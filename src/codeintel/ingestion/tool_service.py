@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 from anyio import to_thread
@@ -29,7 +28,6 @@ from codeintel.ingestion.tools import (
     build_default_registry,
 )
 from codeintel.ingestion.tools.results import (
-    CoverageFileSummary,
     CoverageReport,
     DiagnosticReport,
     ScipIndexResult,
@@ -45,40 +43,6 @@ def _unlink_missing(path: Path) -> None:
 
 def _path_is_file(path: Path) -> bool:
     return path.is_file()
-
-
-@dataclass(frozen=True)
-class CoverageFileReport:
-    """Normalized coverage summary for a single file.
-
-    This dataclass provides backward compatibility with existing code
-    that expects this interface from ToolService.
-    """
-
-    rel_path: str
-    executed_lines: set[int]
-    missing_lines: set[int]
-
-    @classmethod
-    def from_summary(cls, summary: CoverageFileSummary) -> CoverageFileReport:
-        """
-        Convert from the new CoverageFileSummary domain type.
-
-        Parameters
-        ----------
-        summary
-            CoverageFileSummary from tool plugin.
-
-        Returns
-        -------
-        CoverageFileReport
-            Converted report with mutable sets.
-        """
-        return cls(
-            rel_path=summary.rel_path,
-            executed_lines=set(summary.executed_lines),
-            missing_lines=set(summary.missing_lines),
-        )
 
 
 class ToolService:
@@ -281,29 +245,29 @@ class ToolService:
             raise RuntimeError(message)
         return {}
 
-    async def run_coverage_json(
+    async def run_coverage_report(
         self,
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
         output_path: Path | None = None,
-    ) -> list[CoverageFileReport]:
-        """
-        Run coverage json export and return normalized file reports.
+    ) -> CoverageReport:
+        """Run coverage JSON export and return a CoverageReport.
 
         Parameters
         ----------
         repo_root
-            Repository root supplied to the coverage invocation.
+            Repository root directory.
         coverage_file
-            Optional explicit .coverage path to read from.
+            Optional explicit coverage data file path.
         output_path
-            Optional path where the JSON output should be written.
+            Optional path for JSON output; defaults to a cache location.
 
         Returns
         -------
-        list[CoverageFileReport]
-            Normalized coverage summaries grouped per file.
+        CoverageReport
+            Parsed coverage data for all files. Returns CoverageReport.empty()
+            when the coverage tool is missing or fails.
         """
         target_output = output_path or (self.runner.cache_dir / "coverage.json")
         data_file = coverage_file or self.tools_config.coverage_file
@@ -315,10 +279,12 @@ class ToolService:
             output_path=target_output,
         )
 
+        json_path = plugin_result.artifacts.get("coverage_json", target_output)
+        await to_thread.run_sync(_unlink_missing, json_path)
+
         if plugin_result.status is ToolStatus.NOT_FOUND:
             log.warning("coverage binary not found; skipping coverage ingestion")
-            await to_thread.run_sync(_unlink_missing, target_output)
-            return []
+            return CoverageReport.empty()
 
         if plugin_result.status is not ToolStatus.OK:
             log.warning(
@@ -326,19 +292,17 @@ class ToolService:
                 plugin_result.status,
                 plugin_result.error,
             )
-            await to_thread.run_sync(_unlink_missing, target_output)
-            return []
+            return CoverageReport.empty()
 
-        # Clean up temp file
-        json_path = plugin_result.artifacts.get("coverage_json", target_output)
-        await to_thread.run_sync(_unlink_missing, json_path)
-
-        # Convert parsed CoverageReport to legacy CoverageFileReport list
         parsed = plugin_result.parsed
         if isinstance(parsed, CoverageReport):
-            return [CoverageFileReport.from_summary(f) for f in parsed.files]
+            return parsed
 
-        return []
+        log.warning(
+            "coverage plugin returned unexpected parsed payload type: %r",
+            type(parsed),
+        )
+        return CoverageReport.empty()
 
     async def run_pytest_report(
         self,

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Final
 import networkx as nx
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.metrics import (
     core_graph_metrics_plugin,
@@ -134,7 +134,7 @@ def _make_execution_context(
     seed: GraphEngineSeed | None = None,
     engine: NxGraphEngine | None = None,
     use_resources: bool = True,
-) -> GraphExecutionContext:
+) -> GraphPluginExecutionContext:
     """Create an execution context for metrics tests.
 
     Parameters
@@ -152,7 +152,7 @@ def _make_execution_context(
 
     Returns
     -------
-    GraphExecutionContext
+    GraphPluginExecutionContext
         Configured execution context.
     """
     effective_engine = engine
@@ -164,7 +164,7 @@ def _make_execution_context(
         if effective_engine is not None
         else SnapshotRef(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
     )
-    scratch = GraphRuntimeScratch()
+    scratch = PluginScratch()
     resources = ResourceContainer()
 
     # Always register storage; optionally graph resource
@@ -172,10 +172,10 @@ def _make_execution_context(
     if use_resources and effective_engine is not None:
         resources.register(GraphResource(effective_engine))
 
-    return GraphExecutionContext(
+    return GraphPluginExecutionContext(
         snapshot=snapshot,
-        resources=resources,
-        _gateway=gateway,
+        graph_resources=resources,
+        gateway=gateway,
         scratch=scratch,
         plugin_name="metrics_test",
         run_id="metrics-run-001",
@@ -418,23 +418,23 @@ def test_core_graph_metrics_requires_graphs() -> None:
     """Core graph metrics plugin requires call and import graphs."""
     plugin = core_graph_metrics_plugin
 
-    assert plugin.metadata.requires_graphs is not None
+    assert plugin.metadata.requires_graph_kinds is not None
     # Check that it requires at least call_graph and import_graph
-    assert GraphKind.CALL_GRAPH in plugin.metadata.requires_graphs
-    assert GraphKind.IMPORT_GRAPH in plugin.metadata.requires_graphs
+    assert GraphKind.CALL_GRAPH in plugin.metadata.requires_graph_kinds
+    assert GraphKind.IMPORT_GRAPH in plugin.metadata.requires_graph_kinds
 
 
 def test_function_ext_metrics_requires_call_graph() -> None:
     """Function ext metrics plugin requires call graph."""
     plugin = function_ext_metrics_plugin
 
-    assert plugin.metadata.requires_graphs is not None
-    assert GraphKind.CALL_GRAPH in plugin.metadata.requires_graphs
+    assert plugin.metadata.requires_graph_kinds is not None
+    assert GraphKind.CALL_GRAPH in plugin.metadata.requires_graph_kinds
 
 
 def test_module_ext_metrics_requires_import_graph() -> None:
     """Module ext metrics plugin requires import graph."""
     plugin = module_ext_metrics_plugin
 
-    assert plugin.metadata.requires_graphs is not None
-    assert GraphKind.IMPORT_GRAPH in plugin.metadata.requires_graphs
+    assert plugin.metadata.requires_graph_kinds is not None
+    assert GraphKind.IMPORT_GRAPH in plugin.metadata.requires_graph_kinds

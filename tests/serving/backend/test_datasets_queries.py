@@ -261,7 +261,6 @@ def test_build_registry_and_limits_with_default_config() -> None:
     class MinimalConfig:
         """Config with no explicit limits."""
 
-
     cfg = MinimalConfig()
     registry, limits = build_registry_and_limits(cfg)
 

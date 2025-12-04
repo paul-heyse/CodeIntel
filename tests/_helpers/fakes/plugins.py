@@ -12,17 +12,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core import (
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginMetadata,
     GraphPluginProtocol,
-    GraphPluginResult,
     register_graph_plugin,
 )
 from codeintel.graphs.core.registry import unregister_graph_plugin
 
 # Type alias for plugin execute functions
-ExecuteFn = Callable[[GraphExecutionContext], GraphPluginResult]
+ExecuteFn = Callable[[GraphPluginExecutionContext], PluginResult]
 
 
 @dataclass
@@ -75,7 +75,7 @@ class TestGraphPlugin:
         """
         return self._metadata
 
-    def execute(self, ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
         """Execute the plugin.
 
         Parameters
@@ -85,7 +85,7 @@ class TestGraphPlugin:
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Result of execution.
         """
         return self._execute_fn(ctx)
@@ -158,33 +158,33 @@ def build_graph_plugin_pack(settings: GraphPluginPackSettings | None = None) -> 
     cfg = settings or GraphPluginPackSettings()
     counters = GraphPluginPackCounters()
 
-    def _success(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def _success(_ctx: GraphPluginExecutionContext) -> PluginResult:
         counters.success_calls += 1
-        return GraphPluginResult.ok(row_counts=dict(cfg.success_row_counts))
+        return PluginResult.ok(row_counts=dict(cfg.success_row_counts))
 
-    def _soft_fail(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def _soft_fail(_ctx: GraphPluginExecutionContext) -> PluginResult:
         counters.soft_fail_calls += 1
         message = "soft_fail_triggered"
         raise RuntimeError(message)
 
-    def _fatal(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def _fatal(_ctx: GraphPluginExecutionContext) -> PluginResult:
         counters.fatal_calls += 1
         message = "fatal_triggered"
         raise RuntimeError(message)
 
     flaky_threshold = cfg.flaky_failures
 
-    def _flaky(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def _flaky(_ctx: GraphPluginExecutionContext) -> PluginResult:
         counters.flaky_calls += 1
         if counters.flaky_calls <= flaky_threshold:
             message = "transient"
             raise RuntimeError(message)
-        return GraphPluginResult.ok(row_counts={"analytics.pack.flaky": counters.flaky_calls})
+        return PluginResult.ok(row_counts={"analytics.pack.flaky": counters.flaky_calls})
 
-    def _slow(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def _slow(_ctx: GraphPluginExecutionContext) -> PluginResult:
         counters.slow_calls += 1
         time.sleep(cfg.slow_sleep_ms / 1000)
-        return GraphPluginResult.ok()
+        return PluginResult.ok()
 
     return GraphPluginPack(
         success=TestGraphPlugin(

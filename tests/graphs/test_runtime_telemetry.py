@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Final
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginKind,
@@ -27,7 +27,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginStage,
 )
-from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
+from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime.telemetry import (
     GraphPluginSpan,
@@ -72,8 +72,8 @@ def _make_test_plugin(
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -85,7 +85,7 @@ def _make_test_plugin(
     return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
-def _make_gateway_and_context() -> tuple[StorageGateway, GraphExecutionContext]:
+def _make_gateway_and_context() -> tuple[StorageGateway, GraphPluginExecutionContext]:
     """Create a gateway and execution context for telemetry tests.
 
     Returns
@@ -99,12 +99,12 @@ def _make_gateway_and_context() -> tuple[StorageGateway, GraphExecutionContext]:
     apply_all_schemas(gateway.con)
 
     snapshot = SnapshotRef(repo="test/telemetry", commit="tel123", repo_root=Path())
-    scratch = GraphRuntimeScratch()
+    scratch = PluginScratch()
 
-    ctx = GraphExecutionContext(
+    ctx = GraphPluginExecutionContext(
         snapshot=snapshot,
-        resources=ResourceContainer(),
-        _gateway=gateway,
+        graph_resources=ResourceContainer(),
+        gateway=gateway,
         scratch=scratch,
         plugin_name="telemetry_test",
         run_id="telemetry-run-001",
@@ -214,11 +214,11 @@ def test_finish_plugin_computes_duration() -> None:
         # Simulate some execution time
         time.sleep(SLEEP_MS / 1000)
 
-        record = GraphPluginRunRecord(
-            name="duration_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="duration_plugin",
             status="succeeded",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=float(SLEEP_MS),
         )
 
@@ -237,11 +237,11 @@ def test_finish_plugin_with_failed_status() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-fail", ctx)
 
-        record = GraphPluginRunRecord(
-            name="failed_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="failed_plugin",
             status="failed",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=100.0,
             error="Test error message",
         )
@@ -261,11 +261,11 @@ def test_finish_plugin_with_skipped_status() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-skip", ctx)
 
-        record = GraphPluginRunRecord(
-            name="skipped_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="skipped_plugin",
             status="skipped",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=0.0,
         )
 
@@ -284,11 +284,11 @@ def test_finish_plugin_with_multiple_attempts() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-retry", ctx)
 
-        record = GraphPluginRunRecord(
-            name="retry_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="retry_plugin",
             status="succeeded",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=200.0,
             attempts=3,
         )
@@ -303,11 +303,11 @@ def test_record_metrics_without_metrics_enabled() -> None:
     """Record metrics does nothing when metrics disabled."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
 
-    record = GraphPluginRunRecord(
-        name="no_metrics",
+    record = PluginExecutionRecord(
+        plugin_name="no_metrics",
         status="succeeded",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=50.0,
     )
 
@@ -319,11 +319,11 @@ def test_record_metrics_with_scope_paths() -> None:
     """Record metrics includes scope path count in labels."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
 
-    record = GraphPluginRunRecord(
-        name="scope_paths",
+    record = PluginExecutionRecord(
+        plugin_name="scope_paths",
         status="succeeded",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=75.0,
     )
     scope = GraphRunScope(paths=("src/", "lib/", "tests/"))
@@ -336,11 +336,11 @@ def test_record_metrics_with_scope_modules() -> None:
     """Record metrics includes scope module count in labels."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
 
-    record = GraphPluginRunRecord(
-        name="scope_modules",
+    record = PluginExecutionRecord(
+        plugin_name="scope_modules",
         status="failed",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=120.0,
         error="Test failure",
     )
@@ -354,11 +354,11 @@ def test_record_metrics_with_none_scope() -> None:
     """Record metrics handles None scope correctly."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
 
-    record = GraphPluginRunRecord(
-        name="no_scope",
+    record = PluginExecutionRecord(
+        plugin_name="no_scope",
         status="skipped",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=0.0,
     )
 
@@ -518,11 +518,11 @@ def test_telemetry_handles_otel_not_available() -> None:
 
     try:
         span = telemetry.start_plugin(plugin, "run-otel", ctx)
-        record = GraphPluginRunRecord(
-            name="otel_test",
+        record = PluginExecutionRecord(
+            plugin_name="otel_test",
             status="succeeded",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=10.0,
         )
         GraphRuntimeTelemetry.finish_plugin(span, record)
@@ -556,11 +556,11 @@ def test_telemetry_finish_plugin_with_otel_span_none() -> None:
         context_data={"otel_span": None},
     )
 
-    record = GraphPluginRunRecord(
-        name="no_otel_span",
+    record = PluginExecutionRecord(
+        plugin_name="no_otel_span",
         status="succeeded",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=5.0,
     )
 

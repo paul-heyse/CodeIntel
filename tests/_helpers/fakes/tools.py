@@ -20,8 +20,8 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolResult,
     ToolRunner,
 )
-from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
-from codeintel.ingestion.tools.results import ScipIndexResult
+from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.results import CoverageReport, ScipIndexResult
 
 
 def _mkdir_parents(path: Path) -> None:
@@ -152,8 +152,8 @@ class FakeToolServiceConfig:
         Mapping of file paths to error counts for pyrefly.
     ruff_errors : dict[str, int]
         Mapping of file paths to error counts for ruff.
-    coverage_reports : list[CoverageFileReport] | None
-        Coverage reports to return, or None for empty.
+    coverage_report : CoverageReport | None
+        Coverage report to return, or None for empty.
     scip_result : ScipIndexResult | None
         SCIP result to return, or None for empty.
     pytest_success : bool
@@ -175,7 +175,7 @@ class FakeToolServiceConfig:
     pyright_errors: dict[str, int] = field(default_factory=dict)
     pyrefly_errors: dict[str, int] = field(default_factory=dict)
     ruff_errors: dict[str, int] = field(default_factory=dict)
-    coverage_reports: list[CoverageFileReport] | None = None
+    coverage_report: CoverageReport | None = None
     scip_result: ScipIndexResult | None = None
     pytest_success: bool = True
     raise_on_pyright: Exception | None = None
@@ -272,14 +272,14 @@ class FakeToolService(ToolService):
             raise self.fake_config.raise_on_ruff
         return dict(self.fake_config.ruff_errors)
 
-    async def run_coverage_json(
+    async def run_coverage_report(
         self,
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
         output_path: Path | None = None,
-    ) -> list[CoverageFileReport]:
-        """Run coverage and return configured reports.
+    ) -> CoverageReport:
+        """Run coverage and return configured report.
 
         Parameters
         ----------
@@ -292,12 +292,12 @@ class FakeToolService(ToolService):
 
         Returns
         -------
-        list[CoverageFileReport]
-            Configured coverage reports.
+        CoverageReport
+            Configured coverage report.
         """
         self.calls.append(
             (
-                "run_coverage_json",
+                "run_coverage_report",
                 {
                     "repo_root": repo_root,
                     "coverage_file": coverage_file,
@@ -307,7 +307,7 @@ class FakeToolService(ToolService):
         )
         if self.fake_config.raise_on_coverage is not None:
             raise self.fake_config.raise_on_coverage
-        return list(self.fake_config.coverage_reports or [])
+        return self.fake_config.coverage_report or CoverageReport.empty()
 
     async def run_scip_full(
         self,

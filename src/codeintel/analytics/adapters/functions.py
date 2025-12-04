@@ -13,9 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.analytics.adapters.base import BatchAdapter
+from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -326,7 +325,7 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
             self._gateway,
             contract,
             list(rows),
-            delete_scope=DeleteScope(params=[self.repo, self.commit]),
+            delete_scope=DeleteScope(repo=self.repo, commit=self.commit),
             scope=scope,
         )
 
@@ -406,7 +405,7 @@ class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"]):
             self._gateway,
             contract,
             list(rows),
-            delete_scope=DeleteScope(params=[self.repo, self.commit]),
+            delete_scope=DeleteScope(repo=self.repo, commit=self.commit),
             scope=scope,
         )
 

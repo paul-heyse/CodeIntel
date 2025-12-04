@@ -106,7 +106,7 @@ class FunctionMetricsPlugin(
 
         result = compute_function_metrics_and_types(ctx.gateway, self.config, options=opts)
 
-        # Map legacy counter names to table names
+        # Map result keys to output table names
         return {
             "analytics.function_metrics": result.get("metrics_rows", 0),
             "analytics.function_types": result.get("types_rows", 0),

@@ -7,7 +7,7 @@ catalog used in analytics.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
 from codeintel.graphs.catalog import FunctionCatalogService
@@ -35,6 +35,8 @@ class CatalogProvider(LazyResource["FunctionCatalogProvider"]):
     >>> catalog = provider.get()
     >>> function_info = catalog.get_function(function_goid)
     """
+
+    RESOURCE_NAME: ClassVar[str] = "FunctionCatalog"
 
     def __init__(
         self,

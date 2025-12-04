@@ -34,28 +34,29 @@ from codeintel.ingestion.resources import (
     TrackerConfig,
     TrackerProvider,
 )
-from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
+from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.results import CoverageFileSummary, CoverageReport
 from tests._helpers.gateway import open_ingestion_gateway
 
 
 class _FakeCoverageService(ToolService):
     """Provide synthetic coverage reports without invoking external tools."""
 
-    def __init__(self, report: CoverageFileReport, repo_root: Path) -> None:
+    def __init__(self, report: CoverageFileSummary, repo_root: Path) -> None:
         tools_cfg = ToolsConfig.default()
         runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache", tools_config=tools_cfg)
         super().__init__(runner, tools_cfg)
         self._report = report
 
-    async def run_coverage_json(
+    async def run_coverage_report(
         self,
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
         output_path: Path | None = None,
-    ) -> list[CoverageFileReport]:
+    ) -> CoverageReport:
         del repo_root, coverage_file, output_path
-        return [self._report]
+        return CoverageReport(files=(self._report,))
 
 
 def _build_plugin_context(
@@ -127,10 +128,10 @@ def test_coverage_ingest_runs_full_rebuild_with_tracker(tmp_path: Path) -> None:
             build_dir=repo_root / "build",
         )
         cfg = builder.coverage_ingest(coverage_file=coverage_file)
-        report = CoverageFileReport(
+        report = CoverageFileSummary(
             rel_path="pkg/mod.py",
-            executed_lines={1, 2},
-            missing_lines={3},
+            executed_lines=frozenset({1, 2}),
+            missing_lines=frozenset({3}),
         )
         fake_service = _FakeCoverageService(report, repo_root)
 

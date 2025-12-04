@@ -52,15 +52,12 @@ class DeleteScope:
         Repository identifier for the deletion scope.
     commit
         Commit hash for the deletion scope.
-    params
-        Additional parameters for the delete query (deprecated, use repo/commit).
     columns
         Optional explicit column names for the WHERE clause.
     """
 
     repo: str
     commit: str
-    params: Sequence[object] | None = None
     columns: tuple[str, ...] | None = None
 
 

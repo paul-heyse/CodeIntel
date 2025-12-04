@@ -432,6 +432,8 @@ def test_centrality_metrics_all_fields() -> None:
         pagerank=METRIC_PAGERANK,
         betweenness=METRIC_BETWEENNESS,
         closeness=METRIC_CLOSENESS,
+        harmonic=METRIC_CLOSENESS,
+        eigenvector=METRIC_PAGERANK,
         in_degree=METRIC_IN_DEGREE,
         out_degree=METRIC_OUT_DEGREE,
         degree=METRIC_DEGREE_TOTAL,
@@ -440,6 +442,8 @@ def test_centrality_metrics_all_fields() -> None:
     assert metrics.pagerank == METRIC_PAGERANK
     assert metrics.betweenness == METRIC_BETWEENNESS
     assert metrics.closeness == METRIC_CLOSENESS
+    assert metrics.harmonic == METRIC_CLOSENESS
+    assert metrics.eigenvector == METRIC_PAGERANK
     assert metrics.in_degree == METRIC_IN_DEGREE
     assert metrics.out_degree == METRIC_OUT_DEGREE
     assert metrics.degree == METRIC_DEGREE_TOTAL
@@ -451,6 +455,8 @@ def test_centrality_metrics_equality() -> None:
         pagerank=METRIC_BETWEENNESS,
         betweenness=METRIC_BETWEENNESS,
         closeness=METRIC_BETWEENNESS,
+        harmonic=METRIC_BETWEENNESS,
+        eigenvector=METRIC_BETWEENNESS,
         in_degree=1,
         out_degree=1,
         degree=EQUALITY_DEGREE_TOTAL,
@@ -459,6 +465,8 @@ def test_centrality_metrics_equality() -> None:
         pagerank=METRIC_BETWEENNESS,
         betweenness=METRIC_BETWEENNESS,
         closeness=METRIC_BETWEENNESS,
+        harmonic=METRIC_BETWEENNESS,
+        eigenvector=METRIC_BETWEENNESS,
         in_degree=1,
         out_degree=1,
         degree=EQUALITY_DEGREE_TOTAL,
@@ -474,6 +482,8 @@ def test_centrality_metrics_default_values() -> None:
         pagerank=0.1,
         betweenness=0.2,
         closeness=0.3,
+        harmonic=0.4,
+        eigenvector=0.5,
         in_degree=1,
         out_degree=2,
         degree=3,

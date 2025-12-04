@@ -43,9 +43,7 @@ def _create_config() -> ConfigDataFlowStepConfig:
     ConfigDataFlowStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(
-        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo")
-    )
+    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
     return ConfigDataFlowStepConfig(snapshot=snapshot)
 
 

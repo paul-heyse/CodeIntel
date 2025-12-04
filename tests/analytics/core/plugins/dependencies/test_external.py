@@ -39,9 +39,7 @@ def _create_config() -> ExternalDependenciesStepConfig:
     ExternalDependenciesStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(
-        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo")
-    )
+    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
     return ExternalDependenciesStepConfig(snapshot=snapshot)
 
 
@@ -273,9 +271,7 @@ def test_execute_succeeds_with_minimal_resources(
     ctx.gateway = fresh_gateway
     ctx.has_config.return_value = True
     ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = (
-        lambda n: n == "CatalogProvider"
-    )
+    ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider"
 
     # Mock catalog provider
     catalog = MagicMock()

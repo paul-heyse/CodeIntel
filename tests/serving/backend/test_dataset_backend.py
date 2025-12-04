@@ -156,7 +156,9 @@ def test_read_dataset_rows_with_offset(architecture_gateway: StorageGateway) -> 
     context, repositories = _build_components(architecture_gateway)
     backend = DatasetBackend(context=context, repositories=repositories)
 
-    rows = backend.read_dataset_rows(dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE, offset=0)
+    rows = backend.read_dataset_rows(
+        dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE, offset=0
+    )
 
     _expect(
         condition=isinstance(rows, (list, tuple)),
@@ -184,7 +186,9 @@ def test_read_dataset_rows_invalid_offset(architecture_gateway: StorageGateway) 
     backend = DatasetBackend(context=context, repositories=repositories)
 
     with pytest.raises(errors.McpError) as excinfo:
-        backend.read_dataset_rows(dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE, offset=-1)
+        backend.read_dataset_rows(
+            dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE, offset=-1
+        )
 
     _expect(
         condition=excinfo.value.detail.code == "invalid-argument",
@@ -194,7 +198,9 @@ def test_read_dataset_rows_invalid_offset(architecture_gateway: StorageGateway) 
 
 def test_read_dataset_rows_with_custom_limits(architecture_gateway: StorageGateway) -> None:
     """Respect custom limits from backend configuration."""
-    custom_limits = BackendLimits(default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_LIMIT)
+    custom_limits = BackendLimits(
+        default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_LIMIT
+    )
     context, repositories = _build_components(architecture_gateway, limits=custom_limits)
     backend = DatasetBackend(context=context, repositories=repositories)
 
@@ -326,7 +332,9 @@ def test_dataset_schema_columns_have_properties(architecture_gateway: StorageGat
         col = schema.duckdb_schema[0]
         col_name = col.get("name") if isinstance(col, dict) else getattr(col, "name", None)
         col_type = col.get("type") if isinstance(col, dict) else getattr(col, "type", None)
-        col_nullable = col.get("nullable") if isinstance(col, dict) else getattr(col, "nullable", None)
+        col_nullable = (
+            col.get("nullable") if isinstance(col, dict) else getattr(col, "nullable", None)
+        )
         _expect(
             condition=col_name is not None and bool(col_name),
             message="Column should have name",

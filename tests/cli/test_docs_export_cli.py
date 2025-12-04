@@ -1,40 +1,31 @@
-"""Tests for CLI docs export validator invocation."""
+"""Tests for docs export validator invocation."""
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.docs import GatewayFactory, cmd_docs_export
-from codeintel.config.models import CodeIntelConfig
+from codeintel.cli.commands.docs import run_docs_export
+from codeintel.config.models import (
+    CliConfigOptions,
+    CliPathsInput,
+    CodeIntelConfig,
+    RepoConfig,
+)
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import provision_docs_export_ready
 
 
-def _make_args(tmp_path: Path) -> argparse.Namespace:
-    return argparse.Namespace(
-        repo_root=tmp_path,
-        repo="demo/repo",
-        commit="deadbeef",
-        db_path=tmp_path / "db.duckdb",
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "out",
-        schemas=None,
-        datasets=None,
-        validate_exports=False,
-        nx_gpu=False,
-        nx_backend="auto",
-        verbose=0,
-    )
-
-
-def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> None:
-    """CLI docs export uses the provided validator before running exports."""
+def test_docs_export_invokes_validator_before_exports(tmp_path: Path) -> None:
+    """Docs export uses the provided validator before running exports."""
     events: list[str] = []
+
+    # Provision the database with required seeds, then close the connection
+    # so run_docs_export can open its own connection to the same file
     ctx = provision_docs_export_ready(tmp_path, db_path=tmp_path / "db.duckdb", file_backed=True)
+    ctx.close()
 
     def validator(_gateway: StorageGateway) -> None:
         events.append("validator")
@@ -48,29 +39,31 @@ def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> Non
         events.append(f"export:{output_dir}")
         return []
 
-    def gateway_factory(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
-        if not read_only:
-            pytest.fail("Expected read-only gateway")
-        _ = cfg  # unused in stub
-        return ctx.gateway
+    out_dir = tmp_path / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    typed_factory: GatewayFactory = gateway_factory
+    paths_cfg = CliPathsInput(
+        repo_root=tmp_path,
+        build_dir=tmp_path / "build",
+        db_path=tmp_path / "db.duckdb",
+        document_output_dir=out_dir,
+    )
+    repo_cfg = RepoConfig(repo="demo/repo", commit="deadbeef")
+    cfg = CodeIntelConfig.from_cli_args(
+        repo_cfg=repo_cfg,
+        paths_cfg=paths_cfg,
+        options=CliConfigOptions(),
+    )
 
-    args = _make_args(tmp_path)
-    args.document_output_dir.mkdir(parents=True, exist_ok=True)
+    run_docs_export(
+        cfg=cfg,
+        validate_exports=False,
+        schemas=None,
+        datasets=None,
+        require_normalized_macros=False,
+        validator=validator,
+        export_runner=export_runner,
+    )
 
-    try:
-        exit_code = cmd_docs_export(
-            args,
-            validator=validator,
-            export_runner=export_runner,
-            gateway_factory=typed_factory,
-        )
-    finally:
-        ctx.close()
-
-    if exit_code != 0:
-        pytest.fail(f"Unexpected exit: {exit_code}")
-    expected_events = ["validator", f"export:{args.document_output_dir}"]
-    if events != expected_events:
-        pytest.fail(f"Unexpected event order: {events}")
+    expected_events = ["validator", f"export:{out_dir}"]
+    assert events == expected_events, f"Unexpected event order: {events}"

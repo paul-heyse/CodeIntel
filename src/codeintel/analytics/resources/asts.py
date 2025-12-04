@@ -189,8 +189,6 @@ class AstProvider(LazyResource[AstResourceData]):
 
         Example
         -------
-        >>> existing_asts = context.function_ast_map
-        >>> missing = context.missing_function_goids
         >>> provider = AstProvider.from_asts(existing_asts, missing)
         >>> registry.register(AstProvider, provider)
         """
@@ -246,32 +244,6 @@ class AstProvider(LazyResource[AstResourceData]):
             function_ast_map=function_ast_map,
             missing_function_goids=missing,
         )
-
-    @property
-    def function_asts(self) -> dict[int, FunctionAst]:
-        """Return function AST map.
-
-        Convenience property matching the legacy AnalyticsContext API.
-
-        Returns
-        -------
-        dict[int, FunctionAst]
-            Mapping of GOID to FunctionAst.
-        """
-        return self.get().function_ast_map
-
-    @property
-    def missing_goids(self) -> set[int]:
-        """Return set of missing GOIDs.
-
-        Convenience property matching the legacy AnalyticsContext API.
-
-        Returns
-        -------
-        set[int]
-            GOIDs that could not be parsed.
-        """
-        return self.get().missing_function_goids
 
 
 __all__ = [

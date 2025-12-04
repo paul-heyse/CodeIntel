@@ -1,13 +1,24 @@
 """Protocol and base classes for resource providers.
 
-This module defines the core `ResourceProvider` protocol and related
-types for lazy resource loading.
+This module re-exports unified resource provider types from codeintel.core.resources,
+while maintaining backward compatibility with analytics-specific resource patterns.
+
+The canonical protocol definition lives in codeintel.core.resources.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
+from typing import TypeVar
+
+from codeintel.core.resources import (
+    ResourceNotFoundError,
+    ResourceProvider,
+    ResourceProviderBase,
+    ResourceRegistry,
+)
+
+T = TypeVar("T")
 
 
 class ResourceError(Exception):
@@ -35,80 +46,18 @@ class ResourceNotLoadedError(ResourceError):
         self.reason = reason
 
 
-@runtime_checkable
-class ResourceProvider[T_co](Protocol):
-    """Protocol for lazy resource providers.
-
-    Resource providers encapsulate lazy loading of expensive resources
-    (graphs, AST maps, catalogs). Resources are loaded on first access
-    and cached for subsequent requests.
-
-    Type Parameters
-    ---------------
-    T_co
-        The type of resource this provider yields (covariant).
-    """
-
-    @property
-    def is_loaded(self) -> bool:
-        """Check if the resource has been loaded.
-
-        Returns
-        -------
-        bool
-            True if the resource is currently loaded.
-        """
-        ...
-
-    @property
-    def resource_name(self) -> str:
-        """Return a human-readable name for this resource.
-
-        Returns
-        -------
-        str
-            Name of the resource for error messages and logging.
-        """
-        ...
-
-    def get(self) -> T_co:
-        """Get the resource, loading if necessary.
-
-        Returns
-        -------
-        T_co
-            The loaded resource.
-
-        Raises
-        ------
-        ResourceNotLoadedError
-            If the resource cannot be loaded.
-        """
-        ...
-
-    def get_or_none(self) -> T_co | None:
-        """Get the resource or None if not available.
-
-        Returns
-        -------
-        T_co | None
-            The loaded resource, or None if unavailable.
-        """
-        ...
-
-    def invalidate(self) -> None:
-        """Invalidate the cached resource.
-
-        Forces the resource to be reloaded on next access.
-        """
-        ...
-
-
 class LazyResource[T](ABC):
     """Abstract base class for lazy resource providers.
 
-    Provides a standard implementation of lazy loading with caching.
-    Subclasses implement `_load()` to define how the resource is loaded.
+    Provides a standard implementation of lazy loading with caching and
+    error tracking. Subclasses implement `_load()` to define how the
+    resource is loaded.
+
+    This class provides additional features beyond ResourceProviderBase:
+    - is_loaded property to check load status
+    - get_or_none() for optional access
+    - set_preloaded() for dependency injection
+    - Error tracking for repeated failures
 
     Type Parameters
     ---------------
@@ -223,6 +172,9 @@ class LazyResource[T](ABC):
 __all__ = [
     "LazyResource",
     "ResourceError",
+    "ResourceNotFoundError",
     "ResourceNotLoadedError",
     "ResourceProvider",
+    "ResourceProviderBase",
+    "ResourceRegistry",
 ]

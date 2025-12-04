@@ -511,111 +511,6 @@ class ScaffoldConfigError(Exception):
 
 
 def build_scaffold_options(
-    args: object,
-    registry: DatasetRegistry | None = None,
-) -> ScaffoldOptions:
-    """Build scaffold options from argparse namespace (test compatibility).
-
-    Parameters
-    ----------
-    args
-        Argparse namespace with scaffold options.
-    registry
-        Optional registry for validation.
-
-    Returns
-    -------
-    ScaffoldOptions
-        Validated scaffold options.
-    """
-    return _build_scaffold_options(
-        name=str(getattr(args, "name", "")),
-        kind=str(getattr(args, "kind", "table")),
-        table_key=getattr(args, "table_key", None),
-        owner=getattr(args, "owner", None),
-        freshness_sla=getattr(args, "freshness_sla", None),
-        retention_policy=getattr(args, "retention_policy", None),
-        schema_version=str(getattr(args, "schema_version", "1")),
-        validation_profile=str(getattr(args, "validation_profile", "strict")),
-        schema_id=getattr(args, "schema_id", None),
-        jsonl_filename=getattr(args, "jsonl_filename", None),
-        parquet_filename=getattr(args, "parquet_filename", None),
-        stable_id=getattr(args, "stable_id", None),
-        specs_snapshot=Path(getattr(args, "specs_snapshot", Path())),
-        output_dir=Path(getattr(args, "output_dir", Path())),
-        overwrite=bool(getattr(args, "overwrite", False)),
-        dry_run=bool(getattr(args, "dry_run", False)),
-        emit_bootstrap_snippet=bool(getattr(args, "emit_bootstrap_snippet", False)),
-        registry=registry,
-    )
-
-
-def run_datasets_catalog(args: object) -> int:
-    """Run dataset catalog generation from argparse namespace (test compatibility).
-
-    Parameters
-    ----------
-    args
-        Argparse namespace with catalog options.
-
-    Returns
-    -------
-    int
-        Exit code (0 on success).
-    """
-    from codeintel.storage.config import StorageConfig
-    from codeintel.storage.gateway import open_gateway
-
-    warnings_seen: set[str] = set()
-
-    def _warn(msg: str) -> None:
-        if msg in warnings_seen:
-            return
-        warnings_seen.add(msg)
-        sys.stderr.write(msg + "\n")
-
-    db_path = Path(getattr(args, "db_path", ""))
-    output_dir = Path(getattr(args, "output_dir", ""))
-    sample_rows = int(getattr(args, "sample_rows", 0))
-    sample_rows_strict = bool(getattr(args, "sample_rows_strict", False))
-
-    if not db_path.exists():
-        if sample_rows_strict:
-            sys.stderr.write(f"Database not found at {db_path}\n")
-            return 1
-        _warn(f"Database not found at {db_path}; writing empty catalog.")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        write_markdown_catalog(output_dir, [])
-        write_html_catalog(output_dir, [])
-        return 0
-
-    storage_cfg = StorageConfig.for_readonly(db_path)
-    gateway = open_gateway(storage_cfg)
-    registry = load_dataset_registry(gateway.con)
-
-    try:
-        entries = build_catalog(
-            registry,
-            con=gateway.con,
-            sampling=SamplingConfig(
-                sample_rows=sample_rows,
-                sample_rows_strict=sample_rows_strict,
-            ),
-            warn=_warn,
-        )
-    except (DuckDBError, RuntimeError) as exc:
-        sys.stderr.write(f"Failed to generate catalog: {exc}\n")
-        gateway.close()
-        return 1
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_markdown_catalog(output_dir, entries)
-    write_html_catalog(output_dir, entries)
-    gateway.close()
-    return 0
-
-
-def _build_scaffold_options(
     name: str,
     kind: str,
     table_key: str | None,
@@ -1256,7 +1151,7 @@ def datasets_scaffold(
         registry = load_dataset_registry(gateway.con)
 
     try:
-        opts = _build_scaffold_options(
+        opts = build_scaffold_options(
             name=name,
             kind=kind,
             table_key=table_key,
@@ -1350,5 +1245,4 @@ __all__ = [
     "ScaffoldConfigError",
     "build_scaffold_options",
     "datasets_ext_app",
-    "run_datasets_catalog",
 ]

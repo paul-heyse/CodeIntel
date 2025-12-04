@@ -20,7 +20,7 @@ from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.resources import StorageResource
 
 if TYPE_CHECKING:
-    from codeintel.graphs.core import GraphExecutionContext
+    from codeintel.graphs.core import GraphPluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -48,7 +48,7 @@ class ResolvedRuntime:
 
 @contextmanager
 def resolve_analytics_runtime(
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
 ) -> Iterator[ResolvedRuntime]:
     """Resolve runtime for analytics computations.
 
@@ -71,8 +71,8 @@ def resolve_analytics_runtime(
     ...     compute_metrics(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
     """
     # Get gateway via resource injection or fallback
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.require(StorageResource)
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        storage = ctx.graph_resources.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway

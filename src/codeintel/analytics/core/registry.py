@@ -495,7 +495,12 @@ class PluginMetaOptions:
 
     @staticmethod
     def from_kwargs(**kwargs: Unpack[PluginMetaOptionsInput]) -> PluginMetaOptions:
-        """Build options from legacy kwargs while keeping a narrow public API.
+        """Build options from keyword arguments with validation.
+
+        Parameters
+        ----------
+        **kwargs
+            Keyword arguments matching PluginMetaOptionsInput fields.
 
         Returns
         -------
@@ -559,7 +564,7 @@ class PluginMetaOptions:
 
 
 class PluginMetaOptionsInput(TypedDict, total=False):
-    """Typed kwargs for PluginMetaOptions.from_kwargs."""
+    """Typed keyword arguments for PluginMetaOptions.from_kwargs factory."""
 
     name: str
     description: str

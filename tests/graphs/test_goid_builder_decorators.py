@@ -152,7 +152,7 @@ def test_goid_build_entries_class_definition() -> None:
     row = _make_row(
         path="models.py",
         node_type="ClassDef",
-        name="User",
+        plugin_name="User",
         qualname="models.User",
         lineno=5,
         end_lineno=20,
@@ -176,7 +176,7 @@ def test_goid_build_entries_module_fallback() -> None:
     row = _make_row(
         path="unknown/module.py",
         node_type="Module",
-        name="module",
+        plugin_name="module",
         qualname="module",
         lineno=1,
         end_lineno=50,
@@ -199,7 +199,7 @@ def test_goid_build_entries_async_function() -> None:
     row = _make_row(
         path="async_mod.py",
         node_type="AsyncFunctionDef",
-        name="fetch",
+        plugin_name="fetch",
         qualname="async_mod.fetch",
         lineno=10,
         end_lineno=15,
@@ -221,7 +221,7 @@ def test_goid_build_entries_method_in_class() -> None:
     row = _make_row(
         path="models.py",
         node_type="FunctionDef",
-        name="save",
+        plugin_name="save",
         qualname="models.User.save",
         lineno=15,
         end_lineno=20,

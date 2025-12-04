@@ -23,7 +23,7 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
 from codeintel.analytics.tests.graph_metrics import compute_test_graph_metrics
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_metric_plugin,
 )
@@ -36,7 +36,7 @@ from codeintel.graphs.resources import StorageResource
 # =============================================================================
 
 
-def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_cfg_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute control-flow graph metrics for functions and blocks.
 
     Uses resource injection to access storage, with fallback to ctx.gateway.
@@ -47,15 +47,15 @@ def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
         Success result after computing CFG metrics.
     """
     # CFG/DFG metrics don't need runtime - use simple gateway access
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.require(StorageResource).gateway
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.graph_resources.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
-def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_dfg_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute data-flow graph metrics for functions and blocks.
 
     Uses resource injection to access storage, with fallback to ctx.gateway.
@@ -66,15 +66,15 @@ def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
         Success result after computing DFG metrics.
     """
     # CFG/DFG metrics don't need runtime - use simple gateway access
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.require(StorageResource).gateway
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.graph_resources.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
-def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_test_graph_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute metrics over the test <-> function bipartite graph.
 
     Returns
@@ -87,7 +87,7 @@ def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     return ComputationResult.ok()
 
 
-def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_subsystem_graph_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute subsystem-level condensed import graph metrics.
 
     Returns
@@ -102,7 +102,7 @@ def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationR
     return ComputationResult.ok()
 
 
-def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_symbol_graph_metrics_modules(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute symbol graph metrics at the module level.
 
     Returns
@@ -117,7 +117,7 @@ def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> Computa
     return ComputationResult.ok()
 
 
-def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_symbol_graph_metrics_functions(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute symbol graph metrics at the function level.
 
     Returns
@@ -132,7 +132,7 @@ def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> Compu
     return ComputationResult.ok()
 
 
-def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_config_graph_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute config bipartite/projection graph metrics.
 
     Returns
@@ -145,7 +145,7 @@ def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResu
     return ComputationResult.ok()
 
 
-def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_subsystem_agreement(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Check agreement between subsystem labels and import communities.
 
     Returns
@@ -154,15 +154,15 @@ def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResul
         Success result after computing subsystem agreement metrics.
     """
     # Subsystem agreement doesn't need runtime - use simple gateway access
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.require(StorageResource).gateway
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.graph_resources.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
-def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_graph_stats(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute global graph statistics for core graphs.
 
     Returns
@@ -185,7 +185,7 @@ cfg_metrics_plugin = make_metric_plugin(
     stage="cfg",
     depends_on=("cfg_dfg_builder",),
     provides=("cfg_metrics",),
-    requires_graphs=(GraphKind.CFG_GRAPH,),
+    requires_graph_kinds=(GraphKind.CFG_GRAPH,),
 )
 
 dfg_metrics_plugin = make_metric_plugin(
@@ -194,7 +194,7 @@ dfg_metrics_plugin = make_metric_plugin(
     stage="dfg",
     depends_on=("cfg_dfg_builder",),
     provides=("dfg_metrics",),
-    requires_graphs=(GraphKind.CFG_GRAPH,),
+    requires_graph_kinds=(GraphKind.CFG_GRAPH,),
 )
 
 test_graph_metrics_plugin = make_metric_plugin(
@@ -207,7 +207,7 @@ test_graph_metrics_plugin = make_metric_plugin(
         "analytics.test_graph_metrics_tests",
         "analytics.test_graph_metrics_functions",
     ),
-    requires_graphs=(GraphKind.CALL_GRAPH,),
+    requires_graph_kinds=(GraphKind.CALL_GRAPH,),
 )
 
 subsystem_graph_metrics_plugin = make_metric_plugin(
@@ -217,7 +217,7 @@ subsystem_graph_metrics_plugin = make_metric_plugin(
     depends_on=("import_graph_builder",),
     provides=("subsystem_metrics",),
     produces_tables=("analytics.subsystem_graph_metrics",),
-    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+    requires_graph_kinds=(GraphKind.IMPORT_GRAPH,),
 )
 
 symbol_graph_metrics_modules_plugin = make_metric_plugin(
@@ -227,7 +227,7 @@ symbol_graph_metrics_modules_plugin = make_metric_plugin(
     depends_on=("import_graph_builder",),
     provides=("symbol_metrics_modules",),
     produces_tables=("analytics.symbol_graph_metrics_modules",),
-    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+    requires_graph_kinds=(GraphKind.IMPORT_GRAPH,),
 )
 
 symbol_graph_metrics_functions_plugin = make_metric_plugin(
@@ -237,7 +237,7 @@ symbol_graph_metrics_functions_plugin = make_metric_plugin(
     depends_on=("callgraph_builder",),
     provides=("symbol_metrics_functions",),
     produces_tables=("analytics.symbol_graph_metrics_functions",),
-    requires_graphs=(GraphKind.CALL_GRAPH,),
+    requires_graph_kinds=(GraphKind.CALL_GRAPH,),
 )
 
 config_graph_metrics_plugin = make_metric_plugin(
@@ -252,7 +252,7 @@ config_graph_metrics_plugin = make_metric_plugin(
         "analytics.config_projection_key_edges",
         "analytics.config_projection_module_edges",
     ),
-    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+    requires_graph_kinds=(GraphKind.IMPORT_GRAPH,),
 )
 
 subsystem_agreement_plugin = make_metric_plugin(
@@ -262,7 +262,7 @@ subsystem_agreement_plugin = make_metric_plugin(
     depends_on=("subsystem_graph_metrics", "graph_metrics_modules_ext"),
     provides=("subsystem_agreement",),
     produces_tables=("analytics.subsystem_agreement",),
-    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+    requires_graph_kinds=(GraphKind.IMPORT_GRAPH,),
 )
 
 graph_stats_plugin = make_metric_plugin(
@@ -272,7 +272,7 @@ graph_stats_plugin = make_metric_plugin(
     depends_on=("callgraph_builder", "import_graph_builder"),
     provides=("graph_stats",),
     produces_tables=("analytics.graph_stats",),
-    requires_graphs=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
+    requires_graph_kinds=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
 )
 
 

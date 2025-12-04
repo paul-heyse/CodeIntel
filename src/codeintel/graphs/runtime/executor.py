@@ -16,9 +16,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
-from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
@@ -63,7 +64,7 @@ PLUGIN_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
 class PluginFatalError(Exception):
     """Fatal plugin failure while respecting fail-fast semantics."""
 
-    def __init__(self, record: GraphPluginRunRecord, original: Exception) -> None:
+    def __init__(self, record: PluginExecutionRecord, original: Exception) -> None:
         """Initialize with execution record and original exception.
 
         Parameters
@@ -112,13 +113,13 @@ class GraphRunReport:
     run_id: str
     repo: str
     commit: str
-    records: tuple[GraphPluginRunRecord, ...]
+    records: tuple[PluginExecutionRecord, ...]
     success_count: int
     failure_count: int
     skip_count: int
     duration_ms: float
-    started_at: str
-    ended_at: str
+    started_at: datetime
+    ended_at: datetime
     fatal_error: bool = False
     manifest: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -150,9 +151,9 @@ class GraphExecutorContext:
 
 def _run_with_timeout(
     plugin: GraphPluginProtocol,
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     timeout_ms: int | None,
-) -> GraphPluginResult:
+) -> PluginResult:
     """Execute a plugin with an optional timeout.
 
     Parameters
@@ -166,7 +167,7 @@ def _run_with_timeout(
 
     Returns
     -------
-    GraphPluginResult
+    PluginResult
         Plugin execution result.
 
     Raises
@@ -190,9 +191,9 @@ def _run_with_timeout(
 def _execute_plugin(
     *,
     plugin: GraphPluginProtocol,
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     settings: PluginExecutionSettings,
-) -> GraphPluginRunRecord:
+) -> PluginExecutionRecord:
     """Execute a plugin with retry and timeout handling.
 
     Parameters
@@ -206,7 +207,7 @@ def _execute_plugin(
 
     Returns
     -------
-    GraphPluginRunRecord
+    PluginExecutionRecord
         Execution record.
 
     Raises
@@ -219,7 +220,7 @@ def _execute_plugin(
     attempts = 0
     status: Literal["succeeded", "failed", "skipped"] = "failed"
     error_message: str | None = None
-    plugin_result: GraphPluginResult | None = None
+    plugin_result: PluginResult | None = None
     max_attempts = max(settings.retry_cfg.max_attempts, 1)
 
     while attempts < max_attempts:
@@ -244,11 +245,11 @@ def _execute_plugin(
                 _maybe_retry(plugin.metadata.name, attempts, max_attempts, settings)
                 continue
             if status == "failed" and settings.severity == "fatal" and settings.fail_fast:
-                record = GraphPluginRunRecord(
-                    name=plugin.metadata.name,
+                record = PluginExecutionRecord(
+                    plugin_name=plugin.metadata.name,
                     status=status,
-                    started_at=started_at.isoformat(),
-                    ended_at=datetime.now(tz=UTC).isoformat(),
+                    started_at=started_at,
+                    ended_at=datetime.now(tz=UTC),
                     duration_ms=round((time.perf_counter() - start) * 1000, 2),
                     attempts=attempts,
                     partial=True,
@@ -275,11 +276,11 @@ def _execute_plugin(
         else settings.options_hash
     )
 
-    return GraphPluginRunRecord(
-        name=plugin.metadata.name,
+    return PluginExecutionRecord(
+        plugin_name=plugin.metadata.name,
         status=status,
-        started_at=started_at.isoformat(),
-        ended_at=ended_at.isoformat(),
+        started_at=started_at,
+        ended_at=ended_at,
         duration_ms=round((time.perf_counter() - start) * 1000, 2),
         attempts=attempts,
         partial=status != "succeeded",
@@ -328,10 +329,10 @@ def _maybe_retry(
 def _execute_planned_plugin(
     *,
     plugin: GraphPluginProtocol,
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     settings: PluginExecutionSettings,
     plan: GraphPluginExecutionPlan,
-) -> GraphPluginRunRecord:
+) -> PluginExecutionRecord:
     """Execute a plugin according to the execution plan.
 
     Parameters
@@ -347,7 +348,7 @@ def _execute_planned_plugin(
 
     Returns
     -------
-    GraphPluginRunRecord
+    PluginExecutionRecord
         Execution record.
 
     Raises
@@ -390,7 +391,7 @@ def _execute_planned_plugin(
         options_hash=settings.options_hash,
     )
 
-    record: GraphPluginRunRecord | None = None
+    record: PluginExecutionRecord | None = None
     try:
         if plan.policy.dry_run:
             record = dry_run_record(plugin=plugin, params=params)
@@ -406,9 +407,9 @@ def _execute_planned_plugin(
         raise
     except PLUGIN_CATCHABLE_ERRORS:
         log.exception("plugin_failed", extra={"graph_run_id": plan.run_id})
-        now = datetime.now(tz=UTC).isoformat()
-        record = GraphPluginRunRecord(
-            name=plugin.metadata.name,
+        now = datetime.now(tz=UTC)
+        record = PluginExecutionRecord(
+            plugin_name=plugin.metadata.name,
             status="failed",
             started_at=now,
             ended_at=now,
@@ -432,7 +433,7 @@ def _execute_planned_plugin(
 
     log.info(
         "graph_runtime.plugin.finish name=%s status=%s duration_ms=%.2f",
-        record.name,
+        record.plugin_name,
         record.status,
         record.duration_ms,
         extra={"graph_run_id": plan.run_id},
@@ -445,19 +446,19 @@ def _execute_plugins_in_plan(
     *,
     plan: GraphPluginExecutionPlan,
     context: GraphExecutorContext,
-) -> tuple[list[GraphPluginRunRecord], dict[str, dict[str, object]], bool]:
+) -> tuple[list[PluginExecutionRecord], dict[str, dict[str, object]], bool]:
     """
     Execute all plugins in a plan, returning records and manifest.
 
     Returns
     -------
-    tuple[list[GraphPluginRunRecord], dict[str, dict[str, object]], bool]
+    tuple[list[PluginExecutionRecord], dict[str, dict[str, object]], bool]
         Plugin records, manifest payload, and fatal_error flag.
     """
-    records: list[GraphPluginRunRecord] = []
+    records: list[PluginExecutionRecord] = []
     manifest: dict[str, dict[str, object]] = {}
     fatal_error = False
-    scratch = GraphRuntimeScratch()
+    scratch = PluginScratch()
 
     try:
         for plugin in plan.plugins:
@@ -469,17 +470,17 @@ def _execute_plugins_in_plan(
             if context.engine is not None:
                 resources.register(GraphResource(cast("NxGraphEngine", context.engine)))
 
-            plugin_ctx = GraphExecutionContext(
+            plugin_ctx = GraphPluginExecutionContext(
+                gateway=context.gateway,
                 snapshot=context.snapshot,
-                resources=resources,
-                _gateway=context.gateway,
-                _catalog_provider=context.catalog_provider,
+                run_id=plan.run_id,
+                graph_resources=resources,
                 scratch=scratch,
                 options=options,
                 plugin_name=plugin.metadata.name,
-                run_id=plan.run_id,
                 scope=plan.scope,
                 run_context=context.run_context,
+                _catalog_provider=context.catalog_provider,
             )
 
             try:
@@ -510,7 +511,7 @@ def _execute_plugins_in_plan(
     return records, manifest, fatal_error
 
 
-def _status_counts(records: Sequence[GraphPluginRunRecord]) -> dict[str, int]:
+def _status_counts(records: Sequence[PluginExecutionRecord]) -> dict[str, int]:
     """
     Summarize plugin run statuses.
 
@@ -574,7 +575,7 @@ def run_graph_plugins(
         error_summary: str | None = None
         if fatal_error or status_counts["failure"] > 0:
             status = "failed"
-            failed_plugins = [r.name for r in records if r.status == "failed"]
+            failed_plugins = [r.plugin_name for r in records if r.status == "failed"]
             error_summary = f"Failed plugins: {', '.join(failed_plugins)}"
         elif status_counts["skipped"] > 0 and status_counts["success"] == 0:
             status = "partial"
@@ -596,8 +597,8 @@ def run_graph_plugins(
         failure_count=status_counts["failure"],
         skip_count=status_counts["skipped"],
         duration_ms=duration_ms,
-        started_at=started_at.isoformat(),
-        ended_at=ended_at.isoformat(),
+        started_at=started_at,
+        ended_at=ended_at,
         fatal_error=fatal_error,
         manifest=manifest,
     )
@@ -606,7 +607,7 @@ def run_graph_plugins(
 def _record_graph_steps(
     runs: PipelineRunTracking,
     run_id: str,
-    records: list[GraphPluginRunRecord],
+    records: list[PluginExecutionRecord],
     plan: GraphPluginExecutionPlan,
 ) -> None:
     """Record step records from graph results.
@@ -625,7 +626,7 @@ def _record_graph_steps(
     for rec in records:
         # Get plugin metadata for stage information
         plugin_meta = next(
-            (p.metadata for p in plan.plugins if p.metadata.name == rec.name),
+            (p.metadata for p in plan.plugins if p.metadata.name == rec.plugin_name),
             None,
         )
         stage = plugin_meta.stage if plugin_meta else "unknown"
@@ -656,19 +657,15 @@ def _record_graph_steps(
         if rec.attempts > 1:
             extra["attempts"] = rec.attempts
 
-        # Parse timestamps
-        started_at = datetime.fromisoformat(rec.started_at)
-        ended_at = datetime.fromisoformat(rec.ended_at)
-
         runs.record_step(
             PipelineStepRecord(
                 run_id=run_id,
                 module="graphs",
                 stage=stage,
-                name=rec.name,
+                name=rec.plugin_name,
                 status=step_status,
-                started_at=started_at,
-                completed_at=ended_at,
+                started_at=rec.started_at,
+                completed_at=rec.ended_at,
                 row_counts=row_counts,
                 extra=extra if extra else None,
             ),

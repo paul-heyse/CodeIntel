@@ -15,13 +15,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.graphs.core.context import GraphExecutionContext
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.graphs.core.result import PluginResult
 from codeintel.graphs.runtime.manifest import (
     GraphPluginManifest,
     InputHashPayload,
@@ -62,8 +62,8 @@ def _make_test_plugin(name: str) -> GraphPluginProtocol:
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -431,7 +431,7 @@ def test_dry_run_record_creates_skipped_status() -> None:
     record = dry_run_record(plugin=plugin, params=params)
 
     assert record.status == "skipped"
-    assert record.name == "dry_run_plugin"
+    assert record.plugin_name == "dry_run_plugin"
     assert record.meta.get("skipped_reason") == "dry_run"
     assert record.meta.get("input_hash") == "inp123"
     assert record.meta.get("options_hash") == "opt456"
@@ -454,7 +454,7 @@ def test_skip_record_creates_skipped_status_with_reason() -> None:
     record = skip_record(plugin=plugin, params=params, reason="unchanged")
 
     assert record.status == "skipped"
-    assert record.name == "skip_plugin"
+    assert record.plugin_name == "skip_plugin"
     assert record.meta.get("skipped_reason") == "unchanged"
     assert record.meta.get("version_hash") == "v2"
 

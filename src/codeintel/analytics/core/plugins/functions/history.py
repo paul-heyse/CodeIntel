@@ -114,7 +114,6 @@ class FunctionHistoryPlugin:
         tool_runner = ctx.extra.get("tool_runner")
 
         try:
-            # Function history no longer requires AnalyticsContext
             # The domain function works directly with database queries
             compute_function_history(
                 ctx.gateway,

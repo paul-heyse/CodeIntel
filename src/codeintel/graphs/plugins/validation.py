@@ -18,11 +18,12 @@ from dataclasses import dataclass
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core import (
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginMetadata,
     GraphPluginProtocol,
-    GraphPluginResult,
+    create_graph_metadata,
 )
 from codeintel.graphs.core.registry import register_graph_plugin
 from codeintel.graphs.engine import GraphKind
@@ -76,7 +77,7 @@ class GraphValidationPlugin:
         GraphPluginMetadata
             Metadata describing the graph validation plugin.
         """
-        return GraphPluginMetadata(
+        return create_graph_metadata(
             name="graph_validation",
             description="Validate graph construction outputs and emit warnings for issues.",
             kind="validation",
@@ -90,14 +91,14 @@ class GraphValidationPlugin:
             provides=("validation_report",),
             requires=("goids", "call_graph", "import_graph"),
             produces_tables=("analytics.graph_validation",),
-            produces_graphs=(),
-            requires_graphs=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
+            produces_graph_kinds=(),
+            requires_graph_kinds=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
             supports_incremental=False,
             isolation_kind="none",
             row_count_tables=("analytics.graph_validation",),
         )
 
-    def execute(self, ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
         """Execute graph validation.
 
         Parameters
@@ -107,7 +108,7 @@ class GraphValidationPlugin:
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Result of the validation operation.
         """
         log.info(
@@ -150,7 +151,7 @@ class GraphValidationPlugin:
                 finding_count,
             )
 
-            return GraphPluginResult.ok(row_counts={"analytics.graph_validation": finding_count})
+            return PluginResult.ok(row_counts={"analytics.graph_validation": finding_count})
 
         except (
             RuntimeError,
@@ -167,10 +168,10 @@ class GraphValidationPlugin:
                 ctx.repo,
                 ctx.commit,
             )
-            return GraphPluginResult.fail(str(exc), error_kind="validation_error")
+            return PluginResult.fail(str(exc), error_kind="validation_error")
 
     @staticmethod
-    def _query_finding_count(ctx: GraphExecutionContext) -> int:
+    def _query_finding_count(ctx: GraphPluginExecutionContext) -> int:
         """Query count of validation findings.
 
         Parameters

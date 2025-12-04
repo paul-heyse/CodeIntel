@@ -239,8 +239,6 @@ def test_seed_labels_from_tags_none_first_tag_skipped() -> None:
     """seed_labels_from_tags skips modules where first tag is None."""
     # Intentionally pass invalid data to test defensive handling.
     # Cast to expected type since we're testing edge case behavior.
-    from typing import cast
-
     invalid_tags = {"module.a": [None, "valid"]}
     tags = cast("dict[str, list[str]]", invalid_tags)
 

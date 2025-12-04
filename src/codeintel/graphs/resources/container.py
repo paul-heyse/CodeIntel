@@ -69,7 +69,7 @@ class ResourceContainer:
         If a provider with the same name already exists, it will be overwritten
         and a warning will be logged.
         """
-        name = provider.resource_name
+        name = type(provider).RESOURCE_NAME
         if name in self._providers:
             log.warning("Overwriting resource provider: %s", name)
         self._providers[name] = provider

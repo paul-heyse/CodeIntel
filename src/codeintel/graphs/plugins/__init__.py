@@ -9,17 +9,20 @@ This package contains all graph plugins organized by category:
 import importlib
 
 from codeintel.graphs.core import (
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginMetadata,
     GraphPluginPlan,
     GraphPluginProtocol,
-    GraphPluginResult,
+    PluginResult,
     graph_plugin,
 )
 from codeintel.graphs.plugins.validation import (
     GraphValidationPlugin,
     get_graph_validation_plugin,
 )
+
+# Backward-compatible alias
+GraphExecutionContext = GraphPluginExecutionContext
 
 
 def load_builtin_plugins() -> None:
@@ -35,11 +38,12 @@ load_builtin_plugins()
 
 __all__ = [
     "GraphExecutionContext",
+    "GraphPluginExecutionContext",
     "GraphPluginMetadata",
     "GraphPluginPlan",
     "GraphPluginProtocol",
-    "GraphPluginResult",
     "GraphValidationPlugin",
+    "PluginResult",
     "get_graph_validation_plugin",
     "graph_plugin",
     "load_builtin_plugins",

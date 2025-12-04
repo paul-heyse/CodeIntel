@@ -16,9 +16,10 @@ from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.registry import get_graph_registry
-from codeintel.graphs.core.result import GraphPluginRunRecord
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.recipes.dsl import GraphRecipe, GraphStage
 from codeintel.graphs.resources.container import ResourceContainer
@@ -52,7 +53,7 @@ class StageExecutionResult:
     """
 
     stage_name: str
-    records: tuple[GraphPluginRunRecord, ...]
+    records: tuple[PluginExecutionRecord, ...]
     success: bool
     duration_ms: float
 
@@ -84,19 +85,19 @@ class RecipeExecutionResult:
     stages: tuple[StageExecutionResult, ...]
     success: bool
     duration_ms: float
-    started_at: str
-    ended_at: str
+    started_at: datetime
+    ended_at: datetime
 
     @property
-    def all_records(self) -> tuple[GraphPluginRunRecord, ...]:
+    def all_records(self) -> tuple[PluginExecutionRecord, ...]:
         """Return all plugin records across all stages.
 
         Returns
         -------
-        tuple[GraphPluginRunRecord, ...]
+        tuple[PluginExecutionRecord, ...]
             All plugin execution records.
         """
-        records: list[GraphPluginRunRecord] = []
+        records: list[PluginExecutionRecord] = []
         for stage in self.stages:
             records.extend(stage.records)
         return tuple(records)
@@ -180,7 +181,7 @@ class RecipeExecutor:
             Execution context.
         """
         self._context = context
-        self._scratch = GraphRuntimeScratch()
+        self._scratch = PluginScratch()
 
     def execute(self, recipe: GraphRecipe) -> RecipeExecutionResult:
         """Execute a graph recipe.
@@ -238,8 +239,8 @@ class RecipeExecutor:
             stages=tuple(stage_results),
             success=overall_success,
             duration_ms=duration_ms,
-            started_at=started_at.isoformat(),
-            ended_at=ended_at.isoformat(),
+            started_at=started_at,
+            ended_at=ended_at,
         )
 
         log.info(
@@ -336,7 +337,7 @@ class RecipeExecutor:
         stage: GraphStage,
         recipe: GraphRecipe,
         run_id: str,
-    ) -> list[GraphPluginRunRecord]:
+    ) -> list[PluginExecutionRecord]:
         """Execute plugins within a stage.
 
         Parameters
@@ -352,7 +353,7 @@ class RecipeExecutor:
 
         Returns
         -------
-        list[GraphPluginRunRecord]
+        list[PluginExecutionRecord]
             Execution records.
         """
         if stage.parallel and len(plugins) > 1 and not self._context.force_sequential:
@@ -377,7 +378,7 @@ class RecipeExecutor:
         stage: GraphStage,
         recipe: GraphRecipe,
         run_id: str,
-    ) -> list[GraphPluginRunRecord]:
+    ) -> list[PluginExecutionRecord]:
         """Execute plugins sequentially.
 
         Parameters
@@ -393,10 +394,10 @@ class RecipeExecutor:
 
         Returns
         -------
-        list[GraphPluginRunRecord]
+        list[PluginExecutionRecord]
             Execution records.
         """
-        records: list[GraphPluginRunRecord] = []
+        records: list[PluginExecutionRecord] = []
 
         for plugin in plugins:
             record = self._execute_single_plugin(
@@ -420,7 +421,7 @@ class RecipeExecutor:
         recipe: GraphRecipe,
         run_id: str,
         max_workers: int,
-    ) -> list[GraphPluginRunRecord]:
+    ) -> list[PluginExecutionRecord]:
         """Execute plugins in parallel using a thread pool.
 
         Parameters
@@ -438,10 +439,10 @@ class RecipeExecutor:
 
         Returns
         -------
-        list[GraphPluginRunRecord]
+        list[PluginExecutionRecord]
             Execution records in order of completion.
         """
-        records: list[GraphPluginRunRecord] = []
+        records: list[PluginExecutionRecord] = []
 
         log.info(
             "recipe_executor.parallel.start plugins=%d max_workers=%d",
@@ -480,12 +481,13 @@ class RecipeExecutor:
                         plugin.metadata.name,
                     )
                     # Create a failure record for the exception
+                    now = datetime.now(tz=UTC)
                     records.append(
-                        GraphPluginRunRecord(
-                            name=plugin.metadata.name,
+                        PluginExecutionRecord(
+                            plugin_name=plugin.metadata.name,
                             status="failed",
-                            started_at=datetime.now(tz=UTC).isoformat(),
-                            ended_at=datetime.now(tz=UTC).isoformat(),
+                            started_at=now,
+                            ended_at=now,
                             duration_ms=0.0,
                             attempts=1,
                             partial=True,
@@ -513,7 +515,7 @@ class RecipeExecutor:
         stage_name: str,
         recipe_name: str,
         run_id: str,
-    ) -> GraphPluginRunRecord:
+    ) -> PluginExecutionRecord:
         """Execute a single plugin.
 
         Parameters
@@ -529,7 +531,7 @@ class RecipeExecutor:
 
         Returns
         -------
-        GraphPluginRunRecord
+        PluginExecutionRecord
             Execution record.
         """
         start = time.perf_counter()
@@ -550,14 +552,14 @@ class RecipeExecutor:
         if self._context.engine is not None:
             container.register(GraphResource(cast("NxGraphEngine", self._context.engine)))
 
-        ctx = GraphExecutionContext(
+        ctx = GraphPluginExecutionContext(
+            gateway=self._context.gateway,
             snapshot=self._context.snapshot,
-            resources=container,
-            _gateway=self._context.gateway,
-            _catalog_provider=self._context.catalog_provider,
+            run_id=run_id,
+            graph_resources=container,
             scratch=self._scratch,
             plugin_name=plugin.metadata.name,
-            run_id=run_id,
+            _catalog_provider=self._context.catalog_provider,
         )
 
         try:
@@ -594,11 +596,11 @@ class RecipeExecutor:
             duration_ms,
         )
 
-        return GraphPluginRunRecord(
-            name=plugin.metadata.name,
+        return PluginExecutionRecord(
+            plugin_name=plugin.metadata.name,
             status=status,
-            started_at=started_at.isoformat(),
-            ended_at=ended_at.isoformat(),
+            started_at=started_at,
+            ended_at=ended_at,
             duration_ms=duration_ms,
             attempts=1,
             partial=status == "failed",

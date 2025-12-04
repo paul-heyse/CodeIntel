@@ -3,20 +3,17 @@
 This module contains:
 - **CLI Boundary Models** (Pydantic): `RepoConfig`, `CliPathsInput`, `ToolsConfig`,
   `CodeIntelConfig` - use these for CLI argument parsing and validation.
-- **Legacy Step Configs** (frozen dataclasses): These are DEPRECATED and will be
-  removed in a future version.
 
 Migration Guide
 ---------------
-For step configurations, prefer the new composition-based system:
+For step configurations, prefer the composition-based system:
 
 Preferred:
     from codeintel.config import ConfigBuilder
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path("."))
     cfg = builder.graph_metrics()
 
-See `codeintel.config.builder` for the new ConfigBuilder API.
-See `codeintel.config.compat` for converters between old and new configs.
+See `codeintel.config.builder` for the ConfigBuilder API.
 """
 
 from __future__ import annotations

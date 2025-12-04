@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -21,7 +22,8 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunner,
     ToolRunResult,
 )
-from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
+from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.results import CoverageFileSummary
 
 
 def _ensure_ok(result: ToolRunResult, *, action: str) -> None:
@@ -112,7 +114,7 @@ class ToolingOutputs:
     pyright_errors: dict[str, int]
     pyrefly_errors: dict[str, int]
     ruff_errors: dict[str, int]
-    coverage_reports: list[CoverageFileReport]
+    coverage_reports: Sequence[CoverageFileSummary]
     context: ToolingContext
 
 
@@ -133,6 +135,18 @@ def build_tooling_context(base_dir: Path) -> ToolingContext:
 
 
 def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
+    """Run static tooling and collect outputs.
+
+    Parameters
+    ----------
+    context
+        Tooling context with repo root, runner, and service.
+
+    Returns
+    -------
+    ToolingOutputs
+        Collected diagnostics and coverage data.
+    """
     coverage_result = context.runner.run(
         ToolName.COVERAGE,
         [
@@ -148,8 +162,8 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
     pyright_errors = asyncio.run(context.service.run_pyright(context.repo_root))
     pyrefly_errors = asyncio.run(context.service.run_pyrefly(context.repo_root))
     ruff_errors = asyncio.run(context.service.run_ruff(context.repo_root))
-    coverage_reports = asyncio.run(
-        context.service.run_coverage_json(
+    coverage_report = asyncio.run(
+        context.service.run_coverage_report(
             context.repo_root,
             coverage_file=context.coverage_file,
         )
@@ -158,7 +172,7 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
         pyright_errors=dict(pyright_errors),
         pyrefly_errors=dict(pyrefly_errors),
         ruff_errors=dict(ruff_errors),
-        coverage_reports=coverage_reports,
+        coverage_reports=coverage_report.files,
         context=context,
     )
 

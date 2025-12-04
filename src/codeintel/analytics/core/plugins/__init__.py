@@ -24,7 +24,6 @@ from codeintel.analytics.core.plugins.functions import (
     FunctionHistoryPlugin,
     FunctionMetricsPlugin,
 )
-from codeintel.analytics.core.plugins.graphs import CoreGraphMetricsPlugin
 from codeintel.analytics.core.plugins.history import HistoryTimeseriesPlugin
 from codeintel.analytics.core.plugins.hotspots import HotspotsPlugin
 from codeintel.analytics.core.plugins.profiles import ProfilesPlugin
@@ -32,7 +31,6 @@ from codeintel.analytics.core.plugins.registration import (
     ALL_PLUGINS,
     BEHAVIORAL_COVERAGE_PLUGIN,
     CONFIG_DATA_FLOW_PLUGIN,
-    CORE_GRAPH_METRICS_PLUGIN,
     COVERAGE_FUNCTIONS_PLUGIN,
     COVERAGE_TEST_EDGES_PLUGIN,
     DATA_MODEL_USAGE_PLUGIN,
@@ -66,7 +64,6 @@ __all__ = [
     "ALL_PLUGINS",
     "BEHAVIORAL_COVERAGE_PLUGIN",
     "CONFIG_DATA_FLOW_PLUGIN",
-    "CORE_GRAPH_METRICS_PLUGIN",
     "COVERAGE_FUNCTIONS_PLUGIN",
     "COVERAGE_TEST_EDGES_PLUGIN",
     "DATA_MODELS_PLUGIN",
@@ -87,7 +84,6 @@ __all__ = [
     "TEST_PROFILE_PLUGIN",
     "BehavioralCoveragePlugin",
     "ConfigDataFlowPlugin",
-    "CoreGraphMetricsPlugin",
     "CoverageFunctionsPlugin",
     "CoverageTestEdgesPlugin",
     "DataModelUsagePlugin",

@@ -1038,9 +1038,7 @@ def test_dataset_schema_returns_domain_model(
     dataset_name = datasets[0].name
 
     try:
-        result = service.dataset_schema(
-            dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT
-        )
+        result = service.dataset_schema(dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT)
         assert isinstance(result, DatasetSchema)
     except McpError:
         # Expected when dataset schema is not available

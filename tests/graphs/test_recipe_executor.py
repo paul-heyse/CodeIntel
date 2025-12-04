@@ -8,6 +8,7 @@ parallelism and failure handling.
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Self
 
@@ -21,7 +22,7 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
-from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
+from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.recipes.dsl import (
     GraphRecipe,
     GraphRecipeOptions,
@@ -39,7 +40,7 @@ from codeintel.graphs.recipes.executor import (
 from tests._helpers.assertions import assert_cannot_setattr
 
 if TYPE_CHECKING:
-    from codeintel.graphs.core.context import GraphExecutionContext
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,11 @@ EXPECTED_STAGE_COUNT_TWO: Final[int] = 2
 EXPECTED_PLUGIN_COUNT_THREE: Final[int] = 3
 SUCCESS_ROW_COUNT: Final[int] = 42
 MS_TO_SECONDS: Final[float] = 1000.0
+
+# Test timestamps for PluginExecutionRecord
+TEST_TIMESTAMP_T0: Final[datetime] = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+TEST_TIMESTAMP_T1: Final[datetime] = datetime(2024, 1, 1, 0, 0, 1, tzinfo=UTC)
+TEST_TIMESTAMP_T2: Final[datetime] = datetime(2024, 1, 1, 0, 0, 2, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -82,9 +88,9 @@ def _make_succeeding_plugin(
         stage="core",
     )
 
-    def execute_fn(ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute_fn(ctx: GraphPluginExecutionContext) -> PluginResult:
         _ = ctx  # Required by protocol
-        return GraphPluginResult(
+        return PluginResult(
             success=True,
             row_counts={"test_table": row_count},
         )
@@ -117,7 +123,7 @@ def _make_failing_plugin(
         stage="core",
     )
 
-    def execute_fn(ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute_fn(ctx: GraphPluginExecutionContext) -> PluginResult:
         _ = ctx  # Required by protocol
         raise RuntimeError(error_message)
 
@@ -268,11 +274,11 @@ def _make_multi_stage_recipe(
 def test_stage_execution_result_attributes() -> None:
     """StageExecutionResult has correct attributes."""
     records = (
-        GraphPluginRunRecord(
-            name="test_plugin",
+        PluginExecutionRecord(
+            plugin_name="test_plugin",
             status="succeeded",
-            started_at="2024-01-01T00:00:00Z",
-            ended_at="2024-01-01T00:00:01Z",
+            started_at=TEST_TIMESTAMP_T0,
+            ended_at=TEST_TIMESTAMP_T1,
             duration_ms=MS_TO_SECONDS,
             attempts=1,
             partial=False,
@@ -300,22 +306,22 @@ def test_stage_execution_result_attributes() -> None:
 
 def test_recipe_execution_result_all_records() -> None:
     """RecipeExecutionResult aggregates records from all stages."""
-    record1 = GraphPluginRunRecord(
-        name="plugin1",
+    record1 = PluginExecutionRecord(
+        plugin_name="plugin1",
         status="succeeded",
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
         duration_ms=MS_TO_SECONDS,
         attempts=1,
         partial=False,
         error=None,
         meta={},
     )
-    record2 = GraphPluginRunRecord(
-        name="plugin2",
+    record2 = PluginExecutionRecord(
+        plugin_name="plugin2",
         status="succeeded",
-        started_at="2024-01-01T00:00:01Z",
-        ended_at="2024-01-01T00:00:02Z",
+        started_at=TEST_TIMESTAMP_T1,
+        ended_at=TEST_TIMESTAMP_T2,
         duration_ms=MS_TO_SECONDS,
         attempts=1,
         partial=False,
@@ -340,8 +346,8 @@ def test_recipe_execution_result_all_records() -> None:
         stages=(stage1, stage2),
         success=True,
         duration_ms=MS_TO_SECONDS * EXPECTED_STAGE_COUNT_TWO,
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:02Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T2,
     )
 
     assert len(result.all_records) == EXPECTED_STAGE_COUNT_TWO
@@ -352,33 +358,33 @@ def test_recipe_execution_result_all_records() -> None:
 
 def test_recipe_execution_result_counts_mixed_statuses() -> None:
     """RecipeExecutionResult counts mixed success/fail/skip."""
-    succeeded_record = GraphPluginRunRecord(
-        name="succeeded_plugin",
+    succeeded_record = PluginExecutionRecord(
+        plugin_name="succeeded_plugin",
         status="succeeded",
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
         duration_ms=MS_TO_SECONDS,
         attempts=1,
         partial=False,
         error=None,
         meta={},
     )
-    failed_record = GraphPluginRunRecord(
-        name="failed_plugin",
+    failed_record = PluginExecutionRecord(
+        plugin_name="failed_plugin",
         status="failed",
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
         duration_ms=MS_TO_SECONDS,
         attempts=1,
         partial=True,
         error="Error",
         meta={},
     )
-    skipped_record = GraphPluginRunRecord(
-        name="skipped_plugin",
+    skipped_record = PluginExecutionRecord(
+        plugin_name="skipped_plugin",
         status="skipped",
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
         duration_ms=0.0,
         attempts=0,
         partial=False,
@@ -397,8 +403,8 @@ def test_recipe_execution_result_counts_mixed_statuses() -> None:
         stages=(stage,),
         success=False,
         duration_ms=MS_TO_SECONDS,
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
     )
 
     assert result.success_count == EXPECTED_STAGE_COUNT_ONE
@@ -773,8 +779,8 @@ def test_recipe_execution_result_frozen() -> None:
         stages=(),
         success=True,
         duration_ms=0.0,
-        started_at="2024-01-01T00:00:00Z",
-        ended_at="2024-01-01T00:00:01Z",
+        started_at=TEST_TIMESTAMP_T0,
+        ended_at=TEST_TIMESTAMP_T1,
     )
     assert_cannot_setattr(result, "success", value=False)
 

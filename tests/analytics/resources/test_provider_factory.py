@@ -95,13 +95,9 @@ def test_provider_factory_init(mock_gateway: MagicMock, mock_snapshot: MagicMock
     assert factory.snapshot is mock_snapshot
 
 
-def test_provider_factory_with_options(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_provider_factory_with_options(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """ProviderFactory accepts custom options."""
-    options = ProviderFactoryOptions(
-        max_functions=MAX_FUNCTIONS_TEST_VALUE, language="python"
-    )
+    options = ProviderFactoryOptions(max_functions=MAX_FUNCTIONS_TEST_VALUE, language="python")
 
     factory = ProviderFactory(mock_gateway, mock_snapshot, options=options)
 
@@ -109,9 +105,7 @@ def test_provider_factory_with_options(
     assert factory._options.language == "python"  # noqa: SLF001
 
 
-def test_create_registry_default(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_default(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry with default providers (graphs and catalog)."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -126,9 +120,7 @@ def test_create_registry_default(
     assert not registry.has(ModuleMapProvider)
 
 
-def test_create_registry_no_graphs(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_no_graphs(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry without graphs."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -138,9 +130,7 @@ def test_create_registry_no_graphs(
     assert registry.has(CatalogProvider)
 
 
-def test_create_registry_no_catalog(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_no_catalog(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry without catalog."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -150,9 +140,7 @@ def test_create_registry_no_catalog(
     assert not registry.has(CatalogProvider)
 
 
-def test_create_registry_with_asts(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_with_asts(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry including AST provider."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -161,9 +149,7 @@ def test_create_registry_with_asts(
     assert registry.has(AstProvider)
 
 
-def test_create_registry_with_features(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_with_features(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry including features provider."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -172,9 +158,7 @@ def test_create_registry_with_features(
     assert registry.has(FeaturesProvider)
 
 
-def test_create_registry_with_module_map(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_with_module_map(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry including module map provider."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -183,9 +167,7 @@ def test_create_registry_with_module_map(
     assert registry.has(ModuleMapProvider)
 
 
-def test_create_registry_all_providers(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_create_registry_all_providers(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Create registry with all providers enabled."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -204,9 +186,7 @@ def test_create_registry_all_providers(
     assert registry.has(ModuleMapProvider)
 
 
-def test_make_catalog_provider(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_catalog_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make catalog provider returns CatalogProvider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -215,9 +195,7 @@ def test_make_catalog_provider(
     assert isinstance(provider, CatalogProvider)
 
 
-def test_make_catalog_provider_caches(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_catalog_provider_caches(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make catalog provider caches the provider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -240,9 +218,7 @@ def test_make_catalog_provider_with_catalog(
     assert isinstance(provider, CatalogProvider)
 
 
-def test_make_graph_provider(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_graph_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make graph provider returns GraphProvider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -251,9 +227,7 @@ def test_make_graph_provider(
     assert isinstance(provider, GraphProvider)
 
 
-def test_make_graph_provider_caches(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_graph_provider_caches(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make graph provider caches the provider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -304,9 +278,7 @@ def test_make_graph_provider_with_backend(
     assert isinstance(provider, GraphProvider)
 
 
-def test_make_ast_provider(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_ast_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make AST provider returns AstProvider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -338,9 +310,7 @@ def test_make_ast_provider_uses_factory_option(
     assert isinstance(provider, AstProvider)
 
 
-def test_make_features_provider(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_features_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make features provider returns FeaturesProvider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 
@@ -360,9 +330,7 @@ def test_make_features_provider_with_max_functions(
     assert isinstance(provider, FeaturesProvider)
 
 
-def test_make_module_map_provider(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
-) -> None:
+def test_make_module_map_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
     """Make module map provider returns ModuleMapProvider instance."""
     factory = ProviderFactory(mock_gateway, mock_snapshot)
 

@@ -295,21 +295,9 @@ def test_create_delete_scope() -> None:
 
 
 def test_delete_scope_defaults() -> None:
-    """Delete scope has None defaults."""
+    """Delete scope has None defaults for optional fields."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
-    assert scope.params is None
     assert scope.columns is None
-
-
-def test_delete_scope_with_params() -> None:
-    """Create delete scope with params."""
-    scope = DeleteScope(
-        repo=DEMO_REPO,
-        commit=DEMO_COMMIT,
-        params=["extra", "params"],
-    )
-    assert scope.params is not None
-    assert len(scope.params) == EXPECTED_COUNT_2
 
 
 def test_delete_scope_with_columns() -> None:

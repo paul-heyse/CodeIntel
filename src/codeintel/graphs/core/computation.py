@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.graphs.core.context import GraphExecutionContext
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
 
 
 @dataclass
@@ -87,8 +87,8 @@ class ComputationResult:
 
 
 # Standard signature for all computation functions.
-# Computation functions take a GraphExecutionContext and return a ComputationResult.
-ComputationFn = Callable[["GraphExecutionContext"], ComputationResult]
+# Computation functions take a GraphPluginExecutionContext and return a ComputationResult.
+ComputationFn = Callable[["GraphPluginExecutionContext"], ComputationResult]
 
 
 __all__ = [

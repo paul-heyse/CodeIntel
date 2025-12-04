@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.resources.asts import AstProvider
     from codeintel.analytics.resources.features import FeaturesProvider
 
+from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -25,7 +26,6 @@ from codeintel.analytics.core.plugin_protocol import (
     ValidationResult,
 )
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_function_ast_features_contract,
     insert_analytics_rows,
 )
@@ -146,7 +146,7 @@ class FunctionAstFeaturesPlugin:
             ]
 
             contract = get_function_ast_features_contract(ctx.gateway)
-            delete_scope = DeleteScope(params=[cfg.repo, cfg.commit])
+            delete_scope = DeleteScope(repo=cfg.repo, commit=cfg.commit)
             insert_analytics_rows(
                 ctx.gateway,
                 contract,

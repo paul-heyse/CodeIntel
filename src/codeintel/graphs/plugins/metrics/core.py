@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from codeintel.graphs.compute.metrics import centrality, components
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_metric_plugin,
 )
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 # =============================================================================
 
 
-def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_core_graph_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """
     Compute core function/module graph metrics (centrality, neighbors, components).
 
@@ -139,7 +139,7 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
 
 
 def _persist_function_metrics(
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     rows: Sequence[tuple[object, ...]],
 ) -> None:
     """Persist function metrics to database.
@@ -147,8 +147,8 @@ def _persist_function_metrics(
     Uses resource injection with fallback to ctx.gateway.
     """
     # Get gateway via resource injection or fallback
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.require(StorageResource)
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        storage = ctx.graph_resources.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -163,7 +163,7 @@ def _persist_function_metrics(
 
 
 def _persist_module_metrics(
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     rows: Sequence[tuple[object, ...]],
 ) -> None:
     """Persist module metrics to database.
@@ -171,8 +171,8 @@ def _persist_module_metrics(
     Uses resource injection with fallback to ctx.gateway.
     """
     # Get gateway via resource injection or fallback
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.require(StorageResource)
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        storage = ctx.graph_resources.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -186,7 +186,7 @@ def _persist_module_metrics(
     )
 
 
-def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_function_ext_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """
     Compute extended call graph metrics for functions.
 
@@ -258,8 +258,8 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
 
     if rows:
         # Get gateway via resource injection or fallback
-        if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-            storage = ctx.require(StorageResource)
+        if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+            storage = ctx.graph_resources.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway
@@ -275,7 +275,7 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     return ComputationResult.ok(row_counts={"analytics.graph_metrics_functions_ext": len(rows)})
 
 
-def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+def _compute_module_ext_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Compute extended import graph metrics for modules.
 
     Returns
@@ -337,8 +337,8 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
 
     if rows:
         # Get gateway via resource injection or fallback
-        if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-            storage = ctx.require(StorageResource)
+        if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+            storage = ctx.graph_resources.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway
@@ -368,7 +368,7 @@ core_graph_metrics_plugin = make_metric_plugin(
         "analytics.graph_metrics_functions",
         "analytics.graph_metrics_modules",
     ),
-    requires_graphs=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
+    requires_graph_kinds=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
 )
 
 function_ext_metrics_plugin = make_metric_plugin(
@@ -378,7 +378,7 @@ function_ext_metrics_plugin = make_metric_plugin(
     depends_on=("callgraph_builder",),
     provides=("function_ext_metrics",),
     produces_tables=("analytics.graph_metrics_functions_ext",),
-    requires_graphs=(GraphKind.CALL_GRAPH,),
+    requires_graph_kinds=(GraphKind.CALL_GRAPH,),
 )
 
 module_ext_metrics_plugin = make_metric_plugin(
@@ -388,7 +388,7 @@ module_ext_metrics_plugin = make_metric_plugin(
     depends_on=("import_graph_builder",),
     provides=("module_ext_metrics",),
     produces_tables=("analytics.graph_metrics_modules_ext",),
-    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+    requires_graph_kinds=(GraphKind.IMPORT_GRAPH,),
 )
 
 

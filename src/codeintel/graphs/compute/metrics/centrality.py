@@ -6,11 +6,14 @@ on NetworkX graphs without any database or file I/O.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
 import networkx as nx
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,10 @@ class CentralityMetrics:
         Betweenness centrality.
     closeness
         Closeness centrality.
+    harmonic
+        Harmonic centrality.
+    eigenvector
+        Eigenvector centrality.
     in_degree
         In-degree (for directed graphs).
     out_degree
@@ -36,6 +43,8 @@ class CentralityMetrics:
     pagerank: float
     betweenness: float
     closeness: float
+    harmonic: float
+    eigenvector: float
     in_degree: int
     out_degree: int
     degree: int
@@ -189,11 +198,85 @@ def compute_out_degree_centrality(graph: nx.DiGraph) -> dict[Any, float]:
     return nx.out_degree_centrality(graph)
 
 
+def compute_harmonic_centrality(
+    graph: nx.Graph | nx.DiGraph,
+) -> dict[Any, float]:
+    """Compute harmonic centrality for all nodes.
+
+    Harmonic centrality is more robust to disconnected graphs than
+    closeness centrality as it uses the sum of reciprocal distances.
+
+    Parameters
+    ----------
+    graph
+        Graph (directed or undirected).
+
+    Returns
+    -------
+    dict[Any, float]
+        Node to harmonic centrality mapping.
+    """
+    if graph.number_of_nodes() == 0:
+        return {}
+    return {node: float(val) for node, val in nx.harmonic_centrality(graph).items()}
+
+
+def compute_eigenvector_centrality(
+    graph: nx.Graph | nx.DiGraph,
+    *,
+    max_iter: int = 100,
+    tol: float = 1e-6,
+    weight: str | None = None,
+) -> dict[Any, float]:
+    """Compute eigenvector centrality for all nodes.
+
+    For directed graphs, computes on the undirected view to ensure
+    convergence.
+
+    Parameters
+    ----------
+    graph
+        Graph (directed or undirected).
+    max_iter
+        Maximum iterations for power iteration.
+    tol
+        Convergence tolerance.
+    weight
+        Edge attribute to use as weight (None for unweighted).
+
+    Returns
+    -------
+    dict[Any, float]
+        Node to eigenvector centrality mapping.
+    """
+    if graph.number_of_nodes() == 0:
+        return {}
+
+    # Convert directed to undirected for eigenvector centrality
+    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
+
+    try:
+        return {
+            node: float(val)
+            for node, val in nx.eigenvector_centrality(
+                work_graph,
+                max_iter=max_iter,
+                tol=tol,
+                weight=weight,
+            ).items()
+        }
+    except nx.PowerIterationFailedConvergence:
+        log.warning("Eigenvector centrality did not converge; returning zeros")
+        return dict.fromkeys(graph.nodes(), 0.0)
+
+
 def compute_all_centralities(
     graph: nx.DiGraph,
     *,
     alpha: float = 0.85,
     betweenness_k: int | None = None,
+    include_eigenvector: bool = True,
+    eigenvector_max_iter: int = 100,
 ) -> dict[Any, CentralityMetrics]:
     """Compute all centrality metrics for all nodes.
 
@@ -205,10 +288,14 @@ def compute_all_centralities(
         PageRank damping factor.
     betweenness_k
         Sample size for betweenness (None for exact).
+    include_eigenvector
+        Whether to compute eigenvector centrality (can be slow/fail to converge).
+    eigenvector_max_iter
+        Maximum iterations for eigenvector computation.
 
     Returns
     -------
-    dict[N, CentralityMetrics]
+    dict[Any, CentralityMetrics]
         Node to centrality metrics mapping.
     """
     if graph.number_of_nodes() == 0:
@@ -217,6 +304,10 @@ def compute_all_centralities(
     pagerank = compute_pagerank(graph, alpha=alpha)
     betweenness = compute_betweenness(graph, k=betweenness_k)
     closeness = compute_closeness(graph)
+    harmonic = compute_harmonic_centrality(graph)
+    eigenvector: dict[Any, float] = {}
+    if include_eigenvector:
+        eigenvector = compute_eigenvector_centrality(graph, max_iter=eigenvector_max_iter)
 
     result: dict[Any, CentralityMetrics] = {}
     for node in graph.nodes():
@@ -227,6 +318,8 @@ def compute_all_centralities(
             pagerank=pagerank.get(node, 0.0),
             betweenness=betweenness.get(node, 0.0),
             closeness=closeness.get(node, 0.0),
+            harmonic=harmonic.get(node, 0.0),
+            eigenvector=eigenvector.get(node, 0.0),
             in_degree=in_degree,
             out_degree=out_degree,
             degree=in_degree + out_degree,
@@ -263,6 +356,8 @@ def centrality_to_rows(
             "pagerank": m.pagerank,
             "betweenness": m.betweenness,
             "closeness": m.closeness,
+            "harmonic": m.harmonic,
+            "eigenvector": m.eigenvector,
             "in_degree": m.in_degree,
             "out_degree": m.out_degree,
             "degree": m.degree,
@@ -278,6 +373,8 @@ __all__ = [
     "compute_betweenness",
     "compute_closeness",
     "compute_degree_centrality",
+    "compute_eigenvector_centrality",
+    "compute_harmonic_centrality",
     "compute_in_degree_centrality",
     "compute_out_degree_centrality",
     "compute_pagerank",

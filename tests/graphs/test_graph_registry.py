@@ -11,7 +11,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.core.context import GraphExecutionContext
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginKind,
@@ -26,7 +26,7 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.graphs.core.result import PluginResult
 
 EXPECTED_PLUGIN_COUNT: Final = 3
 
@@ -58,8 +58,8 @@ def _make_test_plugin(config: PluginConfig) -> GraphPluginProtocol:
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=config.name,

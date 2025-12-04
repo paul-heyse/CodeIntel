@@ -1,45 +1,32 @@
 """Recipe model definitions for composable analytics workflows.
 
-This module defines the core dataclasses for analytics recipes,
-including the recipe itself and execution reports.
+This module re-exports unified recipe types from codeintel.core.recipes,
+while providing backward-compatible analytics-specific types.
+
+The canonical definitions now live in codeintel.core.recipes.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Literal
 
-
-@dataclass(frozen=True)
-class RecipeScope:
-    """Scope constraints for recipe execution.
-
-    Attributes
-    ----------
-    paths
-        Limit analysis to specific file paths.
-    modules
-        Limit analysis to specific modules.
-    time_window
-        Limit analysis to a time range.
-    labels
-        Additional labels for filtering.
-    """
-
-    paths: tuple[str, ...] = ()
-    modules: tuple[str, ...] = ()
-    time_window: tuple[datetime, datetime] | None = None
-    labels: Mapping[str, str] = field(default_factory=dict)
+from codeintel.core.recipes import (
+    Recipe,
+    RecipeExecutionReport,
+    RecipeOptions,
+    RecipePluginRecord,
+    RecipeScope,
+    RecipeStage,
+)
 
 
 @dataclass(frozen=True)
 class AnalyticsRecipe:
     """Composable analytics workflow definition.
 
-    A recipe defines a named collection of plugins to execute together,
-    with optional configuration overrides and execution parameters.
+    This is a backward-compatible wrapper around the unified Recipe type,
+    providing the analytics-specific flat plugin list API.
 
     Attributes
     ----------
@@ -158,115 +145,35 @@ class AnalyticsRecipe:
             version=self.version,
         )
 
+    def to_unified_recipe(self) -> Recipe:
+        """Convert to the unified Recipe type.
 
-@dataclass(frozen=True)
-class RecipePluginRecord:
-    """Record of a single plugin execution within a recipe.
-
-    Attributes
-    ----------
-    plugin_name
-        Name of the executed plugin.
-    status
-        Execution status.
-    started_at
-        When execution started.
-    ended_at
-        When execution ended.
-    duration_ms
-        Execution duration in milliseconds.
-    attempts
-        Number of execution attempts.
-    error
-        Error message if failed.
-    row_counts
-        Table row counts from execution.
-    meta
-        Additional metadata.
-    """
-
-    plugin_name: str
-    status: Literal["succeeded", "failed", "skipped"]
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
-    attempts: int = 1
-    error: str | None = None
-    row_counts: Mapping[str, int] = field(default_factory=dict)
-    meta: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class RecipeExecutionReport:
-    """Complete report of recipe execution.
-
-    Attributes
-    ----------
-    recipe_name
-        Name of the executed recipe.
-    run_id
-        Unique run identifier.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    scope
-        Execution scope.
-    started_at
-        When execution started.
-    ended_at
-        When execution ended.
-    duration_ms
-        Total execution duration.
-    status
-        Overall execution status.
-    plugin_records
-        Records for each plugin execution.
-    skipped_plugins
-        Plugins that were skipped.
-    error
-        Overall error message if failed.
-    tags
-        Tags from recipe and runtime.
-    """
-
-    recipe_name: str
-    run_id: str
-    repo: str
-    commit: str
-    scope: RecipeScope
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
-    status: Literal["succeeded", "failed", "partial"]
-    plugin_records: tuple[RecipePluginRecord, ...]
-    skipped_plugins: tuple[str, ...] = ()
-    error: str | None = None
-    tags: Mapping[str, str] = field(default_factory=dict)
-
-    @property
-    def succeeded_count(self) -> int:
-        """Return count of succeeded plugins."""
-        return sum(1 for r in self.plugin_records if r.status == "succeeded")
-
-    @property
-    def failed_count(self) -> int:
-        """Return count of failed plugins."""
-        return sum(1 for r in self.plugin_records if r.status == "failed")
-
-    @property
-    def total_row_counts(self) -> dict[str, int]:
-        """Return aggregated row counts across all plugins."""
-        totals: dict[str, int] = {}
-        for record in self.plugin_records:
-            for table, count in record.row_counts.items():
-                totals[table] = totals.get(table, 0) + count
-        return totals
+        Returns
+        -------
+        Recipe
+            Unified recipe with plugins in a single stage.
+        """
+        return Recipe(
+            name=self.name,
+            description=self.description,
+            plugins=self.plugins,
+            options=RecipeOptions(
+                fail_fast=self.fail_fast,
+                max_duration_ms=self.max_duration_ms,
+            ),
+            default_configs=self.default_configs,
+            tags=self.tags,
+            version=self.version,
+        )
 
 
 __all__ = [
     "AnalyticsRecipe",
+    # Re-export unified types for migration
+    "Recipe",
     "RecipeExecutionReport",
+    "RecipeOptions",
     "RecipePluginRecord",
     "RecipeScope",
+    "RecipeStage",
 ]
