@@ -18,7 +18,7 @@ from codeintel.analytics.adapters.base import (
     SimpleBatchAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants
@@ -220,22 +220,22 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
 
 
 @pytest.fixture
-def gateway_with_tables() -> Iterator[StorageGateway]:
+def gateway_with_tables(fresh_gateway: StorageGateway) -> StorageGateway:
     """
     Create gateway with sample tables.
 
-    Yields
-    ------
+    Parameters
+    ----------
+    fresh_gateway
+        Base gateway from main conftest.
+
+    Returns
+    -------
     StorageGateway
         Gateway with sample tables created.
     """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    # Create sample tables
-    gateway.con.execute("""
+    # Create sample tables on top of the fresh gateway
+    fresh_gateway.con.execute("""
         CREATE TABLE IF NOT EXISTS sample_analytics (
             repo VARCHAR,
             commit VARCHAR,
@@ -243,7 +243,7 @@ def gateway_with_tables() -> Iterator[StorageGateway]:
             name VARCHAR
         )
     """)
-    gateway.con.execute("""
+    fresh_gateway.con.execute("""
         CREATE TABLE IF NOT EXISTS sample_batch (
             repo VARCHAR,
             commit VARCHAR,
@@ -251,7 +251,7 @@ def gateway_with_tables() -> Iterator[StorageGateway]:
             name VARCHAR
         )
     """)
-    gateway.con.execute("""
+    fresh_gateway.con.execute("""
         CREATE TABLE IF NOT EXISTS sample_simple_batch (
             repo VARCHAR,
             commit VARCHAR,
@@ -259,10 +259,7 @@ def gateway_with_tables() -> Iterator[StorageGateway]:
             name VARCHAR
         )
     """)
-    try:
-        yield gateway
-    finally:
-        gateway.close()
+    return fresh_gateway
 
 
 @pytest.fixture

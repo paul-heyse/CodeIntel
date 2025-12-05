@@ -75,7 +75,7 @@ def test_health_endpoint_returns_status_ok(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -132,7 +132,7 @@ def test_health_endpoint_includes_limits(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -185,7 +185,7 @@ def test_health_endpoint_read_only_false(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -237,7 +237,7 @@ def test_health_endpoint_database_connectivity_verified(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

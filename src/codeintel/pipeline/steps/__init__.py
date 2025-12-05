@@ -3,13 +3,14 @@
 This package provides:
 
 - Step implementations for ingestion, graphs, analytics, and export phases
-- StepRegistry for step discovery and execution
+- StepPluginRegistry for step discovery and execution
 - Step base types (PipelineStep, StepPhase, StepMetadata)
 
 Submodules
 ----------
 - base: Base types for step implementations
-- registry: StepRegistry for managing step collections
+- registry: StepPluginRegistry for managing step collections
+- plugin_registry: Core StepPluginRegistry implementation
 - ingestion: Ingestion phase steps
 - graphs: Graph building steps
 - export: Export steps
@@ -72,10 +73,11 @@ from codeintel.pipeline.steps.ingestion import (
     SCIPIngestStep,
     TypingIngestStep,
 )
-from codeintel.pipeline.steps.registry import StepRegistry, build_registry
+from codeintel.pipeline.steps.plugin_registry import StepPluginRegistry
+from codeintel.pipeline.steps.registry import build_registry
 
 # Build the unified registry from phase-specific step dictionaries
-REGISTRY: StepRegistry = build_registry(
+REGISTRY: StepPluginRegistry = build_registry(
     INGESTION_STEPS,
     GRAPH_STEPS,
     ANALYTICS_STEPS,
@@ -86,7 +88,7 @@ REGISTRY: StepRegistry = build_registry(
 def run_steps(ctx: PipelineContext, *, selected_steps: Sequence[str] | None = None) -> None:
     """Execute pipeline steps in topological order using the shared context.
 
-    This function delegates to the unified StepRegistry for step discovery,
+    This function delegates to the unified StepPluginRegistry for step discovery,
     dependency expansion, and execution.
 
     Parameters
@@ -146,7 +148,7 @@ __all__ = [
     "SemanticRolesStep",
     "StepMetadata",
     "StepPhase",
-    "StepRegistry",
+    "StepPluginRegistry",
     "SubsystemsStep",
     "SymbolUsesStep",
     "TestCoverageEdgesStep",

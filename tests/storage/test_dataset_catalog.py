@@ -14,7 +14,11 @@ from codeintel.storage.datasets.catalog import (
     write_html_catalog,
     write_markdown_catalog,
 )
-from tests._helpers.gateway import memory_con_with_macros
+from codeintel.storage.gateway import StorageGateway
+
+# Constants
+SAMPLE_ROWS_1 = 1
+SAMPLE_ROWS_2 = 2
 
 
 def _sample_registry() -> DatasetRegistry:
@@ -76,40 +80,34 @@ def test_catalog_handles_missing_samples(tmp_path: Path) -> None:
         pytest.fail("Placeholder for sample rows was not rendered")
 
 
-def test_catalog_sampling_gracefully_falls_back(tmp_path: Path) -> None:
+def test_catalog_sampling_gracefully_falls_back(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Sampling errors should not crash catalog generation."""
     registry = _sample_registry()
-    con = memory_con_with_macros()
     warnings: list[str] = []
-    try:
-        entries = build_catalog(
-            registry,
-            con=con,
-            sampling=SamplingConfig(sample_rows=2, sample_rows_strict=False),
-            warn=warnings.append,
-        )
-        if entries[0].sample_rows:
-            pytest.fail("Sample rows should be empty when sampling returns nothing")
-        if not warnings:
-            pytest.fail("Sampling fallback should produce a warning")
-        path = write_markdown_catalog(tmp_path, entries)
-        data = path.read_text(encoding="utf-8")
-        if "_No sample rows available._" not in data:
-            pytest.fail("Fallback placeholder missing after sampling failure")
-    finally:
-        con.close()
+    entries = build_catalog(
+        registry,
+        con=fresh_gateway.con,
+        sampling=SamplingConfig(sample_rows=SAMPLE_ROWS_2, sample_rows_strict=False),
+        warn=warnings.append,
+    )
+    if entries[0].sample_rows:
+        pytest.fail("Sample rows should be empty when sampling returns nothing")
+    if not warnings:
+        pytest.fail("Sampling fallback should produce a warning")
+    path = write_markdown_catalog(tmp_path, entries)
+    data = path.read_text(encoding="utf-8")
+    if "_No sample rows available._" not in data:
+        pytest.fail("Fallback placeholder missing after sampling failure")
 
 
-def test_catalog_sampling_strict_raises() -> None:
+def test_catalog_sampling_strict_raises(fresh_gateway: StorageGateway) -> None:
     """Strict sampling should raise when macros are unavailable."""
     registry = _sample_registry()
-    con = memory_con_with_macros()
-    try:
-        with pytest.raises(RuntimeError):
-            build_catalog(
-                registry,
-                con=con,
-                sampling=SamplingConfig(sample_rows=1, sample_rows_strict=True),
-            )
-    finally:
-        con.close()
+    with pytest.raises(RuntimeError):
+        build_catalog(
+            registry,
+            con=fresh_gateway.con,
+            sampling=SamplingConfig(sample_rows=SAMPLE_ROWS_1, sample_rows_strict=True),
+        )

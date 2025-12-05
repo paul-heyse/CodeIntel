@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/ingest.py
+# hypothesis_version: 6.148.6
+
+['--disable', '--names', '--plan', '--plugins', '--recipe', '--recipe-file', '--skip-scip', '.tool_cache', 'Execution order:\n', 'Skipped:\n', 'Unknown recipe: %s', 'ast_extract', 'cli', 'cli_default', 'cli_explicit', 'config_ingest', 'count', 'coverage_ingest', 'cst_extract', 'dep_graph', 'depends_on', 'description', 'docstrings_ingest', 'duration_s', 'enabled_by_default', 'enrich', 'error', 'index', 'ingest', 'ingest_app', 'isolation_kind', 'name', 'ordered_plugins', 'parallel', 'parse', 'plan_id', 'plugin_metadata', 'plugins', 'produces_tables', 'provides', 'reason', 'recipe', 'recipes', 'repo_scan', 'requires', 'run', 'scan', 'scip_ingest', 'severity', 'skipped_plugins', 'skipped_stages', 'stage', 'stages', 'success', 'supports_incremental', 'tags', 'tests_ingest', 'tool_dependencies', 'typing_ingest', 'version']

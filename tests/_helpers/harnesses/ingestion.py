@@ -27,6 +27,7 @@ from typing import Any, Self, TypeVar
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.config.registry import ConfigRegistry
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure.scanning import (
@@ -36,7 +37,6 @@ from codeintel.ingestion.infrastructure.scanning import (
 )
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginResult,
-    IngestRuntimeScratch,
 )
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.protocol import ResourceProvider
@@ -316,7 +316,7 @@ class IngestPluginTestHarness(BaseTestHarness[BaseIngestPlugin, IngestExecutionC
         config_profile = self._config_profile or default_config_profile(repo_root)
 
         # Build scratch with pre-populated data
-        scratch = IngestRuntimeScratch()
+        scratch = PluginScratch()
         for key, value in self._scratch_data.items():
             scratch.declare(key, value)
 

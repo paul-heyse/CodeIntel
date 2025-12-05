@@ -714,6 +714,8 @@ def _build_local_resource(
     ------
     ValueError
         When the gateway is missing for local_db mode.
+    TypeError
+        When service is not LocalQueryService (internal error).
     """
     if gateway is None:
         message = "StorageGateway is required for local_db mode"
@@ -755,14 +757,18 @@ def _build_local_resource(
             graph_runtime=active_runtime,
         ),
     )
+    # local_db mode always returns LocalQueryService; type guard for pyright
+    if not isinstance(service, LocalQueryService):
+        msg = "Expected LocalQueryService for local_db mode"
+        raise TypeError(msg)
     backend = duckdb_backend_cls(
+        service=service,
         gateway=gateway,
         repo=cfg.repo,
         commit=cfg.commit,
         limits=limits,
         observability=options.observability,
         query_engine=active_runtime.engine,
-        service_override=service if isinstance(service, LocalQueryService) else None,
     )
     LOG.info(
         "serving.backend wired repo=%s commit=%s runtime_source=%s backend=%s use_gpu=%s "

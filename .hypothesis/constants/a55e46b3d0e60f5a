@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/docstrings_plugin.py
+# hypothesis_version: 6.148.6
+
+['2.0.0', 'change_tracker', 'core.docstrings', 'docstrings_ingest', 'enrich', 'repo_scan']

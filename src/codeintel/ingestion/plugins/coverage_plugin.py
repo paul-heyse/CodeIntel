@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.core.execution.errors import PluginSkipRequestError
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.core.base import (
@@ -24,7 +25,6 @@ from codeintel.ingestion.core.base import (
 from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginResult,
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
@@ -66,7 +66,7 @@ class CoverageIngestPlugin(
         External tools required.
     supports_incremental : bool
         Whether incremental mode is supported.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -86,7 +86,7 @@ class CoverageIngestPlugin(
     tracker_required: ClassVar[bool] = False
     tool_required: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=False,
         io_intensive=True,
     )

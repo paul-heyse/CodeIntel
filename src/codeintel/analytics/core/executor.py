@@ -26,8 +26,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.analytics.core.context import (
     PluginExecutionContext,
@@ -51,7 +50,7 @@ from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_tel
 from codeintel.core.execution.timing import utc_now
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
-from codeintel.core.plugins.types.report import BaseExecutionReport, ExecutionStatus
+from codeintel.core.plugins.types.report import BaseExecutionReport
 
 if TYPE_CHECKING:
     from codeintel.analytics.plugins.middleware.protocol import PluginMiddleware
@@ -81,10 +80,6 @@ class AnalyticsExecutionPolicy(BaseExecutionPolicy):
     """
 
     validate_contracts: bool = True
-
-
-# Backward-compat alias
-ExecutionPolicy = AnalyticsExecutionPolicy
 
 
 # =============================================================================
@@ -125,53 +120,6 @@ class AnalyticsExecutionReport(BaseExecutionReport):
     """
 
     contract_results: Mapping[str, ContractValidationResult] = field(default_factory=dict)
-
-
-# Backward-compat alias (mutable version for legacy code)
-@dataclass
-class ExecutionReport:
-    """Report of plugin execution run.
-
-    Attributes
-    ----------
-    run_id
-        Unique identifier for this run.
-    started_at
-        When execution started.
-    ended_at
-        When execution ended.
-    duration_ms
-        Total execution duration.
-    status
-        Overall status.
-    records
-        Per-plugin execution records.
-    contract_results
-        Contract validation results by plugin.
-    """
-
-    run_id: str
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
-    status: ExecutionStatus
-    records: tuple[PluginExecutionRecord, ...]
-    contract_results: Mapping[str, ContractValidationResult] = field(default_factory=dict)
-
-    @property
-    def succeeded_count(self) -> int:
-        """Count of successfully executed plugins."""
-        return sum(1 for r in self.records if r.status == "succeeded")
-
-    @property
-    def failed_count(self) -> int:
-        """Count of failed plugins."""
-        return sum(1 for r in self.records if r.status == "failed")
-
-    @property
-    def skipped_count(self) -> int:
-        """Count of skipped plugins."""
-        return sum(1 for r in self.records if r.status == "skipped")
 
 
 # =============================================================================
@@ -243,7 +191,7 @@ class PluginExecutor:
         plan: PluginPlan,
         *,
         scratch: PluginScratch | None = None,
-    ) -> ExecutionReport:
+    ) -> AnalyticsExecutionReport:
         """Execute all plugins in the plan.
 
         Parameters
@@ -257,7 +205,7 @@ class PluginExecutor:
 
         Returns
         -------
-        ExecutionReport
+        AnalyticsExecutionReport
             Complete execution report.
         """
         run_id = ctx.run_id or plan.plan_id
@@ -265,7 +213,7 @@ class PluginExecutor:
         records: list[PluginExecutionRecord] = []
         contract_results: dict[str, ContractValidationResult] = {}
         shared_scratch = scratch or PluginScratch()
-        overall_status: ExecutionStatus = "succeeded"
+        fatal_error = False
 
         log.info(
             "executor.plan.start run_id=%s plugin_count=%d",
@@ -295,14 +243,13 @@ class PluginExecutor:
                 contract_results[plugin.metadata.name] = validation_map[plugin.metadata.name]
 
             # Check for stop condition
-            if record.status == "failed":
-                if plugin.metadata.severity == "fatal" and self._policy.fail_fast:
-                    overall_status = cast("ExecutionStatus", "failed")
-                    break
-                overall_status = cast("ExecutionStatus", "partial")
-            elif record.status == "skipped":
-                if overall_status == "succeeded":
-                    overall_status = cast("ExecutionStatus", "partial")
+            if (
+                record.status == "failed"
+                and plugin.metadata.severity == "fatal"
+                and self._policy.fail_fast
+            ):
+                fatal_error = True
+                break
 
         # Cleanup scratch
         shared_scratch.cleanup()
@@ -310,12 +257,23 @@ class PluginExecutor:
         ended_at = utc_now()
         duration_ms = (ended_at - started_at).total_seconds() * 1000
 
+        # Build report (status computed from records by BaseExecutionReport)
+        report = AnalyticsExecutionReport(
+            run_id=run_id,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_ms=duration_ms,
+            records=tuple(records),
+            fatal_error=fatal_error,
+            contract_results=contract_results,
+        )
+
         # Record run-level telemetry
         self._telemetry.record_run_metrics(
             run_id=run_id,
-            success_count=sum(1 for r in records if r.status == "succeeded"),
-            failure_count=sum(1 for r in records if r.status == "failed"),
-            skip_count=sum(1 for r in records if r.status == "skipped"),
+            success_count=report.success_count,
+            failure_count=report.failure_count,
+            skip_count=report.skip_count,
             duration_s=duration_ms / 1000,
         )
 
@@ -323,18 +281,10 @@ class PluginExecutor:
             "executor.plan.complete run_id=%s duration_ms=%.2f status=%s",
             run_id,
             duration_ms,
-            overall_status,
+            report.status,
         )
 
-        return ExecutionReport(
-            run_id=run_id,
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=duration_ms,
-            status=cast("ExecutionStatus", overall_status),
-            records=tuple(records),
-            contract_results=contract_results,
-        )
+        return report
 
     def execute_single(
         self,
@@ -670,7 +620,7 @@ def execute_plugin_plan(
     plan: PluginPlan,
     *,
     policy: AnalyticsExecutionPolicy | None = None,
-) -> ExecutionReport:
+) -> AnalyticsExecutionReport:
     """Execute a plugin plan with default executor.
 
     Parameters
@@ -684,7 +634,7 @@ def execute_plugin_plan(
 
     Returns
     -------
-    ExecutionReport
+    AnalyticsExecutionReport
         Execution report.
     """
     executor = PluginExecutor(policy=policy)
@@ -695,8 +645,6 @@ __all__ = [
     "AnalyticsExecutionPolicy",
     "AnalyticsExecutionReport",
     "AnalyticsExecutorContext",
-    "ExecutionPolicy",
-    "ExecutionReport",
     "PluginExecutor",
     "build_analytics_executor_context",
     "execute_plugin_plan",

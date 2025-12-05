@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -19,7 +20,6 @@ from codeintel.ingestion.compute import DocstringsExtractStep
 from codeintel.ingestion.core.base import TableWriterIngestPlugin, TrackerRequiringPlugin
 from codeintel.ingestion.core.traits import WithDependencyData
 from codeintel.ingestion.plugins.protocol import (
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider
@@ -58,7 +58,7 @@ class DocstringsIngestPlugin(
         Required capabilities.
     supports_incremental : bool
         Whether incremental mode is supported.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -76,7 +76,7 @@ class DocstringsIngestPlugin(
     supports_incremental: ClassVar[bool] = True
     tracker_required: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=True,
         io_intensive=False,
     )

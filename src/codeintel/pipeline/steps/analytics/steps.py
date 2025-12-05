@@ -43,6 +43,7 @@ from codeintel.analytics.runtime.manifest import encode_manifest
 from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
@@ -53,7 +54,7 @@ from codeintel.pipeline.execution.context import (
     _resolve_code_profile,
     ensure_graph_runtime,
 )
-from codeintel.pipeline.steps.base import PipelineStep, StepPhase
+from codeintel.pipeline.steps.base import PipelineStep, StepPhase, step_to_plugin_metadata
 from codeintel.storage.gateway import StorageGateway, build_snapshot_gateway_resolver
 
 log = logging.getLogger(__name__)
@@ -143,6 +144,11 @@ class HotspotsStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("ast_extract",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
@@ -190,6 +196,11 @@ class FunctionHistoryStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("function_metrics", "hotspots")
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Compute git churn and history for each function GOID."""
         _log_step(self.name)
@@ -236,6 +247,11 @@ class HistoryTimeseriesStep:
     description: str = "Aggregate analytics across commits into history timeseries."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("profiles",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Compute history timeseries when commit list is provided."""
@@ -303,6 +319,11 @@ class FunctionAnalyticsStep:
     description: str = "Compute per-function metrics, complexity, and type annotations."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Compute per-function metrics and typedness via AnalyticsPlugin harness."""
@@ -396,6 +417,11 @@ class FunctionEffectsStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "callgraph")
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Compute function_effects flags and evidence."""
         _log_step(self.name)
@@ -443,6 +469,11 @@ class FunctionContractsStep:
     description: str = "Infer pre/postconditions and nullability contracts for functions."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("function_metrics", "docstrings_ingest")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Compute inferred contracts for functions."""
@@ -492,6 +523,11 @@ class DataModelsStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("ast_extract", "goids", "docstrings_ingest")
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.data_models."""
         _log_step(self.name)
@@ -538,6 +574,11 @@ class DataModelUsageStep:
     description: str = "Classify per-function data model read/write usage patterns."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("data_models", "callgraph", "cfg", "function_metrics")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.data_model_usage."""
@@ -586,6 +627,11 @@ class ConfigDataFlowStep:
     description: str = "Track configuration key usage and data flow at the function level."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("config_ingest", "callgraph", "function_metrics", "entrypoints")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.config_data_flow."""
@@ -636,6 +682,11 @@ class CoverageAnalyticsStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "coverage_ingest")
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
@@ -682,6 +733,11 @@ class TestCoverageEdgesStep:
     description: str = "Build test-to-function coverage edges from coverage contexts."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("coverage_ingest", "tests_ingest", "goids")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Derive test-to-function edges using coverage contexts."""
@@ -738,6 +794,11 @@ class RiskFactorsStep:
         "test_coverage_edges",
         "config_ingest",
     )
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Compute risk factors by joining analytics tables."""
@@ -813,6 +874,11 @@ class GraphMetricsStep:
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses", "cfg", "test_coverage_edges")
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.graph_metrics_* tables."""
         _log_step(self.name)
@@ -868,6 +934,11 @@ class SemanticRolesStep:
         "function_metrics",
     )
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Compute semantic role tables."""
         _log_step(self.name)
@@ -915,6 +986,11 @@ class SubsystemsStep:
     description: str = "Infer subsystems from module coupling and risk signals."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("import_graph", "symbol_uses", "risk_factors")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate subsystem membership and summaries."""
@@ -969,6 +1045,11 @@ class TestProfileStep:
         "subsystems",
         "graph_metrics",
     )
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.test_profile."""
@@ -1035,6 +1116,11 @@ class BehavioralCoverageStep:
     description: str = "Assign heuristic behavior tags to tests (unit, integration, etc.)."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("test_profile",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.behavioral_coverage."""
@@ -1121,6 +1207,11 @@ class EntryPointsStep:
         "goids",
     )
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
@@ -1168,6 +1259,11 @@ class ExternalDependenciesStep:
     description: str = "Identify external dependency usage across functions."
     phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "config_ingest")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Populate dependency call edges and aggregated usage."""
@@ -1226,6 +1322,11 @@ class ProfilesStep:
         "semantic_roles",
         "function_history",
     )
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Aggregate profile tables for functions, files, and modules."""

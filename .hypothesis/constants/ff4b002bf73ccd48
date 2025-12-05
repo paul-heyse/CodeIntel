@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/steps/plugin_registry.py
+# hypothesis_version: 6.148.7
+
+['StepPlan', 'StepPluginRegistry', 'step-plan']

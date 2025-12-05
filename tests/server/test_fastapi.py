@@ -17,6 +17,7 @@ from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.configs import CoverageSeedConfig
+from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.orchestration import seed_coverage_rows
 
 
@@ -169,15 +170,14 @@ def api_config(gateway: StorageGateway) -> ServingConfig:
 
 @pytest.fixture
 def backend(gateway: StorageGateway) -> DuckDBBackend:
-    """
-    Provide a DuckDBBackend bound to the seeded gateway.
+    """Provide a DuckDBBackend bound to the seeded gateway.
 
     Returns
     -------
     DuckDBBackend
         Backend backed by the temporary DuckDB.
     """
-    return DuckDBBackend(gateway=gateway, repo="r", commit="c")
+    return build_duckdb_backend(gateway, repo="r", commit="c")
 
 
 @pytest.fixture

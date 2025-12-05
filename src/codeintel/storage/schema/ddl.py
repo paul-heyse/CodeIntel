@@ -15,7 +15,7 @@ from duckdb import DuckDBPyConnection
 from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
 from codeintel.storage.sql.primitives import quote_identifier
 
-SCHEMAS = ("core", "graph", "analytics", "docs")
+SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
 
 __all__ = [

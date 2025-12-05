@@ -38,9 +38,6 @@ from codeintel.ingestion.recipes.executor import (
     execute_recipe_for_context,
 )
 
-# Backward compatibility alias
-PluginExecutionRecord = IngestPluginExecutionRecord
-
 __all__ = [
     "ANALYSIS_RECIPE",
     "BUILTIN_RECIPES",
@@ -52,7 +49,6 @@ __all__ = [
     "ExecutorConfig",
     "IngestPluginExecutionRecord",
     "IngestRecipe",
-    "PluginExecutionRecord",
     "RecipeExecutionResult",
     "RecipeExecutor",
     "RecipeOptions",

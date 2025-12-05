@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/runtime/planning.py
+# hypothesis_version: 6.148.6
+
+['IngestPlanContext', 'PlanOptions', 'PluginExecutionPlan', 'plan', 'plan_ingest_plugins', 'resolve_plugin_order']

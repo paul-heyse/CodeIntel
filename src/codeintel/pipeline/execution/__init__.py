@@ -2,11 +2,20 @@
 
 This package contains execution utilities:
 
-- run_pipeline: Execute a spec-based pipeline plan
-- run_full_pipeline: Execute step-based pipeline (legacy entry point)
-- PipelineContext: Execution context for pipeline steps
-- ExportArgs: Configuration for step-based pipeline execution
+Primary API (Spec-Based)
+------------------------
+- :func:`run_pipeline`: Execute a spec-based pipeline plan
+
+Other Utilities
+---------------
+- :class:`PipelineContext`: Execution context for pipeline steps
+- :func:`run_history_timeseries`: Execute history timeseries analytics
+- :func:`run_export_docs`: Export Parquet/JSONL artifacts
 - Run tracking types from codeintel.storage.tracking (re-exported)
+
+Gateway Caching
+---------------
+Gateway caching functions are available from :mod:`codeintel.storage.gateway_cache`.
 """
 
 from __future__ import annotations
@@ -14,16 +23,10 @@ from __future__ import annotations
 from codeintel.pipeline.execution.context import PipelineContext
 from codeintel.pipeline.execution.runner import run_pipeline
 from codeintel.pipeline.execution.step_runner import (
-    ExportArgs,
     ExportHooks,
     HistoryTimeseriesParams,
-    build_pipeline_context,
-    close_gateways,
-    gateway_cache_stats,
     run_export_docs,
-    run_full_pipeline,
     run_history_timeseries,
-    run_pipeline_with_retries,
 )
 from codeintel.pipeline.execution.tracking import (
     ModuleKind,
@@ -34,9 +37,13 @@ from codeintel.pipeline.execution.tracking import (
     StepStatus,
 )
 from codeintel.pipeline.steps.base import PipelineStep, StepPhase
+from codeintel.storage.gateway_cache import (
+    close_gateways,
+    gateway_cache_stats,
+    get_gateway,
+)
 
 __all__ = [
-    "ExportArgs",
     "ExportHooks",
     "HistoryTimeseriesParams",
     "ModuleKind",
@@ -48,12 +55,10 @@ __all__ = [
     "PipelineStepRecord",
     "StepPhase",
     "StepStatus",
-    "build_pipeline_context",
     "close_gateways",
     "gateway_cache_stats",
+    "get_gateway",
     "run_export_docs",
-    "run_full_pipeline",
     "run_history_timeseries",
     "run_pipeline",
-    "run_pipeline_with_retries",
 ]

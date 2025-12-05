@@ -23,8 +23,8 @@ from codeintel.ingestion.tracker import ChangeTracker
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.plugins.execution.context import PluginScratch
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
-    from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
     from codeintel.ingestion.tracker import IncrementalIngestPolicy
     from codeintel.storage.gateway import StorageGateway
 
@@ -50,7 +50,7 @@ class TrackerConfig:
         Whether to force full rebuild mode.
     """
 
-    scratch: IngestRuntimeScratch | None = field(default=None)
+    scratch: PluginScratch | None = field(default=None)
     profile: ScanProfile | None = field(default=None)
     policy: IncrementalIngestPolicy | None = field(default=None)
     full_rebuild: bool = field(default=False)

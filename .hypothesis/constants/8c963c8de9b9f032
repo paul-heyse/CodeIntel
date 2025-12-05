@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits/isolated.py
+# hypothesis_version: 6.148.6
+
+['IsolatedPlugin', 'is_isolated', 'none', 'process', 'thread']

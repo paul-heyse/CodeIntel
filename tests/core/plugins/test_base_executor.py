@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.execution.telemetry import RuntimeTelemetry, TelemetryConfig
 from codeintel.core.plugins.execution.context import PluginExecutionContext, PluginScratch
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
@@ -29,7 +30,6 @@ from codeintel.core.plugins.types.protocol import (
 )
 from codeintel.core.plugins.types.report import BaseExecutionReport
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
-from codeintel.core.execution.telemetry import RuntimeTelemetry, TelemetryConfig
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import gateway_with_macros
 

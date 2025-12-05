@@ -32,7 +32,7 @@ def test_correlation_id_plumbed_into_problem_detail(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

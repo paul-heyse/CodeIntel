@@ -5,9 +5,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from codeintel.storage.schema import apply_all_schemas
-from codeintel.storage.views import create_all_views
-from tests._helpers.gateway import memory_con_with_macros
+from codeintel.storage.gateway import StorageGateway
 
 EXPECTED_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "docs.v_subsystem_profile": [
@@ -64,6 +62,13 @@ EXPECTED_SCHEMAS: dict[str, list[tuple[str, str]]] = {
 
 
 def _fetch_schema(con: duckdb.DuckDBPyConnection, view_key: str) -> list[tuple[str, str]]:
+    """Fetch schema information for a view.
+
+    Returns
+    -------
+    list[tuple[str, str]]
+        List of (column_name, data_type) tuples.
+    """
     schema_name, table_name = view_key.split(".", maxsplit=1)
     rows = con.execute(
         """
@@ -77,15 +82,9 @@ def _fetch_schema(con: duckdb.DuckDBPyConnection, view_key: str) -> list[tuple[s
     return [(str(name), str(dtype)) for name, dtype in rows]
 
 
-def test_subsystem_docs_views_schema_stable() -> None:
+def test_subsystem_docs_views_schema_stable(fresh_gateway: StorageGateway) -> None:
     """Detect unintended column drift for subsystem docs views."""
-    con = memory_con_with_macros()
-    try:
-        apply_all_schemas(con)
-        create_all_views(con)
-        for view_key, expected in EXPECTED_SCHEMAS.items():
-            actual = _fetch_schema(con, view_key)
-            if actual != expected:
-                pytest.fail(f"{view_key} schema drift detected: {actual} != {expected}")
-    finally:
-        con.close()
+    for view_key, expected in EXPECTED_SCHEMAS.items():
+        actual = _fetch_schema(fresh_gateway.con, view_key)
+        if actual != expected:
+            pytest.fail(f"{view_key} schema drift detected: {actual} != {expected}")

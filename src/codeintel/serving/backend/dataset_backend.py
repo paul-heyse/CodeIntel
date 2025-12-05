@@ -1,9 +1,7 @@
 """Dataset query layer backed by DuckDB repositories.
 
 This module provides the **Query Layer** implementation for dataset-related
-operations. The class was renamed from ``DatasetBackend`` to
-``DatasetQueryLayer`` to distinguish it from MCP backends (``DuckDBBackend``,
-``HttpBackend``) which operate at the transport layer.
+operations.
 
 Layer Hierarchy
 ---------------
@@ -19,11 +17,6 @@ Layer Hierarchy
          │
          ▼
     Repository Layer (DatasetReadRepository)
-
-Backward Compatibility
-----------------------
-The ``DatasetBackend`` name is preserved as an alias for backward compatibility.
-New code should use ``DatasetQueryLayer``.
 """
 
 from __future__ import annotations
@@ -145,11 +138,7 @@ def _normalize_validation_profile(
 
 @dataclass
 class DatasetQueryLayer(DatasetQueriesApi):
-    """DuckDB-backed implementation of dataset query operations.
-
-    Note: Previously named ``DatasetBackend``. The 'Backend' suffix was
-    confusing as this is a query layer, not an MCP backend.
-    """
+    """DuckDB-backed implementation of dataset query operations."""
 
     context: BackendContext
     repositories: DuckDBRepositories
@@ -347,7 +336,4 @@ class DatasetQueryLayer(DatasetQueriesApi):
         return build_dataset_schema(schema_input)
 
 
-# Backward compatibility alias - new code should use DatasetQueryLayer
-DatasetBackend = DatasetQueryLayer
-
-__all__ = ["DatasetBackend", "DatasetQueryLayer"]
+__all__ = ["DatasetQueryLayer"]

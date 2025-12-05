@@ -78,7 +78,7 @@ def test_meta_datasets_returns_list(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -137,7 +137,7 @@ def test_meta_datasets_includes_limit_info(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -198,7 +198,7 @@ def test_meta_operations_returns_list(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -255,7 +255,7 @@ def test_meta_operations_includes_http_details(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -316,7 +316,7 @@ def test_meta_dataflow_returns_graph(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -370,7 +370,7 @@ def test_meta_dataflow_nodes_have_expected_fields(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -430,7 +430,7 @@ def test_meta_debug_prereqs_unknown_operation(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -479,7 +479,7 @@ def test_meta_debug_prereqs_valid_operation(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

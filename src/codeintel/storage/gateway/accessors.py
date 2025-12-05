@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
+from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 __all__ = [
     "AnalyticsTables",
     "BaseTableAccessor",
+    "BuildTracking",
     "CoreTables",
     "DocsViews",
     "DuckDBGateway",
@@ -629,18 +631,20 @@ class DuckDBGateway:
     config: StorageConfig
     datasets: DatasetRegistry
     con: DuckDBConnection
-    core: CoreTables = field(init=False)
-    graph: GraphTables = field(init=False)
-    docs: DocsViews = field(init=False)
     analytics: AnalyticsTables = field(init=False)
+    build: BuildTracking = field(init=False)
+    core: CoreTables = field(init=False)
+    docs: DocsViews = field(init=False)
+    graph: GraphTables = field(init=False)
     runs: PipelineRunTracking = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
-        self.core = CoreTables(self.con)
-        self.graph = GraphTables(self.con)
-        self.docs = DocsViews(self.con)
         self.analytics = AnalyticsTables(self.con)
+        self.build = BuildTracking(self.con)
+        self.core = CoreTables(self.con)
+        self.docs = DocsViews(self.con)
+        self.graph = GraphTables(self.con)
         self.runs = PipelineRunTracking(self.con)
 
     def close(self) -> None:

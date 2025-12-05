@@ -5,7 +5,7 @@ including step introspection, dependency visualization, and pipeline execution.
 
 Commands
 --------
-- **run**: Run the full pipeline
+- **run**: Run the full pipeline using spec-based execution
 - **list-steps**: List all available pipeline steps
 - **deps**: Show dependency tree for a step
 """
@@ -16,8 +16,7 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated
 
 import typer
 
@@ -38,21 +37,17 @@ from codeintel.cli.commands._common import (
     ScopeTimeWindowEndOpt,
     ScopeTimeWindowStartOpt,
     VerboseOpt,
-    build_graph_backend_config,
-    build_graph_feature_flags_from_env,
+    build_runtime_or_exit,
     parse_scope_args,
     setup_logging,
 )
-from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
-from codeintel.config.parser_types import FunctionParserKind
 from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
-from codeintel.ingestion.infrastructure.scanning import (
-    default_code_profile,
-    default_config_profile,
-    profile_from_env,
-)
-from codeintel.pipeline.execution.step_runner import ExportArgs, run_full_pipeline
+from codeintel.pipeline import FULL_PIPELINE, run_pipeline
+from codeintel.pipeline.cli_adapter import CliPipelineArgs
+from codeintel.pipeline.config_resolver import resolve_scan_profiles, resolve_tools_config
 from codeintel.pipeline.steps import REGISTRY, StepPhase
+from codeintel.storage.gateway import StorageConfig
+from codeintel.storage.gateway_cache import close_gateways, get_gateway
 
 LOG = logging.getLogger(__name__)
 
@@ -67,78 +62,12 @@ pipeline_ext_app = typer.Typer(
 # Option Type Aliases
 # -----------------------------------------------------------------------------
 
-TargetOpt = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--target",
-        help="Name of a pipeline step to run (can be repeated).",
-    ),
-]
-
 SkipScipOpt = Annotated[
     bool,
     typer.Option(
         "--skip-scip",
         is_flag=True,
         help="Skip SCIP ingestion.",
-    ),
-]
-
-FunctionFailOnMissingSpansOpt = Annotated[
-    bool,
-    typer.Option(
-        "--function-fail-on-missing-spans",
-        is_flag=True,
-        help="Fail pipeline when function spans are missing.",
-    ),
-]
-
-FunctionParserOpt = Annotated[
-    str | None,
-    typer.Option(
-        "--function-parser",
-        help="Parser selector for function analytics (e.g., 'python').",
-    ),
-]
-
-HistoryCommitOpt = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--history-commit",
-        help="Commit SHA to include in history_timeseries (can be repeated).",
-    ),
-]
-
-HistoryDbDirOpt = Annotated[
-    Path,
-    typer.Option(
-        "--history-db-dir",
-        help="Directory containing per-commit DuckDB snapshots.",
-    ),
-]
-
-ExportDatasetOpt = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--export-dataset",
-        help="Dataset name to export during docs export step (can be repeated).",
-    ),
-]
-
-ExportValidationProfileOpt = Annotated[
-    str | None,
-    typer.Option(
-        "--export-validation-profile",
-        help="Override validation profile: strict or lenient.",
-    ),
-]
-
-ForceFullExportOpt = Annotated[
-    bool,
-    typer.Option(
-        "--force-full-export",
-        is_flag=True,
-        help="Force re-export even when incremental markers match.",
     ),
 ]
 
@@ -170,15 +99,7 @@ def pipeline_run(
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
     document_output_dir: DocumentOutputDirOpt = None,
-    targets: TargetOpt = None,
     skip_scip: SkipScipOpt = False,
-    function_fail_on_missing_spans: FunctionFailOnMissingSpansOpt = False,
-    function_parser: FunctionParserOpt = None,
-    history_commits: HistoryCommitOpt = None,
-    history_db_dir: HistoryDbDirOpt = Path("build/db"),
-    export_datasets: ExportDatasetOpt = None,
-    export_validation_profile: ExportValidationProfileOpt = None,
-    force_full_export: ForceFullExportOpt = False,
     scope_paths: ScopePathOpt = None,
     scope_modules: ScopeModuleOpt = None,
     scope_time_start: ScopeTimeWindowStartOpt = None,
@@ -190,8 +111,8 @@ def pipeline_run(
 ) -> None:
     r"""Run the full pipeline.
 
-    Execute the complete ingestion, graphs, analytics, and export pipeline
-    with optional targeting and scope filtering.
+    Execute the complete ingestion, graphs, and analytics pipeline using
+    the unified spec-based execution system.
 
     Examples
     --------
@@ -200,69 +121,33 @@ def pipeline_run(
         # Run full pipeline
         codeintel pipeline run --repo my-org/repo --commit abc123
 
-        # Run specific targets
-        codeintel pipeline run --repo my-org/repo --commit abc123 \
-            --target export_docs
-
         # With scope filtering
         codeintel pipeline run --repo my-org/repo --commit abc123 \
             --scope-path src/core --scope-module core
     """
     setup_logging(verbose)
 
-    # Build configuration
-    from codeintel.cli.project import ProjectNotFoundError, find_project_root, load_project_config
-
-    try:
-        project_root_path = find_project_root(project_root)
-        project_config = load_project_config(project_root_path)
-
-        resolved_repo = repo or project_config.repo
-        from codeintel.cli.project import detect_commit
-
-        resolved_commit = commit or detect_commit(project_root_path)
-        resolved_db_path = db_path or (project_root_path / project_config.storage.db_path)
-        resolved_repo_root = repo_root or project_root_path
-        resolved_build_dir = build_dir or (project_root_path / ".codeintel")
-    except ProjectNotFoundError:
-        if repo is None or commit is None:
-            typer.secho(
-                "Error: No codeintel.yaml found. Provide --repo and --commit explicitly.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=1) from None
-        resolved_repo = repo
-        resolved_commit = commit
-        resolved_db_path = db_path or Path("build/db/codeintel.duckdb")
-        resolved_repo_root = repo_root or Path.cwd()
-        resolved_build_dir = build_dir or Path("build")
-
-    graph_backend = build_graph_backend_config(nx_gpu, nx_backend, nx_gpu_strict)
-    graph_features = build_graph_feature_flags_from_env()
-
-    paths_cfg = CliPathsInput(
-        repo_root=resolved_repo_root,
-        build_dir=resolved_build_dir,
-        db_path=resolved_db_path,
+    # Build runtime using consolidated infrastructure from _common.py
+    runtime = build_runtime_or_exit(
+        project_root=project_root,
+        repo=repo,
+        commit=commit,
+        db_path=db_path,
+        build_dir=build_dir,
+        repo_root=repo_root,
         document_output_dir=document_output_dir,
+        nx_gpu=nx_gpu,
+        nx_backend=nx_backend,
+        nx_gpu_strict=nx_gpu_strict,
     )
-    repo_cfg = RepoConfig(repo=resolved_repo, commit=resolved_commit)
-    cfg = CodeIntelConfig.from_cli_args(
-        repo_cfg=repo_cfg,
-        paths_cfg=paths_cfg,
-        options=CliConfigOptions(graph_backend=graph_backend, graph_features=graph_features),
-    )
+    cfg = runtime.cfg
 
     maybe_enable_nx_gpu(cfg.graph_backend)
 
     if document_output_dir is not None:
         os.environ.setdefault("CODEINTEL_OUTPUT_DIR", str(document_output_dir))
-
     if skip_scip:
         os.environ["CODEINTEL_SKIP_SCIP"] = "true"
-
-    target_list = list(targets) if targets else None
 
     try:
         graph_scope = parse_scope_args(scope_paths, scope_modules, scope_time_start, scope_time_end)
@@ -270,41 +155,28 @@ def pipeline_run(
         typer.secho(f"Invalid scope arguments: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    LOG.info(
-        "Running pipeline for repo=%s commit=%s targets=%s",
-        resolved_repo,
-        resolved_commit,
-        target_list,
+    LOG.info("Running pipeline for repo=%s commit=%s", cfg.repo.repo, cfg.repo.commit)
+
+    profiles = resolve_scan_profiles(repo_root=cfg.paths.repo_root)
+    tools = resolve_tools_config()
+    cli_args = CliPipelineArgs(
+        repo_root=cfg.paths.repo_root,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        db_path=cfg.paths.db_path,
+        build_dir=cfg.paths.build_dir,
+        tools=tools,
+        code_profile=profiles.code,
+        config_profile=profiles.config,
+        graph_backend=cfg.graph_backend,
+        graph_scope=graph_scope,
     )
 
-    from codeintel.config.models import ToolsConfig
-
-    tools = ToolsConfig.default()
-
-    run_full_pipeline(
-        args=ExportArgs(
-            repo_root=cfg.paths.repo_root,
-            repo=resolved_repo,
-            commit=resolved_commit,
-            db_path=cfg.paths.db_path,
-            build_dir=cfg.paths.build_dir,
-            tools=tools,
-            code_profile=profile_from_env(default_code_profile(cfg.paths.repo_root)),
-            config_profile=profile_from_env(default_config_profile(cfg.paths.repo_root)),
-            function_fail_on_missing_spans=function_fail_on_missing_spans,
-            function_parser=FunctionParserKind(function_parser) if function_parser else None,
-            history_commits=tuple(history_commits) if history_commits else None,
-            history_db_dir=history_db_dir,
-            graph_backend=cfg.graph_backend,
-            export_datasets=tuple(export_datasets) if export_datasets else None,
-            export_validation_profile=cast(
-                "Literal['strict', 'lenient'] | None", export_validation_profile
-            ),
-            force_full_export=force_full_export,
-            graph_scope=graph_scope,
-        ),
-        targets=target_list,
-    )
+    gateway = get_gateway(StorageConfig.for_ingest(cli_args.db_path))
+    try:
+        run_pipeline(spec=FULL_PIPELINE, options=cli_args.to_plan_options(gateway, tools))
+    finally:
+        close_gateways()
 
     typer.secho("Pipeline completed.", fg=typer.colors.GREEN)
 

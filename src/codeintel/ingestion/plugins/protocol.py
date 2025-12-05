@@ -4,15 +4,10 @@ This module defines the protocol and types for ingestion plugins, providing
 a modernized interface aligned with the analytics graph plugin architecture
 while preserving ingestion-specific functionality.
 
-Migration Note
---------------
-The following types are deprecated and will be removed in a future version:
+For scratch space and resource hints, use the core types directly:
 
-- ``IngestRuntimeScratch`` -> Use ``PluginScratch`` from ``codeintel.core.plugins``
-- ``IngestResourceHints`` -> Use ``PluginResourceHints`` from ``codeintel.core.plugins``
-
-These aliases exist for backward compatibility. New code should import directly
-from ``codeintel.core.plugins``.
+- ``PluginScratch`` from ``codeintel.core.plugins``
+- ``PluginResourceHints`` from ``codeintel.core.plugins``
 """
 
 from __future__ import annotations
@@ -24,46 +19,11 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard, runtime_checkabl
 
 from pydantic import BaseModel
 
-from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.core.plugins.types.result import BasePluginResult
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
-
-# =============================================================================
-# Deprecated Aliases (will be removed in future version)
-# =============================================================================
-
-IngestRuntimeScratch = PluginScratch
-"""DEPRECATED: Use ``PluginScratch`` from ``codeintel.core.plugins.context`` instead.
-
-This alias exists for backward compatibility with existing code.
-Migrate to the core type:
-
-.. code-block:: python
-
-    # Old (deprecated):
-    from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
-
-    # New (recommended):
-    from codeintel.core.plugins import PluginScratch
-"""
-
-IngestResourceHints = PluginResourceHints
-"""DEPRECATED: Use ``PluginResourceHints`` from ``codeintel.core.plugins.protocol`` instead.
-
-This alias exists for backward compatibility with existing code.
-Migrate to the core type:
-
-.. code-block:: python
-
-    # Old (deprecated):
-    from codeintel.ingestion.plugins.protocol import IngestResourceHints
-
-    # New (recommended):
-    from codeintel.core.plugins import PluginResourceHints
-"""
 
 # =============================================================================
 # Ingestion-Specific Types
@@ -149,7 +109,7 @@ class IngestPluginMetadata:
     requires: tuple[str, ...] = ()
     produces_tables: tuple[str, ...] = ()
     tool_dependencies: tuple[str, ...] = ()
-    resource_hints: IngestResourceHints | None = None
+    resource_hints: PluginResourceHints | None = None
     supports_incremental: bool = False
     isolation_kind: IngestIsolationKind = "none"
     options_model: type[BaseModel] | None = None
@@ -373,8 +333,6 @@ __all__ = [
     "IngestPluginProtocol",
     "IngestPluginResult",
     "IngestPluginSkip",
-    "IngestResourceHints",
-    "IngestRuntimeScratch",
     "IngestSeverity",
     "IngestStage",
     "is_ingest_plugin",

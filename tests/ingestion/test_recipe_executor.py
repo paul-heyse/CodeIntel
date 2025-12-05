@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
@@ -31,7 +32,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
     IngestPluginResult,
     IngestPluginSkip,
-    IngestRuntimeScratch,
     IngestStage,
 )
 from codeintel.ingestion.plugins.registry import IngestPluginRegistry, PlanOptions
@@ -164,7 +164,7 @@ def test_executor_config_defaults() -> None:
 
 def test_executor_config_custom_values() -> None:
     """ExecutorConfig should accept custom values."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
     registry = IngestPluginRegistry()
     custom_workers = 8
     custom_timeout = 60
@@ -669,7 +669,7 @@ def test_recipe_executor_with_real_repo_scan(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -711,7 +711,7 @@ def test_recipe_executor_multi_stage_with_dependencies(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -751,7 +751,7 @@ def test_recipe_executor_fail_fast_stops_on_error(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -784,7 +784,7 @@ def test_recipe_executor_continue_on_soft_fail(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -820,7 +820,7 @@ def test_recipe_executor_empty_stage_skipped(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -866,7 +866,7 @@ def test_recipe_executor_with_provisioned_gateway(
 
     config = ExecutorConfig(
         registry=registry,
-        scratch=IngestRuntimeScratch(),
+        scratch=PluginScratch(),
         enable_parallel=False,
     )
 
@@ -895,7 +895,7 @@ def test_recipe_executor_duration_tracking(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -926,7 +926,7 @@ def test_recipe_executor_parallel_disabled(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,  # Explicitly disabled
             max_workers=1,
         )

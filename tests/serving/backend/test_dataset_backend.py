@@ -1,4 +1,4 @@
-"""Tests for DatasetBackend behavior."""
+"""Tests for DatasetQueryLayer behavior."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Final
 import pytest
 
 from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
-from codeintel.serving.backend.dataset_backend import DatasetBackend
+from codeintel.serving.backend.dataset_backend import DatasetQueryLayer
 from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import StorageGateway
 
@@ -47,7 +47,7 @@ def _build_components(
 def test_list_datasets_returns_descriptors(architecture_gateway: StorageGateway) -> None:
     """List datasets returns a list of descriptors."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     datasets = backend.list_datasets()
 
@@ -64,7 +64,7 @@ def test_list_datasets_returns_descriptors(architecture_gateway: StorageGateway)
 def test_list_datasets_has_name_and_table(architecture_gateway: StorageGateway) -> None:
     """Each dataset descriptor should have name and table."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     datasets = backend.list_datasets()
 
@@ -87,7 +87,7 @@ def test_list_datasets_has_name_and_table(architecture_gateway: StorageGateway) 
 def test_dataset_specs_returns_sorted_list(architecture_gateway: StorageGateway) -> None:
     """Dataset specs returns specs sorted by name."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     specs = backend.dataset_specs()
 
@@ -105,7 +105,7 @@ def test_dataset_specs_returns_sorted_list(architecture_gateway: StorageGateway)
 def test_dataset_specs_includes_schema_columns(architecture_gateway: StorageGateway) -> None:
     """Dataset specs include schema columns when available."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     specs = backend.dataset_specs()
 
@@ -122,7 +122,7 @@ def test_dataset_specs_includes_schema_columns(architecture_gateway: StorageGate
 def test_dataset_specs_includes_capabilities(architecture_gateway: StorageGateway) -> None:
     """Dataset specs include capabilities dictionary."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     specs = backend.dataset_specs()
 
@@ -141,7 +141,7 @@ def test_dataset_specs_includes_capabilities(architecture_gateway: StorageGatewa
 def test_read_dataset_rows_success(architecture_gateway: StorageGateway) -> None:
     """Read dataset rows returns data."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     rows = backend.read_dataset_rows(dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE)
 
@@ -154,7 +154,7 @@ def test_read_dataset_rows_success(architecture_gateway: StorageGateway) -> None
 def test_read_dataset_rows_with_offset(architecture_gateway: StorageGateway) -> None:
     """Read dataset rows with offset."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     rows = backend.read_dataset_rows(
         dataset_name="call_graph_edges", limit=SAMPLE_LIMIT_FIVE, offset=0
@@ -169,7 +169,7 @@ def test_read_dataset_rows_with_offset(architecture_gateway: StorageGateway) -> 
 def test_read_dataset_rows_unknown_dataset(architecture_gateway: StorageGateway) -> None:
     """Raise not_found for unknown dataset."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz")
@@ -183,7 +183,7 @@ def test_read_dataset_rows_unknown_dataset(architecture_gateway: StorageGateway)
 def test_read_dataset_rows_invalid_offset(architecture_gateway: StorageGateway) -> None:
     """Raise invalid-argument when offset is negative."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.read_dataset_rows(
@@ -202,7 +202,7 @@ def test_read_dataset_rows_with_custom_limits(architecture_gateway: StorageGatew
         default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_LIMIT
     )
     context, repositories = _build_components(architecture_gateway, limits=custom_limits)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     rows = backend.read_dataset_rows(dataset_name="call_graph_edges")
 
@@ -220,7 +220,7 @@ def test_read_dataset_rows_with_custom_limits(architecture_gateway: StorageGatew
 def test_dataset_schema_includes_columns(architecture_gateway: StorageGateway) -> None:
     """Return schema details with DuckDB columns populated."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     schema = backend.dataset_schema(dataset_name="call_graph_edges")
 
@@ -235,7 +235,7 @@ def test_dataset_schema_includes_columns(architecture_gateway: StorageGateway) -
 def test_dataset_schema_includes_samples(architecture_gateway: StorageGateway) -> None:
     """Schema includes sample rows."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     schema = backend.dataset_schema(dataset_name="call_graph_edges", sample_limit=3)
 
@@ -248,7 +248,7 @@ def test_dataset_schema_includes_samples(architecture_gateway: StorageGateway) -
 def test_dataset_schema_unknown_dataset(architecture_gateway: StorageGateway) -> None:
     """Raise not_found for unknown dataset."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.dataset_schema(dataset_name="nonexistent_dataset_xyz")
@@ -262,7 +262,7 @@ def test_dataset_schema_unknown_dataset(architecture_gateway: StorageGateway) ->
 def test_dataset_schema_includes_table_key(architecture_gateway: StorageGateway) -> None:
     """Schema includes table_key."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     schema = backend.dataset_schema(dataset_name="call_graph_edges")
 
@@ -280,7 +280,7 @@ def test_dataset_schema_includes_table_key(architecture_gateway: StorageGateway)
 def test_backend_datasets_property(architecture_gateway: StorageGateway) -> None:
     """Verify datasets property returns repository."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     datasets_repo = backend.datasets
 
@@ -293,7 +293,7 @@ def test_backend_datasets_property(architecture_gateway: StorageGateway) -> None
 def test_backend_gateway_property(architecture_gateway: StorageGateway) -> None:
     """Verify gateway property returns storage gateway."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     gateway = backend.gateway
 
@@ -306,7 +306,7 @@ def test_backend_gateway_property(architecture_gateway: StorageGateway) -> None:
 def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
     """Verify con property returns DuckDB connection."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     con = backend.con
 
@@ -324,7 +324,7 @@ def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
 def test_dataset_schema_columns_have_properties(architecture_gateway: StorageGateway) -> None:
     """Schema columns accessed via dataset_schema have proper properties."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     schema = backend.dataset_schema(dataset_name="call_graph_edges")
 
@@ -357,7 +357,7 @@ def test_dataset_schema_columns_have_properties(architecture_gateway: StorageGat
 def test_dataset_specs_validation_profile_normalized(architecture_gateway: StorageGateway) -> None:
     """Validation profiles in dataset specs are normalized to valid literals."""
     context, repositories = _build_components(architecture_gateway)
-    backend = DatasetBackend(context=context, repositories=repositories)
+    backend = DatasetQueryLayer(context=context, repositories=repositories)
 
     specs = backend.dataset_specs()
 

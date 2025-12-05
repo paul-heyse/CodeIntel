@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/execution/retry.py
+# hypothesis_version: 6.148.6
+
+[0.0, 0.25, 0.5, 1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 60.0, 1000, 'NETWORK_RETRY_POLICY', 'NO_RETRY_POLICY', 'PLUGIN_RETRY_POLICY', 'RetryError', 'RetryPolicy', 'T', 'with_retry', 'with_retry_async']

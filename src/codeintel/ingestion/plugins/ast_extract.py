@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -20,7 +21,6 @@ from codeintel.ingestion.core.base import TableWriterIngestPlugin, TrackerRequir
 from codeintel.ingestion.core.traits import WithDependencyData
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider
@@ -57,7 +57,7 @@ class AstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
         Whether incremental mode is supported.
     isolation_kind : IngestIsolationKind
         Isolation requirement.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -80,7 +80,7 @@ class AstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
     isolation_kind: ClassVar[IngestIsolationKind] = "process"
     tracker_required: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=True,
         io_intensive=False,
     )

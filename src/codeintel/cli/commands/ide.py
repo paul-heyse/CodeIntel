@@ -30,7 +30,7 @@ from codeintel.cli.commands._common import (
     open_gateway_from_config,
     setup_logging,
 )
-from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 
 LOG = logging.getLogger(__name__)
 
@@ -95,16 +95,14 @@ def ide_hints(
 
     gateway = open_gateway_from_config(runtime.cfg, read_only=True)
     graph_runtime = build_graph_runtime(runtime.cfg, gateway)
-    engine = graph_runtime.engine
 
-    backend = DuckDBBackend(
+    resource = build_backend_resource(
+        runtime.serving,
         gateway=gateway,
-        repo=runtime.project.repo,
-        commit=runtime.cfg.repo.commit,
-        query_engine=engine,
+        options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
 
-    response = backend.get_file_hints(rel_path=rel_path)
+    response = resource.backend.get_file_hints(rel_path=rel_path)
     if not response.found or not response.hints:
         LOG.error("No IDE hints found for %s", rel_path)
         typer.secho(f"No hints found for: {rel_path}", fg=typer.colors.YELLOW, err=True)

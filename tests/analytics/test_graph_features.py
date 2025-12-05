@@ -9,11 +9,16 @@ import pytest
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
-from tests._helpers.gateway import memory_con_with_macros
 
+# Test constants
 FAN_OUT_TWO = 2
 FAN_IN_ZERO = 0
 FAN_IN_ONE = 1
+GOID_1 = 1
+GOID_2 = 2
+GOID_3 = 3
+GOID_4 = 4
+SLOW_TEST_THRESHOLD_MS = 1000.0
 
 
 def _inputs(con: duckdb.DuckDBPyConnection) -> FunctionProfileInputs:
@@ -22,12 +27,24 @@ def _inputs(con: duckdb.DuckDBPyConnection) -> FunctionProfileInputs:
         repo="r",
         commit="c",
         created_at=datetime.now(tz=UTC),
-        slow_test_threshold_ms=1000.0,
+        slow_test_threshold_ms=SLOW_TEST_THRESHOLD_MS,
     )
 
 
 def _setup_graph() -> duckdb.DuckDBPyConnection:
-    con = memory_con_with_macros()
+    """Create a minimal in-memory database with test graph tables.
+
+    This test uses a simplified schema with only the columns needed for
+    summarize_graph_for_function_profile, rather than the full production
+    schema. This allows focused testing of the graph feature logic without
+    requiring all the production column constraints.
+
+    Returns
+    -------
+    duckdb.DuckDBPyConnection
+        Connection with minimal test graph tables.
+    """
+    con = duckdb.connect(":memory:")
     con.execute("CREATE SCHEMA graph")
     con.execute(
         """
@@ -50,18 +67,18 @@ def _setup_graph() -> duckdb.DuckDBPyConnection:
     con.executemany(
         "INSERT INTO graph.call_graph_edges VALUES (?, ?, ?, ?)",
         [
-            (1, 2, "r", "c"),
-            (1, 3, "r", "c"),
-            (4, 2, "r", "c"),
+            (GOID_1, GOID_2, "r", "c"),
+            (GOID_1, GOID_3, "r", "c"),
+            (GOID_4, GOID_2, "r", "c"),
         ],
     )
     con.executemany(
         "INSERT INTO graph.call_graph_nodes VALUES (?, ?)",
         [
-            (1, True),
-            (2, False),
-            (3, True),
-            (4, False),
+            (GOID_1, True),
+            (GOID_2, False),
+            (GOID_3, True),
+            (GOID_4, False),
         ],
     )
     return con
@@ -73,7 +90,7 @@ def test_summarize_graph_for_function_profile_contract() -> None:
     try:
         features = summarize_graph_for_function_profile(_inputs(con))
         expected = {
-            1: {
+            GOID_1: {
                 "fan_in": FAN_IN_ZERO,
                 "fan_out": FAN_OUT_TWO,
                 "edge_in": FAN_IN_ZERO,
@@ -82,7 +99,7 @@ def test_summarize_graph_for_function_profile_contract() -> None:
                 "entry": True,
                 "public": True,
             },
-            2: {
+            GOID_2: {
                 "fan_in": FAN_OUT_TWO,
                 "fan_out": FAN_IN_ZERO,
                 "edge_in": FAN_OUT_TWO,
@@ -91,7 +108,7 @@ def test_summarize_graph_for_function_profile_contract() -> None:
                 "entry": False,
                 "public": False,
             },
-            3: {
+            GOID_3: {
                 "fan_in": FAN_IN_ONE,
                 "fan_out": FAN_IN_ZERO,
                 "edge_in": FAN_IN_ONE,
@@ -100,7 +117,7 @@ def test_summarize_graph_for_function_profile_contract() -> None:
                 "entry": False,
                 "public": True,
             },
-            4: {
+            GOID_4: {
                 "fan_in": FAN_IN_ZERO,
                 "fan_out": FAN_IN_ONE,
                 "edge_in": FAN_IN_ZERO,

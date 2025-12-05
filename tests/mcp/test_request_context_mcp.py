@@ -9,12 +9,12 @@ import pytest
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import RequestContext
 from codeintel.serving.mcp import registry as mcp_registry
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.observability import (
     ServiceCallMetrics,
     ServiceObservability,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.gateway import BackendOptions, build_duckdb_backend
 
 
 class CapturingObservability(ServiceObservability):
@@ -39,12 +39,14 @@ def test_mcp_tools_set_request_context(architecture_gateway: StorageGateway) -> 
         pytest.skip("FastMCP tools registry not available")
 
     observability = CapturingObservability()
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
+    backend = build_duckdb_backend(
+        architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        limits=BackendLimits(default_limit=2, max_rows_per_call=5),
-        observability=observability,
+        options=BackendOptions(
+            limits=BackendLimits(default_limit=2, max_rows_per_call=5),
+            observability=observability,
+        ),
     )
     mcp_registry.register_tools(mcp, backend)
 

@@ -1,9 +1,7 @@
 """Profile query layer backed by DuckDB repositories.
 
 This module provides the **Query Layer** implementation for profile and
-module-related operations. The class was renamed from ``ProfileBackend`` to
-``ProfileQueryLayer`` to distinguish it from MCP backends (``DuckDBBackend``,
-``HttpBackend``) which operate at the transport layer.
+module-related operations.
 
 Layer Hierarchy
 ---------------
@@ -19,11 +17,6 @@ Layer Hierarchy
          │
          ▼
     Repository Layer (ModuleRepository, SubsystemRepository)
-
-Backward Compatibility
-----------------------
-The ``ProfileBackend`` name is preserved as an alias for backward compatibility.
-New code should use ``ProfileQueryLayer``.
 """
 
 from __future__ import annotations
@@ -50,11 +43,7 @@ ResponseMeta = dm.ResponseMeta
 
 @dataclass
 class ProfileQueryLayer(ProfileQueriesApi):
-    """DuckDB-backed implementation of profile query operations.
-
-    Note: Previously named ``ProfileBackend``. The 'Backend' suffix was
-    confusing as this is a query layer, not an MCP backend.
-    """
+    """DuckDB-backed implementation of profile query operations."""
 
     context: BackendContext
     repositories: DuckDBRepositories
@@ -203,7 +192,4 @@ class ProfileQueryLayer(ProfileQueriesApi):
         return build_file_hints(hints, rel_path=rel_path, meta=ResponseMeta())
 
 
-# Backward compatibility alias - new code should use ProfileQueryLayer
-ProfileBackend = ProfileQueryLayer
-
-__all__ = ["ProfileBackend", "ProfileQueryLayer"]
+__all__ = ["ProfileQueryLayer"]

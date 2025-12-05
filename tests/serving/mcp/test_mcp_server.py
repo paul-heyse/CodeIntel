@@ -93,7 +93,7 @@ def test_create_mcp_server_with_custom_backend_factory(
             gateway=provisioned_repo.gateway,
             repo=provisioned_repo.repo,
             commit=provisioned_repo.commit,
-            service_override=service,
+            service=service,
         )
         return BackendResource(backend=backend, service=service, close=lambda: None)
 
@@ -179,7 +179,7 @@ def test_create_mcp_server_close_callback_callable(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     def custom_factory(

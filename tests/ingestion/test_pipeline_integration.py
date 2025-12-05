@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
     AstExtractPlugin,
     IngestPluginRegistry,
-    IngestRuntimeScratch,
     PlanOptions,
     RepoScanPlugin,
     get_ingest_registry,
@@ -451,7 +451,7 @@ def test_recipe_executor_single_stage(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -504,7 +504,7 @@ def test_recipe_executor_multi_stage(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 
@@ -640,7 +640,7 @@ def test_recipe_with_provisioned_gateway(
 
     config = ExecutorConfig(
         registry=registry,
-        scratch=IngestRuntimeScratch(),
+        scratch=PluginScratch(),
         enable_parallel=False,
     )
 
@@ -717,7 +717,7 @@ def test_recipe_fail_fast_behavior(tmp_path: Path) -> None:
 
         config = ExecutorConfig(
             registry=registry,
-            scratch=IngestRuntimeScratch(),
+            scratch=PluginScratch(),
             enable_parallel=False,
         )
 

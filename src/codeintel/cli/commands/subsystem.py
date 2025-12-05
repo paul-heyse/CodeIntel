@@ -35,6 +35,7 @@ from codeintel.cli.commands._common import (
     open_gateway_from_config,
     setup_logging,
 )
+from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
     SubsystemCoverageResponse,
@@ -128,14 +129,19 @@ def _build_backend(
 
     gateway = open_gateway_from_config(runtime.cfg, read_only=True)
     graph_runtime = build_graph_runtime(runtime.cfg, gateway)
-    engine = graph_runtime.engine
 
-    return DuckDBBackend(
+    resource = build_backend_resource(
+        runtime.serving,
         gateway=gateway,
-        repo=runtime.project.repo,
-        commit=runtime.cfg.repo.commit,
-        query_engine=engine,
+        options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
+
+    # The backend is guaranteed to be DuckDBBackend for local_db mode
+    backend = resource.backend
+    if not isinstance(backend, DuckDBBackend):
+        msg = "Expected DuckDBBackend for local_db mode"
+        raise TypeError(msg)
+    return backend
 
 
 # -----------------------------------------------------------------------------

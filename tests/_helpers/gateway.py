@@ -8,6 +8,7 @@ registered, and building backend services.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -23,6 +24,7 @@ from codeintel.serving.backend import (
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
@@ -405,15 +407,27 @@ def open_ingestion_gateway(
 open_ingestion_gateway_with_macros = open_ingestion_gateway
 
 
+@dataclass(frozen=True)
+class BackendOptions:
+    """Options for building a DuckDBBackend."""
+
+    limits: BackendLimits = field(default_factory=BackendLimits)
+    observability: ServiceObservability | None = None
+    query_engine: GraphEngine | None = None
+
+
 def build_duckdb_backend(
     gateway: StorageGateway,
     *,
     repo: str | None = None,
     commit: str | None = None,
-    service_override: LocalQueryService | None = None,
+    service: LocalQueryService | None = None,
+    options: BackendOptions | None = None,
 ) -> DuckDBBackend:
-    """
-    Construct a DuckDBBackend with gateway config fallbacks.
+    """Construct a DuckDBBackend with gateway config fallbacks.
+
+    When ``service`` is not provided, a default LocalQueryService is constructed
+    using the gateway and repo/commit configuration.
 
     Parameters
     ----------
@@ -423,21 +437,45 @@ def build_duckdb_backend(
         Optional repo override; falls back to ``gateway.config.repo``.
     commit
         Optional commit override; falls back to ``gateway.config.commit``.
-    service_override
-        Optional LocalQueryService to bypass default wiring.
+    service
+        Optional LocalQueryService. When not provided, one is built internally.
+    options
+        Optional backend options (limits, observability, query_engine).
 
     Returns
     -------
     DuckDBBackend
         Backend ready for adapter/service tests.
     """
+    opts = options or BackendOptions()
     repo_value = repo or gateway.config.repo or "demo/repo"
     commit_value = commit or gateway.config.commit or "deadbeef"
+
+    if service is None:
+        context = BackendContext(
+            gateway=gateway,
+            repo=repo_value,
+            commit=commit_value,
+            limits=opts.limits,
+            graph_engine=opts.query_engine,
+        )
+        repositories = DuckDBRepositories(gateway, repo_value, commit_value)
+        provider = GraphEngineProvider(context=context, graph_engine=opts.query_engine)
+        query = DuckDBQueryService(
+            context=context,
+            repositories=repositories,
+            engine_provider=provider,
+        )
+        service = LocalQueryService(query=query, observability=opts.observability)
+
     return DuckDBBackend(
+        service=service,
         gateway=gateway,
         repo=repo_value,
         commit=commit_value,
-        service_override=service_override,
+        limits=opts.limits,
+        observability=opts.observability,
+        query_engine=opts.query_engine,
     )
 
 

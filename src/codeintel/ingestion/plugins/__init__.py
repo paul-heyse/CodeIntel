@@ -37,8 +37,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginProtocol,
     IngestPluginResult,
     IngestPluginSkip,
-    IngestResourceHints,
-    IngestRuntimeScratch,
     IngestSeverity,
     IngestStage,
 )
@@ -214,8 +212,6 @@ __all__ = [
     "IngestPluginRegistry",
     "IngestPluginResult",
     "IngestPluginSkip",
-    "IngestResourceHints",
-    "IngestRuntimeScratch",
     "IngestSeverity",
     "IngestStage",
     "PlanOptions",

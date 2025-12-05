@@ -3,13 +3,19 @@
 This module provides common functionality used across all CLI command groups,
 including configuration building, gateway management, logging setup, and
 type-safe option handling.
+
+The module also provides helper functions for consistent command patterns:
+
+- `build_runtime_or_exit`: Project runtime construction with fallback
+- `build_project_context`: Unified context for project commands
+- `resolve_gateway_for_command`: Gateway resolution with caching support
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
@@ -30,6 +36,7 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway_cache import close_gateways, get_gateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.runtime import GraphRuntime
@@ -656,6 +663,168 @@ def build_paths_from_cli(paths: CliPathsInput) -> BuildPaths:
     return paths.to_build_paths()
 
 
+# -----------------------------------------------------------------------------
+# Unified Command Context
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class ProjectContext:
+    """Unified context for CLI commands that need project access.
+
+    This dataclass bundles the common requirements for project-aware commands,
+    providing access to configuration, gateway, and snapshot information.
+
+    Attributes
+    ----------
+    config
+        CodeIntel configuration resolved from project or CLI options.
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository snapshot reference.
+    paths
+        Build paths for artifacts.
+    """
+
+    config: CodeIntelConfig
+    gateway: StorageGateway
+    snapshot: SnapshotRef
+    paths: BuildPaths
+
+
+def build_project_context(
+    project_root: Path | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+    db_path: Path | None = None,
+    build_dir: Path | None = None,
+    repo_root: Path | None = None,
+    document_output_dir: Path | None = None,
+    nx_gpu: bool = False,
+    nx_backend: str = "auto",
+    nx_gpu_strict: bool = False,
+    *,
+    read_only: bool = True,
+    use_cache: bool = True,
+) -> ProjectContext:
+    """Build a unified project context for CLI commands.
+
+    This function resolves project configuration and returns a context object
+    that can be used by any CLI command needing access to the project.
+
+    Parameters
+    ----------
+    project_root
+        Explicit project root for project file discovery.
+    repo
+        Fallback repository slug.
+    commit
+        Fallback commit SHA.
+    db_path
+        Fallback database path.
+    build_dir
+        Fallback build directory.
+    repo_root
+        Fallback repository root.
+    document_output_dir
+        Fallback document output directory.
+    nx_gpu
+        Whether to prefer GPU backend.
+    nx_backend
+        NetworkX backend selection.
+    nx_gpu_strict
+        Whether to fail if GPU unavailable.
+    read_only
+        Whether to open gateway in read-only mode.
+    use_cache
+        Whether to use the gateway cache.
+
+    Returns
+    -------
+    ProjectContext
+        Unified project context.
+
+    Notes
+    -----
+    This function may exit via ``typer.Exit`` (raised by ``build_runtime_or_exit``)
+    if configuration cannot be resolved.
+    """
+    runtime = build_runtime_or_exit(
+        project_root=project_root,
+        repo=repo,
+        commit=commit,
+        db_path=db_path,
+        build_dir=build_dir,
+        repo_root=repo_root,
+        document_output_dir=document_output_dir,
+        nx_gpu=nx_gpu,
+        nx_backend=nx_backend,
+        nx_gpu_strict=nx_gpu_strict,
+    )
+
+    # Use the cached or non-cached gateway based on preference
+    if use_cache:
+        storage_cfg = (
+            StorageConfig.for_readonly(runtime.paths.db_path)
+            if read_only
+            else StorageConfig.for_ingest(runtime.paths.db_path)
+        )
+        gateway = get_gateway(storage_cfg)
+    else:
+        gateway = runtime.gateway
+
+    return ProjectContext(
+        config=runtime.cfg,
+        gateway=gateway,
+        snapshot=runtime.snapshot,
+        paths=runtime.paths,
+    )
+
+
+def resolve_gateway_for_command(
+    cfg: CodeIntelConfig,
+    *,
+    read_only: bool = True,
+    use_cache: bool = True,
+) -> StorageGateway:
+    """Resolve a StorageGateway for a CLI command.
+
+    Parameters
+    ----------
+    cfg
+        CodeIntel configuration.
+    read_only
+        Whether to open read-only.
+    use_cache
+        Whether to use the gateway cache for connection reuse.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway ready for use.
+    """
+    cfg.paths.db_dir.mkdir(parents=True, exist_ok=True)
+
+    if use_cache:
+        storage_cfg = (
+            StorageConfig.for_readonly(cfg.paths.db_path)
+            if read_only
+            else StorageConfig.for_ingest(cfg.paths.db_path)
+        )
+        return get_gateway(storage_cfg)
+    return open_gateway_from_config(cfg, read_only=read_only)
+
+
+def cleanup_command_resources() -> None:
+    """Clean up resources after CLI command execution.
+
+    Call this at the end of command execution to release cached gateways
+    and other resources.
+    """
+    close_gateways()
+
+
 __all__ = [
     "LOG",
     "BuildDirOpt",
@@ -667,6 +836,7 @@ __all__ = [
     "NxBackendOpt",
     "NxGpuOpt",
     "NxGpuStrictOpt",
+    "ProjectContext",
     "ProjectRootOpt",
     "RepoOpt",
     "RepoRootOpt",
@@ -680,9 +850,12 @@ __all__ = [
     "build_graph_feature_flags_from_env",
     "build_graph_runtime",
     "build_paths_from_cli",
+    "build_project_context",
     "build_runtime_or_exit",
+    "cleanup_command_resources",
     "open_gateway_from_config",
     "parse_scope_args",
     "resolve_flag",
+    "resolve_gateway_for_command",
     "setup_logging",
 ]

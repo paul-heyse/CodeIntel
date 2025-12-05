@@ -16,7 +16,7 @@ from codeintel.analytics.core.context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
-from codeintel.analytics.core.executor import ExecutionPolicy, PluginExecutor
+from codeintel.analytics.core.executor import AnalyticsExecutionPolicy, PluginExecutor
 from codeintel.analytics.core.registry import PluginPlan, get_registry
 from codeintel.analytics.plugins.middleware.logging import LoggingMiddleware
 from codeintel.analytics.plugins.middleware.metrics import MetricsMiddleware
@@ -252,7 +252,7 @@ def run_analytics_plugins(
     builder = _build_execution_context(plan, run_context, snapshot)
     ctx = builder.build()
 
-    policy = ExecutionPolicy(
+    policy = AnalyticsExecutionPolicy(
         fail_fast=plan.policy.fail_fast,
         max_retries=0,
         skip_on_unchanged=plan.policy.skip_on_unchanged,
@@ -388,7 +388,7 @@ def run_analytics_plugins_for_context(
     )
     ctx = builder.build()
 
-    policy = ExecutionPolicy(
+    policy = AnalyticsExecutionPolicy(
         fail_fast=plan.policy.fail_fast,
         max_retries=0,
         skip_on_unchanged=plan.policy.skip_on_unchanged,

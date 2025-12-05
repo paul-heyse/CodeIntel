@@ -19,6 +19,8 @@ from typing import ClassVar
 
 import pytest
 
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.core.base import (
     BaseIngestPlugin,
     TableWriterIngestPlugin,
@@ -26,7 +28,6 @@ from codeintel.ingestion.core.base import (
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
-    IngestRuntimeScratch,
     get_ingest_registry,
     plan_ingest_plugins,
 )
@@ -37,7 +38,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginProtocol,
     IngestPluginResult,
     IngestPluginSkip,
-    IngestResourceHints,
     IngestSeverity,
     IngestStage,
     is_ingest_plugin,
@@ -282,13 +282,13 @@ def test_custom_plugin_registry_execution(ingest_setup: IngestTestSetup) -> None
 
 
 # =============================================================================
-# IngestResourceHints Tests
+# PluginResourceHints Tests
 # =============================================================================
 
 
 def test_resource_hints_defaults() -> None:
-    """IngestResourceHints should have sensible defaults."""
-    hints = IngestResourceHints()
+    """PluginResourceHints should have sensible defaults."""
+    hints = PluginResourceHints()
 
     assert hints.max_runtime_ms is None
     assert hints.max_memory_mb is None
@@ -297,8 +297,8 @@ def test_resource_hints_defaults() -> None:
 
 
 def test_resource_hints_custom_values() -> None:
-    """IngestResourceHints should accept custom values."""
-    hints = IngestResourceHints(
+    """PluginResourceHints should accept custom values."""
+    hints = PluginResourceHints(
         max_runtime_ms=RUNTIME_MS_5000,
         max_memory_mb=MEMORY_MB_512,
         cpu_intensive=True,
@@ -364,7 +364,7 @@ def test_plugin_metadata_custom_dependencies() -> None:
 
 def test_plugin_metadata_with_resource_hints() -> None:
     """IngestPluginMetadata should include resource hints."""
-    hints = IngestResourceHints(max_runtime_ms=RUNTIME_MS_3000)
+    hints = PluginResourceHints(max_runtime_ms=RUNTIME_MS_3000)
     metadata = IngestPluginMetadata(
         name="heavy",
         description="Heavy plugin",
@@ -436,13 +436,13 @@ def test_result_skip_factory() -> None:
 
 
 # =============================================================================
-# IngestRuntimeScratch Tests
+# PluginScratch Tests
 # =============================================================================
 
 
 def test_scratch_declare_and_consume() -> None:
     """Scratch should store and retrieve values."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
 
     scratch.declare("ast_tree", {"nodes": []})
     result = scratch.consume("ast_tree")
@@ -452,7 +452,7 @@ def test_scratch_declare_and_consume() -> None:
 
 def test_scratch_consume_missing_returns_default() -> None:
     """Scratch should return default for missing keys."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
 
     result = scratch.consume("missing", "default_value")
 
@@ -461,7 +461,7 @@ def test_scratch_consume_missing_returns_default() -> None:
 
 def test_scratch_has_key() -> None:
     """Scratch should check key existence."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
 
     assert scratch.has("key") is False
     scratch.declare("key", "value")
@@ -470,7 +470,7 @@ def test_scratch_has_key() -> None:
 
 def test_scratch_len_and_keys() -> None:
     """Scratch should report count and keys."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
 
     scratch.declare("a", 1)
     scratch.declare("b", 2)
@@ -484,7 +484,7 @@ def test_scratch_len_and_keys() -> None:
 
 def test_scratch_cleanup_runs_callbacks() -> None:
     """Scratch cleanup should run registered callbacks."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
     called = [False]
 
     def cleanup_fn() -> None:
@@ -498,7 +498,7 @@ def test_scratch_cleanup_runs_callbacks() -> None:
 
 def test_scratch_cleanup_clears_store() -> None:
     """Scratch cleanup should clear stored values."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
     scratch.declare("key", "value")
 
     scratch.cleanup()
@@ -509,7 +509,7 @@ def test_scratch_cleanup_clears_store() -> None:
 
 def test_scratch_cleanup_handles_callback_errors() -> None:
     """Scratch cleanup should not fail on callback errors."""
-    scratch = IngestRuntimeScratch()
+    scratch = PluginScratch()
 
     def failing_callback() -> None:
         msg = "Cleanup failed"

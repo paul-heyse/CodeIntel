@@ -14,7 +14,7 @@ This module tests the core graph metrics plugins from
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 import networkx as nx
 
@@ -31,40 +31,26 @@ from codeintel.graphs.plugins.metrics import (
 )
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
-from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs import GraphEngineSeed
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.orchestration import build_seeded_graph_engine
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 NODE_COUNT: Final = 5
 MODULE_COUNT: Final = 4
+CALLER_GOID_1001: Final = 1001
+CALLEE_GOID_1002: Final = 1002
+CALLEE_GOID_1003: Final = 1003
+CALLEE_GOID_1004: Final = 1004
+CALLEE_GOID_1005: Final = 1005
 
 
 # ---------------------------------------------------------------------------
 # Test Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_gateway() -> StorageGateway:
-    """Create a gateway for metrics tests.
-
-    Returns
-    -------
-    StorageGateway
-        Configured gateway.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    return gateway
 
 
 def _make_realistic_call_graph() -> nx.DiGraph:
@@ -87,12 +73,12 @@ def _make_realistic_call_graph() -> nx.DiGraph:
     # validate -> process (creates cycle)
     g.add_edges_from(
         [
-            (1001, 1002),
-            (1002, 1003),
-            (1003, 1004),
-            (1002, 1005),
-            (1004, 1005),
-            (1003, 1002),  # Cycle
+            (CALLER_GOID_1001, CALLEE_GOID_1002),
+            (CALLEE_GOID_1002, CALLEE_GOID_1003),
+            (CALLEE_GOID_1003, CALLEE_GOID_1004),
+            (CALLEE_GOID_1002, CALLEE_GOID_1005),
+            (CALLEE_GOID_1004, CALLEE_GOID_1005),
+            (CALLEE_GOID_1003, CALLEE_GOID_1002),  # Cycle
         ]
     )
 
@@ -182,138 +168,124 @@ def _make_execution_context(
     )
 
 
-def test_compute_core_graph_metrics_with_engine(tmp_path: Path) -> None:
+def test_compute_core_graph_metrics_with_engine(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Core metrics computed successfully with engine fallback."""
-    gateway = _make_gateway()
-    try:
-        call_graph = _make_realistic_call_graph()
-        import_graph = _make_realistic_import_graph()
-        seed = GraphEngineSeed(
-            call_graph=call_graph,
-            import_graph=import_graph,
-            repo_root=tmp_path,
-        )
-        engine = build_seeded_graph_engine(gateway, seed)
+    call_graph = _make_realistic_call_graph()
+    import_graph = _make_realistic_import_graph()
+    seed = GraphEngineSeed(
+        call_graph=call_graph,
+        import_graph=import_graph,
+        repo_root=tmp_path,
+    )
+    engine = build_seeded_graph_engine(fresh_gateway, seed)
 
-        ctx = _make_execution_context(gateway, tmp_path, engine=engine)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=engine)
 
-        result = get_core_graph_metrics_plugin().execute(ctx)
+    result = get_core_graph_metrics_plugin().execute(ctx)
 
-        assert result.success
-        assert result.row_counts is not None
-        assert "analytics.graph_metrics_functions" in result.row_counts
-        assert "analytics.graph_metrics_modules" in result.row_counts
-        assert result.row_counts["analytics.graph_metrics_functions"] == NODE_COUNT
-        assert result.row_counts["analytics.graph_metrics_modules"] == MODULE_COUNT
-    finally:
-        gateway.close()
+    assert result.success
+    assert result.row_counts is not None
+    assert "analytics.graph_metrics_functions" in result.row_counts
+    assert "analytics.graph_metrics_modules" in result.row_counts
+    assert result.row_counts["analytics.graph_metrics_functions"] == NODE_COUNT
+    assert result.row_counts["analytics.graph_metrics_modules"] == MODULE_COUNT
 
 
-def test_compute_core_graph_metrics_no_engine_fails(tmp_path: Path) -> None:
+def test_compute_core_graph_metrics_no_engine_fails(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Core metrics computation fails when no engine available."""
-    gateway = _make_gateway()
-    try:
-        ctx = _make_execution_context(gateway, tmp_path, engine=None)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=None)
 
-        result = get_core_graph_metrics_plugin().execute(ctx)
+    result = get_core_graph_metrics_plugin().execute(ctx)
 
-        assert not result.success
-        assert result.error == "No GraphResource registered in context"
-    finally:
-        gateway.close()
+    assert not result.success
+    assert result.error == "No GraphResource registered in context"
 
 
-def test_compute_core_graph_metrics_empty_graphs(tmp_path: Path) -> None:
+def test_compute_core_graph_metrics_empty_graphs(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Core metrics handles empty graphs gracefully."""
-    gateway = _make_gateway()
-    try:
-        empty_call = nx.DiGraph()
-        empty_import = nx.DiGraph()
-        seed = GraphEngineSeed(
-            call_graph=empty_call,
-            import_graph=empty_import,
-            repo_root=tmp_path,
-        )
-        engine = build_seeded_graph_engine(gateway, seed)
+    empty_call = nx.DiGraph()
+    empty_import = nx.DiGraph()
+    seed = GraphEngineSeed(
+        call_graph=empty_call,
+        import_graph=empty_import,
+        repo_root=tmp_path,
+    )
+    engine = build_seeded_graph_engine(fresh_gateway, seed)
 
-        ctx = _make_execution_context(gateway, tmp_path, engine=engine)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=engine)
 
-        result = get_core_graph_metrics_plugin().execute(ctx)
+    result = get_core_graph_metrics_plugin().execute(ctx)
 
-        assert result.success
-        assert result.row_counts is not None
-        assert result.row_counts["analytics.graph_metrics_functions"] == 0
-        assert result.row_counts["analytics.graph_metrics_modules"] == 0
-    finally:
-        gateway.close()
+    assert result.success
+    assert result.row_counts is not None
+    assert result.row_counts["analytics.graph_metrics_functions"] == 0
+    assert result.row_counts["analytics.graph_metrics_modules"] == 0
 
 
-def test_compute_function_ext_metrics_with_engine(tmp_path: Path) -> None:
+def test_compute_function_ext_metrics_with_engine(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Function ext metrics computed successfully."""
-    gateway = _make_gateway()
-    try:
-        call_graph = _make_realistic_call_graph()
-        seed = GraphEngineSeed(call_graph=call_graph, repo_root=tmp_path)
-        engine = build_seeded_graph_engine(gateway, seed)
+    call_graph = _make_realistic_call_graph()
+    seed = GraphEngineSeed(call_graph=call_graph, repo_root=tmp_path)
+    engine = build_seeded_graph_engine(fresh_gateway, seed)
 
-        ctx = _make_execution_context(gateway, tmp_path, engine=engine)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=engine)
 
-        result = get_function_ext_metrics_plugin().execute(ctx)
+    result = get_function_ext_metrics_plugin().execute(ctx)
 
-        assert result.success
-        assert result.row_counts is not None
-        assert "analytics.graph_metrics_functions_ext" in result.row_counts
-        assert result.row_counts["analytics.graph_metrics_functions_ext"] == NODE_COUNT
-    finally:
-        gateway.close()
+    assert result.success
+    assert result.row_counts is not None
+    assert "analytics.graph_metrics_functions_ext" in result.row_counts
+    assert result.row_counts["analytics.graph_metrics_functions_ext"] == NODE_COUNT
 
 
-def test_compute_function_ext_metrics_no_engine_fails(tmp_path: Path) -> None:
+def test_compute_function_ext_metrics_no_engine_fails(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Function ext metrics fails when no engine available."""
-    gateway = _make_gateway()
-    try:
-        ctx = _make_execution_context(gateway, tmp_path, engine=None)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=None)
 
-        result = get_function_ext_metrics_plugin().execute(ctx)
+    result = get_function_ext_metrics_plugin().execute(ctx)
 
-        assert not result.success
-        assert result.error == "No GraphResource registered in context"
-    finally:
-        gateway.close()
+    assert not result.success
+    assert result.error == "No GraphResource registered in context"
 
 
-def test_compute_module_ext_metrics_with_engine(tmp_path: Path) -> None:
+def test_compute_module_ext_metrics_with_engine(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Module ext metrics computed successfully."""
-    gateway = _make_gateway()
-    try:
-        import_graph = _make_realistic_import_graph()
-        seed = GraphEngineSeed(import_graph=import_graph, repo_root=tmp_path)
-        engine = build_seeded_graph_engine(gateway, seed)
+    import_graph = _make_realistic_import_graph()
+    seed = GraphEngineSeed(import_graph=import_graph, repo_root=tmp_path)
+    engine = build_seeded_graph_engine(fresh_gateway, seed)
 
-        ctx = _make_execution_context(gateway, tmp_path, engine=engine)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=engine)
 
-        result = get_module_ext_metrics_plugin().execute(ctx)
+    result = get_module_ext_metrics_plugin().execute(ctx)
 
-        assert result.success
-        assert result.row_counts is not None
-        assert "analytics.graph_metrics_modules_ext" in result.row_counts
-        assert result.row_counts["analytics.graph_metrics_modules_ext"] == MODULE_COUNT
-    finally:
-        gateway.close()
+    assert result.success
+    assert result.row_counts is not None
+    assert "analytics.graph_metrics_modules_ext" in result.row_counts
+    assert result.row_counts["analytics.graph_metrics_modules_ext"] == MODULE_COUNT
 
 
-def test_compute_module_ext_metrics_no_engine_fails(tmp_path: Path) -> None:
+def test_compute_module_ext_metrics_no_engine_fails(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Module ext metrics fails when no engine available."""
-    gateway = _make_gateway()
-    try:
-        ctx = _make_execution_context(gateway, tmp_path, engine=None)
+    ctx = _make_execution_context(fresh_gateway, tmp_path, engine=None)
 
-        result = get_module_ext_metrics_plugin().execute(ctx)
+    result = get_module_ext_metrics_plugin().execute(ctx)
 
-        assert not result.success
-        assert result.error == "No GraphResource registered in context"
-    finally:
-        gateway.close()
+    assert not result.success
+    assert result.error == "No GraphResource registered in context"
 
 
 # ---------------------------------------------------------------------------

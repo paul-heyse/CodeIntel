@@ -9,11 +9,13 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.pipeline.steps import REGISTRY
 from codeintel.pipeline.steps.base import (
     PipelineStep,
     StepMetadata,
     StepPhase,
+    step_to_plugin_metadata,
 )
 from codeintel.pipeline.steps.registry import build_registry
 from tests._helpers.assertions import (
@@ -40,6 +42,11 @@ class MockStep:
     deps: Sequence[str]
     run_count: int = 0
     observed_repos: list[str] = field(default_factory=list)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Record run count and context repo."""

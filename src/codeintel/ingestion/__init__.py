@@ -148,8 +148,6 @@ from codeintel.ingestion.plugins import (
     IngestPluginRegistry,
     IngestPluginResult,
     IngestPluginSkip,
-    IngestResourceHints,
-    IngestRuntimeScratch,
     IngestSeverity,
     IngestStage,
     PlanOptions,
@@ -204,17 +202,20 @@ from codeintel.ingestion.recipes import (
 from codeintel.ingestion.runtime import (
     IngestExecutorConfig,
     IngestPlanContext,
+    IngestPluginExecutionRecord,
     IngestPluginSpan,
     IngestRunReport,
     IngestRuntimeTelemetry,
     PluginExecutionPlan,
-    PluginExecutionRecord,
     PluginExecutionSettings,
     PluginFatalError,
     execute_plugin,
     execute_plugin_batch,
     get_ingest_telemetry,
     resolve_plugin_order,
+)
+from codeintel.ingestion.runtime import (
+    IngestPluginExecutionRecord as PluginExecutionRecord,
 )
 
 # Tracker domain service exports (renamed from change_tracker for alignment with graphs/catalog)
@@ -279,6 +280,7 @@ __all__ = [
     "IngestExecutorConfig",
     "IngestIsolationKind",
     "IngestPlanContext",
+    "IngestPluginExecutionRecord",
     "IngestPluginMetadata",
     "IngestPluginPlan",
     "IngestPluginProtocol",
@@ -287,9 +289,7 @@ __all__ = [
     "IngestPluginSkip",
     "IngestPluginSpan",
     "IngestRecipe",
-    "IngestResourceHints",
     "IngestRunReport",
-    "IngestRuntimeScratch",
     "IngestRuntimeTelemetry",
     "IngestSeverity",
     "IngestStage",

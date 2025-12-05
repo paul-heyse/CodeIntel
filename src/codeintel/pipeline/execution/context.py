@@ -51,6 +51,7 @@ from codeintel.config import (
 )
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -61,7 +62,6 @@ from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
-from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
@@ -313,7 +313,7 @@ def _resolve_config_profile(ctx: PipelineContext) -> ScanProfile:
 def _plugin_ctx(
     ctx: PipelineContext,
     *,
-    scratch: IngestRuntimeScratch | None = None,
+    scratch: PluginScratch | None = None,
     plugin_name: str | None = None,
 ) -> IngestExecutionContext:
     """Build an IngestExecutionContext from a pipeline context.
@@ -359,7 +359,7 @@ def _plugin_ctx(
         code_profile=ctx.code_profile,
         config_profile=ctx.config_profile,
         resources=resources,
-        scratch=scratch or IngestRuntimeScratch(),
+        scratch=scratch or PluginScratch(),
         plugin_name=plugin_name,
         run_id=ctx.run_id or "",
         run_context=ctx.run_context,

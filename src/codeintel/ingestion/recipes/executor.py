@@ -27,13 +27,13 @@ from typing import TYPE_CHECKING
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_telemetry
 from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
     IngestPluginProtocol,
     IngestPluginResult,
-    IngestRuntimeScratch,
 )
 from codeintel.ingestion.plugins.registry import (
     IngestPluginRegistry,
@@ -89,7 +89,7 @@ class ExecutorConfig:
     """
 
     registry: IngestPluginRegistry = field(default_factory=get_ingest_registry)
-    scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
+    scratch: PluginScratch = field(default_factory=PluginScratch)
     run_id: str = field(default_factory=lambda: new_run_id("ingest"))
     enable_parallel: bool = True
     max_workers: int = 4
@@ -157,7 +157,7 @@ class RecipeExecutor:
     3. Ingestion manages change tracking and tool runners
 
     Common patterns shared with other recipe executors:
-    - Scratch space management via IngestRuntimeScratch (via ExecutorConfig)
+    - Scratch space management via PluginScratch (via ExecutorConfig)
     - Parallel execution via ThreadPoolExecutor
     - Stage-based result aggregation
     - Telemetry integration via RuntimeTelemetry

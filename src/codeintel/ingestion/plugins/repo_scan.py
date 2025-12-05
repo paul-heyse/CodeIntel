@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -21,7 +22,6 @@ from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.traits import WithDependencyData, WithRowCounts
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginResult,
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest
@@ -55,7 +55,7 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
         Capabilities provided.
     supports_incremental : bool
         Whether incremental mode is supported.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -74,7 +74,7 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
     provides: ClassVar[tuple[str, ...]] = ("modules", "change_tracker")
     supports_incremental: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=False,
         io_intensive=True,
     )

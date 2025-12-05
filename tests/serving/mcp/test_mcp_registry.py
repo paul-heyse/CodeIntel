@@ -47,7 +47,7 @@ def test_register_tools_with_backend(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     server = FastMCP("TestServer", json_response=True)

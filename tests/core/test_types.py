@@ -2,7 +2,7 @@
 
 This module tests:
 - ScipRange, ScipOccurrence, ScipDocument TypedDicts
-- _normalize_path, _normalize_occurrence, normalize_scip_document
+- normalize_path, normalize_occurrence, normalize_scip_document
 - validate_scip_document
 - PytestTestEntry, PytestCallEntry TypedDicts
 - normalize_pytest_entry, validate_pytest_entry
@@ -15,8 +15,8 @@ import pytest
 from codeintel.core.types import (
     PytestTestEntry,
     ScipDocument,
-    _normalize_occurrence,
-    _normalize_path,
+    normalize_occurrence,
+    normalize_path,
     normalize_pytest_entry,
     normalize_scip_document,
     validate_pytest_entry,
@@ -24,44 +24,46 @@ from codeintel.core.types import (
 )
 
 # =============================================================================
-# _normalize_path Tests
+# normalize_path Tests
 # =============================================================================
 
 
 def test_normalize_path_forward_slashes() -> None:
     """Verify forward slashes are preserved."""
-    result = _normalize_path("path/to/file.py")
+    result = normalize_path("path/to/file.py")
     assert result == "path/to/file.py"
 
 
 def test_normalize_path_backslashes_converted() -> None:
     """Verify backslashes are converted to forward slashes."""
-    result = _normalize_path("path\\to\\file.py")
+    result = normalize_path("path\\to\\file.py")
     assert result == "path/to/file.py"
 
 
 def test_normalize_path_mixed_slashes() -> None:
     """Verify mixed slashes are normalized."""
-    result = _normalize_path("path\\to/file.py")
+    result = normalize_path("path\\to/file.py")
     assert result == "path/to/file.py"
 
 
 def test_normalize_path_non_string_returns_none() -> None:
     """Verify non-string inputs return None."""
-    assert _normalize_path(None) is None
-    assert _normalize_path(123) is None
-    assert _normalize_path([]) is None
+    assert normalize_path(None) is None
+    assert normalize_path(123) is None
+    assert normalize_path([]) is None
 
 
 def test_normalize_path_empty_string() -> None:
     """Verify empty string returns empty string."""
-    result = _normalize_path("")
-    assert result == ""
+    result = normalize_path("")
+    assert not result
 
 
 # =============================================================================
-# _normalize_occurrence Tests
+# normalize_occurrence Tests
 # =============================================================================
+
+EXPECTED_START_LINE = 10
 
 
 def test_normalize_occurrence_valid() -> None:
@@ -70,28 +72,28 @@ def test_normalize_occurrence_valid() -> None:
         "symbol": "test#symbol",
         "symbol_roles": 1,
         "range": {
-            "start_line": 10,
+            "start_line": EXPECTED_START_LINE,
             "start_character": 5,
-            "end_line": 10,
+            "end_line": EXPECTED_START_LINE,
             "end_character": 15,
         },
     }
 
-    result = _normalize_occurrence(raw)
+    result = normalize_occurrence(raw)
 
     assert result is not None
     assert result.get("symbol") == "test#symbol"
     assert result.get("symbol_roles") == 1
     result_range = result.get("range")
     assert result_range is not None
-    assert result_range.get("start_line") == 10
+    assert result_range.get("start_line") == EXPECTED_START_LINE
 
 
 def test_normalize_occurrence_missing_symbol() -> None:
     """Verify occurrence without symbol returns None."""
     raw = {"symbol_roles": 1}
 
-    result = _normalize_occurrence(raw)
+    result = normalize_occurrence(raw)
 
     assert result is None
 
@@ -100,7 +102,7 @@ def test_normalize_occurrence_empty_symbol() -> None:
     """Verify occurrence with empty symbol returns None."""
     raw = {"symbol": ""}
 
-    result = _normalize_occurrence(raw)
+    result = normalize_occurrence(raw)
 
     assert result is None
 
@@ -109,7 +111,7 @@ def test_normalize_occurrence_invalid_symbol_roles() -> None:
     """Verify invalid symbol_roles is handled."""
     raw = {"symbol": "test#sym", "symbol_roles": "invalid"}
 
-    result = _normalize_occurrence(raw)
+    result = normalize_occurrence(raw)
 
     assert result is not None
     assert result.get("symbol_roles") is None
@@ -117,10 +119,10 @@ def test_normalize_occurrence_invalid_symbol_roles() -> None:
 
 def test_normalize_occurrence_non_mapping() -> None:
     """Verify non-mapping input returns None."""
-    result = _normalize_occurrence("not a mapping")
+    result = normalize_occurrence("not a mapping")
     assert result is None
 
-    result = _normalize_occurrence(None)
+    result = normalize_occurrence(None)
     assert result is None
 
 
@@ -128,7 +130,7 @@ def test_normalize_occurrence_without_range() -> None:
     """Verify occurrence without range is valid."""
     raw = {"symbol": "test#sym"}
 
-    result = _normalize_occurrence(raw)
+    result = normalize_occurrence(raw)
 
     assert result is not None
     assert result.get("symbol") == "test#sym"
@@ -174,6 +176,9 @@ def test_normalize_scip_document_empty_occurrences() -> None:
     assert result is None
 
 
+EXPECTED_OCCURRENCES_COUNT = 2
+
+
 def test_normalize_scip_document_filters_invalid_occurrences() -> None:
     """Verify invalid occurrences are filtered out."""
     raw = {
@@ -190,7 +195,7 @@ def test_normalize_scip_document_filters_invalid_occurrences() -> None:
     assert result is not None
     result_occurrences = result.get("occurrences")
     assert result_occurrences is not None
-    assert len(result_occurrences) == 2
+    assert len(result_occurrences) == EXPECTED_OCCURRENCES_COUNT
 
 
 def test_normalize_scip_document_normalizes_path() -> None:
@@ -253,6 +258,10 @@ def test_validate_scip_document_missing_occurrence_symbol() -> None:
 # =============================================================================
 
 
+EXPECTED_DURATION = 1.5
+EXPECTED_CALL_DURATION = 1.0
+
+
 def test_normalize_pytest_entry_valid() -> None:
     """Verify valid entry is normalized."""
     raw = {
@@ -260,8 +269,8 @@ def test_normalize_pytest_entry_valid() -> None:
         "outcome": "passed",
         "status": "passed",
         "keywords": {"slow": True, "fast": False},
-        "duration": 1.5,
-        "call": {"duration": 1.0},
+        "duration": EXPECTED_DURATION,
+        "call": {"duration": EXPECTED_CALL_DURATION},
     }
 
     result = normalize_pytest_entry(raw)
@@ -270,10 +279,10 @@ def test_normalize_pytest_entry_valid() -> None:
     assert result.get("nodeid") == "tests/test_sample.py::test_func"
     assert result.get("outcome") == "passed"
     assert result.get("keywords") == ["slow"]  # Only truthy values, sorted
-    assert result.get("duration") == 1.5
+    assert result.get("duration") == EXPECTED_DURATION
     result_call = result.get("call")
     assert result_call is not None
-    assert result_call.get("duration") == 1.0
+    assert result_call.get("duration") == EXPECTED_CALL_DURATION
 
 
 def test_normalize_pytest_entry_missing_nodeid() -> None:
@@ -314,7 +323,7 @@ def test_normalize_pytest_entry_duration_as_string() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result.get("duration") == 1.5
+    assert result.get("duration") == EXPECTED_DURATION
 
 
 def test_normalize_pytest_entry_invalid_duration() -> None:
