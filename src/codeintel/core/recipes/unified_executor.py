@@ -7,7 +7,7 @@ The UnifiedRecipeExecutor coordinates execution across:
 - Ingestion plugins (via ingestion runtime)
 - Graph plugins (via graph runtime)
 - Analytics plugins (via analytics runtime)
-- Pipeline steps (via step registry)
+- Export operations (via export handlers)
 """
 
 from __future__ import annotations
@@ -293,8 +293,8 @@ class UnifiedRecipeExecutor:
                 result = _execute_graphs_stage(stage, context)
             elif stage.module == "analytics":
                 result = _execute_analytics_stage(stage, context)
-            elif stage.module == "pipeline":
-                result = _execute_pipeline_stage(stage, context)
+            elif stage.module == "export":
+                result = _execute_export_stage(stage, context)
             else:
                 result = _create_skip_result(stage, "Unknown module")
 
@@ -391,16 +391,16 @@ def _execute_analytics_stage(
     return _create_placeholder_result(stage, "analytics")
 
 
-def _execute_pipeline_stage(
+def _execute_export_stage(
     stage: UnifiedStage,
     context: UnifiedExecutorContext,
 ) -> UnifiedStageResult:
-    """Execute a pipeline step stage.
+    """Execute an export stage.
 
     Parameters
     ----------
     stage
-        Pipeline stage to execute.
+        Export stage to execute.
     context
         Execution context.
 
@@ -409,9 +409,9 @@ def _execute_pipeline_stage(
     UnifiedStageResult
         Stage result.
     """
-    # Placeholder - actual implementation would delegate to step registry
-    log.debug("pipeline_stage context.snapshot=%s", context.snapshot)
-    return _create_placeholder_result(stage, "pipeline")
+    # Placeholder - actual implementation would delegate to export operations
+    log.debug("export_stage context.snapshot=%s", context.snapshot)
+    return _create_placeholder_result(stage, "export")
 
 
 def _create_placeholder_result(

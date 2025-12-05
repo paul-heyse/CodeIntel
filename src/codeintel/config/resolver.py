@@ -69,7 +69,7 @@ def resolve_tools_config(
     '/usr/bin/git'
     """
     # Start with default values from ToolsConfig
-    default_config = ToolsConfig()
+    default_config = ToolsConfig.default()
     data = base.model_dump() if base is not None else default_config.model_dump()
     env_map = {
         "CODEINTEL_SCIP_PYTHON_BIN": "scip_python_bin",

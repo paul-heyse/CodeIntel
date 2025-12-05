@@ -12,14 +12,14 @@ All plugins implement the TargetPlugin protocol for the build system.
 
 from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
 from codeintel.graphs.plugins.builders.cfg_dfg import CfgDfgPlugin
-from codeintel.graphs.plugins.builders.goid import GoidPlugin
+from codeintel.graphs.plugins.builders.goid import GoidBuilderPlugin
 from codeintel.graphs.plugins.builders.import_graph import ImportGraphPlugin
 from codeintel.graphs.plugins.builders.symbol_uses import SymbolUsesPlugin, build_scip_candidates
 
 __all__ = [
     "CallGraphPlugin",
     "CfgDfgPlugin",
-    "GoidPlugin",
+    "GoidBuilderPlugin",
     "ImportGraphPlugin",
     "SymbolUsesPlugin",
     "build_scip_candidates",

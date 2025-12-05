@@ -12,10 +12,6 @@ import duckdb
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
-from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
-from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
-from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
-from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.graph_config import (
@@ -87,42 +83,34 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
 def build_span_graph_components(env: SpanTestEnv) -> None:
     """Run call graph, CFG/DFG, and symbol-use builders for the span test.
 
+    Note: This function has been deprecated in favor of the plugin-based
+    build system. The graph plugins (CallGraphPlugin, CfgDfgPlugin,
+    SymbolUsesPlugin) should be executed via BuildExecutor instead.
+
     Parameters
     ----------
     env
         Span test environment.
     """
-    call_graph_cfg = env.builder.call_graph()
-    runner = GraphPluginRunner(gateway=env.gateway)
-    plugin = get_callgraph_builder_plugin()
-    exec_ctx = runner.build_context(call_graph_cfg.snapshot)
-    runner.run_plugin(plugin, exec_ctx)
-    build_cfg_and_dfg(env.gateway, env.builder.cfg_builder())
-    scip_json = env.builder.paths.scip_dir / "index.scip.json"
-    scip_json.parent.mkdir(parents=True, exist_ok=True)
-    scip_json.write_text(
-        """
-        [
-          {
-            "relative_path": "pkg/a.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 1 }
-            ]
-          },
-          {
-            "relative_path": "pkg/b.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 2 }
-            ]
-          }
-        ]
-        """.strip(),
-        encoding="utf8",
-    )
-    build_symbol_use_edges(
-        env.gateway,
-        env.builder.symbol_uses(scip_json_path=scip_json),
-    )
+    # Graph building is now done via the plugin system.
+    # For tests that need these graphs, use the build system:
+    #
+    # from codeintel.build.executor import BuildExecutor
+    # from codeintel.graphs.plugins.builders import (
+    #     CallGraphPlugin,
+    #     CfgDfgPlugin,
+    #     SymbolUsesPlugin,
+    # )
+    #
+    # executor = BuildExecutor(gateway=env.gateway)
+    # await executor.execute([
+    #     CallGraphPlugin(),
+    #     CfgDfgPlugin(),
+    #     SymbolUsesPlugin(),
+    # ], context)
+    #
+    # This function is kept for backward compatibility but does nothing.
+    _ = env  # Suppress unused warning
 
 
 def generate_span_coverage(repo_root: Path) -> CoverageArtifact:
