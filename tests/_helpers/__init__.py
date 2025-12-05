@@ -54,6 +54,7 @@ from tests._helpers.harnesses import (
     assert_result,
     assert_validation,
 )
+from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
     build_callgraph_fixture_repo,
     docs_views_ready_gateway,
@@ -120,6 +121,8 @@ __all__ = [
     "TestContext",
     "TestScenario",
     "ValidationResultAssertions",
+    "assert_all_frozen",
+    "assert_frozen",
     "assert_ingest_result",
     "assert_result",
     "assert_validation",

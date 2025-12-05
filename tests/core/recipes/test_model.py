@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from codeintel.core.recipes.model import (
     BaseRecipe,
     BaseRecipeOptions,
@@ -26,6 +24,7 @@ from codeintel.core.recipes.model import (
     RecipeScope,
     RecipeStage,
 )
+from tests._helpers import assert_frozen
 
 DEFAULT_MAX_PARALLEL = BaseRecipeOptions().max_parallel
 CUSTOM_MAX_PARALLEL = 8
@@ -69,8 +68,7 @@ def test_base_recipe_stage_is_frozen() -> None:
     """Verify BaseRecipeStage is immutable."""
     stage = BaseRecipeStage(name="test", plugins=())
 
-    with pytest.raises(AttributeError):
-        stage.name = "modified"  # type: ignore[misc]
+    assert_frozen(stage, "name", "modified")
 
 
 # =============================================================================

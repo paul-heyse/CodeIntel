@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from codeintel.config.models import ToolsConfig
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_telemetry
 from codeintel.core.execution.timing import utc_now
@@ -56,7 +57,6 @@ from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
-    from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
     from codeintel.core.execution import RunContext
     from codeintel.ingestion.core.runs import IngestRunSink
@@ -128,10 +128,10 @@ class RecipeExecutorContext(BaseExecutorContext):
         Optional sink for recording run metrics.
     """
 
-    paths: BuildPaths = field(default=None)  # type: ignore[assignment]
-    tools: ToolsConfig = field(default=None)  # type: ignore[assignment]
-    code_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
-    config_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
+    paths: BuildPaths | None = None
+    tools: ToolsConfig | None = None
+    code_profile: ScanProfile | None = None
+    config_profile: ScanProfile | None = None
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
     change_tracker: ChangeTracker | None = None
@@ -563,11 +563,14 @@ class RecipeExecutor:
         # Build resource registry with available providers
         resources = self._build_resource_registry()
 
+        # Use default tools config if not provided
+        tools = self._tools if self._tools is not None else ToolsConfig.default()
+
         return IngestExecutionContext(
             gateway=self._gateway,
             snapshot=self._snapshot,
             paths=self._paths,
-            tools=self._tools,
+            tools=tools,
             code_profile=self._code_profile,
             config_profile=self._config_profile,
             resources=resources,
@@ -587,35 +590,37 @@ class RecipeExecutor:
         """
         registry = ResourceRegistry()
 
-        # Register tracker provider if we have tracker state
-        tracker_config = TrackerConfig(
-            scratch=self._config.scratch,
-            profile=self._code_profile,
-            full_rebuild=False,
-        )
-        tracker_provider = TrackerProvider(
-            gateway=self._gateway,
-            snapshot=self._snapshot,
-            config=tracker_config,
-        )
-        registry.register(TrackerProvider, tracker_provider)
+        # Register tracker provider if we have tracker state and code profile
+        if self._code_profile is not None:
+            tracker_config = TrackerConfig(
+                scratch=self._config.scratch,
+                profile=self._code_profile,
+                full_rebuild=False,
+            )
+            tracker_provider = TrackerProvider(
+                gateway=self._gateway,
+                snapshot=self._snapshot,
+                config=tracker_config,
+            )
+            registry.register(TrackerProvider, tracker_provider)
 
-        # Register tools provider with config and cache dir
-        tools_provider = ToolsProvider(
-            tools_config=self._tools,
-            cache_dir=self._paths.tool_cache,
-            runner=self._tool_runner,
-            service=self._tool_service,
-        )
-        registry.register(ToolsProvider, tools_provider)
+            # Register module provider for module access
+            module_provider = ModuleProvider(
+                gateway=self._gateway,
+                snapshot=self._snapshot,
+                profile=self._code_profile,
+            )
+            registry.register(ModuleProvider, module_provider)
 
-        # Register module provider for module access
-        module_provider = ModuleProvider(
-            gateway=self._gateway,
-            snapshot=self._snapshot,
-            profile=self._code_profile,
-        )
-        registry.register(ModuleProvider, module_provider)
+        # Register tools provider with config and cache dir if available
+        if self._tools is not None and self._paths is not None:
+            tools_provider = ToolsProvider(
+                tools_config=self._tools,
+                cache_dir=self._paths.tool_cache,
+                runner=self._tool_runner,
+                service=self._tool_service,
+            )
+            registry.register(ToolsProvider, tools_provider)
 
         return registry
 

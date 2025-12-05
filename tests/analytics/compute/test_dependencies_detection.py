@@ -9,7 +9,6 @@ Testing Charter Compliance:
 from __future__ import annotations
 
 import ast
-import dataclasses
 from pathlib import Path
 
 import pytest
@@ -31,6 +30,7 @@ from codeintel.analytics.compute.dependencies.detection import (
     build_alias_maps,
     group_calls_by_library,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Test Constants
@@ -653,6 +653,5 @@ class TestDependencyCallDataclass:
             severity=None,
             criticality=None,
         )
-        # Should raise FrozenInstanceError
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            call.library = "changed"  # type: ignore[misc]
+        # Should raise AttributeError (FrozenInstanceError is a subclass)
+        assert_frozen(call, "library", "changed")

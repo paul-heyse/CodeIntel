@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from codeintel.analytics.core.protocol import PluginMetadata
 from codeintel.analytics.plugins.groups import (
     ALL_GROUPS,
@@ -22,6 +20,7 @@ from codeintel.analytics.plugins.groups import (
     PluginGroup,
 )
 from codeintel.analytics.plugins.groups.protocol import GroupRegistry
+from tests._helpers import assert_frozen
 
 EXPECTED_GROUPS_COUNT = 3
 DEPENDENCY_ORDER_EXPECTED = 2
@@ -130,8 +129,7 @@ def test_plugin_group_defaults() -> None:
 def test_plugin_group_immutable() -> None:
     """PluginGroup is frozen/immutable."""
     group = PluginGroup(name="test")
-    with pytest.raises(AttributeError):
-        group.name = "other"  # type: ignore[misc]
+    assert_frozen(group, "name", "other")
 
 
 def test_plugin_group_get_plugin_names() -> None:

@@ -21,6 +21,7 @@ from codeintel.analytics.adapters.functions import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -240,8 +241,7 @@ def test_function_goid_is_frozen() -> None:
     """FunctionGoid is immutable."""
     row = _make_goid_row(GoidSeedParams(TEST_GOID_123, "module.func"))
     goid = FunctionGoid.from_row(row)
-    with pytest.raises(AttributeError):
-        goid.goid = 456  # type: ignore[misc]
+    assert_frozen(goid, "goid", 456)
 
 
 # =============================================================================

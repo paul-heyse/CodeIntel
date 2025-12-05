@@ -39,6 +39,12 @@ from tests._helpers.fakes.graph_contexts import (
     create_graph_executor_env,
     create_graph_telemetry_env,
 )
+from tests._helpers.fakes.graph_runtimes import (
+    MockGraphRuntime,
+    create_mock_runtime_all_graphs,
+    create_mock_runtime_with_call_graph,
+    create_mock_runtime_with_import_graph,
+)
 from tests._helpers.gateway import gateway_with_macros, open_ingestion_gateway_with_macros
 from tests._helpers.seeds.golden_graphs import (
     GOLDEN_COMMIT,
@@ -225,6 +231,72 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
     return make_snapshot(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
 
 
+# ---------------------------------------------------------------------------
+# Mock Graph Runtime Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_graph_runtime() -> MockGraphRuntime:
+    """Provide a basic MockGraphRuntime for testing.
+
+    Returns an empty MockGraphRuntime that can be customized per-test.
+    For pre-populated runtimes, use the more specific fixtures.
+
+    Returns
+    -------
+    MockGraphRuntime
+        Empty mock runtime for testing.
+    """
+    return MockGraphRuntime()
+
+
+@pytest.fixture
+def mock_runtime_with_call_graph() -> MockGraphRuntime:
+    """Provide a MockGraphRuntime with a populated call graph.
+
+    The call graph contains a simple chain: func_a -> func_b -> func_c.
+    Use this for tests that need basic call graph operations.
+
+    Returns
+    -------
+    MockGraphRuntime
+        Mock runtime with call graph.
+    """
+    return create_mock_runtime_with_call_graph()
+
+
+@pytest.fixture
+def mock_runtime_with_import_graph() -> MockGraphRuntime:
+    """Provide a MockGraphRuntime with a populated import graph.
+
+    The import graph contains a simple chain: mod_a -> mod_b -> mod_c.
+    Use this for tests that need basic import graph operations.
+
+    Returns
+    -------
+    MockGraphRuntime
+        Mock runtime with import graph.
+    """
+    return create_mock_runtime_with_import_graph()
+
+
+@pytest.fixture
+def mock_runtime_all_graphs() -> MockGraphRuntime:
+    """Provide a MockGraphRuntime with all graph types populated.
+
+    Includes call_graph, import_graph, symbol_module_graph,
+    symbol_function_graph, config_module_bipartite, test_function_bipartite,
+    and cfg_graph. Use for comprehensive integration testing.
+
+    Returns
+    -------
+    MockGraphRuntime
+        Mock runtime with all graphs populated.
+    """
+    return create_mock_runtime_all_graphs()
+
+
 __all__ = [
     "golden_gateway",
     "golden_snapshot",
@@ -233,4 +305,8 @@ __all__ = [
     "graph_plugin_context",
     "graph_snapshot",
     "graph_telemetry_env",
+    "mock_graph_runtime",
+    "mock_runtime_all_graphs",
+    "mock_runtime_with_call_graph",
+    "mock_runtime_with_import_graph",
 ]

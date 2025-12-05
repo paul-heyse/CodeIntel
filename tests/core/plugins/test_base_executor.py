@@ -13,10 +13,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+from codeintel.analytics.core.executor import PluginExecutor
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.execution.context import RunContext
 from codeintel.core.execution.telemetry import RuntimeTelemetry, TelemetryConfig
 from codeintel.core.plugins.execution.context import PluginExecutionContext, PluginScratch
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
@@ -30,6 +33,7 @@ from codeintel.core.plugins.types.protocol import (
 )
 from codeintel.core.plugins.types.report import BaseExecutionReport
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
+from codeintel.graphs.runtime.executor import GraphExecutorContext
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import gateway_with_macros
 
@@ -323,10 +327,6 @@ def test_base_executor_context_effective_run_id_from_run_context(
     mock_snapshot
         Test snapshot.
     """
-    from unittest.mock import MagicMock
-
-    from codeintel.core.execution.context import RunContext
-
     mock_gw = MagicMock()
     run_ctx = RunContext(
         run_id="run-from-context",
@@ -352,8 +352,6 @@ def test_base_executor_context_effective_run_id_empty_when_no_context(
     mock_snapshot
         Test snapshot.
     """
-    from unittest.mock import MagicMock
-
     mock_gw = MagicMock()
     ctx = BaseExecutorContext(
         gateway=mock_gw,
@@ -519,8 +517,6 @@ def test_base_execution_report_status_failed_with_failures() -> None:
 
 def test_analytics_executor_uses_base_infrastructure() -> None:
     """Verify analytics executor properly extends base infrastructure."""
-    from codeintel.analytics.core.executor import PluginExecutor
-
     executor = PluginExecutor()
     # Verify base properties are accessible
     assert executor.policy is not None
@@ -529,8 +525,6 @@ def test_analytics_executor_uses_base_infrastructure() -> None:
 
 def test_graphs_executor_uses_base_infrastructure() -> None:
     """Verify graphs execution uses base infrastructure."""
-    from codeintel.graphs.runtime.executor import GraphExecutorContext
-
     # Verify the executor context extends base
     assert issubclass(GraphExecutorContext, BaseExecutorContext)
 

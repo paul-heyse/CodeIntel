@@ -8,12 +8,11 @@ This module tests:
 
 from __future__ import annotations
 
-import pytest
-
 from codeintel.analytics.functions.function_effects import (
     EffectAnalysis,
     FunctionEffectsInputs,
 )
+from tests._helpers import assert_frozen
 
 
 def test_effect_analysis_creation() -> None:
@@ -199,8 +198,7 @@ def test_effect_analysis_immutable() -> None:
         evidence={},
     )
 
-    with pytest.raises(AttributeError):
-        analysis.uses_io = True  # type: ignore[misc]
+    assert_frozen(analysis, "uses_io", new_value=True)
 
 
 def test_effect_analysis_evidence_structure() -> None:
@@ -256,8 +254,7 @@ def test_function_effects_inputs_immutable() -> None:
     """FunctionEffectsInputs is frozen/immutable."""
     inputs = FunctionEffectsInputs()
 
-    with pytest.raises(AttributeError):
-        inputs.ast_map = {}  # type: ignore[misc]
+    assert_frozen(inputs, "ast_map", {})
 
 
 def test_effect_analysis_direct_effectful_all_false() -> None:

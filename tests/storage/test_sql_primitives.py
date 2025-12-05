@@ -25,6 +25,7 @@ from codeintel.storage.sql.primitives import (
     safe_macro_call,
     validate_identifier,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Exception Classes Tests
@@ -153,8 +154,7 @@ def test_safe_table_raises_on_empty_name() -> None:
 def test_safe_table_is_frozen() -> None:
     """Verify SafeTable is immutable."""
     table = SafeTable("core.modules")
-    with pytest.raises(AttributeError):
-        table.name = "other"  # type: ignore[misc]
+    assert_frozen(table, "name", "other")
 
 
 # =============================================================================
@@ -194,8 +194,7 @@ def test_safe_column_rejects_invalid_names() -> None:
 def test_safe_column_is_frozen() -> None:
     """Verify SafeColumn is immutable."""
     col = SafeColumn("repo")
-    with pytest.raises(AttributeError):
-        col.name = "other"  # type: ignore[misc]
+    assert_frozen(col, "name", "other")
 
 
 # =============================================================================
@@ -461,8 +460,7 @@ def test_prepared_statements_creates_with_all_fields() -> None:
 def test_prepared_statements_is_frozen() -> None:
     """Verify PreparedStatements is immutable."""
     stmt = PreparedStatements(insert_sql="INSERT")
-    with pytest.raises(AttributeError):
-        stmt.insert_sql = "OTHER"  # type: ignore[misc]
+    assert_frozen(stmt, "insert_sql", "OTHER")
 
 
 # =============================================================================

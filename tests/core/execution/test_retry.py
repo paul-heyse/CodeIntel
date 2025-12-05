@@ -11,8 +11,10 @@ This module tests:
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
-from tenacity import Retrying, wait_exponential, wait_random_exponential
+from tenacity import AsyncRetrying, Retrying, wait_exponential, wait_random_exponential
 
 from codeintel.core.execution.errors import PLUGIN_CATCHABLE_ERRORS
 from codeintel.core.execution.retry import (
@@ -25,6 +27,7 @@ from codeintel.core.execution.retry import (
     with_retry,
     with_retry_async,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # RetryPolicy Construction Tests
@@ -69,8 +72,7 @@ def test_retry_policy_is_frozen() -> None:
     """Verify RetryPolicy is immutable."""
     policy = RetryPolicy()
 
-    with pytest.raises(AttributeError):
-        policy.max_attempts = 10  # type: ignore[misc]
+    assert_frozen(policy, "max_attempts", 10)
 
 
 # =============================================================================
@@ -81,7 +83,7 @@ def test_retry_policy_is_frozen() -> None:
 def test_get_wait_strategy_with_jitter() -> None:
     """Verify wait strategy with jitter enabled."""
     policy = RetryPolicy(use_jitter=True)
-    strategy = policy._get_wait_strategy()
+    strategy = policy.get_wait_strategy()
 
     assert isinstance(strategy, wait_random_exponential)
 
@@ -89,7 +91,7 @@ def test_get_wait_strategy_with_jitter() -> None:
 def test_get_wait_strategy_without_jitter() -> None:
     """Verify wait strategy without jitter."""
     policy = RetryPolicy(use_jitter=False)
-    strategy = policy._get_wait_strategy()
+    strategy = policy.get_wait_strategy()
 
     assert isinstance(strategy, wait_exponential)
 
@@ -102,7 +104,7 @@ def test_get_wait_strategy_without_jitter() -> None:
 def test_get_stop_strategy() -> None:
     """Verify stop strategy combines attempts and delay."""
     policy = RetryPolicy(max_attempts=3, max_delay_s=30.0)
-    strategy = policy._get_stop_strategy()
+    strategy = policy.get_stop_strategy()
 
     # Strategy should be a combination (stop_after_attempt | stop_after_delay)
     # We can't easily inspect the combined strategy, but we can verify it works
@@ -123,7 +125,7 @@ def test_create_retrying_returns_retrying() -> None:
 
 
 def test_create_retrying_respects_max_attempts() -> None:
-    """Verify retrying respects max_attempts limit."""
+    """Verify retrying respects max_attempts limit after exhaustion."""
     call_count = 0
 
     policy = RetryPolicy(
@@ -134,12 +136,19 @@ def test_create_retrying_respects_max_attempts() -> None:
         backoff_multiplier=0.01,  # Fast backoff for tests
     )
 
-    with pytest.raises(ValueError):
+    def always_fails() -> None:
+        nonlocal call_count
+        call_count += 1
+        msg = "Always fails"
+        raise ValueError(msg)
+
+    def run_retry_loop() -> None:
         for attempt in policy.create_retrying():
             with attempt:
-                call_count += 1
-                msg = "Always fails"
-                raise ValueError(msg)
+                always_fails()
+
+    with pytest.raises(ValueError, match="Always fails"):
+        run_retry_loop()
 
     assert call_count == 3
 
@@ -157,7 +166,7 @@ def test_create_retrying_success_on_first_try() -> None:
 
 
 def test_create_retrying_success_after_retry() -> None:
-    """Verify retrying succeeds after transient failure."""
+    """Verify retrying succeeds after transient failure on first attempt."""
     call_count = 0
 
     policy = RetryPolicy(
@@ -168,12 +177,16 @@ def test_create_retrying_success_after_retry() -> None:
         backoff_multiplier=0.01,
     )
 
+    def transient_failure() -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            msg = "Transient failure"
+            raise ValueError(msg)
+
     for attempt in policy.create_retrying():
         with attempt:
-            call_count += 1
-            if call_count < 2:
-                msg = "Transient failure"
-                raise ValueError(msg)
+            transient_failure()
 
     assert call_count == 2
 
@@ -185,8 +198,6 @@ def test_create_retrying_success_after_retry() -> None:
 
 def test_create_async_retrying_returns_async_retrying() -> None:
     """Verify create_async_retrying returns an AsyncRetrying instance."""
-    from tenacity import AsyncRetrying
-
     policy = RetryPolicy()
     async_retrying = policy.create_async_retrying()
 
@@ -378,8 +389,6 @@ def test_with_retry_raises_after_exhaustion() -> None:
 
 def test_with_retry_async_is_coroutine_function() -> None:
     """Verify with_retry_async is available as an async helper."""
-    import inspect
-
     assert inspect.iscoroutinefunction(with_retry_async)
 
 

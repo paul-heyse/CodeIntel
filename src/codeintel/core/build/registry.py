@@ -248,7 +248,11 @@ DATA_MODELS_TARGET = OutputTarget(
     name="data_models",
     module="analytics",
     plugin="data_models",
-    tables=("analytics.data_models", "analytics.data_model_fields", "analytics.data_model_relationships"),
+    tables=(
+        "analytics.data_models",
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+    ),
     dependencies=("goids", "ast"),
     description="Data model extraction (dataclasses, Pydantic, etc.).",
 )

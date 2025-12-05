@@ -6,8 +6,6 @@ and extracting profile features for classification.
 
 from __future__ import annotations
 
-import pytest
-
 from codeintel.analytics.compute.profiles.aggregation import (
     FunctionMetricInput,
     ProfileAggregates,
@@ -28,6 +26,7 @@ from codeintel.analytics.compute.profiles.features import (
     ProfileFeatures,
     extract_profile_features,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -424,8 +423,7 @@ def test_features_is_frozen() -> None:
         typedness_category="typed",
         quality_score=1.0,
     )
-    with pytest.raises(AttributeError):
-        features.quality_score = 0.5  # type: ignore[misc]
+    assert_frozen(features, "quality_score", 0.5)
 
 
 # =============================================================================

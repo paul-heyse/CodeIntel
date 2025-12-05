@@ -143,7 +143,7 @@ class FakeCatalogProvider:
         # that compute_function_contracts uses
         return cast("FunctionCatalog", self._catalog)
 
-    def urn_for_goid(self, _goid: int) -> str | None:  # noqa: PLR6301
+    def urn_for_goid(self, _goid: int) -> str | None:
         """Return URN for a GOID (stub implementation).
 
         Parameters
@@ -158,7 +158,7 @@ class FakeCatalogProvider:
         """
         return None
 
-    def lookup_goid(  # noqa: PLR6301
+    def lookup_goid(
         self,
         _rel_path: str,
         _start_line: int,

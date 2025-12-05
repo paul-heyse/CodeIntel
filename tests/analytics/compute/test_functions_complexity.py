@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from codeintel.analytics.compute.functions.complexity import (
     COMPLEXITY_LOW,
     COMPLEXITY_MEDIUM,
     ComplexityMetrics,
     compute_complexity,
 )
+from tests._helpers import assert_frozen
 
 # Test constants
 SIMPLE_FUNC_COMPLEXITY = 1
@@ -79,8 +78,7 @@ class TestComplexityMetrics:
             is_generator=False,
             complexity_bucket="low",
         )
-        with pytest.raises(AttributeError):
-            metrics.cyclomatic = 5  # type: ignore[misc]
+        assert_frozen(metrics, "cyclomatic", 5)
 
 
 class TestComputeComplexityBasic:

@@ -17,8 +17,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
-import pytest
-
 from codeintel.analytics.core.base import BasePlugin
 from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.analytics.core.protocol import PluginResult, PluginStage, ValidationResult
@@ -31,6 +29,7 @@ from codeintel.analytics.plugins.middleware.tracing import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 # Test constants
@@ -67,7 +66,7 @@ class TracingTestPlugin(BasePlugin):
 
     _should_succeed: bool = True
 
-    def compute(  # noqa: PLR6301
+    def compute(
         self,
         ctx: PluginExecutionContext,
     ) -> Mapping[str, int] | None:
@@ -86,7 +85,7 @@ class TracingTestPlugin(BasePlugin):
         _ = ctx  # Required by interface
         return {}
 
-    def validate_inputs(  # noqa: PLR6301
+    def validate_inputs(
         self,
         ctx: PluginExecutionContext,
     ) -> ValidationResult:
@@ -190,8 +189,7 @@ class TestSpanContext:
             trace_id=TEST_TRACE_ID,
             span_id=TEST_SPAN_ID,
         )
-        with pytest.raises(AttributeError):
-            ctx.trace_id = "new_id"  # type: ignore[misc]
+        assert_frozen(ctx, "trace_id", "new_id")
 
 
 class TestSpan:

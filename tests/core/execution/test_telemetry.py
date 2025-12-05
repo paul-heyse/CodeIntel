@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from codeintel.core.execution.telemetry import (
     DEFAULT_DURATION_BUCKETS,
     OTEL_AVAILABLE,
@@ -22,6 +20,7 @@ from codeintel.core.execution.telemetry import (
     TelemetryConfig,
     get_runtime_telemetry,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # PluginSpan Tests
@@ -166,8 +165,7 @@ def test_telemetry_config_is_frozen() -> None:
     """Verify TelemetryConfig is immutable."""
     config = TelemetryConfig()
 
-    with pytest.raises(AttributeError):
-        config.service_name = "modified"  # type: ignore[misc]
+    assert_frozen(config, "service_name", "modified")
 
 
 # =============================================================================

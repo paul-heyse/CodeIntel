@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.repositories.graphs import GraphRepository
+from tests._helpers import assert_frozen
 
 # Test constants
 EXPECTED_COUNT_1 = 1
@@ -120,8 +119,7 @@ def test_graph_repository_is_frozen(fresh_gateway: StorageGateway) -> None:
         repo="test/repo",
         commit="abc123",
     )
-    with pytest.raises(AttributeError):
-        repo.repo = "other"  # type: ignore[misc]
+    assert_frozen(repo, "repo", "other")
 
 
 def test_graph_repository_inherits_base_repository(

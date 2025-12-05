@@ -28,6 +28,7 @@ from codeintel.core.plugins.types.protocol import (
     ValidationResult,
 )
 from codeintel.core.plugins.types.result import PluginResult
+from tests._helpers import assert_frozen
 
 MIN_ROWS_REQUIRED = 10
 RESOURCE_MAX_RUNTIME_MS = 5000
@@ -59,8 +60,7 @@ def test_plugin_capability_is_frozen() -> None:
     """Verify PluginCapability is immutable (frozen dataclass)."""
     capability = PluginCapability(name="test.capability")
 
-    with pytest.raises(AttributeError):
-        capability.name = "modified"  # type: ignore[misc]
+    assert_frozen(capability, "name", "modified")
 
 
 # =============================================================================
@@ -107,8 +107,7 @@ def test_plugin_input_spec_is_frozen() -> None:
     """Verify PluginInputSpec is immutable."""
     spec = PluginInputSpec(name="config", type_ref="AppConfig")
 
-    with pytest.raises(AttributeError):
-        spec.name = "modified"  # type: ignore[misc]
+    assert_frozen(spec, "name", "modified")
 
 
 # =============================================================================
@@ -225,8 +224,7 @@ def test_validation_result_is_frozen() -> None:
     """Verify ValidationResult is immutable."""
     result = ValidationResult.success()
 
-    with pytest.raises(AttributeError):
-        result.valid = False  # type: ignore[misc]
+    assert_frozen(result, "valid", new_value=False)
 
 
 # =============================================================================
@@ -358,8 +356,7 @@ def test_plugin_metadata_is_frozen() -> None:
         stage="function",
     )
 
-    with pytest.raises(AttributeError):
-        metadata.name = "modified"  # type: ignore[misc]
+    assert_frozen(metadata, "name", "modified")
 
 
 # =============================================================================

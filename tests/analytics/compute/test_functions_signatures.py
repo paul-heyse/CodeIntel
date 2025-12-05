@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from codeintel.analytics.compute.functions.signatures import (
     FunctionSignature,
     ParameterInfo,
     extract_signature,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -192,8 +191,7 @@ def test_parameter_is_frozen() -> None:
         has_default=False,
         kind="positional_or_keyword",
     )
-    with pytest.raises(AttributeError):
-        param.name = "y"  # type: ignore[misc]
+    assert_frozen(param, "name", "y")
 
 
 # =============================================================================
@@ -235,8 +233,7 @@ def test_signature_is_frozen() -> None:
         decorators=(),
         docstring=None,
     )
-    with pytest.raises(AttributeError):
-        sig.name = "other"  # type: ignore[misc]
+    assert_frozen(sig, "name", "other")
 
 
 # =============================================================================

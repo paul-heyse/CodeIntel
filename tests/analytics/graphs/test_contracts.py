@@ -31,6 +31,7 @@ from codeintel.analytics.graphs.contracts import (
     table_not_empty_checker,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.gateway import gateway_with_macros
 
@@ -123,8 +124,7 @@ def test_plugin_contract_result_soft_failed() -> None:
 def test_plugin_contract_result_immutable() -> None:
     """Contract result is immutable."""
     result = PluginContractResult(name="test", status="passed")
-    with pytest.raises(AttributeError):
-        result.status = "failed"  # type: ignore[misc]
+    assert_frozen(result, "status", "failed")
 
 
 def test_snapshot_key_creation() -> None:
@@ -137,8 +137,7 @@ def test_snapshot_key_creation() -> None:
 def test_snapshot_key_immutable() -> None:
     """Snapshot key is immutable."""
     key = SnapshotKey(repo="test", commit="abc")
-    with pytest.raises(AttributeError):
-        key.repo = "other"  # type: ignore[misc]
+    assert_frozen(key, "repo", "other")
 
 
 def test_not_null_fraction_spec_creation() -> None:

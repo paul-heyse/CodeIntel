@@ -19,6 +19,7 @@ from codeintel.analytics.functions.function_contracts import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import gateway_with_macros
@@ -133,8 +134,7 @@ def test_condition_context_immutable() -> None:
         line=1,
         limit=5,
     )
-    with pytest.raises(AttributeError):
-        ctx.line = 20  # type: ignore[misc]
+    assert_frozen(ctx, "line", 20)
 
 
 def test_condition_context_with_none_line() -> None:

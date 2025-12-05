@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.core.build.targets import OutputTarget, TargetGraph
+from tests._helpers import assert_frozen
 
 
 class TestOutputTarget:
@@ -50,8 +51,7 @@ class TestOutputTarget:
             plugin="test_plugin",
             tables=("graph.test_table",),
         )
-        with pytest.raises(AttributeError):
-            target.name = "new_name"  # type: ignore[misc]
+        assert_frozen(target, "name", "new_name")
 
 
 class TestTargetGraph:

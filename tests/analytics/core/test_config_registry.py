@@ -24,6 +24,7 @@ from codeintel.analytics.core.config_registry import (
     reset_config_registry,
 )
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers import assert_frozen
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
 
@@ -109,8 +110,7 @@ class TestConfigPluginMapping:
             config_type=MockStepConfig,
             plugins=(TEST_PLUGIN_NAME,),
         )
-        with pytest.raises(AttributeError):
-            mapping.primary = TEST_PLUGIN_NAME  # type: ignore[misc]
+        assert_frozen(mapping, "primary", TEST_PLUGIN_NAME)
 
 
 class TestConfigRegistry:
@@ -340,5 +340,4 @@ class TestBaseStepConfig:
         """Verify config is immutable."""
         snapshot = make_snapshot(repo_root=Path("/test"))
         config = BaseStepConfig(snapshot=snapshot)
-        with pytest.raises(AttributeError):
-            config.snapshot = snapshot  # type: ignore[misc]
+        assert_frozen(config, "snapshot", snapshot)

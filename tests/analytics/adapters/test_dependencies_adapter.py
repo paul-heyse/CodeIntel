@@ -23,6 +23,7 @@ from codeintel.analytics.adapters.dependencies import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -296,8 +297,7 @@ def test_dependency_call_row_is_frozen() -> None:
     )
     row = _make_dependency_call_row(seed)
 
-    with pytest.raises(AttributeError):
-        row.library = "other"  # type: ignore[misc]
+    assert_frozen(row, "library", "other")
 
 
 # =============================================================================
@@ -380,8 +380,7 @@ def test_dependency_aggregate_row_is_frozen() -> None:
     )
     row = _make_dependency_aggregate_row(seed)
 
-    with pytest.raises(AttributeError):
-        row.library = "other"  # type: ignore[misc]
+    assert_frozen(row, "library", "other")
 
 
 # =============================================================================
