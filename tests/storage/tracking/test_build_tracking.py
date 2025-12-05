@@ -132,12 +132,16 @@ class TestOutputManifestOperations:
             )
             tracking.save_manifest(manifest)
 
-        deleted = tracking.delete_manifests("test-org/test-repo", "abc123")
-        # Note: rowcount may not always be accurate in DuckDB
-        assert deleted >= 0
+        # Verify manifests were created
+        manifests_before = tracking.list_manifests("test-org/test-repo", "abc123")
+        assert len(manifests_before) > 0
 
-        manifests = tracking.list_manifests("test-org/test-repo", "abc123")
-        assert len(manifests) == 0
+        # Delete all manifests
+        tracking.delete_manifests("test-org/test-repo", "abc123")
+
+        # Verify all manifests were deleted
+        manifests_after = tracking.list_manifests("test-org/test-repo", "abc123")
+        assert len(manifests_after) == 0
 
 
 class TestBuildRunOperations:

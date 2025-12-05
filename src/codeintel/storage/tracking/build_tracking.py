@@ -219,7 +219,7 @@ class BuildTracking:
             for row in results
         )
 
-    def delete_manifests(self, repo: str, commit: str) -> int:
+    def delete_manifests(self, repo: str, commit: str) -> None:
         """Delete all manifests for a repo/commit.
 
         Parameters
@@ -228,20 +228,14 @@ class BuildTracking:
             Repository slug.
         commit
             Commit SHA.
-
-        Returns
-        -------
-        int
-            Number of manifests deleted.
         """
-        result = self._con.execute(
+        self._con.execute(
             """
             DELETE FROM build.output_manifests
             WHERE repo = ? AND commit = ?
             """,
             [repo, commit],
         )
-        return result.rowcount if hasattr(result, "rowcount") else 0
 
     # =========================================================================
     # Run Tracking Operations
