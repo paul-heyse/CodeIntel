@@ -349,6 +349,8 @@ def _format_status_json(state: DatabaseState) -> dict[str, list[str]]:
 def _format_result_text(result: BuildResult) -> str:
     """Format build result as human-readable text.
 
+    Includes rich error messages with actionable hints when available.
+
     Parameters
     ----------
     result
@@ -361,10 +363,10 @@ def _format_result_text(result: BuildResult) -> str:
     """
     lines: list[str] = []
 
-    status_color = "succeeded" if result.success else "failed"
+    status_text = "succeeded" if result.success else "failed"
     lines.append("Build Complete")
     lines.append("=" * 50)
-    lines.append(f"Status: {status_color}")
+    lines.append(f"Status: {status_text}")
     lines.append(f"Run ID: {result.run_id}")
     lines.append(f"Duration: {result.duration_ms / 1000:.1f}s")
     lines.append("")
@@ -382,9 +384,22 @@ def _format_result_text(result: BuildResult) -> str:
     if result.failed_targets:
         lines.append(f"Failed: {len(result.failed_targets)} targets")
         lines.append(f"  ✗ {', '.join(result.failed_targets)}")
-        if result.error_summary:
-            lines.append(f"  Error: {result.error_summary}")
         lines.append("")
+
+        # Display rich error messages with actionable hints
+        if result.errors.has_errors:
+            lines.append("Error Details:")
+            lines.append("-" * 40)
+            for i, error in enumerate(result.errors.errors, 1):
+                lines.append(f"  {i}. {error.error_code}")
+                lines.append(f"     {error.user_message}")
+                if error.actionable_hint:
+                    lines.append(f"     Hint: {error.actionable_hint}")
+                lines.append("")
+        elif result.error_summary:
+            # Fallback to simple error summary
+            lines.append(f"  Error: {result.error_summary}")
+            lines.append("")
 
     return "\n".join(lines)
 

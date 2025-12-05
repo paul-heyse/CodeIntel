@@ -606,6 +606,411 @@ def compute_stages(targets: list[OutputTarget]) -> list[list[OutputTarget]]:
 
 ---
 
+## Config & Parameters Audit
+
+### Current State: 30+ Step Config Classes
+
+The codebase has accumulated many config dataclasses:
+
+**Ingestion Configs (8):**
+| Config Class | Fields Beyond snapshot/paths | Question |
+|--------------|------------------------------|----------|
+| `RepoScanStepConfig` | `tags_index_path`, `tool_runner` | Why not in OutputTarget? |
+| `ScipIngestStepConfig` | `binaries`, `scip_runner`, `artifact_writer` | Callables seem testability-only |
+| `CoverageIngestStepConfig` | `coverage_file`, `tool_runner` | File path could be in contract.artifacts |
+| `TestsIngestStepConfig` | `pytest_report_path` | Same - artifact path |
+| `TypingIngestStepConfig` | `tool_runner` | Tool is in resources |
+| `ConfigIngestStepConfig` | (just snapshot/paths) | **Empty - can be eliminated** |
+| `DocstringStepConfig` | (just snapshot/paths) | **Empty - can be eliminated** |
+
+**Graph Configs (10):**
+| Config Class | Fields Beyond snapshot/paths | Question |
+|--------------|------------------------------|----------|
+| `CallGraphStepConfig` | `cst_collector`, `ast_collector` | Callables for testing only |
+| `CFGBuilderStepConfig` | `cfg_builder` | Callable for testing only |
+| `GoidBuilderStepConfig` | `language` | Could be target parameter |
+| `ImportGraphStepConfig` | (empty) | **Can be eliminated** |
+| `SymbolUsesStepConfig` | `scip_json_path` | Artifact dependency |
+| `GraphMetricsStepConfig` | Many tuning params | See below |
+| `ConfigDataFlowStepConfig` | `config_type_map`, etc. | Domain-specific |
+| `ExternalDependenciesStepConfig` | (empty) | **Can be eliminated** |
+
+**Analytics Configs (15+):**
+| Config Class | Notable Fields | Question |
+|--------------|----------------|----------|
+| `FunctionAnalyticsStepConfig` | `max_workers` | Execution concern |
+| `HotspotsStepConfig` | `max_commits` | Domain parameter |
+| `FunctionHistoryStepConfig` | `max_history_days`, `min_lines_threshold` | Domain parameters |
+| `ProfilesAnalyticsStepConfig` | Many profile settings | Domain parameters |
+| `SubsystemsStepConfig` | Subsystem detection params | Domain parameters |
+| `SemanticRolesStepConfig` | Role detection params | Domain parameters |
+| ... | ... | ... |
+
+### Pattern Analysis
+
+**Three types of config fields:**
+
+1. **Context (universal)**: `snapshot`, `paths`, `gateway`
+   - Every plugin needs these
+   - **Should come from TargetExecutionContext**
+
+2. **Artifacts**: `scip_json_path`, `coverage_file`, `pytest_report_path`
+   - These are input/output file paths
+   - **Should be in OutputContract as artifact dependencies**
+
+3. **Tuning Parameters**: `max_commits`, `max_workers`, `min_lines_threshold`
+   - These are domain-specific knobs
+   - **Should be in target parameters OR global config**
+
+4. **Test Doubles**: `tool_runner`, `cfg_builder`, `scip_runner`
+   - These are callables injected for testing
+   - **Should use dependency injection, not config fields**
+
+### Proposed: Unified Target Parameters
+
+Instead of 30+ config classes, use a single typed parameters mechanism:
+
+```python
+@dataclass(frozen=True)
+class TargetParameters:
+    """Type-safe parameters for a target."""
+    
+    # Generic parameter storage with type hints
+    _values: dict[str, object] = field(default_factory=dict)
+    
+    def get(self, key: str, type_: type[T], default: T | None = None) -> T:
+        """Get a parameter with type validation."""
+        value = self._values.get(key, default)
+        if not isinstance(value, type_):
+            raise TypeError(f"Parameter {key} expected {type_}, got {type(value)}")
+        return value
+
+
+@dataclass(frozen=True)
+class OutputTarget:
+    name: str
+    module: TargetModule
+    plugin: str
+    contract: OutputContract
+    dependencies: tuple[str, ...] = ()
+    resources: TargetResources = field(default_factory=TargetResources)
+    execution: TargetExecution = field(default_factory=TargetExecution)
+    
+    # NEW: Typed parameters for this target
+    parameters: TargetParameters = field(default_factory=TargetParameters)
+```
+
+**Example: Hotspots Target with Parameters**
+
+```python
+HOTSPOTS_TARGET = OutputTarget(
+    name="hotspots",
+    module="analytics",
+    plugin="hotspots_plugin",
+    contract=OutputContract(
+        tables=(TableSchema("analytics", "hotspots", [...]),),
+    ),
+    dependencies=("function_history",),
+    parameters=TargetParameters({
+        "max_commits": 2000,
+        "scoring_weights": {"frequency": 0.4, "recency": 0.3, "authors": 0.3},
+    }),
+)
+```
+
+**Plugin accesses parameters from context:**
+
+```python
+class HotspotsPlugin:
+    def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+        max_commits = ctx.parameters.get("max_commits", int, default=2000)
+        weights = ctx.parameters.get("scoring_weights", dict, default={...})
+        
+        # Execute with parameters
+        ...
+```
+
+### Configs We Can Eliminate
+
+With the build-first model, these become unnecessary:
+
+| Config Class | Why Eliminate |
+|--------------|---------------|
+| `ConfigIngestStepConfig` | Empty - just snapshot/paths |
+| `DocstringStepConfig` | Empty - just snapshot/paths |
+| `ImportGraphStepConfig` | Empty - just snapshot |
+| `ExternalDependenciesStepConfig` | Empty - just snapshot |
+| `ConfigBuilder` | Parameters move to targets |
+| `IngestionStepBuilder` | Parameters move to targets |
+| `GraphStepBuilder` | Parameters move to targets |
+| `AnalyticsStepBuilder` | Parameters move to targets |
+
+**~15-20 classes can be eliminated or consolidated.**
+
+---
+
+## Error Handling Audit
+
+### Current State: Scattered Exception Classes
+
+**Tool Errors (runner.py):**
+| Exception | Purpose | Keep? |
+|-----------|---------|-------|
+| `ToolNotFoundError` | Binary not on PATH | ✅ Yes - actionable |
+| `ToolExecutionError` | Tool failed (timeout, error) | ✅ Yes - actionable |
+
+**Query Errors (db_queries.py):**
+| Exception | Purpose | Keep? |
+|-----------|---------|-------|
+| `QueryError` | Base class | ✅ Yes - base |
+| `TableNotFoundError` | Table doesn't exist | ✅ Yes - actionable |
+| `ColumnNotFoundError` | Column doesn't exist | ✅ Yes - actionable |
+
+**Plugin Errors (core/execution/errors.py):**
+| Exception | Purpose | Keep? |
+|-----------|---------|-------|
+| `PluginFatalError` | Fatal with fail-fast | ⚠️ Merge with below? |
+| `PluginTimeoutError` | Exceeded timeout | ✅ Yes - actionable |
+| `PluginSkippedError` | Plugin was skipped | ⚠️ Is this an error or result? |
+| `PluginSkipRequestError` | Plugin requests skip | ⚠️ Control flow, not error |
+
+**Config Errors (core/config/registry.py):**
+| Exception | Purpose | Keep? |
+|-----------|---------|-------|
+| `ConfigNotFoundError` | Config type not registered | 🔴 Eliminate with new model |
+| `ConfigValidationError` | Config failed validation | 🔴 Move to target validation |
+| `ConfigTypeError` | Wrong type | 🔴 Move to target validation |
+
+**Resource Errors (core/resources/):**
+| Exception | Purpose | Keep? |
+|-----------|---------|-------|
+| `ResourceError` | Base class | ✅ Yes - base |
+| `ResourceNotFoundError` | Resource not available | ✅ Yes - actionable |
+| `ResourceNotLoadedError` | Lazy load failed | ✅ Yes - actionable |
+
+### Problem: Error Information Loss
+
+Current errors often lose context:
+
+```python
+# Bad: Generic error loses schema info
+raise RuntimeError(f"Table {table_key} missing from TABLE_SCHEMAS")
+
+# Bad: DuckDB internal error is cryptic
+# INTERNAL Error: Attempted to dereference unique_ptr that is NULL!
+```
+
+### Proposed: Build System Error Hierarchy
+
+```python
+# Base errors
+class BuildError(Exception):
+    """Base class for all build system errors."""
+    
+    @property
+    def user_message(self) -> str:
+        """Human-readable error message for CLI output."""
+        ...
+    
+    @property
+    def actionable_hint(self) -> str | None:
+        """Suggestion for how to fix the error."""
+        ...
+
+
+# Contract errors - caught at registration/planning
+class ContractError(BuildError):
+    """Base class for contract violations."""
+    pass
+
+
+class SchemaNotFoundError(ContractError):
+    """Target references a table with no schema defined."""
+    
+    def __init__(self, target: str, table_key: str):
+        self.target = target
+        self.table_key = table_key
+    
+    @property
+    def user_message(self) -> str:
+        return f"Target '{self.target}' outputs table '{self.table_key}' which has no schema"
+    
+    @property
+    def actionable_hint(self) -> str:
+        return f"Add schema for '{self.table_key}' to the target's contract"
+
+
+class ColumnCountMismatchError(ContractError):
+    """Plugin wrote wrong number of columns."""
+    
+    def __init__(self, table_key: str, expected: int, actual: int, row_index: int):
+        self.table_key = table_key
+        self.expected = expected
+        self.actual = actual
+        self.row_index = row_index
+    
+    @property
+    def user_message(self) -> str:
+        return (
+            f"Table '{self.table_key}' expects {self.expected} columns, "
+            f"but row {self.row_index} has {self.actual}"
+        )
+
+
+class ArtifactNotFoundError(ContractError):
+    """Required input artifact doesn't exist."""
+    
+    def __init__(self, target: str, artifact: str, path: Path):
+        self.target = target
+        self.artifact = artifact
+        self.path = path
+    
+    @property
+    def user_message(self) -> str:
+        return f"Target '{self.target}' requires artifact '{self.artifact}' at {self.path}"
+    
+    @property
+    def actionable_hint(self) -> str:
+        return f"Ensure dependency that produces '{self.artifact}' runs first"
+
+
+# Resource errors - caught at execution
+class ResourceError(BuildError):
+    """Base class for resource-related errors."""
+    pass
+
+
+class ToolNotAvailableError(ResourceError):
+    """Required external tool is not available."""
+    
+    def __init__(self, target: str, tool: str, search_path: str | None = None):
+        self.target = target
+        self.tool = tool
+        self.search_path = search_path
+    
+    @property
+    def user_message(self) -> str:
+        return f"Target '{self.target}' requires tool '{self.tool}' which was not found"
+    
+    @property
+    def actionable_hint(self) -> str:
+        if self.tool == "scip-python":
+            return "Install with: npm install -g @aspect/scip-python"
+        if self.tool == "pyright":
+            return "Install with: pip install pyright"
+        return f"Install '{self.tool}' and ensure it's on PATH"
+
+
+# Execution errors - caught during plugin run
+class ExecutionError(BuildError):
+    """Base class for execution-time errors."""
+    pass
+
+
+class PluginExecutionError(ExecutionError):
+    """Plugin failed during execution."""
+    
+    def __init__(self, target: str, plugin: str, cause: Exception):
+        self.target = target
+        self.plugin = plugin
+        self.cause = cause
+    
+    @property
+    def user_message(self) -> str:
+        return f"Target '{self.target}' failed: {self.cause}"
+
+
+class TimeoutError(ExecutionError):
+    """Target exceeded its max_runtime."""
+    
+    def __init__(self, target: str, timeout_ms: int, elapsed_ms: int):
+        self.target = target
+        self.timeout_ms = timeout_ms
+        self.elapsed_ms = elapsed_ms
+    
+    @property
+    def user_message(self) -> str:
+        return (
+            f"Target '{self.target}' timed out after {self.elapsed_ms}ms "
+            f"(limit: {self.timeout_ms}ms)"
+        )
+    
+    @property
+    def actionable_hint(self) -> str:
+        return f"Increase execution.max_runtime_ms for target '{self.target}'"
+```
+
+### Error Handling Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Build System                              │
+├─────────────────────────────────────────────────────────────┤
+│  1. Registration Time (import)                               │
+│     → SchemaNotFoundError: "Table X has no schema"           │
+│     → ContractError: "Artifact Y not in contract"            │
+│                                                              │
+│  2. Planning Time (resolve())                                │
+│     → ToolNotAvailableError: "Tool Z not found"              │
+│     → DependencyError: "Target A depends on unknown B"       │
+│                                                              │
+│  3. Execution Time (execute())                               │
+│     → ArtifactNotFoundError: "Input file missing"            │
+│     → ColumnCountMismatchError: "Wrong columns in row N"     │
+│     → PluginExecutionError: Wraps plugin exceptions          │
+│     → TimeoutError: "Exceeded max_runtime"                   │
+│                                                              │
+│  4. All errors have:                                         │
+│     → user_message: Human-readable description               │
+│     → actionable_hint: How to fix it                         │
+│     → Full context (target, plugin, table, etc.)             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### CLI Error Display
+
+```
+$ codeintel build run --all
+
+❌ Build failed: SchemaNotFoundError
+
+   Target 'scip' outputs table 'core.scip_occurrences' which has no schema
+
+   Hint: Add schema for 'core.scip_occurrences' to the target's contract
+
+   Target:   scip
+   Plugin:   scip_ingest
+   Table:    core.scip_occurrences
+   
+   Stack trace available with --verbose
+```
+
+---
+
+## Summary: What Changes
+
+### Configs
+
+| Current | Proposed |
+|---------|----------|
+| 30+ StepConfig classes | Eliminated or merged |
+| ConfigBuilder with 40+ methods | TargetParameters on OutputTarget |
+| Per-plugin config injection | TargetExecutionContext.parameters |
+| Empty config classes | Eliminated |
+| Test double injection via config | Dependency injection |
+
+### Errors
+
+| Current | Proposed |
+|---------|----------|
+| Scattered exception classes | Unified BuildError hierarchy |
+| Cryptic messages | user_message + actionable_hint |
+| Lost context | Full target/plugin/table context |
+| Runtime-only errors | Registration + planning + execution phases |
+| No recovery suggestions | actionable_hint on every error |
+
+---
+
 ## Legacy Architecture Reference
 
 The sections below describe incremental fixes to the current architecture.

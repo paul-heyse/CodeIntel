@@ -33,9 +33,12 @@ from codeintel.analytics.core.build_bridge import (
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
+from codeintel.build.config import BuildConfig, load_build_config
+from codeintel.build.errors import BuildErrorCollection, PluginExecutionError
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
 from codeintel.build.plan import BuildPlan, PlanStage
+from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.config.resolver import resolve_scan_profiles
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
@@ -125,6 +128,9 @@ class BuildResult:
     full information about the build run including which targets
     completed, failed, or were skipped.
 
+    Supports continue-and-collect semantics: errors are collected during
+    execution and reported at the end, rather than failing on the first error.
+
     Attributes
     ----------
     run_id
@@ -143,6 +149,8 @@ class BuildResult:
         Total execution duration in milliseconds.
     error_summary
         Summary of errors if failed, None otherwise.
+    errors
+        Collection of all errors encountered during execution.
 
     Examples
     --------
@@ -151,6 +159,8 @@ class BuildResult:
     ...     print(f"Built {len(result.completed_targets)} targets")
     ... else:
     ...     print(f"Failed: {result.error_summary}")
+    ...     for error in result.errors.errors:
+    ...         print(f"  - {error.user_message}")
     """
 
     run_id: str
@@ -161,6 +171,7 @@ class BuildResult:
     skipped_targets: tuple[str, ...]
     duration_ms: float
     error_summary: str | None = None
+    errors: BuildErrorCollection = field(default_factory=BuildErrorCollection)
 
     @property
     def success(self) -> bool:
@@ -172,6 +183,17 @@ class BuildResult:
             True if status is "succeeded".
         """
         return self.status == "succeeded"
+
+    @property
+    def has_errors(self) -> bool:
+        """Return True if any errors were collected.
+
+        Returns
+        -------
+        bool
+            True if the error collection has errors.
+        """
+        return self.errors.has_errors
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize result to dictionary for JSON output.
@@ -189,6 +211,7 @@ class BuildResult:
             "skipped_targets": list(self.skipped_targets),
             "duration_ms": self.duration_ms,
             "error_summary": self.error_summary,
+            "error_count": len(self.errors),
             "plan": self.plan.to_dict(),
         }
 
@@ -240,6 +263,7 @@ class BuildExecutor:
         tools: ToolsConfig,
         *,
         ingestion_recipe: str = "full_python",
+        fail_fast: bool = False,
     ) -> None:
         """Initialize the build executor.
 
@@ -258,6 +282,9 @@ class BuildExecutor:
         ingestion_recipe
             Name of ingestion recipe to use (default: "full_python").
             Use "incremental" to skip SCIP indexing.
+        fail_fast
+            If True, stop on first error. If False (default), continue
+            executing independent targets and collect all errors.
         """
         self._graph = graph
         self._gateway = gateway
@@ -265,7 +292,12 @@ class BuildExecutor:
         self._paths = paths
         self._tools = tools
         self._ingestion_recipe = ingestion_recipe
+        self._fail_fast = fail_fast
         self._export_options: ExportCallOptions | None = None
+        # Initialize providers for protocol-based DI
+        self._providers: Providers = create_default_providers(tools)
+        # Load build config for target parameters
+        self._config: BuildConfig = load_build_config(snapshot.repo_root)
 
     @property
     def export_options(self) -> ExportCallOptions | None:
@@ -288,6 +320,28 @@ class BuildExecutor:
             Export options (validation, dataset selection, etc.).
         """
         self._export_options = value
+
+    @property
+    def providers(self) -> Providers:
+        """Get the DI providers for external tools.
+
+        Returns
+        -------
+        Providers
+            Container with all protocol implementations.
+        """
+        return self._providers
+
+    @property
+    def config(self) -> BuildConfig:
+        """Get the build configuration.
+
+        Returns
+        -------
+        BuildConfig
+            Configuration loaded from codeintel.build.toml.
+        """
+        return self._config
 
     def execute(
         self,
@@ -336,10 +390,10 @@ class BuildExecutor:
         if dry_run:
             return self._complete_dry_run(run_id, plan, start_time)
 
-        # Phase C: Execute stages
+        # Phase C: Execute stages with continue-and-collect semantics
         completed: list[str] = []
         failed: list[str] = []
-        error_summary: str | None = None
+        error_collection = BuildErrorCollection()
         status: BuildStatus = "succeeded"
 
         try:
@@ -357,16 +411,50 @@ class BuildExecutor:
                 completed.extend(stage_result.completed)
                 failed.extend(stage_result.failed)
 
-                # Fail-fast: stop on any failure
+                # Collect errors for failed targets
+                if stage_result.error:
+                    for target_name in stage_result.failed:
+                        error_collection.add(
+                            PluginExecutionError(
+                                target=target_name,
+                                plugin=self._graph.get(target_name).plugin,
+                                cause=Exception(stage_result.error),
+                            )
+                        )
+
+                # Check fail-fast mode
                 if not stage_result.success:
                     status = "failed"
-                    error_summary = stage_result.error or "Stage execution failed"
-                    break
+                    if self._fail_fast:
+                        log.info(
+                            "build.executor.fail_fast run_id=%s failed_targets=%s",
+                            run_id,
+                            stage_result.failed,
+                        )
+                        break
+                    # Continue-and-collect: keep going with other stages
+                    log.info(
+                        "build.executor.continue_after_failure run_id=%s "
+                        "failed=%s continuing=True",
+                        run_id,
+                        stage_result.failed,
+                    )
 
         except Exception as exc:
             log.exception("build.executor.error run_id=%s", run_id)
             status = "failed"
-            error_summary = str(exc)
+            error_collection.add(
+                PluginExecutionError(
+                    target="<executor>",
+                    plugin="<executor>",
+                    cause=exc,
+                )
+            )
+
+        # Generate error summary from collection
+        error_summary: str | None = None
+        if error_collection.has_errors:
+            error_summary = f"{len(error_collection)} error(s) during build"
 
         # Phase D: Complete run tracking
         duration_ms = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
@@ -395,6 +483,7 @@ class BuildExecutor:
             skipped_targets=plan.skipped_targets,
             duration_ms=duration_ms,
             error_summary=error_summary,
+            errors=error_collection,
         )
 
     # =========================================================================
