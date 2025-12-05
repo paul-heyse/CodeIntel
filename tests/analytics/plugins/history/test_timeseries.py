@@ -9,12 +9,16 @@ This module tests:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.history.timeseries import HistoryTimeseriesPlugin
 from codeintel.config.steps_analytics import HistoryTimeseriesStepConfig
 from tests._helpers.constants import DEFAULT_COMMIT
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes import TestExecutionContextBuilder
+
+if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
 
 # Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
@@ -44,15 +48,18 @@ def _create_config(tmp_path: Path | None = None) -> HistoryTimeseriesStepConfig:
     return HistoryTimeseriesStepConfig(snapshot=snapshot, commits=(DEFAULT_COMMIT,))
 
 
-def _create_mock_context(
+def _create_context(
+    tmp_path: Path,
     *,
     has_config: bool = True,
     has_snapshot_resolver: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
+    tmp_path
+        Temp path for repo root.
     has_config
         Whether config is available.
     has_snapshot_resolver
@@ -60,29 +67,20 @@ def _create_mock_context(
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    ctx.has_config.return_value = has_config
-
+    builder = TestExecutionContextBuilder.create(tmp_path)
     if has_config:
-        ctx.get_config.return_value = _create_config()
-    else:
-        ctx.get_config.side_effect = ValueError("Config not found")
-
-    # Extra dict
-    extra = {}
+        config = _create_config(tmp_path)
+        builder.with_config(HistoryTimeseriesStepConfig, config)
     if has_snapshot_resolver:
-        resolver = MagicMock()
-        extra["history_snapshot_resolver"] = resolver
-    ctx.extra = extra
+        # Create a simple resolver function for testing
+        def resolver(commit: str) -> object:
+            return make_snapshot(repo_root=tmp_path, commit=commit)
 
-    # Gateway mock
-    gateway = MagicMock()
-    ctx.gateway = gateway
-
-    return ctx
+        builder.with_extra("history_snapshot_resolver", resolver)
+    return builder.build()
 
 
 class TestHistoryTimeseriesPluginMetadata:
@@ -174,36 +172,36 @@ class TestHistoryTimeseriesPluginValidation:
     """Tests for HistoryTimeseriesPlugin input validation."""
 
     @staticmethod
-    def test_validate_inputs_succeeds_with_config_and_resolver() -> None:
+    def test_validate_inputs_succeeds_with_config_and_resolver(tmp_path: Path) -> None:
         """Verify validation succeeds when config and resolver available."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=True, has_snapshot_resolver=True)
+        ctx = _create_context(tmp_path, has_config=True, has_snapshot_resolver=True)
         result = plugin.validate_inputs(ctx)
         assert result.valid is True
 
     @staticmethod
-    def test_validate_inputs_fails_without_config() -> None:
+    def test_validate_inputs_fails_without_config(tmp_path: Path) -> None:
         """Verify validation fails when config is missing."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=False, has_snapshot_resolver=True)
+        ctx = _create_context(tmp_path, has_config=False, has_snapshot_resolver=True)
         result = plugin.validate_inputs(ctx)
         assert result.valid is False
         assert any("HistoryTimeseriesStepConfig" in msg for msg in result.errors)
 
     @staticmethod
-    def test_validate_inputs_fails_without_resolver() -> None:
+    def test_validate_inputs_fails_without_resolver(tmp_path: Path) -> None:
         """Verify validation fails when resolver is missing."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=True, has_snapshot_resolver=False)
+        ctx = _create_context(tmp_path, has_config=True, has_snapshot_resolver=False)
         result = plugin.validate_inputs(ctx)
         assert result.valid is False
         assert any("history_snapshot_resolver" in msg for msg in result.errors)
 
     @staticmethod
-    def test_validate_inputs_fails_without_both() -> None:
+    def test_validate_inputs_fails_without_both(tmp_path: Path) -> None:
         """Verify validation fails with multiple errors when both missing."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=False, has_snapshot_resolver=False)
+        ctx = _create_context(tmp_path, has_config=False, has_snapshot_resolver=False)
         result = plugin.validate_inputs(ctx)
         assert result.valid is False
         # Both errors should be present
@@ -216,18 +214,18 @@ class TestHistoryTimeseriesPluginExecution:
     """Tests for HistoryTimeseriesPlugin execute method."""
 
     @staticmethod
-    def test_execute_fails_without_config() -> None:
+    def test_execute_fails_without_config(tmp_path: Path) -> None:
         """Verify execute fails when config is missing."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=False, has_snapshot_resolver=True)
+        ctx = _create_context(tmp_path, has_config=False, has_snapshot_resolver=True)
         result = plugin.execute(ctx)
         assert result.success is False
 
     @staticmethod
-    def test_execute_fails_without_resolver() -> None:
+    def test_execute_fails_without_resolver(tmp_path: Path) -> None:
         """Verify execute fails when resolver is missing."""
         plugin = HistoryTimeseriesPlugin()
-        ctx = _create_mock_context(has_config=True, has_snapshot_resolver=False)
+        ctx = _create_context(tmp_path, has_config=True, has_snapshot_resolver=False)
         result = plugin.execute(ctx)
         assert result.success is False
         assert result.error is not None

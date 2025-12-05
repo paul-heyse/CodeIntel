@@ -8,7 +8,7 @@ Modules
 -------
 - model: Unified recipe model (Recipe, RecipeStage, RecipeOptions) and base classes
 - dsl: Fluent builder and helper functions for recipe construction
-- executor: Unified recipe executor
+- executor: Base recipe executor with scratch space management
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from codeintel.core.recipes.dsl import (
     recipe,
     stage,
 )
+from codeintel.core.recipes.executor import BaseRecipeExecutor
 from codeintel.core.recipes.model import (
     BaseRecipe,
     BaseRecipeOptions,
@@ -33,6 +34,7 @@ from codeintel.core.recipes.model import (
 __all__ = [
     # Base classes (for domain extension)
     "BaseRecipe",
+    "BaseRecipeExecutor",
     "BaseRecipeOptions",
     "BaseRecipeStage",
     # Core types

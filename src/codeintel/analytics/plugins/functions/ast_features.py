@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import AstProvider
-    from codeintel.analytics.resources.features import FeaturesProvider
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.resources.asts import AstResourceData
 
 from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.ast_features.persist import features_to_row
@@ -119,17 +119,19 @@ class FunctionAstFeaturesPlugin:
             return PluginResult.fail(str(e))
 
         # Get features from FeaturesProvider
+        # Note: require_by_name already calls .get() internally, returns the features dict
         if not ctx.has_resource_by_name("FeaturesProvider"):
             return PluginResult.fail("FeaturesProvider is required")
-        features_provider = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-        features_map = features_provider.get()
+        features_map = cast(
+            "dict[int, FunctionAstFeatures]", ctx.require_by_name("FeaturesProvider")
+        )
 
         # Get AST stats from AstProvider for metadata
+        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
         functions_seen = 0
         functions_missing = 0
         if ctx.has_resource_by_name("AstProvider"):
-            ast_provider = cast("AstProvider", ctx.require_by_name("AstProvider"))
-            ast_data = ast_provider.get()
+            ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
             functions_seen = len(ast_data.function_ast_map)
             functions_missing = len(ast_data.missing_function_goids)
 

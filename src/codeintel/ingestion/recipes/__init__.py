@@ -32,11 +32,14 @@ from codeintel.ingestion.recipes.dsl import (
 )
 from codeintel.ingestion.recipes.executor import (
     ExecutorConfig,
-    PluginExecutionRecord,
+    IngestPluginExecutionRecord,
     RecipeExecutor,
     execute_recipe,
     execute_recipe_for_context,
 )
+
+# Backward compatibility alias
+PluginExecutionRecord = IngestPluginExecutionRecord
 
 __all__ = [
     "ANALYSIS_RECIPE",
@@ -47,6 +50,7 @@ __all__ = [
     "INCREMENTAL_RECIPE",
     "MINIMAL_RECIPE",
     "ExecutorConfig",
+    "IngestPluginExecutionRecord",
     "IngestRecipe",
     "PluginExecutionRecord",
     "RecipeExecutionResult",

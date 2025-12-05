@@ -110,6 +110,20 @@ class RecipeExecutor:
     - Configuration merging
     - Execution with retry and timeout
     - Telemetry and reporting
+
+    Architecture Note
+    -----------------
+    This executor follows the patterns from BaseRecipeExecutor
+    (codeintel.core.recipes.executor) but does not formally extend it because:
+
+    1. Analytics uses plan-based execution (plan() + execute() pattern)
+    2. Analytics is sequential-only (no parallel stage support)
+    3. Analytics uses RecipePluginRecord, not PluginExecutionRecord
+
+    Common patterns shared with other recipe executors:
+    - Scratch space management via PluginScratch
+    - Plugin context building via PluginExecutionContextBuilder
+    - Result aggregation into RecipeExecutionReport
     """
 
     def __init__(

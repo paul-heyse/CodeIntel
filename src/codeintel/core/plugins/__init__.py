@@ -57,6 +57,7 @@ from codeintel.core.plugins.registry import (
 )
 from codeintel.core.plugins.report import BaseExecutionReport, ExecutionStatus
 from codeintel.core.plugins.result import (
+    BasePluginExecutionRecord,
     BasePluginResult,
     PluginExecutionRecord,
     PluginResult,
@@ -95,6 +96,7 @@ __all__ = [
     "BaseExecutionReport",
     "BaseExecutorContext",
     "BaseFunctionalPlugin",
+    "BasePluginExecutionRecord",
     "BasePluginExecutor",
     "BasePluginMetaOptions",
     "BasePluginMetaOptionsInput",
