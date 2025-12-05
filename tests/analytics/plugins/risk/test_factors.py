@@ -8,17 +8,19 @@ This module tests:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
     ValidationResult,
 )
 from codeintel.analytics.plugins.risk.factors import RiskFactorsPlugin
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -27,56 +29,28 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
+def _create_context(
+    tmp_path: Path,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
-    name
-        Resource provider name.
+    tmp_path
+        Temp path for repo root.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock provider.
+    PluginExecutionContext
+        Real execution context.
     """
-    provider = MagicMock()
-    if name == "CatalogProvider":
-        catalog = MagicMock()
-        catalog_data = MagicMock()
-        catalog_data.module_by_path = {}
-        catalog.catalog.return_value = catalog_data
-        provider.get.return_value = catalog
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_catalog: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
-    has_catalog
-        Whether catalog provider is available.
-
-    Returns
-    -------
-    MagicMock
-        Mock execution context.
-    """
-    ctx = MagicMock()
-    ctx.repo = DEFAULT_REPO
-    ctx.commit = DEFAULT_COMMIT
-    ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider" and has_catalog
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
-    ctx.gateway.con = MagicMock()
-    ctx.gateway.con.execute = MagicMock()
-    ctx.gateway.con.executemany = MagicMock()
-
-    return ctx
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        return TestExecutionContextBuilder(gateway, snapshot).build()
+    return TestExecutionContextBuilder.create(tmp_path).build()
 
 
 # =============================================================================
@@ -139,10 +113,10 @@ def test_risk_factors_plugin_metadata_depends_on() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_always_succeeds() -> None:
+def test_validate_inputs_always_succeeds(tmp_path: Path) -> None:
     """Validation always succeeds for this plugin."""
     plugin = RiskFactorsPlugin()
-    ctx = _create_mock_context()
+    ctx = _create_context(tmp_path)
 
     result = plugin.validate_inputs(ctx)
 
@@ -155,15 +129,13 @@ def test_validate_inputs_always_succeeds() -> None:
 # =============================================================================
 
 
-def test_execute_succeeds_without_catalog(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_without_catalog(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds without catalog provider."""
     plugin = RiskFactorsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.repo = DEFAULT_REPO
-    ctx.commit = DEFAULT_COMMIT
-    ctx.has_resource_by_name.return_value = False
+    ctx = _create_context(tmp_path, gateway=fresh_gateway)
 
     result = plugin.execute(ctx)
 
@@ -171,16 +143,13 @@ def test_execute_succeeds_without_catalog(fresh_gateway: StorageGateway) -> None
     assert result.success is True
 
 
-def test_execute_succeeds_with_catalog(fresh_gateway: StorageGateway) -> None:
-    """Execute succeeds with catalog provider."""
+def test_execute_succeeds_with_context(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Execute succeeds with standard context."""
     plugin = RiskFactorsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.repo = DEFAULT_REPO
-    ctx.commit = DEFAULT_COMMIT
-    ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider"
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(tmp_path, gateway=fresh_gateway)
 
     result = plugin.execute(ctx)
 

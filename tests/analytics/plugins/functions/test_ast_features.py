@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
@@ -19,10 +18,14 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.plugins.functions.ast_features import (
     FunctionAstFeaturesPlugin,
 )
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
-from tests._helpers.factories import make_step_config
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -31,85 +34,55 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config(tmp_path: Path | None = None) -> FunctionAnalyticsStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    has_features: bool = False,
+    has_ast: bool = False,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    FunctionAnalyticsStepConfig
-        Test configuration.
-    """
-    return make_step_config(FunctionAnalyticsStepConfig, tmp_path)
-
-
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
-
-    Parameters
-    ----------
-    name
-        Resource provider name.
-
-    Returns
-    -------
-    MagicMock
-        Mock provider.
-    """
-    provider = MagicMock()
-    if name == "FeaturesProvider":
-        provider.get.return_value = {}
-    elif name == "AstProvider":
-        ast_data = MagicMock()
-        ast_data.function_ast_map = {}
-        ast_data.missing_function_goids = set()
-        provider.get.return_value = ast_data
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    has_features: bool = True,
-    has_ast: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
     has_features
         Whether features provider is available.
     has_ast
         Whether AST provider is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    resource_map = {
-        "FeaturesProvider": has_features,
-        "AstProvider": has_ast,
-    }
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(FunctionAnalyticsStepConfig, tmp_path)
+        builder.with_config(FunctionAnalyticsStepConfig, config)
 
-    return ctx
+    if has_features:
+        # Create a features provider with empty preloaded data
+        features_provider = FeaturesProvider.from_features({})
+        builder.with_resource(FeaturesProvider, features_provider)
+
+    if has_ast:
+        # Create an AST provider with empty preloaded data
+        ast_provider = AstProvider.from_asts({}, set())
+        builder.with_resource(AstProvider, ast_provider)
+
+    return builder.build()
 
 
 # =============================================================================
@@ -165,10 +138,10 @@ def test_ast_features_plugin_metadata_tags() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = FunctionAstFeaturesPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -176,10 +149,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = FunctionAstFeaturesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -187,10 +160,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = FunctionAstFeaturesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -205,10 +178,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = FunctionAstFeaturesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -216,10 +189,10 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_fails_without_features_provider() -> None:
+def test_execute_fails_without_features_provider(tmp_path: Path) -> None:
     """Execute fails when features provider is not available."""
     plugin = FunctionAstFeaturesPlugin()
-    ctx = _create_mock_context(has_config=True, has_features=False)
+    ctx = _create_context(tmp_path, has_config=True, has_features=False)
 
     result = plugin.execute(ctx)
 
@@ -229,53 +202,54 @@ def test_execute_fails_without_features_provider() -> None:
 
 
 def test_execute_succeeds_with_required_resources(
+    tmp_path: Path,
     fresh_gateway: StorageGateway,
 ) -> None:
     """Execute succeeds with required resources."""
     plugin = FunctionAstFeaturesPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = lambda n: n == "FeaturesProvider"
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(
+        tmp_path,
+        has_config=True,
+        has_features=True,
+        gateway=fresh_gateway,
+    )
 
     result = plugin.execute(ctx)
 
     assert result.success is True
 
 
-def test_execute_with_ast_provider(fresh_gateway: StorageGateway) -> None:
+def test_execute_with_ast_provider(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds with AST provider also available."""
     plugin = FunctionAstFeaturesPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-
-    def has_resource(name: str) -> bool:
-        return name in {"FeaturesProvider", "AstProvider"}
-
-    ctx.has_resource_by_name.side_effect = has_resource
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(
+        tmp_path,
+        has_config=True,
+        has_features=True,
+        has_ast=True,
+        gateway=fresh_gateway,
+    )
 
     result = plugin.execute(ctx)
 
     assert result.success is True
 
 
-def test_execute_returns_row_counts(fresh_gateway: StorageGateway) -> None:
+def test_execute_returns_row_counts(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute returns row counts in result."""
     plugin = FunctionAstFeaturesPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = lambda n: n == "FeaturesProvider"
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(
+        tmp_path,
+        has_config=True,
+        has_features=True,
+        gateway=fresh_gateway,
+    )
 
     result = plugin.execute(ctx)
 

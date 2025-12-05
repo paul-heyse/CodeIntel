@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import AstProvider
-    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.asts import AstResourceData
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.analytics.core.protocol import (
@@ -117,16 +117,16 @@ class FunctionContractsPlugin:
             return PluginResult.fail(str(e))
 
         # Get required AST data from AstProvider
+        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
         if not ctx.has_resource_by_name("AstProvider"):
             return PluginResult.fail("AstProvider is required")
-        ast_provider = cast("AstProvider", ctx.require_by_name("AstProvider"))
-        ast_data = ast_provider.get()
+        ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
 
         # Get catalog from CatalogProvider
+        # Note: require_by_name returns the loaded resource (FunctionCatalogProvider), not provider
         if not ctx.has_resource_by_name("CatalogProvider"):
             return PluginResult.fail("CatalogProvider is required")
-        catalog_provider = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-        catalog = catalog_provider.get()
+        catalog = cast("FunctionCatalogProvider", ctx.require_by_name("CatalogProvider"))
 
         try:
             compute_function_contracts(

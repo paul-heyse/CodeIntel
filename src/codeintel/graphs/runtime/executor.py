@@ -31,6 +31,7 @@ from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.report import BaseExecutionReport
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.tracking import record_plugin_steps
 from codeintel.core.resources import ResourceRegistry
 from codeintel.core.runtime.errors import (
     PLUGIN_CATCHABLE_ERRORS,
@@ -54,7 +55,7 @@ from codeintel.graphs.runtime.planning import (
     PluginExecutionSettings,
     plan_graph_plugin_run,
 )
-from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
+from codeintel.storage.tracking import PipelineStatus
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -230,7 +231,7 @@ def _execute_plugin(
             break
 
     ended_at = datetime.now(tz=UTC)
-    row_counts = plugin_result.row_counts if plugin_result else None
+    # Extract hashes from result if present, fallback to settings
     input_hash = (
         plugin_result.input_hash
         if plugin_result and plugin_result.input_hash
@@ -250,9 +251,9 @@ def _execute_plugin(
         duration_ms=round((time.perf_counter() - start) * 1000, 2),
         attempts=attempts,
         partial=status != "succeeded",
+        result=plugin_result,  # Store actual result for row_counts access
         error=error_message,
         meta={
-            "row_counts": dict(row_counts) if row_counts else None,
             "input_hash": input_hash,
             "options_hash": options_hash,
             "version_hash": settings.version_hash,
@@ -468,11 +469,17 @@ def _execute_plugins_in_plan(
             records.append(record)
 
             if record.status == "succeeded":
+                # Extract row_counts from result (canonical location)
+                row_counts = (
+                    dict(record.result.row_counts)
+                    if record.result and record.result.row_counts
+                    else None
+                )
                 manifest[plugin.metadata.name] = {
                     "input_hash": record.meta.get("input_hash"),
                     "options_hash": record.meta.get("options_hash"),
                     "version_hash": record.meta.get("version_hash"),
-                    "row_counts": record.meta.get("row_counts"),
+                    "row_counts": row_counts,
                     "executed_at": record.ended_at,
                 }
     finally:
@@ -587,7 +594,11 @@ def _record_graph_steps(
     records: list[PluginExecutionRecord],
     plan: GraphPluginExecutionPlan,
 ) -> None:
-    """Record step records from graph results.
+    """Record step records from graph results using core tracking helper.
+
+    Use the unified `record_plugin_steps()` helper from core.plugins.tracking.
+    The helper extracts row_counts from `rec.result.row_counts` (the canonical
+    location after consolidation).
 
     Parameters
     ----------
@@ -600,53 +611,22 @@ def _record_graph_steps(
     plan
         Execution plan with plugin metadata.
     """
-    for rec in records:
-        # Get plugin metadata for stage information
+
+    def get_stage(plugin_name: str) -> str:
+        """Look up stage from plan metadata.
+
+        Returns
+        -------
+        str
+            The stage name, or "unknown" if plugin not found in plan.
+        """
         plugin_meta = next(
-            (p.metadata for p in plan.plugins if p.metadata.name == rec.plugin_name),
+            (p.metadata for p in plan.plugins if p.metadata.name == plugin_name),
             None,
         )
-        stage = plugin_meta.stage if plugin_meta else "unknown"
+        return plugin_meta.stage if plugin_meta else "unknown"
 
-        # Extract row_counts from meta if present
-        row_counts_raw = rec.meta.get("row_counts")
-        row_counts: dict[str, int] | None = None
-        if isinstance(row_counts_raw, dict):
-            row_counts = {str(k): int(v) for k, v in row_counts_raw.items()}
-
-        # Map graph status to step status
-        step_status: StepStatus
-        if rec.status == "succeeded":
-            step_status = "succeeded"
-        elif rec.status == "failed":
-            step_status = "failed"
-        elif rec.status == "skipped":
-            step_status = "skipped"
-        else:
-            step_status = "failed"
-
-        # Build extra metadata
-        extra: dict[str, object] = {}
-        if rec.error:
-            extra["error"] = rec.error
-        if rec.partial:
-            extra["partial"] = True
-        if rec.attempts > 1:
-            extra["attempts"] = rec.attempts
-
-        runs.record_step(
-            PipelineStepRecord(
-                run_id=run_id,
-                module="graphs",
-                stage=stage,
-                name=rec.plugin_name,
-                status=step_status,
-                started_at=rec.started_at,
-                completed_at=rec.ended_at,
-                row_counts=row_counts,
-                extra=extra if extra else None,
-            ),
-        )
+    record_plugin_steps(runs, run_id, "graphs", records, get_stage)
 
 
 def run_graph_plugin_batch(

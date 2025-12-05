@@ -7,7 +7,7 @@ for structural alignment.
 Key Components
 --------------
 - IngestExecutorConfig: Configuration for plugin execution
-- PluginExecutionRecord: Record of individual plugin execution
+- IngestPluginExecutionRecord: Record of individual plugin execution (extends BasePluginExecutionRecord)
 - execute_plugin_batch: Execute multiple plugins with optional parallelism
 - plan_ingest_plugins: Create an execution plan from plugin names
 - IngestRuntimeTelemetry: Telemetry integration with OpenTelemetry
@@ -35,8 +35,8 @@ print(f"Executed {len(report.records)} plugins, {report.total_rows_written} rows
 from codeintel.ingestion.runtime.executor import (
     PLUGIN_CATCHABLE_ERRORS,
     IngestExecutorConfig,
+    IngestPluginExecutionRecord,
     IngestRunReport,
-    PluginExecutionRecord,
     PluginExecutionSettings,
     PluginFatalError,
     PluginSeverity,
@@ -58,10 +58,14 @@ from codeintel.ingestion.runtime.telemetry import (
     get_ingest_telemetry,
 )
 
+# Backward compatibility alias
+PluginExecutionRecord = IngestPluginExecutionRecord
+
 __all__ = [
     "PLUGIN_CATCHABLE_ERRORS",
     "IngestExecutorConfig",
     "IngestPlanContext",
+    "IngestPluginExecutionRecord",
     "IngestPluginSpan",
     "IngestRunReport",
     "IngestRuntimeTelemetry",

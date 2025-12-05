@@ -136,6 +136,28 @@ class RuntimeTelemetry:
     execution. Gracefully degrade when OTel or Prometheus dependencies
     are not available.
 
+    Extension Points
+    ----------------
+    Domain-specific telemetry classes extend this base to add context-aware
+    span management and domain-specific metrics:
+
+    - **GraphRuntimeTelemetry** (graphs/runtime/telemetry.py):
+      Adds `start_plugin()`, `finish_plugin()`, `record_metrics()`,
+      `start_run()`, `finish_run()` methods with graph context (repo, commit, scope).
+
+    - **IngestRuntimeTelemetry** (ingestion/runtime/telemetry.py):
+      Adds `start_plugin_span()`, `end_span_with_rows()` methods,
+      plus a `_rows_histogram` for ingestion-specific row count metrics.
+      Also provides `OtelIngestRunSink` for run-level metrics.
+
+    When creating a domain-specific telemetry class:
+
+    1. Extend `RuntimeTelemetry` (inherit constructor)
+    2. Add domain-specific span starting methods that call `start_span()`
+       with additional context attributes
+    3. Add domain-specific metric recording methods
+    4. Create a cached singleton getter using `@lru_cache(maxsize=1)`
+
     Parameters
     ----------
     config

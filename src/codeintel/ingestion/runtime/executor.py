@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.core.plugins.result import BasePluginExecutionRecord
 from codeintel.core.runtime.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
@@ -41,35 +42,40 @@ PluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]
 
 
 @dataclass
-class PluginExecutionRecord:
-    """Record of a single plugin execution.
+class IngestPluginExecutionRecord(BasePluginExecutionRecord):
+    """Ingestion-specific execution record with row tracking.
+
+    Extend BasePluginExecutionRecord with ingestion-specific fields for
+    result type, exception-based errors, and row count tracking.
 
     Attributes
     ----------
     plugin_name
-        Name of the executed plugin.
+        Name of the executed plugin (inherited from base).
+    started_at
+        Timestamp when execution started (inherited from base).
+    ended_at
+        Timestamp when execution ended (inherited from base).
     result
         Execution result if successful.
-    duration_s
-        Execution duration in seconds.
     error
         Exception if execution failed.
-    started_at
-        Timestamp when execution started.
-    ended_at
-        Timestamp when execution ended.
     rows_written
         Total rows written across all tables.
     table_counts
         Mapping of table names to row counts.
+
+    Notes
+    -----
+    This class uses Exception for errors (not string) because ingestion
+    needs access to exception type information for error classification.
+
+    The duration_s property is inherited from BasePluginExecutionRecord
+    and computes duration from started_at/ended_at timestamps.
     """
 
-    plugin_name: str
     result: IngestPluginResult | None = None
-    duration_s: float = 0.0
     error: Exception | None = None
-    started_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
-    ended_at: datetime | None = None
     rows_written: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
 
@@ -157,7 +163,7 @@ class IngestRunReport:
     """
 
     run_id: str
-    records: list[PluginExecutionRecord] = field(default_factory=list)
+    records: list[IngestPluginExecutionRecord] = field(default_factory=list)
     started_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     ended_at: datetime | None = None
     status: PipelineStatus = "running"
@@ -200,7 +206,7 @@ def execute_plugin(
     *,
     settings: PluginExecutionSettings | None = None,
     telemetry: IngestRuntimeTelemetry | None = None,
-) -> PluginExecutionRecord:
+) -> IngestPluginExecutionRecord:
     """Execute a single plugin and return an execution record.
 
     Parameters
@@ -216,13 +222,13 @@ def execute_plugin(
 
     Returns
     -------
-    PluginExecutionRecord
+    IngestPluginExecutionRecord
         Record of the execution including result or error.
     """
     settings = settings or PluginExecutionSettings(name=plugin.metadata.name)
     telemetry = telemetry or get_ingest_telemetry()
 
-    record = PluginExecutionRecord(
+    record = IngestPluginExecutionRecord(
         plugin_name=plugin.metadata.name,
         started_at=datetime.now(tz=UTC),
     )
@@ -266,7 +272,7 @@ def execute_plugin_with_timeout(
     timeout_s: int | None = None,
     settings: PluginExecutionSettings | None = None,
     telemetry: IngestRuntimeTelemetry | None = None,
-) -> PluginExecutionRecord:
+) -> IngestPluginExecutionRecord:
     """Execute a plugin with optional timeout.
 
     Parameters
@@ -284,14 +290,14 @@ def execute_plugin_with_timeout(
 
     Returns
     -------
-    PluginExecutionRecord
+    IngestPluginExecutionRecord
         Record of the execution including result or error.
     """
     if timeout_s is None:
         return execute_plugin(plugin, context, settings=settings, telemetry=telemetry)
 
     telemetry = telemetry or get_ingest_telemetry()
-    record = PluginExecutionRecord(
+    record = IngestPluginExecutionRecord(
         plugin_name=plugin.metadata.name,
         started_at=datetime.now(tz=UTC),
     )
@@ -462,8 +468,8 @@ def _execute_batch_parallel(
 __all__ = [
     "PLUGIN_CATCHABLE_ERRORS",
     "IngestExecutorConfig",
+    "IngestPluginExecutionRecord",
     "IngestRunReport",
-    "PluginExecutionRecord",
     "PluginExecutionSettings",
     "PluginFatalError",
     "PluginSeverity",

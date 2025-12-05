@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
@@ -19,10 +18,15 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.plugins.functions.contracts import (
     FunctionContractsPlugin,
 )
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.config.steps_analytics import FunctionContractsStepConfig
-from tests._helpers.factories import make_step_config
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -31,87 +35,57 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config(tmp_path: Path | None = None) -> FunctionContractsStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    has_ast: bool = False,
+    has_catalog: bool = False,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    FunctionContractsStepConfig
-        Test configuration.
-    """
-    return make_step_config(FunctionContractsStepConfig, tmp_path)
-
-
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
-
-    Parameters
-    ----------
-    name
-        Resource provider name.
-
-    Returns
-    -------
-    MagicMock
-        Mock provider.
-    """
-    provider = MagicMock()
-    if name == "AstProvider":
-        ast_data = MagicMock()
-        ast_data.function_ast_map = {}
-        ast_data.missing_function_goids = set()
-        provider.get.return_value = ast_data
-    elif name == "CatalogProvider":
-        catalog = MagicMock()
-        catalog.catalog.return_value = MagicMock(function_spans=[])
-        provider.get.return_value = catalog
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    has_ast: bool = True,
-    has_catalog: bool = True,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
     has_ast
         Whether AST provider is available.
     has_catalog
         Whether catalog provider is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    resource_map = {
-        "AstProvider": has_ast,
-        "CatalogProvider": has_catalog,
-    }
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(FunctionContractsStepConfig, tmp_path)
+        builder.with_config(FunctionContractsStepConfig, config)
 
-    return ctx
+    if has_ast:
+        # Create AST provider with empty preloaded data
+        ast_provider = AstProvider.from_asts({}, set())
+        builder.with_resource(AstProvider, ast_provider)
+
+    if has_catalog:
+        # Create catalog provider with empty preloaded data
+        empty_catalog = FunctionCatalog(functions=[], module_by_path={})
+        catalog_service = FunctionCatalogService(empty_catalog)
+        catalog_provider = CatalogProvider.from_catalog(catalog_service)
+        builder.with_resource(CatalogProvider, catalog_provider)
+
+    return builder.build()
 
 
 # =============================================================================
@@ -167,10 +141,10 @@ def test_contracts_plugin_metadata_tags() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -178,10 +152,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -189,10 +163,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -207,10 +181,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -218,10 +192,10 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_fails_without_ast_provider() -> None:
+def test_execute_fails_without_ast_provider(tmp_path: Path) -> None:
     """Execute fails when AST provider is not available."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=True, has_ast=False, has_catalog=True)
+    ctx = _create_context(tmp_path, has_config=True, has_ast=False, has_catalog=True)
 
     result = plugin.execute(ctx)
 
@@ -230,10 +204,10 @@ def test_execute_fails_without_ast_provider() -> None:
     assert "AstProvider is required" in str(result.error)
 
 
-def test_execute_fails_without_catalog_provider() -> None:
+def test_execute_fails_without_catalog_provider(tmp_path: Path) -> None:
     """Execute fails when catalog provider is not available."""
     plugin = FunctionContractsPlugin()
-    ctx = _create_mock_context(has_config=True, has_ast=True, has_catalog=False)
+    ctx = _create_context(tmp_path, has_config=True, has_ast=True, has_catalog=False)
 
     result = plugin.execute(ctx)
 
@@ -242,20 +216,19 @@ def test_execute_fails_without_catalog_provider() -> None:
     assert "CatalogProvider is required" in str(result.error)
 
 
-def test_execute_succeeds_with_all_resources(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_with_all_resources(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds with all required resources."""
     plugin = FunctionContractsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-
-    def has_resource(name: str) -> bool:
-        return name in {"AstProvider", "CatalogProvider"}
-
-    ctx.has_resource_by_name.side_effect = has_resource
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(
+        tmp_path,
+        has_config=True,
+        has_ast=True,
+        has_catalog=True,
+        gateway=fresh_gateway,
+    )
 
     result = plugin.execute(ctx)
 

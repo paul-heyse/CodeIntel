@@ -166,10 +166,24 @@ class RecipeExecutorContext:
 
 
 class RecipeExecutor:
-    """Execute graph recipes.
+    """Execute graph recipes with stage-based parallelism.
 
-    Orchestrates plugin execution across recipe stages with support for
+    Orchestrate plugin execution across recipe stages with support for
     parallelism, failure handling, and shared scratch space.
+
+    Architecture Note
+    -----------------
+    This executor follows the patterns from BaseRecipeExecutor
+    (codeintel.core.recipes.executor) but does not formally extend it because:
+
+    1. Graphs uses stage-based execution (not plan-based)
+    2. Graphs has tight integration with GraphPluginExecutionContext
+    3. Graphs uses core PluginExecutionRecord directly
+
+    Common patterns shared with other recipe executors:
+    - Scratch space management via PluginScratch
+    - Parallel execution via ThreadPoolExecutor
+    - Stage-based result aggregation
     """
 
     def __init__(self, context: RecipeExecutorContext) -> None:
@@ -609,11 +623,11 @@ class RecipeExecutor:
             duration_ms=duration_ms,
             attempts=1,
             partial=status == "failed",
+            result=result,  # Store actual result for row_counts access
             error=error,
             meta={
                 "recipe": recipe_name,
                 "stage": stage_name,
-                "row_counts": dict(result.row_counts) if result and result.row_counts else None,
             },
         )
 

@@ -51,6 +51,7 @@ from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
+from codeintel.ingestion.runtime.executor import IngestPluginExecutionRecord
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
@@ -137,33 +138,29 @@ class RecipeExecutorContext(BaseExecutorContext):
     ingest_run_sink: IngestRunSink | None = None
 
 
-@dataclass
-class PluginExecutionRecord:
-    """Record of a single plugin execution.
-
-    Attributes
-    ----------
-    plugin_name
-        Name of the executed plugin.
-    result
-        Execution result.
-    duration_s
-        Execution duration in seconds.
-    error
-        Exception if execution failed.
-    """
-
-    plugin_name: str
-    result: IngestPluginResult | None = None
-    duration_s: float = 0.0
-    error: Exception | None = None
-
-
 class RecipeExecutor:
     """Execute ingestion recipes with parallel stage support.
 
-    The executor runs plugins in the order defined by recipe stages,
-    with optional parallelism within stages.
+    Execute plugins in the order defined by recipe stages, with optional
+    parallelism within stages.
+
+    Architecture Note
+    -----------------
+    This executor follows the patterns from BaseRecipeExecutor
+    (codeintel.core.recipes.executor) and uses:
+    - `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
+    - `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+
+    It does not formally extend BaseRecipeExecutor because:
+    1. Ingestion uses recipe stage-based execution with IngestRecipe
+    2. Ingestion has tight integration with IngestPluginExecutionRecord
+    3. Ingestion manages change tracking and tool runners
+
+    Common patterns shared with other recipe executors:
+    - Scratch space management via IngestRuntimeScratch (via ExecutorConfig)
+    - Parallel execution via ThreadPoolExecutor
+    - Stage-based result aggregation
+    - Telemetry integration via RuntimeTelemetry
     """
 
     def __init__(
@@ -418,7 +415,7 @@ class RecipeExecutor:
         self,
         plugins: Sequence[IngestPluginProtocol],
         timeout_s: int | None,
-    ) -> list[PluginExecutionRecord]:
+    ) -> list[IngestPluginExecutionRecord]:
         """Execute plugins sequentially.
 
         Parameters
@@ -430,10 +427,10 @@ class RecipeExecutor:
 
         Returns
         -------
-        list[PluginExecutionRecord]
+        list[IngestPluginExecutionRecord]
             Execution records.
         """
-        records: list[PluginExecutionRecord] = []
+        records: list[IngestPluginExecutionRecord] = []
 
         for plugin in plugins:
             record = self._execute_single_plugin(plugin, timeout_s)
@@ -451,7 +448,7 @@ class RecipeExecutor:
         self,
         plugins: Sequence[IngestPluginProtocol],
         timeout_s: int | None,
-    ) -> list[PluginExecutionRecord]:
+    ) -> list[IngestPluginExecutionRecord]:
         """Execute plugins in parallel using threads.
 
         Parameters
@@ -463,10 +460,10 @@ class RecipeExecutor:
 
         Returns
         -------
-        list[PluginExecutionRecord]
+        list[IngestPluginExecutionRecord]
             Execution records in completion order.
         """
-        records: list[PluginExecutionRecord] = []
+        records: list[IngestPluginExecutionRecord] = []
         max_workers = min(len(plugins), self._config.max_workers)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -483,7 +480,7 @@ class RecipeExecutor:
                 except Exception as exc:
                     log.exception("Plugin execution failed: %s", plugin.metadata.name)
                     records.append(
-                        PluginExecutionRecord(
+                        IngestPluginExecutionRecord(
                             plugin_name=plugin.metadata.name,
                             error=exc,
                         )
@@ -495,7 +492,7 @@ class RecipeExecutor:
         self,
         plugin: IngestPluginProtocol,
         _timeout_s: int | None,
-    ) -> PluginExecutionRecord:
+    ) -> IngestPluginExecutionRecord:
         """Execute a single plugin.
 
         Parameters
@@ -507,7 +504,7 @@ class RecipeExecutor:
 
         Returns
         -------
-        PluginExecutionRecord
+        IngestPluginExecutionRecord
             Execution record.
         """
         name = plugin.metadata.name
@@ -528,7 +525,7 @@ class RecipeExecutor:
                 duration_s,
             )
 
-            return PluginExecutionRecord(
+            return IngestPluginExecutionRecord(
                 plugin_name=name,
                 result=result,
                 duration_s=duration_s,
@@ -538,7 +535,7 @@ class RecipeExecutor:
             duration_s = time.perf_counter() - start_time
             log.exception("Plugin failed: name=%s duration=%.2fs", name, duration_s)
 
-            return PluginExecutionRecord(
+            return IngestPluginExecutionRecord(
                 plugin_name=name,
                 result=IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__),
                 duration_s=duration_s,
@@ -729,6 +726,18 @@ def _record_ingestion_steps(
 ) -> None:
     """Record step records from ingestion results.
 
+    Note: Does not use core `record_plugin_steps()` because ingestion
+    RecipeExecutionResult has a stage-based structure with `plugin_results`
+    as dicts rather than PluginExecutionRecord instances.
+
+    The ingestion result structure:
+    - result.stage_results[].plugin_results: dict[str, dict] (success, skipped, error)
+    - Does not have exact timestamps (uses approximation with current time)
+    - Does not have row_counts in the current structure
+
+    Using the core helper would require changing the ingestion result structure
+    to produce PluginExecutionRecord instances, which would be a larger refactor.
+
     Parameters
     ----------
     runs
@@ -782,7 +791,7 @@ def _record_ingestion_steps(
 
 __all__ = [
     "ExecutorConfig",
-    "PluginExecutionRecord",
+    "IngestPluginExecutionRecord",
     "RecipeExecutor",
     "RecipeExecutorContext",
     "execute_recipe",

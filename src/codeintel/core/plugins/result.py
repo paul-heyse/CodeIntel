@@ -235,9 +235,67 @@ class PluginResult(BasePluginResult):
         )
 
 
+@dataclass
+class BasePluginExecutionRecord:
+    """Base execution record for all domains.
+
+    Provide common fields and computed duration properties for plugin execution
+    records. Domain-specific record types extend this base with additional fields.
+
+    Extension Points
+    ----------------
+    Domain-specific execution record classes should extend this base:
+    - PluginExecutionRecord (core): Frozen, millisecond-based, for graphs/analytics
+    - IngestPluginExecutionRecord (ingestion): Mutable, with row tracking
+
+    Attributes
+    ----------
+    plugin_name
+        Name of the executed plugin.
+    started_at
+        Timestamp when execution started.
+    ended_at
+        Timestamp when execution ended, or None if still running.
+    """
+
+    plugin_name: str
+    started_at: datetime
+    ended_at: datetime | None = None
+
+    @property
+    def duration_s(self) -> float:
+        """Compute duration in seconds.
+
+        Returns
+        -------
+        float
+            Duration in seconds, or 0.0 if ended_at is None.
+        """
+        if self.ended_at is None:
+            return 0.0
+        return (self.ended_at - self.started_at).total_seconds()
+
+    @property
+    def computed_duration_ms(self) -> float:
+        """Compute duration in milliseconds.
+
+        Returns
+        -------
+        float
+            Duration in milliseconds, or 0.0 if ended_at is None.
+        """
+        return self.duration_s * 1000
+
+
 @dataclass(frozen=True)
 class PluginExecutionRecord:
-    """Record of a single plugin execution.
+    """Record of a single plugin execution for graphs and analytics.
+
+    This is the canonical execution record type for graphs and analytics domains.
+    It is frozen (immutable) and stores duration directly in milliseconds.
+
+    For ingestion-specific records with row tracking, see IngestPluginExecutionRecord
+    in codeintel.ingestion.runtime.executor.
 
     Attributes
     ----------
@@ -298,6 +356,7 @@ class PluginArtifact:
 
 
 __all__ = [
+    "BasePluginExecutionRecord",
     "BasePluginResult",
     "PluginArtifact",
     "PluginExecutionRecord",
