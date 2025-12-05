@@ -22,32 +22,37 @@ Example (legacy tool fakes)
 """
 
 # Legacy tool fakes (for ingestion tests)
+# New protocol-based fakes (for build system tests)
+from tests._helpers.fakes.fake_providers import (
+    FakeCoverageCollector,
+    FakeGitHistoryProvider,
+    FakeTestReporter,
+    FakeTypeChecker,
+)
+from tests._helpers.fakes.fake_providers import (
+    FakeProviders as ProtocolFakeProviders,
+)
+from tests._helpers.fakes.fake_providers import (
+    FakeScipIndexer as ProtocolFakeScipIndexer,
+)
+from tests._helpers.fakes.fake_providers import (
+    FakeToolRunner as ProtocolFakeToolRunner,
+)
 from tests._helpers.fakes.tools import (
     FakeToolRunner,
     FakeToolService,
     FakeToolServiceConfig,
 )
 
-# New protocol-based fakes (for build system tests)
-from tests._helpers.fakes.fake_providers import (
-    FakeCoverageCollector,
-    FakeGitHistoryProvider,
-    FakeProviders as ProtocolFakeProviders,
-    FakeScipIndexer as ProtocolFakeScipIndexer,
-    FakeTestReporter,
-    FakeToolRunner as ProtocolFakeToolRunner,
-    FakeTypeChecker,
-)
-
 __all__ = [
-    # Legacy fakes
-    "FakeToolRunner",
-    "FakeToolService",
-    "FakeToolServiceConfig",
     # Protocol-based fakes
     "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeTestReporter",
+    # Legacy fakes
+    "FakeToolRunner",
+    "FakeToolService",
+    "FakeToolServiceConfig",
     "FakeTypeChecker",
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",

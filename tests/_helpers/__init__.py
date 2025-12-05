@@ -4,7 +4,6 @@ This package provides standardized test infrastructure for both analytics
 and ingestion plugins, including:
 
 - `PluginTestHarness`: Fluent test harness for analytics plugins
-- `IngestPluginTestHarness`: Fluent test harness for ingestion plugins
 - `TestContext`: Unified test environment for hexagonal architecture
 - `TestScenario`: Declarative scenario builder
 - `GraphPluginBuilder`: Fluent builder for graph test plugins
@@ -45,12 +44,9 @@ from tests._helpers.fakes.networkx_graphs import (
     star_graph,
 )
 from tests._helpers.harnesses import (
-    IngestPluginResultAssertions,
-    IngestPluginTestHarness,
     PluginResultAssertions,
     PluginTestHarness,
     ValidationResultAssertions,
-    assert_ingest_result,
     assert_result,
     assert_validation,
 )
@@ -109,8 +105,6 @@ __all__ = [
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",
-    "IngestPluginResultAssertions",
-    "IngestPluginTestHarness",
     "PluginResultAssertions",
     "PluginTestHarness",
     "ProvisionedGateway",
@@ -123,7 +117,6 @@ __all__ = [
     "ValidationResultAssertions",
     "assert_all_frozen",
     "assert_frozen",
-    "assert_ingest_result",
     "assert_result",
     "assert_validation",
     "build_callgraph_fixture_repo",

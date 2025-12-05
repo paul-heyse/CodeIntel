@@ -50,7 +50,6 @@ class DataModelsPlugin(TargetPlugin):
 
         cfg = DataModelsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         try:

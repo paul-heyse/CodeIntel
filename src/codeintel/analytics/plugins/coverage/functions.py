@@ -51,7 +51,6 @@ class CoverageFunctionsPlugin(TargetPlugin):
         # Build config from context
         cfg = CoverageAnalyticsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         try:

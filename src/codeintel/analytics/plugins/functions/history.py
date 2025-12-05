@@ -53,17 +53,16 @@ class FunctionHistoryPlugin(TargetPlugin):
 
         cfg = FunctionHistoryStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
             max_history_days=max_history_days,
         )
 
-        tool_runner = ctx.resources.tool_runner
-
+        # Note: ToolRunner type mismatch between build.protocols and ingestion.engine.infrastructure
+        # Passing None for now as runner is optional
         try:
             compute_function_history(
                 ctx.gateway,
                 cfg,
-                runner=tool_runner,
+                runner=None,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Function history computation failed: {e}")

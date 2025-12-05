@@ -7,42 +7,20 @@ This package contains plugins that construct graph structures from parsed code:
 - cfg_dfg: Control-flow and data-flow graph construction
 - symbol_uses: Symbol use edge construction
 
-All plugins use the hexagonal architecture's resource injection pattern
-via ctx.require() with fallback to direct context properties.
+All plugins implement the TargetPlugin protocol for the build system.
 """
 
-# Plugins are registered when their modules are imported
-# Import them here to ensure registration at package load time
-from codeintel.graphs.plugins.builders.callgraph import (
-    callgraph_builder_plugin,
-    get_callgraph_builder_plugin,
-)
-from codeintel.graphs.plugins.builders.cfg_dfg import (
-    cfg_dfg_builder_plugin,
-    get_cfg_dfg_builder_plugin,
-)
-from codeintel.graphs.plugins.builders.goid import (
-    get_goid_builder_plugin,
-    goid_builder_plugin,
-)
-from codeintel.graphs.plugins.builders.import_graph import (
-    get_import_graph_builder_plugin,
-    import_graph_builder_plugin,
-)
-from codeintel.graphs.plugins.builders.symbol_uses import (
-    get_symbol_uses_builder_plugin,
-    symbol_uses_builder_plugin,
-)
+from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
+from codeintel.graphs.plugins.builders.cfg_dfg import CfgDfgPlugin
+from codeintel.graphs.plugins.builders.goid import GoidPlugin
+from codeintel.graphs.plugins.builders.import_graph import ImportGraphPlugin
+from codeintel.graphs.plugins.builders.symbol_uses import SymbolUsesPlugin, build_scip_candidates
 
 __all__ = [
-    "callgraph_builder_plugin",
-    "cfg_dfg_builder_plugin",
-    "get_callgraph_builder_plugin",
-    "get_cfg_dfg_builder_plugin",
-    "get_goid_builder_plugin",
-    "get_import_graph_builder_plugin",
-    "get_symbol_uses_builder_plugin",
-    "goid_builder_plugin",
-    "import_graph_builder_plugin",
-    "symbol_uses_builder_plugin",
+    "CallGraphPlugin",
+    "CfgDfgPlugin",
+    "GoidPlugin",
+    "ImportGraphPlugin",
+    "SymbolUsesPlugin",
+    "build_scip_candidates",
 ]

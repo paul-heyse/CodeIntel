@@ -60,8 +60,6 @@ def _expect(*, condition: bool, detail: str) -> None:
     raise AssertionError(detail)
 
 
-
-
 def _write_scip_json(tmp_path: Path, content: str) -> Path:
     """Write SCIP JSON to a temporary file.
 

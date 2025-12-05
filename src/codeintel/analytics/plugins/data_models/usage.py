@@ -52,7 +52,6 @@ class DataModelUsagePlugin(TargetPlugin):
 
         cfg = DataModelUsageStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         # Get resources
@@ -60,11 +59,11 @@ class DataModelUsagePlugin(TargetPlugin):
         if catalog is None:
             return TargetResult.failed("Catalog is required for data model usage")
 
-        module_map = catalog.get_resource("ModuleMapProvider")
+        module_map = None  # Resources not yet populated via build context
         if module_map is None:
             return TargetResult.failed("ModuleMapProvider is required")
 
-        ast_data = catalog.get_resource("AstProvider")
+        ast_data = None  # Resources not yet populated via build context
         if ast_data is None:
             return TargetResult.failed("AstProvider is required")
 

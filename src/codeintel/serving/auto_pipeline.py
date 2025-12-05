@@ -424,9 +424,7 @@ def diagnose_prereq_failure(
 
     # Use bottleneck or first missing as fix target
     fix_target = bottleneck or (missing[0] if missing else None)
-    fix_command = (
-        f"codeintel build run {fix_target}" if fix_target else "codeintel build run --all"
-    )
+    fix_command = f"codeintel build run {fix_target}" if fix_target else "codeintel build run --all"
 
     # Build human message
     if missing:
@@ -438,8 +436,7 @@ def diagnose_prereq_failure(
         )
     else:
         human_message = (
-            f"Operation '{op_id}' cannot run due to missing prerequisites. "
-            f"Run: {fix_command}"
+            f"Operation '{op_id}' cannot run due to missing prerequisites. Run: {fix_command}"
         )
 
     return PrerequisiteError(

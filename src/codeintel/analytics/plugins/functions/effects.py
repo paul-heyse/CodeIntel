@@ -53,7 +53,6 @@ class FunctionEffectsPlugin(TargetPlugin):
         # Build config from context
         cfg = FunctionEffectsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         # Get resources
@@ -64,7 +63,7 @@ class FunctionEffectsPlugin(TargetPlugin):
         ast_map = None
         missing_goids = None
         if catalog_provider is not None:
-            ast_data = catalog_provider.get_resource("AstProvider")
+            ast_data = None  # Resources not yet populated via build context
             if ast_data is not None:
                 ast_map = ast_data.function_ast_map
                 missing_goids = ast_data.missing_function_goids

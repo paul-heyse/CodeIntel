@@ -159,11 +159,13 @@ class TestMockCatalogFactoryFunctions:
 
     def test_create_multi_file_custom(self) -> None:
         """create_mock_catalog_multi_file accepts custom file layout."""
-        catalog = create_mock_catalog_multi_file({
-            "api/routes.py": 4,
-            "api/models.py": 2,
-            "tests/test_api.py": 3,
-        })
+        catalog = create_mock_catalog_multi_file(
+            {
+                "api/routes.py": 4,
+                "api/models.py": 2,
+                "tests/test_api.py": 3,
+            }
+        )
 
         assert len(catalog.functions) == 9
 
@@ -363,10 +365,12 @@ class TestMockCatalogDocumentation:
         use MockFunctionCatalog with multi-file layout.
         """
         # Setup: Create catalog with functions in multiple files
-        catalog = create_mock_catalog_multi_file({
-            "src/core.py": 5,
-            "src/utils.py": 3,
-        })
+        catalog = create_mock_catalog_multi_file(
+            {
+                "src/core.py": 5,
+                "src/utils.py": 3,
+            }
+        )
 
         # Test: Discovery code
         core_funcs = catalog.get_functions_by_path("src/core.py")

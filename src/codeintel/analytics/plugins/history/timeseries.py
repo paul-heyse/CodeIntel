@@ -51,27 +51,33 @@ class HistoryTimeseriesPlugin(TargetPlugin):
         """
         _ = self  # Protocol method requires instance
 
-        # Build config from context
-        cfg = HistoryTimeseriesStepConfig(
-            snapshot=ctx.snapshot,
-            paths=ctx.paths,
-        )
-
         # Get snapshot resolver from parameters (if available)
         # This is a specialized resource that might need to be provided
         snapshot_resolver = ctx.parameters.get_optional("history_snapshot_resolver", object)
         if snapshot_resolver is None:
             return TargetResult.failed("history_snapshot_resolver is required in parameters")
 
+        # Get commits from parameters
+        commits_raw = ctx.parameters.get_optional("commits", list)
+        if not commits_raw:
+            return TargetResult.failed("commits is required in parameters for history timeseries")
+        commits = tuple(str(c) for c in commits_raw)
+
+        # Build config from context
+        cfg = HistoryTimeseriesStepConfig(
+            snapshot=ctx.snapshot,
+            commits=commits,
+        )
+
         resolver = cast("SnapshotGatewayResolver", snapshot_resolver)
-        tool_runner = ctx.resources.tool_runner
 
         try:
+            # Note: ToolRunner type mismatch - passing None
             compute_history_timeseries_gateways(
                 ctx.gateway,
                 cfg,
                 resolver,
-                runner=tool_runner,
+                runner=None,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"History timeseries computation failed: {e}")

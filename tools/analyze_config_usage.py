@@ -66,9 +66,22 @@ def get_config_exports() -> dict[str, list[str]]:
 
     # Common names to skip (properties, methods, etc.)
     skip_names = {
-        "repo", "commit", "repo_root", "build_dir", "snapshot", "paths",
-        "default", "analytics", "graphs", "ingestion", "profiles",
-        "code", "config", "from_args", "from_layout", "from_primitives",
+        "repo",
+        "commit",
+        "repo_root",
+        "build_dir",
+        "snapshot",
+        "paths",
+        "default",
+        "analytics",
+        "graphs",
+        "ingestion",
+        "profiles",
+        "code",
+        "config",
+        "from_args",
+        "from_layout",
+        "from_primitives",
     }
 
     # Parse each Python file in config
@@ -90,9 +103,7 @@ def get_config_exports() -> dict[str, list[str]]:
                     if isinstance(target, ast.Name) and target.id == "__all__":
                         if isinstance(node.value, (ast.List, ast.Tuple)):
                             for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(
-                                    elt.value, str
-                                ):
+                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                     name = elt.value
                                     if name not in skip_names and len(name) > 3:
                                         file_exports.append(name)
@@ -127,9 +138,7 @@ def get_config_exports() -> dict[str, list[str]]:
                         if isinstance(target, ast.Name) and target.id == "__all__":
                             if isinstance(node.value, (ast.List, ast.Tuple)):
                                 for elt in node.value.elts:
-                                    if isinstance(elt, ast.Constant) and isinstance(
-                                        elt.value, str
-                                    ):
+                                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                         name = elt.value
                                         if name not in skip_names and len(name) > 3:
                                             file_exports.append(name)
@@ -224,7 +233,8 @@ def count_usages(name: str, include_tests: bool = False) -> tuple[int, int, int,
                 "src/",
                 "tests/",
             ],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
             cwd=Path.cwd(),
         )
@@ -240,7 +250,8 @@ def count_usages(name: str, include_tests: bool = False) -> tuple[int, int, int,
                 "src/",
                 "tests/",
             ],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
             cwd=Path.cwd(),
         )
@@ -362,18 +373,24 @@ def format_text_report(result: AnalysisResult, threshold: int) -> str:
             lines.append(f"  ❌ {export.name}")
             lines.append(f"     Source: {export.source_file}")
             lines.append(f"     Kind: {export.kind}")
-            lines.append(f"     Internal uses: {export.internal_uses}, Test uses: {export.test_uses}")
+            lines.append(
+                f"     Internal uses: {export.internal_uses}, Test uses: {export.test_uses}"
+            )
             lines.append("")
     else:
         lines.append("  (none)")
         lines.append("")
 
-    lines.extend([
-        "-" * 80,
-        f"LOW USAGE EXPORTS (1-{threshold-1} external uses)" if threshold > 1 else "LOW USAGE EXPORTS",
-        "-" * 80,
-        "",
-    ])
+    lines.extend(
+        [
+            "-" * 80,
+            f"LOW USAGE EXPORTS (1-{threshold - 1} external uses)"
+            if threshold > 1
+            else "LOW USAGE EXPORTS",
+            "-" * 80,
+            "",
+        ]
+    )
 
     low_usage = [e for e in result.exports if 0 < e.external_uses < threshold]
     if low_usage:
@@ -387,12 +404,14 @@ def format_text_report(result: AnalysisResult, threshold: int) -> str:
         lines.append("  (none)")
         lines.append("")
 
-    lines.extend([
-        "-" * 80,
-        "WELL-USED EXPORTS (by usage count)",
-        "-" * 80,
-        "",
-    ])
+    lines.extend(
+        [
+            "-" * 80,
+            "WELL-USED EXPORTS (by usage count)",
+            "-" * 80,
+            "",
+        ]
+    )
 
     well_used = [e for e in result.exports if e.external_uses >= threshold]
     well_used.sort(key=lambda x: -x.external_uses)  # Descending
@@ -416,9 +435,7 @@ def main() -> int:
     int
         Exit code.
     """
-    parser = argparse.ArgumentParser(
-        description="Analyze usage of config package exports."
-    )
+    parser = argparse.ArgumentParser(description="Analyze usage of config package exports.")
     parser.add_argument(
         "--json",
         action="store_true",

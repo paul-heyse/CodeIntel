@@ -255,9 +255,7 @@ class CallGraphPlugin(TargetPlugin):
         # Get SCIP candidates from symbol_uses if available
         scip_candidates_by_use: dict[str, tuple[str, ...]] = {}
         if ctx.resources.catalog is not None:
-            scip_candidates_by_use = symbol_uses.build_scip_candidates(
-                gateway, repo, commit
-            )
+            scip_candidates_by_use = symbol_uses.build_scip_candidates(gateway, repo, commit)
 
         inputs = CallGraphInputs(
             global_callee_by_name=global_callee_by_name,

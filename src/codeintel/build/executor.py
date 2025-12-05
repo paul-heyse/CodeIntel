@@ -15,7 +15,7 @@ Integration Points
 ------------------
 - Analytics: `plan_analytics_plugin_run()` + `run_analytics_plugins()`
 - Graphs: `plan_graph_plugin_run()` + `run_graph_plugins()`
-- Ingestion: Recipe-based execution via `execute_recipe()`
+- Ingestion: Direct plugin execution via `_execute_target_direct()`
 - Tracking: `BuildTracking` for manifest and run record persistence
 """
 
@@ -43,17 +43,11 @@ from codeintel.build.plan import BuildPlan, PlanStage
 from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
-from codeintel.config.resolver import resolve_scan_profiles
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.graphs.runtime.executor import GraphExecutorContext, run_graph_plugins
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
-from codeintel.ingestion.recipes.builtin import get_builtin_recipe
-from codeintel.ingestion.recipes.executor import (
-    RecipeExecutorContext,
-    execute_recipe,
-)
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -265,7 +259,6 @@ class BuildExecutor:
         paths: BuildPaths,
         tools: ToolsConfig,
         *,
-        ingestion_recipe: str = "full_python",
         fail_fast: bool = False,
     ) -> None:
         """Initialize the build executor.
@@ -282,9 +275,6 @@ class BuildExecutor:
             Build paths configuration.
         tools
             Tools configuration for build execution.
-        ingestion_recipe
-            Name of ingestion recipe to use (default: "full_python").
-            Use "incremental" to skip SCIP indexing.
         fail_fast
             If True, stop on first error. If False (default), continue
             executing independent targets and collect all errors.
@@ -294,7 +284,6 @@ class BuildExecutor:
         self._snapshot = snapshot
         self._paths = paths
         self._tools = tools
-        self._ingestion_recipe = ingestion_recipe
         self._fail_fast = fail_fast
         self._export_options: ExportCallOptions | None = None
         # Initialize providers for protocol-based DI
@@ -437,8 +426,7 @@ class BuildExecutor:
                         break
                     # Continue-and-collect: keep going with other stages
                     log.info(
-                        "build.executor.continue_after_failure run_id=%s "
-                        "failed=%s continuing=True",
+                        "build.executor.continue_after_failure run_id=%s failed=%s continuing=True",
                         run_id,
                         stage_result.failed,
                     )
@@ -775,7 +763,7 @@ class BuildExecutor:
     ) -> StageExecutionResult:
         """Execute an ingestion stage.
 
-        Maps stage targets to ingestion plugins and executes via recipe.
+        Executes each ingestion target directly via the plugin registry.
 
         Parameters
         ----------
@@ -791,75 +779,60 @@ class BuildExecutor:
         """
         start_time = datetime.now(tz=UTC)
         target_names = [step.target for step in stage.steps]
-        plugin_names = self._get_plugin_names_for_stage(stage)
 
         log.debug(
-            "build.executor.ingestion targets=%s plugins=%s",
+            "build.executor.ingestion targets=%s run_id=%s",
             target_names,
-            plugin_names,
+            run_id,
         )
 
-        # Get the configured recipe
-        recipe = get_builtin_recipe(self._ingestion_recipe)
-        if recipe is None:
-            msg = f"Ingestion recipe '{self._ingestion_recipe}' not found"
-            return StageExecutionResult(
-                module="ingestion",
-                completed=(),
-                failed=tuple(target_names),
-                durations_ms={},
-                row_counts={},
-                error=msg,
-            )
+        completed: list[str] = []
+        failed: list[str] = []
+        durations_ms: dict[str, float] = {}
+        row_counts: dict[str, int | None] = {}
+        errors: list[str] = []
 
-        try:
-            # Create context with scan profiles
-            scan_profiles = resolve_scan_profiles(self._snapshot.repo_root)
-            context = RecipeExecutorContext(
-                gateway=self._gateway,
-                snapshot=self._snapshot,
-                paths=self._paths,
-                tools=self._tools,
-                code_profile=scan_profiles.code,
-                config_profile=scan_profiles.config,
-            )
+        for target_name in target_names:
+            target_start = datetime.now(tz=UTC)
+            success, error, counts = self._execute_target_direct(target_name)
+            duration = (datetime.now(tz=UTC) - target_start).total_seconds() * 1000
 
-            # Execute the recipe
-            result = execute_recipe(
-                recipe=recipe,
-                context=context,
-                config=None,
-            )
+            durations_ms[target_name] = duration
+            row_counts.update(counts)
 
-            duration_ms = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
-
-            if result.success:
-                # All targets completed
-                durations = {name: duration_ms / len(target_names) for name in target_names}
-                return StageExecutionResult(
-                    module="ingestion",
-                    completed=tuple(target_names),
-                    failed=(),
-                    durations_ms=durations,
-                    row_counts={},
+            if success:
+                completed.append(target_name)
+                log.info(
+                    "build.executor.ingestion.target.complete target=%s duration_ms=%.1f",
+                    target_name,
+                    duration,
+                )
+            else:
+                failed.append(target_name)
+                if error:
+                    errors.append(f"{target_name}: {error}")
+                log.warning(
+                    "build.executor.ingestion.target.failed target=%s error=%s",
+                    target_name,
+                    error,
                 )
 
-            # Recipe failed
-            return StageExecutionResult(
-                module="ingestion",
-                completed=(),
-                failed=tuple(target_names),
-                error=result.error or "Ingestion recipe failed",
-            )
+        total_duration = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
+        log.info(
+            "build.executor.ingestion.complete completed=%d failed=%d duration_ms=%.1f",
+            len(completed),
+            len(failed),
+            total_duration,
+        )
 
-        except Exception as exc:
-            log.exception("build.executor.ingestion.error run_id=%s", run_id)
-            return StageExecutionResult(
-                module="ingestion",
-                completed=(),
-                failed=tuple(target_names),
-                error=str(exc),
-            )
+        return StageExecutionResult(
+            module="ingestion",
+            completed=tuple(completed),
+            failed=tuple(failed),
+            durations_ms=durations_ms,
+            row_counts=row_counts,
+            error="; ".join(errors) if errors else None,
+        )
 
     def _execute_graphs_stage(
         self,
@@ -1119,9 +1092,7 @@ class BuildExecutor:
                     failed.append(target_name)
                     continue
 
-                duration_ms = int(
-                    (datetime.now(tz=UTC) - target_start).total_seconds() * 1000
-                )
+                duration_ms = int((datetime.now(tz=UTC) - target_start).total_seconds() * 1000)
                 durations[target_name] = duration_ms
                 log.info(
                     "build.executor.export.completed target=%s duration_ms=%d",
@@ -1140,12 +1111,9 @@ class BuildExecutor:
                     (datetime.now(tz=UTC) - target_start).total_seconds() * 1000
                 )
 
-        total_duration_ms = int(
-            (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
-        )
+        total_duration_ms = int((datetime.now(tz=UTC) - start_time).total_seconds() * 1000)
         log.info(
-            "build.executor.export.stage_complete "
-            "completed=%d failed=%d duration_ms=%d",
+            "build.executor.export.stage_complete completed=%d failed=%d duration_ms=%d",
             len(completed),
             len(failed),
             total_duration_ms,

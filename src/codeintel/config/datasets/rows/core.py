@@ -13,10 +13,24 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, TypedDict
+from enum import StrEnum
+from typing import Protocol, TypedDict
 
-if TYPE_CHECKING:
-    from codeintel.ingestion.core.runs import IngestRunMode, IngestRunStatus
+
+class IngestRunStatus(StrEnum):
+    """Outcome for an ingestion step run."""
+
+    OK = "ok"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+
+class IngestRunMode(StrEnum):
+    """High-level mode for a dataset step."""
+
+    FULL = "full"
+    INCREMENTAL = "incremental"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -464,7 +478,9 @@ __all__ = [
     "GoidCrosswalkRow",
     "GoidRow",
     "IngestRunLike",
+    "IngestRunMode",
     "IngestRunRow",
+    "IngestRunStatus",
     "config_value_to_tuple",
     "docstring_row_to_tuple",
     "goid_crosswalk_to_tuple",

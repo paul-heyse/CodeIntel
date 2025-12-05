@@ -57,12 +57,8 @@ class ProfilesPlugin(TargetPlugin):
         _ = self  # Protocol method requires instance
 
         # Build config from context
-        include_ownership = ctx.parameters.get("include_ownership", bool, default=True)
-
         cfg = ProfilesAnalyticsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
-            include_ownership=include_ownership,
         )
 
         # Get optional resources

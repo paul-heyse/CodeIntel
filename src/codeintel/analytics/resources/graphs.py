@@ -99,6 +99,7 @@ class GraphRuntimeLike(Protocol):
         """Whether GPU execution is enabled."""
         ...
 
+
 log = logging.getLogger(__name__)
 
 

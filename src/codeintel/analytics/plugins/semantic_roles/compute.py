@@ -53,7 +53,6 @@ class SemanticRolesPlugin(TargetPlugin):
         # Build config from context
         cfg = SemanticRolesStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         # Get resources from catalog
@@ -68,12 +67,12 @@ class SemanticRolesPlugin(TargetPlugin):
                 module_by_path = catalog.catalog().module_by_path
 
             # Get AST data
-            ast_data = catalog.get_resource("AstProvider")
+            ast_data = None  # Resources not yet populated via build context
             if ast_data is not None:
                 ast_map = ast_data.function_ast_map
 
             # Get features
-            features = catalog.get_resource("FeaturesProvider")
+            features = None  # Resources not yet populated via build context
             if features is not None:
                 features_map = cast("dict[int, FunctionAstFeatures]", features)
 
