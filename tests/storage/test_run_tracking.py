@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime import RunContext
+from tests._helpers.factories import make_snapshot
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import (
     PipelineRunRecord,
@@ -88,7 +88,7 @@ def _make_run_context(run_id: str, tmp_path: Path) -> RunContext:
     RunContext
         A RunContext configured for testing.
     """
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     return RunContext(
         run_id=run_id,
         kind="full",

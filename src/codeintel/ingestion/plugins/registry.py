@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
-import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
-from uuid import uuid4
 
 from codeintel.core.plugins.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
+from codeintel.core.singleton import SingletonHolder
 from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
 from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
@@ -34,6 +33,7 @@ from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
+from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 
@@ -287,7 +287,7 @@ class IngestPluginRegistry:
 
         return IngestPluginPlan(
             plugins=tuple(ordered),
-            plan_id=uuid4().hex,
+            plan_id=new_run_id("plan"),
             skipped_plugins=skipped,
             dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
         )
@@ -607,41 +607,11 @@ class IngestPluginRegistry:
 # Thread-safe singleton holder for the global registry
 
 
-class _RegistrySingleton:
-    """Thread-safe singleton holder for the ingest plugin registry.
+class _IngestRegistryHolder(SingletonHolder[IngestPluginRegistry]):
+    """Singleton holder for IngestPluginRegistry.
 
-    Uses double-checked locking to ensure thread-safe initialization
-    while minimizing lock contention after initialization.
+    Uses the thread-safe SingletonHolder pattern from core.
     """
-
-    _instance: IngestPluginRegistry | None = None
-    _lock: threading.Lock = threading.Lock()
-
-    @classmethod
-    def get(cls) -> IngestPluginRegistry:
-        """Return the singleton registry instance.
-
-        Thread-safe with double-checked locking.
-
-        Returns
-        -------
-        IngestPluginRegistry
-            The singleton registry instance.
-        """
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = IngestPluginRegistry()
-        return cls._instance
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the singleton for testing.
-
-        Should only be called in test fixtures.
-        """
-        with cls._lock:
-            cls._instance = None
 
 
 def get_ingest_registry() -> IngestPluginRegistry:
@@ -652,7 +622,15 @@ def get_ingest_registry() -> IngestPluginRegistry:
     IngestPluginRegistry
         The singleton registry instance.
     """
-    return _RegistrySingleton.get()
+    return _IngestRegistryHolder.get(IngestPluginRegistry)
+
+
+def reset_ingest_registry() -> None:
+    """Reset the singleton for testing.
+
+    Should only be called in test fixtures.
+    """
+    _IngestRegistryHolder.reset()
 
 
 def register_ingest_plugin(plugin: IngestPluginProtocol) -> None:
@@ -754,4 +732,5 @@ __all__ = [
     "plan_ingest_plugins",
     "register_class_based_plugins",
     "register_ingest_plugin",
+    "reset_ingest_registry",
 ]

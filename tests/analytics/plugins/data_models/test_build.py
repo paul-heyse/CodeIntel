@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
@@ -18,9 +17,11 @@ from codeintel.analytics.core.protocol import (
 )
 from codeintel.analytics.plugins.data_models.build import DataModelsPlugin
 from codeintel.config.steps_analytics import DataModelsStepConfig
-from tests._helpers.factories import make_step_config
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -29,49 +30,39 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config(tmp_path: Path | None = None) -> DataModelsStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    DataModelsStepConfig
-        Test configuration.
-    """
-    return make_step_config(DataModelsStepConfig, tmp_path)
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(DataModelsStepConfig, tmp_path)
+        builder.with_config(DataModelsStepConfig, config)
 
-    return ctx
+    return builder.build()
 
 
 # =============================================================================
@@ -134,10 +125,10 @@ def test_data_models_plugin_metadata_depends_on() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = DataModelsPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -145,10 +136,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = DataModelsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -156,10 +147,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = DataModelsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -174,10 +165,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = DataModelsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -185,28 +176,26 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_succeeds_with_config(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_with_config(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds when config is present."""
     plugin = DataModelsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
+    ctx = _create_context(tmp_path, has_config=True, gateway=fresh_gateway)
 
     result = plugin.execute(ctx)
 
     assert result.success is True
 
 
-def test_execute_returns_ok_result(fresh_gateway: StorageGateway) -> None:
+def test_execute_returns_ok_result(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute returns PluginResult.ok() on success."""
     plugin = DataModelsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
+    ctx = _create_context(tmp_path, has_config=True, gateway=fresh_gateway)
 
     result = plugin.execute(ctx)
 

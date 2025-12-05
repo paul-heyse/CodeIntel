@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
@@ -18,9 +17,11 @@ from codeintel.analytics.core.protocol import (
 )
 from codeintel.analytics.plugins.profiles.build import ProfilesPlugin
 from codeintel.config.steps_analytics import ProfilesAnalyticsStepConfig
-from tests._helpers.factories import make_step_config
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -29,84 +30,39 @@ EXPECTED_OUTPUT_COUNT = 3
 EXPECTED_CAPABILITY_COUNT = 3
 
 
-def _create_config(tmp_path: Path | None = None) -> ProfilesAnalyticsStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    ProfilesAnalyticsStepConfig
-        Test configuration.
-    """
-    return make_step_config(ProfilesAnalyticsStepConfig, tmp_path)
-
-
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
-
-    Parameters
-    ----------
-    name
-        Resource provider name.
-
-    Returns
-    -------
-    MagicMock
-        Mock provider.
-    """
-    provider = MagicMock()
-    if name == "CatalogProvider":
-        catalog = MagicMock()
-        catalog.catalog.return_value = MagicMock(function_spans=[])
-        provider.get.return_value = catalog
-    elif name == "ModuleMapProvider":
-        provider.get.return_value = {}
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    has_catalog: bool = False,
-    has_module_map: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
-    has_catalog
-        Whether catalog provider is available.
-    has_module_map
-        Whether module map provider is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    resource_map = {
-        "CatalogProvider": has_catalog,
-        "ModuleMapProvider": has_module_map,
-    }
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(ProfilesAnalyticsStepConfig, tmp_path)
+        builder.with_config(ProfilesAnalyticsStepConfig, config)
 
-    return ctx
+    return builder.build()
 
 
 # =============================================================================
@@ -172,10 +128,10 @@ def test_profiles_plugin_metadata_depends_on() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = ProfilesPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -183,10 +139,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = ProfilesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -194,10 +150,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = ProfilesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -212,10 +168,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = ProfilesPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -223,15 +179,13 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_succeeds_without_providers(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_without_providers(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds without optional providers."""
     plugin = ProfilesPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.return_value = False
+    ctx = _create_context(tmp_path, has_config=True, gateway=fresh_gateway)
 
     result = plugin.execute(ctx)
 

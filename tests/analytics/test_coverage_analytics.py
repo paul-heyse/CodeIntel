@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,6 +16,7 @@ from codeintel.analytics.compute.coverage.functions import compute_coverage_func
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -112,7 +112,7 @@ def snapshot() -> SnapshotRef:
     SnapshotRef
         A snapshot reference for testing.
     """
-    return SnapshotRef(repo="test-repo", commit="abc123", repo_root=Path.cwd())
+    return make_snapshot()
 
 
 @pytest.fixture
@@ -641,7 +641,7 @@ def test_different_repos_isolated(snapshot: SnapshotRef, analytics_gateway: Stor
         GoidSeedData("urn:repo1:func", "module.py", "function", "func1", HASH_REPO1, 1, 5),
     )
 
-    other_snapshot = SnapshotRef(repo="other-repo", commit="other-commit", repo_root=Path.cwd())
+    other_snapshot = make_snapshot(repo="other-repo", commit="other-commit")
     _seed_goid(
         con,
         other_snapshot,

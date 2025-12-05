@@ -12,7 +12,6 @@ import importlib
 import importlib.metadata
 import logging
 from collections.abc import Sequence
-from uuid import uuid4
 
 from codeintel.core.plugins.registry import BasePluginRegistry
 from codeintel.core.plugins.sorting import build_provider_index_from_metadata, topological_sort
@@ -23,6 +22,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginSkip,
 )
+from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
 
         return GraphPluginPlan(
             plugins=tuple(ordered),
-            plan_id=uuid4().hex,
+            plan_id=new_run_id("plan"),
             skipped_plugins=skipped,
             dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
         )

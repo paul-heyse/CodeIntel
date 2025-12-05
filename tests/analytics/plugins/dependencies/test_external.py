@@ -10,17 +10,20 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
     ValidationResult,
 )
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
-from tests._helpers.factories import make_step_config
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -29,132 +32,49 @@ EXPECTED_OUTPUT_COUNT = 2
 EXPECTED_CAPABILITY_COUNT = 2
 
 
-def _create_config(tmp_path: Path | None = None) -> ExternalDependenciesStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    has_catalog: bool = False,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    ExternalDependenciesStepConfig
-        Test configuration.
-    """
-    return make_step_config(ExternalDependenciesStepConfig, tmp_path)
-
-
-def _create_resource_availability_map(
-    *,
-    has_catalog: bool,
-    has_module_map: bool,
-    has_ast: bool,
-    has_features: bool,
-) -> dict[str, bool]:
-    """Create a resource availability mapping.
-
-    Parameters
-    ----------
-    has_catalog
-        Whether catalog provider is available.
-    has_module_map
-        Whether module map provider is available.
-    has_ast
-        Whether AST provider is available.
-    has_features
-        Whether features provider is available.
-
-    Returns
-    -------
-    dict[str, bool]
-        Mapping of resource name to availability.
-    """
-    return {
-        "CatalogProvider": has_catalog,
-        "ModuleMapProvider": has_module_map,
-        "AstProvider": has_ast,
-        "FeaturesProvider": has_features,
-    }
-
-
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
-
-    Parameters
-    ----------
-    name
-        Resource provider name.
-
-    Returns
-    -------
-    MagicMock
-        Mock provider.
-    """
-    provider = MagicMock()
-    if name == "CatalogProvider":
-        catalog = MagicMock()
-        catalog.catalog.return_value = MagicMock(function_spans=[])
-        provider.get.return_value = catalog
-    elif name == "ModuleMapProvider":
-        provider.get.return_value = {}
-    elif name == "AstProvider":
-        ast_data = MagicMock()
-        ast_data.function_ast_map = {}
-        ast_data.missing_function_goids = set()
-        provider.get.return_value = ast_data
-    elif name == "FeaturesProvider":
-        provider.get.return_value = {}
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    has_catalog: bool = True,
-    has_module_map: bool = False,
-    has_ast: bool = False,
-    has_features: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
     has_catalog
         Whether catalog provider is available.
-    has_module_map
-        Whether module map provider is available.
-    has_ast
-        Whether AST provider is available.
-    has_features
-        Whether features provider is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    resource_map = _create_resource_availability_map(
-        has_catalog=has_catalog,
-        has_module_map=has_module_map,
-        has_ast=has_ast,
-        has_features=has_features,
-    )
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(ExternalDependenciesStepConfig, tmp_path)
+        builder.with_config(ExternalDependenciesStepConfig, config)
 
-    return ctx
+    if has_catalog:
+        # Create catalog provider with empty preloaded data
+        empty_catalog = FunctionCatalog(functions=[], module_by_path={})
+        catalog_service = FunctionCatalogService(empty_catalog)
+        catalog_provider = CatalogProvider.from_catalog(catalog_service)
+        builder.with_resource(CatalogProvider, catalog_provider)
+
+    return builder.build()
 
 
 # =============================================================================
@@ -211,10 +131,10 @@ def test_external_deps_plugin_metadata_tags() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = ExternalDepsPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -222,10 +142,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = ExternalDepsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -238,10 +158,10 @@ def test_validate_inputs_failure_without_config() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = ExternalDepsPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -249,10 +169,10 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_fails_without_catalog() -> None:
+def test_execute_fails_without_catalog(tmp_path: Path) -> None:
     """Execute fails when catalog provider is not available."""
     plugin = ExternalDepsPlugin()
-    ctx = _create_mock_context(has_config=True, has_catalog=False)
+    ctx = _create_context(tmp_path, has_config=True, has_catalog=False)
 
     result = plugin.execute(ctx)
 
@@ -261,72 +181,22 @@ def test_execute_fails_without_catalog() -> None:
     assert "CatalogProvider is required" in str(result.error)
 
 
-def test_execute_succeeds_with_minimal_resources(
+def test_execute_succeeds_with_catalog(
+    tmp_path: Path,
     fresh_gateway: StorageGateway,
 ) -> None:
-    """Execute succeeds with minimal required resources."""
+    """Execute succeeds with catalog provider available."""
     plugin = ExternalDepsPlugin()
-
-    # Create a realistic mock context that uses fresh_gateway
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider"
-
-    # Mock catalog provider
-    catalog = MagicMock()
-    catalog.catalog.return_value = MagicMock(function_spans=[])
-    cat_provider = MagicMock()
-    cat_provider.get.return_value = catalog
-    ctx.require_by_name.return_value = cat_provider
+    ctx = _create_context(
+        tmp_path,
+        has_config=True,
+        has_catalog=True,
+        gateway=fresh_gateway,
+    )
 
     result = plugin.execute(ctx)
 
     # Should succeed (may produce empty result but not fail)
-    assert result.success is True
-
-
-def test_execute_with_all_resources(fresh_gateway: StorageGateway) -> None:
-    """Execute succeeds with all resources available."""
-    plugin = ExternalDepsPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-
-    def has_resource(name: str) -> bool:
-        return name in {
-            "CatalogProvider",
-            "ModuleMapProvider",
-            "AstProvider",
-            "FeaturesProvider",
-        }
-
-    ctx.has_resource_by_name.side_effect = has_resource
-
-    def require_resource(name: str) -> MagicMock:
-        provider = MagicMock()
-        if name == "CatalogProvider":
-            catalog = MagicMock()
-            catalog.catalog.return_value = MagicMock(function_spans=[])
-            provider.get.return_value = catalog
-        elif name == "ModuleMapProvider":
-            provider.get.return_value = {}
-        elif name == "AstProvider":
-            ast_data = MagicMock()
-            ast_data.function_ast_map = {}
-            ast_data.missing_function_goids = set()
-            provider.get.return_value = ast_data
-        elif name == "FeaturesProvider":
-            provider.get.return_value = {}
-        return provider
-
-    ctx.require_by_name.side_effect = require_resource
-
-    result = plugin.execute(ctx)
-
     assert result.success is True
 
 

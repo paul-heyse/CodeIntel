@@ -395,12 +395,16 @@ class GraphPluginMetaOptions:
 class GraphPluginSkip:
     """Skip metadata for planned plugins that will not execute.
 
+    Structurally equivalent to ``codeintel.core.plugins.registry.PluginSkip``
+    but with graph-specific skip reasons. The core type uses `str` for
+    maximum flexibility; this type uses a Literal for domain-specific type safety.
+
     Attributes
     ----------
     name
         Plugin name.
     reason
-        Reason for skipping.
+        Reason for skipping (graph-specific values).
     """
 
     name: str

@@ -17,7 +17,6 @@ from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine.views import load_call_graph
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
@@ -28,6 +27,7 @@ from tests._helpers.builders import (
     ModuleRow,
     insert_rows,
 )
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 REPO = "test/repo"
@@ -344,7 +344,7 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
             commit=COMMIT,
             repo_root=repo_root,
         )
-        snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=repo_root)
+        snapshot = make_snapshot(repo_root=repo_root, repo=REPO, commit=COMMIT)
 
         # Load module map
         module_map_provider = ModuleMapProvider(gateway, snapshot)

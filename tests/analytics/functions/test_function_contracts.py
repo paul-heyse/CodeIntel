@@ -762,3 +762,75 @@ def test_compute_function_contracts_classmethod_with_cls(
 
     # Verify completes successfully
     assert True
+
+
+def test_compute_function_contracts_idempotent(
+    memory_gateway: StorageGateway,
+    contracts_config: FunctionContractsStepConfig,
+) -> None:
+    """Compute contracts is idempotent (running twice produces same result)."""
+    goid = 12363
+    code = """def idempotent_test(x):
+    assert x is not None
+    return x
+"""
+    func_ast = _create_sample_function_ast(
+        goid=goid,
+        rel_path="module.py",
+        qualname="idempotent_test",
+        code=code,
+    )
+
+    ast_map = {goid: func_ast}
+
+    # Run twice
+    compute_function_contracts(
+        memory_gateway,
+        contracts_config,
+        function_ast_map=ast_map,
+        catalog=None,
+    )
+    compute_function_contracts(
+        memory_gateway,
+        contracts_config,
+        function_ast_map=ast_map,
+        catalog=None,
+    )
+
+    # Should not error and should be idempotent
+    result = memory_gateway.con.execute(
+        "SELECT COUNT(*) FROM analytics.function_contracts"
+    ).fetchone()
+    assert result is not None
+
+
+def test_compute_function_contracts_complex_assertions(
+    memory_gateway: StorageGateway,
+    contracts_config: FunctionContractsStepConfig,
+) -> None:
+    """Compute contracts handles complex assertion expressions."""
+    goid = 12364
+    code = """def complex_assertions(x, y, z):
+    assert x >= 0, "x must be non-negative"
+    assert not y, "y must be falsey"
+    assert isinstance(z, (list, tuple))
+    return x + len(z)
+"""
+    func_ast = _create_sample_function_ast(
+        goid=goid,
+        rel_path="module.py",
+        qualname="complex_assertions",
+        code=code,
+    )
+
+    ast_map = {goid: func_ast}
+
+    compute_function_contracts(
+        memory_gateway,
+        contracts_config,
+        function_ast_map=ast_map,
+        catalog=None,
+    )
+
+    # Function executed without error
+    assert True

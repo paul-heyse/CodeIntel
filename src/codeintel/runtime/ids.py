@@ -8,8 +8,15 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+# Standard prefixes for run ID generation
+RUN_PREFIX_PIPELINE = "ci"
+RUN_PREFIX_INGEST = "ingest"
+RUN_PREFIX_GRAPHS = "graphs"
+RUN_PREFIX_ANALYTICS = "analytics"
+RUN_PREFIX_PLAN = "plan"
 
-def new_run_id(prefix: str = "ci") -> str:
+
+def new_run_id(prefix: str = RUN_PREFIX_PIPELINE) -> str:
     """Generate a new opaque run identifier.
 
     Parameters
@@ -33,4 +40,11 @@ def new_run_id(prefix: str = "ci") -> str:
     return f"{prefix}-{uuid4().hex}"
 
 
-__all__ = ["new_run_id"]
+__all__ = [
+    "RUN_PREFIX_ANALYTICS",
+    "RUN_PREFIX_GRAPHS",
+    "RUN_PREFIX_INGEST",
+    "RUN_PREFIX_PIPELINE",
+    "RUN_PREFIX_PLAN",
+    "new_run_id",
+]

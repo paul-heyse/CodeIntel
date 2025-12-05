@@ -9,6 +9,7 @@ import networkx as nx
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine
+from tests._helpers.factories import make_snapshot
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from codeintel.storage.gateway import StorageGateway
 
@@ -79,7 +80,7 @@ def _runtime_options(
     *,
     strict: bool,
 ) -> GraphRuntimeOptions:
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
     return GraphRuntimeOptions(
         snapshot=snapshot,
         features=GraphFeatureFlags(validation_strict=strict),

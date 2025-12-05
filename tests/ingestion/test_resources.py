@@ -13,7 +13,6 @@ from typing import ClassVar, cast
 
 import pytest
 
-from codeintel.config import SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -34,6 +33,7 @@ from codeintel.ingestion.resources.registry import (
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 
 # Test constants
 TEST_COUNT_42 = 42
@@ -659,7 +659,7 @@ def test_tracker_config_with_profile(tmp_path: Path) -> None:
 
 def test_tracker_provider_initialization(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """TrackerProvider should initialize with gateway and snapshot."""
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     provider = TrackerProvider(fresh_gateway, snapshot)
 
     # RESOURCE_NAME ClassVar is "tracker" for consistency with core resources
@@ -669,7 +669,7 @@ def test_tracker_provider_initialization(fresh_gateway: StorageGateway, tmp_path
 
 def test_tracker_provider_with_config(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """TrackerProvider should accept TrackerConfig."""
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     config = TrackerConfig(full_rebuild=True)
     provider = TrackerProvider(fresh_gateway, snapshot, config)
 
@@ -689,7 +689,7 @@ def test_tracker_provider_get_or_create_alias(
     src_dir.mkdir()
     (src_dir / "main.py").write_text("# main module\n", encoding="utf-8")
 
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     provider = TrackerProvider(fresh_gateway, snapshot)
 
     # get_or_create should work same as get
@@ -707,7 +707,7 @@ def test_tracker_provider_load_creates_tracker(
     src_dir.mkdir()
     (src_dir / "main.py").write_text("# main module\n", encoding="utf-8")
 
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     provider = TrackerProvider(fresh_gateway, snapshot)
 
     tracker = provider.get()

@@ -10,8 +10,8 @@ import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
+from tests._helpers.factories import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -33,7 +33,7 @@ class _StubEngine:
 
 def test_disk_cache_round_trip(tmp_path: Path) -> None:
     """Graphs should be read from disk cache when metadata matches."""
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     opts = GraphRuntimeOptions(snapshot=snapshot, graph_cache_dir=tmp_path)
     engine = _StubEngine()
     runtime = GraphRuntime(options=opts, engine=cast("GraphEngine", engine))
@@ -55,7 +55,7 @@ def test_disk_cache_round_trip(tmp_path: Path) -> None:
 
 def test_disk_cache_mismatch_falls_back_to_loader(tmp_path: Path) -> None:
     """Cache metadata mismatch should trigger loader path."""
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     opts = GraphRuntimeOptions(snapshot=snapshot, graph_cache_dir=tmp_path)
 
     base = f"other__c__auto__False__{('CALL_GRAPH').lower()}"

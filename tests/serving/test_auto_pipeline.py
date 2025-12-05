@@ -18,8 +18,8 @@ from uuid import uuid4
 import pytest
 
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
+from tests._helpers.factories import make_snapshot
 from codeintel.runtime import RunContext, RunKind, TriggerKind
 from codeintel.serving.auto_pipeline import (
     AUTO_PIPELINE_ENV,
@@ -178,7 +178,7 @@ class RunParams:
 
 def _seed_run(tracking: PipelineRunTracking, params: RunParams) -> None:
     """Insert a run into the tracking store using the production API."""
-    snapshot = SnapshotRef(repo=params.repo, commit=params.commit, repo_root=Path.cwd())
+    snapshot = make_snapshot(repo=params.repo, commit=params.commit, repo_root=Path.cwd())
     ctx = RunContext(
         run_id=f"run-{uuid4().hex}",
         kind=params.kind,

@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
@@ -18,6 +17,7 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginSkip,
 )
 from codeintel.ingestion.plugins.registry import PlanOptions
+from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -40,7 +40,7 @@ class PluginExecutionPlan:
         Snapshot reference for the execution.
     """
 
-    plan_id: str = field(default_factory=lambda: uuid4().hex)
+    plan_id: str = field(default_factory=lambda: new_run_id("plan"))
     plugins: tuple[IngestPluginProtocol, ...] = ()
     skipped: tuple[IngestPluginSkip, ...] = ()
     snapshot: SnapshotRef | None = None

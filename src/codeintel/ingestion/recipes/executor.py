@@ -24,7 +24,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
@@ -53,6 +52,7 @@ from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 from codeintel.ingestion.runtime.executor import IngestPluginExecutionRecord
 from codeintel.ingestion.tracker import ChangeTracker
+from codeintel.runtime.ids import new_run_id
 from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ class ExecutorConfig:
 
     registry: IngestPluginRegistry = field(default_factory=get_ingest_registry)
     scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
-    run_id: str = field(default_factory=lambda: uuid4().hex)
+    run_id: str = field(default_factory=lambda: new_run_id("ingest"))
     enable_parallel: bool = True
     max_workers: int = 4
     timeout_s: int | None = None
@@ -482,6 +482,7 @@ class RecipeExecutor:
                     records.append(
                         IngestPluginExecutionRecord(
                             plugin_name=plugin.metadata.name,
+                            started_at=datetime.now(tz=UTC),
                             error=exc,
                         )
                     )
@@ -508,14 +509,15 @@ class RecipeExecutor:
             Execution record.
         """
         name = plugin.metadata.name
-        start_time = time.perf_counter()
+        started_at = datetime.now(tz=UTC)
 
         log.info("Executing plugin: %s", name)
 
         try:
             ctx = self._build_context(plugin)
             result = plugin.execute(ctx)
-            duration_s = time.perf_counter() - start_time
+            ended_at = datetime.now(tz=UTC)
+            duration_s = (ended_at - started_at).total_seconds()
 
             log.info(
                 "Plugin completed: name=%s success=%s skipped=%s duration=%.2fs",
@@ -527,18 +529,21 @@ class RecipeExecutor:
 
             return IngestPluginExecutionRecord(
                 plugin_name=name,
+                started_at=started_at,
+                ended_at=ended_at,
                 result=result,
-                duration_s=duration_s,
             )
 
         except Exception as exc:
-            duration_s = time.perf_counter() - start_time
+            ended_at = datetime.now(tz=UTC)
+            duration_s = (ended_at - started_at).total_seconds()
             log.exception("Plugin failed: name=%s duration=%.2fs", name, duration_s)
 
             return IngestPluginExecutionRecord(
                 plugin_name=name,
+                started_at=started_at,
+                ended_at=ended_at,
                 result=IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__),
-                duration_s=duration_s,
                 error=exc,
             )
 

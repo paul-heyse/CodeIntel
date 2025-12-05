@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
+from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.engine import GraphEngine, GraphKind
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
+
+if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -80,7 +85,7 @@ def test_eager_hydration_respects_feature_override(
     tmp_path: Path, fresh_gateway: StorageGateway
 ) -> None:
     """Eager hydration should preload graphs when the feature flag is enabled."""
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     stub = _StubEngine(fresh_gateway, snapshot)
 
     opts = GraphRuntimeOptions(
@@ -102,7 +107,7 @@ def test_eager_hydration_off_defers_graph_loads(
     tmp_path: Path, fresh_gateway: StorageGateway
 ) -> None:
     """Absent eager flag should defer graph loads until explicitly requested."""
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     stub = _StubEngine(fresh_gateway, snapshot)
 
     opts = GraphRuntimeOptions(

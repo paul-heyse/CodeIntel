@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from codeintel.analytics.runtime import GraphRuntimeOptions, GraphRuntimePool
-from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
+from tests._helpers.factories import make_snapshot
 
 
 def test_pool_reuses_runtime_within_ttl(fresh_gateway: StorageGateway) -> None:
@@ -21,7 +19,7 @@ def test_pool_reuses_runtime_within_ttl(fresh_gateway: StorageGateway) -> None:
     """
     gateway = fresh_gateway
     apply_all_schemas(gateway.con)
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path())
+    snapshot = make_snapshot()
     options = GraphRuntimeOptions(snapshot=snapshot)
     current = [0.0]
 
@@ -48,7 +46,7 @@ def test_pool_expires_runtime_after_ttl(fresh_gateway: StorageGateway) -> None:
     """
     gateway = fresh_gateway
     apply_all_schemas(gateway.con)
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path())
+    snapshot = make_snapshot()
     options = GraphRuntimeOptions(snapshot=snapshot)
     current = [0.0]
 
@@ -75,8 +73,8 @@ def test_pool_lru_eviction(fresh_gateway: StorageGateway) -> None:
     """
     gateway = fresh_gateway
     apply_all_schemas(gateway.con)
-    snapshot1 = SnapshotRef(repo="r", commit="c1", repo_root=Path())
-    snapshot2 = SnapshotRef(repo="r", commit="c2", repo_root=Path())
+    snapshot1 = make_snapshot(commit="c1")
+    snapshot2 = make_snapshot(commit="c2")
     opts1 = GraphRuntimeOptions(snapshot=snapshot1)
     opts2 = GraphRuntimeOptions(snapshot=snapshot2)
     current = [0.0]

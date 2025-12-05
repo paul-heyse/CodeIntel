@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -156,7 +155,7 @@ def test_safe_count_with_scope_filters_by_snapshot(
             ('c', 'c.py', 'repo2', 'commit2', 'python', '[]', '[]')
     """)
 
-    snapshot = SnapshotRef(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
     result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
 
     assert result == EXPECTED_COUNT_2
@@ -174,7 +173,9 @@ def test_safe_count_with_scope_nonexistent_table(
 
 def test_safe_count_with_scope_no_matches(fresh_gateway: StorageGateway) -> None:
     """safe_count_with_scope should return 0 when no rows match."""
-    snapshot = SnapshotRef(repo="nonexistent_repo", commit="nonexistent", repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(
+        repo="nonexistent_repo", commit="nonexistent", repo_root=TEST_REPO_ROOT
+    )
     result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
 
     assert result == 0
