@@ -15,10 +15,11 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
@@ -43,12 +44,13 @@ from codeintel.ingestion.recipes.dsl import (
 )
 from codeintel.ingestion.recipes.executor import (
     ExecutorConfig,
-    PluginExecutionRecord,
+    IngestPluginExecutionRecord,
     RecipeExecutor,
     RecipeExecutorContext,
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs.provisioning_config import ProvisionedGateway
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 from tests._helpers.harnesses import IngestTestSetup
 from tests._helpers.orchestration.tooling import make_tools_config
@@ -199,7 +201,7 @@ def test_executor_config_run_id_is_unique() -> None:
 
 def test_recipe_executor_context_minimal(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutorContext should be creatable with minimal params."""
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
     paths = BuildPaths.from_repo_root(tmp_path)
     scan_profile = ScanProfile(
         repo_root=tmp_path,
@@ -226,37 +228,42 @@ def test_recipe_executor_context_minimal(fresh_gateway: StorageGateway, tmp_path
 
 
 # =============================================================================
-# PluginExecutionRecord Tests
+# IngestPluginExecutionRecord Tests
 # =============================================================================
 
 
 def test_plugin_execution_record_success() -> None:
-    """PluginExecutionRecord should record successful execution."""
+    """IngestPluginExecutionRecord should record successful execution."""
     result = IngestPluginResult.ok(row_counts={"core.test": 10})
-    expected_duration = 1.5
+    started = datetime.now(tz=UTC)
+    ended = datetime.now(tz=UTC)
 
-    record = PluginExecutionRecord(
+    record = IngestPluginExecutionRecord(
         plugin_name="test_plugin",
+        started_at=started,
+        ended_at=ended,
         result=result,
-        duration_s=expected_duration,
     )
 
     assert record.plugin_name == "test_plugin"
     assert record.result is result
     assert record.result is not None
     assert record.result.success is True
-    assert record.duration_s == expected_duration
+    assert record.duration_s >= 0.0
     assert record.error is None
 
 
 def test_plugin_execution_record_with_error() -> None:
-    """PluginExecutionRecord should record execution with error."""
+    """IngestPluginExecutionRecord should record execution with error."""
     error = ValueError("Test error")
+    started = datetime.now(tz=UTC)
+    ended = datetime.now(tz=UTC)
 
-    record = PluginExecutionRecord(
+    record = IngestPluginExecutionRecord(
         plugin_name="failing_plugin",
+        started_at=started,
+        ended_at=ended,
         error=error,
-        duration_s=0.1,
     )
 
     assert record.plugin_name == "failing_plugin"
@@ -265,8 +272,9 @@ def test_plugin_execution_record_with_error() -> None:
 
 
 def test_plugin_execution_record_default_values() -> None:
-    """PluginExecutionRecord should have sensible defaults."""
-    record = PluginExecutionRecord(plugin_name="test")
+    """IngestPluginExecutionRecord should have sensible defaults."""
+    started = datetime.now(tz=UTC)
+    record = IngestPluginExecutionRecord(plugin_name="test", started_at=started)
 
     assert record.plugin_name == "test"
     assert record.result is None

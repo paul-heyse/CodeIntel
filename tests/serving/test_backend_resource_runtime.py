@@ -10,8 +10,8 @@ from codeintel.analytics.runtime import (
     GraphRuntimePool,
     build_graph_runtime,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
+from tests._helpers.factories import make_snapshot
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from tests._helpers import ProvisionedGateway
 
@@ -34,7 +34,7 @@ def test_backend_resource_reuses_pooled_runtime(
         commit=provisioned_repo.commit,
         db_path=gateway.config.db_path,
     )
-    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+    snapshot = make_snapshot(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
     runtime = build_graph_runtime(
         gateway,
         GraphRuntimeOptions(snapshot=snapshot),
@@ -89,7 +89,7 @@ def test_backend_resource_reuse_across_builds(provisioned_repo: ProvisionedGatew
         commit=provisioned_repo.commit,
         db_path=gateway.config.db_path,
     )
-    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+    snapshot = make_snapshot(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
     runtime = build_graph_runtime(
         gateway,
         GraphRuntimeOptions(snapshot=snapshot),

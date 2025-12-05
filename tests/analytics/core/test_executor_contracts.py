@@ -17,7 +17,7 @@ from codeintel.analytics.core.protocol import (
     ValidationResult,
 )
 from codeintel.analytics.core.registry import PluginPlan
-from codeintel.config.primitives import SnapshotRef
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_fresh_duckdb, seed_tables
 
 
@@ -160,7 +160,7 @@ def test_execute_populates_contract_results_for_metadata_contracts(tmp_path: Pat
             "INSERT INTO analytics.contracts (repo, commit, value) VALUES (?, ?, ?)",
             ["repo", "deadbeef", 1],
         )
-        snapshot = SnapshotRef(repo="repo", commit="deadbeef", repo_root=tmp_path)
+        snapshot = make_snapshot(repo="repo", repo_root=tmp_path)
         builder = PluginExecutionContextBuilder(
             gateway=gateway,
             snapshot=snapshot,

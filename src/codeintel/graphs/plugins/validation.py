@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from codeintel.analytics.runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.plugins.result import PluginResult
+from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core import (
     GraphPluginExecutionContext,
     GraphPluginMetadata,
@@ -37,6 +38,13 @@ from codeintel.storage.gateway import (
 log = logging.getLogger(__name__)
 
 
+class _GraphValidationPluginHolder(SingletonHolder["GraphValidationPlugin"]):
+    """Singleton holder for GraphValidationPlugin.
+
+    Uses the thread-safe SingletonHolder pattern from core.
+    """
+
+
 @dataclass
 class GraphValidationPlugin:
     """Plugin that validates graph construction outputs.
@@ -44,11 +52,8 @@ class GraphValidationPlugin:
     This plugin wraps the existing graph validation functionality,
     emitting warnings for common graph integrity issues.
 
-    This class implements the singleton pattern - use `instance()` to
-    get the global plugin instance.
+    Use `instance()` to get the global plugin instance.
     """
-
-    _instance: GraphValidationPlugin | None = None
 
     @classmethod
     def instance(cls) -> GraphValidationPlugin:
@@ -59,14 +64,12 @@ class GraphValidationPlugin:
         GraphValidationPlugin
             The global plugin instance.
         """
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+        return _GraphValidationPluginHolder.get(cls)
 
     @classmethod
     def reset_instance(cls) -> None:
         """Reset the singleton instance for testing."""
-        cls._instance = None
+        _GraphValidationPluginHolder.reset()
 
     @property
     def metadata(self) -> GraphPluginMetadata:

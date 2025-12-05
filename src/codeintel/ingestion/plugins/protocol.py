@@ -297,12 +297,16 @@ def is_ingest_plugin(obj: object) -> TypeGuard[IngestPluginProtocol]:
 class IngestPluginSkip:
     """Skip metadata for planned plugins that will not execute.
 
+    Structurally equivalent to ``codeintel.core.plugins.registry.PluginSkip``
+    but with ingestion-specific skip reasons. The core type uses `str` for
+    maximum flexibility; this type uses a Literal for domain-specific type safety.
+
     Attributes
     ----------
     name
         Plugin name.
     reason
-        Reason for skipping.
+        Reason for skipping (ingestion-specific values).
     """
 
     name: str

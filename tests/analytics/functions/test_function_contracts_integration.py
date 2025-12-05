@@ -19,9 +19,9 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -61,7 +61,7 @@ def contracts_config(tmp_path: Path) -> FunctionContractsStepConfig:
     FunctionContractsStepConfig
         Configuration for testing.
     """
-    snapshot = SnapshotRef(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     return FunctionContractsStepConfig(
         snapshot=snapshot,
         max_conditions_per_func=TEST_MAX_CONDITIONS,

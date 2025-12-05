@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TypeVar
 
 T = TypeVar("T")
@@ -195,9 +196,32 @@ def measure_duration_ms[T](
     return result, timing.elapsed_ms
 
 
+def utc_now() -> datetime:
+    """Return the current UTC datetime.
+
+    Use this function instead of ``datetime.now(tz=UTC)`` for consistency
+    across the codebase. This makes timestamps easier to search for and
+    provides a single point for any future datetime behavior changes.
+
+    Returns
+    -------
+    datetime
+        Current datetime in UTC timezone.
+
+    Examples
+    --------
+    >>> from codeintel.core.runtime.timing import utc_now
+    >>> now = utc_now()
+    >>> now.tzinfo is UTC
+    True
+    """
+    return datetime.now(tz=UTC)
+
+
 __all__ = [
     "TimingResult",
     "measure_duration",
     "measure_duration_ms",
     "timed",
+    "utc_now",
 ]

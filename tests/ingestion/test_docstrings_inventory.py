@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config import SnapshotRef
 from codeintel.ingestion import (
     DocstringsExtractStep,
     DuckDBStorageAdapter,
@@ -20,9 +19,11 @@ from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
 )
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
 
@@ -106,7 +107,7 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
     (repo_root / "src" / "pkg" / "b.py").write_text('"""doc B"""\n', encoding="utf8")
     (repo_root / "src" / "ignored" / "c.py").write_text('"""ignored doc"""\n', encoding="utf8")
 
-    snapshot = SnapshotRef(repo="demo/docstrings", commit="abc123", repo_root=repo_root)
+    snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=repo_root)
     code_profile = _code_profile_ignoring_dir(snapshot.repo_root, "ignored")
     gateway = open_ingestion_gateway()
 
@@ -128,7 +129,7 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
     (src_pkg / "visible.py").write_text('"""visible doc"""\n', encoding="utf8")
     (src_pkg / "ghost.py").write_text('"""ghost doc"""\n', encoding="utf8")
 
-    snapshot = SnapshotRef(repo="demo/docstrings", commit="deadbeef", repo_root=repo_root)
+    snapshot = make_snapshot(repo="demo/docstrings", repo_root=repo_root)
     code_profile = default_code_profile(snapshot.repo_root)
     gateway = open_ingestion_gateway()
 

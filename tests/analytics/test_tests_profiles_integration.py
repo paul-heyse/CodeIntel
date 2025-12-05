@@ -1,4 +1,8 @@
-"""Richer coverage input tests using in-memory DuckDB fixtures."""
+"""Integration tests for analytics.tests_profiles module.
+
+This module consolidates integration tests for test profiles including
+coverage input processing and plugin runtime execution.
+"""
 
 from __future__ import annotations
 
@@ -7,24 +11,47 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from codeintel.analytics.core.pipeline_bridge import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
+    plan_analytics_plugin_run,
+    run_analytics_plugins,
+)
+from codeintel.analytics.plugins import TEST_PROFILE_PLUGIN
 from codeintel.analytics.testing.coverage import inputs as coverage_inputs
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.config.primitives import SnapshotRef
+from codeintel.config import BehavioralCoverageStepConfig, ConfigBuilder, TestProfileStepConfig
+from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from tests._helpers import provisioned_gateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
 
+# =============================================================================
+# Shared Test Helpers
+# =============================================================================
+
+
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path.cwd())
+    """Create test and behavioral coverage configs from a snapshot.
+
+    Returns
+    -------
+    tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]
+        Tuple of test profile and behavioral coverage configs.
+    """
+    snapshot = make_snapshot()
     return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
 
 
 def _seed_sample_data(con: DuckDBPyConnection) -> None:
+    """Seed sample data into the DuckDB fixture for coverage testing."""
     edges = [
-        ("t1", 1, "mod.a", 5, 10, "r", "c", "a.py", "A::t1a"),
-        ("t1", 2, "mod.b", 8, 10, "r", "c", "b.py", "B::t1b"),
-        ("t2", 2, "mod.b", 6, 10, "r", "c", "b.py", "B::t2"),
+        ("t1", 1, "mod.a", 5, 10, DEFAULT_REPO, DEFAULT_COMMIT, "a.py", "A::t1a"),
+        ("t1", 2, "mod.b", 8, 10, DEFAULT_REPO, DEFAULT_COMMIT, "b.py", "B::t1b"),
+        ("t2", 2, "mod.b", 6, 10, DEFAULT_REPO, DEFAULT_COMMIT, "b.py", "B::t2"),
     ]
     con.executemany(
         """
@@ -35,30 +62,32 @@ def _seed_sample_data(con: DuckDBPyConnection) -> None:
         edges,
     )
     catalog = [
-        ("t1", "r", "c", "passed", 500.0, False),
-        ("t2", "r", "c", "failed", 2500.0, True),
+        ("t1", DEFAULT_REPO, DEFAULT_COMMIT, "passed", 500.0, False),
+        ("t2", DEFAULT_REPO, DEFAULT_COMMIT, "failed", 2500.0, True),
     ]
     con.executemany(
         "INSERT INTO analytics.test_catalog VALUES (?, ?, ?, ?, ?, ?)",
         catalog,
     )
     subsystems = [
-        ("mod.a", "subA"),
-        ("mod.b", "subB"),
+        ("mod.a", "subA", DEFAULT_REPO, DEFAULT_COMMIT),
+        ("mod.b", "subB", DEFAULT_REPO, DEFAULT_COMMIT),
     ]
     con.executemany(
-        "INSERT INTO analytics.subsystem_modules VALUES (?, ?, 'r', 'c')",
+        "INSERT INTO analytics.subsystem_modules VALUES (?, ?, ?, ?)",
         subsystems,
     )
     con.executemany(
-        "INSERT INTO analytics.subsystems VALUES (?, ?, ?, 'r', 'c')",
-        [("subA", "Subsystem A", 0.2), ("subB", "Subsystem B", 0.8)],
+        "INSERT INTO analytics.subsystems VALUES (?, ?, ?, ?, ?)",
+        [
+            ("subA", "Subsystem A", 0.2, DEFAULT_REPO, DEFAULT_COMMIT),
+            ("subB", "Subsystem B", 0.8, DEFAULT_REPO, DEFAULT_COMMIT),
+        ],
     )
 
 
 def _aggregate_functions(con: DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
-    """
-    Compute function coverage summaries from the fixture tables.
+    """Compute function coverage summaries from the fixture tables.
 
     Parameters
     ----------
@@ -104,8 +133,7 @@ def _aggregate_functions(con: DuckDBPyConnection, repo: str, commit: str) -> dic
 
 
 def _aggregate_subsystems(con: DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
-    """
-    Compute subsystem coverage summaries from the fixture tables.
+    """Compute subsystem coverage summaries from the fixture tables.
 
     Parameters
     ----------
@@ -149,6 +177,11 @@ def _aggregate_subsystems(con: DuckDBPyConnection, repo: str, commit: str) -> di
             "max_risk_score": None,
         }
     return result
+
+
+# =============================================================================
+# Coverage Input Tests
+# =============================================================================
 
 
 def test_aggregate_test_coverage_by_function_in_memory(
@@ -195,3 +228,67 @@ def test_aggregate_test_coverage_by_subsystem_in_memory(
         pytest.fail("Primary subsystem for t1 not in expected set.")
     if t2.primary_subsystem_id != "subB":
         pytest.fail("Primary subsystem for t2 did not match expectations.")
+
+
+# =============================================================================
+# Plugin Runtime Tests
+# =============================================================================
+
+
+def test_tests_profile_plugin_runtime(tmp_path: Path) -> None:
+    """Execute the test profile plugin through the analytics harness."""
+    with provisioned_gateway(tmp_path) as ctx:
+        builder = ConfigBuilder.from_snapshot(
+            ctx.repo,
+            ctx.commit,
+            ctx.repo_root,
+            build_dir=ctx.build_dir,
+            db_path=ctx.db_path,
+            document_output_dir=ctx.document_output_dir,
+        )
+        cfg = builder.test_profile()
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(TEST_PROFILE_PLUGIN.metadata.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest={},
+                cfg_options={},
+                runtime_options={},
+                run_id="test-profile-run",
+            )
+        )
+
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                graph_runtime=None,
+                cfgs={"test_profile": cfg},
+                extra={},
+                catalog_provider=None,
+            ),
+        )
+
+        if len(report.records) != 1:
+            msg = "Expected single run record for test profile plugin."
+            pytest.fail(msg)
+        rec = report.records[0]
+        if rec.name != TEST_PROFILE_PLUGIN.metadata.name:
+            msg = "Unexpected plugin recorded."
+            pytest.fail(msg)
+        if rec.status != "succeeded":
+            msg = f"Plugin execution failed with status {rec.status}"
+            pytest.fail(msg)
+        summary = rec.meta.get("result")
+        if not isinstance(summary, dict):
+            msg = "Expected summary metadata dictionary."
+            pytest.fail(msg)
+        if summary.get("profile_rows", 0) < 0:
+            msg = "Profile rows count is invalid."
+            pytest.fail(msg)

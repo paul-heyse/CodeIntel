@@ -9,7 +9,7 @@ This module tests:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
@@ -20,6 +20,10 @@ from codeintel.analytics.plugins.tests.behavioral_coverage import (
 )
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
 from tests._helpers.factories import make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
+
+if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
 
 # Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
@@ -27,31 +31,18 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config(tmp_path: Path | None = None) -> BehavioralCoverageStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    llm_runner: object | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    BehavioralCoverageStepConfig
-        Test configuration.
-    """
-    return make_step_config(BehavioralCoverageStepConfig, tmp_path)
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    llm_runner: object | None = None,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
     llm_runner
@@ -59,24 +50,19 @@ def _create_mock_context(
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
+    builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_config.return_value = has_config
     if has_config:
-        ctx.get_config.return_value = _create_config()
-    else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        config = make_step_config(BehavioralCoverageStepConfig, tmp_path)
+        builder.with_config(BehavioralCoverageStepConfig, config)
 
-    ctx.extra = {}
     if llm_runner is not None:
-        ctx.extra["behavioral_llm_runner"] = llm_runner
+        builder.with_extra("behavioral_llm_runner", llm_runner)
 
-    ctx.gateway = MagicMock()
-
-    return ctx
+    return builder.build()
 
 
 # =============================================================================
@@ -132,10 +118,10 @@ def test_behavioral_coverage_plugin_metadata_tags() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -143,10 +129,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -154,34 +140,34 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_with_callable_llm_runner() -> None:
+def test_validate_inputs_with_callable_llm_runner(tmp_path: Path) -> None:
     """Validation succeeds with callable LLM runner."""
     plugin = BehavioralCoveragePlugin()
 
     def mock_llm_runner() -> None:
         pass
 
-    ctx = _create_mock_context(has_config=True, llm_runner=mock_llm_runner)
+    ctx = _create_context(tmp_path, has_config=True, llm_runner=mock_llm_runner)
 
     result = plugin.validate_inputs(ctx)
 
     assert result.valid is True
 
 
-def test_validate_inputs_with_non_callable_llm_runner() -> None:
+def test_validate_inputs_with_non_callable_llm_runner(tmp_path: Path) -> None:
     """Validation fails with non-callable LLM runner."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=True, llm_runner="not_callable")
+    ctx = _create_context(tmp_path, has_config=True, llm_runner="not_callable")
 
     result = plugin.validate_inputs(ctx)
 
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -196,10 +182,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -207,10 +193,10 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_fails_with_non_callable_llm_runner() -> None:
+def test_execute_fails_with_non_callable_llm_runner(tmp_path: Path) -> None:
     """Execute fails with non-callable LLM runner."""
     plugin = BehavioralCoveragePlugin()
-    ctx = _create_mock_context(has_config=True, llm_runner="not_callable")
+    ctx = _create_context(tmp_path, has_config=True, llm_runner="not_callable")
 
     result = plugin.execute(ctx)
 

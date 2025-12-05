@@ -49,7 +49,7 @@ from codeintel.analytics.core.traits import is_contract_validated
 from codeintel.analytics.plugins.middleware.protocol import MiddlewareChain
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.policy import BaseExecutionPolicy
-from codeintel.core.plugins.report import BaseExecutionReport
+from codeintel.core.plugins.report import BaseExecutionReport, ExecutionStatus
 from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
 
 if TYPE_CHECKING:
@@ -58,8 +58,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
-
-ExecutionStatus = Literal["succeeded", "failed", "partial"]
 
 log = logging.getLogger(__name__)
 

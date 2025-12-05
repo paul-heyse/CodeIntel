@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
-from uuid import uuid4
 
 from codeintel.analytics.core.context import (
     PluginExecutionContextBuilder,
@@ -37,6 +36,7 @@ from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.runtime.ids import new_run_id
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
@@ -170,7 +170,7 @@ class RecipeExecutor:
         return RecipeExecutionPlan(
             recipe=resolved_recipe,
             plugins=plugins,
-            run_id=uuid4().hex,
+            run_id=new_run_id("analytics"),
             resolved_configs=merged_configs,
         )
 

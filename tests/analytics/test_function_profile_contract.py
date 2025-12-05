@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -30,7 +29,6 @@ from codeintel.config.datasets import (
     module_profile_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
@@ -38,6 +36,7 @@ from tests._helpers.factories import (
     blank_function_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
+    make_snapshot,
 )
 
 
@@ -65,17 +64,17 @@ class _FakeCon:
 
 
 def _cfg() -> ProfilesAnalyticsStepConfig:
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path.cwd())
+    snapshot = make_snapshot()
     return ProfilesAnalyticsStepConfig(snapshot=snapshot)
 
 
 def _test_cfg() -> TestProfileStepConfig:
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path.cwd())
+    snapshot = make_snapshot()
     return TestProfileStepConfig(snapshot=snapshot)
 
 
 def _behavior_cfg() -> BehavioralCoverageStepConfig:
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path.cwd())
+    snapshot = make_snapshot()
     return BehavioralCoverageStepConfig(snapshot=snapshot)
 
 

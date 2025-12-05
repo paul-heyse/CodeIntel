@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
-from uuid import uuid4
 
 from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
@@ -29,6 +28,7 @@ from codeintel.graphs.runtime.manifest import (
     compute_options_hash,
 )
 from codeintel.graphs.runtime.telemetry import GraphRuntimeTelemetry, get_graph_telemetry
+from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -383,8 +383,8 @@ def _prepare_execution_inputs(
     ResolvedPlanInputs
         Computed plan identifiers, plugin settings, and scope metadata.
     """
-    run_id = uuid4().hex
-    plan_id = uuid4().hex
+    run_id = new_run_id("graphs")
+    plan_id = new_run_id("plan")
     cfg = context.cfg
     run_options = context.run_options
     policy = context.policy

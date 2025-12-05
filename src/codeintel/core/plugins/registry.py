@@ -15,13 +15,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
-from uuid import uuid4
 
 from codeintel.core.plugins.protocol import PluginMetadata
 from codeintel.core.plugins.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
+from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class PluginPlan[P: RegistrablePlugin]:
     """
 
     plugins: tuple[P, ...]
-    plan_id: str = field(default_factory=lambda: uuid4().hex)
+    plan_id: str = field(default_factory=lambda: new_run_id("plan"))
     skipped: tuple[PluginSkip, ...] = ()
     dep_graph: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 

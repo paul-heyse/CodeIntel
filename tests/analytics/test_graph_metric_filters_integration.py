@@ -13,8 +13,8 @@ from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_f
 from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
+from tests._helpers.factories import make_snapshot
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
@@ -32,7 +32,7 @@ def test_filters_prune_architecture_metrics(tmp_path: Path) -> None:
         db_path=tmp_path / "arch.duckdb",
         strict_schema=True,
     )
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = GraphMetricsStepConfig(snapshot=snapshot)
     runtime = build_graph_runtime(gateway, GraphRuntimeOptions(snapshot=snapshot))
     filters = GraphMetricFilters(

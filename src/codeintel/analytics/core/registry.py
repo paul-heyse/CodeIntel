@@ -12,8 +12,7 @@ import importlib.metadata
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Unpack
-from uuid import uuid4
+from typing import Unpack
 
 # Import at runtime for use in type alias (FunctionalPlugin)
 from codeintel.analytics.core.context import PluginExecutionContext
@@ -28,36 +27,25 @@ from codeintel.core.plugins.meta_options import (
     BasePluginMetaOptions,
     BasePluginMetaOptionsInput,
 )
-from codeintel.core.plugins.registry import BasePluginRegistry
+from codeintel.core.plugins.registry import BasePluginRegistry, PluginSkip
 from codeintel.core.singleton import SingletonHolder
+from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Analytics-specific Plan and Skip types
+# Analytics-specific Plan types (PluginSkip is imported from core)
 # =============================================================================
-
-
-@dataclass(frozen=True)
-class PluginSkip:
-    """Skip metadata for plugins excluded from execution.
-
-    Attributes
-    ----------
-    name
-        Plugin name.
-    reason
-        Reason for skipping.
-    """
-
-    name: str
-    reason: Literal["disabled", "missing_dependency", "config_error"]
 
 
 @dataclass(frozen=True)
 class PluginPlan:
     """Resolved execution plan for a set of analytics plugins.
+
+    Structurally equivalent to ``codeintel.core.plugins.registry.PluginPlan[P]``
+    instantiated with ``P=AnalyticsPluginProtocol``. Kept as a separate class
+    for simpler type annotations throughout analytics code.
 
     Attributes
     ----------
@@ -72,7 +60,7 @@ class PluginPlan:
     """
 
     plugins: tuple[AnalyticsPluginProtocol, ...]
-    plan_id: str = field(default_factory=lambda: uuid4().hex)
+    plan_id: str = field(default_factory=lambda: new_run_id("plan"))
     skipped: tuple[PluginSkip, ...] = ()
     dep_graph: dict[str, tuple[str, ...]] = field(default_factory=dict)
 

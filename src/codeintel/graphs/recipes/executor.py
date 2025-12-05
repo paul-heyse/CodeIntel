@@ -13,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
-from uuid import uuid4
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
@@ -25,6 +24,7 @@ from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
+from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -210,7 +210,7 @@ class RecipeExecutor:
         RecipeExecutionResult
             Execution result.
         """
-        run_id = uuid4().hex
+        run_id = new_run_id("graphs")
         start = time.perf_counter()
         started_at = datetime.now(tz=UTC)
 

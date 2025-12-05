@@ -18,6 +18,7 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
+from tests._helpers.factories import make_snapshot
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.policy import BaseExecutionPolicy
 from codeintel.core.plugins.protocol import (
@@ -212,7 +213,7 @@ def mock_snapshot(tmp_path: Path) -> SnapshotRef:
     SnapshotRef
         Test snapshot reference.
     """
-    return SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    return make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
 
 
 @pytest.fixture

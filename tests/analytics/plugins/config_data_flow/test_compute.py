@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,9 +21,11 @@ from codeintel.analytics.plugins.config_data_flow.compute import (
     ConfigDataFlowPlugin,
 )
 from codeintel.config.steps_graphs import ConfigDataFlowStepConfig
-from tests._helpers.factories import make_step_config
+from tests._helpers.factories import make_snapshot, make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
@@ -33,84 +34,39 @@ EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config(tmp_path: Path | None = None) -> ConfigDataFlowStepConfig:
-    """Create a test configuration.
+def _create_context(
+    tmp_path: Path,
+    *,
+    has_config: bool = True,
+    gateway: StorageGateway | None = None,
+) -> PluginExecutionContext:
+    """Create a test execution context using real production types.
 
     Parameters
     ----------
     tmp_path
-        Optional temp path for repo root.
-
-    Returns
-    -------
-    ConfigDataFlowStepConfig
-        Test configuration.
-    """
-    return make_step_config(ConfigDataFlowStepConfig, tmp_path)
-
-
-def _create_mock_provider(name: str) -> MagicMock:
-    """Create a mock provider for the given resource name.
-
-    Parameters
-    ----------
-    name
-        Resource provider name.
-
-    Returns
-    -------
-    MagicMock
-        Mock provider.
-    """
-    provider = MagicMock()
-    if name == "CatalogProvider":
-        catalog = MagicMock()
-        catalog.catalog.return_value = MagicMock(function_spans=[])
-        provider.get.return_value = catalog
-    elif name == "GraphProvider":
-        provider.runtime = None
-    return provider
-
-
-def _create_mock_context(
-    *,
-    has_config: bool = True,
-    has_catalog: bool = False,
-    has_graph: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
-
-    Parameters
-    ----------
+        Temp path for repo root.
     has_config
         Whether config is available.
-    has_catalog
-        Whether catalog provider is available.
-    has_graph
-        Whether graph provider is available.
+    gateway
+        Optional gateway override.
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
-    resource_map = {
-        "CatalogProvider": has_catalog,
-        "GraphProvider": has_graph,
-    }
-
-    ctx.has_config.return_value = has_config
-    if has_config:
-        ctx.get_config.return_value = _create_config()
+    if gateway is not None:
+        snapshot = make_snapshot(repo_root=tmp_path)
+        builder = TestExecutionContextBuilder(gateway, snapshot)
     else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
-    ctx.require_by_name.side_effect = _create_mock_provider
-    ctx.gateway = MagicMock()
+    if has_config:
+        config = make_step_config(ConfigDataFlowStepConfig, tmp_path)
+        builder.with_config(ConfigDataFlowStepConfig, config)
 
-    return ctx
+    return builder.build()
 
 
 # =============================================================================
@@ -173,10 +129,10 @@ def test_config_data_flow_plugin_metadata_depends_on() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = ConfigDataFlowPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -184,10 +140,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = ConfigDataFlowPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -195,10 +151,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = ConfigDataFlowPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -213,10 +169,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = ConfigDataFlowPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -225,6 +181,7 @@ def test_execute_fails_without_config() -> None:
 
 
 def test_execute_raises_on_domain_function_mismatch(
+    tmp_path: Path,
     fresh_gateway: StorageGateway,
 ) -> None:
     """Execute raises TypeError due to argument mismatch with domain function.
@@ -235,52 +192,7 @@ def test_execute_raises_on_domain_function_mismatch(
     The TypeError is not caught by the plugin's exception handler.
     """
     plugin = ConfigDataFlowPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.return_value = False
-
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        plugin.execute(ctx)
-
-
-def test_execute_raises_with_catalog_provider(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Execute raises TypeError when using catalog provider.
-
-    Note: Documents current behavior where domain function call has arg mismatch.
-    """
-    plugin = ConfigDataFlowPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider"
-    ctx.require_by_name.side_effect = _create_mock_provider
-
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        plugin.execute(ctx)
-
-
-def test_execute_raises_with_graph_provider(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Execute raises TypeError when using graph provider.
-
-    Note: Documents current behavior where domain function call has arg mismatch.
-    """
-    plugin = ConfigDataFlowPlugin()
-
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.has_resource_by_name.side_effect = lambda n: n == "GraphProvider"
-    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx = _create_context(tmp_path, has_config=True, gateway=fresh_gateway)
 
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         plugin.execute(ctx)

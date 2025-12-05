@@ -241,7 +241,7 @@ def execute_plugin(
         record.rows_written = sum((result.row_counts or {}).values())
         record.table_counts = dict(result.row_counts or {})
         record.ended_at = datetime.now(tz=UTC)
-        record.duration_s = telemetry.end_span(span, success=True, rows_written=record.rows_written)
+        telemetry.end_span(span, success=True, rows_written=record.rows_written)
 
         log.info(
             "Plugin completed: plugin=%s duration=%.3fs rows=%d",
@@ -253,7 +253,7 @@ def execute_plugin(
     except PLUGIN_CATCHABLE_ERRORS as exc:
         record.error = exc
         record.ended_at = datetime.now(tz=UTC)
-        record.duration_s = telemetry.end_span(span, success=False, error=str(exc))
+        telemetry.end_span(span, success=False, error=str(exc))
 
         log.warning(
             "Plugin failed: plugin=%s error=%s duration=%.3fs",
@@ -311,12 +311,13 @@ def execute_plugin_with_timeout(
         except FuturesTimeout:
             record.error = TimeoutError(f"Plugin timed out after {timeout_s}s")
             record.ended_at = datetime.now(tz=UTC)
-            record.duration_s = telemetry.end_span(span, success=False, error="timeout")
+            telemetry.end_span(span, success=False, error="timeout")
 
             log.warning(
-                "Plugin timed out: plugin=%s timeout=%ds",
+                "Plugin timed out: plugin=%s timeout=%ds duration=%.3fs",
                 plugin.metadata.name,
                 timeout_s,
+                record.duration_s,
             )
 
     return record

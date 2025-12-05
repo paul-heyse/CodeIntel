@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config import SnapshotRef
 from codeintel.ingestion import (
     DocstringsExtractStep,
     DuckDBStorageAdapter,
@@ -22,6 +21,7 @@ from codeintel.ingestion.tracker import (
     IncrementalIngestPolicy,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
@@ -223,7 +223,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     """
     repo_root = tmp_path / "repo"
     _, file_b = _setup_test_files(repo_root)
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
+    snapshot = make_snapshot(repo_root=repo_root)
 
     gateway = open_ingestion_gateway()
     try:
