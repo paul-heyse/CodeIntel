@@ -297,9 +297,12 @@ class ScipPlugin(ToolPlugin):
 
         log.info("SCIP JSON exists at %s; reusing", existing_json)
 
+        # Capture non-None path for closure (pyrefly type narrowing)
+        json_path: Path = existing_json
+
         # Parse existing JSON and return without running tools
         def _parse_existing() -> ScipIndexResult:
-            return _parse_scip_json(existing_json, output_scip)
+            return _parse_scip_json(json_path, output_scip)
 
         parsed = await to_thread.run_sync(_parse_existing)
         return ToolPluginResult(

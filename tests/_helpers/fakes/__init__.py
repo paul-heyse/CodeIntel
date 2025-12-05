@@ -43,6 +43,7 @@ from tests._helpers.fakes.tools import (
     FakeToolService,
     FakeToolServiceConfig,
 )
+from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
     # Protocol-based fakes
@@ -57,4 +58,6 @@ __all__ = [
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
+    # Utilities
+    "utcnow",
 ]
