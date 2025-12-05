@@ -53,7 +53,7 @@ def _create_test_client(
         commit=commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

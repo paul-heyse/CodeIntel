@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/runner.py
+# hypothesis_version: 6.148.6
+
+['GraphPluginError', 'GraphPluginRunner', 'Plugin %s failed: %s', 'Unknown error', 'runner']

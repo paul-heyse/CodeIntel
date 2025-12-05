@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/manifest.py
+# hypothesis_version: 6.148.6
+
+[0.0, 'GraphPluginManifest', 'InputHashPayload', 'ManifestState', 'RecordParams', 'commit', 'compute_input_hash', 'compute_options_hash', 'dry_run', 'dry_run_record', 'input_hash', 'is_unchanged', 'options', 'options_hash', 'plugin_name', 'recorded_at', 'repo', 'row_counts', 'scope_modules', 'scope_paths', 'severity', 'skip_record', 'skipped', 'skipped_reason', 'timeout_ms', 'version_hash']

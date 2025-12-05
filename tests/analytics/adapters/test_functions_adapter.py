@@ -6,7 +6,6 @@ function metrics and types using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +20,7 @@ from codeintel.analytics.adapters.functions import (
     GoidRow,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants
@@ -128,23 +127,23 @@ def _seed_goids(gateway: StorageGateway, goids: list[GoidRow]) -> None:
 
 
 @pytest.fixture
-def gateway_with_goids() -> Iterator[StorageGateway]:
+def gateway_with_goids(fresh_gateway: StorageGateway) -> StorageGateway:
     """
     Create gateway with GOID table seeded.
 
-    Yields
-    ------
+    Parameters
+    ----------
+    fresh_gateway
+        Base gateway from main conftest.
+
+    Returns
+    -------
     StorageGateway
         Gateway with test GOIDs.
     """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
     # Seed some test GOIDs
     _seed_goids(
-        gateway,
+        fresh_gateway,
         [
             _make_goid_row(
                 GoidSeedParams(1001, "module.func_a", "src/module.py", "function", 10, 20)
@@ -162,31 +161,25 @@ def gateway_with_goids() -> Iterator[StorageGateway]:
             ),
         ],
     )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
+    return fresh_gateway
 
 
 @pytest.fixture
-def empty_gateway() -> Iterator[StorageGateway]:
+def empty_gateway(fresh_gateway: StorageGateway) -> StorageGateway:
     """
     Create gateway without any GOIDs.
 
-    Yields
-    ------
+    Parameters
+    ----------
+    fresh_gateway
+        Base gateway from main conftest.
+
+    Returns
+    -------
     StorageGateway
         Empty gateway.
     """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
+    return fresh_gateway
 
 
 @pytest.fixture

@@ -6,12 +6,25 @@ specifications that orchestrate ingestion, graphs, and analytics stages.
 A PipelineSpec is a declarative description of which stages to run in what
 order, allowing for flexible composition of pipeline modes (full, ingest-only,
 graphs-only, analytics-only) without changing executor logic.
+
+PipelineSpec can be converted to UnifiedRecipe for integration with the
+unified recipe execution system.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
+
+from codeintel.core.recipes.unified import (
+    RecipeKind,
+    UnifiedRecipe,
+    UnifiedRecipeOptions,
+    UnifiedStage,
+)
+from codeintel.core.recipes.unified import (
+    StageModule as UnifiedStageModule,
+)
 
 # Shares the same vocabulary as storage.run_tracking.ModuleKind
 StageModule = Literal["ingestion", "graphs", "analytics"]
@@ -77,6 +90,52 @@ class PipelineSpec:
     id: str
     description: str
     stages: tuple[PipelineStage, ...]
+
+    def to_unified_recipe(self) -> UnifiedRecipe:
+        """Convert this spec to a UnifiedRecipe.
+
+        This enables PipelineSpec to be executed using the unified
+        recipe executor infrastructure.
+
+        Returns
+        -------
+        UnifiedRecipe
+            Unified recipe representation of this spec.
+        """
+        # Map PipelineSpec stages to UnifiedStages
+        unified_stages: list[UnifiedStage] = []
+        for stage in self.stages:
+            # Map the module type
+            module: UnifiedStageModule = stage.module
+
+            unified_stages.append(
+                UnifiedStage(
+                    name=stage.name,
+                    plugins=(),  # Plugins resolved by executor
+                    module=module,
+                    required=stage.required,
+                    description=stage.description,
+                )
+            )
+
+        # Determine the recipe kind from the spec id
+        kind: RecipeKind = "full"
+        if self.id == "ingest":
+            kind = "ingestion"
+        elif self.id == "graphs":
+            kind = "graphs"
+        elif self.id == "analytics":
+            kind = "analytics"
+        elif self.id == "noop":
+            kind = "custom"
+
+        return UnifiedRecipe(
+            name=self.id,
+            kind=kind,
+            stages=tuple(unified_stages),
+            options=UnifiedRecipeOptions(),
+            description=self.description,
+        )
 
 
 # -----------------------------------------------------------------------------

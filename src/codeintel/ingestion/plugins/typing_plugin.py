@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -25,7 +26,6 @@ from codeintel.ingestion.core.base import (
 )
 from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
 from codeintel.ingestion.plugins.protocol import (
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
@@ -67,7 +67,7 @@ class TypingIngestPlugin(
         External tools required.
     supports_incremental : bool
         Whether incremental mode is supported.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -90,7 +90,7 @@ class TypingIngestPlugin(
     tracker_required: ClassVar[bool] = True
     tool_required: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=False,
         io_intensive=True,
         max_runtime_ms=180000,

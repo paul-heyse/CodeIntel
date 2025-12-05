@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     )
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking.build_tracking import BuildTracking
 
 __all__ = [
     "DuckDBBinderException",
@@ -47,12 +48,13 @@ DuckDBBinderException = duckdb.BinderException
 class StorageGateway(Protocol):
     """Expose DuckDB access along with dataset registry metadata."""
 
-    config: StorageConfig
-    datasets: DatasetRegistry
-    core: CoreTables
-    graph: GraphTables
-    docs: DocsViews
     analytics: AnalyticsTables
+    build: BuildTracking
+    config: StorageConfig
+    core: CoreTables
+    datasets: DatasetRegistry
+    docs: DocsViews
+    graph: GraphTables
     runs: PipelineRunTracking
 
     @property

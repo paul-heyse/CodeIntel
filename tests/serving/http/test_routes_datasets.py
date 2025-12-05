@@ -56,7 +56,7 @@ def test_datasets_list_endpoint(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -107,7 +107,7 @@ def test_datasets_specs_endpoint(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -163,7 +163,7 @@ def test_dataset_rows_not_found(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -214,7 +214,7 @@ def test_dataset_schema_not_found(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -268,7 +268,7 @@ def test_dataset_rows_with_limit(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -329,7 +329,7 @@ def test_dataset_rows_with_offset(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

@@ -17,7 +17,7 @@ from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -42,8 +42,8 @@ def test_duckdb_backend_creation(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -66,21 +66,21 @@ def test_duckdb_backend_with_custom_limits(
     custom_limits = BackendLimits(
         default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_ROWS
     )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        limits=custom_limits,
+        options=BackendOptions(limits=custom_limits),
     )
 
     assert backend.limits.default_limit == CUSTOM_DEFAULT_LIMIT
     assert backend.limits.max_rows_per_call == CUSTOM_MAX_ROWS
 
 
-def test_duckdb_backend_with_service_override(
+def test_duckdb_backend_with_service(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend accepts service_override.
+    """Verify DuckDBBackend accepts a service parameter.
 
     Parameters
     ----------
@@ -98,10 +98,10 @@ def test_duckdb_backend_with_service_override(
     )
 
     backend = DuckDBBackend(
+        service=service,
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
     )
 
     assert backend.service is service
@@ -135,7 +135,7 @@ def test_duckdb_backend_list_datasets(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     datasets = backend.list_datasets()
@@ -166,7 +166,7 @@ def test_duckdb_backend_dataset_specs(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     specs = backend.dataset_specs()
@@ -202,7 +202,7 @@ def test_duckdb_backend_list_high_risk_functions(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     response = backend.list_high_risk_functions(min_risk=0.5, limit=10)
@@ -233,7 +233,7 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     response = backend.list_high_risk_functions(min_risk=0.5, limit=10, tested_only=True)
@@ -269,7 +269,7 @@ def test_duckdb_backend_list_subsystems(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     response = backend.list_subsystems(limit=10)
@@ -300,7 +300,7 @@ def test_duckdb_backend_list_subsystems_with_role_filter(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     response = backend.list_subsystems(limit=10, role="test_role")
@@ -331,7 +331,7 @@ def test_duckdb_backend_list_subsystems_with_query_filter(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     response = backend.list_subsystems(limit=10, q="test")
@@ -362,7 +362,7 @@ def test_duckdb_backend_search_subsystems(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     response = backend.search_subsystems(limit=10)
@@ -398,7 +398,7 @@ def test_duckdb_backend_service_attribute(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     assert backend.service is not None
@@ -414,8 +414,8 @@ def test_duckdb_backend_limits_attribute(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -453,7 +453,7 @@ def test_duckdb_backend_get_function_summary(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     # Get a valid goid_h128
@@ -497,7 +497,7 @@ def test_duckdb_backend_get_callgraph_neighbors(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -536,7 +536,7 @@ def test_duckdb_backend_get_callgraph_neighbors_direction_in(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -575,7 +575,7 @@ def test_duckdb_backend_get_callgraph_neighborhood(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -615,7 +615,7 @@ def test_duckdb_backend_get_tests_for_function(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -654,7 +654,7 @@ def test_duckdb_backend_get_file_summary(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -702,7 +702,7 @@ def test_duckdb_backend_get_function_profile(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -745,7 +745,7 @@ def test_duckdb_backend_get_file_profile(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -788,7 +788,7 @@ def test_duckdb_backend_get_module_profile(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -831,7 +831,7 @@ def test_duckdb_backend_get_function_architecture(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -874,7 +874,7 @@ def test_duckdb_backend_get_module_architecture(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        service_override=service,
+        service=service,
     )
 
     result = provisioned_repo.gateway.con.execute(
@@ -922,7 +922,7 @@ def test_duckdb_backend_get_module_subsystems(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     result = architecture_gateway.con.execute("SELECT module FROM core.modules LIMIT 1").fetchone()
@@ -963,7 +963,7 @@ def test_duckdb_backend_get_file_hints(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     result = architecture_gateway.con.execute("SELECT path FROM core.modules LIMIT 1").fetchone()
@@ -1004,7 +1004,7 @@ def test_duckdb_backend_get_subsystem_modules(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     result = architecture_gateway.con.execute(
@@ -1047,7 +1047,7 @@ def test_duckdb_backend_summarize_subsystem(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
-        service_override=service,
+        service=service,
     )
 
     result = architecture_gateway.con.execute(
@@ -1082,8 +1082,8 @@ def test_callgraph_neighbors_direction_incoming(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1111,8 +1111,8 @@ def test_callgraph_neighbors_direction_outgoing(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1145,8 +1145,8 @@ def test_duckdb_backend_get_function_summary_missing_identifier(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1165,8 +1165,8 @@ def test_duckdb_backend_get_tests_for_function_missing_identifier(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1185,8 +1185,8 @@ def test_duckdb_backend_get_callgraph_neighbors_invalid_direction(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1206,8 +1206,8 @@ def test_duckdb_backend_get_import_boundary(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1227,8 +1227,8 @@ def test_duckdb_backend_read_dataset_rows(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1252,8 +1252,8 @@ def test_duckdb_backend_read_dataset_rows_nonexistent(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1272,8 +1272,8 @@ def test_duckdb_backend_dataset_schema(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )
@@ -1297,8 +1297,8 @@ def test_duckdb_backend_dataset_schema_nonexistent(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
     )

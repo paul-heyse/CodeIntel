@@ -5,8 +5,11 @@ This module provides the foundational types for pipeline step implementations:
 - PipelineStep: Protocol for step implementations
 - StepPhase: Enum classifying step phases
 - StepMetadata: Dataclass for step metadata
+- step_to_plugin_metadata: Helper to convert step attributes to PluginMetadata
 
 These types are used by the step registry and all step implementations.
+The protocol is designed to be compatible with the unified RegistrablePlugin
+protocol from core.plugins.registry.
 """
 
 from __future__ import annotations
@@ -15,6 +18,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol
+
+from codeintel.core.plugins.types.protocol import PluginMetadata, PluginStage
 
 if TYPE_CHECKING:
     from codeintel.pipeline.execution.context import PipelineContext
@@ -39,6 +44,52 @@ class StepPhase(Enum):
     GRAPHS = "graphs"
     ANALYTICS = "analytics"
     EXPORT = "export"
+
+
+# Mapping from StepPhase to PluginStage for registry compatibility
+STEP_PHASE_TO_PLUGIN_STAGE: dict[StepPhase, PluginStage] = {
+    StepPhase.INGESTION: "pipeline_ingestion",
+    StepPhase.GRAPHS: "pipeline_graphs",
+    StepPhase.ANALYTICS: "pipeline_analytics",
+    StepPhase.EXPORT: "pipeline_export",
+}
+
+
+def step_to_plugin_metadata(
+    name: str,
+    description: str,
+    phase: StepPhase,
+    deps: Sequence[str],
+) -> PluginMetadata:
+    """Convert pipeline step attributes to PluginMetadata.
+
+    This helper enables pipeline steps to participate in the unified
+    plugin registry system by providing compatible metadata.
+
+    Parameters
+    ----------
+    name
+        Step identifier.
+    description
+        Human-readable description.
+    phase
+        Pipeline phase the step belongs to.
+    deps
+        Step dependencies.
+
+    Returns
+    -------
+    PluginMetadata
+        Metadata compatible with BasePluginRegistry.
+    """
+    return PluginMetadata(
+        name=name,
+        description=description,
+        kind="analytics",  # Steps are treated as analytics-like plugins
+        stage=STEP_PHASE_TO_PLUGIN_STAGE[phase],
+        depends_on=tuple(deps),
+        enabled_by_default=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -72,7 +123,11 @@ class PipelineStep(Protocol):
     - description: Human-readable description of the step's purpose.
     - phase: The pipeline phase this step belongs to.
     - deps: Sequence of step names this step depends on.
+    - metadata: Property returning PluginMetadata for registry compatibility.
     - run(): Method to execute the step with a PipelineContext.
+
+    The metadata property enables steps to be registered in the unified
+    plugin registry system alongside graph and analytics plugins.
 
     Examples
     --------
@@ -83,6 +138,10 @@ class PipelineStep(Protocol):
     ...     phase: StepPhase = StepPhase.ANALYTICS
     ...     deps: tuple[str, ...] = ()
     ...
+    ...     @property
+    ...     def metadata(self) -> PluginMetadata:
+    ...         return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+    ...
     ...     def run(self, ctx: PipelineContext) -> None:
     ...         pass
     """
@@ -91,6 +150,18 @@ class PipelineStep(Protocol):
     description: str
     phase: StepPhase
     deps: Sequence[str]
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility.
+
+        Returns
+        -------
+        PluginMetadata
+            Metadata enabling this step to participate in the unified
+            plugin registry system.
+        """
+        ...
 
     def run(self, ctx: PipelineContext) -> None:
         """Execute the step using shared context.
@@ -103,7 +174,9 @@ class PipelineStep(Protocol):
 
 
 __all__ = [
+    "STEP_PHASE_TO_PLUGIN_STAGE",
     "PipelineStep",
     "StepMetadata",
     "StepPhase",
+    "step_to_plugin_metadata",
 ]

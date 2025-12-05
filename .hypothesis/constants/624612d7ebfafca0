@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/backend/dataset_backend.py
+# hypothesis_version: 6.148.7
+
+['.', 'DatasetQueryLayer', 'Mapping[str, bool]', 'YES', 'capabilities', 'description', 'dict[str, bool]', 'docs_view', 'family', 'is_docs_view', 'is_view', 'lenient', 'list[str]', 'name', 'owner', 'read_only', 'schema_columns', 'schema_version', 'stable_id', 'str', 'str | None', 'strict', 'table', 'table_key', 'utf-8', 'validation_profile']

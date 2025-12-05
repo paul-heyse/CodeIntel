@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Self
 
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import (
@@ -31,7 +32,6 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
 )
-from codeintel.ingestion.plugins import IngestRuntimeScratch
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
@@ -67,7 +67,7 @@ class IngestTestSetup:
         Code scanning profile.
     config_profile : ScanProfile
         Configuration profile.
-    scratch : IngestRuntimeScratch
+    scratch : PluginScratch
         Runtime scratch space for inter-plugin communication.
     resources : ResourceRegistry
         Resource registry with registered providers.
@@ -79,7 +79,7 @@ class IngestTestSetup:
     tools: ToolsConfig
     code_profile: ScanProfile
     config_profile: ScanProfile
-    scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
+    scratch: PluginScratch = field(default_factory=PluginScratch)
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
     @classmethod
@@ -120,7 +120,7 @@ class IngestTestSetup:
         tools = make_tools_config()
         code_profile = default_code_profile(repo_root)
         config_profile = default_config_profile(repo_root)
-        scratch = IngestRuntimeScratch()
+        scratch = PluginScratch()
         resources = ResourceRegistry()
 
         instance = cls(
@@ -205,7 +205,7 @@ class IngestTestSetup:
         IngestTestSetup
             New setup with fresh scratch and re-registered providers.
         """
-        new_scratch = IngestRuntimeScratch()
+        new_scratch = PluginScratch()
         new_resources = ResourceRegistry()
 
         new_setup = IngestTestSetup(

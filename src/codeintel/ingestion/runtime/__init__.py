@@ -58,9 +58,6 @@ from codeintel.ingestion.runtime.telemetry import (
     get_ingest_telemetry,
 )
 
-# Backward compatibility alias
-PluginExecutionRecord = IngestPluginExecutionRecord
-
 __all__ = [
     "PLUGIN_CATCHABLE_ERRORS",
     "IngestExecutorConfig",
@@ -72,7 +69,6 @@ __all__ = [
     "OtelIngestRunSink",
     "PlanOptions",
     "PluginExecutionPlan",
-    "PluginExecutionRecord",
     "PluginExecutionSettings",
     "PluginFatalError",
     "PluginSeverity",

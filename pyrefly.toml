@@ -2,6 +2,7 @@ project-includes = ["src", "tests"]
 project-excludes = [
     "**/.venv/**",
     "**/__pycache__/**",
+    "**/tests/fixtures/heuristics/**",
 ]
 search-path = ["src", "."]
 python-version = "3.13.9"

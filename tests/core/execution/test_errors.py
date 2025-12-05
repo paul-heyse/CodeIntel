@@ -13,13 +13,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.core.execution.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
     PluginSkippedError,
     PluginTimeoutError,
 )
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 # =============================================================================
 # PLUGIN_CATCHABLE_ERRORS Tests

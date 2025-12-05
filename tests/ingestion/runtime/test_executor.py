@@ -171,4 +171,3 @@ class TestIngestPluginExecutionRecord:
         assert record.rows_written == 0
         assert record.table_counts == {}
         assert record.ended_at is None
-

@@ -11,7 +11,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.plugins.registry import get_ingest_registry
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.pipeline.execution.context import (
@@ -19,17 +20,17 @@ from codeintel.pipeline.execution.context import (
     _log_step,
     _plugin_ctx,
 )
-from codeintel.pipeline.steps.base import PipelineStep, StepPhase
+from codeintel.pipeline.steps.base import PipelineStep, StepPhase, step_to_plugin_metadata
 
 log = logging.getLogger(__name__)
 
 
-def _get_shared_scratch() -> IngestRuntimeScratch:
+def _get_shared_scratch() -> PluginScratch:
     """Get or create the shared scratch space for the current pipeline run.
 
     Returns
     -------
-    IngestRuntimeScratch
+    PluginScratch
         Shared scratch space for storing intermediate data during ingestion.
     """
     return _shared_scratch_cache()
@@ -43,8 +44,8 @@ def reset_shared_scratch() -> None:
 
 
 @lru_cache(maxsize=1)
-def _shared_scratch_cache() -> IngestRuntimeScratch:
-    return IngestRuntimeScratch()
+def _shared_scratch_cache() -> PluginScratch:
+    return PluginScratch()
 
 
 def _execute_plugin(ctx: PipelineContext, plugin_name: str) -> None:
@@ -96,6 +97,11 @@ class SchemaBootstrapStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Reset shared scratch and prepare for new run."""
         _log_step(self.name)
@@ -112,6 +118,11 @@ class RepoScanStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("schema_bootstrap",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Execute repository scan ingestion via plugin."""
         _log_step(self.name)
@@ -126,6 +137,11 @@ class SCIPIngestStep:
     description: str = "Run scip-python and register SCIP artifacts and symbols."
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Register SCIP artifacts and populate SCIP symbols in crosswalk."""
@@ -142,6 +158,11 @@ class CSTStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Extract CST rows into core.cst_nodes."""
         _log_step(self.name)
@@ -156,6 +177,11 @@ class AstStep:
     description: str = "Parse Python AST and persist rows and metrics into core tables."
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Extract AST rows and metrics into core tables."""
@@ -172,6 +198,11 @@ class CoverageIngestStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Ingest line-level coverage signals."""
         _log_step(self.name)
@@ -186,6 +217,11 @@ class TestsIngestStep:
     description: str = "Load pytest JSON report into analytics.test_catalog."
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest pytest test catalog."""
@@ -202,6 +238,11 @@ class TypingIngestStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Ingest typing signals from ast + pyright."""
         _log_step(self.name)
@@ -217,6 +258,11 @@ class DocstringsIngestStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Ingest docstrings for all Python modules."""
         _log_step(self.name)
@@ -231,6 +277,11 @@ class ConfigIngestStep:
     description: str = "Flatten configuration files into analytics.config_values."
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest configuration files from repo root."""

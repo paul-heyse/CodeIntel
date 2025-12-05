@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits/incremental.py
+# hypothesis_version: 6.148.6
+
+['IncrementalPlugin', 'is_incremental']

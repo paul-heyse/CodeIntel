@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.goid import build_goids
@@ -19,7 +20,7 @@ from codeintel.pipeline.execution.context import (
     _log_step,
     ensure_graph_runtime,
 )
-from codeintel.pipeline.steps.base import PipelineStep, StepPhase
+from codeintel.pipeline.steps.base import PipelineStep, StepPhase, step_to_plugin_metadata
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,11 @@ class GoidsStep:
     description: str = "Build core.goids and core.goid_crosswalk from AST nodes."
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("ast_extract",)
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Build GOID registry and crosswalk tables."""
@@ -49,6 +55,11 @@ class CallGraphStep:
     description: str = "Build static call graph nodes and edges from CST/AST analysis."
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("goids", "repo_scan")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Construct static call graph nodes and edges."""
@@ -73,6 +84,11 @@ class CFGStep:
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("function_metrics",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Create minimal CFG/DFG scaffolding."""
         _log_step(self.name)
@@ -91,6 +107,11 @@ class ImportGraphStep:
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("repo_scan",)
 
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
+
     def run(self, ctx: PipelineContext) -> None:
         """Construct module import graph edges."""
         _log_step(self.name)
@@ -107,6 +128,11 @@ class SymbolUsesStep:
     description: str = "Build symbol definition-to-use edges from SCIP index."
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("repo_scan", "scip_ingest")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Derive symbol definition→use edges from SCIP JSON."""
@@ -129,6 +155,11 @@ class GraphValidationStep:
     description: str = "Validate graph integrity for GOIDs, spans, and orphan nodes."
     phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("callgraph", "cfg")
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Emit warnings for missing GOIDs, span mismatches, and orphans."""

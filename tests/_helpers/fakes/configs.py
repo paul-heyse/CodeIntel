@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.ingestion.engine.service import ToolService
 from codeintel.core.execution import RunContext
+from codeintel.ingestion.engine.service import ToolService
 
 if TYPE_CHECKING:
     from codeintel.core.execution.context import RunKind, TriggerKind

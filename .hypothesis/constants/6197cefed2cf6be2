@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/pipeline.py
+# hypothesis_version: 6.148.7
+
+['  (none)\n', '(none)', ', ', '--phase', '--skip-scip', 'CODEINTEL_OUTPUT_DIR', 'CODEINTEL_SKIP_SCIP', 'Pipeline completed.', 'Skip SCIP ingestion.', 'auto', 'deps', 'description', 'direct_deps', 'list-steps', 'name', 'phase', 'pipeline', 'pipeline_ext_app', 'run', 'step', 'transitive_deps', 'true']

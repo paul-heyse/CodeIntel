@@ -12,7 +12,8 @@
     ".venv",
     ".ruff_cache",
     ".pytest_cache",
-    "docs/**"
+    "docs/**",
+    "tests/fixtures/heuristics/**"
   ],
   "extraPaths": [
     ".",

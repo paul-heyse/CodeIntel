@@ -67,7 +67,7 @@ def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
 
@@ -101,7 +101,7 @@ def _build_architecture_backend(gateway: StorageGateway) -> DuckDBBackend:
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
 
@@ -420,7 +420,7 @@ def test_register_architecture_tools_custom_limits(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     mcp = FastMCP("Test Custom Limits", json_response=True)

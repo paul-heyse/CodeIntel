@@ -62,6 +62,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import lru_cache
 
+# Base context
+from codeintel.core.execution.base_context import BaseContext
+
 # Run context and identity
 from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
 
@@ -159,24 +162,20 @@ def cached_singleton[T](factory: Callable[[], T]) -> Callable[[], T]:
 
 
 __all__ = [
-    # Retry
     "DATABASE_RETRY_POLICY",
-    # Telemetry
     "DEFAULT_DURATION_BUCKETS",
     "NETWORK_RETRY_POLICY",
     "NO_RETRY_POLICY",
     "OTEL_AVAILABLE",
-    # Errors
     "PLUGIN_CATCHABLE_ERRORS",
     "PLUGIN_RETRY_POLICY",
     "PROMETHEUS_AVAILABLE",
-    # Run context & identity
     "RUN_PREFIX_ANALYTICS",
     "RUN_PREFIX_GRAPHS",
     "RUN_PREFIX_INGEST",
     "RUN_PREFIX_PIPELINE",
     "RUN_PREFIX_PLAN",
-    # Validation
+    "BaseContext",
     "BaseValidationOptions",
     "PluginFatalError",
     "PluginSkipRequestError",
@@ -190,7 +189,6 @@ __all__ = [
     "RuntimeTelemetry",
     "SeverityLevel",
     "TelemetryConfig",
-    # Timing
     "TimingResult",
     "TriggerKind",
     "apply_severity_overrides",

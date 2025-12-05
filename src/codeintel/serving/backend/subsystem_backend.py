@@ -1,9 +1,7 @@
 """Subsystem query layer backed by DuckDB repositories.
 
 This module provides the **Query Layer** implementation for subsystem-related
-operations. The class was renamed from ``SubsystemBackend`` to
-``SubsystemQueryLayer`` to distinguish it from MCP backends (``DuckDBBackend``,
-``HttpBackend``) which operate at the transport layer.
+operations.
 
 Layer Hierarchy
 ---------------
@@ -19,11 +17,6 @@ Layer Hierarchy
          │
          ▼
     Repository Layer (SubsystemRepository)
-
-Backward Compatibility
-----------------------
-The ``SubsystemBackend`` name is preserved as an alias for backward compatibility.
-New code should use ``SubsystemQueryLayer``.
 """
 
 from __future__ import annotations
@@ -49,11 +42,7 @@ ResponseMeta = dm.ResponseMeta
 
 @dataclass
 class SubsystemQueryLayer(SubsystemQueriesApi):
-    """DuckDB-backed implementation of subsystem query operations.
-
-    Note: Previously named ``SubsystemBackend``. The 'Backend' suffix was
-    confusing as this is a query layer, not an MCP backend.
-    """
+    """DuckDB-backed implementation of subsystem query operations."""
 
     context: BackendContext
     repositories: DuckDBRepositories
@@ -240,7 +229,4 @@ class SubsystemQueryLayer(SubsystemQueriesApi):
         return build_subsystem_coverage(rows, meta=meta)
 
 
-# Backward compatibility alias - new code should use SubsystemQueryLayer
-SubsystemBackend = SubsystemQueryLayer
-
-__all__ = ["SubsystemBackend", "SubsystemQueryLayer"]
+__all__ = ["SubsystemQueryLayer"]

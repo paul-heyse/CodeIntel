@@ -1,4 +1,18 @@
-"""Analytics step configuration models and builder."""
+"""Analytics step configuration models and builder.
+
+Note
+----
+For constructing step configurations, prefer using ``ConfigBuilder`` from
+``codeintel.config.builder``. Direct construction of these dataclasses is
+supported but ``ConfigBuilder`` provides validated, consistent defaults
+and reduces boilerplate.
+
+Example
+-------
+>>> from codeintel.config import ConfigBuilder
+>>> builder = ConfigBuilder.from_snapshot("org/repo", "abc123", Path("/repo"))
+>>> config = builder.function_analytics()  # Preferred
+"""
 
 from __future__ import annotations
 

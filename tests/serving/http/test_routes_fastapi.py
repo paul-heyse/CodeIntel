@@ -247,7 +247,7 @@ def test_create_app_with_provisioned_gateway(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -299,7 +299,7 @@ def test_create_app_correlation_id_from_header(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -348,7 +348,7 @@ def test_create_app_correlation_id_generated_when_missing(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -399,7 +399,7 @@ def test_create_app_x_correlation_id_header(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -454,7 +454,7 @@ def test_exception_handler_problem_error(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -507,7 +507,7 @@ def test_exception_handler_validation_error(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -564,7 +564,7 @@ def test_register_routes_includes_all_routers(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -621,7 +621,7 @@ def test_create_app_with_auto_pipeline_option(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

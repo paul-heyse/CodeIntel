@@ -1877,6 +1877,52 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("detail", "VARCHAR"),
         ],
     ),
+    # Build system schemas
+    "build.output_manifests": TableSchema(
+        schema="build",
+        name="output_manifests",
+        columns=[
+            Column("target", "VARCHAR", nullable=False, description="Target name (e.g., 'risk_factors')"),
+            Column("repo", "VARCHAR", nullable=False, description="Repository slug"),
+            Column("commit", "VARCHAR", nullable=False, description="Commit SHA"),
+            Column("plugin", "VARCHAR", nullable=False, description="Plugin that produced this target"),
+            Column("computed_at", "TIMESTAMPTZ", nullable=False, description="When the target was computed"),
+            Column("duration_ms", "DOUBLE", description="Computation duration in milliseconds"),
+            Column("input_hash", "VARCHAR", nullable=False, description="Hash of all inputs (deps + options)"),
+            Column("output_hash", "VARCHAR", description="Hash of output data for integrity"),
+            Column("row_count", "INTEGER", description="Number of rows written"),
+            Column("options_hash", "VARCHAR", description="Hash of plugin configuration options"),
+        ],
+        primary_key=("target", "repo", "commit"),
+        indexes=(
+            Index("idx_build_output_manifests_repo_commit", ("repo", "commit")),
+            Index("idx_build_output_manifests_computed_at", ("computed_at",)),
+        ),
+        description="Manifest of computed build targets for incremental computation",
+    ),
+    "build.runs": TableSchema(
+        schema="build",
+        name="runs",
+        columns=[
+            Column("run_id", "VARCHAR", nullable=False, description="Unique run identifier"),
+            Column("repo", "VARCHAR", nullable=False, description="Repository slug"),
+            Column("commit", "VARCHAR", nullable=False, description="Commit SHA"),
+            Column("requested_targets", "JSON", nullable=False, description="JSON array of targets requested"),
+            Column("computed_targets", "JSON", nullable=False, description="JSON array of targets computed"),
+            Column("skipped_targets", "JSON", nullable=False, description="JSON array of targets skipped"),
+            Column("started_at", "TIMESTAMPTZ", nullable=False, description="Run start time"),
+            Column("completed_at", "TIMESTAMPTZ", description="Run completion time"),
+            Column("status", "VARCHAR", nullable=False, description="Run status: running/succeeded/failed"),
+            Column("error_summary", "VARCHAR", description="Error summary if failed"),
+            Column("duration_ms", "DOUBLE", description="Total run duration in milliseconds"),
+        ],
+        primary_key=("run_id",),
+        indexes=(
+            Index("idx_build_runs_repo_commit", ("repo", "commit")),
+            Index("idx_build_runs_started_at", ("started_at",)),
+        ),
+        description="Build system run tracking for debugging and observability",
+    ),
 }
 
 # ---------------------------------------------------------------------------

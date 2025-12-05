@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.core.base import ValidationResult
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginMetadata,
     IngestPluginProtocol,
     IngestPluginResult,
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.plugins.registry import IngestPluginRegistry, PlanOptions
@@ -59,7 +59,7 @@ class MockPlugin(IngestPluginProtocol):
             produces_tables=self.produces_tables,
             tool_dependencies=(),
             supports_incremental=False,
-            resource_hints=IngestResourceHints(),
+            resource_hints=PluginResourceHints(),
             version_hash="1.0.0",
         )
 

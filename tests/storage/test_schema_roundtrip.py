@@ -22,14 +22,16 @@ from codeintel.config.datasets import (
     symbol_use_to_tuple,
 )
 from codeintel.storage.datasets import load_dataset_registry
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.schema.json_schema import (
     generate_export_schemas,
     json_schema_from_typeddict,
     validate_row_with_schema,
 )
-from tests._helpers.gateway import memory_con_with_macros
+
+# Constants
+MAX_HYPOTHESIS_EXAMPLES = 15
 
 
 def _json_safe(value: object) -> object:
@@ -54,7 +56,7 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-@settings(max_examples=15)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
 @given(st.from_type(CallGraphEdgeRow))
 def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
     """Generate schemas from TypedDict should validate generated call graph edges."""
@@ -67,7 +69,7 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=15)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
 @given(st.from_type(SymbolUseRow))
 def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     """Generate schemas should align with symbol use TypedDict and serializer."""
@@ -80,7 +82,7 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=15)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
 @given(st.from_type(TestCoverageEdgeRow))
 def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
     """Generate schemas should align with test coverage edge TypedDict and serializer."""
@@ -93,7 +95,7 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=15)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
 @given(st.from_type(BehavioralCoverageRowModel))
 def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
     """Generate schemas should align with behavioral coverage TypedDict and serializer."""
@@ -106,25 +108,22 @@ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-def test_generate_export_schemas_writes_files(tmp_path: Path) -> None:
+def test_generate_export_schemas_writes_files(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Codegen should write schemas for datasets with row bindings."""
-    con = memory_con_with_macros()
-    try:
-        apply_all_schemas(con)
-        bootstrap_metadata_datasets(con)
-        registry = load_dataset_registry(con)
-        written = generate_export_schemas(
-            registry,
-            output_dir=tmp_path,
-            include_datasets={"call_graph_edges"},
-        )
-        schema_path = tmp_path / "call_graph_edges.json"
-        if not schema_path.exists():
-            pytest.fail("Expected generated schema for call_graph_edges")
-        if schema_path not in written:
-            pytest.fail("Generated schemas list missing call_graph_edges.json")
-        doc = json.loads(schema_path.read_text(encoding="utf-8"))
-        if "properties" not in doc or "repo" not in doc["properties"]:
-            pytest.fail("Generated schema missing expected repo property")
-    finally:
-        con.close()
+    bootstrap_metadata_datasets(fresh_gateway.con)
+    registry = load_dataset_registry(fresh_gateway.con)
+    written = generate_export_schemas(
+        registry,
+        output_dir=tmp_path,
+        include_datasets={"call_graph_edges"},
+    )
+    schema_path = tmp_path / "call_graph_edges.json"
+    if not schema_path.exists():
+        pytest.fail("Expected generated schema for call_graph_edges")
+    if schema_path not in written:
+        pytest.fail("Generated schemas list missing call_graph_edges.json")
+    doc = json.loads(schema_path.read_text(encoding="utf-8"))
+    if "properties" not in doc or "repo" not in doc["properties"]:
+        pytest.fail("Generated schema missing expected repo property")

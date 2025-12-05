@@ -6,13 +6,14 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.pipeline.execution.context import (
     PipelineContext,
     _log_step,
 )
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
-from codeintel.pipeline.steps.base import PipelineStep, StepPhase
+from codeintel.pipeline.steps.base import PipelineStep, StepPhase, step_to_plugin_metadata
 from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.storage.views import create_all_views
 
@@ -62,6 +63,11 @@ class ExportDocsStep:
         "symbol_uses",
         "graph_validation",
     )
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata for registry compatibility."""
+        return step_to_plugin_metadata(self.name, self.description, self.phase, self.deps)
 
     def run(self, ctx: PipelineContext) -> None:
         """Create views and export Parquet/JSONL artifacts."""

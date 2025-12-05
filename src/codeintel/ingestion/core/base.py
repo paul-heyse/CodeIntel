@@ -34,13 +34,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from codeintel.core.plugins.types.protocol import ValidationResult
+from codeintel.core.plugins.types.protocol import PluginResourceHints, ValidationResult
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,
     IngestPluginMetadata,
     IngestPluginResult,
-    IngestResourceHints,
     IngestSeverity,
     IngestStage,
 )
@@ -166,7 +165,7 @@ class BaseIngestPlugin(ABC):
         External tools required (e.g., "pyright", "scip").
     supports_incremental : bool
         Whether incremental ingestion is supported.
-    resource_hints : IngestResourceHints | None
+    resource_hints : PluginResourceHints | None
         Runtime resource hints for scheduling.
     isolation_kind : IngestIsolationKind
         Type of isolation needed for execution.
@@ -202,7 +201,7 @@ class BaseIngestPlugin(ABC):
     supports_incremental: ClassVar[bool] = False
 
     # Resource hints
-    resource_hints: ClassVar[IngestResourceHints | None] = None
+    resource_hints: ClassVar[PluginResourceHints | None] = None
 
     # Isolation
     isolation_kind: ClassVar[IngestIsolationKind] = "none"

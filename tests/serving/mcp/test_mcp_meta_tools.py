@@ -66,7 +66,7 @@ def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
 
@@ -221,24 +221,24 @@ def test_register_meta_tools_backend_with_limits(
     assert mcp.name == "Test Backend Limits"
 
 
-def test_register_meta_tools_backend_with_service_override(
+def test_register_meta_tools_backend_with_service(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify meta tools work with backend using service override.
+    """Verify meta tools work with backend using provided service.
 
     Parameters
     ----------
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Service Override", json_response=True)
+    mcp = FastMCP("Test With Service", json_response=True)
     backend = _build_backend(provisioned_repo)
 
-    # Backend was built with service_override
+    # Backend was built with service
     assert backend.service is not None
 
     register_meta_tools(mcp, backend)
-    assert mcp.name == "Test Service Override"
+    assert mcp.name == "Test With Service"
 
 
 # =============================================================================
@@ -275,7 +275,7 @@ def test_register_meta_tools_custom_limits(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     mcp = FastMCP("Test Custom Limits", json_response=True)

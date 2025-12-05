@@ -8,12 +8,12 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import seed_mcp_backend
+from tests._helpers.gateway import build_duckdb_backend
 
 
 @pytest.fixture
 def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
-    """
-    Create an in-memory DuckDB gateway with minimal MCP tables.
+    """Create an in-memory DuckDB gateway with minimal MCP tables.
 
     Returns
     -------
@@ -26,15 +26,14 @@ def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
 
 @pytest.fixture
 def backend(gateway: StorageGateway) -> DuckDBBackend:
-    """
-    Backend configured against the in-memory DuckDB.
+    """Backend configured against the in-memory DuckDB.
 
     Returns
     -------
     DuckDBBackend
         Backend under test.
     """
-    return DuckDBBackend(gateway=gateway, repo="r", commit="c")
+    return build_duckdb_backend(gateway, repo="r", commit="c")
 
 
 def test_get_function_summary(backend: DuckDBBackend) -> None:

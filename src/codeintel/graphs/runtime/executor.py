@@ -685,8 +685,3 @@ __all__ = [
     "run_graph_plugin_batch",
     "run_graph_plugins",
 ]
-
-
-# Backward compatibility: expose for imports
-GraphsExecutorContext = GraphExecutorContext
-GraphsExecutionReport = GraphRunReport

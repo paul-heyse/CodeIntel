@@ -62,9 +62,14 @@ class ScipDocument(TypedDict, total=False):
     occurrences: list[ScipOccurrence]
 
 
-def _normalize_path(path: object) -> str | None:
+def normalize_path(path: object) -> str | None:
     """
     Normalize a path-like value to a forward-slash string.
+
+    Parameters
+    ----------
+    path
+        Path-like value to normalize.
 
     Returns
     -------
@@ -76,11 +81,16 @@ def _normalize_path(path: object) -> str | None:
     return path.replace("\\", "/")
 
 
-def _normalize_occurrence(raw: object) -> ScipOccurrence | None:
+def normalize_occurrence(raw: object) -> ScipOccurrence | None:
     """
     Normalize a raw occurrence mapping into a ScipOccurrence.
 
     Filter out entries missing a symbol.
+
+    Parameters
+    ----------
+    raw
+        Raw occurrence mapping to normalize.
 
     Returns
     -------
@@ -134,13 +144,13 @@ def normalize_scip_document(raw: Mapping[str, object]) -> ScipDocument | None:
     ScipDocument | None
         Normalized document or None when required fields are missing.
     """
-    path = _normalize_path(raw.get("relative_path"))
+    path = normalize_path(raw.get("relative_path"))
     if path is None:
         return None
     occurrences_raw = raw.get("occurrences")
     occurrences: list[ScipOccurrence] = []
     if isinstance(occurrences_raw, Iterable):
-        occurrences = [occ for occ in (_normalize_occurrence(o) for o in occurrences_raw) if occ]
+        occurrences = [occ for occ in (normalize_occurrence(o) for o in occurrences_raw) if occ]
     if not occurrences:
         return None
     return ScipDocument(relative_path=path, occurrences=occurrences)

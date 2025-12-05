@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.execution import RunContext
 from codeintel.core.plugins.execution.context import (
     ConfigProvider,
     PluginExecutionContext,
@@ -24,7 +25,6 @@ from codeintel.core.plugins.execution.context import (
     PluginScratch,
 )
 from codeintel.core.resources.registry import ResourceRegistry
-from codeintel.core.execution import RunContext
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes import (

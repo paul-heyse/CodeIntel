@@ -14,8 +14,9 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import create_app
-from codeintel.serving.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
+from codeintel.serving.mcp.backend import BackendLimits, HttpBackend
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
@@ -64,7 +65,7 @@ def test_backend_registry_matches_gateway(tmp_path: Path) -> None:
     repo = "demo/repo"
     commit = "deadbeef"
     gateway = _seed_db(tmp_path / "codeintel.duckdb", repo=repo, commit=commit)
-    backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
+    backend = build_duckdb_backend(gateway, repo=repo, commit=commit)
     if backend.gateway.datasets.mapping != gateway.datasets.mapping:
         pytest.fail("Backend registry should match gateway mapping")
     gateway.close()

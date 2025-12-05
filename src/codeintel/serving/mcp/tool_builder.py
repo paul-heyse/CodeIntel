@@ -43,7 +43,7 @@ See Also
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -69,11 +69,12 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import QueryBackend
 
 
-class _ModelLike:
+class _ModelLike(Protocol):
     """Protocol for objects with model_dump method."""
 
     def model_dump(self) -> dict[str, object]:
         """Serialize model to dictionary."""
+        ...
 
 
 def _serialize_payload(

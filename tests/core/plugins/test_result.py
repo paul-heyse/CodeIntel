@@ -138,9 +138,7 @@ class TestPluginExecutionRecordWithResult:
 
         # Canonical pattern for accessing row_counts
         row_counts = (
-            dict(record.result.row_counts)
-            if record.result and record.result.row_counts
-            else None
+            dict(record.result.row_counts) if record.result and record.result.row_counts else None
         )
 
         assert row_counts is not None
@@ -220,4 +218,3 @@ class TestPluginResult:
         assert result.success is False
         assert result.error == "Critical error"
         assert result.warnings == ("Warning 1", "Warning 2")
-

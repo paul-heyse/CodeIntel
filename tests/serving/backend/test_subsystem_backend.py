@@ -1,11 +1,11 @@
-"""Tests for SubsystemBackend behavior."""
+"""Tests for SubsystemQueryLayer behavior."""
 
 from __future__ import annotations
 
 import pytest
 
 from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
-from codeintel.serving.backend.subsystem_backend import SubsystemBackend
+from codeintel.serving.backend.subsystem_backend import SubsystemQueryLayer
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -37,7 +37,7 @@ def test_list_subsystems_respects_backend_limits(
     """Clamp subsystem listings to backend limits."""
     limits = BackendLimits(default_limit=5, max_rows_per_call=1)
     context, repositories = _build_components(architecture_gateway, limits)
-    backend = SubsystemBackend(context=context, repositories=repositories)
+    backend = SubsystemQueryLayer(context=context, repositories=repositories)
 
     result = backend.list_subsystems(limit=10)
 
@@ -50,7 +50,7 @@ def test_get_module_subsystems_returns_memberships(
 ) -> None:
     """Return subsystem memberships for a module."""
     context, repositories = _build_components(architecture_gateway)
-    backend = SubsystemBackend(context=context, repositories=repositories)
+    backend = SubsystemQueryLayer(context=context, repositories=repositories)
 
     memberships = backend.get_module_subsystems(module="pkg.mod")
 

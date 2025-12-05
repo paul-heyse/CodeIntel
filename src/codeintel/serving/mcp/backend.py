@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-import warnings
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import cast
 
@@ -14,11 +13,8 @@ import httpx
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import (
-    BackendContext,
     BackendLimits,
     DuckDBQueryService,
-    DuckDBRepositories,
-    GraphEngineProvider,
 )
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp import errors
@@ -246,84 +242,34 @@ def _validate_direction(direction: str) -> str:
 
 @dataclass
 class DuckDBBackend(DatasetBackendMixin, QueryBackend):
-    """
-    DuckDB-backed implementation of QueryBackend.
+    """DuckDB-backed implementation of QueryBackend.
 
-    Requires a StorageGateway to source the connection and dataset registry.
-    Assumes a single repo/commit per DuckDB file, but repo/commit filters are
-    still applied for future multi-repo support.
+    The backend requires a pre-constructed ``LocalQueryService`` which provides
+    query capabilities. Use ``build_backend_resource()`` from
+    ``codeintel.serving.bootstrap`` to construct the service.
+
+    Example
+    -------
+    >>> from codeintel.serving.bootstrap import build_backend_resource
+    >>> resource = build_backend_resource(gateway=gateway, repo="my/repo", commit="abc123")
+    >>> backend = resource.backend
     """
 
+    # Attribute typed as QueryService for protocol compatibility;
+    # __init__ enforces LocalQueryService at construction time
+    service: QueryService
     gateway: StorageGateway
     repo: str | None = None
     commit: str | None = None
     limits: BackendLimits = field(default_factory=BackendLimits)
     observability: ServiceObservability | None = None
-    service_override: LocalQueryService | None = None
-    service: QueryService = field(init=False)
     query: DuckDBQueryApi | DuckDBQueryService | None = field(init=False, default=None)
     query_engine: GraphEngine | None = None
 
     def __post_init__(self) -> None:
-        """
-        Initialize the query service and dataset registry.
-
-        When ``service_override`` is provided (recommended), the backend uses
-        that service directly. Otherwise, it falls back to internal construction
-        which is deprecated.
-
-        Raises
-        ------
-        ValueError
-            If the connection or repo/commit cannot be derived.
-        """
-        if self.service_override is not None:
-            self.service = self.service_override
-            if isinstance(self.service, LocalQueryService):
-                self.query = self.service.query
-            return
-
-        # Deprecated path: internal service construction
-        # Use build_backend_resource() from codeintel.serving.bootstrap instead
-        warnings.warn(
-            "DuckDBBackend without service_override is deprecated. "
-            "Use build_backend_resource() from codeintel.serving.bootstrap instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        gateway_repo = self.gateway.config.repo
-        gateway_commit = self.gateway.config.commit
-        repo = self.repo or gateway_repo
-        commit = self.commit or gateway_commit
-        if repo is None or commit is None:
-            message = "repo and commit must be provided either directly or via the gateway config."
-            raise ValueError(message)
-
-        self.repo = repo
-        self.commit = commit
-        context = BackendContext(
-            gateway=self.gateway,
-            repo=self.repo,
-            commit=self.commit,
-            limits=self.limits,
-            graph_engine=self.query_engine,
-        )
-        repositories = DuckDBRepositories(
-            gateway=self.gateway,
-            repo=self.repo,
-            commit=self.commit,
-        )
-        provider = GraphEngineProvider(context=context, graph_engine=self.query_engine)
-        self.query = DuckDBQueryService(
-            context=context,
-            repositories=repositories,
-            engine_provider=provider,
-        )
-        self.service = LocalQueryService(
-            query=self.query,
-            observability=self.observability,
-        )
+        """Initialize internal state from the provided service."""
+        if isinstance(self.service, LocalQueryService):
+            self.query = self.service.query
 
     def get_function_summary(
         self,

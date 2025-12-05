@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.core.execution.errors import PluginSkipRequestError
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.core.base import (
@@ -22,7 +23,6 @@ from codeintel.ingestion.core.base import (
 from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginResult,
-    IngestResourceHints,
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
@@ -64,7 +64,7 @@ class ScipIngestPlugin(
         External tools required.
     supports_incremental : bool
         Whether incremental mode is supported.
-    resource_hints : IngestResourceHints
+    resource_hints : PluginResourceHints
         Resource requirements.
     """
 
@@ -86,7 +86,7 @@ class ScipIngestPlugin(
     tracker_required: ClassVar[bool] = False
     tool_required: ClassVar[bool] = False
 
-    resource_hints: ClassVar[IngestResourceHints] = IngestResourceHints(
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
         cpu_intensive=True,
         io_intensive=True,
         max_runtime_ms=300000,

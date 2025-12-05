@@ -48,6 +48,11 @@ PluginStage = Literal[
     "stats",
     "validation",
     "other",
+    # Pipeline step stages (for unified registry)
+    "pipeline_ingestion",
+    "pipeline_graphs",
+    "pipeline_analytics",
+    "pipeline_export",
 ]
 
 PluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]

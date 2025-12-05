@@ -74,7 +74,7 @@ def _create_test_app(provisioned_repo: ProvisionedGateway) -> FastAPI:
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

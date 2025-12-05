@@ -6,7 +6,6 @@ and module mapping data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,7 +17,7 @@ from codeintel.analytics.adapters.subsystems import (
     SubsystemsAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants
@@ -122,27 +121,6 @@ def _make_subsystem_module_row(
 
 
 @pytest.fixture
-def analytics_gateway() -> Iterator[StorageGateway]:
-    """
-    Create gateway with analytics schema.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway with analytics tables available.
-    """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
-
-
-@pytest.fixture
 def snapshot() -> SnapshotRef:
     """
     Create snapshot reference.
@@ -165,47 +143,47 @@ def snapshot() -> SnapshotRef:
 
 
 def test_subsystems_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.subsystems"
 
 
 def test_subsystems_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_subsystems_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_subsystems_adapter_persist_single(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single subsystem."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
     row = _make_subsystem_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.subsystems WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -214,11 +192,11 @@ def test_subsystems_adapter_persist_single(
 
 
 def test_subsystems_adapter_persist_multiple(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple subsystems."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_subsystem_row(subsystem_id="auth", name="Authentication"),
@@ -231,16 +209,16 @@ def test_subsystems_adapter_persist_multiple(
 
 
 def test_subsystems_adapter_persist_verifies_data(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = SubsystemsAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemsAdapter(fresh_gateway, snapshot)
     row = _make_subsystem_row(subsystem_id="billing", name="Billing")
     adapter.persist([row])
 
     # Query and verify
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         """
         SELECT subsystem_id, name, risk_level, function_count
         FROM analytics.subsystems
@@ -262,47 +240,47 @@ def test_subsystems_adapter_persist_verifies_data(
 
 
 def test_subsystem_modules_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.subsystem_modules"
 
 
 def test_subsystem_modules_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_subsystem_modules_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_subsystem_modules_adapter_persist_single(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single subsystem-module mapping."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
     row = _make_subsystem_module_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -311,11 +289,11 @@ def test_subsystem_modules_adapter_persist_single(
 
 
 def test_subsystem_modules_adapter_persist_multiple(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple subsystem-module mappings."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_subsystem_module_row(module="auth.core", role="core"),
@@ -328,11 +306,11 @@ def test_subsystem_modules_adapter_persist_multiple(
 
 
 def test_subsystem_modules_adapter_persist_verifies_data(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = SubsystemModulesAdapter(analytics_gateway, snapshot)
+    adapter = SubsystemModulesAdapter(fresh_gateway, snapshot)
     row = _make_subsystem_module_row(
         subsystem_id="users",
         module="users.service",
@@ -341,7 +319,7 @@ def test_subsystem_modules_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         """
         SELECT subsystem_id, module, role
         FROM analytics.subsystem_modules

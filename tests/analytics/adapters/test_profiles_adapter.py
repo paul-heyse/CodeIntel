@@ -6,7 +6,6 @@ profile data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -20,7 +19,7 @@ from codeintel.analytics.adapters.profiles import (
     ModuleProfileAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants
@@ -284,27 +283,6 @@ def _make_module_profile_row(
 
 
 @pytest.fixture
-def analytics_gateway() -> Iterator[StorageGateway]:
-    """
-    Create gateway with analytics schema.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway with analytics tables available.
-    """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
-
-
-@pytest.fixture
 def snapshot() -> SnapshotRef:
     """
     Create snapshot reference.
@@ -327,47 +305,47 @@ def snapshot() -> SnapshotRef:
 
 
 def test_function_profile_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = FunctionProfileAdapter(analytics_gateway, snapshot)
+    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.function_profile"
 
 
 def test_function_profile_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = FunctionProfileAdapter(analytics_gateway, snapshot)
+    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_function_profile_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = FunctionProfileAdapter(analytics_gateway, snapshot)
+    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_function_profile_adapter_persist_single_row(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = FunctionProfileAdapter(analytics_gateway, snapshot)
+    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
     row = _make_function_profile_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -376,11 +354,11 @@ def test_function_profile_adapter_persist_single_row(
 
 
 def test_function_profile_adapter_persist_multiple_rows(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = FunctionProfileAdapter(analytics_gateway, snapshot)
+    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_function_profile_row(goid=TEST_GOID_12345, qualname="module.func_a"),
@@ -391,7 +369,7 @@ def test_function_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -405,47 +383,47 @@ def test_function_profile_adapter_persist_multiple_rows(
 
 
 def test_file_profile_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = FileProfileAdapter(analytics_gateway, snapshot)
+    adapter = FileProfileAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.file_profile"
 
 
 def test_file_profile_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = FileProfileAdapter(analytics_gateway, snapshot)
+    adapter = FileProfileAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_file_profile_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = FileProfileAdapter(analytics_gateway, snapshot)
+    adapter = FileProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_file_profile_adapter_persist_single_row(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = FileProfileAdapter(analytics_gateway, snapshot)
+    adapter = FileProfileAdapter(fresh_gateway, snapshot)
     row = _make_file_profile_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -454,11 +432,11 @@ def test_file_profile_adapter_persist_single_row(
 
 
 def test_file_profile_adapter_persist_multiple_rows(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = FileProfileAdapter(analytics_gateway, snapshot)
+    adapter = FileProfileAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_file_profile_row(rel_path="src/api.py"),
@@ -469,7 +447,7 @@ def test_file_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -483,47 +461,47 @@ def test_file_profile_adapter_persist_multiple_rows(
 
 
 def test_module_profile_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = ModuleProfileAdapter(analytics_gateway, snapshot)
+    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.module_profile"
 
 
 def test_module_profile_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = ModuleProfileAdapter(analytics_gateway, snapshot)
+    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_module_profile_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = ModuleProfileAdapter(analytics_gateway, snapshot)
+    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_module_profile_adapter_persist_single_row(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = ModuleProfileAdapter(analytics_gateway, snapshot)
+    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
     row = _make_module_profile_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -532,11 +510,11 @@ def test_module_profile_adapter_persist_single_row(
 
 
 def test_module_profile_adapter_persist_multiple_rows(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = ModuleProfileAdapter(analytics_gateway, snapshot)
+    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_module_profile_row(module="services.api"),
@@ -547,7 +525,7 @@ def test_module_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()

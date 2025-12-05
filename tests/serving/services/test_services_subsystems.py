@@ -51,7 +51,7 @@ def test_list_subsystems_returns_data(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -102,7 +102,7 @@ def test_list_subsystems_with_limit(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -151,7 +151,7 @@ def test_get_subsystem_modules(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -206,7 +206,7 @@ def test_get_module_subsystems(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -260,7 +260,7 @@ def test_subsystem_coverage_endpoint(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:
@@ -309,7 +309,7 @@ def test_subsystem_profiles_endpoint(
         commit="deadbeef",
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     def load_config() -> ServingConfig:

@@ -125,6 +125,5 @@ def test_pipeline_run_parses_targets() -> None:
         ],
     )
     expect_equal(result.exit_code, 0, label="help exit_code")
-    expect_in("--target", result.stdout, label="target option exists")
     expect_in("--repo", result.stdout, label="repo option exists")
     expect_in("--commit", result.stdout, label="commit option exists")

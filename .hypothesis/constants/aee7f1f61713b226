@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits/scratch.py
+# hypothesis_version: 6.148.6
+
+['ScratchContext', 'WithDependencyData']

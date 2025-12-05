@@ -1,9 +1,7 @@
 """Function query layer backed by DuckDB repositories.
 
 This module provides the **Query Layer** implementation for function-related
-operations. The class was renamed from ``FunctionBackend`` to
-``FunctionQueryLayer`` to distinguish it from MCP backends (``DuckDBBackend``,
-``HttpBackend``) which operate at the transport layer.
+operations.
 
 Layer Hierarchy
 ---------------
@@ -19,11 +17,6 @@ Layer Hierarchy
          │
          ▼
     Repository Layer (FunctionRepository, GraphRepository)
-
-Backward Compatibility
-----------------------
-The ``FunctionBackend`` name is preserved as an alias for backward compatibility.
-New code should use ``FunctionQueryLayer``.
 """
 
 from __future__ import annotations
@@ -63,11 +56,7 @@ ResponseMeta = dm.ResponseMeta
 
 @dataclass
 class FunctionQueryLayer(FunctionQueriesApi):
-    """DuckDB-backed implementation of function query operations.
-
-    Note: Previously named ``FunctionBackend``. The 'Backend' suffix was
-    confusing as this is a query layer, not an MCP backend.
-    """
+    """DuckDB-backed implementation of function query operations."""
 
     context: BackendContext
     repositories: DuckDBRepositories
@@ -554,7 +543,4 @@ class FunctionQueryLayer(FunctionQueriesApi):
         return build_function_architecture(row, meta=ResponseMeta())
 
 
-# Backward compatibility alias - new code should use FunctionQueryLayer
-FunctionBackend = FunctionQueryLayer
-
-__all__ = ["FunctionBackend", "FunctionQueryLayer"]
+__all__ = ["FunctionQueryLayer"]

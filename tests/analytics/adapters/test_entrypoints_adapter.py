@@ -6,7 +6,6 @@ and test mapping data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -19,7 +18,7 @@ from codeintel.analytics.adapters.entrypoints import (
     EntrypointTestsAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants
@@ -194,27 +193,6 @@ def _make_entrypoint_test_row(
 
 
 @pytest.fixture
-def analytics_gateway() -> Iterator[StorageGateway]:
-    """
-    Create gateway with analytics schema.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway with analytics tables available.
-    """
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
-
-
-@pytest.fixture
 def snapshot() -> SnapshotRef:
     """
     Create snapshot reference.
@@ -237,47 +215,47 @@ def snapshot() -> SnapshotRef:
 
 
 def test_entrypoints_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.entrypoints"
 
 
 def test_entrypoints_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_entrypoints_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_entrypoints_adapter_persist_http_endpoint(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist HTTP endpoint entrypoint."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
     row = _make_entrypoint_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -286,18 +264,18 @@ def test_entrypoints_adapter_persist_http_endpoint(
 
 
 def test_entrypoints_adapter_persist_cli_command(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist CLI command entrypoint."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
     row = _make_cli_entrypoint_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify CLI-specific fields
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         """
         SELECT kind, command_name, http_method
         FROM analytics.entrypoints
@@ -312,11 +290,11 @@ def test_entrypoints_adapter_persist_cli_command(
 
 
 def test_entrypoints_adapter_persist_multiple(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple entrypoints."""
-    adapter = EntrypointsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointsAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_entrypoint_row(entrypoint_id="ep_1", handler_qualname="api.get"),
@@ -333,47 +311,47 @@ def test_entrypoints_adapter_persist_multiple(
 
 
 def test_entrypoint_tests_adapter_table_name(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
     assert adapter.table_name == "analytics.entrypoint_tests"
 
 
 def test_entrypoint_tests_adapter_load_raises(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_entrypoint_tests_adapter_persist_empty(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
     assert count == EXPECTED_COUNT_0
 
 
 def test_entrypoint_tests_adapter_persist_single(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist single entrypoint-test mapping."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
     row = _make_entrypoint_test_row()
 
     count = adapter.persist([row])
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.entrypoint_tests WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
@@ -382,11 +360,11 @@ def test_entrypoint_tests_adapter_persist_single(
 
 
 def test_entrypoint_tests_adapter_persist_multiple(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persist multiple entrypoint-test mappings."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
 
     rows = [
         _make_entrypoint_test_row(test_id="test_1", test_goid=Decimal(1001)),
@@ -398,11 +376,11 @@ def test_entrypoint_tests_adapter_persist_multiple(
 
 
 def test_entrypoint_tests_adapter_persist_verifies_data(
-    analytics_gateway: StorageGateway,
+    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = EntrypointTestsAdapter(analytics_gateway, snapshot)
+    adapter = EntrypointTestsAdapter(fresh_gateway, snapshot)
     row = _make_entrypoint_test_row(
         entrypoint_id="ep_verify",
         test_id="test_verify",
@@ -410,7 +388,7 @@ def test_entrypoint_tests_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = analytics_gateway.con.execute(
+    result = fresh_gateway.con.execute(
         """
         SELECT entrypoint_id, test_id, status, coverage_ratio
         FROM analytics.entrypoint_tests

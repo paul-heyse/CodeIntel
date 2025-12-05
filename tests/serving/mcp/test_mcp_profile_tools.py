@@ -65,7 +65,7 @@ def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
 
@@ -374,7 +374,7 @@ def test_backend_with_custom_limits(
         commit=provisioned_repo.commit,
         limits=limits,
         observability=None,
-        service_override=service,
+        service=service,
     )
 
     assert backend.limits.default_limit == custom_limit

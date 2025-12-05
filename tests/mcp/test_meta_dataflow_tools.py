@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
 
 
 def test_explain_dataset_tool_smoke() -> None:
@@ -20,7 +19,7 @@ def test_explain_dataset_tool_smoke() -> None:
     gateway = gateway_with_macros(validate_schema=False)
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
-        backend = DuckDBBackend(gateway=gateway, repo="demo/repo", commit="deadbeef")
+        backend = build_duckdb_backend(gateway, repo="demo/repo", commit="deadbeef")
 
         register_meta_tools(mcp, backend)
         explain = mcp.tools.get("explain_dataset")

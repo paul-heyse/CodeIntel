@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.ingestion.core.base import (
     BaseIngestPlugin,
     ResolvedConfig,
@@ -19,7 +20,6 @@ from codeintel.ingestion.core.base import (
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginMetadata,
     IngestPluginResult,
-    IngestResourceHints,
     IngestStage,
 )
 from tests._helpers.assertions import assert_cannot_setattr
@@ -282,7 +282,7 @@ def test_base_ingest_plugin_resource_hints() -> None:
 
     hints = plugin.metadata.resource_hints
     # resource_hints may be None if not set in plugin class vars
-    assert hints is None or isinstance(hints, IngestResourceHints)
+    assert hints is None or isinstance(hints, PluginResourceHints)
 
 
 # =============================================================================
@@ -361,7 +361,7 @@ def test_ingest_plugin_metadata_create_minimal() -> None:
         produces_tables=("core.test",),
         tool_dependencies=(),
         supports_incremental=False,
-        resource_hints=IngestResourceHints(),
+        resource_hints=PluginResourceHints(),
         version_hash="1.0.0",
     )
 
@@ -381,7 +381,7 @@ def test_ingest_plugin_metadata_frozen() -> None:
         produces_tables=(),
         tool_dependencies=(),
         supports_incremental=False,
-        resource_hints=IngestResourceHints(),
+        resource_hints=PluginResourceHints(),
         version_hash="1.0.0",
     )
 
@@ -389,13 +389,13 @@ def test_ingest_plugin_metadata_frozen() -> None:
 
 
 # =============================================================================
-# IngestResourceHints Tests
+# PluginResourceHints Tests
 # =============================================================================
 
 
 def test_ingest_resource_hints_defaults() -> None:
-    """IngestResourceHints should have sensible defaults."""
-    hints = IngestResourceHints()
+    """PluginResourceHints should have sensible defaults."""
+    hints = PluginResourceHints()
 
     assert hints.cpu_intensive is False
     assert hints.io_intensive is False
@@ -404,8 +404,8 @@ def test_ingest_resource_hints_defaults() -> None:
 
 
 def test_ingest_resource_hints_custom_values() -> None:
-    """IngestResourceHints should accept custom values."""
-    hints = IngestResourceHints(
+    """PluginResourceHints should accept custom values."""
+    hints = PluginResourceHints(
         cpu_intensive=True,
         io_intensive=True,
         max_memory_mb=TEST_MEMORY_MB,

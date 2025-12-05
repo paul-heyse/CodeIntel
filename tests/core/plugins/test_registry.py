@@ -18,13 +18,13 @@ from typing import ClassVar, TypedDict, Unpack
 
 import pytest
 
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
     PluginPlan,
     PluginSkip,
     RegistrablePlugin,
 )
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 
 # Test constants
 EXPECTED_PLUGIN_COUNT = 2

@@ -62,8 +62,8 @@ from codeintel.analytics.core.contracts import (
     validate_plugin_outputs,
 )
 from codeintel.analytics.core.executor import (
-    ExecutionPolicy,
-    ExecutionReport,
+    AnalyticsExecutionPolicy,
+    AnalyticsExecutionReport,
     PluginExecutor,
     execute_plugin_plan,
 )
@@ -119,7 +119,8 @@ from codeintel.analytics.core.traits import (
 )
 
 __all__ = [
-    # Protocol and base classes
+    "AnalyticsExecutionPolicy",
+    "AnalyticsExecutionReport",
     "AnalyticsPluginProtocol",
     "AnalyticsStepConfigBase",
     "BasePlugin",
@@ -141,8 +142,6 @@ __all__ = [
     "ContractValidationResult",
     "ContractValidator",
     "ContractViolation",
-    "ExecutionPolicy",
-    "ExecutionReport",
     "FunctionalPlugin",
     "GraphAwareMixin",
     "GraphAwarePlugin",
@@ -152,7 +151,6 @@ __all__ = [
     "InputSource",
     "IsolatedPlugin",
     "OutputContractSpec",
-    # Builders
     "OutputSpec",
     "OutputSpecBuilder",
     "PluginExecutionContext",
@@ -182,7 +180,6 @@ __all__ = [
     "ScopeAwarePlugin",
     "TableWriterPlugin",
     "ValidationResult",
-    # Composition mixins
     "WithCaching",
     "WithCleanup",
     "WithContractValidation",
