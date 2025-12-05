@@ -746,9 +746,7 @@ def _format_run_summary(record: BuildRunRecord) -> str:
     """
     from codeintel.build.plan import format_duration
 
-    duration_str = (
-        format_duration(record.duration_ms) if record.duration_ms else "?"
-    )
+    duration_str = format_duration(record.duration_ms) if record.duration_ms else "?"
     computed_count = len(record.computed_targets)
     skipped_count = len(record.skipped_targets)
 

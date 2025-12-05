@@ -52,7 +52,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
 
         cfg = ConfigDataFlowStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         catalog_provider = ctx.resources.catalog

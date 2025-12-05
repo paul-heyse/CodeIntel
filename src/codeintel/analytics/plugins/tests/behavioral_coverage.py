@@ -53,7 +53,6 @@ class BehavioralCoveragePlugin(TargetPlugin):
 
         cfg = BehavioralCoverageStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         # Get optional LLM runner from parameters

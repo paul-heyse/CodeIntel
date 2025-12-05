@@ -151,9 +151,7 @@ class BuildRunRecord:
             "computed_targets": list(self.computed_targets),
             "skipped_targets": list(self.skipped_targets),
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (
-                self.completed_at.isoformat() if self.completed_at else None
-            ),
+            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "status": self.status,
             "error_summary": self.error_summary,
             "duration_ms": self.duration_ms,

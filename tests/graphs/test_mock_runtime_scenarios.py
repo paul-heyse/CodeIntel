@@ -191,13 +191,15 @@ class TestMixedGraphTypes:
         """MockGraphRuntime preserves CFG graph structure."""
         # Create a simple CFG with entry/exit blocks
         cfg = nx.DiGraph()
-        cfg.add_edges_from([
-            ("entry", "block1"),
-            ("block1", "block2"),
-            ("block1", "block3"),  # Branch
-            ("block2", "exit"),
-            ("block3", "exit"),
-        ])
+        cfg.add_edges_from(
+            [
+                ("entry", "block1"),
+                ("block1", "block2"),
+                ("block1", "block3"),  # Branch
+                ("block2", "exit"),
+                ("block3", "exit"),
+            ]
+        )
 
         mock = MockGraphRuntime(cfg_graph=cfg)
         provider = GraphProvider.from_runtime(mock)
@@ -216,9 +218,7 @@ class TestMixedGraphTypes:
 class TestGraphResourceCaching:
     """Test that GraphProvider caches resources from MockGraphRuntime."""
 
-    def test_resources_cached_on_get(
-        self, mock_runtime_with_call_graph: MockGraphRuntime
-    ) -> None:
+    def test_resources_cached_on_get(self, mock_runtime_with_call_graph: MockGraphRuntime) -> None:
         """GraphProvider caches resources after first get() call."""
         provider = GraphProvider.from_runtime(mock_runtime_with_call_graph)
 

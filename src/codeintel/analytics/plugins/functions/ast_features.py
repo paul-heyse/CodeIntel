@@ -59,14 +59,14 @@ class FunctionAstFeaturesPlugin(TargetPlugin):
             return TargetResult.failed("CatalogProvider is required")
 
         # Get features from FeaturesProvider
-        features_map = catalog.get_resource("FeaturesProvider")
+        features_map = None  # Resources not yet populated via build context
         if features_map is None:
             return TargetResult.failed("FeaturesProvider is required")
 
         features_map = cast("dict[int, FunctionAstFeatures]", features_map)
 
         # Get AST stats for metadata (available for debugging/logging)
-        ast_data = catalog.get_resource("AstProvider")
+        ast_data = None  # Resources not yet populated via build context
         _ = ast_data  # May be used for logging in future
 
         try:

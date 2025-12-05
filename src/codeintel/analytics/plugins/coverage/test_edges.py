@@ -53,7 +53,6 @@ class CoverageTestEdgesPlugin(TargetPlugin):
         # Build config from context
         cfg = TestCoverageStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         catalog_provider = ctx.resources.catalog

@@ -106,7 +106,6 @@ class ContractError(BuildError):
     """
 
 
-
 class SchemaNotFoundError(ContractError):
     """Target references a table with no schema defined.
 
@@ -126,7 +125,9 @@ class SchemaNotFoundError(ContractError):
     @property
     def user_message(self) -> str:
         """Return human-readable error message."""
-        return f"Target '{self.target}' outputs table '{self.table_key}' which has no schema defined"
+        return (
+            f"Target '{self.target}' outputs table '{self.table_key}' which has no schema defined"
+        )
 
     @property
     def actionable_hint(self) -> str:
@@ -228,7 +229,6 @@ class ResourceError(BuildError):
     """
 
 
-
 class ToolNotAvailableError(ResourceError):
     """Required external tool is not available.
 
@@ -311,7 +311,6 @@ class ExecutionError(BuildError):
     """
 
 
-
 class PluginExecutionError(ExecutionError):
     """Plugin failed during execution.
 
@@ -375,7 +374,9 @@ class TargetTimeoutError(ExecutionError):
     @property
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
-        return f"Increase execution.max_runtime_ms for target '{self.target}' or optimize the plugin"
+        return (
+            f"Increase execution.max_runtime_ms for target '{self.target}' or optimize the plugin"
+        )
 
 
 # =============================================================================
@@ -595,8 +596,7 @@ class BuildErrorCollection:
             Errors for the specified target.
         """
         result: list[BuildError] = [
-            error for error in self.errors
-            if getattr(error, "target", None) == target
+            error for error in self.errors if getattr(error, "target", None) == target
         ]
         return result
 

@@ -57,7 +57,6 @@ class ExternalDepsPlugin(TargetPlugin):
 
         cfg = ExternalDependenciesStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         catalog = ctx.resources.catalog
@@ -70,16 +69,16 @@ class ExternalDepsPlugin(TargetPlugin):
         missing_goids: set[int] = set()
         features_map: dict[int, FunctionAstFeatures] = {}
 
-        mm_resource = catalog.get_resource("ModuleMapProvider")
+        mm_resource = None  # Resources not yet populated via build context
         if mm_resource is not None:
             module_map = mm_resource
 
-        ast_data = catalog.get_resource("AstProvider")
+        ast_data = None  # Resources not yet populated via build context
         if ast_data is not None:
             ast_by_goid = ast_data.function_ast_map
             missing_goids = ast_data.missing_function_goids
 
-        feat_resource = catalog.get_resource("FeaturesProvider")
+        feat_resource = None  # Resources not yet populated via build context
         if feat_resource is not None:
             features_map = cast("dict[int, FunctionAstFeatures]", feat_resource)
 

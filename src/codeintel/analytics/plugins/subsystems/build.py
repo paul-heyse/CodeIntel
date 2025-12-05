@@ -33,9 +33,7 @@ class SubsystemsPlugin(TargetPlugin):
 
     plugin_name: ClassVar[str] = "subsystems.build"
     plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Infer subsystems from module coupling and risk signals."
-    )
+    plugin_description: ClassVar[str] = "Infer subsystems from module coupling and risk signals."
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -55,7 +53,6 @@ class SubsystemsPlugin(TargetPlugin):
         # Build config from context
         cfg = SubsystemsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         graph_runtime = ctx.resources.graph_runtime

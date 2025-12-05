@@ -8,10 +8,12 @@ per-target.
 Example
 -------
 >>> from codeintel.build.parameters import TargetParameters
->>> params = TargetParameters({
-...     "max_commits": 2000,
-...     "scoring_weights": {"frequency": 0.4, "recency": 0.3},
-... })
+>>> params = TargetParameters(
+...     {
+...         "max_commits": 2000,
+...         "scoring_weights": {"frequency": 0.4, "recency": 0.3},
+...     }
+... )
 >>> max_commits = params.get("max_commits", int, default=1000)
 >>> weights = params.get("scoring_weights", dict)
 """
@@ -62,8 +64,7 @@ class ParameterError(ValueError):
             )
         else:
             super().__init__(
-                f"Required parameter '{parameter}' not found "
-                f"(expected {expected_type.__name__})"
+                f"Required parameter '{parameter}' not found (expected {expected_type.__name__})"
             )
 
 

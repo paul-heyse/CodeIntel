@@ -1,12 +1,12 @@
 """Test harness infrastructure for plugin testing.
 
-This package provides fluent test harnesses for both analytics and ingestion
+This package provides fluent test harnesses for analytics and graph
 plugins, with shared base classes to reduce code duplication.
 
 Example
 -------
->>> from tests._helpers.harnesses import PluginTestHarness, IngestPluginTestHarness
->>> from tests._helpers.harnesses import assert_result, assert_ingest_result
+>>> from tests._helpers.harnesses import PluginTestHarness, GraphPluginTestHarness
+>>> from tests._helpers.harnesses import assert_result
 """
 
 from __future__ import annotations
@@ -27,26 +27,16 @@ from tests._helpers.harnesses.graphs import (
     GraphPluginTestHarness,
     NewPluginTestHarness,
 )
-from tests._helpers.harnesses.ingest_setup import IngestTestSetup
-from tests._helpers.harnesses.ingestion import (
-    IngestPluginResultAssertions,
-    IngestPluginTestHarness,
-    assert_ingest_result,
-)
 
 __all__ = [
     "BaseResultAssertions",
     "BaseTestHarness",
     "GraphPluginTestHarness",
-    "IngestPluginResultAssertions",
-    "IngestPluginTestHarness",
-    "IngestTestSetup",
     "NewPluginTestHarness",
     "PluginResultAssertions",
     "PluginTestHarness",
     "ResultLike",
     "ValidationResultAssertions",
-    "assert_ingest_result",
     "assert_result",
     "assert_validation",
 ]

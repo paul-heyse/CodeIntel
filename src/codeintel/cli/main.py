@@ -89,6 +89,7 @@ ReloadOpt = Annotated[
     typer.Option("--reload", help="Enable auto-reload for development", is_flag=True),
 ]
 
+
 def _build_runtime_or_exit(project_root: Path | None) -> ProjectRuntime:
     """Build project runtime or exit with error message.
 

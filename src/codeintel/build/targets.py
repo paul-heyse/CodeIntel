@@ -75,12 +75,8 @@ class OutputTarget:
     ...     module="ingestion",
     ...     plugin="scip_ingest",
     ...     contract=OutputContract(
-    ...         tables=(
-    ...             TableSchema("core", "goids", [Column("goid_h128", "DECIMAL(38,0)")]),
-    ...         ),
-    ...         artifacts=(
-    ...             ArtifactSpec("scip_index", "{scip_dir}/index.scip"),
-    ...         ),
+    ...         tables=(TableSchema("core", "goids", [Column("goid_h128", "DECIMAL(38,0)")]),),
+    ...         artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
     ...     ),
     ...     dependencies=("modules",),
     ...     resources=TargetResources(tracker=True, tools=("scip-python",)),

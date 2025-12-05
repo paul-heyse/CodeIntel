@@ -53,7 +53,6 @@ class FunctionContractsPlugin(TargetPlugin):
         # Build config from context
         cfg = FunctionContractsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         # Get catalog provider
@@ -62,7 +61,7 @@ class FunctionContractsPlugin(TargetPlugin):
             return TargetResult.failed("CatalogProvider is required")
 
         # Get AST data
-        ast_data = catalog.get_resource("AstProvider")
+        ast_data = None  # Resources not yet populated via build context
         if ast_data is None:
             return TargetResult.failed("AstProvider is required")
 

@@ -191,9 +191,7 @@ class ScipPlugin(ToolPlugin):
         ToolPluginResult
             Normalized execution result with parsed ScipIndexResult.
         """
-        output_scip, output_json, target_dir, rel_paths = self._validate_kwargs(
-            dict(kwargs)
-        )
+        output_scip, output_json, target_dir, rel_paths = self._validate_kwargs(dict(kwargs))
 
         # Check for existing output - skip SCIP execution if already present
         existing_result = await self._try_use_existing(output_scip, output_json)
@@ -288,9 +286,7 @@ class ScipPlugin(ToolPlugin):
             Parsed result if existing files found, None otherwise.
         """
         _ = self  # Required by interface
-        existing_json = await to_thread.run_sync(
-            _find_existing_json, output_scip, output_json
-        )
+        existing_json = await to_thread.run_sync(_find_existing_json, output_scip, output_json)
         if existing_json is None:
             return None
 

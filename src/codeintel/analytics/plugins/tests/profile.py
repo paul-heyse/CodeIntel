@@ -52,7 +52,6 @@ class TestProfilePlugin(TargetPlugin):
 
         cfg = TestProfileStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         try:

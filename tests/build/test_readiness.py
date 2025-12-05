@@ -725,9 +725,7 @@ class TestTimeEstimation:
     ) -> None:
         """Test time estimation for a target that can run."""
         target = graph.get("ast")
-        view = TargetReadinessView(
-            target, graph, as_gateway(empty_gateway), as_snapshot(snapshot)
-        )
+        view = TargetReadinessView(target, graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
         readiness = view.readiness
         # ast has estimated_duration_ms of 5000

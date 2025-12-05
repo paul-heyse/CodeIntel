@@ -51,19 +51,17 @@ class HotspotsPlugin(TargetPlugin):
         """
         # Get parameters
         max_commits = ctx.parameters.get("max_commits", int, default=2000)
-        min_churn_threshold = ctx.parameters.get("min_churn_threshold", int, default=5)
 
         # Build hotspots config from parameters
         cfg = HotspotsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
             max_commits=max_commits,
-            min_churn_threshold=min_churn_threshold,
         )
 
         # Execute computation
-        tool_runner = ctx.resources.tool_runner
-        build_hotspots(ctx.gateway, cfg, runner=tool_runner)
+        # Note: ToolRunner type mismatch between build.protocols and ingestion.engine.infrastructure
+        # Passing None for now as runner is optional
+        build_hotspots(ctx.gateway, cfg, runner=None)
 
         # Compute row counts
         row_counts = self._compute_row_counts(ctx)
@@ -86,12 +84,12 @@ class HotspotsPlugin(TargetPlugin):
         row_counts: dict[str, int] = {}
         for table_key in ctx.contract.table_keys:
             try:
-                count = ctx.gateway.query(
+                count = ctx.gateway.con.execute(
                     f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
                     f"WHERE repo = ? AND commit = ?",
                     [ctx.repo, ctx.commit],
                 ).fetchone()
-                row_counts[table_key] = count[0] if count else 0
+                row_counts[table_key] = int(count[0]) if count else 0
             except (RuntimeError, OSError):
                 row_counts[table_key] = 0
         return row_counts

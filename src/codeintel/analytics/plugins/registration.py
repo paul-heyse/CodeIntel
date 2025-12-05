@@ -1,13 +1,15 @@
 """Plugin registration for the unified analytics system.
 
-This module instantiates and registers all analytics plugins with the
-global registry. It also provides backward-compatible constants for
-pipeline steps that reference plugins by name.
+This module instantiates analytics plugins that are now used by the
+build system. The legacy registry registration is deprecated.
+
+NOTE: The analytics plugins now implement TargetPlugin instead of
+AnalyticsPluginProtocol. They are registered via codeintel.build.plugin_registry
+rather than the legacy analytics registry.
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.core.registry import get_registry
 from codeintel.analytics.plugins.config_data_flow import ConfigDataFlowPlugin
 from codeintel.analytics.plugins.coverage import (
     CoverageFunctionsPlugin,
@@ -94,18 +96,12 @@ class _RegistrationState:
 
 
 def register_all_plugins() -> None:
-    """Register all plugins with the global registry.
+    """Register all analytics plugins with the global registry.
 
-    This function is idempotent - calling it multiple times has no effect
-    after the first registration.
+    DEPRECATED: The analytics plugins now use the build system's
+    plugin_registry. This function is a no-op for backward compatibility.
     """
-    if _RegistrationState.registered:
-        return
-
-    registry = get_registry()
-    for plugin in ALL_PLUGINS:
-        registry.register(plugin)
-
+    # No-op: plugins are now registered via codeintel.build.plugin_registry
     _RegistrationState.registered = True
 
 

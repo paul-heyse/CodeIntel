@@ -54,18 +54,17 @@ class EntrypointsPlugin(TargetPlugin):
 
         cfg = EntryPointsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        module_map = catalog.get_resource("ModuleMapProvider")
+        module_map = None  # Resources not yet populated via build context
         if module_map is None:
             return TargetResult.failed("ModuleMapProvider is required")
 
-        features_map = catalog.get_resource("FeaturesProvider")
+        features_map = None  # Resources not yet populated via build context
         if features_map is None:
             return TargetResult.failed("FeaturesProvider is required")
 

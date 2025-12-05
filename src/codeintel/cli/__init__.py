@@ -1,8 +1,7 @@
 """CodeIntel unified CLI entry point.
 
 This module provides the Typer-based CLI for CodeIntel, exposing all functional
-areas (build, ingest, graph, docs, datasets, etc.) under a single coherent
-interface.
+areas (build, graph, docs, datasets, etc.) under a single coherent interface.
 
 Command Groups
 --------------
@@ -11,7 +10,6 @@ Command Groups
 - **dataset**: Dataset inspection and verification
 - **datasets**: Extended dataset management (lint, diff, snapshot, scaffold, catalog)
 - **serve**: HTTP and MCP server startup
-- **ingest**: Ingestion plugin orchestration
 - **graph**: Graph analytics plugin management
 - **docs**: Document export utilities
 - **storage**: Storage validation utilities
@@ -29,6 +27,9 @@ Example Usage
     # Build specific targets with dependency resolution
     codeintel build run function_metrics call_graph
 
+    # Build ingestion targets
+    codeintel build run --module ingestion
+
     # Show build target status
     codeintel build status
 
@@ -40,9 +41,6 @@ Example Usage
 
     # Start HTTP server
     codeintel serve http --port 8000
-
-    # Run ingestion with a recipe
-    codeintel ingest run --recipe full_python
 
     # List graph plugins
     codeintel graph plugins --plan
@@ -64,7 +62,6 @@ from codeintel.cli.commands.docs import docs_app
 from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.ide import ide_app
-from codeintel.cli.commands.ingest import ingest_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
 from codeintel.cli.main import dataset_app, op_app, serve_app
@@ -82,7 +79,6 @@ app.add_typer(dataset_app, name="dataset")
 app.add_typer(serve_app, name="serve")
 
 # Domain commands
-app.add_typer(ingest_app, name="ingest")
 app.add_typer(graphs_app, name="graph")
 app.add_typer(docs_app, name="docs")
 app.add_typer(storage_app, name="storage")
@@ -106,7 +102,6 @@ __all__ = [
     "graphs_app",
     "history_app",
     "ide_app",
-    "ingest_app",
     "main",
     "op_app",
     "serve_app",

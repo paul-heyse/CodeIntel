@@ -121,9 +121,7 @@ class _LazyCatalog:
             The catalog module.
         """
         if cls._catalog_module is None:
-            cls._catalog_module = importlib.import_module(
-                "codeintel.serving.operations.catalog"
-            )
+            cls._catalog_module = importlib.import_module("codeintel.serving.operations.catalog")
         return cls._catalog_module
 
     @classmethod

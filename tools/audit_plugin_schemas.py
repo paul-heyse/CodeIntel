@@ -18,11 +18,12 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from codeintel.config.datasets import TABLE_SCHEMAS
 from codeintel.ingestion.plugins.registry import (
     get_ingest_registry,
     register_class_based_plugins,
 )
+
+from codeintel.config.datasets import TABLE_SCHEMAS
 
 
 def main() -> int:
@@ -124,4 +125,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

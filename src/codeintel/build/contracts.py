@@ -15,12 +15,8 @@ Example
 >>> from codeintel.build.contracts import OutputContract, ArtifactSpec
 >>> from codeintel.config.datasets.primitives import TableSchema, Column
 >>> contract = OutputContract(
-...     tables=(
-...         TableSchema("core", "symbols", [Column("name", "VARCHAR")]),
-...     ),
-...     artifacts=(
-...         ArtifactSpec("scip_index", "{scip_dir}/index.scip"),
-...     ),
+...     tables=(TableSchema("core", "symbols", [Column("name", "VARCHAR")]),),
+...     artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
 ... )
 """
 
@@ -118,9 +114,7 @@ class OutputContract:
     ...             primary_key=("goid_h128",),
     ...         ),
     ...     ),
-    ...     artifacts=(
-    ...         ArtifactSpec("scip_index", "{scip_dir}/index.scip"),
-    ...     ),
+    ...     artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
     ... )
     """
 
@@ -211,7 +205,9 @@ class OutputContract:
             seen_artifacts.add(artifact.name)
 
         # Check table schemas have at least one column
-        errors.extend(f"Table {table.fq_name} has no columns" for table in self.tables if not table.columns)
+        errors.extend(
+            f"Table {table.fq_name} has no columns" for table in self.tables if not table.columns
+        )
 
         return errors
 

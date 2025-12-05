@@ -293,7 +293,9 @@ class TestToolServiceRunCoverageReport:
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
-        result = asyncio.run(service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json"))
+        result = asyncio.run(
+            service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json")
+        )
 
         # Coverage not found returns empty report (graceful degradation)
         assert result == CoverageReport.empty()
@@ -303,7 +305,9 @@ class TestToolServiceRunCoverageReport:
         runner = FailingRunner(cache_dir=tmp_path, return_code=1)
         service = ToolService(runner)
 
-        result = asyncio.run(service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json"))
+        result = asyncio.run(
+            service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json")
+        )
 
         # Coverage failures are handled gracefully
         assert result == CoverageReport.empty()

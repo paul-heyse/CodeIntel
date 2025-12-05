@@ -72,9 +72,7 @@ _GIT_LOG_RECORD_PARTS = 5
 _GIT_COMMIT_HASH_LENGTH = 40
 
 
-def _parse_git_stat_line(
-    lines: list[str], current_idx: int
-) -> tuple[bool, int, int, int]:
+def _parse_git_stat_line(lines: list[str], current_idx: int) -> tuple[bool, int, int, int]:
     """Parse git shortstat line to extract file changes.
 
     Parameters
@@ -445,9 +443,7 @@ class RealScipIndexer:
             Result with extracted symbols and occurrences.
         """
         # Ensure output directory exists
-        await asyncio.to_thread(
-            output_json_path.parent.mkdir, parents=True, exist_ok=True
-        )
+        await asyncio.to_thread(output_json_path.parent.mkdir, parents=True, exist_ok=True)
 
         result = await self.tool_runner.run(
             "scip",
@@ -464,9 +460,7 @@ class RealScipIndexer:
 
         # Write JSON output
         try:
-            await asyncio.to_thread(
-                output_json_path.write_text, result.stdout, encoding="utf-8"
-            )
+            await asyncio.to_thread(output_json_path.write_text, result.stdout, encoding="utf-8")
 
             # Parse symbols and occurrences from JSON
             data = json.loads(result.stdout)
@@ -866,8 +860,12 @@ class RealTestReporter:
                     path=path,
                     outcome=str(test.get("outcome", "unknown")),
                     duration_ms=int(float(test.get("duration", 0)) * 1000),
-                    error_message=test.get("call", {}).get("longrepr") if isinstance(test.get("call"), dict) else None,
-                    markers=tuple(str(m) for m in test.get("keywords", {})) if isinstance(test.get("keywords"), dict) else (),
+                    error_message=test.get("call", {}).get("longrepr")
+                    if isinstance(test.get("call"), dict)
+                    else None,
+                    markers=tuple(str(m) for m in test.get("keywords", {}))
+                    if isinstance(test.get("keywords"), dict)
+                    else (),
                 )
             )
 

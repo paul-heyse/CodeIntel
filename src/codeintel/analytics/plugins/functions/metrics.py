@@ -5,7 +5,7 @@ This plugin computes function complexity and type coverage metrics.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
@@ -16,7 +16,6 @@ from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import AstResourceData
     from codeintel.build.context import TargetExecutionContext
 
 
@@ -46,18 +45,15 @@ class FunctionMetricsPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
+        _ = self  # Protocol method requires instance
+
         # Get AST data from catalog if available
         function_ast_map = None
         missing_function_goids: set[int] = set()
 
-        catalog = ctx.resources.catalog
-        if catalog is not None:
-            ast_data = cast("AstResourceData", catalog.get_resource("AstProvider"))
-            if ast_data is not None:
-                function_ast_map = ast_data.function_ast_map
-                missing_function_goids = ast_data.missing_function_goids
-
-        _ = self  # Protocol method requires instance
+        # Note: Direct resource access not yet implemented in build context
+        # The FunctionCatalogProvider doesn't have get_resource()
+        # This will be populated when the build executor provides resources
 
         opts = FunctionAnalyticsOptions(
             function_ast_map=function_ast_map,
@@ -67,7 +63,6 @@ class FunctionMetricsPlugin(TargetPlugin):
         # Build config from parameters
         cfg = FunctionAnalyticsStepConfig(
             snapshot=ctx.snapshot,
-            paths=ctx.paths,
         )
 
         result = compute_function_metrics_and_types(ctx.gateway, cfg, options=opts)
