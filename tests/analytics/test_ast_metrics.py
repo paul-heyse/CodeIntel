@@ -14,8 +14,9 @@ import pytest
 
 from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
 from codeintel.config import HotspotsStepConfig
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
+from tests._helpers.gateway import gateway_with_macros
 
 # Test constants (non-repo/commit)
 EXPECTED_COMMIT_COUNT = 2
@@ -37,7 +38,7 @@ def memory_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Configured gateway with schema applied.
     """
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = gateway_with_macros()
     try:
         yield gateway
     finally:

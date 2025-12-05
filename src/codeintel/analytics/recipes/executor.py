@@ -10,7 +10,6 @@ import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from codeintel.analytics.core.context import (
@@ -36,6 +35,7 @@ from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.runtime.timing import utc_now
 from codeintel.runtime.ids import new_run_id
 from codeintel.storage.gateway import StorageGateway
 
@@ -265,7 +265,7 @@ class RecipeExecutor:
         RecipeExecutionReport
             Execution report for the recipe run.
         """
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
         start_time = time.perf_counter()
 
         records: list[RecipePluginRecord] = []
@@ -304,7 +304,7 @@ class RecipeExecutor:
         # Cleanup scratch
         scratch.cleanup()
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = (time.perf_counter() - start_time) * 1000
 
         return RecipeExecutionReport(
@@ -386,7 +386,7 @@ class RecipeExecutor:
             Record summarizing the plugin execution.
         """
         plugin_name = plugin.metadata.name
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
         start_time = time.perf_counter()
 
         builder = RecipeExecutor._build_plugin_context(plugin_name, context, config, run_id)
@@ -395,7 +395,7 @@ class RecipeExecutor:
         # Validate inputs
         validation = plugin.validate_inputs(plugin_ctx)
         if not validation.valid:
-            ended_at = datetime.now(tz=UTC)
+            ended_at = utc_now()
             duration_ms = (time.perf_counter() - start_time) * 1000
             return RecipePluginRecord(
                 plugin_name=plugin_name,
@@ -421,7 +421,7 @@ class RecipeExecutor:
             row_counts = {}
             result = PluginResult.fail(error)
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = (time.perf_counter() - start_time) * 1000
 
         return RecipePluginRecord(

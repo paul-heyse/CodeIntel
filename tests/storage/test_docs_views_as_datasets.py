@@ -6,12 +6,11 @@ import duckdb
 import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.gateway import open_memory_gateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views import DERIVED_DOCS_VIEWS, create_all_views
-from tests._helpers.gateway import memory_con_with_macros
+from tests._helpers.gateway import gateway_with_macros, memory_con_with_macros
 
 
 def _fresh_connection() -> duckdb.DuckDBPyConnection:
@@ -41,7 +40,7 @@ def test_docs_views_registered_in_metadata() -> None:
 
 def test_docs_view_readable_via_dataset_rows() -> None:
     """Docs views remain readable through metadata.dataset_rows slices."""
-    gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+    gateway = gateway_with_macros(validate_schema=False)
     repo = DatasetReadRepository(gateway=gateway, repo="demo/repo", commit="deadbeef")
     rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
     if not isinstance(rows, list):

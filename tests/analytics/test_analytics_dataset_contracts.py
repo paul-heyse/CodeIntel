@@ -16,7 +16,7 @@ from codeintel.config.datasets import (
     FunctionMetricsRow,
     GraphMetricsFunctionsRow,
 )
-from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.gateway import gateway_with_macros
 
 
 def _count_rows(con: DuckDBPyConnection, table: str, repo: str, commit: str) -> int:
@@ -64,7 +64,7 @@ def _assert_fk_graph_metrics_functions(con: DuckDBPyConnection) -> None:
 
 def test_function_metrics_insertion_is_idempotent() -> None:
     """Inserting the same function_metrics rows twice should be idempotent."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = gateway_with_macros()
     repo = "demo/repo"
     commit = "abc123"
     now = datetime.now(UTC)
@@ -122,7 +122,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
 
 def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
     """graph_metrics_functions insert should be idempotent and FK clean."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = gateway_with_macros()
     repo = "demo/repo"
     commit = "deadbeef"
     now = datetime.now(UTC)

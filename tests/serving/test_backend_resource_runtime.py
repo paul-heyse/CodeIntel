@@ -11,9 +11,9 @@ from codeintel.analytics.runtime import (
     build_graph_runtime,
 )
 from codeintel.config.serving_models import ServingConfig
-from tests._helpers.factories import make_snapshot
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from tests._helpers import ProvisionedGateway
+from tests._helpers.factories import make_snapshot
 
 
 def _expect(*, condition: bool, message: str) -> None:

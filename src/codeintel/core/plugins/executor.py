@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
 from codeintel.core.plugins.context import PluginScratch
@@ -21,6 +21,7 @@ from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.core.plugins.traits import get_retry_policy
 from codeintel.core.runtime.errors import PLUGIN_CATCHABLE_ERRORS
 from codeintel.core.runtime.telemetry import get_runtime_telemetry
+from codeintel.core.runtime.timing import utc_now
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.context import PluginExecutionContext
@@ -290,7 +291,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
             Execution report with all plugin results.
         """
         effective_run_id = run_id or executor_ctx.effective_run_id or plan.plan_id
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
         start_time = time.perf_counter()
         records: list[PluginExecutionRecord] = []
         shared_scratch = scratch or PluginScratch()
@@ -331,7 +332,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
         finally:
             shared_scratch.cleanup()
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
         # Record run-level telemetry
@@ -383,7 +384,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
             Execution record with status, duration, and result.
         """
         meta = plugin.metadata
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
         start_time = time.perf_counter()
 
         # Start telemetry span
@@ -402,7 +403,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
         # Validate inputs
         is_valid, validation_error = self._validate_plugin_inputs(plugin, ctx)
         if not is_valid:
-            ended_at = datetime.now(tz=UTC)
+            ended_at = utc_now()
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
             self._telemetry.end_span(span, success=False, error=validation_error)
             return PluginExecutionRecord(
@@ -417,7 +418,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
         # Execute with retry
         result, attempts, error = self._execute_with_retries(plugin, ctx)
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
         # Determine status
@@ -518,7 +519,7 @@ class BasePluginExecutor(ABC, Generic[P, C, EC, R]):
         PluginExecutionRecord
             Record with skipped status.
         """
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         return PluginExecutionRecord(
             plugin_name=plugin.metadata.name,
             status="skipped",

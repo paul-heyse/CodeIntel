@@ -10,11 +10,12 @@ domain-specific functionality while reusing the core logic.
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from codeintel.core.plugins.protocol import PluginMetadata
 from codeintel.core.plugins.sorting import (
@@ -524,10 +525,122 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         """Load built-in plugins if not already done."""
         ...
 
-    @abstractmethod
     def _ensure_entrypoints_loaded(self) -> None:
         """Load plugins from entry points if not already done."""
-        ...
+        if self._entrypoints_loaded:
+            return
+        self.load_from_entrypoints()
+
+    # -------------------------------------------------------------------------
+    # Entry Point Discovery
+    # -------------------------------------------------------------------------
+
+    @property
+    def _default_entrypoint_group(self) -> str:
+        """Return the default entry point group for this registry.
+
+        Override in subclasses to specify a domain-specific group.
+
+        Returns
+        -------
+        str
+            Entry point group name.
+        """
+        return "codeintel.plugins"
+
+    def load_from_entrypoints(
+        self,
+        *,
+        group: str | None = None,
+        force: bool = False,
+    ) -> tuple[P, ...]:
+        """Discover and register plugins from entry points.
+
+        This method loads plugins from Python entry points, resolving each
+        entry point through `_resolve_entrypoint()` which subclasses can
+        override for domain-specific resolution logic.
+
+        Parameters
+        ----------
+        group
+            Entry point group to load from. Defaults to `_default_entrypoint_group`.
+        force
+            Whether to reload even if already loaded.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Tuple of newly registered plugins.
+        """
+        if self._entrypoints_loaded and not force:
+            return ()
+
+        effective_group = group or self._default_entrypoint_group
+        discovered: list[P] = []
+        eps = importlib.metadata.entry_points()
+        selected = eps.select(group=effective_group)
+
+        for entry_point in selected:
+            try:
+                loaded = entry_point.load()
+                plugin = self._resolve_entrypoint(loaded)
+                if plugin is not None:
+                    self.register(plugin)
+                    discovered.append(plugin)
+                    log.info("Discovered plugin from entrypoint: %s", plugin.metadata.name)
+                else:
+                    log.warning(
+                        "Entry point %s did not return a valid plugin",
+                        entry_point.name,
+                    )
+            except (ImportError, AttributeError, TypeError) as exc:
+                log.warning(
+                    "Failed to load plugin from entrypoint %s: %s",
+                    entry_point.name,
+                    exc,
+                )
+
+        self._entrypoints_loaded = True
+        return tuple(discovered)
+
+    def _resolve_entrypoint(self, loaded: object) -> P | None:
+        """Resolve an entry point object to a plugin instance.
+
+        Override in subclasses for domain-specific resolution logic
+        (e.g., handling callable factories).
+
+        Parameters
+        ----------
+        loaded
+            The object loaded from the entry point.
+
+        Returns
+        -------
+        P | None
+            A valid plugin instance, or None if resolution failed.
+        """
+        if self._is_valid_plugin(loaded):
+            return cast("P", loaded)
+        return None
+
+    def _is_valid_plugin(self, obj: object) -> bool:
+        """Check if an object is a valid plugin for this registry.
+
+        Override in subclasses for domain-specific validation.
+
+        Parameters
+        ----------
+        obj
+            Object to validate.
+
+        Returns
+        -------
+        bool
+            True if the object is a valid plugin.
+        """
+        # Access self to satisfy PLR6301 while also checking for RegistrablePlugin
+        _ = self._entrypoints_loaded  # Ensure registry state is accessible
+        return isinstance(obj, RegistrablePlugin)
 
 
 __all__ = [

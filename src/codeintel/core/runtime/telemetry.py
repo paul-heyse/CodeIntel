@@ -15,8 +15,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any, Literal
+
+from codeintel.core.singleton import SingletonHolder
 
 # Optional OpenTelemetry imports with graceful degradation
 try:
@@ -439,7 +440,10 @@ class RuntimeTelemetry:
         )
 
 
-@lru_cache(maxsize=1)
+class _RuntimeTelemetryHolder(SingletonHolder[RuntimeTelemetry]):
+    """Singleton holder for RuntimeTelemetry."""
+
+
 def get_runtime_telemetry() -> RuntimeTelemetry:
     """Return the default runtime telemetry singleton.
 
@@ -448,7 +452,12 @@ def get_runtime_telemetry() -> RuntimeTelemetry:
     RuntimeTelemetry
         Shared telemetry instance.
     """
-    return RuntimeTelemetry()
+    return _RuntimeTelemetryHolder.get(RuntimeTelemetry)
+
+
+def reset_runtime_telemetry() -> None:
+    """Reset the telemetry singleton for testing."""
+    _RuntimeTelemetryHolder.reset()
 
 
 __all__ = [
@@ -459,4 +468,5 @@ __all__ = [
     "RuntimeTelemetry",
     "TelemetryConfig",
     "get_runtime_telemetry",
+    "reset_runtime_telemetry",
 ]

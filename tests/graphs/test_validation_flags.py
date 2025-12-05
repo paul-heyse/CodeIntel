@@ -9,9 +9,9 @@ import networkx as nx
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine
-from tests._helpers.factories import make_snapshot
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:

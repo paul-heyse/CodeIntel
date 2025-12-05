@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/protocol.py
+# hypothesis_version: 6.148.6
+
+['CapabilityKind', 'InputSource', 'PluginInputSpec', 'PluginIsolation', 'PluginKind', 'PluginMetadata', 'PluginOutputSpec', 'PluginProtocol', 'PluginResourceHints', 'PluginResult', 'PluginSeverity', 'PluginStage', 'PluginStatus', 'ValidationResult', 'execute', 'is_analytics_plugin', 'is_core_compatible', 'metadata', 'validate_inputs']

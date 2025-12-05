@@ -22,11 +22,11 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
+from codeintel.core.runtime.timing import utc_now
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
@@ -482,7 +482,7 @@ class RecipeExecutor:
                     records.append(
                         IngestPluginExecutionRecord(
                             plugin_name=plugin.metadata.name,
-                            started_at=datetime.now(tz=UTC),
+                            started_at=utc_now(),
                             error=exc,
                         )
                     )
@@ -509,14 +509,14 @@ class RecipeExecutor:
             Execution record.
         """
         name = plugin.metadata.name
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
 
         log.info("Executing plugin: %s", name)
 
         try:
             ctx = self._build_context(plugin)
             result = plugin.execute(ctx)
-            ended_at = datetime.now(tz=UTC)
+            ended_at = utc_now()
             duration_s = (ended_at - started_at).total_seconds()
 
             log.info(
@@ -535,7 +535,7 @@ class RecipeExecutor:
             )
 
         except Exception as exc:
-            ended_at = datetime.now(tz=UTC)
+            ended_at = utc_now()
             duration_s = (ended_at - started_at).total_seconds()
             log.exception("Plugin failed: name=%s duration=%.2fs", name, duration_s)
 
@@ -774,7 +774,7 @@ def _record_ingestion_steps(
                 step_status = "failed"
 
             # Use current time as approximation since we don't have exact timestamps
-            now = datetime.now(tz=UTC)
+            now = utc_now()
             extra: dict[str, object] | None = None
             if error:
                 extra = {"error": error}

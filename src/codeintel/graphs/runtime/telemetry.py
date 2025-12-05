@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import time
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.runtime.telemetry import (
@@ -17,6 +16,7 @@ from codeintel.core.runtime.telemetry import (
     RuntimeTelemetry,
     TelemetryConfig,
 )
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from opentelemetry.trace import StatusCode as _StatusCodeType
@@ -289,6 +289,10 @@ class GraphRuntimeTelemetry(RuntimeTelemetry):
                 pass
 
 
+class _GraphTelemetryHolder(SingletonHolder[GraphRuntimeTelemetry]):
+    """Singleton holder for GraphRuntimeTelemetry."""
+
+
 def get_graph_telemetry() -> GraphRuntimeTelemetry:
     """Return the default graph telemetry singleton.
 
@@ -297,12 +301,12 @@ def get_graph_telemetry() -> GraphRuntimeTelemetry:
     GraphRuntimeTelemetry
         Shared telemetry instance.
     """
-    return _telemetry_singleton()
+    return _GraphTelemetryHolder.get(GraphRuntimeTelemetry)
 
 
-@lru_cache(maxsize=1)
-def _telemetry_singleton() -> GraphRuntimeTelemetry:
-    return GraphRuntimeTelemetry()
+def reset_graph_telemetry() -> None:
+    """Reset the telemetry singleton for testing."""
+    _GraphTelemetryHolder.reset()
 
 
 __all__ = [
@@ -310,4 +314,5 @@ __all__ = [
     "GraphRuntimeTelemetry",
     "GraphTelemetryConfig",
     "get_graph_telemetry",
+    "reset_graph_telemetry",
 ]

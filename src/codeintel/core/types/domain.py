@@ -80,7 +80,7 @@ def _normalize_occurrence(raw: object) -> ScipOccurrence | None:
     """
     Normalize a raw occurrence mapping into a ScipOccurrence.
 
-    Filters out entries missing a symbol.
+    Filter out entries missing a symbol.
 
     Returns
     -------

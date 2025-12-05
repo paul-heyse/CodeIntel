@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import (
     bootstrap_metadata_datasets,
     dataset_rows_only_entries,
@@ -17,6 +17,7 @@ from codeintel.storage.metadata import (
     validate_normalized_macro_schemas,
 )
 from codeintel.storage.repositories import DataflowRepository
+from tests._helpers.gateway import gateway_with_macros
 
 
 def _require(condition: object, message: str) -> None:
@@ -27,7 +28,7 @@ def _require(condition: object, message: str) -> None:
 
 def test_metadata_bootstrap_populates_catalog() -> None:
     """Bootstrap should create catalog rows and expose registry mappings."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=False)
+    gateway = gateway_with_macros(validate_schema=False)
     con = gateway.con
 
     count_row = con.execute("SELECT COUNT(*) FROM metadata.datasets").fetchone()
@@ -64,9 +65,7 @@ def test_metadata_bootstrap_populates_catalog() -> None:
 
 def test_dataflow_metadata_populated() -> None:
     """bootstrap_metadata_datasets should populate dataset_dataflow_* tables and repositories."""
-    gateway = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
+    gateway = gateway_with_macros(
         validate_schema=False,
         repo="test/repo",
         commit="deadbeef",

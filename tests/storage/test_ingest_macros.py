@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import duckdb
+import pytest
 
+from codeintel.storage.gateway import open_memory_gateway
 from codeintel.storage.macros import (
     assert_ingest_macros_present,
     clear_macro_cache_for_connection,
@@ -151,3 +153,14 @@ def test_macros_contain_ingest_prefix() -> None:
         assert macro_name.startswith("metadata.ingest_"), (
             f"Macro {macro_name} for {table_key} doesn't follow naming convention"
         )
+
+
+def test_ingest_macros_registered_on_gateway() -> None:
+    """All ingest macros should be registered automatically for new gateways."""
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    con = gateway.con
+    macros = list_ingest_macros(con)
+    missing = {macro.lower() for macro in INGEST_MACROS.values() if macro.lower() not in macros}
+    if missing:
+        pytest.fail(f"Missing ingest macros: {sorted(missing)}")
+    gateway.close()

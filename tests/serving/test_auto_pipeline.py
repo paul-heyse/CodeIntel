@@ -19,7 +19,6 @@ import pytest
 
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.serving_models import ServingConfig
-from tests._helpers.factories import make_snapshot
 from codeintel.runtime import RunContext, RunKind, TriggerKind
 from codeintel.serving.auto_pipeline import (
     AUTO_PIPELINE_ENV,
@@ -40,6 +39,7 @@ from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import PipelineRunTracking, PipelineStatus
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
 
 # -----------------------------------------------------------------------------

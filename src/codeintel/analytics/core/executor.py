@@ -26,7 +26,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.analytics.core.context import (
@@ -51,6 +51,7 @@ from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.policy import BaseExecutionPolicy
 from codeintel.core.plugins.report import BaseExecutionReport, ExecutionStatus
 from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
+from codeintel.core.runtime.timing import utc_now
 
 if TYPE_CHECKING:
     from codeintel.analytics.plugins.middleware.protocol import PluginMiddleware
@@ -260,7 +261,7 @@ class PluginExecutor:
             Complete execution report.
         """
         run_id = ctx.run_id or plan.plan_id
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
         records: list[PluginExecutionRecord] = []
         contract_results: dict[str, ContractValidationResult] = {}
         shared_scratch = scratch or PluginScratch()
@@ -306,7 +307,7 @@ class PluginExecutor:
         # Cleanup scratch
         shared_scratch.cleanup()
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = (ended_at - started_at).total_seconds() * 1000
 
         # Record run-level telemetry
@@ -417,7 +418,7 @@ class PluginExecutor:
             Execution record.
         """
         meta = plugin.metadata
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
 
         # Start telemetry span
         span = self._telemetry.start_span(
@@ -439,7 +440,7 @@ class PluginExecutor:
                 plugin_name=meta.name,
                 status="skipped",
                 started_at=started_at,
-                ended_at=datetime.now(tz=UTC),
+                ended_at=utc_now(),
                 duration_ms=0.0,
                 error="dry_run",
             )
@@ -456,7 +457,7 @@ class PluginExecutor:
                 plugin_name=meta.name,
                 status="failed",
                 started_at=started_at,
-                ended_at=datetime.now(tz=UTC),
+                ended_at=utc_now(),
                 duration_ms=0.0,
                 error=f"Validation failed: {', '.join(validation.errors)}",
             )
@@ -471,7 +472,7 @@ class PluginExecutor:
         if result is not None:
             result = self._middleware.after_execute(ctx, plugin, result)
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         status: Literal["succeeded", "failed", "skipped"]
 
         if result is not None and result.success:

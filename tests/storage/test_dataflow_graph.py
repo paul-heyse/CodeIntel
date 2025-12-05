@@ -10,9 +10,9 @@ from codeintel.config.datasets import (
     get_dataset_contracts,
     get_dataset_contracts_by_table_key,
 )
-from codeintel.storage.gateway import open_memory_gateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.views import ALIAS_DOCS_VIEWS
+from tests._helpers.gateway import gateway_with_macros
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -51,7 +51,7 @@ def test_composite_edges_align_with_composite_schemas() -> None:
 
 def test_metadata_dataflow_tables_populated() -> None:
     """bootstrap_metadata_datasets must populate metadata.dataset_dataflow_* tables."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=False)
+    gateway = gateway_with_macros(validate_schema=False)
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
         node_row = gateway.con.execute(
