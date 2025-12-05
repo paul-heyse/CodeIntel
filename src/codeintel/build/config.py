@@ -37,9 +37,11 @@ import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, overload
 
 from codeintel.build.parameters import TargetParameters
+
+_T = TypeVar("_T")
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +71,13 @@ class ConfigSection:
     name: str
     values: dict[str, Any] = field(default_factory=dict)
 
-    def get(self, key: str, default: Any = None) -> Any:
+    @overload
+    def get(self, key: str) -> object | None: ...
+
+    @overload
+    def get(self, key: str, default: _T) -> object | _T: ...
+
+    def get(self, key: str, default: object | None = None) -> object:
         """Get a value from this section.
 
         Parameters
@@ -81,7 +89,7 @@ class ConfigSection:
 
         Returns
         -------
-        Any
+        object
             Value or default.
         """
         return self.values.get(key, default)
@@ -216,7 +224,13 @@ class BuildConfig:
 
         return TargetParameters(result_values)
 
-    def get(self, key: str, default: Any = None) -> Any:
+    @overload
+    def get(self, key: str) -> object | None: ...
+
+    @overload
+    def get(self, key: str, default: _T) -> object | _T: ...
+
+    def get(self, key: str, default: object | None = None) -> object:
         """Get a top-level config value.
 
         Parameters
@@ -228,11 +242,11 @@ class BuildConfig:
 
         Returns
         -------
-        Any
+        object
             Value or default.
         """
         parts = key.split(".")
-        current: Any = self._raw
+        current: dict[str, object] | object = self._raw
 
         for part in parts:
             if not isinstance(current, dict):

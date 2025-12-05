@@ -1,122 +1,109 @@
-"""Tests ingest plugin using class-based architecture.
+"""Tests ingest plugin.
 
-This module provides `TestsIngestPlugin`, a class-based plugin that
-ingests pytest JSON reports.
+This module provides `TestsIngestPlugin` that ingests pytest JSON reports.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.plugins.types.protocol import PluginResourceHints
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
-from codeintel.ingestion.core.base import (
-    TableWriterIngestPlugin,
-    ToolDependentIngestPlugin,
-    TrackerRequiringPlugin,
-)
-from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
-from codeintel.ingestion.plugins.protocol import (
-    IngestStage,
-)
-from codeintel.ingestion.resources import ModuleProvider
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class TestsIngestPlugin(
-    TrackerRequiringPlugin,
-    ToolDependentIngestPlugin,
-    TableWriterIngestPlugin,
-    WithDependencyData,
-    WithToolDependencies,
-):
+def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
+    """Convert string paths to ModuleRecord objects.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records with metadata.
+    """
+    total = len(paths)
+    return [
+        ModuleRecord(
+            rel_path=path,
+            module_name=path.replace("/", ".").removesuffix(".py"),
+            file_path=repo_root / path,
+            index=i + 1,
+            total=total,
+        )
+        for i, path in enumerate(paths)
+    ]
+
+
+def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
+    """Get module paths from context resources or database.
+
+    Returns
+    -------
+    list[str]
+        List of relative module paths.
+    """
+    if ctx.resources.modules:
+        return list(ctx.resources.modules)
+    try:
+        rows = ctx.gateway.con.execute(
+            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+    except (RuntimeError, OSError):
+        return []
+
+
+class TestsIngestPlugin(TargetPlugin):
     """Ingest pytest JSON reports.
 
     This plugin reads pytest's JSON report output and extracts
     test results for storage.
 
-    Class Attributes
-    ----------------
-    plugin_name : str
-        Stable identifier ("tests_ingest").
-    plugin_description : str
-        Human-readable description.
-    plugin_stage : IngestStage
-        Processing stage ("enrich").
-    output_tables : tuple[str, ...]
-        Tables written to.
-    depends_on : tuple[str, ...]
-        Plugin dependencies.
-    requires : tuple[str, ...]
-        Required capabilities.
-    tool_dependencies : tuple[str, ...]
-        External tools required.
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    resource_hints : PluginResourceHints
-        Resource requirements.
+    Outputs
+    -------
+    - analytics.test_results: Test execution results
     """
 
     plugin_name: ClassVar[str] = "tests_ingest"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Ingest pytest JSON reports."
-    plugin_stage: ClassVar[IngestStage] = "enrich"
-    plugin_version: ClassVar[str] = "2.0.0"
 
-    output_tables: ClassVar[tuple[str, ...]] = ("analytics.test_results",)
-
-    depends_on: ClassVar[tuple[str, ...]] = ("repo_scan",)
-    requires: ClassVar[tuple[str, ...]] = ("change_tracker",)
-    tool_dependencies: ClassVar[tuple[str, ...]] = ("pytest",)
-    supports_incremental: ClassVar[bool] = True
-    tracker_required: ClassVar[bool] = False
-    tool_required: ClassVar[bool] = False
-
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        cpu_intensive=False,
-        io_intensive=True,
-    )
-
-    def compute(
-        self,
-        ctx: IngestExecutionContext,
-    ) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute tests ingestion.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with resources and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            Row counts, or None for auto-compute.
-
-        Raises
-        ------
-        RuntimeError
-            When tests ingestion fails.
+        TargetResult
+            Success result with row counts.
         """
-        _ = self  # Required by interface, accessed via ctx
+        _ = self  # Protocol method requires instance
 
-        # Get modules from provider
-        modules_provider = ctx.require(ModuleProvider)
-        modules = list(modules_provider.get())
+        # Get module paths and convert to ModuleRecord
+        paths = _get_module_paths(ctx)
+        modules = _paths_to_modules(paths, ctx.repo_root)
 
         # Create storage adapter
         storage = DuckDBStorageAdapter(ctx.gateway)
 
-        # Get report path
-        report_path = ctx.validated_paths.pytest_report
+        # Get report path - check common locations
+        report_path = _resolve_report_file(ctx)
+        if report_path is None:
+            log.info("No pytest report found, skipping tests ingestion")
+            return TargetResult.succeeded(row_counts={})
 
         # Execute step
         step = TestsIngestStep(storage=storage)
@@ -129,10 +116,34 @@ class TestsIngestPlugin(
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            msg = f"Tests ingest failed: {errors}"
-            raise RuntimeError(msg)
+            return TargetResult.failed(f"Tests ingest failed: {errors}")
 
-        return result.table_counts
+        return TargetResult.succeeded(row_counts=result.table_counts or {})
+
+
+def _resolve_report_file(ctx: TargetExecutionContext) -> Path | None:
+    """Resolve the pytest report file.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    Path | None
+        Path to report file or None if not found.
+    """
+    # Check common locations
+    candidates = [
+        ctx.repo_root / "pytest_report.json",
+        ctx.repo_root / "report.json",
+        ctx.build_dir / "pytest_report.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 __all__ = ["TestsIngestPlugin"]

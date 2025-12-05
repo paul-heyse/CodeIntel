@@ -1,95 +1,39 @@
-"""Function history plugin using the new protocol.
+"""Function history plugin.
 
-This module provides the function history plugin migrated to the
-new unified plugin protocol.
+This plugin aggregates git churn and commit history per function.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.functions import compute_function_history
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import FunctionHistoryStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class FunctionHistoryPlugin:
-    """Plugin for aggregating git churn and commit history per function.
+
+class FunctionHistoryPlugin(TargetPlugin):
+    """Aggregate git churn and commit history per function GOID.
 
     Analyzes git history to compute:
     - Function churn metrics
     - Commit frequency per function
     - Author contribution patterns
+
+    Outputs
+    -------
+    - analytics.function_history: History metrics per function
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="functions.history",
-            description="Aggregate git churn and commit history per function GOID.",
-            kind="analytics",
-            stage="function_history",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="function_history_cfg",
-                    type_ref="FunctionHistoryStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="function_history",
-                    tables=("analytics.function_history",),
-                ),
-            ),
-            provides=("analytics.function_history",),
-            requires=("core.goids",),
-            depends_on=("functions.metrics", "hotspots.build"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=60_000,
-                priority=40,
-            ),
-            tags=("functions", "history", "git"),
-        )
+    plugin_name: ClassVar[str] = "functions.history"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Aggregate git churn and commit history per function GOID."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(FunctionHistoryStepConfig):
-            errors.append("FunctionHistoryStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -99,29 +43,32 @@ class FunctionHistoryPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(FunctionHistoryStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get optional tool runner from context extras
-        tool_runner = ctx.extra.get("tool_runner")
+        # Build config from context
+        max_history_days = ctx.parameters.get("max_history_days", int, default=365)
+
+        cfg = FunctionHistoryStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+            max_history_days=max_history_days,
+        )
+
+        tool_runner = ctx.resources.tool_runner
 
         try:
-            # The domain function works directly with database queries
             compute_function_history(
                 ctx.gateway,
                 cfg,
                 runner=tool_runner,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Function history computation failed: {e}")
+            return TargetResult.failed(f"Function history computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["FunctionHistoryPlugin"]

@@ -1,81 +1,39 @@
-"""Data models plugin using the new protocol."""
+"""Data models plugin.
+
+This plugin extracts structured data models from class definitions.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.data_models import compute_data_models
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import DataModelsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class DataModelsPlugin:
-    """Plugin for extracting structured data models.
+
+class DataModelsPlugin(TargetPlugin):
+    """Extract structured data models from class definitions.
 
     Extracts from class definitions:
     - Data model schemas
     - Field types and constraints
     - Relationships between models
+
+    Outputs
+    -------
+    - analytics.data_models: Extracted data models
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="data_models.build",
-            description="Extract structured data models from class definitions.",
-            kind="analytics",
-            stage="data_model",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="data_models_cfg",
-                    type_ref="DataModelsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(PluginOutputSpec(name="data_models", tables=("analytics.data_models",)),),
-            provides=("analytics.data_models",),
-            requires=("core.goids",),
-            depends_on=("ast_extract", "goids", "docstrings_ingest"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=60_000,
-                priority=40,
-            ),
-            tags=("data_models", "schema", "extraction"),
-        )
+    plugin_name: ClassVar[str] = "data_models.build"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Extract structured data models from class definitions."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        if not ctx.has_config(DataModelsStepConfig):
-            return ValidationResult.failure(("DataModelsStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -85,21 +43,22 @@ class DataModelsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(DataModelsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
+
+        cfg = DataModelsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
 
         try:
             compute_data_models(ctx.gateway, cfg)
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Data models computation failed: {e}")
+            return TargetResult.failed(f"Data models computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["DataModelsPlugin"]

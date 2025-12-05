@@ -1,31 +1,22 @@
-"""Entrypoints plugin using new base classes.
+"""Entrypoints plugin.
 
-This module detects application entrypoints and maps them to handlers and tests.
+This plugin detects HTTP/CLI/job entrypoints and maps them to handlers and tests.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.features import FeaturesProvider
-    from codeintel.analytics.resources.module_map import ModuleMapProvider
-
-from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginResourceHints,
-    PluginStage,
-)
 from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import EntryPointsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class EntrypointsPlugin(ConfiguredTableWriterPlugin[EntryPointsStepConfig]):
+
+class EntrypointsPlugin(TargetPlugin):
     """Detect HTTP/CLI/job entrypoints and map them to handlers and tests.
 
     Identifies and maps:
@@ -33,86 +24,63 @@ class EntrypointsPlugin(ConfiguredTableWriterPlugin[EntryPointsStepConfig]):
     - CLI commands
     - Background job handlers
     - Tests covering each entrypoint
+
+    Outputs
+    -------
+    - analytics.entrypoints: Detected entrypoints
+    - analytics.entrypoint_tests: Tests covering entrypoints
     """
 
-    # Core identification
     plugin_name: ClassVar[str] = "entrypoints.build"
-    plugin_stage: ClassVar[PluginStage] = "entrypoints"
     plugin_version: ClassVar[str] = "3.0.0"
-
-    # Configuration binding
-    config_type: ClassVar[type[EntryPointsStepConfig]] = EntryPointsStepConfig
-
-    # Output tables
-    output_tables: ClassVar[tuple[str, ...]] = (
-        "analytics.entrypoints",
-        "analytics.entrypoint_tests",
+    plugin_description: ClassVar[str] = (
+        "Detect HTTP/CLI/job entrypoints and map them to handlers and tests."
     )
 
-    # Capabilities and dependencies
-    provides: ClassVar[tuple[str, ...]] = (
-        "analytics.entrypoints",
-        "analytics.entrypoint_tests",
-    )
-    requires: ClassVar[tuple[str, ...]] = ("core.goids",)
-    depends_on: ClassVar[tuple[str, ...]] = (
-        "subsystems.build",
-        "coverage.functions",
-        "coverage.test_edges",
-        "goids",
-    )
-
-    # Categorization
-    tags: ClassVar[tuple[str, ...]] = ("entrypoints", "http", "cli")
-
-    # Resource hints
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        max_runtime_ms=90_000,
-        priority=50,
-    )
-
-    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the entrypoints detection.
 
         Parameters
         ----------
         ctx
-            Execution context with gateway and config.
+            Execution context.
 
         Returns
         -------
-        Mapping[str, int] | None
-            None to trigger auto row count computation, or error dict if
-            required providers are missing.
+        TargetResult
+            Execution result.
         """
-        cfg = self.config
+        _ = self  # Protocol method requires instance
 
-        # Get catalog from CatalogProvider (required)
-        if not ctx.has_resource_by_name("CatalogProvider"):
-            return {"error": -1}  # Signal failure; base handles this
-        cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-        catalog_provider = cat_prov.get()
-
-        # Get module map from ModuleMapProvider (required)
-        if not ctx.has_resource_by_name("ModuleMapProvider"):
-            return {"error": -1}
-        mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
-        module_map = mm_prov.get()
-
-        # Get features from FeaturesProvider (required)
-        if not ctx.has_resource_by_name("FeaturesProvider"):
-            return {"error": -1}
-        feat_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-        features_map = feat_prov.get()
-
-        build_entrypoints(
-            ctx.gateway,
-            cfg,
-            catalog_provider=catalog_provider,
-            module_map=module_map,
-            features_map=features_map,
+        cfg = EntryPointsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
         )
-        return None  # Let base class compute row counts
+
+        catalog = ctx.resources.catalog
+        if catalog is None:
+            return TargetResult.failed("CatalogProvider is required")
+
+        module_map = catalog.get_resource("ModuleMapProvider")
+        if module_map is None:
+            return TargetResult.failed("ModuleMapProvider is required")
+
+        features_map = catalog.get_resource("FeaturesProvider")
+        if features_map is None:
+            return TargetResult.failed("FeaturesProvider is required")
+
+        try:
+            build_entrypoints(
+                ctx.gateway,
+                cfg,
+                catalog_provider=catalog,
+                module_map=module_map,
+                features_map=features_map,
+            )
+        except (RuntimeError, ValueError, OSError) as e:
+            return TargetResult.failed(f"Entrypoints build failed: {e}")
+
+        return TargetResult.succeeded()
 
 
 __all__ = ["EntrypointsPlugin"]

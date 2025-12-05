@@ -47,9 +47,12 @@ from codeintel.build.protocols import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.build.providers import Providers, RealTestReporter
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.ingestion.tracker import ChangeTracker
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -193,13 +196,19 @@ class ContextResources:
     modules
         Module list (if target requires it).
     change_tracker
-        Change tracker (if target requires it).
+        Change tracker for incremental builds.
+    graph_runtime
+        Graph runtime for graph/analytics plugins.
+    catalog
+        Function catalog for analytics plugins.
     """
 
     providers: Providers | None = None
     gateway: StorageGateway | None = None
     modules: tuple[str, ...] = ()
-    change_tracker: object | None = None
+    change_tracker: ChangeTracker | None = None
+    graph_runtime: GraphRuntime | None = None
+    catalog: FunctionCatalogProvider | None = None
 
     @property
     def tool_runner(self) -> ToolRunner | None:

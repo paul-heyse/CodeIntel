@@ -1,154 +1,133 @@
-"""Typing ingest plugin using class-based architecture.
+"""Typing ingest plugin.
 
-This module provides `TypingIngestPlugin`, a class-based plugin that
-populates analytics.typedness and analytics.static_diagnostics.
+This module provides `TypingIngestPlugin` that populates
+analytics.typedness and analytics.static_diagnostics.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.plugins.types.protocol import PluginResourceHints
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.ingestion.adapters import (
+    BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
-    ToolRunnerAdapter,
 )
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
-from codeintel.ingestion.core.base import (
-    TableWriterIngestPlugin,
-    ToolDependentIngestPlugin,
-    TrackerRequiringPlugin,
-)
-from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
-from codeintel.ingestion.plugins.protocol import (
-    IngestStage,
-)
-from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class TypingIngestPlugin(
-    TrackerRequiringPlugin,
-    ToolDependentIngestPlugin,
-    TableWriterIngestPlugin,
-    WithDependencyData,
-    WithToolDependencies,
-):
+def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
+    """Convert string paths to ModuleRecord objects.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records with metadata.
+    """
+    total = len(paths)
+    return [
+        ModuleRecord(
+            rel_path=path,
+            module_name=path.replace("/", ".").removesuffix(".py"),
+            file_path=repo_root / path,
+            index=i + 1,
+            total=total,
+        )
+        for i, path in enumerate(paths)
+    ]
+
+
+def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
+    """Get module paths from context resources or database.
+
+    Returns
+    -------
+    list[str]
+        List of relative module paths.
+    """
+    if ctx.resources.modules:
+        return list(ctx.resources.modules)
+    try:
+        rows = ctx.gateway.con.execute(
+            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+    except (RuntimeError, OSError):
+        return []
+
+
+class TypingIngestPlugin(TargetPlugin):
     """Populate analytics.typedness and analytics.static_diagnostics.
 
     This plugin runs type checkers (pyright, pyrefly) and linters (ruff)
     to compute typedness scores and capture static diagnostics.
 
-    Class Attributes
-    ----------------
-    plugin_name : str
-        Stable identifier ("typing_ingest").
-    plugin_description : str
-        Human-readable description.
-    plugin_stage : IngestStage
-        Processing stage ("enrich").
-    output_tables : tuple[str, ...]
-        Tables written to.
-    depends_on : tuple[str, ...]
-        Plugin dependencies.
-    requires : tuple[str, ...]
-        Required capabilities.
-    tool_dependencies : tuple[str, ...]
-        External tools required.
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    resource_hints : PluginResourceHints
-        Resource requirements.
+    Outputs
+    -------
+    - analytics.typedness: Type coverage metrics
+    - analytics.static_diagnostics: Static analysis diagnostics
     """
 
     plugin_name: ClassVar[str] = "typing_ingest"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Populate analytics.typedness and analytics.static_diagnostics."
     )
-    plugin_stage: ClassVar[IngestStage] = "enrich"
-    plugin_version: ClassVar[str] = "2.0.0"
 
-    output_tables: ClassVar[tuple[str, ...]] = (
-        "analytics.typedness",
-        "analytics.static_diagnostics",
-    )
-
-    depends_on: ClassVar[tuple[str, ...]] = ("repo_scan",)
-    requires: ClassVar[tuple[str, ...]] = ("change_tracker",)
-    tool_dependencies: ClassVar[tuple[str, ...]] = ("pyright", "pyrefly", "ruff")
-    supports_incremental: ClassVar[bool] = True
-    tracker_required: ClassVar[bool] = True
-    tool_required: ClassVar[bool] = False
-
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        cpu_intensive=False,
-        io_intensive=True,
-        max_runtime_ms=180000,
-    )
-
-    def compute(
-        self,
-        ctx: IngestExecutionContext,
-    ) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute typing analysis.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with resources and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            Row counts, or None for auto-compute.
-
-        Raises
-        ------
-        RuntimeError
-            When typing analysis fails.
+        TargetResult
+            Success result with row counts.
         """
-        _ = self  # Required by interface, accessed via ctx
+        _ = self  # Protocol method requires instance
 
-        # Get tool service from provider
-        tools_provider = ctx.require(ToolsProvider)
-        service = tools_provider.get()
+        # Check if type checker is available (soft dependency)
+        if ctx.resources.type_checker is None:
+            log.info("Type checker not available, skipping typing analysis")
+            return TargetResult.succeeded(row_counts={})
 
-        # Get modules from provider
-        modules_provider = ctx.require(ModuleProvider)
-        modules = list(modules_provider.get())
+        # Get module paths and convert to ModuleRecord
+        paths = _get_module_paths(ctx)
+        modules = _paths_to_modules(paths, ctx.repo_root)
 
-        # Create adapters
+        # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
-        tools = ToolRunnerAdapter(service)
+        tools = BuildToolAdapter(type_checker=ctx.resources.type_checker)
 
-        # Execute step (async)
+        # Execute step
         step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
-        result = asyncio.run(
-            step.execute_async(
-                modules,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                repo_root=str(ctx.repo_root),
-            )
+        result = await step.execute_async(
+            modules,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=str(ctx.repo_root),
         )
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            msg = f"Typing ingest failed: {errors}"
-            raise RuntimeError(msg)
+            return TargetResult.failed(f"Typing ingest failed: {errors}")
 
-        return result.table_counts
+        return TargetResult.succeeded(row_counts=result.table_counts or {})
 
 
 __all__ = ["TypingIngestPlugin"]

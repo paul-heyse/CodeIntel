@@ -1,106 +1,47 @@
-"""Profiles plugin using the new protocol."""
+"""Profiles plugin.
+
+This plugin builds aggregated profiles for functions, files, and modules.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.module_map import ModuleMapProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.profiles import (
     build_file_profile,
     build_function_profile,
     build_module_profile,
 )
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import ProfilesAnalyticsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class ProfilesPlugin:
-    """Plugin for building aggregated profiles.
+
+class ProfilesPlugin(TargetPlugin):
+    """Build aggregated profiles for functions, files, and modules.
 
     Creates comprehensive profiles for:
     - Functions (combining metrics, effects, contracts, etc.)
     - Files (aggregating function profiles)
     - Modules (aggregating file profiles)
+
+    Outputs
+    -------
+    - analytics.function_profile: Function profiles
+    - analytics.file_profile: File profiles
+    - analytics.module_profile: Module profiles
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="profiles.build",
-            description="Build aggregated profiles for functions, files, and modules.",
-            kind="analytics",
-            stage="profiles",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="profiles_cfg",
-                    type_ref="ProfilesAnalyticsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(name="function_profile", tables=("analytics.function_profile",)),
-                PluginOutputSpec(name="file_profile", tables=("analytics.file_profile",)),
-                PluginOutputSpec(name="module_profile", tables=("analytics.module_profile",)),
-            ),
-            provides=(
-                "analytics.function_profile",
-                "analytics.file_profile",
-                "analytics.module_profile",
-            ),
-            requires=("analytics.goid_risk_factors",),
-            depends_on=(
-                "risk_factors.build",
-                "callgraph",
-                "import_graph",
-                "functions.effects",
-                "functions.contracts",
-                "semantic.roles",
-                "functions.history",
-            ),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=120_000,
-                priority=70,
-            ),
-            tags=("profiles", "aggregation"),
-        )
+    plugin_name: ClassVar[str] = "profiles.build"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Build aggregated profiles for functions, files, and modules."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        if not ctx.has_config(ProfilesAnalyticsStepConfig):
-            return ValidationResult.failure(("ProfilesAnalyticsStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -110,26 +51,23 @@ class ProfilesPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(ProfilesAnalyticsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get catalog from CatalogProvider (optional)
-        catalog_provider = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
+        # Build config from context
+        include_ownership = ctx.parameters.get("include_ownership", bool, default=True)
 
-        # Get module map from ModuleMapProvider (optional)
-        module_map = None
-        if ctx.has_resource_by_name("ModuleMapProvider"):
-            mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
-            module_map = mm_prov.get()
+        cfg = ProfilesAnalyticsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+            include_ownership=include_ownership,
+        )
+
+        # Get optional resources
+        catalog_provider = ctx.resources.catalog
+        module_map = None  # Will be loaded from catalog if available
 
         try:
             build_function_profile(
@@ -149,9 +87,9 @@ class ProfilesPlugin:
                 catalog_provider=catalog_provider,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Profiles build failed: {e}")
+            return TargetResult.failed(f"Profiles build failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["ProfilesPlugin"]

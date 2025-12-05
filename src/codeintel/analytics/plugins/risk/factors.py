@@ -1,24 +1,20 @@
-"""Risk factors plugin using the new protocol."""
+"""Risk factors plugin.
+
+This plugin aggregates analytics into per-function risk scores.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.catalog import CatalogProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.subsystems import refresh_subsystem_caches
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
 
 def _seed_catalog_modules(
@@ -71,68 +67,27 @@ def _seed_catalog_modules(
     return True
 
 
-@dataclass
-class RiskFactorsPlugin:
-    """Plugin for aggregating risk factors.
+class RiskFactorsPlugin(TargetPlugin):
+    """Aggregate analytics into per-function risk scores and levels.
 
     Computes per-function risk scores based on:
     - Code complexity
     - Coverage metrics
     - Hotspot patterns
     - Static analysis findings
+
+    Outputs
+    -------
+    - analytics.goid_risk_factors: Per-function risk scores
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="risk_factors.build",
-            description="Aggregate analytics into per-function risk scores and levels.",
-            kind="analytics",
-            stage="risk",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(),
-            outputs=(
-                PluginOutputSpec(name="goid_risk_factors", tables=("analytics.goid_risk_factors",)),
-            ),
-            provides=("analytics.goid_risk_factors",),
-            requires=("analytics.function_metrics",),
-            depends_on=(
-                "functions.metrics",
-                "coverage.functions",
-                "hotspots.build",
-                "typing_ingest",
-                "tests_ingest",
-                "coverage.test_edges",
-                "config_ingest",
-            ),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=90_000,
-                priority=60,
-            ),
-            tags=("risk", "factors", "scoring"),
-        )
+    plugin_name: ClassVar[str] = "risk_factors.build"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Aggregate analytics into per-function risk scores and levels."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Always returns success as this plugin has no required configs.
-        """
-        _ = self.metadata
-        _ = ctx  # No validation needed for this plugin
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -142,17 +97,14 @@ class RiskFactorsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
+        _ = self  # Protocol method requires instance
+
         gateway = ctx.gateway
         con = gateway.con
-
-        catalog = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            catalog_resource = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog = catalog_resource.get()
+        catalog = ctx.resources.catalog
 
         try:
             con.execute(
@@ -284,9 +236,9 @@ class RiskFactorsPlugin:
                     benchmark=False,
                 )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Risk factors computation failed: {e}")
+            return TargetResult.failed(f"Risk factors computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["RiskFactorsPlugin"]

@@ -1,0 +1,330 @@
+"""Unified plugin registry for the build system.
+
+This module provides a central registry mapping target names to their
+plugin implementations. The BuildExecutor uses this to instantiate
+and execute plugins.
+
+Plugin Registration
+-------------------
+Plugins are registered lazily to avoid circular import issues.
+The first call to ``get_plugin_for_target()`` or ``get_all_plugins()``
+triggers loading of all plugin modules.
+
+Example
+-------
+>>> from codeintel.build.plugin_registry import get_plugin_for_target
+>>> plugin = get_plugin_for_target("ast")
+>>> result = await plugin.execute(ctx)
+"""
+
+from __future__ import annotations
+
+import importlib
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codeintel.build.plugin import TargetPlugin
+
+log = logging.getLogger(__name__)
+
+# =============================================================================
+# Plugin Definitions (module path, class name, target names)
+# =============================================================================
+
+_PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    # Ingestion plugins
+    (
+        "codeintel.ingestion.plugins.repo_scan",
+        "RepoScanPlugin",
+        ("modules",),
+    ),
+    (
+        "codeintel.ingestion.plugins.ast_extract",
+        "AstExtractPlugin",
+        ("ast",),
+    ),
+    (
+        "codeintel.ingestion.plugins.cst_extract",
+        "CstExtractPlugin",
+        ("cst",),
+    ),
+    (
+        "codeintel.ingestion.plugins.scip_plugin",
+        "ScipIngestPlugin",
+        ("scip",),
+    ),
+    (
+        "codeintel.ingestion.plugins.typing_plugin",
+        "TypingIngestPlugin",
+        ("typing",),
+    ),
+    (
+        "codeintel.ingestion.plugins.coverage_plugin",
+        "CoverageIngestPlugin",
+        ("coverage_ingest",),
+    ),
+    (
+        "codeintel.ingestion.plugins.tests_plugin",
+        "TestsIngestPlugin",
+        ("tests_ingest",),
+    ),
+    (
+        "codeintel.ingestion.plugins.docstrings_plugin",
+        "DocstringsIngestPlugin",
+        ("docstrings",),
+    ),
+    (
+        "codeintel.ingestion.plugins.config_plugin",
+        "ConfigIngestPlugin",
+        ("config_ingest",),
+    ),
+    # Graph plugins
+    (
+        "codeintel.graphs.plugins.builders.goid",
+        "GoidPlugin",
+        ("goids",),
+    ),
+    (
+        "codeintel.graphs.plugins.builders.callgraph",
+        "CallGraphPlugin",
+        ("call_graph",),
+    ),
+    (
+        "codeintel.graphs.plugins.builders.import_graph",
+        "ImportGraphPlugin",
+        ("import_graph",),
+    ),
+    (
+        "codeintel.graphs.plugins.builders.cfg_dfg",
+        "CfgDfgPlugin",
+        ("cfg", "dfg"),
+    ),
+    (
+        "codeintel.graphs.plugins.builders.symbol_uses",
+        "SymbolUsesPlugin",
+        ("symbol_uses",),
+    ),
+    (
+        "codeintel.graphs.plugins.metrics.core",
+        "CoreMetricsPlugin",
+        ("graph_metrics",),
+    ),
+    (
+        "codeintel.graphs.plugins.metrics.secondary",
+        "SecondaryMetricsPlugin",
+        ("graph_metrics_secondary",),
+    ),
+    (
+        "codeintel.graphs.plugins.validation",
+        "GraphValidationPlugin",
+        ("graph_validation",),
+    ),
+    # Analytics plugins
+    (
+        "codeintel.analytics.plugins.hotspots.build",
+        "HotspotsPlugin",
+        ("hotspots",),
+    ),
+    (
+        "codeintel.analytics.plugins.functions.metrics",
+        "FunctionMetricsPlugin",
+        ("function_metrics",),
+    ),
+    (
+        "codeintel.analytics.plugins.functions.effects",
+        "FunctionEffectsPlugin",
+        ("function_effects",),
+    ),
+    (
+        "codeintel.analytics.plugins.functions.contracts",
+        "FunctionContractsPlugin",
+        ("function_contracts",),
+    ),
+    (
+        "codeintel.analytics.plugins.functions.history",
+        "FunctionHistoryPlugin",
+        ("function_history",),
+    ),
+    (
+        "codeintel.analytics.plugins.functions.ast_features",
+        "FunctionAstFeaturesPlugin",
+        ("function_ast_features",),
+    ),
+    (
+        "codeintel.analytics.plugins.history.timeseries",
+        "HistoryTimeseriesPlugin",
+        ("history_timeseries",),
+    ),
+    (
+        "codeintel.analytics.plugins.coverage.functions",
+        "CoverageFunctionsPlugin",
+        ("coverage_functions",),
+    ),
+    (
+        "codeintel.analytics.plugins.coverage.test_edges",
+        "CoverageTestEdgesPlugin",
+        ("coverage_test_edges",),
+    ),
+    (
+        "codeintel.analytics.plugins.data_models.build",
+        "DataModelsPlugin",
+        ("data_models",),
+    ),
+    (
+        "codeintel.analytics.plugins.data_models.usage",
+        "DataModelUsagePlugin",
+        ("data_model_usage",),
+    ),
+    (
+        "codeintel.analytics.plugins.config_data_flow.compute",
+        "ConfigDataFlowPlugin",
+        ("config_data_flow",),
+    ),
+    (
+        "codeintel.analytics.plugins.risk.factors",
+        "RiskFactorsPlugin",
+        ("risk_factors",),
+    ),
+    (
+        "codeintel.analytics.plugins.semantic_roles.compute",
+        "SemanticRolesPlugin",
+        ("semantic_roles",),
+    ),
+    (
+        "codeintel.analytics.plugins.subsystems.build",
+        "SubsystemsPlugin",
+        ("subsystems",),
+    ),
+    (
+        "codeintel.analytics.plugins.tests.profile",
+        "TestProfilePlugin",
+        ("test_profile",),
+    ),
+    (
+        "codeintel.analytics.plugins.tests.behavioral_coverage",
+        "BehavioralCoveragePlugin",
+        ("behavioral_coverage",),
+    ),
+    (
+        "codeintel.analytics.plugins.entrypoints.build",
+        "EntrypointsPlugin",
+        ("entrypoints",),
+    ),
+    (
+        "codeintel.analytics.plugins.dependencies.external",
+        "ExternalDepsPlugin",
+        ("external_deps",),
+    ),
+    (
+        "codeintel.analytics.plugins.profiles.build",
+        "ProfilesPlugin",
+        ("profiles",),
+    ),
+)
+
+# =============================================================================
+# Plugin Registry
+# =============================================================================
+
+_PLUGINS: dict[str, type[TargetPlugin]] = {}
+_REGISTERED: bool = False
+
+
+def register_plugin(target_name: str, plugin_class: type[TargetPlugin]) -> None:
+    """Register a plugin for a target.
+
+    Parameters
+    ----------
+    target_name
+        Name of the target (e.g., "ast", "hotspots").
+    plugin_class
+        Plugin class that implements the target.
+    """
+    if target_name in _PLUGINS:
+        log.warning("Overwriting plugin for target '%s'", target_name)
+    _PLUGINS[target_name] = plugin_class
+
+
+def get_plugin_for_target(target_name: str) -> TargetPlugin:
+    """Get a plugin instance for a target.
+
+    Parameters
+    ----------
+    target_name
+        Name of the target.
+
+    Returns
+    -------
+    TargetPlugin
+        Instantiated plugin.
+
+    Raises
+    ------
+    KeyError
+        If no plugin is registered for the target.
+    """
+    _ensure_registered()
+    if target_name not in _PLUGINS:
+        available = ", ".join(sorted(_PLUGINS.keys()))
+        msg = f"No plugin registered for target '{target_name}'. Available: {available}"
+        raise KeyError(msg)
+    return _PLUGINS[target_name]()
+
+
+def get_all_plugins() -> dict[str, type[TargetPlugin]]:
+    """Get all registered plugins.
+
+    Returns
+    -------
+    dict[str, type[TargetPlugin]]
+        Mapping of target names to plugin classes.
+    """
+    _ensure_registered()
+    return dict(_PLUGINS)
+
+
+def clear_registry() -> None:
+    """Clear the plugin registry (for testing)."""
+    global _REGISTERED  # noqa: PLW0603
+    _PLUGINS.clear()
+    _REGISTERED = False
+
+
+# =============================================================================
+# Lazy Registration
+# =============================================================================
+
+
+def _ensure_registered() -> None:
+    """Ensure all plugins are registered (lazy loading)."""
+    global _REGISTERED  # noqa: PLW0603
+    if _REGISTERED:
+        return
+    _register_all_plugins()
+    _REGISTERED = True
+
+
+def _register_all_plugins() -> None:
+    """Register all built-in plugins from definitions."""
+    for module_path, class_name, target_names in _PLUGIN_DEFINITIONS:
+        try:
+            module = importlib.import_module(module_path)
+            plugin_class = getattr(module, class_name)
+            for target_name in target_names:
+                register_plugin(target_name, plugin_class)
+        except (ImportError, AttributeError) as e:
+            log.warning(
+                "Failed to register plugin %s.%s: %s",
+                module_path,
+                class_name,
+                e,
+            )
+
+
+__all__ = [
+    "clear_registry",
+    "get_all_plugins",
+    "get_plugin_for_target",
+    "register_plugin",
+]

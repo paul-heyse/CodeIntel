@@ -63,6 +63,8 @@ class ToolStatus(StrEnum):
         Tool execution failed (non-zero exit, parse error, or exception).
     TIMEOUT
         Tool execution exceeded the configured timeout.
+    SKIPPED
+        Tool execution was skipped (tool not available or not applicable).
 
     Examples
     --------
@@ -78,6 +80,7 @@ class ToolStatus(StrEnum):
     NOT_FOUND = "not_found"
     FAILED = "failed"
     TIMEOUT = "timeout"
+    SKIPPED = "skipped"
 
 
 @dataclass(frozen=True)

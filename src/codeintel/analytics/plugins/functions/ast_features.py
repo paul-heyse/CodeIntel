@@ -1,105 +1,44 @@
-"""Function AST features plugin using the new protocol.
+"""Function AST features plugin.
 
-This module provides the function AST features plugin migrated to the
-new unified plugin protocol.
+This plugin computes AST-derived semantic features for functions.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.analytics.resources.asts import AstResourceData
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.ast_features.persist import features_to_row
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.utilities.datasets import (
     get_function_ast_features_contract,
     insert_analytics_rows,
 )
-from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
+
+if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.build.context import TargetExecutionContext
 
 
-@dataclass
-class FunctionAstFeaturesPlugin:
-    """Plugin for computing AST-derived semantic features for functions.
+class FunctionAstFeaturesPlugin(TargetPlugin):
+    """Compute AST-derived semantic features for each function.
 
     Extracts structural features from function ASTs including:
     - Control flow patterns
     - Statement types and distribution
     - Expression complexity
+
+    Outputs
+    -------
+    - analytics.function_ast_features: Semantic features per function
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="functions.ast_features",
-            description="Compute AST-derived semantic features for each function.",
-            kind="analytics",
-            stage="function",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="function_cfg",
-                    type_ref="FunctionAnalyticsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="function_ast_features",
-                    tables=("analytics.function_ast_features",),
-                ),
-            ),
-            provides=("analytics.function_ast_features",),
-            requires=("core.goids",),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=120_000,
-                requires_gpu=False,
-                priority=12,
-            ),
-            tags=("functions", "ast", "features"),
-        )
+    plugin_name: ClassVar[str] = "functions.ast_features"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Compute AST-derived semantic features for each function."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(FunctionAnalyticsStepConfig):
-            errors.append("FunctionAnalyticsStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -109,60 +48,51 @@ class FunctionAstFeaturesPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(FunctionAnalyticsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
+
+        # Get catalog for resources
+        catalog = ctx.resources.catalog
+        if catalog is None:
+            return TargetResult.failed("CatalogProvider is required")
 
         # Get features from FeaturesProvider
-        # Note: require_by_name already calls .get() internally, returns the features dict
-        if not ctx.has_resource_by_name("FeaturesProvider"):
-            return PluginResult.fail("FeaturesProvider is required")
-        features_map = cast(
-            "dict[int, FunctionAstFeatures]", ctx.require_by_name("FeaturesProvider")
-        )
+        features_map = catalog.get_resource("FeaturesProvider")
+        if features_map is None:
+            return TargetResult.failed("FeaturesProvider is required")
 
-        # Get AST stats from AstProvider for metadata
-        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
-        functions_seen = 0
-        functions_missing = 0
-        if ctx.has_resource_by_name("AstProvider"):
-            ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
-            functions_seen = len(ast_data.function_ast_map)
-            functions_missing = len(ast_data.missing_function_goids)
+        features_map = cast("dict[int, FunctionAstFeatures]", features_map)
+
+        # Get AST stats for metadata (available for debugging/logging)
+        ast_data = catalog.get_resource("AstProvider")
+        _ = ast_data  # May be used for logging in future
 
         try:
             rows = [
                 features_to_row(
-                    repo=cfg.repo,
-                    commit=cfg.commit,
+                    repo=ctx.repo,
+                    commit=ctx.commit,
                     features=features,
                 )
                 for features in features_map.values()
             ]
 
             contract = get_function_ast_features_contract(ctx.gateway)
-            delete_scope = DeleteScope(repo=cfg.repo, commit=cfg.commit)
+            delete_scope = DeleteScope(repo=ctx.repo, commit=ctx.commit)
             insert_analytics_rows(
                 ctx.gateway,
                 contract,
                 rows,
                 delete_scope=delete_scope,
-                scope=f"{cfg.repo}@{cfg.commit}",
+                scope=f"{ctx.repo}@{ctx.commit}",
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Function AST features computation failed: {e}")
+            return TargetResult.failed(f"Function AST features computation failed: {e}")
 
-        return PluginResult.ok(
+        return TargetResult.succeeded(
             row_counts={"analytics.function_ast_features": len(rows)},
-            meta={
-                "functions_seen": functions_seen,
-                "functions_missing": functions_missing,
-            },
         )
 
 

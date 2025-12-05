@@ -21,6 +21,7 @@ Integration Points
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -34,10 +35,12 @@ from codeintel.analytics.core.build_bridge import (
     run_analytics_plugins,
 )
 from codeintel.build.config import BuildConfig, load_build_config
+from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.errors import BuildErrorCollection, PluginExecutionError
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
 from codeintel.build.plan import BuildPlan, PlanStage
+from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.config.resolver import resolve_scan_profiles
@@ -654,6 +657,67 @@ class BuildExecutor:
             target_name,
             input_hash,
         )
+
+    # =========================================================================
+    # Direct Plugin Execution
+    # =========================================================================
+
+    def _execute_target_direct(
+        self,
+        target_name: str,
+    ) -> tuple[bool, str | None, dict[str, int]]:
+        """Execute a target directly via the plugin registry.
+
+        This method bypasses the legacy domain executors and calls plugins
+        directly using the unified TargetPlugin interface.
+
+        Parameters
+        ----------
+        target_name
+            Name of the target to execute.
+
+        Returns
+        -------
+        tuple[bool, str | None, dict[str, int]]
+            (success, error_message, row_counts)
+        """
+        try:
+            # Get target and plugin
+            target = self._graph.get(target_name)
+            plugin = get_plugin_for_target(target_name)
+
+            # Build execution context
+            resources = ContextResources(
+                providers=self._providers,
+                gateway=self._gateway,
+                modules=(),  # Will be loaded from DB if needed
+            )
+
+            # Get parameters from config
+            params = self._config.parameters_for(target_name)
+
+            ctx = TargetExecutionContext(
+                target=target,
+                snapshot=self._snapshot,
+                paths=self._paths,
+                resources=resources,
+                parameters=params,
+            )
+
+            # Execute plugin
+            result = asyncio.run(plugin.execute(ctx))
+
+        except KeyError as e:
+            # No plugin registered for this target
+            log.warning("No plugin for target '%s', falling back to legacy", target_name)
+            return False, f"No plugin registered: {e}", {}
+        except Exception as e:
+            log.exception("Direct plugin execution failed for %s", target_name)
+            return False, str(e), {}
+        else:
+            if result.success:
+                return True, None, dict(result.row_counts)
+            return False, result.error_message, {}
 
     # =========================================================================
     # Stage Execution

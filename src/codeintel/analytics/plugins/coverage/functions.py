@@ -1,74 +1,65 @@
-"""Coverage functions plugin using new base classes.
+"""Coverage functions plugin.
 
-This module aggregates line coverage data to function-level metrics.
+This plugin aggregates line coverage to function-level metrics.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
-from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginResourceHints,
-    PluginStage,
-)
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepConfig]):
+
+class CoverageFunctionsPlugin(TargetPlugin):
     """Aggregate line coverage to function-level metrics.
 
     Analyzes code coverage data to compute:
     - Function-level coverage percentages
     - Covered/uncovered line counts per function
     - Coverage quality metrics
+
+    Outputs
+    -------
+    - analytics.coverage_functions: Function-level coverage metrics
     """
 
-    # Core identification
     plugin_name: ClassVar[str] = "coverage.functions"
-    plugin_stage: ClassVar[PluginStage] = "coverage"
     plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Aggregate line coverage to function-level metrics."
 
-    # Configuration binding
-    config_type: ClassVar[type[CoverageAnalyticsStepConfig]] = CoverageAnalyticsStepConfig
-
-    # Output tables
-    output_tables: ClassVar[tuple[str, ...]] = ("analytics.coverage_functions",)
-
-    # Capabilities and dependencies
-    provides: ClassVar[tuple[str, ...]] = ("analytics.coverage_functions",)
-    requires: ClassVar[tuple[str, ...]] = ("coverage.lines",)
-    depends_on: ClassVar[tuple[str, ...]] = ("goids", "coverage_ingest")
-
-    # Categorization
-    tags: ClassVar[tuple[str, ...]] = ("coverage", "functions")
-
-    # Resource hints
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        max_runtime_ms=60_000,
-        priority=40,
-    )
-
-    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the coverage functions computation.
 
         Parameters
         ----------
         ctx
-            Execution context with gateway and config.
+            Execution context with gateway and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            None to trigger auto row count computation.
+        TargetResult
+            Success result with row counts.
         """
-        compute_coverage_functions(ctx.gateway, self.config)
-        return None  # Let base class compute row counts
+        _ = self  # Protocol method requires instance
+
+        # Build config from context
+        cfg = CoverageAnalyticsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
+
+        try:
+            compute_coverage_functions(ctx.gateway, cfg)
+        except (RuntimeError, ValueError, OSError) as e:
+            return TargetResult.failed(f"Coverage functions computation failed: {e}")
+
+        return TargetResult.succeeded()
 
 
 __all__ = ["CoverageFunctionsPlugin"]
