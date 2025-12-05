@@ -31,6 +31,15 @@ from tests._helpers.fakes.execution_contexts import (
     TestExecutionContextBuilder,
     create_test_execution_context,
 )
+from tests._helpers.fakes.function_catalogs import (
+    MockFunctionCatalog,
+    MockFunctionMeta,
+    MockFunctionSpan,
+    create_mock_catalog_empty,
+    create_mock_catalog_multi_file,
+    create_mock_catalog_realistic,
+    create_mock_catalog_with_functions,
+)
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphPlanningTestEnv,
@@ -110,6 +119,9 @@ __all__ = [
     "GraphPluginPackCounters",
     "GraphPluginPackSettings",
     "GraphTelemetryTestEnv",
+    "MockFunctionCatalog",
+    "MockFunctionMeta",
+    "MockFunctionSpan",
     "MockGraphRuntime",
     "ScopeRecordingQuery",
     "ServingScopePack",
@@ -127,6 +139,10 @@ __all__ = [
     "create_graph_plugin_context",
     "create_graph_snapshot",
     "create_graph_telemetry_env",
+    "create_mock_catalog_empty",
+    "create_mock_catalog_multi_file",
+    "create_mock_catalog_realistic",
+    "create_mock_catalog_with_functions",
     "create_mock_runtime_all_graphs",
     "create_mock_runtime_with_call_graph",
     "create_mock_runtime_with_import_graph",

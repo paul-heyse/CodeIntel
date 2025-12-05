@@ -24,7 +24,7 @@ from time import perf_counter
 import pytest
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
+from codeintel.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.metadata import (

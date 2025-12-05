@@ -17,7 +17,6 @@ from tests._helpers.configs import (
     CoverageEdgeEnv,
     CoverageSeedConfig,
     GatewayOptions,
-    PipelineEnv,
     ProvisionedGateway,
     ProvisioningConfig,
     SpanTestEnv,
@@ -28,10 +27,8 @@ from tests._helpers.harnesses import IngestTestSetup
 from tests._helpers.orchestration import (
     compute_coverage_edges,
     create_coverage_edge_env,
-    create_pipeline_env,
     create_span_test_env,
     generate_coverage_artifact,
-    generate_pipeline_coverage,
     generate_span_coverage,
     provision_docs_export_ready,
     provision_graph_ready_repo,
@@ -186,23 +183,6 @@ def span_env(tmp_path: Path, fresh_gateway: StorageGateway) -> Iterator[SpanTest
         Span test environment with seeded modules and GOIDs.
     """
     env = create_span_test_env(tmp_path, fresh_gateway)
-    try:
-        yield env
-    finally:
-        env.gateway.close()
-
-
-@pytest.fixture
-def pipeline_env(tmp_path: Path) -> Iterator[PipelineEnv]:
-    """
-    Provide a reusable pipeline environment with seeded catalog data.
-
-    Yields
-    ------
-    PipelineEnv
-        Pipeline environment prepared for graph and coverage integration tests.
-    """
-    env = create_pipeline_env(tmp_path)
     try:
         yield env
     finally:
@@ -406,8 +386,7 @@ def coverage_profiles_conn() -> Iterator[duckdb.DuckDBPyConnection]:
 
 @pytest.fixture
 def span_coverage_artifact(span_env: SpanTestEnv) -> Path:
-    """
-    Generate a coverage artifact for the span alignment environment.
+    """Generate a coverage artifact for the span alignment environment.
 
     Returns
     -------
@@ -416,19 +395,6 @@ def span_coverage_artifact(span_env: SpanTestEnv) -> Path:
     """
     artifact = generate_span_coverage(span_env.repo_root)
     return artifact.coverage_file
-
-
-@pytest.fixture
-def pipeline_coverage_artifact(pipeline_env: PipelineEnv) -> Path:
-    """
-    Generate a coverage artifact for the pipeline environment.
-
-    Returns
-    -------
-    Path
-        Path to the generated coverage data file.
-    """
-    return generate_pipeline_coverage(pipeline_env)
 
 
 # =============================================================================

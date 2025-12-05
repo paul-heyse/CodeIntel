@@ -1,4 +1,7 @@
-"""Symbol uses builder should handle partial module maps."""
+"""Symbol uses builder should handle partial module maps.
+
+Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 SCIP_TEMPLATE = """
 [
@@ -44,9 +47,7 @@ def test_partial_catalog_map_falls_back_to_db(tmp_path: Path) -> None:
     con = gateway.con
     gateway.core.insert_modules([("pkg.use", "pkg/b.py", "r", "c")])
 
-    provider = FunctionCatalogService(
-        FunctionCatalog(functions=(), module_by_path={"pkg/a.py": "pkg.def"})
-    )
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.def"})
     scip_path = _write_scip(tmp_path)
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
     cfg = builder.symbol_uses(scip_json_path=scip_path)

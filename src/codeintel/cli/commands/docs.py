@@ -35,13 +35,13 @@ from codeintel.cli.commands._common import (
     setup_logging,
 )
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
-from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
-from codeintel.pipeline.export.export_jsonl import ExportCallOptions
-from codeintel.pipeline.export.runner import (
+from codeintel.export.export_jsonl import ExportCallOptions
+from codeintel.export.runner import (
     ExportOptions,
     ExportRunner,
     run_validated_exports,
 )
+from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, log_problem
 from codeintel.storage.gateway import StorageGateway
@@ -99,6 +99,15 @@ RequireNormalizedMacrosOpt = Annotated[
         "--require-normalized-macros",
         is_flag=True,
         help="Fail if any requested dataset lacks a normalized macro.",
+    ),
+]
+
+SkipPrereqsOpt = Annotated[
+    bool,
+    typer.Option(
+        "--skip-prereqs",
+        is_flag=True,
+        help="Skip prerequisite computation (assume analytics already complete).",
     ),
 ]
 
@@ -198,6 +207,125 @@ def _resolve_export_config(
     )
 
 
+def run_docs_export_via_build_system(
+    cfg: CodeIntelConfig,
+    *,
+    validate_exports: bool = True,
+    schemas: list[str] | None = None,
+    datasets: list[str] | None = None,
+    require_normalized_macros: bool = False,
+) -> None:
+    """Execute docs export using the build system for dependency-aware execution.
+
+    This function uses the build system to ensure all prerequisites are met
+    before running the export. It will run any missing analytics/graph targets
+    that the export depends on.
+
+    Parameters
+    ----------
+    cfg
+        Resolved configuration.
+    validate_exports
+        Whether to validate exports against JSON Schema.
+    schemas
+        Specific schemas to validate (None for all).
+    datasets
+        Specific datasets to export (None for all).
+    require_normalized_macros
+        Whether to require normalized macros.
+
+    Raises
+    ------
+    typer.Exit
+        If the build fails.
+    """
+    from codeintel.build import get_target_graph
+    from codeintel.build.executor import BuildExecutor
+    from codeintel.build.plan import PlanGenerator
+    from codeintel.build.resolver import BuildResolver
+    from codeintel.build.state import StateValidator
+    from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.export.export_jsonl import ExportCallOptions
+
+    maybe_enable_nx_gpu(cfg.graph_backend)
+    gateway = open_gateway_from_config(cfg, read_only=False)
+
+    out_dir = cfg.paths.document_output_dir
+    if out_dir is None:
+        typer.secho(
+            "Error: document_output_dir was not resolved",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    snapshot = SnapshotRef(
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        repo_root=cfg.paths.repo_root,
+    )
+    paths = BuildPaths.from_layout(
+        repo_root=cfg.paths.repo_root,
+        build_dir=cfg.paths.build_dir,
+        db_path=cfg.paths.db_path,
+        document_output_dir=cfg.paths.document_output_dir,
+    )
+
+    graph = get_target_graph()
+    validator = StateValidator(graph=graph, gateway=gateway, snapshot=snapshot)
+    state = validator.validate()
+
+    # Resolve what needs to run for export targets
+    resolver = BuildResolver(graph=graph, state=state)
+    resolution = resolver.resolve(
+        goals=["export_jsonl", "export_parquet"],
+        force_recompute=None,
+    )
+
+    if not resolution.to_compute:
+        LOG.info("All export targets are up to date.")
+        typer.secho("Exports are up to date.", fg=typer.colors.GREEN)
+        return
+
+    # Generate and execute the build plan
+    generator = PlanGenerator(graph=graph)
+    plan = generator.generate(resolution)
+
+    LOG.info(
+        "Build system: %d targets to compute, %d to skip",
+        len(resolution.to_compute),
+        len(resolution.to_skip),
+    )
+
+    executor = BuildExecutor(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        tools=cfg.tools,
+        graph=graph,
+    )
+
+    # Set export options from CLI parameters
+    executor.export_options = ExportCallOptions(
+        validate_exports=validate_exports,
+        schemas=schemas,
+        datasets=datasets,
+        require_normalized_macros=require_normalized_macros,
+    )
+    result = executor.execute(plan)
+
+    if result.status == "failed":
+        typer.secho(
+            f"Export failed: {result.error_summary}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    LOG.info("Export complete via build system.")
+    typer.secho("Export complete.", fg=typer.colors.GREEN)
+
+
 def run_docs_export(
     cfg: CodeIntelConfig,
     validate_exports: bool,
@@ -207,7 +335,7 @@ def run_docs_export(
     validator: Callable[[StorageGateway], None],
     export_runner: ExportRunner,
 ) -> None:
-    """Execute the docs export with provided configuration and callbacks.
+    """Execute the docs export with provided configuration and callbacks (legacy).
 
     Parameters
     ----------
@@ -278,6 +406,7 @@ def docs_export(
     schemas: SchemasOpt = None,
     datasets: DatasetsOpt = None,
     require_normalized_macros: RequireNormalizedMacrosOpt = False,
+    skip_prereqs: SkipPrereqsOpt = False,
     nx_gpu: NxGpuOpt = False,
     nx_backend: NxBackendOpt = "auto",
     nx_gpu_strict: NxGpuStrictOpt = False,
@@ -285,20 +414,27 @@ def docs_export(
 ) -> None:
     """Export Parquet + JSONL datasets from DuckDB into Document Output/.
 
-    Assumes the pipeline has already populated the DuckDB database.
+    By default, uses the build system for dependency-aware export, which
+    ensures all prerequisites (analytics, profiles) are computed first.
+
+    Use --skip-prereqs to skip prerequisite computation if analytics are
+    already complete.
 
     Examples
     --------
     .. code-block:: bash
 
-        # Export all datasets
+        # Export all datasets (runs prerequisites if needed)
+        codeintel docs export
+
+        # Export with explicit repo/commit
         codeintel docs export --repo my-org/repo --commit abc123
 
         # Export specific datasets with validation
         codeintel docs export --dataset functions --dataset modules --validate
 
-        # Using project file
-        codeintel docs export
+        # Skip prerequisites (assume analytics complete)
+        codeintel docs export --skip-prereqs
     """
     setup_logging(verbose)
 
@@ -315,18 +451,30 @@ def docs_export(
         nx_gpu_strict,
     )
 
-    run_docs_export(
-        cfg=cfg,
-        validate_exports=validate,
-        schemas=list(schemas) if schemas else None,
-        datasets=list(datasets) if datasets else None,
-        require_normalized_macros=require_normalized_macros,
-        validator=validate_dataset_registry,
-        export_runner=run_validated_exports,
-    )
+    if skip_prereqs:
+        # Direct export without build system (legacy behavior)
+        run_docs_export(
+            cfg=cfg,
+            validate_exports=validate,
+            schemas=list(schemas) if schemas else None,
+            datasets=list(datasets) if datasets else None,
+            require_normalized_macros=require_normalized_macros,
+            validator=validate_dataset_registry,
+            export_runner=run_validated_exports,
+        )
+    else:
+        # Use build system with all options
+        run_docs_export_via_build_system(
+            cfg,
+            validate_exports=validate,
+            schemas=list(schemas) if schemas else None,
+            datasets=list(datasets) if datasets else None,
+            require_normalized_macros=require_normalized_macros,
+        )
 
 
 __all__ = [
     "docs_app",
     "run_docs_export",
+    "run_docs_export_via_build_system",
 ]

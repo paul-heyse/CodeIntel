@@ -1,0 +1,1053 @@
+Analyzing config package usage...
+================================================================================
+CONFIG PACKAGE USAGE ANALYSIS
+================================================================================
+
+Total exports analyzed: 369
+Potentially unused (0 external uses): 121
+Low usage (<3 external uses): 101
+
+--------------------------------------------------------------------------------
+POTENTIALLY UNUSED EXPORTS (0 external uses)
+--------------------------------------------------------------------------------
+
+  ❌ AST_METRICS_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ AST_NODES_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 1
+
+  ❌ AnalyticsStepBuilder
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ AnalyticsStepBuilder
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ CALL_GRAPH_NODES_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ CFG_BLOCKS_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 1
+
+  ❌ CFG_EDGES_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ COLUMN_TYPE
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ COMPOSITE_SCHEMAS
+     Source: src/codeintel/config/datasets/schemas.py
+     Kind: constant
+     Internal uses: 5, Test uses: 2
+
+  ❌ CREATED_AT_COL
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 1
+
+  ❌ CREATED_AT_COL_NULLABLE
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 0
+
+  ❌ CST_NODES_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ ColumnType
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ CompositeSchema
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: class
+     Internal uses: 5, Test uses: 3
+
+  ❌ CompositeSchema
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: class
+     Internal uses: 5, Test uses: 3
+
+  ❌ ConfigIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ConfigIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ConfigIngestStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ConfigValueRow
+     Source: src/codeintel/config/datasets/rows/core.py
+     Kind: class
+     Internal uses: 4, Test uses: 9
+
+  ❌ CoverageIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ CoverageIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ CoverageIngestStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ CoverageLineRow
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Kind: class
+     Internal uses: 4, Test uses: 3
+
+  ❌ DFG_EDGES_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ DocstringStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ DocstringStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ DocstringStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ EdgeType
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: class
+     Internal uses: 2, Test uses: 1
+
+  ❌ EntryPointToggles
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ EntryPointToggles
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ EntryPointToggles
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ FILE_STATE_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 1
+
+  ❌ FUNCTION_ENTITY_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 2
+
+  ❌ FUNCTION_GOID_COL
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 1
+
+  ❌ FUNCTION_GOID_COL_NULLABLE
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ GOID_CROSSWALK_UPDATE_SCIP
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ GraphMetricPluginOverrides
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ GraphMetricPluginSelection
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 1, Test uses: 0
+
+  ❌ GraphMetricWeights
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 1, Test uses: 0
+
+  ❌ GraphMetricsTuning
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ GraphMetricsTuning
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ GraphStepBuilder
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ GraphStepBuilder
+     Source: src/codeintel/config/steps_graphs.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ IngestRunLike
+     Source: src/codeintel/config/datasets/rows/core.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ IngestRunRow
+     Source: src/codeintel/config/datasets/rows/core.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ IngestionStepBuilder
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ IngestionStepBuilder
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ MODULE_ENTITY_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 1
+
+  ❌ OWNERSHIP_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 0
+
+  ❌ PyAstIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ PyAstIngestStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 2, Test uses: 0
+
+  ❌ REPO_COMMIT_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 1
+
+  ❌ RISK_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 0
+
+  ❌ RepoScanStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ RepoScanStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ RepoScanStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ RowBinding
+     Source: src/codeintel/config/datasets/contracts.py
+     Kind: class
+     Internal uses: 2, Test uses: 2
+
+  ❌ RowBinding
+     Source: src/codeintel/config/datasets/contracts.py
+     Kind: class
+     Internal uses: 2, Test uses: 2
+
+  ❌ RowDictType
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ RowToTuple
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ SOURCE_SPAN_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ SUBSYSTEM_ENTITY_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 3, Test uses: 0
+
+  ❌ SYMBOL_USE_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ ScanProfiles
+     Source: src/codeintel/config/primitives.py
+     Kind: class
+     Internal uses: 6, Test uses: 0
+
+  ❌ ScanProfiles
+     Source: src/codeintel/config/primitives.py
+     Kind: class
+     Internal uses: 6, Test uses: 0
+
+  ❌ ScipIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ScipIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ScipIngestStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ SubsystemCoverageCacheRow
+     Source: src/codeintel/config/datasets/rows/test.py
+     Kind: class
+     Internal uses: 4, Test uses: 0
+
+  ❌ SubsystemProfileCacheRow
+     Source: src/codeintel/config/datasets/rows/test.py
+     Kind: class
+     Internal uses: 4, Test uses: 0
+
+  ❌ TAGS_INDEX_DELETE
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ TEST_ENTITY_COLS
+     Source: src/codeintel/config/datasets/primitives.py
+     Kind: constant
+     Internal uses: 2, Test uses: 0
+
+  ❌ TestCatalogRowModel
+     Source: src/codeintel/config/datasets/rows/test.py
+     Kind: class
+     Internal uses: 4, Test uses: 0
+
+  ❌ TestsIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ TestsIngestStepConfig
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ TestsIngestStepConfig
+     Source: src/codeintel/config/builder.py
+     Kind: class
+     Internal uses: 3, Test uses: 0
+
+  ❌ ToolBinaries
+     Source: src/codeintel/config/primitives.py
+     Kind: class
+     Internal uses: 4, Test uses: 0
+
+  ❌ ToolBinaries
+     Source: src/codeintel/config/primitives.py
+     Kind: class
+     Internal uses: 4, Test uses: 0
+
+  ❌ build_delete_sql
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: function
+     Internal uses: 2, Test uses: 1
+
+  ❌ build_delete_sql_by_table
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: function
+     Internal uses: 2, Test uses: 1
+
+  ❌ build_insert_sql_by_table
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: function
+     Internal uses: 2, Test uses: 1
+
+  ❌ classify_module
+     Source: src/codeintel/config/layering_checks.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ composite_schemas
+     Source: src/codeintel/config/datasets/schema_provider.py
+     Kind: unknown
+     Internal uses: 3, Test uses: 1
+
+  ❌ find_imports
+     Source: src/codeintel/config/layering_checks.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ from_args
+     Source: src/codeintel/config/primitives.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ from_explicit
+     Source: src/codeintel/config/primitives.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 1
+
+  ❌ from_primitives
+     Source: src/codeintel/config/builder.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ from_repo_root
+     Source: src/codeintel/config/primitives.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 7
+
+  ❌ function_analytics
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ function_analytics
+     Source: src/codeintel/config/builder.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ get_composite_schemas
+     Source: src/codeintel/config/datasets/contracts.py
+     Kind: unknown
+     Internal uses: 3, Test uses: 3
+
+  ❌ get_contract_columns
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ get_delete_sql_by_table
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ get_insert_sql_by_table
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ get_row_bindings
+     Source: src/codeintel/config/datasets/contracts.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 2
+
+  ❌ get_table_columns
+     Source: src/codeintel/config/datasets/sql.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 2
+
+  ❌ get_table_schemas
+     Source: src/codeintel/config/datasets/contracts.py
+     Kind: unknown
+     Internal uses: 3, Test uses: 5
+
+  ❌ iter_composite_edges
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ iter_dataset_nodes
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ iter_dependency_edges
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 1
+
+  ❌ iter_docs_view_alias_edges
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 0
+
+  ❌ iter_docs_view_alias_nodes
+     Source: src/codeintel/config/datasets/dataflow.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 0
+
+  ❌ logs_dir
+     Source: src/codeintel/config/models.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ normalize_optional_path
+     Source: src/codeintel/config/serving_models.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 1
+
+  ❌ profiles_analytics
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 2
+
+  ❌ profiles_analytics
+     Source: src/codeintel/config/builder.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 2
+
+  ❌ py_ast_ingest
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 0
+
+  ❌ py_ast_ingest
+     Source: src/codeintel/config/builder.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_graph_backend
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_graph_backend
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_scan_profiles
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_scan_profiles
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_tools_config
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolve_tools_config
+     Source: src/codeintel/config/resolver.py
+     Kind: function
+     Internal uses: 2, Test uses: 0
+
+  ❌ resolved_coverage_path
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ resolved_report_path
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ resolved_tags_index_path
+     Source: src/codeintel/config/steps_ingestion.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 0
+
+  ❌ table_schemas
+     Source: src/codeintel/config/datasets/schema_provider.py
+     Kind: unknown
+     Internal uses: 4, Test uses: 3
+
+  ❌ test_coverage
+     Source: src/codeintel/config/steps_analytics.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 4
+
+  ❌ test_coverage
+     Source: src/codeintel/config/builder.py
+     Kind: unknown
+     Internal uses: 2, Test uses: 4
+
+  ❌ with_overrides
+     Source: src/codeintel/config/models.py
+     Kind: unknown
+     Internal uses: 1, Test uses: 2
+
+--------------------------------------------------------------------------------
+LOW USAGE EXPORTS (1-2 external uses)
+--------------------------------------------------------------------------------
+
+  ⚠️  CFGBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  CFGBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  CFGBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  CallGraphNodeRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/plugins/builders/callgraph.py
+
+  ⚠️  CallGraphStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/callgraph.py
+
+  ⚠️  CallGraphStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/callgraph.py
+
+  ⚠️  CallGraphStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/callgraph.py
+
+  ⚠️  DocstringRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/core.py
+     Used in: src/codeintel/ingestion/compute/docstrings_extract.py
+
+  ⚠️  FileProfileRowModel (1 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/profiles/files.py
+
+  ⚠️  FunctionValidationRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Used in: src/codeintel/analytics/parsing/validation.py
+
+  ⚠️  GoidBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/goid.py
+
+  ⚠️  GoidBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/goid.py
+
+  ⚠️  GoidBuilderStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/goid.py
+
+  ⚠️  GraphPluginRetryPolicy (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/runtime/planning.py
+
+  ⚠️  GraphValidationRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Used in: src/codeintel/analytics/parsing/validation.py
+
+  ⚠️  HotspotRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Used in: src/codeintel/analytics/compute/hotspots/metrics.py
+
+  ⚠️  ImportGraphStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/import_graph.py
+
+  ⚠️  ImportGraphStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/import_graph.py
+
+  ⚠️  ImportGraphStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/import_graph.py
+
+  ⚠️  ModuleProfileRowModel (1 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/profiles/modules.py
+
+  ⚠️  NodeKind (1 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/serving/operations/catalog.py
+
+  ⚠️  ServingMode (1 uses)
+     Source: src/codeintel/config/serving_models.py
+     Used in: src/codeintel/serving/mcp/tools.py
+
+  ⚠️  StaticDiagnosticRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Used in: src/codeintel/ingestion/compute/typing_ingest.py
+
+  ⚠️  SymbolUsesStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  SymbolUsesStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  SymbolUsesStepConfig (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  TEST_CATALOG_UPDATE_GOIDS (1 uses)
+     Source: src/codeintel/config/datasets/sql.py
+     Used in: src/codeintel/analytics/testing/coverage/edges.py
+
+  ⚠️  TestCoverageEdgeRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/test.py
+     Used in: src/codeintel/analytics/testing/coverage/edges.py
+
+  ⚠️  TypednessRow (1 uses)
+     Source: src/codeintel/config/datasets/rows/analytics.py
+     Used in: src/codeintel/ingestion/compute/typing_ingest.py
+
+  ⚠️  TypingIngestStepConfig (1 uses)
+     Source: src/codeintel/config/steps_ingestion.py
+     Used in: src/codeintel/ingestion/plugins/config_factory.py
+
+  ⚠️  TypingIngestStepConfig (1 uses)
+     Source: src/codeintel/config/steps_ingestion.py
+     Used in: src/codeintel/ingestion/plugins/config_factory.py
+
+  ⚠️  TypingIngestStepConfig (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/ingestion/plugins/config_factory.py
+
+  ⚠️  build_env (1 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/ingestion/engine/infrastructure/runner.py
+
+  ⚠️  coverage_analytics (1 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/coverage/functions.py
+
+  ⚠️  coverage_analytics (1 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/compute/coverage/functions.py
+
+  ⚠️  resolved_scip_json_path (1 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  scip_dir (1 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/ingestion/plugins/scip_plugin.py
+
+  ⚠️  verify_db_identity (1 uses)
+     Source: src/codeintel/config/serving_models.py
+     Used in: src/codeintel/serving/bootstrap.py
+
+  ⚠️  verify_db_identity (1 uses)
+     Source: src/codeintel/config/serving_models.py
+     Used in: src/codeintel/serving/bootstrap.py
+
+  ⚠️  BehavioralCoverageRowModel (2 uses)
+     Source: src/codeintel/config/datasets/rows/test.py
+     Used in: src/codeintel/analytics/testing/profiles/rows.py, src/codeintel/analytics/utilities/datasets.py
+
+  ⚠️  CFGBlockRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/cfg.py, src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  CFGEdgeRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/cfg.py, src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  CliConfigOptions (2 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/cli/commands/_common.py, src/codeintel/cli/commands/docs.py
+
+  ⚠️  ConfigBuilder (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/cli/commands/history.py, src/codeintel/analytics/compute/coverage/functions.py
+
+  ⚠️  ConfigBuilder (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/cli/commands/history.py, src/codeintel/analytics/compute/coverage/functions.py
+
+  ⚠️  ConfigDataFlowStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/plugins/config_data_flow/compute.py, src/codeintel/analytics/graphs/config_data_flow.py
+
+  ⚠️  ConfigDataFlowStepConfig (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/analytics/plugins/config_data_flow/compute.py, src/codeintel/analytics/graphs/config_data_flow.py
+
+  ⚠️  ConfigDataFlowStepConfig (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/analytics/plugins/config_data_flow/compute.py, src/codeintel/analytics/graphs/config_data_flow.py
+
+  ⚠️  CoverageAnalyticsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/coverage/functions.py, src/codeintel/analytics/plugins/coverage/functions.py
+
+  ⚠️  CoverageAnalyticsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/coverage/functions.py, src/codeintel/analytics/plugins/coverage/functions.py
+
+  ⚠️  CoverageAnalyticsStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/compute/coverage/functions.py, src/codeintel/analytics/plugins/coverage/functions.py
+
+  ⚠️  DFGEdgeRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/dfg.py, src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  DataModelUsageStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/data_models/usage.py, src/codeintel/analytics/plugins/data_models/usage.py
+
+  ⚠️  DataModelUsageStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/data_models/usage.py, src/codeintel/analytics/plugins/data_models/usage.py
+
+  ⚠️  DataModelUsageStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/compute/data_models/usage.py, src/codeintel/analytics/plugins/data_models/usage.py
+
+  ⚠️  DataModelsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/data_models/core.py, src/codeintel/analytics/plugins/data_models/build.py
+
+  ⚠️  DataModelsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/data_models/core.py, src/codeintel/analytics/plugins/data_models/build.py
+
+  ⚠️  DataModelsStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/plugins/data_models/build.py, src/codeintel/analytics/data_models/core.py
+
+  ⚠️  DataflowEdge (2 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/serving/mcp/meta_tools.py, src/codeintel/serving/operations/catalog.py
+
+  ⚠️  DataflowEdge (2 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/serving/mcp/meta_tools.py, src/codeintel/serving/operations/catalog.py
+
+  ⚠️  DataflowNode (2 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/serving/mcp/meta_tools.py, src/codeintel/serving/operations/catalog.py
+
+  ⚠️  DataflowNode (2 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/serving/mcp/meta_tools.py, src/codeintel/serving/operations/catalog.py
+
+  ⚠️  EntryPointsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/entrypoints/build.py, src/codeintel/analytics/entrypoints/core.py
+
+  ⚠️  EntryPointsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/entrypoints/core.py, src/codeintel/analytics/plugins/entrypoints/build.py
+
+  ⚠️  EntryPointsStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/entrypoints/core.py, src/codeintel/analytics/plugins/entrypoints/build.py
+
+  ⚠️  ExternalDependenciesStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/dependencies/core.py, src/codeintel/analytics/plugins/dependencies/external.py
+
+  ⚠️  ExternalDependenciesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/analytics/plugins/dependencies/external.py, src/codeintel/analytics/dependencies/core.py
+
+  ⚠️  ExternalDependenciesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/analytics/plugins/dependencies/external.py, src/codeintel/analytics/dependencies/core.py
+
+  ⚠️  FunctionAstFeaturesRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/ast_features/persist.py, src/codeintel/analytics/utilities/datasets.py
+
+  ⚠️  FunctionProfileRowModel (2 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/profiles/functions.py, src/codeintel/analytics/utilities/datasets.py
+
+  ⚠️  GoidCrosswalkRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/core.py
+     Used in: src/codeintel/graphs/compute/goid.py, src/codeintel/graphs/plugins/builders/goid.py
+
+  ⚠️  GraphMetricsFunctionsRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/adapters/graphs/graph_metrics.py, src/codeintel/analytics/utilities/datasets.py
+
+  ⚠️  GraphMetricsModulesRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/profiles.py
+     Used in: src/codeintel/analytics/utilities/datasets.py, src/codeintel/analytics/adapters/graphs/graph_metrics.py
+
+  ⚠️  HistoryTimeseriesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/history/timeseries.py, src/codeintel/analytics/history/history_timeseries.py
+
+  ⚠️  HistoryTimeseriesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/history/timeseries.py, src/codeintel/analytics/history/history_timeseries.py
+
+  ⚠️  HistoryTimeseriesStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/history/history_timeseries.py, src/codeintel/analytics/plugins/history/timeseries.py
+
+  ⚠️  HotspotsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/hotspots/metrics.py, src/codeintel/analytics/plugins/hotspots/build.py
+
+  ⚠️  HotspotsStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/compute/hotspots/metrics.py, src/codeintel/analytics/plugins/hotspots/build.py
+
+  ⚠️  HotspotsStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/compute/hotspots/metrics.py, src/codeintel/analytics/plugins/hotspots/build.py
+
+  ⚠️  ImportEdgeRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/imports.py, src/codeintel/graphs/plugins/builders/import_graph.py
+
+  ⚠️  ImportModuleRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/imports.py, src/codeintel/graphs/plugins/builders/import_graph.py
+
+  ⚠️  ProfileRowModel (2 uses)
+     Source: src/codeintel/config/datasets/rows/test.py
+     Used in: src/codeintel/analytics/testing/profiles/rows.py, src/codeintel/analytics/utilities/datasets.py
+
+  ⚠️  SemanticRolesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/semantic_roles/compute.py, src/codeintel/analytics/semantic_roles/core.py
+
+  ⚠️  SemanticRolesStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/semantic_roles/compute.py, src/codeintel/analytics/semantic_roles/core.py
+
+  ⚠️  SemanticRolesStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/plugins/semantic_roles/compute.py, src/codeintel/analytics/semantic_roles/core.py
+
+  ⚠️  SymbolUseRow (2 uses)
+     Source: src/codeintel/config/datasets/rows/graph.py
+     Used in: src/codeintel/graphs/compute/symbols.py, src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  TestCoverageStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/plugins/coverage/test_edges.py, src/codeintel/analytics/testing/coverage/edges.py
+
+  ⚠️  TestCoverageStepConfig (2 uses)
+     Source: src/codeintel/config/steps_analytics.py
+     Used in: src/codeintel/analytics/testing/coverage/edges.py, src/codeintel/analytics/plugins/coverage/test_edges.py
+
+  ⚠️  TestCoverageStepConfig (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/analytics/testing/coverage/edges.py, src/codeintel/analytics/plugins/coverage/test_edges.py
+
+  ⚠️  build_contract_dataflow_graph (2 uses)
+     Source: src/codeintel/config/datasets/dataflow.py
+     Used in: src/codeintel/storage/metadata/bootstrap.py, src/codeintel/serving/operations/catalog.py
+
+  ⚠️  build_paths (2 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/cli/commands/_common.py, src/codeintel/cli/project.py
+
+  ⚠️  cfg_builder (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/graphs/plugins/builders/cfg_dfg.py, src/codeintel/build/registry.py
+
+  ⚠️  cfg_builder (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/build/registry.py, src/codeintel/graphs/plugins/builders/cfg_dfg.py
+
+  ⚠️  from_env (2 uses)
+     Source: src/codeintel/config/serving_models.py
+     Used in: src/codeintel/serving/mcp/server.py, src/codeintel/serving/http/fastapi.py
+
+  ⚠️  from_layout (2 uses)
+     Source: src/codeintel/config/primitives.py
+     Used in: src/codeintel/cli/commands/docs.py, src/codeintel/graphs/plugins/builders/symbol_uses.py
+
+  ⚠️  from_snapshot (2 uses)
+     Source: src/codeintel/config/builder.py
+     Used in: src/codeintel/cli/commands/history.py, src/codeintel/analytics/compute/coverage/functions.py
+
+  ⚠️  get_dataset_contracts (2 uses)
+     Source: src/codeintel/config/datasets/contracts.py
+     Used in: src/codeintel/storage/schema/json_schema.py, src/codeintel/serving/backend/datasets.py
+
+  ⚠️  resolve_path (2 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/ingestion/engine/infrastructure/runner.py, src/codeintel/ingestion/engine/service.py
+
+  ⚠️  resolve_path (2 uses)
+     Source: src/codeintel/config/primitives.py
+     Used in: src/codeintel/ingestion/engine/infrastructure/runner.py, src/codeintel/ingestion/engine/service.py
+
+  ⚠️  snapshot_ref (2 uses)
+     Source: src/codeintel/config/steps_graphs.py
+     Used in: src/codeintel/graphs/runtime/planning.py, src/codeintel/analytics/graphs/graph_metrics.py
+
+  ⚠️  to_build_paths (2 uses)
+     Source: src/codeintel/config/models.py
+     Used in: src/codeintel/cli/commands/_common.py, src/codeintel/serving/auto_pipeline.py
+
+--------------------------------------------------------------------------------
+WELL-USED EXPORTS (by usage count)
+--------------------------------------------------------------------------------
+
+  ✅ analytics: 298 external uses
+  ✅ commit: 220 external uses
+  ✅ commit: 220 external uses
+  ✅ commit: 220 external uses
+  ✅ repo: 220 external uses
+  ✅ repo: 220 external uses
+  ✅ repo: 220 external uses
+  ✅ graphs: 190 external uses
+  ✅ ingestion: 153 external uses
+  ✅ snapshot: 119 external uses
+  ✅ snapshot: 119 external uses
+  ✅ snapshot: 119 external uses
+  ✅ default: 97 external uses
+  ✅ repo_root: 93 external uses
+  ✅ repo_root: 93 external uses
+  ✅ repo_root: 93 external uses
+  ✅ paths: 83 external uses
+  ✅ paths: 83 external uses
+  ✅ SnapshotRef: 62 external uses
+  ✅ SnapshotRef: 62 external uses
+  ... and 127 more
+
+================================================================================

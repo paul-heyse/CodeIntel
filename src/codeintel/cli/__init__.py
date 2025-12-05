@@ -1,13 +1,12 @@
 """CodeIntel unified CLI entry point.
 
 This module provides the Typer-based CLI for CodeIntel, exposing all functional
-areas (pipeline, ingest, graph, docs, datasets, etc.) under a single coherent
+areas (build, ingest, graph, docs, datasets, etc.) under a single coherent
 interface.
 
 Command Groups
 --------------
-- **pipeline**: Pipeline orchestration (run-full, run-op, run, list-steps, deps, status)
-- **build**: Build system commands (run, status) for minimal-work target computation
+- **build**: Build system commands (run, status, history) for minimal-work target computation
 - **op**: List and invoke serving operations
 - **dataset**: Dataset inspection and verification
 - **datasets**: Extended dataset management (lint, diff, snapshot, scaffold, catalog)
@@ -24,14 +23,17 @@ Example Usage
 -------------
 .. code-block:: bash
 
-    # Run full pipeline (using project file)
-    codeintel pipeline run-full
+    # Build all targets
+    codeintel build run --all
 
-    # Run full pipeline (using explicit options)
-    codeintel pipeline run --repo my-org/repo --commit abc123
+    # Build specific targets with dependency resolution
+    codeintel build run function_metrics call_graph
 
-    # Run minimal pipeline for an operation
-    codeintel pipeline run-op function.summary
+    # Show build target status
+    codeintel build status
+
+    # Show build run history
+    codeintel build history
 
     # List available operations
     codeintel op list
@@ -50,12 +52,6 @@ Example Usage
 
     # Generate dataset catalog
     codeintel datasets catalog
-
-    # Build specific targets with dependency resolution
-    codeintel build run function_metrics
-
-    # Show build target status
-    codeintel build status
 """
 
 from __future__ import annotations
@@ -69,35 +65,23 @@ from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.ide import ide_app
 from codeintel.cli.commands.ingest import ingest_app
-from codeintel.cli.commands.pipeline import (
-    pipeline_deps,
-    pipeline_list_steps,
-    pipeline_run,
-)
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
-from codeintel.cli.main import dataset_app, op_app, pipeline_app, serve_app
+from codeintel.cli.main import dataset_app, op_app, serve_app
 
 app = typer.Typer(
     name="codeintel",
-    help="CodeIntel unified CLI for pipeline, analytics, and serving operations.",
+    help="CodeIntel unified CLI for build, analytics, and serving operations.",
     no_args_is_help=True,
 )
 
-# Add extended pipeline commands to the existing pipeline_app
-# These add list-steps, deps, and run (with scope filtering)
-pipeline_app.command("run")(pipeline_run)
-pipeline_app.command("list-steps")(pipeline_list_steps)
-pipeline_app.command("deps")(pipeline_deps)
-
-# Core application commands (from existing Typer CLI)
-app.add_typer(pipeline_app, name="pipeline")
+# Core application commands
+app.add_typer(build_app, name="build")
 app.add_typer(op_app, name="op")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(serve_app, name="serve")
-app.add_typer(build_app, name="build")
 
-# Migrated commands from legacy CLI
+# Domain commands
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(graphs_app, name="graph")
 app.add_typer(docs_app, name="docs")
@@ -125,10 +109,6 @@ __all__ = [
     "ingest_app",
     "main",
     "op_app",
-    "pipeline_app",
-    "pipeline_deps",
-    "pipeline_list_steps",
-    "pipeline_run",
     "serve_app",
     "storage_app",
     "subsystem_app",

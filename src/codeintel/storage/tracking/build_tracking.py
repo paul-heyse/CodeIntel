@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.core.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
+from codeintel.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
 from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
 
 if TYPE_CHECKING:

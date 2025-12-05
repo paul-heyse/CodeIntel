@@ -104,28 +104,6 @@ class ScipIngestStepConfig:
 
 
 @dataclass(frozen=True)
-class PyAstIngestStepConfig:
-    """Configuration for stdlib AST ingestion."""
-
-    snapshot: SnapshotRef
-
-    @property
-    def repo(self) -> str:
-        """Repository slug."""
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit identifier."""
-        return self.snapshot.commit
-
-    @property
-    def repo_root(self) -> Path:
-        """Repository root path."""
-        return self.snapshot.repo_root
-
-
-@dataclass(frozen=True)
 class CoverageIngestStepConfig:
     """Configuration for ingesting coverage lines."""
 
@@ -405,24 +383,12 @@ class IngestionStepBuilder:
         """
         return ConfigIngestStepConfig(snapshot=self.snapshot)
 
-    def py_ast_ingest(self) -> PyAstIngestStepConfig:
-        """
-        Build stdlib AST ingestion configuration.
-
-        Returns
-        -------
-        PyAstIngestStepConfig
-            Configuration for AST ingestion.
-        """
-        return PyAstIngestStepConfig(snapshot=self.snapshot)
-
 
 __all__ = [
     "ConfigIngestStepConfig",
     "CoverageIngestStepConfig",
     "DocstringStepConfig",
     "IngestionStepBuilder",
-    "PyAstIngestStepConfig",
     "RepoScanStepConfig",
     "ScipIngestStepConfig",
     "TestsIngestStepConfig",

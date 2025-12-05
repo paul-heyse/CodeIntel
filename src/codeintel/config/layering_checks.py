@@ -17,10 +17,11 @@ LAYER_FOR_PREFIX: Final = {
     "codeintel.config.schemas": "core",
     "codeintel.config": "core",
     "codeintel.storage": "core",
+    "codeintel.build": "domain",
     "codeintel.ingestion": "domain",
     "codeintel.analytics": "domain",
     "codeintel.graphs": "domain",
-    "codeintel.pipeline": "app",
+    "codeintel.export": "domain",
     "codeintel.serving": "app",
     "codeintel.cli": "app",
 }

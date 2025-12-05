@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway_cache.py
+# hypothesis_version: 6.148.7
+
+['GatewayCache', 'close_gateways', 'gateway_cache_stats', 'get_gateway', 'hits', 'opens', 'reset_gateway_cache', 'size']

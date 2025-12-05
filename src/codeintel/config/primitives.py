@@ -341,48 +341,8 @@ class ToolBinaries:
 
 
 @dataclass(frozen=True)
-class StepConfig:
-    """Base configuration for all pipeline step configurations.
-
-    Step-specific configs inherit from this and add only their unique fields.
-    This eliminates the need for repetitive repo/commit/repo_root fields and
-    `from_paths()` factory methods across 25+ config classes.
-
-    Attributes
-    ----------
-    snapshot : SnapshotRef
-        Repository snapshot reference.
-    paths : BuildPaths
-        Derived build paths for the pipeline run.
-    """
-
-    snapshot: SnapshotRef
-    paths: BuildPaths
-
-    @property
-    def repo(self) -> str:
-        """Repository slug from the snapshot reference."""
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit identifier from the snapshot reference."""
-        return self.snapshot.commit
-
-    @property
-    def repo_root(self) -> Path:
-        """Repository root path from the snapshot reference."""
-        return self.snapshot.repo_root
-
-    @property
-    def build_dir(self) -> Path:
-        """Build directory from the paths configuration."""
-        return self.paths.build_dir
-
-
-@dataclass(frozen=True)
 class ScanProfiles:
-    """Bundle of code and config scan profiles for a pipeline run.
+    """Bundle of code and config scan profiles for a build run.
 
     Attributes
     ----------
@@ -394,26 +354,6 @@ class ScanProfiles:
 
     code: ScanProfile
     config: ScanProfile
-
-
-@dataclass(frozen=True)
-class ExecutionOptions:
-    """Optional execution tuning parameters for pipeline runs.
-
-    Attributes
-    ----------
-    history_db_dir : Path | None
-        Directory containing historical DuckDB snapshots.
-    history_commits : tuple[str, ...]
-        Commit identifiers to include in historical analysis.
-    """
-
-    history_db_dir: Path | None = None
-    history_commits: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        """Normalize tuple fields for immutability."""
-        object.__setattr__(self, "history_commits", tuple(self.history_commits))
 
 
 @dataclass(frozen=True)
@@ -459,11 +399,9 @@ class GraphFeatureFlags:
 
 __all__ = [
     "BuildPaths",
-    "ExecutionOptions",
     "GraphBackendConfig",
     "GraphFeatureFlags",
     "ScanProfiles",
     "SnapshotRef",
-    "StepConfig",
     "ToolBinaries",
 ]

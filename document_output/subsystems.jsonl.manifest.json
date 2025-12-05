@@ -1,0 +1,12 @@
+{
+  "dataset": "subsystems",
+  "artifact": "subsystems.jsonl",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_at": "2025-12-05T12:58:31.913970+00:00",
+  "completed_at": "2025-12-05T12:58:31.914964+00:00"
+}

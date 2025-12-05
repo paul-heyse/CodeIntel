@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config.datasets import DatasetContract
-from codeintel.pipeline.export.manifest import compute_file_hash
+from codeintel.export.manifest import compute_file_hash
 from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError
 from codeintel.storage.repositories.base import fetch_all_dicts

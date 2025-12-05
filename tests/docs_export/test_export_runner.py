@@ -6,8 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from codeintel.pipeline.export.export_jsonl import ExportCallOptions
-from codeintel.pipeline.export.runner import ExportOptions, run_validated_exports
+from codeintel.export.export_jsonl import ExportCallOptions
+from codeintel.export.runner import ExportOptions, run_validated_exports
 from codeintel.storage.gateway import StorageConfig, StorageGateway
 from tests._helpers import provision_docs_export_ready
 

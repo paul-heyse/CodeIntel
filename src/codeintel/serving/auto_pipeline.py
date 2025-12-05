@@ -15,19 +15,21 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.executor import BuildExecutor, BuildResult
+from codeintel.build.operations import get_targets_for_operation
+from codeintel.build.plan import PlanGenerator
+from codeintel.build.readiness import DatabaseReadinessView
+from codeintel.build.registry import get_target_graph
+from codeintel.build.resolver import BuildResolver
+from codeintel.build.state import StateValidator
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.models import CliPathsInput, ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.execution import TriggerKind
-from codeintel.pipeline.planning.op_planner import (
-    OperationPrereqOptions,
-    build_prereq_summary,
-    ensure_prerequisites_for_operation,
-)
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.tracking import PipelineRunRecord
 from codeintel.storage.validation import table_has_rows_for_snapshot
@@ -187,6 +189,8 @@ def dataset_has_rows_for_snapshot(
 def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
     """Get all required table keys for an operation with transitive expansion.
 
+    Uses the build system's target graph to resolve transitive dependencies.
+
     Parameters
     ----------
     op_id
@@ -201,11 +205,32 @@ def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
     if op is None:
         return frozenset()
 
-    # Use the op_planner's summary to get expanded tables
-    # We need a dummy snapshot for the call
-    dummy_snapshot = SnapshotRef(repo="", commit="", repo_root=Path.cwd())
-    summary = build_prereq_summary(op_id, dummy_snapshot)
-    return summary.expanded_tables
+    # Get the targets required for this operation
+    op_targets = get_targets_for_operation(op_id)
+    if not op_targets.required_targets:
+        return frozenset(op.required_datasets)
+
+    # Get all tables from the targets and their transitive dependencies
+    graph = get_target_graph()
+    table_keys: set[str] = set()
+
+    for target_name in op_targets.required_targets:
+        if target_name not in graph:
+            continue
+
+        # Get target and all its dependencies
+        target = graph.get(target_name)
+        deps = graph.transitive_deps(target_name)
+
+        # Add tables from this target
+        table_keys.update(target.tables)
+
+        # Add tables from all dependencies
+        for dep_name in deps:
+            dep_target = graph.get(dep_name)
+            table_keys.update(dep_target.tables)
+
+    return frozenset(table_keys)
 
 
 def has_required_data_for_operation(
@@ -262,12 +287,12 @@ def operation_prereqs_satisfied(
     *,
     repo: str,
     commit: str,
+    snapshot: SnapshotRef | None = None,
 ) -> bool:
-    """Check if prerequisites are satisfied using data-aware or run-based logic.
+    """Check if prerequisites are satisfied using build system readiness.
 
-    This function implements the combined check:
-    1. If operation has required_datasets, use data-aware checking
-    2. Otherwise, fall back to run-based checking
+    This function uses the build system's DatabaseReadinessView to check if
+    all targets required by the operation are in a 'current' state.
 
     Parameters
     ----------
@@ -279,29 +304,150 @@ def operation_prereqs_satisfied(
         Repository slug.
     commit
         Commit SHA.
+    snapshot
+        Optional snapshot reference. If not provided, one will be constructed.
 
     Returns
     -------
     bool
         True if prerequisites are satisfied, False otherwise.
     """
-    op = get_operation(op_id)
+    # Get required targets for operation
+    op_targets = get_targets_for_operation(op_id)
+    if not op_targets.required_targets:
+        # Operation has no declared requirements - check fallback
+        op = get_operation(op_id)
+        if op is not None and op.required_datasets:
+            return has_required_data_for_operation(
+                gateway,
+                op_id,
+                repo=repo,
+                commit=commit,
+            )
+        # No requirements declared - consider satisfied
+        return True
 
-    # If operation has declared datasets, use data-aware check
-    if op is not None and op.required_datasets:
-        return has_required_data_for_operation(
-            gateway,
-            op_id,
-            repo=repo,
-            commit=commit,
+    # Construct snapshot if not provided
+    if snapshot is None:
+        snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path.cwd())
+
+    # Create readiness view
+    graph = get_target_graph()
+    view = DatabaseReadinessView(graph, gateway, snapshot)
+
+    # Check if all required targets are ready
+    for target_name in op_targets.required_targets:
+        if target_name not in view:
+            LOG.debug("prereqs: unknown target %s for %s", target_name, op_id)
+            continue
+        readiness = view[target_name]
+        if not readiness.is_ready:
+            LOG.debug("prereqs: target %s not ready for %s", target_name, op_id)
+            return False
+
+    return True
+
+
+# =============================================================================
+# Error Diagnosis
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class PrerequisiteError:
+    """Structured error for unmet prerequisites.
+
+    Provides actionable information about why an operation cannot run
+    and how to fix it.
+
+    Attributes
+    ----------
+    op_id
+        Operation that cannot run.
+    missing_targets
+        Targets that are not ready.
+    bottleneck
+        The ultimate blocker target (the root cause).
+    fix_command
+        CLI command to fix the issue.
+    human_message
+        Human-readable explanation.
+    """
+
+    op_id: str
+    missing_targets: tuple[str, ...]
+    bottleneck: str | None
+    fix_command: str
+    human_message: str
+
+
+def diagnose_prereq_failure(
+    gateway: StorageGateway,
+    op_id: str,
+    snapshot: SnapshotRef,
+) -> PrerequisiteError:
+    """Diagnose why prerequisites are not satisfied.
+
+    Returns structured error information with an actionable fix command.
+    Uses the build system's readiness view to determine the root cause.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway with connection and database access.
+    op_id
+        Operation identifier that failed prerequisite check.
+    snapshot
+        Repository snapshot reference.
+
+    Returns
+    -------
+    PrerequisiteError
+        Structured error with diagnosis and fix instructions.
+    """
+    graph = get_target_graph()
+    view = DatabaseReadinessView(graph, gateway, snapshot)
+    op_targets = get_targets_for_operation(op_id)
+
+    missing: list[str] = []
+    bottleneck: str | None = None
+
+    for target_name in op_targets.required_targets:
+        if target_name not in view:
+            continue
+        readiness = view[target_name]
+        if not readiness.is_ready:
+            missing.append(target_name)
+            # Track the ultimate bottleneck (root cause)
+            if readiness.ultimate_bottleneck:
+                bottleneck = readiness.ultimate_bottleneck
+
+    # Use bottleneck or first missing as fix target
+    fix_target = bottleneck or (missing[0] if missing else None)
+    fix_command = (
+        f"codeintel build run {fix_target}" if fix_target else "codeintel build run --all"
+    )
+
+    # Build human message
+    if missing:
+        missing_str = ", ".join(sorted(missing))
+        human_message = (
+            f"Operation '{op_id}' requires data that hasn't been computed. "
+            f"Missing targets: {missing_str}. "
+            f"Run: {fix_command}"
+        )
+    else:
+        human_message = (
+            f"Operation '{op_id}' cannot run due to missing prerequisites. "
+            f"Run: {fix_command}"
         )
 
-    # Fall back to run-based check
-    return has_successful_prereq_run(
-        gateway.runs,
-        repo=repo,
-        commit=commit,
+    return PrerequisiteError(
         op_id=op_id,
+        missing_targets=tuple(sorted(missing)),
+        bottleneck=bottleneck,
+        fix_command=fix_command,
+        human_message=human_message,
     )
 
 
@@ -546,6 +692,117 @@ def should_run_auto_pipeline(
     return True, gateway, ""
 
 
+def run_operation_prereqs(
+    *,
+    op_id: str,
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    paths: BuildPaths,
+    tools: ToolsConfig,
+) -> BuildResult | None:
+    """Execute prerequisites for an operation using the build system.
+
+    Public API for CLI and other callers that already have the required
+    configuration objects.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    gateway
+        Storage gateway with database connection.
+    snapshot
+        Repository snapshot reference.
+    paths
+        Build paths configuration.
+    tools
+        Tools configuration.
+
+    Returns
+    -------
+    BuildResult | None
+        The build result if executed, None if all targets are current.
+    """
+    # Get required targets for the operation
+    op_targets = get_targets_for_operation(op_id)
+    if not op_targets.required_targets:
+        LOG.debug("run_operation_prereqs: op=%s has no required targets", op_id)
+        return None
+
+    # Convert to list for the build system
+    goal_targets = list(op_targets.required_targets)
+
+    # Get target graph and validate state
+    graph = get_target_graph()
+    validator = StateValidator(graph, gateway, snapshot)
+    state = validator.validate()
+
+    # Resolve minimal work needed
+    resolver = BuildResolver(graph, state)
+    resolution = resolver.resolve(goals=goal_targets)
+
+    # If nothing to compute, return early
+    if not resolution.to_compute:
+        LOG.debug("run_operation_prereqs: all targets current for op=%s", op_id)
+        return None
+
+    # Generate build plan
+    planner = PlanGenerator(graph)
+    plan = planner.generate(resolution)
+
+    LOG.info(
+        "run_operation_prereqs executing op=%s targets=%s",
+        op_id,
+        resolution.to_compute,
+    )
+
+    # Execute via build system
+    executor = BuildExecutor(graph, gateway, snapshot, paths, tools)
+    return executor.execute(plan)
+
+
+def _run_prereqs_build(
+    *,
+    op_id: str,
+    config: ServingConfig,
+    gateway: StorageGateway,
+) -> BuildResult | None:
+    """Execute prerequisites for an operation using the build system.
+
+    Internal helper for serving layer that uses ServingConfig.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    config
+        Serving configuration.
+    gateway
+        Storage gateway with database connection.
+
+    Returns
+    -------
+    BuildResult | None
+        The build result if executed, None if all targets are current.
+    """
+    # Build snapshot and paths from config
+    paths = build_paths_for_serving(config)
+    snapshot = SnapshotRef(
+        repo=config.repo,
+        commit=config.commit,
+        repo_root=config.repo_root or Path.cwd(),
+    )
+    tools = ToolsConfig.default()
+
+    return run_operation_prereqs(
+        op_id=op_id,
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        tools=tools,
+    )
+
+
 def _run_prereqs(
     *,
     op_id: str,
@@ -555,7 +812,8 @@ def _run_prereqs(
 ) -> PipelineRunRecord | None:
     """Execute prerequisites for an operation.
 
-    Internal helper used by both HTTP and MCP auto-pipeline functions.
+    This is a compatibility shim that wraps _run_prereqs_build and converts
+    the BuildResult to a PipelineRunRecord for backward compatibility.
 
     Parameters
     ----------
@@ -573,36 +831,32 @@ def _run_prereqs(
     PipelineRunRecord | None
         The pipeline run record if executed, None if skipped.
     """
-    # Check for existing successful run
-    if has_successful_prereq_run(
-        gateway.runs,
-        repo=config.repo,
-        commit=config.commit,
+    result = _run_prereqs_build(
         op_id=op_id,
-    ):
-        LOG.debug("auto_pipeline skipped: found existing successful run")
+        config=config,
+        gateway=gateway,
+    )
+
+    if result is None:
         return None
 
-    # Build prerequisite options
-    paths = build_paths_for_serving(config)
-    snapshot = SnapshotRef(
+    # Convert BuildResult to PipelineRunRecord for compatibility
+    # The build system now records its own runs in build.runs,
+    # but for backward compat we return a synthetic PipelineRunRecord
+    now = datetime.now(tz=UTC)
+    return PipelineRunRecord(
+        run_id=result.run_id,
         repo=config.repo,
         commit=config.commit,
-        repo_root=config.repo_root or Path.cwd(),
-    )
-    tools = ToolsConfig.default()
-
-    prereq_options = OperationPrereqOptions(
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=tools,
-        include_analytics=True,
+        kind="op_prereqs",
         trigger=trigger,
+        status="succeeded" if result.success else "failed",
+        started_at=now,
+        completed_at=now,
+        requested_operation=op_id,
+        error_summary=result.error_summary,
+        pipeline_name="build_system",
     )
-
-    LOG.info("auto_pipeline executing op=%s trigger=%s", op_id, trigger)
-    return ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
 
 
 def ensure_prereqs_for_http(
@@ -677,10 +931,12 @@ __all__ = [
     "AUTO_PIPELINE_ENV",
     "DatasetDebugInfo",
     "PrereqDebugInfo",
+    "PrerequisiteError",
     "RunDebugInfo",
     "build_paths_for_serving",
     "build_prereq_debug_info",
     "dataset_has_rows_for_snapshot",
+    "diagnose_prereq_failure",
     "ensure_prereqs_for_http",
     "ensure_prereqs_for_mcp",
     "get_required_table_keys_for_operation",
@@ -688,5 +944,6 @@ __all__ = [
     "has_successful_prereq_run",
     "is_auto_pipeline_enabled",
     "operation_prereqs_satisfied",
+    "run_operation_prereqs",
     "should_run_auto_pipeline",
 ]

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/pipeline.py
+# hypothesis_version: 6.148.7
+
+['  (none)\n', '(none)', ', ', '--phase', 'deps', 'description', 'direct_deps', 'name', 'phase', 'pipeline_deps', 'pipeline_list_steps', 'step', 'transitive_deps']

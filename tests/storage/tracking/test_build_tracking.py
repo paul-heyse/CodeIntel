@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.core.build.manifest import BuildRunRecord, OutputManifest
+from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking.build_tracking import BuildTracking
 

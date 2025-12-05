@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.datasets import JSON_SCHEMA_BY_DATASET_NAME
-from codeintel.pipeline.export import default_validation_schemas
+from codeintel.export import default_validation_schemas
 
 
 def _require(*, condition: bool, message: str) -> None:

@@ -37,13 +37,13 @@ RecipeKind = Literal["ingestion", "graphs", "analytics", "full", "custom"]
 """
 
 # Module classification for stage dispatch
-StageModule = Literal["ingestion", "graphs", "analytics", "pipeline"]
+StageModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Module that should execute a stage.
 
 - ``ingestion``: codeintel.ingestion plugins
 - ``graphs``: codeintel.graphs plugins
 - ``analytics``: codeintel.analytics plugins
-- ``pipeline``: codeintel.pipeline steps
+- ``export``: codeintel.export operations
 """
 
 

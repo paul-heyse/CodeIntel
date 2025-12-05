@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/build/plan.py
+# hypothesis_version: 6.148.7
+
+[1000, '=', 'BuildPlan', 'PlanGenerator', 'PlanStage', 'PlanStep', 'analytics', 'blocked_targets', 'dependencies', 'format_duration', 'graphs', 'ingestion', 'module', 'plugin', 'reason', 'requested_targets', 'skipped_targets', 'stages', 'step_count', 'steps', 'target', 'total_steps']

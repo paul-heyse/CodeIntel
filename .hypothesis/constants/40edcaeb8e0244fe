@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/recipes/unified.py
+# hypothesis_version: 6.148.7
+
+['1.0.0', 'RecipeKind', 'StageModule', 'UnifiedRecipe', 'UnifiedRecipeOptions', 'UnifiedStage', 'analytics', 'custom', 'default', 'description', 'export', 'fail_fast', 'full', 'graphs', 'ingestion', 'options', 'parallel', 'required', 'tags', 'unified_recipe', 'unified_stage', 'version']

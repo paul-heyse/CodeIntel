@@ -12,8 +12,8 @@ import json
 import pytest
 from typer.testing import CliRunner
 
+from codeintel.build.targets import TargetModule
 from codeintel.cli import app
-from codeintel.core.build.targets import TargetModule
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

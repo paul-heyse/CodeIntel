@@ -19,6 +19,10 @@ Build all targets in a module:
 
     codeintel build run --module analytics
 
+Build all targets across all modules:
+
+    codeintel build run --all
+
 Show what would be built (dry-run):
 
     codeintel build run function_metrics --dry-run
@@ -40,6 +44,12 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+from codeintel.build.executor import BuildExecutor, BuildResult
+from codeintel.build.plan import BuildPlan, PlanGenerator
+from codeintel.build.registry import get_target_graph
+from codeintel.build.resolver import BuildResolver
+from codeintel.build.state import DatabaseState, StateValidator
+from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.commands._common import (
     JsonOutputOpt,
     ProjectRootOpt,
@@ -47,14 +57,9 @@ from codeintel.cli.commands._common import (
     build_runtime_or_exit,
     setup_logging,
 )
-from codeintel.core.build.executor import BuildExecutor, BuildResult
-from codeintel.core.build.plan import BuildPlan, PlanGenerator
-from codeintel.core.build.registry import get_target_graph
-from codeintel.core.build.resolver import BuildResolver
-from codeintel.core.build.state import DatabaseState, StateValidator
-from codeintel.core.build.targets import TargetGraph, TargetModule
 
 if TYPE_CHECKING:
+    from codeintel.build.manifest import BuildRunRecord
     from codeintel.cli.project import ProjectRuntime
 
 LOG = logging.getLogger(__name__)
@@ -105,6 +110,16 @@ ForceOpt = Annotated[
     ),
 ]
 
+AllOpt = Annotated[
+    bool,
+    typer.Option(
+        "--all",
+        "-a",
+        is_flag=True,
+        help="Build all targets across all modules",
+    ),
+]
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -113,6 +128,7 @@ ForceOpt = Annotated[
 def _resolve_goals(
     targets: list[str] | None,
     module: str | None,
+    all_targets: bool,
     graph: TargetGraph,
 ) -> list[str]:
     """Resolve target goals from CLI arguments.
@@ -123,6 +139,8 @@ def _resolve_goals(
         Explicit target names from CLI arguments.
     module
         Module name to build all targets for.
+    all_targets
+        If True, build all targets across all modules.
     graph
         Target graph for validation.
 
@@ -136,6 +154,9 @@ def _resolve_goals(
     typer.BadParameter
         If no targets specified or unknown target provided.
     """
+    if all_targets:
+        return [t.name for t in graph.all_targets]
+
     if module:
         # Validate module name
         valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
@@ -155,7 +176,7 @@ def _resolve_goals(
                 raise typer.BadParameter(msg) from exc
         return list(targets)
 
-    msg = "Specify targets or --module"
+    msg = "Specify targets, --module, or --all"
     raise typer.BadParameter(msg)
 
 
@@ -525,6 +546,7 @@ def build_status(
 def build_run(
     targets: TargetsArg = None,
     module: ModuleOpt = None,
+    all_targets: AllOpt = False,
     dry_run: DryRunOpt = False,
     force: ForceOpt = None,
     json_output: JsonOutputOpt = False,
@@ -546,6 +568,10 @@ def build_run(
 
         codeintel build run --module analytics
 
+    Build all targets across all modules:
+
+        codeintel build run --all
+
     Preview what would be built:
 
         codeintel build run function_metrics --dry-run
@@ -560,18 +586,19 @@ def build_run(
     graph = get_target_graph()
 
     LOG.info(
-        "build.run repo=%s commit=%s targets=%s module=%s dry_run=%s force=%s",
+        "build.run repo=%s commit=%s targets=%s module=%s all=%s dry_run=%s force=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
         targets,
         module,
+        all_targets,
         dry_run,
         force,
     )
 
     # Resolve goals
     try:
-        goals = _resolve_goals(targets, module, graph)
+        goals = _resolve_goals(targets, module, all_targets, graph)
     except typer.BadParameter as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
@@ -621,8 +648,232 @@ def build_run(
     typer.secho("Build completed successfully", fg=typer.colors.GREEN)
 
 
+# =============================================================================
+# History Command
+# =============================================================================
+
+RunIdOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--run-id",
+        "-i",
+        help="Specific run ID to show details for (prefix match supported)",
+    ),
+]
+
+LimitOpt = Annotated[
+    int,
+    typer.Option(
+        "--limit",
+        "-n",
+        help="Number of recent runs to show",
+    ),
+]
+
+
+def _format_run_detail(record: BuildRunRecord) -> str:
+    """Format a single build run for detailed display.
+
+    Parameters
+    ----------
+    record
+        Build run record to format.
+
+    Returns
+    -------
+    str
+        Formatted run details.
+    """
+    from codeintel.build.plan import format_duration
+
+    lines = [
+        f"Run: {record.run_id}",
+        f"  Repo:    {record.repo}",
+        f"  Commit:  {record.commit[:12]}",
+        f"  Status:  {record.status}",
+        f"  Started: {record.started_at.isoformat() if record.started_at else 'N/A'}",
+    ]
+    if record.completed_at:
+        lines.append(f"  Ended:   {record.completed_at.isoformat()}")
+    if record.duration_ms is not None:
+        lines.append(f"  Duration: {format_duration(record.duration_ms)}")
+
+    if record.requested_targets:
+        lines.append(f"  Requested ({len(record.requested_targets)}):")
+        lines.extend(f"    - {t}" for t in sorted(record.requested_targets))
+
+    if record.computed_targets:
+        lines.append(f"  Computed ({len(record.computed_targets)}):")
+        lines.extend(f"    ✓ {t}" for t in sorted(record.computed_targets))
+
+    if record.skipped_targets:
+        lines.append(f"  Skipped ({len(record.skipped_targets)}):")
+        lines.extend(f"    - {t}" for t in sorted(record.skipped_targets))
+
+    if record.error_summary:
+        lines.append(f"  Error: {record.error_summary}")
+
+    return "\n".join(lines)
+
+
+def _format_run_summary(record: BuildRunRecord) -> str:
+    """Format a single build run for list display.
+
+    Parameters
+    ----------
+    record
+        Build run record to format.
+
+    Returns
+    -------
+    str
+        Formatted single-line summary.
+    """
+    from codeintel.build.plan import format_duration
+
+    duration_str = (
+        format_duration(record.duration_ms) if record.duration_ms else "?"
+    )
+    computed_count = len(record.computed_targets)
+    skipped_count = len(record.skipped_targets)
+
+    return (
+        f"{record.run_id[:8]}  "
+        f"{record.status:<10}  "
+        f"{computed_count:>2} computed, {skipped_count:>2} skipped  "
+        f"{duration_str:>8}  "
+        f"{record.started_at.strftime('%Y-%m-%d %H:%M')}"
+    )
+
+
+def _lookup_run_by_id(
+    runtime: ProjectRuntime,
+    run_id: str,
+) -> BuildRunRecord:
+    """Look up a build run by ID or prefix.
+
+    Parameters
+    ----------
+    runtime
+        Project runtime with gateway access.
+    run_id
+        Exact run ID or prefix to match.
+
+    Returns
+    -------
+    BuildRunRecord
+        The matched run record.
+
+    Raises
+    ------
+    typer.Exit
+        If run is not found or prefix is ambiguous.
+    """
+    # First try exact match
+    record = runtime.gateway.build.fetch_run(run_id)
+    if record is not None:
+        return record
+
+    # Try prefix match
+    all_runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=100)
+    matches = [r for r in all_runs if r.run_id.startswith(run_id)]
+
+    if len(matches) == 1:
+        return matches[0]
+
+    if len(matches) > 1:
+        typer.secho(
+            f"Ambiguous run ID prefix '{run_id}' matches {len(matches)} runs:",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        for r in matches[:5]:
+            typer.echo(f"  {r.run_id}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.secho(f"Error: Run not found: {run_id}", fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=1)
+
+
+def _get_status_color(status: str) -> str:
+    """Get color for a build status.
+
+    Parameters
+    ----------
+    status
+        Build status string.
+
+    Returns
+    -------
+    str
+        Typer color constant.
+    """
+    if status == "succeeded":
+        return typer.colors.GREEN
+    if status == "failed":
+        return typer.colors.RED
+    return typer.colors.YELLOW
+
+
+@build_app.command("history")
+def build_history(
+    run_id: RunIdOpt = None,
+    limit: LimitOpt = 10,
+    project_root: ProjectRootOpt = None,
+    json_output: JsonOutputOpt = False,
+    verbose: VerboseOpt = 0,
+) -> None:
+    """Show build run history and details.
+
+    Lists recent build runs or shows details for a specific run.
+    Use --run-id to see detailed information about a specific run,
+    including which targets were computed and which were skipped.
+
+    Examples
+    --------
+    .. code-block:: bash
+
+        # Show recent build runs
+        codeintel build history
+
+        # Show more runs
+        codeintel build history --limit 20
+
+        # Show details for a specific run
+        codeintel build history --run-id abc12345
+
+        # Output as JSON
+        codeintel build history --json
+    """
+    setup_logging(verbose)
+    runtime = build_runtime_or_exit(project_root)
+
+    if run_id:
+        record = _lookup_run_by_id(runtime, run_id)
+        if json_output:
+            typer.echo(json.dumps(record.to_dict(), indent=2))
+        else:
+            typer.echo(_format_run_detail(record))
+        return
+
+    # List recent runs
+    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
+
+    if not runs:
+        typer.echo("No build runs found.")
+        return
+
+    if json_output:
+        typer.echo(json.dumps([r.to_dict() for r in runs], indent=2))
+    else:
+        typer.echo(f"Recent build runs (showing {len(runs)}):\n")
+        for record in runs:
+            typer.secho(_format_run_summary(record), fg=_get_status_color(record.status))
+
+
 __all__ = [
     "build_app",
+    "build_history",
     "build_run",
     "build_status",
 ]
