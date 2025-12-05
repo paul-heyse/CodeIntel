@@ -7,87 +7,132 @@ graph_ctx, etc., use the fixtures from the main conftest.py.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.core import (
-    GraphPluginProtocol,
-    register_graph_plugin,
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.constants import DEFAULT_RUN_ID
+from tests._helpers.fakes.configs import create_test_snapshot
+from tests._helpers.fakes.graph_contexts import create_graph_gateway
+from tests._helpers.harnesses.graphs import (
+    GraphPluginTestHarness,
 )
-from codeintel.graphs.core.registry import unregister_graph_plugin
-from codeintel.graphs.recipes import RecipeExecutor, RecipeExecutorContext
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
-
-class GraphPluginTestHarness:
-    """Test harness for graph plugin tests using RecipeExecutor.
-
-    This harness is specifically for testing graph plugins that use the
-    graphs.core infrastructure. For analytics plugins, use PluginTestHarness
-    from tests._helpers.plugin_harness instead.
-
-    Attributes
-    ----------
-    snapshot : SnapshotRef
-        Repository snapshot reference.
-    gateway : StorageGateway
-        Storage gateway for database access.
-    executor : RecipeExecutor
-        Recipe executor for running graph plugins.
-    """
-
-    def __init__(self, tmp_path: Path) -> None:
-        """Initialize the test harness.
-
-        Parameters
-        ----------
-        tmp_path
-            Temporary directory for test artifacts.
-        """
-        self._tmp_path = tmp_path
-        self.snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=Path())
-        self.gateway: StorageGateway = open_memory_gateway(
-            apply_schema=True, ensure_views=True, validate_schema=True
-        )
-        self.executor_ctx = RecipeExecutorContext(
-            gateway=self.gateway,
-            snapshot=self.snapshot,
-            engine=None,
-            catalog_provider=None,
-        )
-        self.executor = RecipeExecutor(self.executor_ctx)
-        self._registered: set[str] = set()
-
-    def register(self, plugin: GraphPluginProtocol) -> None:
-        """Register a plugin for the duration of the harness lifecycle.
-
-        Parameters
-        ----------
-        plugin
-            Plugin to register.
-        """
-        try:
-            register_graph_plugin(plugin)
-            self._registered.add(plugin.metadata.name)
-        except ValueError:
-            # Already registered
-            pass
-
-    def cleanup(self) -> None:
-        """Unregister all plugins registered by this harness."""
-        for name in list(self._registered):
-            with contextlib.suppress(KeyError):
-                unregister_graph_plugin(name)
-            self._registered.discard(name)
-
-
-# Backward compatibility aliases
-NewPluginTestHarness = GraphPluginTestHarness
+# Backward compatibility alias
 PluginTestHarness = GraphPluginTestHarness
+
+
+# =============================================================================
+# Standard Analytics Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def analytics_gateway() -> Iterator[StorageGateway]:
+    """Provide standard analytics gateway with schema and macros.
+
+    This fixture creates a gateway using the same configuration as the
+    graph gateway, suitable for analytics plugin tests.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with schema and macros applied; automatically closed.
+    """
+    gateway = create_graph_gateway()
+    yield gateway
+    gateway.close()
+
+
+@pytest.fixture
+def analytics_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide standard analytics snapshot reference.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path fixture.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot with standard test defaults.
+    """
+    return create_test_snapshot(tmp_path)
+
+
+@pytest.fixture
+def analytics_context(
+    analytics_gateway: StorageGateway,
+    analytics_snapshot: SnapshotRef,
+) -> PluginExecutionContext:
+    """Provide standard execution context for analytics tests.
+
+    Parameters
+    ----------
+    analytics_gateway
+        Gateway fixture with full schema.
+    analytics_snapshot
+        Snapshot reference fixture.
+
+    Returns
+    -------
+    PluginExecutionContext
+        Configured execution context for plugin testing.
+    """
+    return PluginExecutionContext(
+        gateway=analytics_gateway,
+        snapshot=analytics_snapshot,
+        run_id=DEFAULT_RUN_ID,
+    )
+
+
+# =============================================================================
+# Legacy Fixture Aliases (for backward compatibility)
+# =============================================================================
+
+
+@pytest.fixture
+def test_gateway(analytics_gateway: StorageGateway) -> StorageGateway:
+    """Alias for analytics_gateway for backward compatibility.
+
+    Parameters
+    ----------
+    analytics_gateway
+        Shared analytics gateway fixture.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway with schema and macros applied.
+    """
+    return analytics_gateway
+
+
+@pytest.fixture
+def test_snapshot(analytics_snapshot: SnapshotRef) -> SnapshotRef:
+    """Alias for analytics_snapshot for backward compatibility.
+
+    Parameters
+    ----------
+    analytics_snapshot
+        Shared analytics snapshot fixture.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot with standard test defaults.
+    """
+    return analytics_snapshot
+
+
+# =============================================================================
+# Graph Plugin Test Fixtures
+# =============================================================================
 
 
 @pytest.fixture(name="graph_plugin_harness")

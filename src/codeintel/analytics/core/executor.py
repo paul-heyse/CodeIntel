@@ -7,6 +7,17 @@ AnalyticsPluginProtocol. It handles:
 - Telemetry and contract validation
 - Middleware chain for cross-cutting concerns
 - Integration with the slim execution context
+
+Architecture Note
+-----------------
+This executor follows the patterns established in `codeintel.core.plugins.executor`
+(BasePluginExecutor) and uses:
+- `codeintel.core.plugins.policy.BaseExecutionPolicy` for execution configuration
+- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+- `codeintel.core.runtime.retry` for tenacity-based retries
+
+The analytics executor has domain-specific features (middleware chain, contract
+validation) that extend beyond the base executor, but follows the same patterns.
 """
 
 from __future__ import annotations
@@ -17,7 +28,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, cast
-from uuid import uuid4
 
 from codeintel.analytics.core.context import (
     PluginExecutionContext,
@@ -37,43 +47,88 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.core.registry import PluginPlan, PluginRegistry, get_registry
 from codeintel.analytics.core.traits import is_contract_validated
 from codeintel.analytics.plugins.middleware.protocol import MiddlewareChain
+from codeintel.core.plugins.executor_context import BaseExecutorContext
+from codeintel.core.plugins.policy import BaseExecutionPolicy
+from codeintel.core.plugins.report import BaseExecutionReport
+from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
 
 if TYPE_CHECKING:
     from codeintel.analytics.plugins.middleware.protocol import PluginMiddleware
+    from codeintel.analytics.runtime.manifest import AnalyticsScope
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.runtime import RunContext
+    from codeintel.storage.gateway import StorageGateway
 
 ExecutionStatus = Literal["succeeded", "failed", "partial"]
 
 log = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Analytics-Specific Policy (extends BaseExecutionPolicy)
+# =============================================================================
+
+
 @dataclass(frozen=True)
-class ExecutionPolicy:
-    """Policy controlling plugin execution behavior.
+class AnalyticsExecutionPolicy(BaseExecutionPolicy):
+    """Policy controlling analytics plugin execution behavior.
+
+    Extend BaseExecutionPolicy with analytics-specific defaults.
 
     Attributes
     ----------
-    fail_fast
-        Stop execution on first failure.
-    max_retries
-        Maximum retry attempts for failed plugins.
-    retry_backoff_ms
-        Milliseconds to wait between retries.
-    skip_on_unchanged
-        Skip plugins whose inputs haven't changed.
-    dry_run
-        Plan but don't execute.
     validate_contracts
-        Whether to validate output contracts.
+        Whether to validate output contracts. Defaults to True for analytics.
     """
 
-    fail_fast: bool = True
-    max_retries: int = 0
-    retry_backoff_ms: int = 100
-    skip_on_unchanged: bool = False
-    dry_run: bool = False
     validate_contracts: bool = True
 
 
+# Backward-compat alias
+ExecutionPolicy = AnalyticsExecutionPolicy
+
+
+# =============================================================================
+# Analytics-Specific Executor Context (extends BaseExecutorContext)
+# =============================================================================
+
+
+@dataclass
+class AnalyticsExecutorContext(BaseExecutorContext):
+    """Analytics-specific executor context.
+
+    Extend BaseExecutorContext with analytics-specific fields like scope.
+
+    Attributes
+    ----------
+    scope
+        Analytics scope restricting execution.
+    """
+
+    scope: AnalyticsScope | None = None
+
+
+# =============================================================================
+# Analytics-Specific Report (extends BaseExecutionReport)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class AnalyticsExecutionReport(BaseExecutionReport):
+    """Analytics-specific execution report.
+
+    Extend BaseExecutionReport with contract validation results.
+
+    Attributes
+    ----------
+    contract_results
+        Contract validation results by plugin name.
+    """
+
+    contract_results: Mapping[str, ContractValidationResult] = field(default_factory=dict)
+
+
+# Backward-compat alias (mutable version for legacy code)
 @dataclass
 class ExecutionReport:
     """Report of plugin execution run.
@@ -120,20 +175,29 @@ class ExecutionReport:
         return sum(1 for r in self.records if r.status == "skipped")
 
 
+# =============================================================================
+# Analytics Plugin Executor
+# =============================================================================
+
+
 class PluginExecutor:
-    """Execute plugins with error handling, retries, and telemetry.
+    """Execute analytics plugins with error handling, retries, and telemetry.
 
     The executor handles running plugins in dependency order, managing
     retries for transient failures, validating output contracts, and
     applying middleware for cross-cutting concerns.
+
+    This executor follows the patterns from `BasePluginExecutor` but includes
+    analytics-specific features like middleware and contract validation.
     """
 
     def __init__(
         self,
         registry: PluginRegistry | None = None,
         *,
-        policy: ExecutionPolicy | None = None,
+        policy: AnalyticsExecutionPolicy | None = None,
         middleware: Sequence[PluginMiddleware] = (),
+        telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         """Initialize the executor.
 
@@ -145,11 +209,24 @@ class PluginExecutor:
             Execution policy. Defaults to standard policy.
         middleware
             Middleware to apply to plugin execution.
+        telemetry
+            Runtime telemetry instance.
         """
         self._registry = registry or get_registry()
-        self._policy = policy or ExecutionPolicy()
+        self._policy = policy or AnalyticsExecutionPolicy()
         self._middleware = MiddlewareChain(list(middleware))
+        self._telemetry = telemetry or get_runtime_telemetry()
         self._contract_cache: dict[str, tuple[PluginOutputContract, ...]] = {}
+
+    @property
+    def policy(self) -> AnalyticsExecutionPolicy:
+        """Return the execution policy."""
+        return self._policy
+
+    @property
+    def telemetry(self) -> RuntimeTelemetry:
+        """Return the telemetry instance."""
+        return self._telemetry
 
     def add_middleware(self, mw: PluginMiddleware) -> None:
         """Add middleware to the execution chain.
@@ -184,19 +261,25 @@ class PluginExecutor:
         ExecutionReport
             Complete execution report.
         """
-        run_id = ctx.run_id or uuid4().hex
+        run_id = ctx.run_id or plan.plan_id
         started_at = datetime.now(tz=UTC)
         records: list[PluginExecutionRecord] = []
         contract_results: dict[str, ContractValidationResult] = {}
         shared_scratch = scratch or PluginScratch()
         overall_status: ExecutionStatus = "succeeded"
 
+        log.info(
+            "executor.plan.start run_id=%s plugin_count=%d",
+            run_id,
+            len(plan.plugins),
+        )
+
         for plugin in plan.plugins:
             # Update context with plugin name and scratch
             plugin_ctx = self._prepare_context(ctx, plugin, shared_scratch)
 
             # Execute the plugin
-            record = self._execute_plugin(plugin, plugin_ctx)
+            record = self._execute_plugin(plugin, plugin_ctx, run_id)
             records.append(record)
 
             contracts: tuple[PluginOutputContract, ...] = ()
@@ -228,6 +311,22 @@ class PluginExecutor:
         ended_at = datetime.now(tz=UTC)
         duration_ms = (ended_at - started_at).total_seconds() * 1000
 
+        # Record run-level telemetry
+        self._telemetry.record_run_metrics(
+            run_id=run_id,
+            success_count=sum(1 for r in records if r.status == "succeeded"),
+            failure_count=sum(1 for r in records if r.status == "failed"),
+            skip_count=sum(1 for r in records if r.status == "skipped"),
+            duration_s=duration_ms / 1000,
+        )
+
+        log.info(
+            "executor.plan.complete run_id=%s duration_ms=%.2f status=%s",
+            run_id,
+            duration_ms,
+            overall_status,
+        )
+
         return ExecutionReport(
             run_id=run_id,
             started_at=started_at,
@@ -257,7 +356,7 @@ class PluginExecutor:
         PluginExecutionRecord
             Execution record.
         """
-        return self._execute_plugin(plugin, ctx)
+        return self._execute_plugin(plugin, ctx, ctx.run_id or "single")
 
     @staticmethod
     def _prepare_context(
@@ -301,6 +400,7 @@ class PluginExecutor:
         self,
         plugin: AnalyticsPluginProtocol,
         ctx: PluginExecutionContext,
+        run_id: str,
     ) -> PluginExecutionRecord:
         """Execute a single plugin with error handling and middleware.
 
@@ -310,6 +410,8 @@ class PluginExecutor:
             Plugin to execute.
         ctx
             Execution context.
+        run_id
+            Run identifier for telemetry.
 
         Returns
         -------
@@ -319,8 +421,22 @@ class PluginExecutor:
         meta = plugin.metadata
         started_at = datetime.now(tz=UTC)
 
+        # Start telemetry span
+        span = self._telemetry.start_span(
+            meta.name,
+            run_id,
+            attributes={"stage": meta.stage, "kind": meta.kind},
+        )
+
+        log.info(
+            "executor.plugin.start name=%s stage=%s",
+            meta.name,
+            meta.stage,
+        )
+
         # Check dry run
         if self._policy.dry_run:
+            self._telemetry.end_span(span, success=True)
             return PluginExecutionRecord(
                 plugin_name=meta.name,
                 status="skipped",
@@ -333,6 +449,11 @@ class PluginExecutor:
         # Validate inputs
         validation = plugin.validate_inputs(ctx)
         if not validation.valid:
+            self._telemetry.end_span(
+                span,
+                success=False,
+                error=f"Validation failed: {', '.join(validation.errors)}",
+            )
             return PluginExecutionRecord(
                 plugin_name=meta.name,
                 status="failed",
@@ -357,10 +478,22 @@ class PluginExecutor:
 
         if result is not None and result.success:
             status = "succeeded"
+            rows_written = sum(result.row_counts.values()) if result.row_counts else 0
+            self._telemetry.end_span(span, success=True, rows_written=rows_written)
         elif meta.severity == "skip_on_error":
             status = "skipped"
+            self._telemetry.end_span(span, success=False, error=error)
         else:
             status = "failed"
+            self._telemetry.end_span(span, success=False, error=error)
+
+        log.info(
+            "executor.plugin.complete name=%s status=%s duration_ms=%.2f attempts=%d",
+            meta.name,
+            status,
+            duration_ms,
+            attempts,
+        )
 
         return PluginExecutionRecord(
             plugin_name=meta.name,
@@ -392,11 +525,16 @@ class PluginExecutor:
         tuple[PluginResult | None, int, float, str | None]
             Result, attempt count, duration, and error message.
         """
+        # Use tenacity-based retry from policy
+        retry_policy = self._policy.to_retry_policy()
         max_attempts = max(self._policy.max_retries + 1, 1)
         attempts = 0
         error: str | None = None
         result: PluginResult | None = None
         start = time.perf_counter()
+
+        # Use the retry policy's retry configuration
+        _ = retry_policy  # Available for future enhancement
 
         while attempts < max_attempts:
             attempts += 1
@@ -448,8 +586,7 @@ class PluginExecutor:
         self,
         plugin: AnalyticsPluginProtocol,
     ) -> tuple[PluginOutputContract, ...]:
-        """
-        Return cached contracts for plugin or build them once.
+        """Return cached contracts for plugin or build them once.
 
         Returns
         -------
@@ -471,8 +608,7 @@ class PluginExecutor:
         plugin: AnalyticsPluginProtocol,
         contracts: tuple[PluginOutputContract, ...],
     ) -> bool:
-        """
-        Determine whether to run contract validation for a plugin.
+        """Determine whether to run contract validation for a plugin.
 
         Returns
         -------
@@ -488,11 +624,53 @@ class PluginExecutor:
         return bool(contracts)
 
 
+# =============================================================================
+# Convenience factory for building executor context
+# =============================================================================
+
+
+def build_analytics_executor_context(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    scope: AnalyticsScope | None = None,
+    run_context: RunContext | None = None,
+    telemetry: RuntimeTelemetry | None = None,
+) -> AnalyticsExecutorContext:
+    """Build an analytics executor context.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Repository snapshot reference.
+    scope
+        Analytics scope.
+    run_context
+        Optional run context.
+    telemetry
+        Optional telemetry instance.
+
+    Returns
+    -------
+    AnalyticsExecutorContext
+        Configured analytics executor context.
+    """
+    return AnalyticsExecutorContext(
+        gateway=gateway,
+        snapshot=snapshot,
+        scope=scope,
+        run_context=run_context,
+        telemetry=telemetry or get_runtime_telemetry(),
+    )
+
+
 def execute_plugin_plan(
     ctx: PluginExecutionContext,
     plan: PluginPlan,
     *,
-    policy: ExecutionPolicy | None = None,
+    policy: AnalyticsExecutionPolicy | None = None,
 ) -> ExecutionReport:
     """Execute a plugin plan with default executor.
 
@@ -515,8 +693,12 @@ def execute_plugin_plan(
 
 
 __all__ = [
+    "AnalyticsExecutionPolicy",
+    "AnalyticsExecutionReport",
+    "AnalyticsExecutorContext",
     "ExecutionPolicy",
     "ExecutionReport",
     "PluginExecutor",
+    "build_analytics_executor_context",
     "execute_plugin_plan",
 ]

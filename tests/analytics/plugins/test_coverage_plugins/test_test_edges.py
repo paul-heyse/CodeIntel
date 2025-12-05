@@ -19,15 +19,13 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.plugins.coverage.test_edges import (
     CoverageTestEdgesPlugin,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import TestCoverageStepConfig
+from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
@@ -46,9 +44,8 @@ def _create_config(tmp_path: Path | None = None) -> TestCoverageStepConfig:
     TestCoverageStepConfig
         Test configuration.
     """
-    repo_root = tmp_path or Path("/test/repo")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=repo_root)
-    coverage_file = repo_root / "coverage.json" if tmp_path else None
+    snapshot = make_snapshot(repo_root=tmp_path)
+    coverage_file = tmp_path / "coverage.json" if tmp_path else None
     return TestCoverageStepConfig(snapshot=snapshot, coverage_file=coverage_file)
 
 
@@ -267,7 +264,7 @@ def test_execute_handles_error_gracefully(
     plugin = CoverageTestEdgesPlugin()
 
     # Create a non-existent coverage file path to trigger error handling
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     bad_config = TestCoverageStepConfig(
         snapshot=snapshot,
         coverage_file=tmp_path / "nonexistent" / "coverage.db",

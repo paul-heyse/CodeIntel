@@ -1,4 +1,15 @@
-"""Dataset MCP tools registered from Operation."""
+"""Dataset MCP tools registered from Operation.
+
+Note: This module is maintained for backward compatibility. The core tool
+building logic has been consolidated in ``tool_builder.py``. New code should
+use ``register_tools_for_category`` from ``tools_base.py`` or the unified
+``register_tools`` function.
+
+See Also
+--------
+- ``codeintel.serving.mcp.tool_builder`` : Unified tool building
+- ``codeintel.serving.mcp.tools_base`` : Top-level registration
+"""
 
 from __future__ import annotations
 

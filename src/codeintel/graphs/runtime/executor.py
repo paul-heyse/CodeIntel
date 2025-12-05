@@ -2,6 +2,17 @@
 
 This module provides the execution infrastructure for running graph plugins
 without any dependency on the analytics subsystem.
+
+Architecture Note
+-----------------
+This executor follows the patterns established in `codeintel.core.plugins.executor`
+(BasePluginExecutor) and uses:
+- `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
+- `codeintel.core.plugins.report.BaseExecutionReport` as a base
+- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+
+The graphs executor has domain-specific features (manifest tracking, timeout
+execution with ThreadPoolExecutor) that extend beyond the base executor.
 """
 
 from __future__ import annotations
@@ -17,12 +28,15 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.executor_context import BaseExecutorContext
+from codeintel.core.plugins.report import BaseExecutionReport
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.core.resources import ResourceRegistry
 from codeintel.core.runtime.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
 )
+from codeintel.core.runtime.telemetry import get_runtime_telemetry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.resources.graphs import GraphResource
@@ -46,82 +60,59 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine, NxGraphEngine
-    from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Graphs-Specific Report (extends BaseExecutionReport)
+# =============================================================================
+
+
 @dataclass(frozen=True)
-class GraphRunReport:
+class GraphRunReport(BaseExecutionReport):
     """Report of a graph plugin execution run.
+
+    Extend BaseExecutionReport with graph-specific fields like manifest.
 
     Attributes
     ----------
-    run_id
-        Unique run identifier.
     repo
         Repository identifier.
     commit
         Commit SHA.
-    records
-        Execution records for each plugin.
-    success_count
-        Number of successful executions.
-    failure_count
-        Number of failed executions.
-    skip_count
-        Number of skipped executions.
-    duration_ms
-        Total run duration in milliseconds.
-    started_at
-        Run start time.
-    ended_at
-        Run end time.
-    fatal_error
-        Whether run ended due to fatal error.
     manifest
         Final manifest state.
     """
 
-    run_id: str
-    repo: str
-    commit: str
-    records: tuple[PluginExecutionRecord, ...]
-    success_count: int
-    failure_count: int
-    skip_count: int
-    duration_ms: float
-    started_at: datetime
-    ended_at: datetime
-    fatal_error: bool = False
+    repo: str = ""
+    commit: str = ""
     manifest: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
 
+# =============================================================================
+# Graphs-Specific Executor Context (extends BaseExecutorContext)
+# =============================================================================
+
+
 @dataclass
-class GraphExecutorContext:
+class GraphExecutorContext(BaseExecutorContext):
     """Context for graph plugin execution.
+
+    Extend BaseExecutorContext with graph-specific fields.
 
     Attributes
     ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Repository snapshot.
     engine
         Graph engine.
     catalog_provider
         Function catalog provider.
-    run_context
-        Optional unified run context for cross-engine correlation.
     """
 
-    gateway: StorageGateway
-    snapshot: SnapshotRef
     engine: GraphEngine | None = None
     catalog_provider: FunctionCatalogProvider | None = None
-    run_context: RunContext | None = None
 
 
 def _run_with_timeout(
@@ -547,6 +538,16 @@ def run_graph_plugins(
         run_span, status_counts["success"], status_counts["failure"], status_counts["skipped"]
     )
 
+    # Record to central telemetry as well
+    telemetry = context.telemetry
+    telemetry.record_run_metrics(
+        run_id=plan.run_id,
+        success_count=status_counts["success"],
+        failure_count=status_counts["failure"],
+        skip_count=status_counts["skipped"],
+        duration_s=duration_ms / 1000,
+    )
+
     if run_context is not None and runs is not None:
         _record_graph_steps(runs, run_context.run_id, records, plan)
 
@@ -569,16 +570,13 @@ def run_graph_plugins(
 
     return GraphRunReport(
         run_id=plan.run_id,
-        repo=plan.repo,
-        commit=plan.commit,
-        records=tuple(records),
-        success_count=status_counts["success"],
-        failure_count=status_counts["failure"],
-        skip_count=status_counts["skipped"],
-        duration_ms=duration_ms,
         started_at=started_at,
         ended_at=ended_at,
+        duration_ms=duration_ms,
+        records=tuple(records),
         fatal_error=fatal_error,
+        repo=plan.repo,
+        commit=plan.commit,
         manifest=manifest,
     )
 
@@ -692,6 +690,7 @@ def run_graph_plugin_batch(
     executor_context = GraphExecutorContext(
         gateway=gateway,
         snapshot=snapshot,
+        telemetry=get_runtime_telemetry(),
         engine=engine,
         catalog_provider=catalog_provider,
     )
@@ -706,3 +705,8 @@ __all__ = [
     "run_graph_plugin_batch",
     "run_graph_plugins",
 ]
+
+
+# Backward compatibility: expose for imports
+GraphsExecutorContext = GraphExecutorContext
+GraphsExecutionReport = GraphRunReport

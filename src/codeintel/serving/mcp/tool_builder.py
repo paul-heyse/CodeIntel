@@ -1,0 +1,258 @@
+"""Declarative MCP tool registration from the Operation catalog.
+
+Tool Registration Architecture
+------------------------------
+Tools are registered declaratively based on the Operation catalog
+(``operations/catalog.py``). Each Operation defines:
+
+- ``id``: Unique operation identifier
+- ``tool_name``: MCP tool name (if exposed as a tool)
+- ``backend_method``: Method name on QueryBackend or QueryService
+- ``output_model_name``: Response model class name
+- ``category``: Tool category for filtering
+
+Registration Flow
+~~~~~~~~~~~~~~~~~
+::
+
+    Operation Catalog
+         │
+         ▼
+    build_tool_from_operation()  ──▶ MCP tool function
+         │
+         ▼
+    register_tools_for_category()  ──▶ mcp.tool()
+
+All tools are derived from the Operation catalog. The per-category
+registration functions (``register_function_tools``, etc.) remain for
+backward compatibility but delegate to this unified builder.
+
+Auto-Pipeline Support
+~~~~~~~~~~~~~~~~~~~~~
+When ``auto_pipeline`` is enabled, the tool builder automatically checks
+for and runs missing pipeline prerequisites before executing operations.
+This is controlled via the ``config`` parameter and the
+``is_auto_pipeline_enabled()`` flag.
+
+See Also
+--------
+- ``codeintel.serving.operations.catalog`` : Operation definitions
+- ``codeintel.serving.mcp.tools_base`` : Top-level registration entry point
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
+
+from mcp.server.fastmcp import FastMCP
+
+from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
+from codeintel.serving.context import (
+    RequestContext,
+    reset_current_request_context,
+    set_current_request_context,
+)
+from codeintel.serving.mcp import models
+from codeintel.serving.mcp.models import ProblemDetail
+from codeintel.serving.mcp.serialization import (
+    ResponseFactory,
+    SupportsFromDomain,
+    SupportsModelValidate,
+)
+from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
+from codeintel.serving.operations import Operation, iter_operations
+from codeintel.serving.services.errors import generate_correlation_id
+
+if TYPE_CHECKING:
+    from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.backend import QueryBackend
+
+
+class _ModelLike:
+    """Protocol for objects with model_dump method."""
+
+    def model_dump(self) -> dict[str, object]:
+        """Serialize model to dictionary."""
+
+
+def _serialize_payload(
+    payload: object,
+    model_cls: ResponseFactory | None,
+) -> dict[str, object]:
+    """Serialize a response payload to a dictionary.
+
+    Parameters
+    ----------
+    payload
+        The response object from a backend method.
+    model_cls
+        Optional response model class for conversion.
+
+    Returns
+    -------
+    dict[str, object]
+        Serialized payload as a dictionary.
+    """
+    if hasattr(payload, "model_dump"):
+        return cast("_ModelLike", payload).model_dump()
+    if model_cls is not None:
+        if hasattr(model_cls, "from_domain"):
+            return cast(
+                "_ModelLike",
+                cast("SupportsFromDomain", model_cls).from_domain(payload),
+            ).model_dump()
+        validator = cast("SupportsModelValidate", model_cls).model_validate
+        return cast("_ModelLike", validator(payload)).model_dump()
+    return cast("dict[str, object]", payload)
+
+
+def build_tool_from_operation(
+    spec: Operation,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> Callable[..., dict[str, object] | dict[str, ProblemDetail]]:
+    """Build an MCP tool function from an Operation specification.
+
+    This is the core factory function that transforms an Operation definition
+    into a callable MCP tool. The resulting tool handles:
+
+    - Request context setup with correlation IDs
+    - Auto-pipeline prerequisite checking
+    - Response serialization via the appropriate model class
+    - Error wrapping via the ``_wrap`` decorator
+
+    Parameters
+    ----------
+    spec
+        Operation specification defining the tool.
+    backend
+        Backend or service providing the implementation method.
+    config
+        Optional serving config for auto-pipeline support.
+
+    Returns
+    -------
+    Callable
+        Tool function suitable for FastMCP registration.
+
+    Raises
+    ------
+    TypeError
+        If the backend does not implement the required method.
+    """
+    backend_attr = getattr(backend, spec.backend_method, None)
+    if not callable(backend_attr):
+        message = (
+            f"Backend {backend!r} does not implement method {spec.backend_method!r} "
+            f"for Operation id={spec.id!r}"
+        )
+        raise TypeError(message)
+    backend_method: Callable[..., object] = backend_attr
+    model_cls = cast("ResponseFactory | None", getattr(models, spec.output_model_name, None))
+
+    @_wrap
+    def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
+        # Check for auto-pipeline prerequisites
+        if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
+            ensure_prereqs_for_mcp(
+                op_id=spec.id,
+                config=config,
+                backend=cast("QueryBackend", backend),
+            )
+
+        correlation_id = generate_correlation_id()
+        dataset = kwargs.get("dataset_name") or kwargs.get("dataset")
+        ctx = RequestContext(
+            correlation_id=correlation_id,
+            transport="mcp",
+            operation=spec.id,
+            dataset=str(dataset) if dataset is not None else None,
+            repo=getattr(backend, "repo", None),
+            commit=getattr(backend, "commit", None),
+            snapshot=None,
+            graph_scope=kwargs.get("scope"),
+            client_id=None,
+            user_agent=None,
+        )
+        token = set_current_request_context(ctx)
+        try:
+            response = backend_method(**kwargs)
+            return _serialize_payload(response, model_cls)
+        finally:
+            reset_current_request_context(token)
+
+    return cast("Callable[..., dict[str, object] | dict[str, ProblemDetail]]", _tool)
+
+
+def register_tools_for_category(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    categories: set[str],
+    config: ServingConfig | None = None,
+) -> None:
+    """Register MCP tools for specific categories from the Operation catalog.
+
+    This function iterates through all operations in the catalog and registers
+    those matching the specified categories as MCP tools.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP instance to register tools against.
+    backend
+        Backend or service providing implementations.
+    categories
+        Set of category names to register (e.g., {"functions", "graph"}).
+    config
+        Optional serving config for auto-pipeline support.
+    """
+    for spec in iter_operations():
+        if spec.category not in categories or spec.tool_name is None:
+            continue
+        tool = build_tool_from_operation(spec, backend, config)
+        tool.__name__ = spec.tool_name
+        tool.__doc__ = spec.description or spec.summary
+        mcp.tool(
+            name=spec.tool_name,
+            description=spec.summary,
+        )(tool)
+
+
+def register_all_tools(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> None:
+    """Register all MCP tools from the Operation catalog.
+
+    This is a convenience function that registers all operations that have
+    a ``tool_name`` defined. Use ``register_tools_for_category`` if you need
+    to filter by specific categories.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP instance to register tools against.
+    backend
+        Backend or service providing implementations.
+    config
+        Optional serving config for auto-pipeline support.
+    """
+    for spec in iter_operations():
+        if spec.tool_name is None:
+            continue
+        tool = build_tool_from_operation(spec, backend, config)
+        tool.__name__ = spec.tool_name
+        tool.__doc__ = spec.description or spec.summary
+        mcp.tool(
+            name=spec.tool_name,
+            description=spec.summary,
+        )(tool)
+
+
+__all__ = [
+    "build_tool_from_operation",
+    "register_all_tools",
+    "register_tools_for_category",
+]

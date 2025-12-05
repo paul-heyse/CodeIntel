@@ -21,13 +21,12 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test-repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_MAX_CONDITIONS = 10
 GOID_SIMPLE = 10001
 GOID_TYPED = 10002
@@ -62,7 +61,7 @@ def contracts_config(tmp_path: Path) -> FunctionContractsStepConfig:
     FunctionContractsStepConfig
         Configuration for testing.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = SnapshotRef(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT, repo_root=tmp_path)
     return FunctionContractsStepConfig(
         snapshot=snapshot,
         max_conditions_per_func=TEST_MAX_CONDITIONS,
@@ -237,8 +236,8 @@ def _seed_docstrings(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         [
-            TEST_REPO,
-            TEST_COMMIT,
+            DEFAULT_REPO,
+            DEFAULT_COMMIT,
             rel_path,
             rel_path.replace("/", ".").replace(".py", ""),
             qualname,
@@ -277,8 +276,8 @@ def _seed_function_types(
         ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         [
-            TEST_REPO,
-            TEST_COMMIT,
+            DEFAULT_REPO,
+            DEFAULT_COMMIT,
             goid,
             return_type,
             json.dumps(param_types) if param_types else "{}",
@@ -321,7 +320,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     assert result is not None
@@ -350,7 +349,7 @@ def test_compute_contracts_with_missing_ast(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     # Row should be created with empty contracts
@@ -400,7 +399,7 @@ def test_compute_contracts_with_docstring_data(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -447,7 +446,7 @@ def test_compute_contracts_with_type_annotations(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_TYPED],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_TYPED],
     ).fetchone()
 
     assert result is not None
@@ -490,7 +489,7 @@ def test_compute_contracts_with_guards_and_catalog(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_GUARDED],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_GUARDED],
     ).fetchone()
 
     assert result is not None
@@ -538,7 +537,7 @@ def test_compute_contracts_with_bool_return_type(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -595,7 +594,7 @@ def test_compute_contracts_confidence_score(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -637,7 +636,7 @@ def test_compute_contracts_multiple_goids(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     assert result is not None
@@ -683,7 +682,7 @@ def test_compute_contracts_with_nullable_return(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -722,7 +721,7 @@ def test_compute_contracts_with_isinstance_guard(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -765,7 +764,7 @@ def test_compute_contracts_with_len_check(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -803,7 +802,7 @@ def test_compute_contracts_with_predicate_name(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None
@@ -847,7 +846,7 @@ def test_compute_contracts_with_doc_return_none(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, GOID_SIMPLE],
+        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
     assert result is not None

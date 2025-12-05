@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
+    from tests._helpers.configs.provisioning_config import ProvisionedGateway
+
 
 # Import constants from central module
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -241,6 +243,43 @@ class TestContext:
             The test context's snapshot reference.
         """
         return self.snapshot
+
+    @classmethod
+    def from_provisioned(cls, provisioned: ProvisionedGateway) -> TestContext:
+        """Create a TestContext from a ProvisionedGateway.
+
+        This factory method enables interoperability between the older
+        ProvisionedGateway pattern and the newer TestContext pattern.
+
+        Parameters
+        ----------
+        provisioned
+            A provisioned gateway from orchestration functions.
+
+        Returns
+        -------
+        TestContext
+            Context configured with the provisioned gateway's settings.
+        """
+        snapshot = SnapshotRef(
+            repo=provisioned.repo,
+            commit=provisioned.commit,
+            repo_root=provisioned.repo_root,
+        )
+        build_paths = BuildPaths.from_repo_root(
+            provisioned.repo_root,
+            build_dir=provisioned.build_dir,
+        )
+        return cls(
+            snapshot=snapshot,
+            gateway=provisioned.gateway,
+            build_paths=build_paths,
+            extra={
+                "coverage_file": provisioned.coverage_file,
+                "runner": provisioned.runner,
+                "document_output_dir": provisioned.document_output_dir,
+            },
+        )
 
     def require(self, *seed_packs: SeedPack) -> Self:
         """Ensure seed packs are applied (idempotent).

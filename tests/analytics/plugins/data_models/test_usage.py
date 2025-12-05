@@ -18,30 +18,32 @@ from codeintel.analytics.core.protocol import (
     ValidationResult,
 )
 from codeintel.analytics.plugins.data_models.usage import DataModelUsagePlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import DataModelUsageStepConfig
+from tests._helpers.factories import make_step_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config() -> DataModelUsageStepConfig:
+def _create_config(tmp_path: Path | None = None) -> DataModelUsageStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     DataModelUsageStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return DataModelUsageStepConfig(snapshot=snapshot)
+    return make_step_config(DataModelUsageStepConfig, tmp_path)
 
 
 def _create_mock_provider(name: str) -> MagicMock:

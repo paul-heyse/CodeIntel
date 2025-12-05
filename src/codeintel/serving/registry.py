@@ -1,16 +1,27 @@
 """Unified registry for serving datasets and operations.
 
-.. deprecated::
-    This module is a compatibility shim. All functionality has been moved to
-    ``codeintel.serving.operations.catalog``. Import from there directly.
+.. deprecated:: 0.2.0
+    This module will be removed in version 1.0.0.
+    Import from ``codeintel.serving.operations.catalog`` instead.
 
 This module re-exports dataflow graph building and dataset metadata functions
 from the canonical ``operations.catalog`` module for backward compatibility.
+All new code should import directly from ``codeintel.serving.operations.catalog``.
+
+Migration
+---------
+Replace::
+
+    from codeintel.serving.registry import build_serving_dataflow_graph
+
+With::
+
+    from codeintel.serving.operations.catalog import build_serving_dataflow_graph
 """
 
 from __future__ import annotations
 
-import warnings
+import warnings as _warnings
 
 # Re-export all symbols from the canonical location
 from codeintel.serving.operations.catalog import (
@@ -25,16 +36,13 @@ from codeintel.serving.operations.catalog import (
     iter_registry_operations,
 )
 
-
-def _emit_deprecation_warning() -> None:
-    """Emit a deprecation warning for this module."""
-    warnings.warn(
-        "codeintel.serving.registry is deprecated. "
-        "Import from codeintel.serving.operations.catalog instead.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-
+# Emit deprecation warning on first import (after imports to satisfy E402)
+_warnings.warn(
+    "codeintel.serving.registry is deprecated and will be removed in v1.0.0. "
+    "Import from codeintel.serving.operations.catalog instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "DatasetMeta",

@@ -26,7 +26,7 @@ from codeintel.pipeline.export.manifest import (
     write_per_dataset_manifest,
 )
 from codeintel.pipeline.export.validate_exports import validate_files
-from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, ProblemDetails, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBConnection,

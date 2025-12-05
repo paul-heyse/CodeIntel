@@ -11,48 +11,55 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 from codeintel.analytics.core.protocol import (
     PluginResult,
     ValidationResult,
 )
 from codeintel.analytics.plugins.functions.history import FunctionHistoryPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import FunctionHistoryStepConfig
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_step_config
+from tests._helpers.fakes import TestExecutionContextBuilder
 
 if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config() -> FunctionHistoryStepConfig:
+def _create_config(tmp_path: Path) -> FunctionHistoryStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary path for repo root.
 
     Returns
     -------
     FunctionHistoryStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return FunctionHistoryStepConfig(snapshot=snapshot)
+    return make_step_config(FunctionHistoryStepConfig, tmp_path)
 
 
-def _create_mock_context(
+def _create_context(
+    tmp_path: Path,
     *,
     has_config: bool = True,
     has_tool_runner: bool = False,
-) -> MagicMock:
-    """Create a mock execution context.
+) -> PluginExecutionContext:
+    """Create a real execution context for testing.
 
     Parameters
     ----------
+    tmp_path
+        Temporary path for repo root.
     has_config
         Whether config is available.
     has_tool_runner
@@ -60,27 +67,20 @@ def _create_mock_context(
 
     Returns
     -------
-    MagicMock
-        Mock execution context.
+    PluginExecutionContext
+        Real execution context.
     """
-    ctx = MagicMock()
+    builder = TestExecutionContextBuilder.create(tmp_path)
 
-    ctx.has_config.return_value = has_config
     if has_config:
-        ctx.get_config.return_value = _create_config()
-    else:
-        ctx.get_config.side_effect = ValueError("Config not found")
+        config = _create_config(tmp_path)
+        builder.with_config(FunctionHistoryStepConfig, config)
 
-    # Set up extra dict with optional tool_runner
     if has_tool_runner:
-        mock_runner = MagicMock()
-        ctx.extra = {"tool_runner": mock_runner}
-    else:
-        ctx.extra = {}
+        # Use a real object instead of mock
+        builder.with_extra("tool_runner", object())
 
-    ctx.gateway = MagicMock()
-
-    return ctx
+    return builder.build()
 
 
 # =============================================================================
@@ -143,10 +143,10 @@ def test_function_history_plugin_metadata_depends_on() -> None:
 # =============================================================================
 
 
-def test_validate_inputs_success_with_config() -> None:
+def test_validate_inputs_success_with_config(tmp_path: Path) -> None:
     """Validation succeeds when config is present."""
     plugin = FunctionHistoryPlugin()
-    ctx = _create_mock_context(has_config=True)
+    ctx = _create_context(tmp_path, has_config=True)
 
     result = plugin.validate_inputs(ctx)
 
@@ -154,10 +154,10 @@ def test_validate_inputs_success_with_config() -> None:
     assert result.valid is True
 
 
-def test_validate_inputs_failure_without_config() -> None:
+def test_validate_inputs_failure_without_config(tmp_path: Path) -> None:
     """Validation fails when config is missing."""
     plugin = FunctionHistoryPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -165,10 +165,10 @@ def test_validate_inputs_failure_without_config() -> None:
     assert result.valid is False
 
 
-def test_validate_inputs_returns_error_details() -> None:
+def test_validate_inputs_returns_error_details(tmp_path: Path) -> None:
     """Validation returns specific error messages."""
     plugin = FunctionHistoryPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.validate_inputs(ctx)
 
@@ -183,10 +183,10 @@ def test_validate_inputs_returns_error_details() -> None:
 # =============================================================================
 
 
-def test_execute_fails_without_config() -> None:
+def test_execute_fails_without_config(tmp_path: Path) -> None:
     """Execute fails when config is not available."""
     plugin = FunctionHistoryPlugin()
-    ctx = _create_mock_context(has_config=False)
+    ctx = _create_context(tmp_path, has_config=False)
 
     result = plugin.execute(ctx)
 
@@ -194,47 +194,59 @@ def test_execute_fails_without_config() -> None:
     assert result.success is False
 
 
-def test_execute_succeeds_without_tool_runner(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_without_tool_runner(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds without optional tool_runner."""
     plugin = FunctionHistoryPlugin()
+    config = _create_config(tmp_path)
 
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.extra = {}
+    ctx = (
+        TestExecutionContextBuilder(fresh_gateway, config.snapshot)
+        .with_config(FunctionHistoryStepConfig, config)
+        .build()
+    )
 
     result = plugin.execute(ctx)
 
     assert result.success is True
 
 
-def test_execute_succeeds_with_tool_runner(fresh_gateway: StorageGateway) -> None:
+def test_execute_succeeds_with_tool_runner(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute succeeds with optional tool_runner."""
     plugin = FunctionHistoryPlugin()
+    config = _create_config(tmp_path)
 
-    mock_runner = MagicMock()
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.extra = {"tool_runner": mock_runner}
+    ctx = (
+        TestExecutionContextBuilder(fresh_gateway, config.snapshot)
+        .with_config(FunctionHistoryStepConfig, config)
+        .with_extra("tool_runner", object())
+        .build()
+    )
 
     result = plugin.execute(ctx)
 
     assert result.success is True
 
 
-def test_execute_passes_tool_runner_to_domain(fresh_gateway: StorageGateway) -> None:
+def test_execute_passes_tool_runner_to_domain(
+    tmp_path: Path,
+    fresh_gateway: StorageGateway,
+) -> None:
     """Execute passes tool_runner to domain function when available."""
     plugin = FunctionHistoryPlugin()
+    config = _create_config(tmp_path)
 
-    mock_runner = MagicMock()
-    ctx = MagicMock()
-    ctx.gateway = fresh_gateway
-    ctx.has_config.return_value = True
-    ctx.get_config.return_value = _create_config()
-    ctx.extra = {"tool_runner": mock_runner}
+    ctx = (
+        TestExecutionContextBuilder(fresh_gateway, config.snapshot)
+        .with_config(FunctionHistoryStepConfig, config)
+        .with_extra("tool_runner", object())
+        .build()
+    )
 
     # Execute should not raise and should pass runner to domain
     result = plugin.execute(ctx)
@@ -282,3 +294,7 @@ def test_plugin_resource_hints() -> None:
     assert hints.max_runtime_ms > 0
     assert hints.priority is not None
     assert hints.priority > 0
+
+
+# Ensure DEFAULT_REPO and DEFAULT_COMMIT are available for assertion checks
+_ = DEFAULT_REPO, DEFAULT_COMMIT

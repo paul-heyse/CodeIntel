@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.backend.datasets import build_dataset_registry
 from codeintel.serving.bootstrap import (
     BackendResourceOptions,
     DatasetRegistryOptions,
@@ -14,7 +15,6 @@ from codeintel.serving.bootstrap import (
     build_backend_resource,
     build_service_from_config,
 )
-from codeintel.serving.http.datasets import build_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway

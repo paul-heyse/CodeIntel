@@ -11,7 +11,6 @@ compatibility with existing tests.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -19,13 +18,15 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from codeintel.storage.macros import ensure_ingest_macros
 from codeintel.storage.schema import apply_all_schemas
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fakes import create_test_snapshot
 
 # =============================================================================
-# Constants
+# Constants (aliases for backward compatibility)
 # =============================================================================
 
-ADAPTER_TEST_REPO = "test/repo"
-ADAPTER_TEST_COMMIT = "abc123"
+ADAPTER_TEST_REPO = DEFAULT_REPO
+ADAPTER_TEST_COMMIT = DEFAULT_COMMIT
 
 
 # =============================================================================
@@ -77,11 +78,7 @@ def adapter_snapshot() -> SnapshotRef:
     SnapshotRef
         Snapshot with test repo and commit identifiers.
     """
-    return SnapshotRef(
-        repo=ADAPTER_TEST_REPO,
-        commit=ADAPTER_TEST_COMMIT,
-        repo_root=Path.cwd(),
-    )
+    return create_test_snapshot()
 
 
 __all__ = [

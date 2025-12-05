@@ -1,4 +1,77 @@
-"""Typed MCP request/response models and error payloads."""
+"""Typed MCP request/response models and error payloads.
+
+Transport Model Layer
+---------------------
+This module provides Pydantic models for HTTP/MCP serialization. These models
+form the **Transport Layer** in the dual-model architecture.
+
+Dual-Model Architecture
+~~~~~~~~~~~~~~~~~~~~~~~
+The serving layer maintains two parallel model systems by design:
+
+1. **Domain Models** (``domain_models.py``)
+   - Pure Python dataclasses for business logic
+   - Used within the Service layer
+   - No serialization dependencies
+
+2. **Transport Models** (this module)
+   - Pydantic BaseModel subclasses
+   - JSON serialization and validation
+   - Provide ``from_domain()`` and ``to_domain()`` converters
+
+Why Two Systems?
+~~~~~~~~~~~~~~~~
+- **Domain Purity**: Service layer stays independent of serialization
+- **Validation at Boundaries**: Pydantic validation only at transport layer
+- **Performance**: Dataclasses are faster for internal processing
+- **Testability**: Domain models are easy to construct in tests
+
+Model Correspondence
+~~~~~~~~~~~~~~~~~~~~
+Each transport model corresponds to a domain model in ``domain_models.py``:
+
+| Transport Model | Domain Model | Converter Methods |
+|-----------------|--------------|-------------------|
+| ``FunctionSummaryResponse`` | ``dm.FunctionSummaryResult`` | ``from_domain()``, ``to_domain()`` |
+| ``HighRiskFunctionsResponse`` | ``dm.HighRiskFunctionsResult`` | ``from_domain()``, ``to_domain()`` |
+| ``CallGraphNeighborsResponse`` | ``dm.CallGraphNeighbors`` | ``from_domain()``, ``to_domain()`` |
+| ``GraphNeighborhoodResponse`` | ``dm.GraphNeighborhood`` | ``from_domain()``, ``to_domain()`` |
+| ... | ... | ... |
+
+Conversion Flow
+~~~~~~~~~~~~~~~
+::
+
+    [Client Request]
+         │
+         ▼
+    Transport Model (Pydantic) ──from_domain()──▶ Response to Client
+         │                                           ▲
+         │ to_domain()                               │
+         ▼                                           │
+    Domain Model (dataclass) ◀──────────────────────┘
+         │
+         ▼
+    [Service Layer Processing]
+
+Usage Pattern
+~~~~~~~~~~~~~
+::
+
+    # At Transport layer (HTTP route or MCP tool):
+    domain_result = service.get_function_summary(...)  # Returns domain model
+    response = FunctionSummaryResponse.from_domain(domain_result)  # Convert
+    return response  # Pydantic model serializes to JSON
+
+    # In HttpQueryService (reverse direction):
+    http_response = self._http_call(...)  # Returns Pydantic model
+    return http_response.to_domain()  # Convert back to domain model
+
+See Also
+--------
+- ``codeintel.serving.domain_models`` : Domain models (dataclasses)
+- ``codeintel.serving.services.query_service`` : Service layer contract
+"""
 
 from __future__ import annotations
 

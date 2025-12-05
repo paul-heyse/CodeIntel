@@ -42,7 +42,7 @@ from codeintel.pipeline.export.runner import (
     ExportRunner,
     run_validated_exports,
 )
-from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, log_problem
 from codeintel.storage.gateway import StorageGateway
 

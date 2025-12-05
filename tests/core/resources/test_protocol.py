@@ -324,6 +324,7 @@ def test_lazy_resource_is_loaded_after_get() -> None:
 
 def test_lazy_resource_caches_value() -> None:
     """Verify LazyResource caches loaded value."""
+
     class CountingLazy(LazyResource[int]):
         def __init__(self, name: str) -> None:
             super().__init__(name)

@@ -18,27 +18,29 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.plugins.tests.behavioral_coverage import (
     BehavioralCoveragePlugin,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
+from tests._helpers.factories import make_step_config
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config() -> BehavioralCoverageStepConfig:
+def _create_config(tmp_path: Path | None = None) -> BehavioralCoverageStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     BehavioralCoverageStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return BehavioralCoverageStepConfig(snapshot=snapshot)
+    return make_step_config(BehavioralCoverageStepConfig, tmp_path)
 
 
 def _create_mock_context(

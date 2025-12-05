@@ -25,20 +25,20 @@ from codeintel.analytics.testing.coverage.edges import (
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK, TestContext
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
 # =============================================================================
 # Test Constants
 # =============================================================================
 
-# Test data constants
-TEST_REPO = "test_repo"
-TEST_COMMIT = "abc123"
+# Test data constants (non-repo/commit)
 TEST_REL_PATH = "src/module.py"
 TEST_QUALNAME = "my_function"
 TEST_GOID = 12345
 TEST_START_LINE = 10
 TEST_END_LINE = 20
-TEST_URN = f"urn:codeintel:{TEST_REPO}:{TEST_COMMIT}:{TEST_REL_PATH}#{TEST_QUALNAME}"
+TEST_URN = f"urn:codeintel:{DEFAULT_REPO}:{DEFAULT_COMMIT}:{TEST_REL_PATH}#{TEST_QUALNAME}"
 
 # Edge computation constants
 EXPECTED_EMPTY_LIST_LENGTH = 0
@@ -54,7 +54,7 @@ class TestEdgeContext:
     def test_creates_edge_context(tmp_path: Path) -> None:
         """Verify EdgeContext stores all required fields."""
         now = datetime.now(UTC)
-        snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+        snapshot = make_snapshot(repo_root=tmp_path)
         cfg = TestCoverageStepConfig(snapshot=snapshot)
         ctx = EdgeContext(
             status_by_test={"test_a": "passed", "test_b": "failed"},
@@ -63,14 +63,14 @@ class TestEdgeContext:
             test_meta_by_id={"test_a": (123, "urn:test_a")},
         )
         assert ctx.status_by_test["test_a"] == "passed"
-        assert ctx.cfg.repo == TEST_REPO
+        assert ctx.cfg.repo == DEFAULT_REPO
         assert ctx.now == now
         assert ctx.test_meta_by_id["test_a"] == (123, "urn:test_a")
 
     @staticmethod
     def test_edge_context_allows_empty_dicts(tmp_path: Path) -> None:
         """Verify EdgeContext works with empty dictionaries."""
-        snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+        snapshot = make_snapshot(repo_root=tmp_path)
         cfg = TestCoverageStepConfig(snapshot=snapshot)
         ctx = EdgeContext(
             status_by_test={},
@@ -134,7 +134,7 @@ class TestBuildEdgesForFile:
         EdgeContext
             Configured edge context for testing.
         """
-        snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=repo_root)
+        snapshot = make_snapshot(repo_root=repo_root)
         cfg = TestCoverageStepConfig(snapshot=snapshot)
         return EdgeContext(
             status_by_test={"test_func": "passed"},
@@ -202,8 +202,8 @@ class TestBuildEdgesForFile:
         edge = result[0]
         assert edge["test_id"] == "test_func"
         assert edge["function_goid_h128"] == TEST_GOID
-        assert edge["repo"] == TEST_REPO
-        assert edge["commit"] == TEST_COMMIT
+        assert edge["repo"] == DEFAULT_REPO
+        assert edge["commit"] == DEFAULT_COMMIT
         assert edge["coverage_ratio"] == EXPECTED_COVERAGE_RATIO_FULL
 
     def test_handles_partial_coverage(self, tmp_path: Path) -> None:
@@ -264,7 +264,7 @@ class TestBuildEdgesForFile:
     @staticmethod
     def test_uses_unknown_status_for_unmapped_test(tmp_path: Path) -> None:
         """Verify uses 'unknown' status for tests not in status_by_test."""
-        snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+        snapshot = make_snapshot(repo_root=tmp_path)
         cfg = TestCoverageStepConfig(snapshot=snapshot)
         ctx = EdgeContext(
             status_by_test={},  # No status mapping

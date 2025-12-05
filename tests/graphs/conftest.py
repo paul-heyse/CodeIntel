@@ -32,6 +32,7 @@ from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphTelemetryTestEnv,
@@ -44,13 +45,6 @@ from tests._helpers.seeds.golden_graphs import (
     GOLDEN_REPO,
     seed_golden_graphs,
 )
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-DEFAULT_REPO = "demo/repo"
-DEFAULT_COMMIT = "deadbeef"
-
 
 # ---------------------------------------------------------------------------
 # Gateway Fixtures
@@ -98,7 +92,7 @@ def graph_snapshot(tmp_path: Path) -> SnapshotRef:
     SnapshotRef
         Standard test snapshot with demo/repo and deadbeef commit.
     """
-    return SnapshotRef(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT, repo_root=tmp_path)
+    return create_test_snapshot(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -232,8 +226,6 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 __all__ = [
-    "DEFAULT_COMMIT",
-    "DEFAULT_REPO",
     "golden_gateway",
     "golden_snapshot",
     "graph_executor_env",

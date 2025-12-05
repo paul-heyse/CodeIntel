@@ -1,4 +1,15 @@
-"""DuckDB-backed query service shared by all serving surfaces."""
+"""DuckDB-backed query service shared by all serving surfaces.
+
+This module provides the central ``DuckDBQueryService`` which composes
+the query layer backends (now named ``*QueryLayer`` for clarity).
+
+See Also
+--------
+- ``FunctionQueryLayer`` : Function-related queries
+- ``ProfileQueryLayer`` : Profile/module queries
+- ``SubsystemQueryLayer`` : Subsystem queries
+- ``DatasetQueryLayer`` : Dataset queries
+"""
 
 from __future__ import annotations
 
@@ -12,10 +23,10 @@ from codeintel.serving.backend.core import (
     GraphEngineProvider,
     StorageGateway,
 )
-from codeintel.serving.backend.dataset_backend import DatasetBackend
-from codeintel.serving.backend.function_backend import FunctionBackend
+from codeintel.serving.backend.dataset_backend import DatasetQueryLayer
+from codeintel.serving.backend.function_backend import FunctionQueryLayer
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.serving.backend.profile_backend import ProfileBackend
+from codeintel.serving.backend.profile_backend import ProfileQueryLayer
 from codeintel.serving.backend.query_api import (
     DatasetQueriesApi,
     DuckDBQueryApi,
@@ -23,38 +34,38 @@ from codeintel.serving.backend.query_api import (
     ProfileQueriesApi,
     SubsystemQueriesApi,
 )
-from codeintel.serving.backend.subsystem_backend import SubsystemBackend
+from codeintel.serving.backend.subsystem_backend import SubsystemQueryLayer
 
 
 @dataclass
 class DuckDBQueryService(DuckDBQueryApi):
-    """Shared query runner facade delegating to backend services."""
+    """Shared query runner facade delegating to query layer services."""
 
     context: BackendContext
     repositories: DuckDBRepositories
     engine_provider: GraphEngineProvider
 
-    _functions: FunctionBackend = field(init=False, repr=False)
-    _modules: ProfileBackend = field(init=False, repr=False)
-    _subsystems: SubsystemBackend = field(init=False, repr=False)
-    _datasets: DatasetBackend = field(init=False, repr=False)
+    _functions: FunctionQueryLayer = field(init=False, repr=False)
+    _modules: ProfileQueryLayer = field(init=False, repr=False)
+    _subsystems: SubsystemQueryLayer = field(init=False, repr=False)
+    _datasets: DatasetQueryLayer = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Construct backend delegates backed by shared context/repos."""
-        self._functions = FunctionBackend(
+        """Construct query layer delegates backed by shared context/repos."""
+        self._functions = FunctionQueryLayer(
             context=self.context,
             repositories=self.repositories,
             engine_provider=self.engine_provider,
         )
-        self._modules = ProfileBackend(
+        self._modules = ProfileQueryLayer(
             context=self.context,
             repositories=self.repositories,
         )
-        self._subsystems = SubsystemBackend(
+        self._subsystems = SubsystemQueryLayer(
             context=self.context,
             repositories=self.repositories,
         )
-        self._datasets = DatasetBackend(
+        self._datasets = DatasetQueryLayer(
             context=self.context,
             repositories=self.repositories,
         )

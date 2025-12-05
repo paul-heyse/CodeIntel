@@ -23,6 +23,10 @@ from tests._helpers.harnesses.base import (
     BaseTestHarness,
     ResultLike,
 )
+from tests._helpers.harnesses.graphs import (
+    GraphPluginTestHarness,
+    NewPluginTestHarness,
+)
 from tests._helpers.harnesses.ingest_setup import IngestTestSetup
 from tests._helpers.harnesses.ingestion import (
     IngestPluginResultAssertions,
@@ -33,9 +37,11 @@ from tests._helpers.harnesses.ingestion import (
 __all__ = [
     "BaseResultAssertions",
     "BaseTestHarness",
+    "GraphPluginTestHarness",
     "IngestPluginResultAssertions",
     "IngestPluginTestHarness",
     "IngestTestSetup",
+    "NewPluginTestHarness",
     "PluginResultAssertions",
     "PluginTestHarness",
     "ResultLike",

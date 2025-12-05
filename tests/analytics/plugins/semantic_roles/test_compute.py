@@ -12,12 +12,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from codeintel.analytics.plugins.semantic_roles.compute import SemanticRolesPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import SemanticRolesStepConfig
+from tests._helpers.factories import make_step_config
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_PROVIDES_COUNT = 1
@@ -28,16 +26,20 @@ MAX_RUNTIME_MS = 90_000
 PRIORITY_VALUE = 50
 
 
-def _create_config() -> SemanticRolesStepConfig:
+def _create_config(tmp_path: Path | None = None) -> SemanticRolesStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     SemanticRolesStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return SemanticRolesStepConfig(snapshot=snapshot)
+    return make_step_config(SemanticRolesStepConfig, tmp_path)
 
 
 def _create_mock_context(

@@ -14,11 +14,10 @@ import pytest
 
 from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
 from codeintel.config import HotspotsStepConfig
-from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.factories import make_snapshot
 
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 EXPECTED_COMMIT_COUNT = 2
 EXPECTED_AUTHOR_COUNT = 2
 EXPECTED_LINES_ADDED = 30
@@ -59,7 +58,7 @@ def hotspots_config(tmp_path: Path) -> HotspotsStepConfig:
     HotspotsStepConfig
         Configured step config.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     return HotspotsStepConfig(snapshot=snapshot, max_commits=100)
 
 
@@ -175,7 +174,7 @@ def test_build_hotspots_with_ast_data(
     _insert_ast_metric(memory_gateway, "test_file.py", complexity=5.0)
 
     # Create config with max_commits=0 to skip git log
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -201,7 +200,7 @@ def test_build_hotspots_multiple_files(
     _insert_ast_metric(memory_gateway, "file2.py", complexity=7.0)
     _insert_ast_metric(memory_gateway, "file3.py", complexity=12.0)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -220,7 +219,7 @@ def test_build_hotspots_score_calculation(
     """Verify hotspot score calculation components."""
     _insert_ast_metric(memory_gateway, "scored.py", complexity=EXPECTED_COMPLEXITY)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -251,7 +250,7 @@ def test_build_hotspots_high_complexity(
     high_complexity = 100.0
     _insert_ast_metric(memory_gateway, "high_complexity.py", complexity=high_complexity)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -275,7 +274,7 @@ def test_build_hotspots_idempotent(
     """Build hotspots is idempotent (DELETE before INSERT)."""
     _insert_ast_metric(memory_gateway, "idempotent.py", complexity=5.0)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     # Run twice
@@ -321,7 +320,7 @@ def test_build_hotspots_windows_path_handling(
     """Build hotspots normalizes Windows-style paths."""
     _insert_ast_metric(memory_gateway, "path\\to\\file.py", complexity=5.0)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -341,7 +340,7 @@ def test_build_hotspots_zero_complexity(
     """Build hotspots handles zero complexity."""
     _insert_ast_metric(memory_gateway, "zero_complexity.py", complexity=0.0)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
@@ -365,7 +364,7 @@ def test_build_hotspots_negative_complexity(
     """Build hotspots handles negative complexity (clamps to zero)."""
     _insert_ast_metric(memory_gateway, "negative.py", complexity=-5.0)
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)

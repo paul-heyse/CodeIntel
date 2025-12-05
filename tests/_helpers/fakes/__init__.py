@@ -27,6 +27,10 @@ from tests._helpers.fakes.coverage import (
     FakeCoverage,
     FakeCoverageData,
 )
+from tests._helpers.fakes.execution_contexts import (
+    TestExecutionContextBuilder,
+    create_test_execution_context,
+)
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphPlanningTestEnv,
@@ -102,6 +106,7 @@ __all__ = [
     "GraphTelemetryTestEnv",
     "ScopeRecordingQuery",
     "ServingScopePack",
+    "TestExecutionContextBuilder",
     "TestGraphPlugin",
     "TestPluginContext",
     "bipartite_graph",
@@ -116,6 +121,7 @@ __all__ = [
     "create_graph_snapshot",
     "create_graph_telemetry_env",
     "create_test_build_paths",
+    "create_test_execution_context",
     "create_test_run_context",
     "create_test_snapshot",
     "cyclic_graph",

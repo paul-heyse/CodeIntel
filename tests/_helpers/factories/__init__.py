@@ -36,6 +36,7 @@ from tests._helpers.factories.row_factories import (
     blank_module_profile_row,
     blank_test_profile_row,
 )
+from tests._helpers.factories.step_config_factories import make_step_config
 
 __all__ = [
     "GOLDEN_EXPECTED_COMMUNITIES",
@@ -60,4 +61,5 @@ __all__ = [
     "build_two_communities_graph",
     "make_graph_runtime_options",
     "make_snapshot",
+    "make_step_config",
 ]

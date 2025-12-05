@@ -237,7 +237,9 @@ def _resolve_gateway_for_config(
         return None
     db_path = config.db_path or Path(":memory:")
     base_cfg = (
-        StorageConfig.for_readonly(db_path) if config.read_only else StorageConfig.for_ingest(db_path)
+        StorageConfig.for_readonly(db_path)
+        if config.read_only
+        else StorageConfig.for_ingest(db_path)
     )
     gw_cfg = replace(base_cfg, repo=config.repo, commit=config.commit)
     return open_gateway(gw_cfg)

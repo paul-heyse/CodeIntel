@@ -6,11 +6,26 @@ with analytics-specific functionality like `AnalyticsScope`.
 
 Architecture
 ------------
+**Inheritance from Core**
+- `PluginExecutionContext` extends `CorePluginExecutionContext` from core
+- `PluginExecutionContextBuilder` extends `CoreContextBuilder` from core
+- All core fields (gateway, snapshot, run_id, resources, configs, scratch,
+  paths, options, plugin_name, extra, run_context) are inherited
+- Analytics adds: `scope` (AnalyticsScope)
+
+**Resource Registry Pattern**
 The context uses ResourceRegistry for typed resource access:
 - Access resources via `ctx.require(ProviderType)` or `ctx.require_or_none(ProviderType)`
 - Common providers: GraphProvider, CatalogProvider, AstProvider, FeaturesProvider
 
 All plugins have been migrated to use the resource provider pattern.
+
+See Also
+--------
+codeintel.core.plugins.context.PluginExecutionContext
+    Core execution context that this class extends.
+codeintel.core.plugins.context.PluginExecutionContextBuilder
+    Core builder that PluginExecutionContextBuilder extends.
 """
 
 from __future__ import annotations

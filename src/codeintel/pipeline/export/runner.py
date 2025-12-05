@@ -12,7 +12,7 @@ from codeintel.pipeline.export.export_jsonl import (
     export_all_jsonl,
 )
 from codeintel.pipeline.export.export_parquet import export_all_parquet
-from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -45,7 +45,7 @@ class JsonlExporter(Protocol):
 
 
 class ExportRunner(Protocol):
-    """Protocol for higher-level export runners invoked by CLI/Prefect."""
+    """Protocol for higher-level export runners invoked by CLI or pipeline."""
 
     def __call__(
         self,

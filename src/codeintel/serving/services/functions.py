@@ -180,7 +180,28 @@ class _FunctionQueryDelegates:
 
 
 class _HttpFunctionQueryMixin(_HttpTransportMixin):
-    """HTTP-based implementation of the function query API."""
+    """HTTP-based implementation of the function query API.
+
+    Architecture Note
+    -----------------
+    This mixin implements the **HTTP transport path** for ``HttpQueryService``.
+    It performs bidirectional domain/response conversion to maintain the
+    service layer contract:
+
+    1. **Outgoing**: Calls remote HTTP API, receives JSON/response model
+    2. **Normalize**: Converts response to Pydantic model if needed
+       - If domain model received (rare): ``Response.from_domain(payload)``
+       - If response model received: use directly
+       - If dict received: ``Response.model_validate(payload)``
+    3. **Return**: Converts response → domain via ``to_domain()``
+
+    The ``from_domain()`` call inside ``_run()`` handles the edge case where
+    the remote API returns a domain model instead of a response model. The
+    final ``to_domain()`` call ensures we return domain models to satisfy
+    the service layer contract.
+
+    See ``codeintel.serving.domain_models`` for the full architecture contract.
+    """
 
     def list_high_risk_functions(
         self,

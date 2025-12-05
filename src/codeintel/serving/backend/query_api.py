@@ -1,4 +1,34 @@
-"""Protocol surfaces for DuckDB-backed query services."""
+"""Protocol surfaces for DuckDB-backed query services.
+
+Query Protocol Hierarchy
+------------------------
+This module defines backend-layer query protocols using ``GraphRunScope``
+for scope parameters. These are internal protocols for the query layer.
+
+The **canonical unified protocols** are in ``codeintel.serving.types``:
+
+- ``FunctionQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
+- ``ProfileQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
+- ``SubsystemQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
+- ``DatasetQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
+
+Implementations at the backend layer accept ``GraphRunScope`` and are called
+by service-layer code that converts ``GraphScopePayload`` → ``GraphRunScope``
+using ``parse_graph_scope()``.
+
+Layer Hierarchy
+~~~~~~~~~~~~~~~
+::
+
+    Service Layer (GraphScopePayload)
+         │
+         │ parse_graph_scope()
+         ▼
+    Backend Layer (GraphRunScope) ← This module
+         │
+         ▼
+    Repository Layer
+"""
 
 from __future__ import annotations
 
@@ -13,7 +43,12 @@ from codeintel.storage.gateway import StorageGateway
 
 
 class FunctionQueriesApi(Protocol):
-    """Function-centric query surface."""
+    """Function-centric query surface (backend layer).
+
+    Note: This protocol uses ``GraphRunScope`` for the scope parameter.
+    Service-layer code should use ``FunctionQueryProtocol`` from
+    ``codeintel.serving.types`` which uses ``GraphScopePayload``.
+    """
 
     def get_function_summary(
         self,

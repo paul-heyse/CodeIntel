@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.datasets import build_dataset_registry, build_registry_and_limits
+from codeintel.serving.backend.datasets import build_dataset_registry, build_registry_and_limits
 
 
 def test_limits_parity_between_local_and_remote_configs() -> None:

@@ -4,14 +4,11 @@ This module tests:
 - ProviderFactory for creating resource providers
 - ProviderFactoryOptions configuration
 - Registry creation with different provider combinations
+
+Note: Uses shared analytics fixtures from analytics/conftest.py.
 """
 
 from __future__ import annotations
-
-from collections.abc import Generator
-from pathlib import Path
-
-import pytest
 
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
@@ -25,42 +22,10 @@ from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from tests._helpers.fakes.configs import create_test_snapshot
+from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50
-
-
-@pytest.fixture
-def test_gateway() -> Generator[StorageGateway]:
-    """Create an in-memory StorageGateway for testing.
-
-    Yields
-    ------
-    StorageGateway
-        An in-memory gateway with schema applied.
-    """
-    gateway = open_memory_gateway(validate_schema=False)
-    yield gateway
-    gateway.close()
-
-
-@pytest.fixture
-def test_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Create a real SnapshotRef for testing.
-
-    Parameters
-    ----------
-    tmp_path
-        Pytest temporary path fixture.
-
-    Returns
-    -------
-    SnapshotRef
-        A configured snapshot reference.
-    """
-    return create_test_snapshot(tmp_path)
 
 
 def test_provider_factory_options_defaults() -> None:
@@ -93,9 +58,7 @@ def test_provider_factory_options_custom() -> None:
     assert options.language == lang
 
 
-def test_provider_factory_init(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_provider_factory_init(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """ProviderFactory initializes with gateway and snapshot."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -115,9 +78,7 @@ def test_provider_factory_with_options(
     assert factory._options.language == "python"  # noqa: SLF001
 
 
-def test_create_registry_default(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Create registry with default providers (graphs and catalog)."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -210,9 +171,7 @@ def test_create_registry_all_providers(
     assert registry.has(ModuleMapProvider)
 
 
-def test_make_catalog_provider(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_make_catalog_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make catalog provider returns CatalogProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -246,9 +205,7 @@ def test_make_catalog_provider_with_catalog(
     assert isinstance(provider, CatalogProvider)
 
 
-def test_make_graph_provider(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_make_graph_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make graph provider returns GraphProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -310,9 +267,7 @@ def test_make_graph_provider_with_backend(
     assert isinstance(provider, GraphProvider)
 
 
-def test_make_ast_provider(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_make_ast_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make AST provider returns AstProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -344,9 +299,7 @@ def test_make_ast_provider_uses_factory_option(
     assert isinstance(provider, AstProvider)
 
 
-def test_make_features_provider(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_make_features_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make features provider returns FeaturesProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -366,9 +319,7 @@ def test_make_features_provider_with_max_functions(
     assert isinstance(provider, FeaturesProvider)
 
 
-def test_make_module_map_provider(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_make_module_map_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make module map provider returns ModuleMapProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
@@ -400,9 +351,7 @@ def test_make_module_map_provider_uses_factory_option(
     assert isinstance(provider, ModuleMapProvider)
 
 
-def test_clear_cache(
-    test_gateway: StorageGateway, test_snapshot: SnapshotRef
-) -> None:
+def test_clear_cache(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Clear cache resets cached providers."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 

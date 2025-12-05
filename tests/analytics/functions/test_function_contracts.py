@@ -18,11 +18,11 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 CONFIDENCE_FULL = 0.9
 CONFIDENCE_TYPES_ONLY = 0.3
 CONTEXT_LINE = 5
@@ -60,7 +60,7 @@ def contracts_config(tmp_path: Path) -> FunctionContractsStepConfig:
     FunctionContractsStepConfig
         Configured step config.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
     return FunctionContractsStepConfig(snapshot=snapshot)
 
 
@@ -161,7 +161,7 @@ def test_compute_function_contracts_empty_catalog(
 
     result = memory_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     assert result is not None
@@ -199,7 +199,7 @@ def test_compute_function_contracts_with_simple_function(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [TEST_REPO, TEST_COMMIT, goid],
+        [DEFAULT_REPO, DEFAULT_COMMIT, goid],
     ).fetchone()
 
     # With no catalog, no rows written for the function
@@ -235,7 +235,7 @@ def test_compute_function_contracts_with_assert_guard(
     # With no catalog, contracts aren't computed
     result = memory_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     assert result is not None

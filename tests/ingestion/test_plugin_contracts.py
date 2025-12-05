@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.validation import (
     CONSTRAINT_CHECKERS,
     ColumnConstraint,
@@ -24,10 +23,9 @@ from codeintel.ingestion.validation import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.factories import make_snapshot
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_REPO_ROOT = Path("/opt/test")
 EXPECTED_COUNT_2 = 2
 EXPECTED_COUNT_3 = 3
@@ -117,7 +115,7 @@ def test_constraint_checkers_registry() -> None:
 
 def test_validator_table_not_exists(fresh_gateway: StorageGateway) -> None:
     """Validator should report violation for missing table."""
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(table="nonexistent.table")
     result = validator.validate([contract], snapshot)
@@ -127,7 +125,7 @@ def test_validator_table_not_exists(fresh_gateway: StorageGateway) -> None:
 
 def test_validator_min_rows_violation(fresh_gateway: StorageGateway) -> None:
     """Validator should report when row count is below minimum."""
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(table="core.modules", min_rows=MIN_ROW_THRESHOLD)
     result = validator.validate([contract], snapshot)
@@ -136,7 +134,7 @@ def test_validator_min_rows_violation(fresh_gateway: StorageGateway) -> None:
 
 def test_validator_skip_if_empty(fresh_gateway: StorageGateway) -> None:
     """Validator should skip validation for empty tables if configured."""
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(table="core.modules", min_rows=10, skip_if_empty=True)
     result = validator.validate([contract], snapshot)
@@ -150,7 +148,7 @@ def test_validator_required_columns_missing(fresh_gateway: StorageGateway) -> No
         INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
         VALUES ('test', 'test.py', 'test/repo', 'abc123', 'python', '[]', '[]')
     """)
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.modules",
@@ -166,7 +164,7 @@ def test_validator_not_null_constraint_pass(fresh_gateway: StorageGateway) -> No
         INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
         VALUES ('test', 'test.py', 'r', 'c', 'python', '[]', '[]')
     """)
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.modules",
@@ -180,7 +178,7 @@ def test_validator_not_null_constraint_fail(fresh_gateway: StorageGateway) -> No
     """Validator should fail not_null when nulls exist."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_n (id INT, name VARCHAR)")
     fresh_gateway.con.execute("INSERT INTO core.test_n (id, name) VALUES (1, NULL)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_n",
@@ -194,7 +192,7 @@ def test_validator_min_value_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail min_value when values below minimum."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_min (id INT, val DOUBLE)")
     fresh_gateway.con.execute("INSERT INTO core.test_min VALUES (1, -5.0)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_min",
@@ -210,7 +208,7 @@ def test_validator_max_value_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail max_value when values exceed maximum."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_max (id INT, val DOUBLE)")
     fresh_gateway.con.execute("INSERT INTO core.test_max VALUES (1, 150.0)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_max",
@@ -226,7 +224,7 @@ def test_validator_positive_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail positive when non-positive values exist."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_pos (id INT, val INT)")
     fresh_gateway.con.execute("INSERT INTO core.test_pos VALUES (1, -5), (2, 0)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_pos",
@@ -240,7 +238,7 @@ def test_validator_unique_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail unique when duplicates exist."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_uniq (id INT, name VARCHAR)")
     fresh_gateway.con.execute("INSERT INTO core.test_uniq VALUES (1, 'a'), (2, 'a')")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_uniq",
@@ -256,7 +254,7 @@ def test_validator_min_fraction_not_null_fail(fresh_gateway: StorageGateway) -> 
     fresh_gateway.con.execute(
         "INSERT INTO core.test_frac VALUES (1, 'a'), (2, NULL), (3, NULL), (4, NULL)"
     )
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_frac",
@@ -276,7 +274,7 @@ def test_validator_foreign_key_pass(fresh_gateway: StorageGateway) -> None:
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_c (id INT, pid INT)")
     fresh_gateway.con.execute("INSERT INTO core.fk_p VALUES (1, 'a'), (2, 'b')")
     fresh_gateway.con.execute("INSERT INTO core.fk_c VALUES (1, 1), (2, 2)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.fk_c",
@@ -296,7 +294,7 @@ def test_validator_foreign_key_fail(fresh_gateway: StorageGateway) -> None:
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_c2 (id INT, pid INT)")
     fresh_gateway.con.execute("INSERT INTO core.fk_p2 VALUES (1, 'a')")
     fresh_gateway.con.execute("INSERT INTO core.fk_c2 VALUES (1, 1), (2, 999)")
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.fk_c2",
@@ -316,7 +314,7 @@ def test_validator_severity_warning_does_not_cause_failure(
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.warn_test (id INT, name VARCHAR)")
     fresh_gateway.con.execute("INSERT INTO core.warn_test VALUES (1, NULL), (2, 'a')")
 
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     # Same constraint with severity="warning" should NOT fail
     contract = IngestContractSpec(
@@ -331,7 +329,7 @@ def test_validator_severity_warning_does_not_cause_failure(
 
 def test_validator_multiple_contracts(fresh_gateway: StorageGateway) -> None:
     """Validator should validate multiple contracts."""
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contracts = [
         IngestContractSpec(table="core.modules", skip_if_empty=True),

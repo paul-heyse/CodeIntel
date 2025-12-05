@@ -12,12 +12,11 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from codeintel.analytics.plugins.history.timeseries import HistoryTimeseriesPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import HistoryTimeseriesStepConfig
+from tests._helpers.constants import DEFAULT_COMMIT
+from tests._helpers.factories import make_snapshot
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_PROVIDES_COUNT = 1
@@ -28,16 +27,21 @@ MAX_RUNTIME_MS = 120_000
 PRIORITY_VALUE = 80
 
 
-def _create_config() -> HistoryTimeseriesStepConfig:
+def _create_config(tmp_path: Path | None = None) -> HistoryTimeseriesStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     HistoryTimeseriesStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return HistoryTimeseriesStepConfig(snapshot=snapshot, commits=(TEST_COMMIT,))
+    snapshot = make_snapshot(repo_root=tmp_path)
+    return HistoryTimeseriesStepConfig(snapshot=snapshot, commits=(DEFAULT_COMMIT,))
 
 
 def _create_mock_context(

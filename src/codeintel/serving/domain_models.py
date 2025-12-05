@@ -1,4 +1,99 @@
-"""Transport-agnostic domain models for serving."""
+"""Transport-agnostic domain models for the serving layer.
+
+Dual-Model Architecture
+-----------------------
+The serving layer maintains **two parallel model systems** by design:
+
+1. **Domain Models** (this module)
+   - Pure Python dataclasses with no external dependencies
+   - Used within the Service layer for business logic
+   - Immutable, hashable, and picklable for easy testing
+   - No Pydantic, no JSON serialization logic
+
+2. **Transport Models** (``mcp/models.py``)
+   - Pydantic BaseModel subclasses for JSON serialization/validation
+   - Used at the Transport layer (HTTP routes, MCP tools)
+   - Provide ``from_domain()`` and ``to_domain()`` converter methods
+   - Handle validation at system boundaries
+
+Why Two Systems?
+~~~~~~~~~~~~~~~~
+- **Domain Purity**: Service layer remains independent of serialization concerns
+- **Validation at Boundaries**: Pydantic validation only where data enters/exits
+- **Performance**: Dataclasses are faster for internal processing
+- **Testability**: Domain models are trivial to construct in unit tests
+- **Flexibility**: Transport format can change without affecting business logic
+
+Architecture Contract
+---------------------
+Domain models are the **single source of truth** for data exchanged between
+the Service layer and Transport layers (HTTP routes, MCP tools, CLI).
+
+Layer Responsibilities
+~~~~~~~~~~~~~~~~~~~~~~
+1. **Service Layer** (``LocalQueryService``, ``HttpQueryService``)
+   - MUST return domain models (``dm.*``) from all query methods
+   - MUST NOT return transport-specific response models (Pydantic ``*Response``)
+
+2. **Transport Layer** (HTTP routes, MCP backends, CLI commands)
+   - Receives domain models from the Service layer
+   - Converts to transport-specific response models using ``Response.from_domain()``
+   - Returns response models to clients
+
+Conversion Flow
+~~~~~~~~~~~~~~~
+::
+
+    [Client Request]
+         │
+         ▼
+    Transport Model (Pydantic) ──from_domain()──▶ Response to Client
+         │                                           ▲
+         │ to_domain()                               │
+         ▼                                           │
+    Domain Model (dataclass) ◀──────────────────────┘
+         │
+         ▼
+    [Service Layer Processing]
+
+Conversion Methods
+~~~~~~~~~~~~~~~~~~
+- ``Response.from_domain(domain_model)`` - Convert domain → response (Transport layer)
+- ``Response.to_domain()`` - Convert response → domain (HTTP client path only)
+
+The ``to_domain()`` method exists only for ``HttpQueryService`` which receives
+response models from a remote HTTP API and must convert them back to domain
+models to maintain the service layer contract.
+
+Model Correspondence
+~~~~~~~~~~~~~~~~~~~~
+Each domain model has a corresponding transport model:
+
+| Domain Model (this module) | Transport Model (mcp/models.py) |
+|----------------------------|--------------------------------|
+| ``FunctionSummaryResult`` | ``FunctionSummaryResponse`` |
+| ``HighRiskFunctionsResult`` | ``HighRiskFunctionsResponse`` |
+| ``CallGraphNeighbors`` | ``CallGraphNeighborsResponse`` |
+| ``GraphNeighborhood`` | ``GraphNeighborhoodResponse`` |
+| ... | ... |
+
+Example
+-------
+::
+
+    # In HTTP route (Transport layer):
+    domain_result = service.get_function_summary(goid_h128=123)  # Returns dm.*
+    return FunctionSummaryResponse.from_domain(domain_result)    # Convert for HTTP
+
+    # In MCP backend (Transport layer):
+    domain_result = self.service.get_function_summary(...)       # Returns dm.*
+    return FunctionSummaryResponse.from_domain(domain_result)    # Convert for MCP
+
+See Also
+--------
+- ``codeintel.serving.mcp.models`` : Transport models with Pydantic serialization
+- ``codeintel.serving.services.query_service`` : Service layer consuming domain models
+"""
 
 from __future__ import annotations
 

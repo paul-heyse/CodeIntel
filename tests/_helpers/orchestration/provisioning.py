@@ -55,6 +55,7 @@ from tests._helpers.configs import (
     ProvisionOptions,
     RepoContext,
 )
+from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.gateway import gateway_with_macros
 from tests._helpers.orchestration.repo_writers import (
@@ -916,7 +917,148 @@ def build_callgraph_fixture_repo(
     return ctx
 
 
+# =============================================================================
+# Provisioning Builder
+# =============================================================================
+
+
+class ProvisioningBuilder:
+    """Fluent builder for test environment provisioning.
+
+    Provide a composable interface for creating test contexts with various
+    provisioning configurations.
+
+    Example
+    -------
+    >>> ctx = ProvisioningBuilder(repo_root).with_typing().with_coverage().build()
+    >>> ctx = ProvisioningBuilder(repo_root).for_docs_export().build()
+    """
+
+    def __init__(
+        self,
+        repo_root: Path,
+        *,
+        repo: str = DEFAULT_REPO,
+        commit: str = DEFAULT_COMMIT,
+    ) -> None:
+        """Initialize builder with repository paths.
+
+        Parameters
+        ----------
+        repo_root
+            Path to repository root.
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+        """
+        self._repo_root = repo_root
+        self._repo = repo
+        self._commit = commit
+        self._options = ProvisionOptions()
+
+    def with_typing(self) -> ProvisioningBuilder:
+        """Enable typing ingestion.
+
+        Returns
+        -------
+        ProvisioningBuilder
+            Self for chaining.
+        """
+        self._options = ProvisionOptions(
+            include_typing=True,
+            include_coverage=self._options.include_coverage,
+            build_graph_metrics=self._options.build_graph_metrics,
+            file_backed=self._options.file_backed,
+            db_path=self._options.db_path,
+        )
+        return self
+
+    def with_coverage(self) -> ProvisioningBuilder:
+        """Enable coverage ingestion.
+
+        Returns
+        -------
+        ProvisioningBuilder
+            Self for chaining.
+        """
+        self._options = ProvisionOptions(
+            include_typing=self._options.include_typing,
+            include_coverage=True,
+            build_graph_metrics=self._options.build_graph_metrics,
+            file_backed=self._options.file_backed,
+            db_path=self._options.db_path,
+        )
+        return self
+
+    def with_graph_metrics(self) -> ProvisioningBuilder:
+        """Enable graph metrics computation.
+
+        Returns
+        -------
+        ProvisioningBuilder
+            Self for chaining.
+        """
+        self._options = ProvisionOptions(
+            include_typing=self._options.include_typing,
+            include_coverage=self._options.include_coverage,
+            build_graph_metrics=True,
+            file_backed=self._options.file_backed,
+            db_path=self._options.db_path,
+        )
+        return self
+
+    def file_backed(self, db_path: Path | None = None) -> ProvisioningBuilder:
+        """Use file-backed database.
+
+        Parameters
+        ----------
+        db_path
+            Optional path to database file.
+
+        Returns
+        -------
+        ProvisioningBuilder
+            Self for chaining.
+        """
+        self._options = ProvisionOptions(
+            include_typing=self._options.include_typing,
+            include_coverage=self._options.include_coverage,
+            build_graph_metrics=self._options.build_graph_metrics,
+            file_backed=True,
+            db_path=db_path,
+        )
+        return self
+
+    def for_docs_export(self) -> ProvisioningBuilder:
+        """Configure for docs export testing.
+
+        Returns
+        -------
+        ProvisioningBuilder
+            Self for chaining.
+        """
+        return self.with_typing().with_coverage()
+
+    def build(self) -> TestContext:
+        """Build the provisioned TestContext.
+
+        Returns
+        -------
+        TestContext
+            Configured test context with provisioned gateway.
+        """
+        provisioned = provision_ingested_repo(
+            self._repo_root,
+            repo=self._repo,
+            commit=self._commit,
+            options=self._options,
+        )
+        return TestContext.from_provisioned(provisioned)
+
+
 __all__ = [
+    "ProvisioningBuilder",
     "build_callgraph_fixture_repo",
     "docs_views_ready_gateway",
     "graph_metrics_ready_gateway",

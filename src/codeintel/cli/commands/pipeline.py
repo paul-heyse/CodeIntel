@@ -1,12 +1,11 @@
 """Extended pipeline orchestration commands for the CodeIntel CLI.
 
 This module provides additional Typer commands for pipeline management,
-including step introspection, dependency visualization, and Prefect flow
-execution.
+including step introspection, dependency visualization, and pipeline execution.
 
 Commands
 --------
-- **run**: Run the full pipeline via Prefect
+- **run**: Run the full pipeline
 - **list-steps**: List all available pipeline steps
 - **deps**: Show dependency tree for a step
 """
@@ -52,7 +51,7 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_config_profile,
     profile_from_env,
 )
-from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.pipeline.orchestration.runner import ExportArgs, run_full_pipeline
 from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 
 LOG = logging.getLogger(__name__)
@@ -189,9 +188,9 @@ def pipeline_run(
     nx_gpu_strict: NxGpuStrictOpt = False,
     verbose: VerboseOpt = 0,
 ) -> None:
-    r"""Run the full pipeline via Prefect.
+    r"""Run the full pipeline.
 
-    Executes the complete ingestion, graphs, analytics, and export pipeline
+    Execute the complete ingestion, graphs, analytics, and export pipeline
     with optional targeting and scope filtering.
 
     Examples
@@ -235,7 +234,7 @@ def pipeline_run(
             raise typer.Exit(code=1) from None
         resolved_repo = repo
         resolved_commit = commit
-        resolved_db_path = db_path or Path("build/db/codeintel_prefect.duckdb")
+        resolved_db_path = db_path or Path("build/db/codeintel.duckdb")
         resolved_repo_root = repo_root or Path.cwd()
         resolved_build_dir = build_dir or Path("build")
 
@@ -272,7 +271,7 @@ def pipeline_run(
         raise typer.Exit(code=1) from exc
 
     LOG.info(
-        "Running Prefect export_docs_flow for repo=%s commit=%s targets=%s",
+        "Running pipeline for repo=%s commit=%s targets=%s",
         resolved_repo,
         resolved_commit,
         target_list,
@@ -282,7 +281,7 @@ def pipeline_run(
 
     tools = ToolsConfig.default()
 
-    export_docs_flow(
+    run_full_pipeline(
         args=ExportArgs(
             repo_root=cfg.paths.repo_root,
             repo=resolved_repo,

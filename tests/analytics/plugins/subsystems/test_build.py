@@ -12,12 +12,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from codeintel.analytics.plugins.subsystems.build import SubsystemsPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import SubsystemsStepConfig
+from tests._helpers.factories import make_step_config
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 3
 EXPECTED_PROVIDES_COUNT = 3
@@ -28,16 +26,20 @@ MAX_RUNTIME_MS = 120_000
 PRIORITY_VALUE = 60
 
 
-def _create_config() -> SubsystemsStepConfig:
+def _create_config(tmp_path: Path | None = None) -> SubsystemsStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     SubsystemsStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return SubsystemsStepConfig(snapshot=snapshot)
+    return make_step_config(SubsystemsStepConfig, tmp_path)
 
 
 def _create_mock_context(

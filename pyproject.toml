@@ -45,7 +45,6 @@ dependencies = [
     "uuid6",
     "vulture",
     "xxhash>=3.6.0",
-    "prefect>=3.6.4",
     "jsonschema>=4.25.1",
     "networkx>=3.6",
     "scipy>=1.16.3",
@@ -243,12 +242,24 @@ ban-relative-imports = "all"
 # PLC0415: Deferred imports for project discovery logic (avoid circular imports)
 "src/codeintel/cli/commands/*.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
 "src/codeintel/cli/main.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
+# Pipeline runner uses deferred imports to avoid circular dependencies with steps.py
+"src/codeintel/pipeline/orchestration/runner.py" = ["PLC0415"]
 # Core plugin system uses factory patterns with many configuration options
 "src/codeintel/core/recipes/dsl.py" = ["PLR0913"]
 "src/codeintel/core/recipes/model.py" = ["PLR0913"]
 # Graph plugin system uses factory patterns with many configuration options
 "src/codeintel/graphs/core/context.py" = ["PLR0913"]
 "src/codeintel/graphs/core/protocol.py" = ["PLR0913"]
+# Base plugin executor abstract class signature requires many arguments and uses Generic[]
+# UP046: Uses Generic[] for type bounds which is the clearest pattern for abstract base classes
+# PLR0913/PLR0917: Abstract _build_report method signature requires all report components
+# FBT001: Boolean fatal_error is required context, not a toggle flag
+# PLR6301: Hook methods (_on_plugin_success/failure) use self for subclass override pattern
+"src/codeintel/core/plugins/executor.py" = ["UP046", "PLR0913", "PLR0917", "FBT001", "PLR6301"]
+# Analytics executor inherits base executor requirements
+"src/codeintel/analytics/core/executor.py" = ["PLR0913", "PLR0917", "FBT001", "PLR6301"]
+# Tracking module helper functions use boolean parameters naturally
+"src/codeintel/core/plugins/tracking.py" = ["FBT001", "FBT002"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

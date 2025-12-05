@@ -1,4 +1,30 @@
-"""Shared orchestration primitives for pipeline steps."""
+"""Shared orchestration primitives for pipeline steps.
+
+Architecture Note
+-----------------
+This module provides the high-level orchestration context (`PipelineContext`)
+for pipeline steps, which is distinct from plugin execution contexts:
+
+- **PipelineContext**: High-level orchestration context shared across all
+  pipeline steps. Contains configuration, services, and state needed to
+  coordinate multiple steps. This is NOT a plugin execution context.
+
+- **PluginExecutionContext** (from core.plugins or domain modules): Context
+  passed to individual plugin executions. Created from PipelineContext via
+  `_plugin_ctx()` or similar helpers.
+
+The pipeline orchestration uses:
+- `codeintel.core.plugins.executor_context.BaseExecutorContext` as a conceptual base
+- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration (via runner.py)
+- `codeintel.core.plugins.policy.BaseExecutionPolicy` for retry configuration
+
+See Also
+--------
+codeintel.core.plugins.executor_context.BaseExecutorContext
+    Base executor context that domain executors extend.
+codeintel.ingestion.core.execution_context.IngestExecutionContext
+    Ingestion plugin execution context created from PipelineContext.
+"""
 
 from __future__ import annotations
 
@@ -96,10 +122,28 @@ def _log_step(name: str) -> None:
 
 @dataclass
 class PipelineContext:
-    """
-    Shared context passed to every pipeline step.
+    """Shared context passed to every pipeline step.
 
-    This matches the repo layout described in your architecture:
+    This is a high-level orchestration context that contains all configuration,
+    services, and state needed to coordinate pipeline steps. It is NOT a plugin
+    execution context - use `_plugin_ctx()` to create domain-specific plugin
+    contexts from this.
+
+    Conceptual Relationship
+    -----------------------
+    PipelineContext is conceptually similar to `BaseExecutorContext` but operates
+    at the pipeline orchestration level rather than plugin execution level:
+    - Contains gateway, snapshot (like BaseExecutorContext)
+    - Contains run_context for unified run tracking (like BaseExecutorContext)
+    - Adds pipeline-specific fields: profiles, callables, graph runtime, etc.
+
+    The pipeline orchestration flow is:
+    1. Create PipelineContext with all configuration
+    2. Pass to pipeline steps (which implement PipelineStep protocol)
+    3. Steps create domain-specific contexts via helpers like `_plugin_ctx()`
+    4. Those contexts are passed to plugins for execution
+
+    This matches the repo layout:
       repo_root/
         src/
         Document Output/

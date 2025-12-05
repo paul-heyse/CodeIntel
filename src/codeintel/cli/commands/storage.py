@@ -64,7 +64,7 @@ RequireIngestMacrosOpt = Annotated[
 
 @storage_app.command("validate-macros")
 def storage_validate_macros(
-    db_path: DbPathArg = Path("build/db/codeintel_prefect.duckdb"),
+    db_path: DbPathArg = Path("build/db/codeintel.duckdb"),
     require_ingest_macros: RequireIngestMacrosOpt = True,
     verbose: VerboseOpt = 0,
 ) -> None:
