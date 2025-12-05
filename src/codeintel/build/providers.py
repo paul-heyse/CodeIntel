@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 import time
 from collections.abc import Mapping, Sequence
@@ -55,6 +56,136 @@ __all__ = [
     "SubprocessToolRunner",
     "create_default_providers",
 ]
+
+
+# =============================================================================
+# Constants for parsing
+# =============================================================================
+
+# Minimum parts in a SCIP symbol identifier
+_SCIP_SYMBOL_MIN_PARTS = 4
+
+# Expected parts in a git log record (hash, author_email, author_date, subject, files)
+_GIT_LOG_RECORD_PARTS = 5
+
+# Length of a git commit hash
+_GIT_COMMIT_HASH_LENGTH = 40
+
+
+def _parse_git_stat_line(
+    lines: list[str], current_idx: int
+) -> tuple[bool, int, int, int]:
+    """Parse git shortstat line to extract file changes.
+
+    Parameters
+    ----------
+    lines
+        All output lines.
+    current_idx
+        Current index in lines.
+
+    Returns
+    -------
+    tuple[bool, int, int, int]
+        (has_stat, files_changed, insertions, deletions).
+    """
+    if current_idx + 1 >= len(lines):
+        return (False, 0, 0, 0)
+
+    stat_line = lines[current_idx + 1].strip()
+    if "file" not in stat_line:
+        return (False, 0, 0, 0)
+
+    # Parse "1 file changed, 10 insertions(+), 5 deletions(-)"
+    files_match = re.search(r"(\d+) files? changed", stat_line)
+    ins_match = re.search(r"(\d+) insertions?", stat_line)
+    del_match = re.search(r"(\d+) deletions?", stat_line)
+
+    return (
+        True,
+        int(files_match.group(1)) if files_match else 0,
+        int(ins_match.group(1)) if ins_match else 0,
+        int(del_match.group(1)) if del_match else 0,
+    )
+
+
+@dataclass
+class _BlameParseState:
+    """Internal state for blame parsing."""
+
+    current_sha: str = ""
+    current_line: int = 0
+    author: str = ""
+    author_email: str = ""
+    author_time: str = ""
+    summary: str = ""
+
+
+def _parse_blame_output(lines: list[str]) -> dict[int, GitLogEntry]:
+    """Parse git blame porcelain output lines.
+
+    Parameters
+    ----------
+    lines
+        Blame output lines.
+
+    Returns
+    -------
+    dict[int, GitLogEntry]
+        Line to commit mapping.
+    """
+    result: dict[int, GitLogEntry] = {}
+    commit_cache: dict[str, GitLogEntry] = {}
+    state = _BlameParseState()
+
+    for line in lines:
+        if line.startswith("\t"):
+            _record_blame_line(state, result, commit_cache)
+        elif " " in line:
+            _parse_blame_field(line, state)
+
+    return result
+
+
+def _record_blame_line(
+    state: _BlameParseState,
+    result: dict[int, GitLogEntry],
+    commit_cache: dict[str, GitLogEntry],
+) -> None:
+    """Record a blame line mapping."""
+    if not state.current_sha or not state.current_line:
+        return
+
+    if state.current_sha not in commit_cache:
+        commit_cache[state.current_sha] = GitLogEntry(
+            sha=state.current_sha,
+            author=state.author,
+            author_email=state.author_email,
+            date=state.author_time,
+            message=state.summary,
+        )
+    result[state.current_line] = commit_cache[state.current_sha]
+
+
+def _parse_blame_field(line: str, state: _BlameParseState) -> None:
+    """Parse a single blame field line."""
+    parts = line.split(" ", 1)
+    key = parts[0]
+    value = parts[1] if len(parts) > 1 else ""
+
+    if len(key) == _GIT_COMMIT_HASH_LENGTH:
+        # SHA line: "sha orig_line final_line [count]"
+        state.current_sha = key
+        line_parts = value.split()
+        state.current_line = int(line_parts[1]) if len(line_parts) > 1 else 0
+    elif key == "author":
+        state.author = value
+    elif key == "author-mail":
+        state.author_email = value.strip("<>")
+    elif key == "author-time":
+        state.author_time = value
+    elif key == "summary":
+        state.summary = value
 
 
 # =============================================================================
@@ -138,8 +269,8 @@ class SubprocessToolRunner:
         tool_path = self._resolve_tool_path(tool)
         timeout = (timeout_ms or self.default_timeout_ms) / 1000.0
 
-        # Build environment
-        run_env = self.tools_config.build_env()
+        # Build environment with tool-specific settings
+        run_env = self.tools_config.build_env(tool)
         if env:
             run_env.update(env)
 
@@ -280,7 +411,8 @@ class RealScipIndexer:
             timeout_ms=300000,  # 5 minutes
         )
 
-        if result.success and output_path.exists():
+        path_exists = await asyncio.to_thread(output_path.exists)
+        if result.success and path_exists:
             return ScipIndexResult(
                 success=True,
                 index_path=output_path,
@@ -313,7 +445,9 @@ class RealScipIndexer:
             Result with extracted symbols and occurrences.
         """
         # Ensure output directory exists
-        output_json_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(
+            output_json_path.parent.mkdir, parents=True, exist_ok=True
+        )
 
         result = await self.tool_runner.run(
             "scip",
@@ -330,7 +464,9 @@ class RealScipIndexer:
 
         # Write JSON output
         try:
-            output_json_path.write_text(result.stdout, encoding="utf-8")
+            await asyncio.to_thread(
+                output_json_path.write_text, result.stdout, encoding="utf-8"
+            )
 
             # Parse symbols and occurrences from JSON
             data = json.loads(result.stdout)
@@ -349,7 +485,8 @@ class RealScipIndexer:
                 error_message=f"Failed to process SCIP JSON: {e}",
             )
 
-    def _extract_symbols(self, data: dict[str, object]) -> tuple[ScipSymbol, ...]:
+    @staticmethod
+    def _extract_symbols(data: dict[str, object]) -> tuple[ScipSymbol, ...]:
         """Extract symbols from SCIP JSON.
 
         Parameters
@@ -364,7 +501,10 @@ class RealScipIndexer:
         """
         symbols: list[ScipSymbol] = []
         # SCIP JSON format varies; this handles common structures
-        for doc in data.get("documents", []):
+        documents = data.get("documents", [])
+        if not isinstance(documents, list):
+            return ()
+        for doc in documents:
             if not isinstance(doc, dict):
                 continue
             for sym in doc.get("symbols", []):
@@ -381,7 +521,8 @@ class RealScipIndexer:
                 )
         return tuple(symbols)
 
-    def _extract_occurrences(self, data: dict[str, object]) -> tuple[ScipOccurrence, ...]:
+    @staticmethod
+    def _extract_occurrences(data: dict[str, object]) -> tuple[ScipOccurrence, ...]:
         """Extract occurrences from SCIP JSON.
 
         Parameters
@@ -395,16 +536,20 @@ class RealScipIndexer:
             Extracted occurrences.
         """
         occurrences: list[ScipOccurrence] = []
-        for doc in data.get("documents", []):
+        default_range = [0, 0, 0, 0]
+        documents = data.get("documents", [])
+        if not isinstance(documents, list):
+            return ()
+        for doc in documents:
             if not isinstance(doc, dict):
                 continue
             path = str(doc.get("relative_path", ""))
             for occ in doc.get("occurrences", []):
                 if not isinstance(occ, dict):
                     continue
-                range_data = occ.get("range", [0, 0, 0, 0])
-                if not isinstance(range_data, list) or len(range_data) < 4:
-                    range_data = [0, 0, 0, 0]
+                range_data = occ.get("range", default_range)
+                if not isinstance(range_data, list) or len(range_data) < _SCIP_SYMBOL_MIN_PARTS:
+                    range_data = default_range
                 occurrences.append(
                     ScipOccurrence(
                         symbol=str(occ.get("symbol", "")),
@@ -505,8 +650,9 @@ class RealTypeChecker:
                 duration_ms=result.duration_ms,
             )
 
+    @staticmethod
     def _parse_diagnostics(
-        self, data: dict[str, object]
+        data: dict[str, object],
     ) -> tuple[TypeDiagnostic, ...]:
         """Parse pyright JSON output into diagnostics.
 
@@ -597,13 +743,14 @@ class RealCoverageCollector:
 
         try:
             data = json.loads(json_path.read_text())
-            return self._parse_coverage_json(data)
+            return RealCoverageCollector._parse_coverage_json(data)
         except (json.JSONDecodeError, OSError) as e:
             log.warning("Failed to parse coverage JSON: %s", e)
             return {}
 
+    @staticmethod
     def _parse_coverage_json(
-        self, data: dict[str, object]
+        data: dict[str, object],
     ) -> Mapping[str, CoverageData]:
         """Parse coverage.py JSON output.
 
@@ -664,19 +811,24 @@ class RealTestReporter:
         tuple[TestResult, ...]
             Collected test results.
         """
-        if not report_path.exists():
+        # Use self to satisfy linter (protocol pattern requires instance method)
+        _ = self
+        exists = await asyncio.to_thread(report_path.exists)
+        if not exists:
             log.warning("Pytest report not found: %s", report_path)
             return ()
 
         try:
-            data = json.loads(report_path.read_text(encoding="utf-8"))
-            return self._parse_pytest_json(data)
+            text_content = await asyncio.to_thread(report_path.read_text, encoding="utf-8")
+            data = json.loads(text_content)
+            return RealTestReporter._parse_pytest_json(data)
         except (json.JSONDecodeError, OSError) as e:
             log.warning("Failed to parse pytest report: %s", e)
             return ()
 
+    @staticmethod
     def _parse_pytest_json(
-        self, data: dict[str, object]
+        data: dict[str, object],
     ) -> tuple[TestResult, ...]:
         """Parse pytest JSON report.
 
@@ -768,7 +920,7 @@ class RealGitHistoryProvider:
         tuple[GitLogEntry, ...]
             Log entries.
         """
-        # Format: sha|author|email|date|message|files|insertions|deletions
+        # Git log format: sha, author, email, date, message (pipe-separated)
         format_str = "%H|%an|%ae|%aI|%s"
 
         args = [
@@ -792,9 +944,10 @@ class RealGitHistoryProvider:
             log.warning("Git log failed: %s", result.stderr)
             return ()
 
-        return self._parse_git_log(result.stdout)
+        return RealGitHistoryProvider._parse_git_log(result.stdout)
 
-    def _parse_git_log(self, output: str) -> tuple[GitLogEntry, ...]:
+    @staticmethod
+    def _parse_git_log(output: str) -> tuple[GitLogEntry, ...]:
         """Parse git log output.
 
         Parameters
@@ -809,40 +962,23 @@ class RealGitHistoryProvider:
         """
         entries: list[GitLogEntry] = []
         lines = output.strip().split("\n")
+        idx = 0
 
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
+        while idx < len(lines):
+            line = lines[idx].strip()
             if not line or "|" not in line:
-                i += 1
+                idx += 1
                 continue
 
             parts = line.split("|", 4)
-            if len(parts) < 5:
-                i += 1
+            if len(parts) < _GIT_LOG_RECORD_PARTS:
+                idx += 1
                 continue
 
             sha, author, email, date, message = parts
-
-            # Look for stat line
-            files_changed = 0
-            insertions = 0
-            deletions = 0
-
-            if i + 1 < len(lines):
-                stat_line = lines[i + 1].strip()
-                if "file" in stat_line:
-                    # Parse "1 file changed, 10 insertions(+), 5 deletions(-)"
-                    import re
-
-                    files_match = re.search(r"(\d+) files? changed", stat_line)
-                    ins_match = re.search(r"(\d+) insertions?", stat_line)
-                    del_match = re.search(r"(\d+) deletions?", stat_line)
-
-                    files_changed = int(files_match.group(1)) if files_match else 0
-                    insertions = int(ins_match.group(1)) if ins_match else 0
-                    deletions = int(del_match.group(1)) if del_match else 0
-                    i += 1
+            stat_info = _parse_git_stat_line(lines, idx)
+            if stat_info[0]:  # Has stat line
+                idx += 1
 
             entries.append(
                 GitLogEntry(
@@ -851,12 +987,12 @@ class RealGitHistoryProvider:
                     author_email=email,
                     date=date,
                     message=message,
-                    files_changed=files_changed,
-                    insertions=insertions,
-                    deletions=deletions,
+                    files_changed=stat_info[1],
+                    insertions=stat_info[2],
+                    deletions=stat_info[3],
                 )
             )
-            i += 1
+            idx += 1
 
         return tuple(entries)
 
@@ -899,9 +1035,10 @@ class RealGitHistoryProvider:
             log.warning("Git blame failed: %s", result.stderr)
             return {}
 
-        return self._parse_git_blame(result.stdout)
+        return RealGitHistoryProvider._parse_git_blame(result.stdout)
 
-    def _parse_git_blame(self, output: str) -> Mapping[int, GitLogEntry]:
+    @staticmethod
+    def _parse_git_blame(output: str) -> Mapping[int, GitLogEntry]:
         """Parse git blame porcelain output.
 
         Parameters
@@ -914,51 +1051,7 @@ class RealGitHistoryProvider:
         Mapping[int, GitLogEntry]
             Line to commit mapping.
         """
-        result: dict[int, GitLogEntry] = {}
-        lines = output.strip().split("\n")
-
-        current_sha = ""
-        current_line = 0
-        commit_cache: dict[str, GitLogEntry] = {}
-
-        author = ""
-        author_email = ""
-        author_time = ""
-        summary = ""
-
-        for line in lines:
-            if line.startswith("\t"):
-                # Actual source line - record mapping
-                if current_sha and current_line:
-                    if current_sha not in commit_cache:
-                        commit_cache[current_sha] = GitLogEntry(
-                            sha=current_sha,
-                            author=author,
-                            author_email=author_email,
-                            date=author_time,
-                            message=summary,
-                        )
-                    result[current_line] = commit_cache[current_sha]
-            elif " " in line:
-                parts = line.split(" ", 1)
-                key = parts[0]
-                value = parts[1] if len(parts) > 1 else ""
-
-                if len(key) == 40:
-                    # SHA line: "sha orig_line final_line [count]"
-                    current_sha = key
-                    line_parts = value.split()
-                    current_line = int(line_parts[1]) if len(line_parts) > 1 else 0
-                elif key == "author":
-                    author = value
-                elif key == "author-mail":
-                    author_email = value.strip("<>")
-                elif key == "author-time":
-                    author_time = value
-                elif key == "summary":
-                    summary = value
-
-        return result
+        return _parse_blame_output(output.strip().split("\n"))
 
 
 # =============================================================================

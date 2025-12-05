@@ -1,109 +1,41 @@
-"""Function effects plugin using the new protocol.
+"""Function effects plugin.
 
-This module provides the function effects plugin migrated to the
-new unified plugin protocol.
+This plugin classifies function side effects and purity.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import AstProvider
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.graphs import GraphProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.functions import compute_function_effects
 from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import FunctionEffectsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class FunctionEffectsPlugin:
-    """Plugin for classifying function side effects and purity.
+
+class FunctionEffectsPlugin(TargetPlugin):
+    """Classify side effects and purity for functions.
 
     Analyzes functions to classify:
     - Pure functions vs impure
     - Side effect types (I/O, state mutation, etc.)
     - Effect evidence and reasoning
+
+    Outputs
+    -------
+    - analytics.function_effects: Effect classifications
+    - analytics.function_effects_evidence: Effect evidence
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="functions.effects",
-            description="Classify side effects and purity for functions.",
-            kind="analytics",
-            stage="function",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="function_effects_cfg",
-                    type_ref="FunctionEffectsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="function_effects",
-                    tables=("analytics.function_effects",),
-                ),
-                PluginOutputSpec(
-                    name="function_effects_evidence",
-                    tables=("analytics.function_effects_evidence",),
-                ),
-            ),
-            provides=(
-                "analytics.function_effects",
-                "analytics.function_effects_evidence",
-            ),
-            requires=("core.goids",),
-            depends_on=("functions.metrics", "callgraph"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=90_000,
-                priority=30,
-            ),
-            tags=("functions", "effects", "purity"),
-        )
+    plugin_name: ClassVar[str] = "functions.effects"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Classify side effects and purity for functions."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(FunctionEffectsStepConfig):
-            errors.append("FunctionEffectsStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -113,35 +45,29 @@ class FunctionEffectsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(FunctionEffectsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get catalog from CatalogProvider
-        catalog_provider = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
+        # Build config from context
+        cfg = FunctionEffectsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
 
-        # Get graph runtime from GraphProvider
-        graph_runtime = None
-        if ctx.has_resource_by_name("GraphProvider"):
-            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
-            graph_runtime = graph_prov.runtime
+        # Get resources
+        catalog_provider = ctx.resources.catalog
+        graph_runtime = ctx.resources.graph_runtime
 
-        # Get AST data from AstProvider (AstResourceData)
+        # Get AST data if available
         ast_map = None
         missing_goids = None
-        if ctx.has_resource_by_name("AstProvider"):
-            ast_prov = cast("AstProvider", ctx.require_by_name("AstProvider"))
-            ast_data = ast_prov.get()
-            ast_map = ast_data.function_ast_map
-            missing_goids = ast_data.missing_function_goids
+        if catalog_provider is not None:
+            ast_data = catalog_provider.get_resource("AstProvider")
+            if ast_data is not None:
+                ast_map = ast_data.function_ast_map
+                missing_goids = ast_data.missing_function_goids
 
         try:
             inputs = FunctionEffectsInputs(
@@ -152,9 +78,9 @@ class FunctionEffectsPlugin:
             )
             compute_function_effects(ctx.gateway, cfg, inputs=inputs)
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Function effects computation failed: {e}")
+            return TargetResult.failed(f"Function effects computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["FunctionEffectsPlugin"]

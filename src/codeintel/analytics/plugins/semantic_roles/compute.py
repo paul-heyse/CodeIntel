@@ -1,90 +1,41 @@
-"""Semantic roles plugin using the new protocol."""
+"""Semantic roles plugin.
+
+This plugin computes semantic roles for functions and calls.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
+
+from codeintel.analytics.semantic_roles import compute_semantic_roles
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
+from codeintel.config.steps_analytics import SemanticRolesStepConfig
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.analytics.resources.asts import AstResourceData
-    from codeintel.graphs.catalog import FunctionCatalogProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
-from codeintel.analytics.semantic_roles import compute_semantic_roles
-from codeintel.config.steps_analytics import SemanticRolesStepConfig
+    from codeintel.build.context import TargetExecutionContext
 
 
-@dataclass
-class SemanticRolesPlugin:
-    """Plugin for computing semantic roles.
+class SemanticRolesPlugin(TargetPlugin):
+    """Compute semantic roles for functions and calls.
 
     Classifies functions and calls by:
     - Semantic role (producer, consumer, transformer, etc.)
     - Data flow patterns
     - Behavioral classification
+
+    Outputs
+    -------
+    - analytics.semantic_roles: Semantic role classifications
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="semantic.roles",
-            description="Compute semantic roles for functions and calls.",
-            kind="analytics",
-            stage="semantic",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="semantic_roles_cfg",
-                    type_ref="SemanticRolesStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(name="semantic_roles", tables=("analytics.semantic_roles",)),
-            ),
-            provides=("analytics.semantic_roles",),
-            requires=("core.goids",),
-            depends_on=("callgraph",),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=90_000,
-                priority=50,
-            ),
-            tags=("semantic", "roles", "classification"),
-        )
+    plugin_name: ClassVar[str] = "semantic.roles"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Compute semantic roles for functions and calls."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        if not ctx.has_config(SemanticRolesStepConfig):
-            return ValidationResult.failure(("SemanticRolesStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -94,38 +45,37 @@ class SemanticRolesPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(SemanticRolesStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get module_by_path from CatalogProvider
-        # Note: require_by_name already calls .get() internally
+        # Build config from context
+        cfg = SemanticRolesStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
+
+        # Get resources from catalog
+        catalog = ctx.resources.catalog
         module_by_path: dict[str, str] = {}
-        if ctx.has_resource_by_name("CatalogProvider"):
-            catalog_provider = cast(
-                "FunctionCatalogProvider", ctx.require_by_name("CatalogProvider")
-            )
-            module_by_path = catalog_provider.catalog().module_by_path
-
-        # Get ast_map from AstProvider
-        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
         ast_map: dict[int, FunctionAst] = {}
-        if ctx.has_resource_by_name("AstProvider"):
-            ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
-            ast_map = ast_data.function_ast_map
-
-        # Get features from FeaturesProvider
-        # Note: require_by_name already calls .get() internally
         features_map: dict[int, FunctionAstFeatures] = {}
-        if ctx.has_resource_by_name("FeaturesProvider"):
-            features_map = cast(
-                "dict[int, FunctionAstFeatures]", ctx.require_by_name("FeaturesProvider")
-            )
+
+        if catalog is not None:
+            # Get module_by_path from catalog
+            if hasattr(catalog, "catalog"):
+                module_by_path = catalog.catalog().module_by_path
+
+            # Get AST data
+            ast_data = catalog.get_resource("AstProvider")
+            if ast_data is not None:
+                ast_map = ast_data.function_ast_map
+
+            # Get features
+            features = catalog.get_resource("FeaturesProvider")
+            if features is not None:
+                features_map = cast("dict[int, FunctionAstFeatures]", features)
 
         try:
             compute_semantic_roles(
@@ -136,9 +86,9 @@ class SemanticRolesPlugin:
                 features_map=features_map,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Semantic roles computation failed: {e}")
+            return TargetResult.failed(f"Semantic roles computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["SemanticRolesPlugin"]

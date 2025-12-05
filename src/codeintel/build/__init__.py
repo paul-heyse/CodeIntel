@@ -64,6 +64,14 @@ from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.operations import OperationTargets, get_targets_for_operation
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
+
+# Plugin support
+from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
+from codeintel.build.plugin_registry import (
+    get_all_plugins,
+    get_plugin_for_target,
+    register_plugin,
+)
 from codeintel.build.registry import build_target_graph, get_target_graph
 from codeintel.build.resources import (
     DEFAULT_EXECUTION,
@@ -91,11 +99,16 @@ __all__ = [
     "TargetGraph",
     "TargetModule",
     "TargetParameters",
+    "TargetPlugin",
+    "TargetPluginProtocol",
     "TargetResources",
     "TargetResult",
     "build_target_graph",
     "compute_input_hash",
     "compute_options_hash",
+    "get_all_plugins",
+    "get_plugin_for_target",
     "get_target_graph",
     "get_targets_for_operation",
+    "register_plugin",
 ]

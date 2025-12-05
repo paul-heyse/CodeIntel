@@ -1,102 +1,42 @@
-"""Behavioral coverage plugin using the new protocol.
+"""Behavioral coverage plugin.
 
-This module provides the behavioral coverage plugin migrated to the
-new unified plugin protocol.
+This plugin assigns heuristic behavior tags to tests.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class BehavioralCoveragePlugin:
-    """Plugin for assigning behavioral tags to tests.
+
+class BehavioralCoveragePlugin(TargetPlugin):
+    """Assign heuristic behavior tags to tests (unit/integration/etc.).
 
     Classifies tests into categories:
     - Unit tests vs integration tests
     - Behavioral patterns and coverage types
     - Optional LLM-assisted classification
+
+    Outputs
+    -------
+    - analytics.behavioral_coverage: Test behavioral classifications
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="tests.behavioral_coverage",
-            description="Assign heuristic behavior tags to tests (unit/integration/etc.).",
-            kind="analytics",
-            stage="test",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="behavioral_cfg",
-                    type_ref="BehavioralCoverageStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="behavioral_coverage",
-                    tables=("analytics.behavioral_coverage",),
-                ),
-            ),
-            provides=("analytics.behavioral_coverage",),
-            requires=("analytics.test_profile",),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=120_000,
-                requires_gpu=False,
-                priority=30,
-            ),
-            tags=("tests", "behavioral", "classification"),
-        )
+    plugin_name: ClassVar[str] = "tests.behavioral_coverage"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Assign heuristic behavior tags to tests (unit/integration/etc.)."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(BehavioralCoverageStepConfig):
-            errors.append("BehavioralCoverageStepConfig is required")
-
-        # Validate llm runner if provided
-        llm_runner_raw = ctx.extra.get("behavioral_llm_runner")
-        if llm_runner_raw is not None and not callable(llm_runner_raw):
-            errors.append("behavioral_llm_runner must be callable or None")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -106,21 +46,20 @@ class BehavioralCoveragePlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(BehavioralCoverageStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get optional LLM runner
+        cfg = BehavioralCoverageStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
+
+        # Get optional LLM runner from parameters
         llm_runner: BehavioralLLMRunner | None = None
-        llm_runner_raw = ctx.extra.get("behavioral_llm_runner")
-        if llm_runner_raw is not None:
-            if not callable(llm_runner_raw):
-                return PluginResult.fail("behavioral_llm_runner must be callable")
+        llm_runner_raw = ctx.parameters.get_optional("behavioral_llm_runner", object)
+        if llm_runner_raw is not None and callable(llm_runner_raw):
             llm_runner = cast("BehavioralLLMRunner", llm_runner_raw)
 
         try:
@@ -130,7 +69,7 @@ class BehavioralCoveragePlugin:
                 llm_runner=llm_runner,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Behavioral coverage build failed: {e}")
+            return TargetResult.failed(f"Behavioral coverage build failed: {e}")
 
         # Count rows written
         row = ctx.gateway.con.execute(
@@ -138,13 +77,12 @@ class BehavioralCoveragePlugin:
             SELECT COUNT(*) FROM analytics.behavioral_coverage
             WHERE repo = ? AND commit = ?
             """,
-            [cfg.repo, cfg.commit],
+            [ctx.repo, ctx.commit],
         ).fetchone()
         row_count = int(row[0]) if row else 0
 
-        return PluginResult.ok(
+        return TargetResult.succeeded(
             row_counts={"analytics.behavioral_coverage": row_count},
-            meta={"behavior_rows": row_count},
         )
 
 

@@ -1,203 +1,150 @@
-"""Coverage ingest plugin using class-based architecture.
+"""Coverage ingest plugin.
 
-This module provides `CoverageIngestPlugin`, a class-based plugin that
-loads coverage.py data and populates analytics.coverage_lines.
+This module provides `CoverageIngestPlugin` that loads coverage.py
+data and populates analytics.coverage_lines.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.execution.errors import PluginSkipRequestError
-from codeintel.core.plugins.types.protocol import PluginResourceHints
-from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
+from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.core.base import (
-    TableWriterIngestPlugin,
-    ToolDependentIngestPlugin,
-    TrackerRequiringPlugin,
-)
-from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
-from codeintel.ingestion.plugins.protocol import (
-    IngestPluginResult,
-    IngestStage,
-)
-from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class CoverageIngestPlugin(
-    TrackerRequiringPlugin,
-    ToolDependentIngestPlugin,
-    TableWriterIngestPlugin,
-    WithDependencyData,
-    WithToolDependencies,
-):
+def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
+    """Convert string paths to ModuleRecord objects.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records with metadata.
+    """
+    total = len(paths)
+    return [
+        ModuleRecord(
+            rel_path=path,
+            module_name=path.replace("/", ".").removesuffix(".py"),
+            file_path=repo_root / path,
+            index=i + 1,
+            total=total,
+        )
+        for i, path in enumerate(paths)
+    ]
+
+
+def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
+    """Get module paths from context resources or database.
+
+    Returns
+    -------
+    list[str]
+        List of relative module paths.
+    """
+    if ctx.resources.modules:
+        return list(ctx.resources.modules)
+    try:
+        rows = ctx.gateway.con.execute(
+            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+    except (RuntimeError, OSError):
+        return []
+
+
+def _resolve_coverage_file(ctx: TargetExecutionContext) -> Path | None:
+    """Resolve the coverage data file.
+
+    Returns
+    -------
+    Path | None
+        Path to coverage file or None if not found.
+    """
+    candidates = [
+        ctx.repo_root / ".coverage",
+        ctx.repo_root / "coverage.json",
+        ctx.build_dir / "coverage.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+class CoverageIngestPlugin(TargetPlugin):
     """Load coverage.py data and populate analytics.coverage_lines.
 
     This plugin ingests test coverage data from coverage.py's database
     or JSON export.
 
-    Class Attributes
-    ----------------
-    plugin_name : str
-        Stable identifier ("coverage_ingest").
-    plugin_description : str
-        Human-readable description.
-    plugin_stage : IngestStage
-        Processing stage ("enrich").
-    output_tables : tuple[str, ...]
-        Tables written to.
-    depends_on : tuple[str, ...]
-        Plugin dependencies.
-    requires : tuple[str, ...]
-        Required capabilities.
-    tool_dependencies : tuple[str, ...]
-        External tools required.
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    resource_hints : PluginResourceHints
-        Resource requirements.
+    Outputs
+    -------
+    - analytics.coverage_lines: Line-level coverage data
     """
 
     plugin_name: ClassVar[str] = "coverage_ingest"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Load coverage.py data and populate analytics.coverage_lines."
     )
-    plugin_stage: ClassVar[IngestStage] = "enrich"
-    plugin_version: ClassVar[str] = "2.0.0"
 
-    output_tables: ClassVar[tuple[str, ...]] = ("analytics.coverage_lines",)
-
-    depends_on: ClassVar[tuple[str, ...]] = ("repo_scan",)
-    requires: ClassVar[tuple[str, ...]] = ("change_tracker",)
-    tool_dependencies: ClassVar[tuple[str, ...]] = ("coverage",)
-    supports_incremental: ClassVar[bool] = True
-    tracker_required: ClassVar[bool] = False
-    tool_required: ClassVar[bool] = False
-
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        cpu_intensive=False,
-        io_intensive=True,
-    )
-
-    def compute(
-        self,
-        ctx: IngestExecutionContext,
-    ) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute coverage ingestion.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with resources and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            Row counts, or None for auto-compute.
-
-        Raises
-        ------
-        PluginSkipRequestError
-            When coverage file is missing (handled by execute).
-        RuntimeError
-            When coverage ingestion fails.
+        TargetResult
+            Success result with row counts.
         """
+        _ = self  # Protocol method requires instance
+
         # Resolve coverage file
-        coverage_path = self._resolve_coverage_file(ctx)
+        coverage_path = _resolve_coverage_file(ctx)
         if coverage_path is None:
-            msg = "missing_coverage_file"
-            raise PluginSkipRequestError(msg)
+            log.info("No coverage file found, skipping coverage ingestion")
+            return TargetResult.succeeded(row_counts={})
 
-        # Get tool service from provider
-        tools_provider = ctx.require(ToolsProvider)
-        service = tools_provider.get()
+        # Get module paths and convert to ModuleRecord
+        paths = _get_module_paths(ctx)
+        modules = _paths_to_modules(paths, ctx.repo_root)
 
-        # Get modules from provider
-        modules_provider = ctx.require(ModuleProvider)
-        modules = list(modules_provider.get())
-
-        # Create adapters
+        # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
-        tool = ToolRunnerAdapter(service)
+        tool = BuildToolAdapter(
+            coverage_collector=ctx.resources.coverage_collector,
+        )
 
-        # Execute step (async)
+        # Execute step
         step = CoverageIngestStep(storage=storage, tools=tool)
-        result = asyncio.run(
-            step.execute_async(
-                modules,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                repo_root=ctx.repo_root,
-                coverage_file=coverage_path,
-            )
+        result = await step.execute_async(
+            modules,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            coverage_file=coverage_path,
         )
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            msg = f"Coverage ingest failed: {errors}"
-            raise RuntimeError(msg)
+            return TargetResult.failed(f"Coverage ingest failed: {errors}")
 
-        return result.table_counts
-
-    def execute(self, ctx: IngestExecutionContext) -> IngestPluginResult:
-        """Execute with skip handling.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        IngestPluginResult
-            Execution result.
-        """
-        try:
-            result = self.compute(ctx)
-            return self._build_success_result(result, ctx)
-        except PluginSkipRequestError as skip:
-            return IngestPluginResult.skip(str(skip))
-        except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
-            log.exception("Plugin %s failed", self.metadata.name)
-            return IngestPluginResult.fail(f"{self.metadata.name} failed: {exc}")
-
-    @staticmethod
-    def _resolve_coverage_file(ctx: IngestExecutionContext) -> Path | None:
-        """Resolve the coverage data file.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        Path | None
-            Path to coverage file or None if not found.
-        """
-        # Check common locations
-        paths = ctx.paths
-        candidates = [
-            ctx.repo_root / ".coverage",
-            ctx.repo_root / "coverage.json",
-            paths.coverage_json if paths is not None and hasattr(paths, "coverage_json") else None,
-        ]
-        for candidate in candidates:
-            if candidate is not None and candidate.exists():
-                return candidate
-        return None
+        return TargetResult.succeeded(row_counts=result.table_counts or {})
 
 
 __all__ = ["CoverageIngestPlugin"]

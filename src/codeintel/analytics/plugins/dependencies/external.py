@@ -1,106 +1,46 @@
-"""External dependencies plugin using the new protocol."""
+"""External dependencies plugin.
+
+This plugin identifies external dependency usage across functions.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
-if TYPE_CHECKING:
-    from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.analytics.resources.asts import AstProvider
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.features import FeaturesProvider
-    from codeintel.analytics.resources.module_map import ModuleMapProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.dependencies import (
     build_external_dependencies,
     build_external_dependency_calls,
 )
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class ExternalDepsPlugin:
-    """Plugin for identifying external dependency usage.
+
+class ExternalDepsPlugin(TargetPlugin):
+    """Identify external dependency usage across functions.
 
     Analyzes and builds:
     - External dependency calls per function
     - Aggregated dependency usage patterns
     - Third-party library integration points
+
+    Outputs
+    -------
+    - analytics.external_dependency_calls: External dependency calls
+    - analytics.external_dependencies: Aggregated dependencies
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="deps.external",
-            description="Identify external dependency usage across functions.",
-            kind="analytics",
-            stage="other",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="external_deps_cfg",
-                    type_ref="ExternalDependenciesStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="external_dependency_calls",
-                    tables=("analytics.external_dependency_calls",),
-                ),
-                PluginOutputSpec(
-                    name="external_dependencies",
-                    tables=("analytics.external_dependencies",),
-                ),
-            ),
-            provides=(
-                "analytics.external_dependency_calls",
-                "analytics.external_dependencies",
-            ),
-            requires=("core.goids",),
-            depends_on=("goids", "config_ingest"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=90_000,
-                priority=50,
-            ),
-            tags=("dependencies", "external", "third-party"),
-        )
+    plugin_name: ClassVar[str] = "deps.external"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = "Identify external dependency usage across functions."
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        if not ctx.has_config(ExternalDependenciesStepConfig):
-            return ValidationResult.failure(("ExternalDependenciesStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -110,45 +50,42 @@ class ExternalDepsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(ExternalDependenciesStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get catalog from CatalogProvider (required)
-        if not ctx.has_resource_by_name("CatalogProvider"):
-            return PluginResult.fail("CatalogProvider is required for external dependencies")
-        cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-        catalog_provider = cat_prov.get()
+        cfg = ExternalDependenciesStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
 
-        # Get module map from ModuleMapProvider (returns dict directly)
+        catalog = ctx.resources.catalog
+        if catalog is None:
+            return TargetResult.failed("CatalogProvider is required")
+
+        # Get resources from catalog
         module_map: dict[str, str] = {}
-        if ctx.has_resource_by_name("ModuleMapProvider"):
-            mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
-            module_map = mm_prov.get()
-
-        # Get AST data from AstProvider (AstResourceData)
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
-        if ctx.has_resource_by_name("AstProvider"):
-            ast_prov = cast("AstProvider", ctx.require_by_name("AstProvider"))
-            ast_data = ast_prov.get()
+        features_map: dict[int, FunctionAstFeatures] = {}
+
+        mm_resource = catalog.get_resource("ModuleMapProvider")
+        if mm_resource is not None:
+            module_map = mm_resource
+
+        ast_data = catalog.get_resource("AstProvider")
+        if ast_data is not None:
             ast_by_goid = ast_data.function_ast_map
             missing_goids = ast_data.missing_function_goids
 
-        # Get features from FeaturesProvider (returns dict directly)
-        features_map: dict[int, FunctionAstFeatures] = {}
-        if ctx.has_resource_by_name("FeaturesProvider"):
-            feat_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-            features_map = feat_prov.get()
+        feat_resource = catalog.get_resource("FeaturesProvider")
+        if feat_resource is not None:
+            features_map = cast("dict[int, FunctionAstFeatures]", feat_resource)
 
         try:
             inputs = ExternalDependencyInputs(
-                catalog_provider=catalog_provider,
+                catalog_provider=catalog,
                 module_map=module_map,
                 ast_by_goid=ast_by_goid,
                 features_map=features_map,
@@ -157,9 +94,9 @@ class ExternalDepsPlugin:
             build_external_dependency_calls(ctx.gateway, cfg, inputs=inputs)
             build_external_dependencies(ctx.gateway, cfg)
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"External dependencies build failed: {e}")
+            return TargetResult.failed(f"External dependencies build failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["ExternalDepsPlugin"]

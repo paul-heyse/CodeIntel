@@ -1,4 +1,4 @@
-"""Hotspots plugin using new base classes.
+"""Hotspots plugin.
 
 This module computes file-level hotspots based on AST complexity
 metrics and Git churn patterns.
@@ -6,70 +6,95 @@ metrics and Git churn patterns.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.hotspots.metrics import build_hotspots
-from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginResourceHints,
-    PluginStage,
-)
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HotspotsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class HotspotsPlugin(ConfiguredTableWriterPlugin[HotspotsStepConfig]):
+
+class HotspotsPlugin(TargetPlugin):
     """Compute file-level hotspots from AST metrics and churn.
 
     Identifies high-risk code areas based on:
     - AST complexity metrics
     - Git churn patterns
     - Change frequency
+
+    Outputs
+    -------
+    - analytics.hotspots: File-level hotspot scores
     """
 
-    # Core identification
     plugin_name: ClassVar[str] = "hotspots.build"
-    plugin_stage: ClassVar[PluginStage] = "hotspots"
-    plugin_version: ClassVar[str] = "2.0.0"
-
-    # Configuration binding
-    config_type: ClassVar[type[HotspotsStepConfig]] = HotspotsStepConfig
-
-    # Output tables
-    output_tables: ClassVar[tuple[str, ...]] = ("analytics.hotspots",)
-
-    # Capabilities
-    provides: ClassVar[tuple[str, ...]] = ("analytics.hotspots",)
-    requires: ClassVar[tuple[str, ...]] = ("core.ast_metrics",)
-
-    # Categorization
-    tags: ClassVar[tuple[str, ...]] = ("hotspots", "risk", "churn")
-
-    # Resource hints
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        max_runtime_ms=60_000,
-        priority=50,
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Compute file-level hotspots from AST metrics and Git churn."
     )
 
-    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the hotspots computation.
 
         Parameters
         ----------
         ctx
-            Execution context with gateway and config.
+            Execution context with gateway and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            None to trigger auto row count computation.
+        TargetResult
+            Success result with row counts.
         """
-        cfg = self.config
-        build_hotspots(ctx.gateway, cfg, runner=ctx.extra.get("tool_runner"))
-        return None  # Let base class compute row counts
+        # Get parameters
+        max_commits = ctx.parameters.get("max_commits", int, default=2000)
+        min_churn_threshold = ctx.parameters.get("min_churn_threshold", int, default=5)
+
+        # Build hotspots config from parameters
+        cfg = HotspotsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+            max_commits=max_commits,
+            min_churn_threshold=min_churn_threshold,
+        )
+
+        # Execute computation
+        tool_runner = ctx.resources.tool_runner
+        build_hotspots(ctx.gateway, cfg, runner=tool_runner)
+
+        # Compute row counts
+        row_counts = self._compute_row_counts(ctx)
+        return TargetResult.succeeded(row_counts=row_counts)
+
+    def _compute_row_counts(self, ctx: TargetExecutionContext) -> dict[str, int]:
+        """Compute row counts for output tables.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        dict[str, int]
+            Row counts per table.
+        """
+        _ = self  # Instance method for future extension
+        row_counts: dict[str, int] = {}
+        for table_key in ctx.contract.table_keys:
+            try:
+                count = ctx.gateway.query(
+                    f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
+                    f"WHERE repo = ? AND commit = ?",
+                    [ctx.repo, ctx.commit],
+                ).fetchone()
+                row_counts[table_key] = count[0] if count else 0
+            except (RuntimeError, OSError):
+                row_counts[table_key] = 0
+        return row_counts
 
 
 __all__ = ["HotspotsPlugin"]

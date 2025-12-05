@@ -1,97 +1,42 @@
-"""History timeseries plugin using the new protocol."""
+"""History timeseries plugin.
+
+This plugin aggregates analytics across commits into history timeseries.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HistoryTimeseriesStepConfig
 
 if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import SnapshotGatewayResolver
 
 
-@dataclass
-class HistoryTimeseriesPlugin:
-    """Plugin for aggregating history timeseries.
+class HistoryTimeseriesPlugin(TargetPlugin):
+    """Aggregate analytics across commits into history timeseries.
 
     Computes historical trends by:
     - Aggregating analytics across commits
     - Building time-based metrics
     - Tracking evolution patterns
+
+    Outputs
+    -------
+    - analytics.history_timeseries: Historical trends data
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="history.timeseries",
-            description="Aggregate analytics across commits into history timeseries.",
-            kind="analytics",
-            stage="history",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="history_cfg",
-                    type_ref="HistoryTimeseriesStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="history_timeseries", tables=("analytics.history_timeseries",)
-                ),
-            ),
-            provides=("analytics.history_timeseries",),
-            requires=("analytics.function_profile",),
-            depends_on=("profiles.build",),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=120_000,
-                priority=80,
-            ),
-            tags=("history", "timeseries", "trends"),
-        )
+    plugin_name: ClassVar[str] = "history.timeseries"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Aggregate analytics across commits into history timeseries."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        errors: list[str] = []
-
-        if not ctx.has_config(HistoryTimeseriesStepConfig):
-            errors.append("HistoryTimeseriesStepConfig is required")
-
-        if ctx.extra.get("history_snapshot_resolver") is None:
-            errors.append("history_snapshot_resolver is required in ctx.extra")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -101,32 +46,37 @@ class HistoryTimeseriesPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(HistoryTimeseriesStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        snapshot_resolver = ctx.extra.get("history_snapshot_resolver")
+        # Build config from context
+        cfg = HistoryTimeseriesStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
+
+        # Get snapshot resolver from parameters (if available)
+        # This is a specialized resource that might need to be provided
+        snapshot_resolver = ctx.parameters.get_optional("history_snapshot_resolver", object)
         if snapshot_resolver is None:
-            return PluginResult.fail("history_snapshot_resolver is required")
+            return TargetResult.failed("history_snapshot_resolver is required in parameters")
 
         resolver = cast("SnapshotGatewayResolver", snapshot_resolver)
+        tool_runner = ctx.resources.tool_runner
 
         try:
             compute_history_timeseries_gateways(
                 ctx.gateway,
                 cfg,
                 resolver,
-                runner=ctx.extra.get("tool_runner"),
+                runner=tool_runner,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"History timeseries computation failed: {e}")
+            return TargetResult.failed(f"History timeseries computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["HistoryTimeseriesPlugin"]

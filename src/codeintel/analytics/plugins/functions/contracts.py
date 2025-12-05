@@ -1,103 +1,41 @@
-"""Function contracts plugin using the new protocol.
+"""Function contracts plugin.
 
-This module provides the function contracts plugin migrated to the
-new unified plugin protocol.
+This plugin infers pre/postconditions and nullability contracts.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import AstResourceData
-    from codeintel.graphs.catalog import FunctionCatalogProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.functions import compute_function_contracts
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import FunctionContractsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class FunctionContractsPlugin:
-    """Plugin for inferring function pre/postconditions and contracts.
+
+class FunctionContractsPlugin(TargetPlugin):
+    """Infer pre/postconditions and nullability contracts for functions.
 
     Analyzes functions to infer:
     - Preconditions (required input states)
     - Postconditions (guaranteed output states)
     - Nullability contracts
+
+    Outputs
+    -------
+    - analytics.function_contracts: Contract information
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="functions.contracts",
-            description="Infer pre/postconditions and nullability contracts for functions.",
-            kind="analytics",
-            stage="function",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="function_contracts_cfg",
-                    type_ref="FunctionContractsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="function_contracts",
-                    tables=("analytics.function_contracts",),
-                ),
-            ),
-            provides=("analytics.function_contracts",),
-            requires=(
-                "analytics.function_metrics",
-                "analytics.docstrings",
-            ),
-            depends_on=("functions.metrics",),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=90_000,
-                priority=30,
-            ),
-            tags=("functions", "contracts", "nullability"),
-        )
+    plugin_name: ClassVar[str] = "functions.contracts"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Infer pre/postconditions and nullability contracts for functions."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(FunctionContractsStepConfig):
-            errors.append("FunctionContractsStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -107,38 +45,40 @@ class FunctionContractsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(FunctionContractsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get required AST data from AstProvider
-        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
-        if not ctx.has_resource_by_name("AstProvider"):
-            return PluginResult.fail("AstProvider is required")
-        ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
+        # Build config from context
+        cfg = FunctionContractsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
 
-        # Get catalog from CatalogProvider
-        # Note: require_by_name returns the loaded resource (FunctionCatalogProvider), not provider
-        if not ctx.has_resource_by_name("CatalogProvider"):
-            return PluginResult.fail("CatalogProvider is required")
-        catalog = cast("FunctionCatalogProvider", ctx.require_by_name("CatalogProvider"))
+        # Get catalog provider
+        catalog = ctx.resources.catalog
+        if catalog is None:
+            return TargetResult.failed("CatalogProvider is required")
+
+        # Get AST data
+        ast_data = catalog.get_resource("AstProvider")
+        if ast_data is None:
+            return TargetResult.failed("AstProvider is required")
+
+        function_ast_map = ast_data.function_ast_map
 
         try:
             compute_function_contracts(
                 ctx.gateway,
                 cfg,
-                function_ast_map=ast_data.function_ast_map,
+                function_ast_map=function_ast_map,
                 catalog=catalog,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Function contracts computation failed: {e}")
+            return TargetResult.failed(f"Function contracts computation failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["FunctionContractsPlugin"]

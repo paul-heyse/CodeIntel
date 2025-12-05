@@ -1,182 +1,165 @@
-"""SCIP ingest plugin using class-based architecture.
+"""SCIP ingest plugin.
 
-This module provides `ScipIngestPlugin`, a class-based plugin that
-runs scip-python and persists symbols and GOID crosswalk.
+This module provides `ScipIngestPlugin` that runs scip-python
+and persists symbols and GOID crosswalk.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.execution.errors import PluginSkipRequestError
-from codeintel.core.plugins.types.protocol import PluginResourceHints
-from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
+from codeintel.build.context import TargetResult
+from codeintel.build.errors import ToolNotAvailableError
+from codeintel.build.plugin import TargetPlugin
+from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
-from codeintel.ingestion.core.base import (
-    ToolDependentIngestPlugin,
-    TrackerRequiringPlugin,
-)
-from codeintel.ingestion.core.traits import WithDependencyData, WithToolDependencies
-from codeintel.ingestion.plugins.protocol import (
-    IngestPluginResult,
-    IngestStage,
-)
-from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class ScipIngestPlugin(
-    TrackerRequiringPlugin,
-    ToolDependentIngestPlugin,
-    WithDependencyData,
-    WithToolDependencies,
-):
+def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
+    """Convert string paths to ModuleRecord objects.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records with metadata.
+    """
+    total = len(paths)
+    return [
+        ModuleRecord(
+            rel_path=path,
+            module_name=path.replace("/", ".").removesuffix(".py"),
+            file_path=repo_root / path,
+            index=i + 1,
+            total=total,
+        )
+        for i, path in enumerate(paths)
+    ]
+
+
+def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
+    """Get module paths from context resources or database.
+
+    Returns
+    -------
+    list[str]
+        List of relative module paths.
+    """
+    if ctx.resources.modules:
+        return list(ctx.resources.modules)
+    try:
+        rows = ctx.gateway.con.execute(
+            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+    except (RuntimeError, OSError):
+        return []
+
+
+def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
+    """Compute row counts for output tables.
+
+    Returns
+    -------
+    dict[str, int]
+        Row counts per table.
+    """
+    row_counts: dict[str, int] = {}
+    for table_key in ctx.contract.table_keys:
+        try:
+            count = ctx.gateway.con.execute(
+                f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
+                f"WHERE repo = ? AND commit = ?",
+                [ctx.repo, ctx.commit],
+            ).fetchone()
+            row_counts[table_key] = int(count[0]) if count else 0
+        except (RuntimeError, OSError):
+            row_counts[table_key] = 0
+    return row_counts
+
+
+class ScipIngestPlugin(TargetPlugin):
     """Run scip-python and persist symbols and GOID crosswalk.
 
     This plugin executes the SCIP-Python indexer to generate semantic
     code intelligence data, including symbol information and global
     identifier crosswalk.
 
-    Class Attributes
-    ----------------
-    plugin_name : str
-        Stable identifier ("scip_ingest").
-    plugin_description : str
-        Human-readable description.
-    plugin_stage : IngestStage
-        Processing stage ("index").
-    output_tables : tuple[str, ...]
-        Tables written to.
-    depends_on : tuple[str, ...]
-        Plugin dependencies.
-    requires : tuple[str, ...]
-        Required capabilities.
-    tool_dependencies : tuple[str, ...]
-        External tools required.
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    resource_hints : PluginResourceHints
-        Resource requirements.
+    Outputs
+    -------
+    - index.scip: SCIP index file
+    - core.scip_symbols: Symbol table
+    - core.goid_crosswalk: GOID crosswalk
     """
 
     plugin_name: ClassVar[str] = "scip_ingest"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Run scip-python and persist symbols and GOID crosswalk."
-    plugin_stage: ClassVar[IngestStage] = "index"
-    plugin_version: ClassVar[str] = "2.0.0"
 
-    output_tables: ClassVar[tuple[str, ...]] = (
-        "index.scip",
-        "core.scip_symbols",
-        "core.goid_crosswalk",
-    )
-
-    depends_on: ClassVar[tuple[str, ...]] = ("repo_scan",)
-    requires: ClassVar[tuple[str, ...]] = ("change_tracker",)
-    tool_dependencies: ClassVar[tuple[str, ...]] = ("scip",)
-    supports_incremental: ClassVar[bool] = True
-    tracker_required: ClassVar[bool] = False
-    tool_required: ClassVar[bool] = False
-
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        cpu_intensive=True,
-        io_intensive=True,
-        max_runtime_ms=300000,
-    )
-
-    def compute(
-        self,
-        ctx: IngestExecutionContext,
-    ) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute SCIP indexing.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with resources and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            Row counts, or None on skip.
+        TargetResult
+            Success result with row counts.
 
         Raises
         ------
-        PluginSkipRequestError
-            When SCIP tools are unavailable.
-        RuntimeError
-            On SCIP execution failure.
+        ToolNotAvailableError
+            When the scip-python tool is not available.
         """
-        _ = self  # Required by interface, accessed via ctx
+        _ = self  # Protocol method requires instance
 
-        # Check if SCIP binaries are configured
-        if ctx.tools.scip_python_bin is None or ctx.tools.scip_bin is None:
-            msg = "SCIP binaries not configured"
-            raise PluginSkipRequestError(msg)
+        # Check tool availability
+        if ctx.resources.scip_indexer is None:
+            raise ToolNotAvailableError(target=self.plugin_name, tool="scip-python")
 
-        # Get tool service from provider
-        tools_provider = ctx.require(ToolsProvider)
-        service = tools_provider.get()
+        # Get module paths and convert to ModuleRecord
+        paths = _get_module_paths(ctx)
+        modules = _paths_to_modules(paths, ctx.repo_root)
 
-        # Get modules from provider
-        modules_provider = ctx.require(ModuleProvider)
-        modules = list(modules_provider.get())
-
-        # Create adapters
+        # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
-        tool = ToolRunnerAdapter(service)
+        tool = BuildToolAdapter(scip_indexer=ctx.resources.scip_indexer)
 
         # Create config
-        scip_dir = ctx.validated_paths.scip_dir
+        scip_dir = ctx.scip_dir
         config = ScipIngestConfig(
-            repo=ctx.snapshot.repo,
-            commit=ctx.snapshot.commit,
-            repo_root=ctx.snapshot.repo_root,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
             output_scip=scip_dir / "index.scip",
             output_json=scip_dir / "index.json",
         )
 
-        # Execute step (async)
+        # Execute step
         step = ScipIngestStep(storage=storage, tools=tool)
-        result = asyncio.run(step.execute_async(modules, config))
+        result = await step.execute_async(modules, config)
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            msg = f"SCIP ingest failed: {errors}"
-            raise RuntimeError(msg)
+            return TargetResult.failed(f"SCIP ingest failed: {errors}")
 
-        # Return None to trigger auto row count
-        return None
-
-    def execute(self, ctx: IngestExecutionContext) -> IngestPluginResult:
-        """Execute with skip handling.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        IngestPluginResult
-            Execution result.
-        """
-        try:
-            result = self.compute(ctx)
-            return self._build_success_result(result, ctx)
-        except PluginSkipRequestError as skip:
-            return IngestPluginResult.skip(str(skip))
-        except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
-            log.exception("Plugin %s failed", self.metadata.name)
-            return IngestPluginResult.fail(f"{self.metadata.name} failed: {exc}")
+        # Compute row counts
+        row_counts = _compute_row_counts(ctx)
+        return TargetResult.succeeded(
+            row_counts=row_counts,
+            artifacts_written=["index.scip", "index.json"],
+        )
 
 
 __all__ = ["ScipIngestPlugin"]

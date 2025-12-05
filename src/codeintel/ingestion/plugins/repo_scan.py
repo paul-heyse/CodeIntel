@@ -1,104 +1,70 @@
-"""Repository scan plugin using class-based architecture.
+"""Repository scan plugin.
 
-This module provides `RepoScanPlugin`, a class-based plugin that scans
-repository modules and builds change-tracker state.
+This module provides `RepoScanPlugin` that scans repository modules
+and builds change-tracker state. Part of the build system.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.plugins.types.protocol import PluginResourceHints
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.core.base import BaseIngestPlugin
-from codeintel.ingestion.core.traits import WithDependencyData, WithRowCounts
-from codeintel.ingestion.plugins.protocol import (
-    IngestPluginResult,
-    IngestStage,
-)
+from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
+class RepoScanPlugin(TargetPlugin):
     """Scan repository modules and build change-tracker state.
 
     This plugin scans the repository tree, discovering Python modules
-    and tracking changes for incremental processing. Results are stored
-    in scratch for downstream plugins.
+    and tracking changes for incremental processing.
 
-    Class Attributes
-    ----------------
-    plugin_name : str
-        Stable identifier ("repo_scan").
-    plugin_description : str
-        Human-readable description.
-    plugin_stage : IngestStage
-        Processing stage ("scan").
-    output_tables : tuple[str, ...]
-        Tables written to.
-    provides : tuple[str, ...]
-        Capabilities provided.
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    resource_hints : PluginResourceHints
-        Resource requirements.
+    Outputs
+    -------
+    - core.file_state: File state and hashes
+    - core.modules: Discovered Python modules
+    - core.repo_map: Repository mapping
+    - analytics.tags_index: Tag index for search
     """
 
     plugin_name: ClassVar[str] = "repo_scan"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Scan repository modules and build change-tracker state."
-    plugin_stage: ClassVar[IngestStage] = "scan"
-    plugin_version: ClassVar[str] = "2.0.0"
 
-    output_tables: ClassVar[tuple[str, ...]] = (
-        "core.file_state",
-        "core.modules",
-        "core.repo_map",
-        "analytics.tags_index",
-    )
-
-    provides: ClassVar[tuple[str, ...]] = ("modules", "change_tracker")
-    supports_incremental: ClassVar[bool] = False
-
-    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
-        cpu_intensive=False,
-        io_intensive=True,
-    )
-
-    def compute(
-        self,
-        ctx: IngestExecutionContext,
-    ) -> Mapping[str, int] | None:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute repository scan.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with resources and parameters.
 
         Returns
         -------
-        Mapping[str, int] | None
-            Row counts after scan, or None for auto-compute.
+        TargetResult
+            Success result with row counts.
         """
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
-        discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
+        discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
+
+        # Create scan profile - use default code profile for Python files
+        profile = default_code_profile(ctx.repo_root)
 
         # Execute step
         step = RepoScanStep(
@@ -108,24 +74,24 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
         )
 
         _result, modules, _change_set = step.execute(
-            repo=ctx.snapshot.repo,
-            commit=ctx.snapshot.commit,
-            repo_root=ctx.snapshot.repo_root,
-            profile=ctx.validated_code_profile,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            profile=profile,
             full_rebuild=False,
         )
 
         # Build change request for tracker
         change_request = ChangeRequest(
-            repo=ctx.snapshot.repo,
-            commit=ctx.snapshot.commit,
-            repo_root=ctx.snapshot.repo_root,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
             language="python",
             full_rebuild=False,
-            scan_profile=ctx.validated_code_profile,
+            scan_profile=profile,
         )
 
-        # Create change tracker
+        # Create change tracker (stored in resources for downstream plugins)
         tracker = ChangeTracker.create(
             gateway=ctx.gateway,
             change_request=change_request,
@@ -134,34 +100,41 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
             change_detection=change_detection,
         )
 
-        # Store tracker in scratch for downstream plugins
-        self.set_dependency_data(ctx, "change_tracker", tracker)
+        # Store tracker in context resources for downstream plugins
+        # This is accessed via ctx.resources.change_tracker
+        ctx.resources.change_tracker = tracker
 
-        # Return None to trigger auto row count computation
-        return None
+        # Compute row counts from tables
+        row_counts = self._compute_row_counts(ctx)
 
-    def _build_success_result(
-        self,
-        row_counts: Mapping[str, int] | None,
-        ctx: IngestExecutionContext,
-    ) -> IngestPluginResult:
-        """Build success result with auto row counts.
+        return TargetResult.succeeded(row_counts=row_counts)
+
+    @staticmethod
+    def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
+        """Compute row counts for output tables.
 
         Parameters
         ----------
-        row_counts
-            Explicit row counts or None.
         ctx
             Execution context.
 
         Returns
         -------
-        IngestPluginResult
-            Success result.
+        dict[str, int]
+            Row counts per table.
         """
-        if row_counts is None:
-            row_counts = self.compute_row_counts_for_tables(ctx)
-        return IngestPluginResult.ok(row_counts=dict(row_counts))
+        row_counts: dict[str, int] = {}
+        for table_key in ctx.contract.table_keys:
+            try:
+                count = ctx.gateway.con.execute(
+                    f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
+                    f"WHERE repo = ? AND commit = ?",
+                    [ctx.repo, ctx.commit],
+                ).fetchone()
+                row_counts[table_key] = int(count[0]) if count else 0
+            except (RuntimeError, OSError):
+                row_counts[table_key] = 0
+        return row_counts
 
 
 __all__ = ["RepoScanPlugin"]

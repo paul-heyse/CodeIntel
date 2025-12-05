@@ -1,95 +1,43 @@
-"""Subsystems plugin using the new protocol."""
+"""Subsystems plugin.
+
+This plugin infers subsystems from module coupling and risk signals.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar
 
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.graphs import GraphProvider
-
-from codeintel.analytics.core.context import PluginExecutionContext
-from codeintel.analytics.core.protocol import (
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
 from codeintel.analytics.subsystems import build_subsystems
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import SubsystemsStepConfig
 
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
-@dataclass
-class SubsystemsPlugin:
-    """Plugin for inferring subsystems from module coupling.
+
+class SubsystemsPlugin(TargetPlugin):
+    """Infer subsystems from module coupling and risk signals.
 
     Detects and builds:
     - Subsystem boundaries from coupling analysis
     - Module to subsystem mappings
     - Function to subsystem associations
+
+    Outputs
+    -------
+    - analytics.subsystems: Subsystem definitions
+    - analytics.subsystem_modules: Module to subsystem mappings
+    - analytics.subsystem_functions: Function to subsystem associations
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="subsystems.build",
-            description="Infer subsystems from module coupling and risk signals.",
-            kind="analytics",
-            stage="subsystem",
-            version="3.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="subsystems_cfg",
-                    type_ref="SubsystemsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(name="subsystems", tables=("analytics.subsystems",)),
-                PluginOutputSpec(name="subsystem_modules", tables=("analytics.subsystem_modules",)),
-                PluginOutputSpec(
-                    name="subsystem_functions", tables=("analytics.subsystem_functions",)
-                ),
-            ),
-            provides=(
-                "analytics.subsystems",
-                "analytics.subsystem_modules",
-                "analytics.subsystem_functions",
-            ),
-            requires=("core.modules",),
-            depends_on=("import_graph", "symbol_uses", "risk_factors.build"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=120_000,
-                priority=60,
-            ),
-            tags=("subsystems", "architecture", "modules"),
-        )
+    plugin_name: ClassVar[str] = "subsystems.build"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Infer subsystems from module coupling and risk signals."
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata
-        if not ctx.has_config(SubsystemsStepConfig):
-            return ValidationResult.failure(("SubsystemsStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
 
         Parameters
@@ -99,20 +47,18 @@ class SubsystemsPlugin:
 
         Returns
         -------
-        PluginResult
+        TargetResult
             Execution result.
         """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(SubsystemsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
+        _ = self  # Protocol method requires instance
 
-        # Get graph runtime from GraphProvider (optional)
-        graph_runtime = None
-        if ctx.has_resource_by_name("GraphProvider"):
-            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
-            graph_runtime = graph_prov.runtime
+        # Build config from context
+        cfg = SubsystemsStepConfig(
+            snapshot=ctx.snapshot,
+            paths=ctx.paths,
+        )
+
+        graph_runtime = ctx.resources.graph_runtime
 
         try:
             build_subsystems(
@@ -121,9 +67,9 @@ class SubsystemsPlugin:
                 runtime=graph_runtime,
             )
         except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Subsystems build failed: {e}")
+            return TargetResult.failed(f"Subsystems build failed: {e}")
 
-        return PluginResult.ok()
+        return TargetResult.succeeded()
 
 
 __all__ = ["SubsystemsPlugin"]

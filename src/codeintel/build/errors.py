@@ -21,6 +21,7 @@ Add schema for 'core.scip_symbols' to the target's OutputContract
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from difflib import get_close_matches
 from pathlib import Path
 
 __all__ = [
@@ -410,8 +411,6 @@ class TargetNotFoundError(BuildError):
             return "Check the target name and try again"
 
         # Find similar names for suggestions
-        from difflib import get_close_matches
-
         matches = get_close_matches(self.target, self.available, n=3, cutoff=0.6)
         if matches:
             suggestions = ", ".join(f"'{m}'" for m in matches)
@@ -595,7 +594,10 @@ class BuildErrorCollection:
         list[BuildError]
             Errors for the specified target.
         """
-        result: list[BuildError] = [error for error in self.errors if hasattr(error, "target") and error.target == target]
+        result: list[BuildError] = [
+            error for error in self.errors
+            if getattr(error, "target", None) == target
+        ]
         return result
 
     def format_summary(self) -> str:
@@ -629,15 +631,12 @@ class BuildErrorCollection:
         """Raise the first error if any were collected.
 
         This is useful when you want to collect errors during
-        a phase but raise at the end.
-
-        Raises
-        ------
-        BuildError
-            The first collected error.
+        a phase but raise at the end. If no errors were collected,
+        this method does nothing.
         """
         if self.errors:
-            raise self.errors[0]
+            first_error: BuildError = self.errors[0]
+            raise first_error
 
     def merge(self, other: BuildErrorCollection) -> BuildErrorCollection:
         """Merge another collection into this one.
