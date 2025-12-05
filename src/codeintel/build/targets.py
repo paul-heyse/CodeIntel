@@ -2,6 +2,12 @@
 
 This module defines the core abstractions for tracking what outputs
 the build system can produce and their interdependencies.
+
+The OutputTarget is now the single source of truth for:
+- What tables/artifacts a target produces (contract)
+- What resources it needs (resources)
+- How it should be executed (execution)
+- Tuning parameters (parameters)
 """
 
 from __future__ import annotations
@@ -9,6 +15,15 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal
+
+from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
+from codeintel.build.resources import (
+    DEFAULT_EXECUTION,
+    DEFAULT_RESOURCES,
+    TargetExecution,
+    TargetResources,
+)
 
 TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of which target module produces an output."""
@@ -21,42 +36,98 @@ class OutputTarget:
     Each target represents a logical output that the build system can
     produce. Targets have dependencies on other targets, forming a DAG.
 
+    The OutputTarget is the single source of truth for what a target
+    produces and how it should be executed. Plugins receive all their
+    configuration from the target via TargetExecutionContext.
+
     Attributes
     ----------
     name
-        Canonical target identifier (e.g., "function.metrics").
+        Canonical target identifier (e.g., "function_metrics").
     module
         Which target module produces this output.
     plugin
         Plugin name that produces this target.
-    tables
-        DuckDB tables this target writes to.
+    contract
+        Output contract defining tables and artifacts produced.
+        This is authoritative - TABLE_SCHEMAS derives from contracts.
     dependencies
         Other OutputTarget names that must be computed first.
+    resources
+        Resources required for execution (tracker, tools, etc.).
+    execution
+        Execution configuration (isolation, timeouts, etc.).
+    parameters
+        Tuning parameters for this target.
     description
         Human-readable description.
-    estimated_duration_ms
-        Typical execution time in milliseconds (for planning).
+    tables
+        DEPRECATED: Use contract.table_keys instead.
+        Kept for backward compatibility during migration.
 
     Examples
     --------
+    >>> from codeintel.build.contracts import OutputContract, ArtifactSpec
+    >>> from codeintel.build.resources import TargetResources, TargetExecution
+    >>> from codeintel.config.datasets.primitives import TableSchema, Column
     >>> target = OutputTarget(
-    ...     name="risk_factors",
-    ...     module="analytics",
-    ...     plugin="risk_factors_plugin",
-    ...     tables=("analytics.goid_risk_factors",),
-    ...     dependencies=("function_metrics", "coverage"),
-    ...     description="Risk factors per function",
+    ...     name="scip",
+    ...     module="ingestion",
+    ...     plugin="scip_ingest",
+    ...     contract=OutputContract(
+    ...         tables=(
+    ...             TableSchema("core", "goids", [Column("goid_h128", "DECIMAL(38,0)")]),
+    ...         ),
+    ...         artifacts=(
+    ...             ArtifactSpec("scip_index", "{scip_dir}/index.scip"),
+    ...         ),
+    ...     ),
+    ...     dependencies=("modules",),
+    ...     resources=TargetResources(tracker=True, tools=("scip-python",)),
+    ...     execution=TargetExecution(cpu_intensive=True, isolation="process"),
+    ...     description="SCIP index ingestion",
     ... )
     """
 
     name: str
     module: TargetModule
     plugin: str
-    tables: tuple[str, ...]
+    # New: Full contract (authoritative)
+    contract: OutputContract = field(default_factory=lambda: EMPTY_CONTRACT)
     dependencies: tuple[str, ...] = ()
+    # New: Resource requirements
+    resources: TargetResources = field(default_factory=lambda: DEFAULT_RESOURCES)
+    # New: Execution configuration
+    execution: TargetExecution = field(default_factory=lambda: DEFAULT_EXECUTION)
+    # New: Tuning parameters
+    parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     description: str = ""
-    estimated_duration_ms: int | None = None
+    # DEPRECATED: Use contract.table_keys instead
+    tables: tuple[str, ...] = ()
+
+    @property
+    def table_keys(self) -> tuple[str, ...]:
+        """Return table keys from contract, falling back to deprecated tables.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Fully-qualified table names this target writes to.
+        """
+        if self.contract.tables:
+            return self.contract.table_keys
+        return self.tables
+
+    @property
+    def estimated_duration_ms(self) -> int:
+        """Return estimated duration from execution config.
+
+        Returns
+        -------
+        int
+            Estimated execution duration in milliseconds.
+        """
+        return self.execution.estimated_duration_ms()
 
 
 @dataclass

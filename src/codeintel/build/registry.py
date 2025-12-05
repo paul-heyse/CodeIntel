@@ -5,14 +5,32 @@ enabling the build system to compute minimal execution plans.
 
 Targets are organized by module (ingestion, graphs, analytics) and
 registered in the singleton target graph.
+
+The OutputTarget is now the single source of truth for what each target
+produces. Targets can be defined with:
+1. Full contracts (new pattern) - OutputContract with TableSchema
+2. Legacy tables (deprecated) - Just table key strings
+
+During migration, both patterns coexist. TABLE_SCHEMAS can be derived
+from target contracts using derive_schemas_from_targets().
 """
 
 from __future__ import annotations
 
 import logging
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
+from codeintel.build.contracts import ArtifactSpec, OutputContract
+from codeintel.build.resources import (
+    CPU_INTENSIVE_EXECUTION,
+    TOOL_EXECUTION,
+    TargetResources,
+)
 from codeintel.build.targets import OutputTarget, TargetGraph
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.primitives import TableSchema
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +53,8 @@ AST_TARGET = OutputTarget(
     plugin="ast_extract",
     tables=("core.ast_nodes", "core.ast_metrics"),
     dependencies=("modules",),
+    resources=TargetResources(tracker=True, modules=True),
+    execution=CPU_INTENSIVE_EXECUTION,
     description="Python AST extraction and metrics.",
 )
 
@@ -51,8 +71,20 @@ SCIP_TARGET = OutputTarget(
     name="scip",
     module="ingestion",
     plugin="scip_ingest",
-    tables=("core.goids", "core.goid_crosswalk"),
+    contract=OutputContract(
+        artifacts=(
+            ArtifactSpec("scip_index", "{scip_dir}/index.scip", "SCIP index file"),
+            ArtifactSpec("scip_json", "{scip_dir}/index.json", "SCIP JSON export"),
+        ),
+    ),
+    tables=("core.goids", "core.goid_crosswalk"),  # Legacy: will migrate to contract
     dependencies=("modules",),
+    resources=TargetResources(
+        tracker=True,
+        modules=True,
+        tools=("scip-python", "scip"),
+    ),
+    execution=TOOL_EXECUTION,
     description="SCIP index ingestion and GOID generation.",
 )
 
@@ -62,6 +94,12 @@ TYPING_TARGET = OutputTarget(
     plugin="typing_ingest",
     tables=("analytics.typedness", "analytics.static_diagnostics"),
     dependencies=("modules",),
+    resources=TargetResources(
+        tracker=True,
+        modules=True,
+        tools=("pyright", "pyrefly", "ruff"),
+    ),
+    execution=TOOL_EXECUTION,
     description="Type annotation analysis and static diagnostics.",
 )
 
@@ -498,6 +536,81 @@ def get_target_graph() -> TargetGraph:
     return build_target_graph()
 
 
+def derive_schemas_from_targets(
+    targets: tuple[OutputTarget, ...],
+) -> dict[str, TableSchema]:
+    """Derive TABLE_SCHEMAS from target contracts.
+
+    This function extracts TableSchema definitions from OutputTarget
+    contracts, enabling schema derivation from the build system.
+
+    During migration, this is used alongside static TABLE_SCHEMAS.
+    Eventually, TABLE_SCHEMAS will be fully derived from targets.
+
+    Parameters
+    ----------
+    targets
+        Tuple of OutputTargets to extract schemas from.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping of table key to TableSchema.
+    """
+    schemas: dict[str, TableSchema] = {}
+
+    for target in targets:
+        for table in target.contract.tables:
+            key = table.fq_name
+            if key in schemas:
+                log.warning(
+                    "Duplicate schema for %s from targets %s",
+                    key,
+                    target.name,
+                )
+            schemas[key] = table
+
+    return schemas
+
+
+def get_all_target_table_keys() -> frozenset[str]:
+    """Return all table keys declared by any target.
+
+    This includes both contract tables and legacy tables.
+
+    Returns
+    -------
+    frozenset[str]
+        Set of all table keys.
+    """
+    keys: set[str] = set()
+    for target in ALL_TARGETS:
+        # Add contract tables
+        keys.update(target.contract.table_keys)
+        # Add legacy tables
+        keys.update(target.tables)
+    return frozenset(keys)
+
+
+def get_target_by_table(table_key: str) -> OutputTarget | None:
+    """Find the target that produces a given table.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name.
+
+    Returns
+    -------
+    OutputTarget | None
+        Target that produces this table, or None.
+    """
+    for target in ALL_TARGETS:
+        if table_key in target.table_keys:
+            return target
+    return None
+
+
 __all__ = [
     "ALL_TARGETS",
     "AST_TARGET",
@@ -540,5 +653,8 @@ __all__ = [
     "TEST_PROFILE_TARGET",
     "TYPING_TARGET",
     "build_target_graph",
+    "derive_schemas_from_targets",
+    "get_all_target_table_keys",
+    "get_target_by_table",
     "get_target_graph",
 ]

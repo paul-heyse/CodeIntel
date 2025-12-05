@@ -1,5 +1,11 @@
 """Graph-related step configuration models and builder.
 
+.. deprecated:: 2.0.0
+    Step configurations are being migrated to the build system.
+    Use ``codeintel.build.context.TargetExecutionContext`` instead.
+    Parameters now come from ``codeintel.build.config.BuildConfig``.
+    See ``codeintel.build.plugins.TargetPlugin`` for the new pattern.
+
 Note
 ----
 For constructing step configurations, prefer using ``ConfigBuilder`` from

@@ -2286,7 +2286,53 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Schema Derivation Support
+# ---------------------------------------------------------------------------
+
+
+def get_table_schema(table_key: str) -> TableSchema | None:
+    """Get a table schema by key.
+
+    Looks up schemas in TABLE_SCHEMAS and (in future) derived schemas
+    from build targets.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name (e.g., "core.ast_nodes").
+
+    Returns
+    -------
+    TableSchema | None
+        Schema if found, None otherwise.
+    """
+    return TABLE_SCHEMAS.get(table_key)
+
+
+def merge_with_derived_schemas(derived: dict[str, TableSchema]) -> dict[str, TableSchema]:
+    """Merge derived schemas with static TABLE_SCHEMAS.
+
+    Derived schemas take precedence over static schemas.
+
+    Parameters
+    ----------
+    derived
+        Schemas derived from build target contracts.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Merged schemas.
+    """
+    result = dict(TABLE_SCHEMAS)
+    result.update(derived)
+    return result
+
+
 __all__ = [
     "COMPOSITE_SCHEMAS",
     "TABLE_SCHEMAS",
+    "get_table_schema",
+    "merge_with_derived_schemas",
 ]
