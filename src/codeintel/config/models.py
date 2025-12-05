@@ -91,7 +91,7 @@ class CliPathsInput(BaseModel):
         description="Build directory (holds db/, logs/, etc.)",
     )
     db_path: Path = Field(
-        default=Path("build/db/codeintel_prefect.duckdb"),
+        default=Path("build/db/codeintel.duckdb"),
         description="DuckDB database path",
     )
     document_output_dir: Path | None = Field(

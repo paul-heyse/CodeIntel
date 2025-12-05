@@ -1,1 +1,1 @@
-"""Test package for Prefect orchestration scaffolding."""
+"""Test package for pipeline orchestration."""

@@ -14,6 +14,18 @@ from codeintel.pipeline.orchestration.core import (
     ensure_graph_runtime,
 )
 from codeintel.pipeline.orchestration.registry import StepRegistry, build_registry
+from codeintel.pipeline.orchestration.runner import (
+    ExportArgs,
+    ExportHooks,
+    HistoryTimeseriesParams,
+    build_pipeline_context,
+    close_gateways,
+    gateway_cache_stats,
+    run_export_docs,
+    run_full_pipeline,
+    run_history_timeseries,
+    run_pipeline_with_retries,
+)
 from codeintel.pipeline.orchestration.steps_analytics import (
     ANALYTICS_STEPS,
     BehavioralCoverageStep,
@@ -101,7 +113,9 @@ __all__ = [
     "DataModelsStep",
     "DocstringsIngestStep",
     "EntryPointsStep",
+    "ExportArgs",
     "ExportDocsStep",
+    "ExportHooks",
     "ExternalDependenciesStep",
     "FunctionAnalyticsStep",
     "FunctionContractsStep",
@@ -110,6 +124,7 @@ __all__ = [
     "GoidsStep",
     "GraphMetricsStep",
     "GraphValidationStep",
+    "HistoryTimeseriesParams",
     "HistoryTimeseriesStep",
     "HotspotsStep",
     "ImportGraphStep",
@@ -130,7 +145,14 @@ __all__ = [
     "TestProfileStep",
     "TypingIngestStep",
     "build_graph_context",
+    "build_pipeline_context",
+    "close_gateways",
     "ensure_graph_engine",
     "ensure_graph_runtime",
+    "gateway_cache_stats",
+    "run_export_docs",
+    "run_full_pipeline",
+    "run_history_timeseries",
     "run_pipeline",
+    "run_pipeline_with_retries",
 ]

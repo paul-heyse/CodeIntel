@@ -6,17 +6,22 @@ including configuration registries, resource registries, and plugin metadata.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.config_registry import ConfigRegistry
 from codeintel.core.plugins.context import ConfigProvider, PluginScratch
 from codeintel.core.plugins.protocol import (
     PluginMetadata,
 )
 from codeintel.core.resources.registry import ResourceRegistry
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.fakes.configs import create_test_snapshot
+from tests._helpers.fakes.graph_contexts import create_graph_gateway
 
 # =============================================================================
 # Sample Configuration Classes for Testing
@@ -115,6 +120,42 @@ def config_provider() -> ConfigProvider:
             ),
         }
     )
+
+
+# =============================================================================
+# Gateway and Snapshot Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def core_gateway() -> Iterator[StorageGateway]:
+    """Provide standard gateway for core tests.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with schema and macros applied; automatically closed.
+    """
+    gateway = create_graph_gateway()
+    yield gateway
+    gateway.close()
+
+
+@pytest.fixture
+def core_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide standard snapshot for core tests.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path fixture.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot with standard test defaults.
+    """
+    return create_test_snapshot(tmp_path)
 
 
 # =============================================================================

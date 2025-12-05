@@ -132,7 +132,17 @@ class _SubsystemQueryDelegates:
 
 
 class _HttpSubsystemQueryMixin(_HttpTransportMixin):
-    """HTTP-based subsystem query APIs."""
+    """HTTP-based subsystem query APIs.
+
+    Architecture Note
+    -----------------
+    Implements HTTP transport path for subsystem queries. Performs bidirectional
+    domain/response conversion: receives HTTP responses, normalizes to Pydantic
+    models, and converts to domain models via ``to_domain()`` to satisfy the
+    service layer contract.
+
+    See ``codeintel.serving.domain_models`` for the full architecture contract.
+    """
 
     def list_subsystems(
         self,

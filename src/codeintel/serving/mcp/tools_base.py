@@ -1,4 +1,20 @@
-"""Common MCP tool registration helpers and error wrapping."""
+"""MCP tool registration orchestrator.
+
+Tool Registration Architecture
+------------------------------
+All tools are now registered declaratively from the Operation catalog via
+the ``tool_builder`` module. This module provides the top-level entry point
+that delegates to category-specific registration functions.
+
+The per-category registration functions still exist for backward compatibility
+and granular control, but the unified ``register_tools`` function is the
+preferred entry point for new code.
+
+See Also
+--------
+- ``codeintel.serving.mcp.tool_builder`` : Core tool building logic
+- ``codeintel.serving.operations.catalog`` : Operation definitions
+"""
 
 from __future__ import annotations
 
@@ -13,6 +29,11 @@ from codeintel.serving.mcp.dataset_tools import register_dataset_tools
 from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.profile_tools import register_profile_tools
+from codeintel.serving.mcp.tool_builder import (
+    build_tool_from_operation,
+    register_all_tools,
+    register_tools_for_category,
+)
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import iter_registry_operations
 
@@ -26,6 +47,10 @@ def register_tools(
     config: ServingConfig | None = None,
 ) -> None:
     """Register all MCP tools on the given FastMCP instance.
+
+    This is the main entry point for MCP tool registration. It delegates
+    to category-specific registration functions which use the unified
+    ``tool_builder`` module.
 
     Parameters
     ----------
@@ -57,4 +82,10 @@ def register_tools(
     cast("Any", mcp).tools = fallback_tools
 
 
-__all__ = ["QueryBackendOrService", "register_tools"]
+__all__ = [
+    "QueryBackendOrService",
+    "build_tool_from_operation",
+    "register_all_tools",
+    "register_tools",
+    "register_tools_for_category",
+]

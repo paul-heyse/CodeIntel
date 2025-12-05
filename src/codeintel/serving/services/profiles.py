@@ -78,7 +78,17 @@ class _ProfileQueryDelegates:
 
 
 class _HttpProfileQueryMixin(_HttpTransportMixin):
-    """HTTP-based profile query mixin."""
+    """HTTP-based profile query mixin.
+
+    Architecture Note
+    -----------------
+    Implements HTTP transport path for profile queries. Performs bidirectional
+    domain/response conversion: receives HTTP responses, normalizes to Pydantic
+    models, and converts to domain models via ``to_domain()`` to satisfy the
+    service layer contract.
+
+    See ``codeintel.serving.domain_models`` for the full architecture contract.
+    """
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
         def _run() -> FunctionProfileResponse:

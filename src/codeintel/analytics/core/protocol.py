@@ -1,11 +1,22 @@
 """Analytics plugin protocol.
 
-This module defines the protocol for analytics plugins, using the
-analytics-specific execution context.
+This module defines the protocol for analytics plugins, extending the
+core unified plugin protocol with analytics-specific context requirements.
 
-The graph plugin system uses a separate protocol defined in
-codeintel.core.plugins, which will be the unified protocol once
-migration is complete.
+Architecture
+------------
+- `AnalyticsPluginProtocol` is a structural extension of `PluginProtocol`
+  from `codeintel.core.plugins.protocol`.
+- Analytics plugins use the extended `PluginExecutionContext` from
+  `codeintel.analytics.core.context` which adds `scope` (AnalyticsScope).
+- All metadata types (`PluginMetadata`, `PluginKind`, `PluginStage`, etc.)
+  are inherited directly from the core unified types.
+- This ensures type consistency across the codebase while allowing
+  analytics-specific context requirements.
+
+The analytics `PluginExecutionContext` extends the core context, so:
+- Analytics plugins are structurally compatible with the core protocol
+- Any analytics plugin can be used where a core protocol is expected
 """
 
 from __future__ import annotations
@@ -25,6 +36,10 @@ from codeintel.core.plugins import (
     PluginStage,
     ValidationResult,
 )
+
+# Note: PluginProtocol imported for re-export and documentation purposes.
+# AnalyticsPluginProtocol is structurally compatible with it.
+from codeintel.core.plugins.protocol import PluginProtocol
 from codeintel.core.plugins.result import (
     PluginExecutionRecord,
     PluginResult,
@@ -39,13 +54,33 @@ if TYPE_CHECKING:
 class AnalyticsPluginProtocol(Protocol):
     """Protocol for analytics plugins.
 
-    Analytics plugins use the analytics-specific PluginExecutionContext
-    which provides access to analytics-specific resources and configuration.
+    Extend the core `PluginProtocol` with analytics-specific context.
+
+    This protocol uses `codeintel.analytics.core.context.PluginExecutionContext`
+    which extends the core context with analytics-specific fields like `scope`.
+
+    Structural Compatibility
+    ------------------------
+    This protocol is structurally compatible with `PluginProtocol`:
+    - Same `metadata` property returning `PluginMetadata`
+    - Same `execute()` and `validate_inputs()` signatures
+    - The analytics context extends the core context
+
+    Any implementation satisfying this protocol also satisfies `PluginProtocol`.
+
+    See Also
+    --------
+    codeintel.core.plugins.protocol.PluginProtocol
+        The core unified plugin protocol.
+    codeintel.analytics.core.context.PluginExecutionContext
+        Analytics-specific execution context extending core context.
     """
 
     @property
     def metadata(self) -> PluginMetadata:
         """Return plugin metadata.
+
+        Return the same core `PluginMetadata` type used across all domains.
 
         Returns
         -------
@@ -60,7 +95,7 @@ class AnalyticsPluginProtocol(Protocol):
         Parameters
         ----------
         ctx
-            Execution context providing access to storage, config, and runtime.
+            Analytics execution context (extends core context with scope).
 
         Returns
         -------
@@ -75,7 +110,7 @@ class AnalyticsPluginProtocol(Protocol):
         Parameters
         ----------
         ctx
-            Execution context to validate against.
+            Analytics execution context to validate against.
 
         Returns
         -------
@@ -83,6 +118,55 @@ class AnalyticsPluginProtocol(Protocol):
             Validation result with any errors.
         """
         ...
+
+
+def is_analytics_plugin(plugin: object) -> bool:
+    """Check if an object implements AnalyticsPluginProtocol.
+
+    Parameters
+    ----------
+    plugin
+        Object to check.
+
+    Returns
+    -------
+    bool
+        True if the object implements AnalyticsPluginProtocol.
+    """
+    return isinstance(plugin, AnalyticsPluginProtocol)
+
+
+def is_core_compatible(plugin: AnalyticsPluginProtocol) -> bool:
+    """Check if an analytics plugin is compatible with the core protocol.
+
+    All analytics plugins are compatible with the core protocol since
+    AnalyticsPluginProtocol is a structural extension of PluginProtocol.
+    The analytics context extends the core context, so any analytics plugin
+    can be used where a core plugin is expected.
+
+    Parameters
+    ----------
+    plugin
+        Analytics plugin to check.
+
+    Returns
+    -------
+    bool
+        Always True for valid analytics plugins.
+
+    Notes
+    -----
+    This function always returns True because AnalyticsPluginProtocol is
+    structurally compatible with PluginProtocol by design. It exists for
+    documentation and explicit type checking purposes.
+    """
+    # Analytics plugins are always core-compatible due to structural typing
+    # Check for required attributes directly instead of isinstance on Protocol
+    return (
+        hasattr(plugin, "metadata")
+        and hasattr(plugin, "execute")
+        and hasattr(plugin, "validate_inputs")
+    )
 
 
 # Re-export everything needed by analytics plugins
@@ -96,10 +180,13 @@ __all__ = [
     "PluginKind",
     "PluginMetadata",
     "PluginOutputSpec",
+    "PluginProtocol",
     "PluginResourceHints",
     "PluginResult",
     "PluginSeverity",
     "PluginStage",
     "PluginStatus",
     "ValidationResult",
+    "is_analytics_plugin",
+    "is_core_compatible",
 ]

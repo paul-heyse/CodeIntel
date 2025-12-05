@@ -16,13 +16,12 @@ from codeintel.analytics.core.protocol import (
     ValidationResult,
 )
 from codeintel.analytics.plugins.risk.factors import RiskFactorsPlugin
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "2.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
@@ -68,8 +67,8 @@ def _create_mock_context(
         Mock execution context.
     """
     ctx = MagicMock()
-    ctx.repo = TEST_REPO
-    ctx.commit = TEST_COMMIT
+    ctx.repo = DEFAULT_REPO
+    ctx.commit = DEFAULT_COMMIT
     ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider" and has_catalog
     ctx.require_by_name.side_effect = _create_mock_provider
     ctx.gateway = MagicMock()
@@ -162,8 +161,8 @@ def test_execute_succeeds_without_catalog(fresh_gateway: StorageGateway) -> None
 
     ctx = MagicMock()
     ctx.gateway = fresh_gateway
-    ctx.repo = TEST_REPO
-    ctx.commit = TEST_COMMIT
+    ctx.repo = DEFAULT_REPO
+    ctx.commit = DEFAULT_COMMIT
     ctx.has_resource_by_name.return_value = False
 
     result = plugin.execute(ctx)
@@ -178,8 +177,8 @@ def test_execute_succeeds_with_catalog(fresh_gateway: StorageGateway) -> None:
 
     ctx = MagicMock()
     ctx.gateway = fresh_gateway
-    ctx.repo = TEST_REPO
-    ctx.commit = TEST_COMMIT
+    ctx.repo = DEFAULT_REPO
+    ctx.commit = DEFAULT_COMMIT
     ctx.has_resource_by_name.side_effect = lambda n: n == "CatalogProvider"
     ctx.require_by_name.side_effect = _create_mock_provider
 

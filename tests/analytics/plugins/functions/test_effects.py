@@ -17,30 +17,32 @@ from codeintel.analytics.core.protocol import (
     ValidationResult,
 )
 from codeintel.analytics.plugins.functions.effects import FunctionEffectsPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import FunctionEffectsStepConfig
+from tests._helpers.factories import make_step_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 2
 EXPECTED_CAPABILITY_COUNT = 2
 
 
-def _create_config() -> FunctionEffectsStepConfig:
+def _create_config(tmp_path: Path | None = None) -> FunctionEffectsStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     FunctionEffectsStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return FunctionEffectsStepConfig(snapshot=snapshot)
+    return make_step_config(FunctionEffectsStepConfig, tmp_path)
 
 
 def _create_resource_availability_map(

@@ -5,11 +5,12 @@ This module tests:
 - ConfigProvider operations (get, get_optional, has, register)
 - PluginExecutionContext properties and methods
 - PluginExecutionContextBuilder fluent API
+
+Note: Uses shared core fixtures from core/conftest.py.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,8 +26,12 @@ from codeintel.core.plugins.context import (
 from codeintel.core.resources.registry import ResourceRegistry
 from codeintel.runtime import RunContext
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fakes import DEFAULT_TEST_COMMIT, DEFAULT_TEST_REPO, create_test_snapshot
-from tests._helpers.fakes.graph_contexts import create_graph_gateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fakes import (
+    create_graph_gateway,
+    create_test_run_context,
+    create_test_snapshot,
+)
 
 # =============================================================================
 # Test Fixtures
@@ -81,6 +86,8 @@ def make_test_gateway() -> StorageGateway:
 def make_test_run_context(snapshot: SnapshotRef, run_id: str = "test-run-id") -> RunContext:
     """Create a real RunContext for testing.
 
+    Delegates to the centralized create_test_run_context helper.
+
     Parameters
     ----------
     snapshot
@@ -93,12 +100,7 @@ def make_test_run_context(snapshot: SnapshotRef, run_id: str = "test-run-id") ->
     RunContext
         Test run context.
     """
-    return RunContext(
-        run_id=run_id,
-        kind="full",
-        snapshot=snapshot,
-        trigger="cli",
-    )
+    return create_test_run_context(snapshot, run_id=run_id)
 
 
 def make_test_build_paths(tmp_dir: Path) -> BuildPaths:
@@ -118,34 +120,37 @@ def make_test_build_paths(tmp_dir: Path) -> BuildPaths:
 
 
 @pytest.fixture
-def test_gateway() -> Iterator[StorageGateway]:
-    """Provide a test gateway that auto-closes.
-
-    Yields
-    ------
-    StorageGateway
-        In-memory gateway with schema applied.
-    """
-    gateway = make_test_gateway()
-    yield gateway
-    gateway.close()
-
-
-@pytest.fixture
-def test_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Provide a test snapshot.
+def test_gateway(core_gateway: StorageGateway) -> StorageGateway:
+    """Alias for core_gateway for backward compatibility.
 
     Parameters
     ----------
-    tmp_path
-        Pytest temporary path fixture.
+    core_gateway
+        Shared core gateway fixture.
+
+    Returns
+    -------
+    StorageGateway
+        In-memory gateway with schema applied.
+    """
+    return core_gateway
+
+
+@pytest.fixture
+def test_snapshot(core_snapshot: SnapshotRef) -> SnapshotRef:
+    """Alias for core_snapshot for backward compatibility.
+
+    Parameters
+    ----------
+    core_snapshot
+        Shared core snapshot fixture.
 
     Returns
     -------
     SnapshotRef
         Test snapshot reference.
     """
-    return make_test_snapshot(tmp_path)
+    return core_snapshot
 
 
 # =============================================================================
@@ -360,8 +365,8 @@ def test_plugin_execution_context_properties(tmp_path: Path) -> None:
             run_id="run-123",
         )
 
-        assert ctx.repo == DEFAULT_TEST_REPO
-        assert ctx.commit == DEFAULT_TEST_COMMIT
+        assert ctx.repo == DEFAULT_REPO
+        assert ctx.commit == DEFAULT_COMMIT
         assert ctx.repo_root == tmp_path
     finally:
         gateway.close()
@@ -593,9 +598,7 @@ def test_builder_with_paths(
     paths = make_test_build_paths(tmp_path)
 
     ctx = (
-        PluginExecutionContextBuilder(test_gateway, test_snapshot, "run")
-        .with_paths(paths)
-        .build()
+        PluginExecutionContextBuilder(test_gateway, test_snapshot, "run").with_paths(paths).build()
     )
 
     assert ctx.paths is paths
@@ -704,9 +707,8 @@ def test_builder_with_scratch(
     shared_scratch = PluginScratch()
     shared_scratch.declare("shared_key", "shared_value")
 
-    ctx = (
-        PluginExecutionContextBuilder(test_gateway, test_snapshot, "run")
-        .build(scratch=shared_scratch)
+    ctx = PluginExecutionContextBuilder(test_gateway, test_snapshot, "run").build(
+        scratch=shared_scratch
     )
 
     assert ctx.scratch is shared_scratch

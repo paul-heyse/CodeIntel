@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/profiles.py
+# hypothesis_version: 6.148.6
+
+['/architecture/module', '/profiles/file', '/profiles/function', '/profiles/module', 'get_file_profile', 'get_function_profile', 'get_module_profile', 'goid_h128', 'module', 'rel_path']

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.serving.http.datasets import build_dataset_registry
+from codeintel.serving.backend.datasets import build_dataset_registry
 
 
 def test_function_validation_dataset_present() -> None:

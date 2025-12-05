@@ -44,6 +44,14 @@ from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
 from tests._helpers.seeds.core import CORE_PACK, CorePack
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
 from tests._helpers.seeds.data_models import DATA_MODELS_PACK, DataModelsPack
+from tests._helpers.seeds.docs import (
+    DOCS_EXPORT_PACK,
+    MCP_BACKEND_PACK,
+    PROFILE_DATA_PACK,
+    DocsExportPack,
+    McpBackendPack,
+    ProfileDataPack,
+)
 from tests._helpers.seeds.docstrings import DOCSTRING_PACK, DocstringPack
 from tests._helpers.seeds.function_types import FUNCTION_TYPES_PACK, FunctionTypesPack
 from tests._helpers.seeds.graph import GRAPH_PACK, GraphPack
@@ -61,9 +69,12 @@ __all__ = [
     "COVERAGE_PACK",
     "DATA_MODELS_PACK",
     "DOCSTRING_PACK",
+    "DOCS_EXPORT_PACK",
     "FUNCTION_TYPES_PACK",
     "GRAPH_PACK",
+    "MCP_BACKEND_PACK",
     "METRICS_PACK",
+    "PROFILE_DATA_PACK",
     "SUBSYSTEM_ANALYTICS_PACK",
     "SUBSYSTEM_PACK",
     "SYMBOL_PACK",
@@ -71,10 +82,13 @@ __all__ = [
     "CorePack",
     "CoveragePack",
     "DataModelsPack",
+    "DocsExportPack",
     "DocstringPack",
     "FunctionTypesPack",
     "GraphPack",
+    "McpBackendPack",
     "MetricsPack",
+    "ProfileDataPack",
     "SubsystemAnalyticsPack",
     "SubsystemPack",
     "SymbolPack",

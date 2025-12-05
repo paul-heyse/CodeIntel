@@ -19,30 +19,32 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.plugins.functions.ast_features import (
     FunctionAstFeaturesPlugin,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
+from tests._helpers.factories import make_step_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_VERSION = "3.0.0"
 EXPECTED_OUTPUT_COUNT = 1
 EXPECTED_CAPABILITY_COUNT = 1
 
 
-def _create_config() -> FunctionAnalyticsStepConfig:
+def _create_config(tmp_path: Path | None = None) -> FunctionAnalyticsStepConfig:
     """Create a test configuration.
+
+    Parameters
+    ----------
+    tmp_path
+        Optional temp path for repo root.
 
     Returns
     -------
     FunctionAnalyticsStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
-    return FunctionAnalyticsStepConfig(snapshot=snapshot)
+    return make_step_config(FunctionAnalyticsStepConfig, tmp_path)
 
 
 def _create_mock_provider(name: str) -> MagicMock:

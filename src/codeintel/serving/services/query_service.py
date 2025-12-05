@@ -1,4 +1,64 @@
-"""Transport-agnostic query application services."""
+"""Transport-agnostic query application services.
+
+Architecture Overview
+---------------------
+This module defines the **Service Layer** in the serving architecture:
+
+::
+
+    ┌─────────────────────────────────────────────────────────┐
+    │  Transport Layer (HTTP routes, MCP backends, CLI)       │
+    │  - Calls Service layer methods                          │
+    │  - Converts domain models → response models             │
+    └────────────────────────────────────────────────────────┘
+                            ▲
+                            │ domain models (dm.*)
+    ┌────────────────────────────────────────────────────────┐
+    │  Service Layer (this module)                            │
+    │  - LocalQueryService: wraps DuckDBQueryApi              │
+    │  - HttpQueryService: forwards to remote HTTP API        │
+    │  - ALWAYS returns domain models (dm.*)                  │
+    └────────────────────────────────────────────────────────┘
+                            ▲
+                            │
+    ┌────────────────────────────────────────────────────────┐
+    │  Query Layer (DuckDBQueryService, repositories)         │
+    │  - Direct database access                               │
+    │  - Graph engine integration                             │
+    └────────────────────────────────────────────────────────┘
+
+Contract
+--------
+All ``QueryService`` implementations MUST return domain models (``dm.*``)
+from their query methods. Transport layers are responsible for converting
+domain models to transport-specific response models using ``from_domain()``.
+
+See ``codeintel.serving.domain_models`` for the full architecture contract.
+
+Implementations
+---------------
+- ``LocalQueryService``: Wraps ``DuckDBQueryApi`` for local database access.
+  Uses delegate mixins that call the query layer and return domain models.
+
+- ``HttpQueryService``: Forwards queries to a remote HTTP API. Uses HTTP
+  mixins that make HTTP requests, receive response models, convert them
+  back to domain models via ``to_domain()``, and return domain models.
+
+Query Protocol Hierarchy
+------------------------
+The **canonical unified protocols** are defined in ``codeintel.serving.types``:
+
+- ``FunctionQueryProtocol`` - unified function query interface
+- ``ProfileQueryProtocol`` - unified profile query interface
+- ``SubsystemQueryProtocol`` - unified subsystem query interface
+- ``DatasetQueryProtocol`` - unified dataset query interface
+
+The protocols defined in this module (``FunctionQueryApi``, ``ProfileQueryApi``,
+etc.) are **service-layer specific** and use ``GraphScopePayload`` for scope
+parameters. They are compatible with the unified protocols.
+
+For new code, prefer importing from ``codeintel.serving.types``.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +98,11 @@ ResponseMeta = dm.ResponseMeta
 
 
 class FunctionQueryApi(Protocol):
-    """Function-centric query surface."""
+    """Function-centric query surface (service layer).
+
+    Note: See ``FunctionQueryProtocol`` in ``codeintel.serving.types`` for
+    the canonical unified protocol definition.
+    """
 
     def get_function_summary(
         self,
@@ -112,7 +176,11 @@ class FunctionQueryApi(Protocol):
 
 
 class ProfileQueryApi(Protocol):
-    """Profile and architecture surfaces."""
+    """Profile and architecture surfaces (service layer).
+
+    Note: See ``ProfileQueryProtocol`` in ``codeintel.serving.types`` for
+    the canonical unified protocol definition.
+    """
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
         """Return a function profile."""
@@ -136,7 +204,11 @@ class ProfileQueryApi(Protocol):
 
 
 class SubsystemQueryApi(Protocol):
-    """Subsystem and hints surfaces."""
+    """Subsystem and hints surfaces (service layer).
+
+    Note: See ``SubsystemQueryProtocol`` in ``codeintel.serving.types`` for
+    the canonical unified protocol definition.
+    """
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -180,7 +252,11 @@ class SubsystemQueryApi(Protocol):
 
 
 class DatasetQueryApi(Protocol):
-    """Dataset listing and retrieval surface."""
+    """Dataset listing and retrieval surface (service layer).
+
+    Note: See ``DatasetQueryProtocol`` in ``codeintel.serving.types`` for
+    the canonical unified protocol definition.
+    """
 
     def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
         """List available datasets."""

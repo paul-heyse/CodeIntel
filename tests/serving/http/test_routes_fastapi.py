@@ -22,7 +22,6 @@ from codeintel.serving.http.fastapi import (
     load_api_config,
     problem_response,
 )
-from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ProblemDetail
 from codeintel.serving.services.query_service import LocalQueryService

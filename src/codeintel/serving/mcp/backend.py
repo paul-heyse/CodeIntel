@@ -6,7 +6,7 @@ import logging
 import time
 import warnings
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import Protocol, cast
+from typing import cast
 
 import anyio
 import httpx
@@ -56,6 +56,13 @@ from codeintel.serving.services.query_service import (
     QueryService,
     ServiceObservability,
 )
+from codeintel.serving.types import (
+    AggregatedBackendProtocol,
+    BaseBackendProtocol,
+    FunctionBackendProtocol,
+    ProfileBackendProtocol,
+    SubsystemBackendProtocol,
+)
 from codeintel.storage.gateway import StorageGateway
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
@@ -83,183 +90,18 @@ async def _get_async(
     return await client.get(path, params=params)
 
 
-class BaseBackend(Protocol):
-    """Base backend interface providing shared service access."""
-
-    service: QueryService
-
-
-class FunctionBackend(BaseBackend, Protocol):
-    """Function and graph operations surfaced by backends."""
-
-    def get_function_summary(
-        self,
-        *,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
-        scope: object | None = None,
-    ) -> FunctionSummaryResponse:
-        """Return a function summary from analytics and docs views."""
-        ...
-
-    def list_high_risk_functions(
-        self,
-        *,
-        min_risk: float = 0.7,
-        limit: int | None = None,
-        tested_only: bool = False,
-        scope: object | None = None,
-    ) -> HighRiskFunctionsResponse:
-        """List high-risk functions with optional tested-only filtering."""
-        ...
-
-    def get_callgraph_neighbors(
-        self,
-        *,
-        goid_h128: int,
-        direction: str = "both",
-        limit: int | None = None,
-        scope: object | None = None,
-    ) -> CallGraphNeighborsResponse:
-        """Return incoming and outgoing call graph neighbors."""
-        ...
-
-    def get_callgraph_neighborhood(
-        self,
-        *,
-        goid_h128: int,
-        radius: int = 1,
-        max_nodes: int | None = None,
-    ) -> GraphNeighborhoodResponse:
-        """Return a bounded ego neighborhood in the call graph."""
-        ...
-
-    def get_import_boundary(
-        self,
-        *,
-        subsystem_id: str,
-        max_edges: int | None = None,
-    ) -> ImportBoundaryResponse:
-        """Return import graph edges crossing a subsystem boundary."""
-        ...
-
-    def get_tests_for_function(
-        self,
-        *,
-        goid_h128: int | None = None,
-        urn: str | None = None,
-        limit: int | None = None,
-        scope: object | None = None,
-    ) -> TestsForFunctionResponse:
-        """List tests that exercised a function."""
-        ...
-
-    def get_file_summary(
-        self,
-        *,
-        rel_path: str,
-        scope: object | None = None,
-    ) -> FileSummaryResponse:
-        """Return a file summary with nested function rows."""
-        ...
-
-
-class ProfileBackend(BaseBackend, Protocol):
-    """Profile and architecture operations surfaced by backends."""
-
-    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
-        """Return a denormalized function profile."""
-        ...
-
-    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
-        """Return a denormalized file profile."""
-        ...
-
-    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """Return a profile for a module."""
-        ...
-
-    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """Return architecture metrics for a function."""
-        ...
-
-    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """Return architecture metrics for a module."""
-        ...
-
-
-class SubsystemBackend(BaseBackend, Protocol):
-    """Subsystem, IDE hints, and search operations."""
-
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        """List inferred subsystems with optional filters."""
-        ...
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """Return subsystem memberships for a module."""
-        ...
-
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """Return IDE-focused hints for a file."""
-        ...
-
-    def get_subsystem_modules(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """Return subsystem detail and member modules."""
-        ...
-
-    def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
-        """Search subsystems by role or label."""
-        ...
-
-    def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """Summarize a subsystem with optional module truncation."""
-        ...
-
-
-class DatasetBackendProtocol(BaseBackend, Protocol):
-    """Dataset listing and schema operations surfaced by backends."""
-
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        """List datasets available to browse."""
-        ...
-
-    def read_dataset_rows(
-        self,
-        *,
-        dataset_name: str,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:
-        """Read a slice of rows from a dataset."""
-        ...
-
-    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """Return canonical dataset specifications."""
-        ...
-
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
-        """Return schema and sample rows for a dataset."""
-        ...
-
-
-class QueryBackend(
-    DatasetBackendProtocol,
-    FunctionBackend,
-    ProfileBackend,
-    SubsystemBackend,
-    Protocol,
-):
-    """Aggregated backend interface consumed by MCP tools."""
+# =============================================================================
+# Type Aliases for Backward Compatibility
+# =============================================================================
+# These protocols are now defined in codeintel.serving.types. The aliases below
+# maintain backward compatibility for code that imports from this module.
+# New code should import directly from codeintel.serving.types.
+BaseBackend = BaseBackendProtocol
+FunctionBackend = FunctionBackendProtocol
+ProfileBackend = ProfileBackendProtocol
+SubsystemBackend = SubsystemBackendProtocol
+QueryBackend = AggregatedBackendProtocol
+# Note: DatasetBackendProtocol is imported directly from types.py
 
 
 class DatasetBackendMixin:

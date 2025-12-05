@@ -14,7 +14,7 @@ from codeintel.pipeline.orchestration.core import (
     StepPhase,
     _log_step,
 )
-from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)

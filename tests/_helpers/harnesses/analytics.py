@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, Self, TypeVar
 
 from codeintel.analytics.core.context import (
     ConfigProvider,
@@ -37,6 +37,8 @@ from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.harnesses.base import BaseResultAssertions, BaseTestHarness
 
 if TYPE_CHECKING:
@@ -48,6 +50,29 @@ if TYPE_CHECKING:
     from codeintel.analytics.resources.protocol import ResourceProvider
 
 T = TypeVar("T")
+
+
+class StepConfigProtocol(Protocol):
+    """Protocol for step configs with snapshot properties.
+
+    Any step config class with `repo`, `commit`, and `repo_root` properties
+    (derived from a `snapshot` attribute) satisfies this protocol.
+    """
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        ...
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        ...
 
 
 @dataclass
@@ -91,6 +116,49 @@ class PluginTestHarness(BaseTestHarness["AnalyticsPluginProtocol", PluginExecuti
             A new harness configured for the plugin.
         """
         return cls(_plugin=plugin)
+
+    @classmethod
+    def for_analytics_plugin(
+        cls,
+        plugin: AnalyticsPluginProtocol,
+        gateway: StorageGateway,
+        repo_root: Path,
+        *,
+        repo: str = DEFAULT_REPO,
+        commit: str = DEFAULT_COMMIT,
+    ) -> PluginTestHarness:
+        """Create a harness with standard analytics setup.
+
+        Convenience factory that configures common analytics plugin
+        test environment in one call.
+
+        Parameters
+        ----------
+        plugin
+            The plugin instance to test.
+        gateway
+            Storage gateway with schema applied.
+        repo_root
+            Repository root path for the snapshot.
+        repo
+            Repository identifier (defaults to DEFAULT_REPO).
+        commit
+            Commit identifier (defaults to DEFAULT_COMMIT).
+
+        Returns
+        -------
+        PluginTestHarness
+            Harness configured with gateway and snapshot.
+
+        Example
+        -------
+        >>> harness = PluginTestHarness.for_analytics_plugin(
+        ...     MyPlugin(),
+        ...     gateway,
+        ...     tmp_path,
+        ... )
+        """
+        return cls.for_plugin(plugin).with_gateway(gateway).with_snapshot(repo, commit, repo_root)
 
     def with_snapshot(
         self,
@@ -140,6 +208,34 @@ class PluginTestHarness(BaseTestHarness["AnalyticsPluginProtocol", PluginExecuti
             Self for chaining.
         """
         self._configs[type(config)] = config
+        return self
+
+    def with_step_config(self, config: StepConfigProtocol) -> Self:
+        """Add a step config and extract snapshot from it.
+
+        Convenience method for step configs that have embedded snapshot
+        information. Registers the config and sets repo/commit/repo_root
+        from the config's properties.
+
+        Parameters
+        ----------
+        config
+            Step config with repo, commit, and repo_root properties.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+
+        Example
+        -------
+        >>> from codeintel.config import FunctionContractsStepConfig
+        >>> harness.with_step_config(FunctionContractsStepConfig(snapshot=snapshot))
+        """
+        self._configs[type(config)] = config
+        self._repo = config.repo
+        self._commit = config.commit
+        self._repo_root = config.repo_root
         return self
 
     def with_configs(self, *configs: object) -> Self:

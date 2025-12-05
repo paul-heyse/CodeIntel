@@ -4,15 +4,33 @@ This module provides the execution context that plugins receive during
 execution, enabling typed access to resources, configuration, and
 shared scratch space.
 
-IngestExecutionContext extends the core PluginExecutionContext with
-ingestion-specific fields:
+Architecture
+------------
+IngestExecutionContext extends the unified `PluginExecutionContext` from
+`codeintel.core.plugins.context` with ingestion-specific fields:
 - code_profile: Code scanning profile
 - config_profile: Config scanning profile
 - tools: External tools configuration
 - Plugin timing utilities for performance tracking
 
+This follows the same pattern as:
+- `codeintel.analytics.core.context.PluginExecutionContext` (analytics)
+- `codeintel.graphs.core.context.GraphPluginExecutionContext` (graphs)
+
+All domain contexts extend the same core base, ensuring consistent
+interface while allowing domain-specific extensions.
+
 The module also provides IngestExecutionContextBuilder for fluent
-construction of contexts with validation.
+construction of contexts with validation. The builder is domain-specific
+and not derived from a core builder since ingestion has unique field
+requirements.
+
+See Also
+--------
+codeintel.core.plugins.context.PluginExecutionContext
+    Core execution context that this class extends.
+codeintel.analytics.core.context.PluginExecutionContext
+    Analytics execution context following the same pattern.
 """
 
 from __future__ import annotations

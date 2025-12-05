@@ -5,13 +5,15 @@ This module tests:
 - BasePlugin metadata synthesis
 - TableWriterPlugin output spec building
 - Plugin execution flow
+
+Note: This module uses the shared analytics fixtures from analytics/conftest.py.
+The `test_context` fixture is an alias for `analytics_context`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Generator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 import pytest
@@ -27,9 +29,6 @@ from codeintel.analytics.core.protocol import (
     PluginStage,
     ValidationResult,
 )
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fakes.graph_contexts import create_graph_gateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.context import PluginExecutionContext
@@ -40,70 +39,28 @@ TABLE_A_ROW_COUNT = 5
 TABLE_B_ROW_COUNT = 3
 TEST_TABLE_ROW_COUNT = 10
 EXPECTED_TWO_OUTPUT_SPECS = 2
-DEFAULT_REPO = "test/repo"
-DEFAULT_COMMIT = "abc123"
 
 
 # =============================================================================
-# Fixtures
+# Fixture Aliases (delegate to shared fixtures from conftest.py)
 # =============================================================================
 
 
 @pytest.fixture
-def test_gateway() -> Generator[StorageGateway]:
-    """Provide a test gateway that auto-closes.
-
-    Yields
-    ------
-    StorageGateway
-        In-memory gateway with schema applied.
-    """
-    gateway = create_graph_gateway()
-    yield gateway
-    gateway.close()
-
-
-@pytest.fixture
-def test_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Provide a test snapshot.
+def test_context(analytics_context: PluginExecutionContext) -> PluginExecutionContext:
+    """Alias for analytics_context for backward compatibility.
 
     Parameters
     ----------
-    tmp_path
-        Pytest temporary path fixture.
-
-    Returns
-    -------
-    SnapshotRef
-        Test snapshot reference.
-    """
-    return SnapshotRef(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT, repo_root=tmp_path)
-
-
-@pytest.fixture
-def test_context(
-    test_gateway: StorageGateway,
-    test_snapshot: SnapshotRef,
-) -> PluginExecutionContext:
-    """Provide a test execution context.
-
-    Parameters
-    ----------
-    test_gateway
-        Storage gateway fixture.
-    test_snapshot
-        Snapshot reference fixture.
+    analytics_context
+        Shared analytics context fixture.
 
     Returns
     -------
     PluginExecutionContext
         Test execution context.
     """
-    return PluginExecutionContext(
-        gateway=test_gateway,
-        snapshot=test_snapshot,
-        run_id="test-run-001",
-    )
+    return analytics_context
 
 
 # =============================================================================

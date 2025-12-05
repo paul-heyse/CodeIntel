@@ -6,14 +6,15 @@ This module tests:
 - SpanExporter base class
 - InMemoryExporter for testing
 - TracingMiddleware behavior
+
+Note: Uses shared analytics fixtures from analytics/conftest.py.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -30,7 +31,7 @@ from codeintel.analytics.plugins.middleware.tracing import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fakes.graph_contexts import create_graph_gateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 # Test constants
 TEST_TRACE_ID = "trace123"
@@ -40,8 +41,6 @@ TEST_PLUGIN_NAME = "test.plugin"
 TEST_PLUGIN_VERSION = "1.0.0"
 TEST_PLUGIN_STAGE: PluginStage = "function"
 TEST_RUN_ID = "run123"
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
 MINIMUM_DURATION_MS = 0.0
 MULTIPLE_SPANS_COUNT = 3
 
@@ -108,39 +107,8 @@ class TracingTestPlugin(BasePlugin):
 
 
 # =============================================================================
-# Fixtures
+# Helper Functions
 # =============================================================================
-
-
-@pytest.fixture
-def test_gateway() -> Generator[StorageGateway]:
-    """Provide a test gateway that auto-closes.
-
-    Yields
-    ------
-    StorageGateway
-        In-memory gateway with schema applied.
-    """
-    gateway = create_graph_gateway()
-    yield gateway
-    gateway.close()
-
-
-@pytest.fixture
-def test_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Provide a test snapshot.
-
-    Parameters
-    ----------
-    tmp_path
-        Pytest temporary path fixture.
-
-    Returns
-    -------
-    SnapshotRef
-        Test snapshot reference.
-    """
-    return SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
 
 
 def make_context(
@@ -508,8 +476,8 @@ class TestTracingMiddleware:
         assert span.attributes["plugin.version"] == TEST_PLUGIN_VERSION
         assert span.attributes["plugin.stage"] == TEST_PLUGIN_STAGE
         assert span.attributes["run.id"] == TEST_RUN_ID
-        assert span.attributes["repo"] == TEST_REPO
-        assert span.attributes["commit"] == TEST_COMMIT
+        assert span.attributes["repo"] == DEFAULT_REPO
+        assert span.attributes["commit"] == DEFAULT_COMMIT
 
     @staticmethod
     def test_successful_execution_marks_span_ok(

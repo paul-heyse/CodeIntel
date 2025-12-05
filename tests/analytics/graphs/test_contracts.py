@@ -31,9 +31,9 @@ from codeintel.analytics.graphs.contracts import (
     table_not_empty_checker,
 )
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 MIN_FRACTION_HIGH = 0.95
 MIN_FRACTION_LOW = 0.1
 EXPECTED_COLUMN_COUNT = 14
@@ -82,8 +82,8 @@ def contract_context(memory_gateway: StorageGateway) -> MockContractContext:
     """
     return MockContractContext(
         gateway=memory_gateway,
-        repo=TEST_REPO,
-        commit=TEST_COMMIT,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
     )
 
 
@@ -193,8 +193,8 @@ def test_assert_table_not_empty_with_empty_table(memory_gateway: StorageGateway)
     result = assert_table_not_empty(
         memory_gateway,
         table="analytics.graph_metrics_functions",
-        repo=TEST_REPO,
-        commit=TEST_COMMIT,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
     )
     assert result.status == "failed"
     assert "empty" in (result.message or "").lower()
@@ -212,14 +212,14 @@ def test_assert_table_not_empty_with_data(memory_gateway: StorageGateway) -> Non
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [TEST_REPO, TEST_COMMIT, 12345, 3, 2, 3, 2, 0.1, 0.2, 0.3, False, None, 1],
+        [DEFAULT_REPO, DEFAULT_COMMIT, 12345, 3, 2, 3, 2, 0.1, 0.2, 0.3, False, None, 1],
     )
 
     result = assert_table_not_empty(
         memory_gateway,
         table="analytics.graph_metrics_functions",
-        repo=TEST_REPO,
-        commit=TEST_COMMIT,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
     )
     assert result.status == "passed"
 
@@ -229,8 +229,8 @@ def test_assert_table_not_empty_unsafe_table(memory_gateway: StorageGateway) -> 
     result = assert_table_not_empty(
         memory_gateway,
         table="unsafe.table",
-        repo=TEST_REPO,
-        commit=TEST_COMMIT,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
     )
     assert result.status == "failed"
     assert "unsafe" in (result.message or "").lower()
@@ -241,8 +241,8 @@ def test_assert_table_not_empty_custom_name(memory_gateway: StorageGateway) -> N
     result = assert_table_not_empty(
         memory_gateway,
         table="analytics.graph_metrics_functions",
-        repo=TEST_REPO,
-        commit=TEST_COMMIT,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
         name="my_custom_check",
     )
     assert result.name == "my_custom_check"
@@ -323,7 +323,7 @@ def test_assert_columns_present_unsafe_table(memory_gateway: StorageGateway) -> 
 
 def test_assert_not_null_fraction_empty_table(memory_gateway: StorageGateway) -> None:
     """Assert not null fraction handles empty table."""
-    snapshot = SnapshotKey(repo=TEST_REPO, commit=TEST_COMMIT)
+    snapshot = SnapshotKey(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
     spec = NotNullFractionSpec(
         table="analytics.graph_metrics_functions",
         column="pagerank",
@@ -350,10 +350,10 @@ def test_assert_not_null_fraction_with_data(memory_gateway: StorageGateway) -> N
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [TEST_REPO, TEST_COMMIT, 12345, 3, 2, 3, 2, 0.5, 0.2, 0.3, False, None, 1],
+        [DEFAULT_REPO, DEFAULT_COMMIT, 12345, 3, 2, 3, 2, 0.5, 0.2, 0.3, False, None, 1],
     )
 
-    snapshot = SnapshotKey(repo=TEST_REPO, commit=TEST_COMMIT)
+    snapshot = SnapshotKey(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
     # Note: SAFE_TABLE_COLUMNS allowlist must include the column being checked.
     # Since schema has evolved, use a column that is both in the schema and
     # should be in any reasonable allowlist: repo or commit.
@@ -373,7 +373,7 @@ def test_assert_not_null_fraction_with_data(memory_gateway: StorageGateway) -> N
 
 def test_assert_not_null_fraction_disallowed_column(memory_gateway: StorageGateway) -> None:
     """Assert not null fraction fails for disallowed column."""
-    snapshot = SnapshotKey(repo=TEST_REPO, commit=TEST_COMMIT)
+    snapshot = SnapshotKey(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
     spec = NotNullFractionSpec(
         table="analytics.graph_metrics_functions",
         column="nonexistent",
@@ -390,7 +390,7 @@ def test_assert_not_null_fraction_disallowed_column(memory_gateway: StorageGatew
 
 def test_assert_not_null_fraction_unsafe_table(memory_gateway: StorageGateway) -> None:
     """Assert not null fraction raises for unsafe table."""
-    snapshot = SnapshotKey(repo=TEST_REPO, commit=TEST_COMMIT)
+    snapshot = SnapshotKey(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
     spec = NotNullFractionSpec(
         table="unsafe.table",
         column="col",

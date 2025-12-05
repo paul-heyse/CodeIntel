@@ -39,7 +39,7 @@ def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
     (pkg_dir / "mod.py").write_text("def foo(x: int) -> int:\n    return x + 1\n", encoding="utf8")
 
     build_dir = repo_root / "build"
-    db_path = build_dir / "db" / "codeintel_prefect.duckdb"
+    db_path = build_dir / "db" / "codeintel.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     return repo_root, db_path

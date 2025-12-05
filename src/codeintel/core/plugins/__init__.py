@@ -26,11 +26,14 @@ from codeintel.core.plugins.context import (
     ResourceRegistry,
 )
 from codeintel.core.plugins.decorators import make_plugin_instance
+from codeintel.core.plugins.executor import BasePluginExecutor
+from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.functional import BaseFunctionalPlugin
 from codeintel.core.plugins.meta_options import (
     BasePluginMetaOptions,
     BasePluginMetaOptionsInput,
 )
+from codeintel.core.plugins.policy import BaseExecutionPolicy
 from codeintel.core.plugins.protocol import (
     CapabilityKind,
     InputSource,
@@ -52,6 +55,7 @@ from codeintel.core.plugins.registry import (
     PluginSkip,
     RegistrablePlugin,
 )
+from codeintel.core.plugins.report import BaseExecutionReport, ExecutionStatus
 from codeintel.core.plugins.result import (
     BasePluginResult,
     PluginExecutionRecord,
@@ -63,6 +67,10 @@ from codeintel.core.plugins.sorting import (
     build_provider_index,
     build_provider_index_from_metadata,
     topological_sort,
+)
+from codeintel.core.plugins.tracking import (
+    complete_run_from_records,
+    record_plugin_steps,
 )
 from codeintel.core.plugins.traits import (
     CacheAwareMixin,
@@ -83,7 +91,11 @@ from codeintel.core.plugins.traits import (
 )
 
 __all__ = [
+    "BaseExecutionPolicy",
+    "BaseExecutionReport",
+    "BaseExecutorContext",
     "BaseFunctionalPlugin",
+    "BasePluginExecutor",
     "BasePluginMetaOptions",
     "BasePluginMetaOptionsInput",
     "BasePluginRegistry",
@@ -93,6 +105,7 @@ __all__ = [
     "CapabilityKind",
     "CapabilityProvider",
     "ConfigProvider",
+    "ExecutionStatus",
     "IncrementalPlugin",
     "InputSource",
     "IsolatedPlugin",
@@ -126,11 +139,13 @@ __all__ = [
     "WithDependencyData",
     "build_provider_index",
     "build_provider_index_from_metadata",
+    "complete_run_from_records",
     "is_cache_aware",
     "is_incremental",
     "is_isolated",
     "is_progress_reporting",
     "is_retryable",
     "make_plugin_instance",
+    "record_plugin_steps",
     "topological_sort",
 ]

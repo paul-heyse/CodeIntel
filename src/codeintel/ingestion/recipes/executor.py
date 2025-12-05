@@ -3,6 +3,16 @@
 This module provides the executor for running ingestion recipes,
 with support for parallel plugin execution, failure handling,
 and observability.
+
+Architecture Note
+-----------------
+This executor follows the patterns established in `codeintel.core.plugins.executor`
+(BasePluginExecutor) and uses:
+- `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
+- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+
+The ingestion executor has domain-specific features (recipe/stage-based execution,
+parallel plugin execution within stages) that extend beyond the base executor.
 """
 
 from __future__ import annotations
@@ -16,6 +26,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from codeintel.core.plugins.executor_context import BaseExecutorContext
+from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
@@ -44,13 +56,12 @@ from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepS
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
-    from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.config.primitives import BuildPaths
     from codeintel.ingestion.core.runs import IngestRunSink
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.ingestion.engine.service import ToolService
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.runtime import RunContext
-    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
@@ -84,19 +95,20 @@ class ExecutorConfig:
     timeout_s: int | None = None
 
 
+# =============================================================================
+# Ingestion-Specific Executor Context (extends BaseExecutorContext)
+# =============================================================================
+
+
 @dataclass
-class RecipeExecutorContext:
+class RecipeExecutorContext(BaseExecutorContext):
     """Execution context for recipe execution.
 
-    Encapsulates all dependencies and services needed by the RecipeExecutor,
-    reducing parameter count in initialization.
+    Extend BaseExecutorContext with ingestion-specific fields.
+    Encapsulates all dependencies and services needed by the RecipeExecutor.
 
     Attributes
     ----------
-    gateway
-        StorageGateway for database access.
-    snapshot
-        Repository snapshot reference.
     paths
         Build paths configuration.
     tools
@@ -113,21 +125,16 @@ class RecipeExecutorContext:
         Optional change tracker for incremental ingestion.
     ingest_run_sink
         Optional sink for recording run metrics.
-    run_context
-        Optional unified run context for cross-engine correlation.
     """
 
-    gateway: StorageGateway
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    tools: ToolsConfig
-    code_profile: ScanProfile
-    config_profile: ScanProfile
+    paths: BuildPaths = field(default=None)  # type: ignore[assignment]
+    tools: ToolsConfig = field(default=None)  # type: ignore[assignment]
+    code_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
+    config_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
     change_tracker: ChangeTracker | None = None
     ingest_run_sink: IngestRunSink | None = None
-    run_context: RunContext | None = None
 
 
 @dataclass
@@ -163,6 +170,7 @@ class RecipeExecutor:
         self,
         context: RecipeExecutorContext,
         config: ExecutorConfig | None = None,
+        telemetry: RuntimeTelemetry | None = None,
     ) -> None:
         """Initialize the executor.
 
@@ -172,6 +180,8 @@ class RecipeExecutor:
             Execution context with dependencies and services.
         config
             Executor configuration.
+        telemetry
+            Runtime telemetry instance.
         """
         self._gateway = context.gateway
         self._snapshot = context.snapshot
@@ -185,6 +195,7 @@ class RecipeExecutor:
         self._ingest_run_sink = context.ingest_run_sink
         self._run_context = context.run_context
         self._config = config or ExecutorConfig()
+        self._telemetry = telemetry or get_runtime_telemetry()
 
     def execute(self, recipe: IngestRecipe) -> RecipeExecutionResult:
         """Execute a recipe.
@@ -253,6 +264,10 @@ class RecipeExecutor:
         self._config.scratch.cleanup()
 
         duration_s = time.perf_counter() - start_time
+
+        # Record run-level telemetry
+        self._record_telemetry(stage_results, skipped_stages, duration_s)
+
         log.info(
             "Recipe execution completed: recipe=%s success=%s duration=%.2fs",
             recipe.name,
@@ -267,6 +282,44 @@ class RecipeExecutor:
             skipped_stages=tuple(skipped_stages),
             duration_s=duration_s,
             error=error,
+        )
+
+    def _record_telemetry(
+        self,
+        stage_results: list[RecipeStageResult],
+        skipped_stages: list[str],
+        duration_s: float,
+    ) -> None:
+        """Record run-level telemetry metrics.
+
+        Parameters
+        ----------
+        stage_results
+            Results from executed stages.
+        skipped_stages
+            Names of skipped stages.
+        duration_s
+            Total duration in seconds.
+        """
+        success_count = 0
+        failure_count = 0
+        skip_count = 0
+        for stage_result in stage_results:
+            for plugin_data in stage_result.plugin_results.values():
+                if isinstance(plugin_data, dict):
+                    if plugin_data.get("skipped", False):
+                        skip_count += 1
+                    elif plugin_data.get("success", False):
+                        success_count += 1
+                    else:
+                        failure_count += 1
+
+        self._telemetry.record_run_metrics(
+            run_id=self._config.run_id,
+            success_count=success_count,
+            failure_count=failure_count,
+            skip_count=skip_count + len(skipped_stages),
+            duration_s=duration_s,
         )
 
     def _build_plan(self, recipe: IngestRecipe) -> IngestPluginPlan:

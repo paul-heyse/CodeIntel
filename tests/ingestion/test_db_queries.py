@@ -37,10 +37,9 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_table_exists,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 EXPECTED_COUNT_2 = 2
 EXPECTED_COUNT_3 = 3
 TEST_REPO_ROOT = Path("/opt/test")
@@ -167,7 +166,7 @@ def test_safe_count_with_scope_nonexistent_table(
     fresh_gateway: StorageGateway,
 ) -> None:
     """safe_count_with_scope should return None for nonexistent tables."""
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
+    snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     result = safe_count_with_scope(fresh_gateway, "nonexistent.table", snapshot)
 
     assert result is None

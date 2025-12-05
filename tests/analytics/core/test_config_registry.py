@@ -24,10 +24,10 @@ from codeintel.analytics.core.config_registry import (
     reset_config_registry,
 )
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
-# Test constants
-TEST_REPO = "test/repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_PLUGIN_NAME = "test.plugin"
 TEST_PLUGIN_NAME_2 = "test.plugin2"
 TEST_PLUGIN_NAME_3 = "test.plugin3"
@@ -210,11 +210,7 @@ class TestConfigRegistry:
         registry.register(MockStepConfig, (TEST_PLUGIN_NAME,))
         registry.register(MockStepConfig2, (TEST_PLUGIN_NAME_2,))
 
-        snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
-            repo_root=Path("/test"),
-        )
+        snapshot = make_snapshot(repo_root=Path("/test"))
         configs: dict[type, object] = {
             MockStepConfig: MockStepConfig(snapshot=snapshot),
             MockStepConfig2: MockStepConfig2(snapshot=snapshot),
@@ -230,11 +226,7 @@ class TestConfigRegistry:
         registry = ConfigRegistry()
         registry.register(MockStepConfig, (TEST_PLUGIN_NAME,))
 
-        snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
-            repo_root=Path("/test"),
-        )
+        snapshot = make_snapshot(repo_root=Path("/test"))
         configs: dict[type, object] = {
             MockStepConfig: MockStepConfig(snapshot=snapshot),
             MockStepConfig2: MockStepConfig2(snapshot=snapshot),  # Not registered
@@ -302,8 +294,8 @@ class TestBaseStepConfig:
     def test_creates_config_with_snapshot() -> None:
         """Verify config stores snapshot."""
         snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             repo_root=Path("/test/repo"),
         )
         config = BaseStepConfig(snapshot=snapshot)
@@ -313,31 +305,31 @@ class TestBaseStepConfig:
     def test_repo_property() -> None:
         """Verify repo property returns snapshot.repo."""
         snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             repo_root=Path("/test/repo"),
         )
         config = BaseStepConfig(snapshot=snapshot)
-        assert config.repo == TEST_REPO
+        assert config.repo == DEFAULT_REPO
 
     @staticmethod
     def test_commit_property() -> None:
         """Verify commit property returns snapshot.commit."""
         snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             repo_root=Path("/test/repo"),
         )
         config = BaseStepConfig(snapshot=snapshot)
-        assert config.commit == TEST_COMMIT
+        assert config.commit == DEFAULT_COMMIT
 
     @staticmethod
     def test_repo_root_property() -> None:
         """Verify repo_root property returns snapshot.repo_root."""
         repo_root = Path("/test/repo")
         snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             repo_root=repo_root,
         )
         config = BaseStepConfig(snapshot=snapshot)
@@ -346,11 +338,7 @@ class TestBaseStepConfig:
     @staticmethod
     def test_config_is_frozen() -> None:
         """Verify config is immutable."""
-        snapshot = SnapshotRef(
-            repo=TEST_REPO,
-            commit=TEST_COMMIT,
-            repo_root=Path("/test"),
-        )
+        snapshot = make_snapshot(repo_root=Path("/test"))
         config = BaseStepConfig(snapshot=snapshot)
         with pytest.raises(AttributeError):
             config.snapshot = snapshot  # type: ignore[misc]

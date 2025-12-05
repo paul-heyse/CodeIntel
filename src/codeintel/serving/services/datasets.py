@@ -250,7 +250,17 @@ class _LocalDatasetMixin:
 
 
 class _HttpDatasetQueryMixin(_HttpTransportMixin):
-    """HTTP-based dataset query APIs used by HttpQueryService."""
+    """HTTP-based dataset query APIs used by HttpQueryService.
+
+    Architecture Note
+    -----------------
+    Implements HTTP transport path for dataset queries. Performs bidirectional
+    domain/response conversion: receives HTTP responses, normalizes to Pydantic
+    models, and converts to domain models via ``to_domain()`` to satisfy the
+    service layer contract.
+
+    See ``codeintel.serving.domain_models`` for the full architecture contract.
+    """
 
     limits: BackendLimits
 

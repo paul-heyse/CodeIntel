@@ -18,14 +18,13 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.config.primitives import SnapshotRef
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
-TEST_REPO = "test-repo"
-TEST_COMMIT = "abc123"
+# Test constants (non-repo/commit)
 TEST_MAX_CONDITIONS = 10
 LINE_NUMBER_TEN = 10
 LINE_NUMBER_FIVE = 5
@@ -40,7 +39,7 @@ def contracts_config() -> FunctionContractsStepConfig:
     FunctionContractsStepConfig
         Configuration for testing.
     """
-    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
+    snapshot = make_snapshot(repo_root=Path("/test/repo"))
     return FunctionContractsStepConfig(
         snapshot=snapshot,
         max_conditions_per_func=TEST_MAX_CONDITIONS,
@@ -146,7 +145,7 @@ def test_compute_function_contracts_empty_catalog(
         SELECT COUNT(*) FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [TEST_REPO, TEST_COMMIT],
+        [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
     assert result is not None
