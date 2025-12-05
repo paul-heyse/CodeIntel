@@ -17,9 +17,10 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
+from tests._helpers.gateway import gateway_with_macros
 
 
 class StubFunctionRow(TypedDict):
@@ -68,7 +69,7 @@ class _StubFunctionQuery:
     """Lightweight stub implementing the function summary surface."""
 
     def __init__(self, row: StubFunctionRow) -> None:
-        gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+        gateway = gateway_with_macros(validate_schema=False)
         self.gateway = gateway
         self.limits = BackendLimits()
         self._functions = _StubFunctions(
@@ -142,7 +143,7 @@ class _StubSubsystemQueryService:
         self.modules = self
         self.subsystems = self
         self.datasets = self
-        gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+        gateway = gateway_with_macros(validate_schema=False)
         self._profile_row = profile_row
         self._coverage_row = coverage_row
         self._subsystems = _StubSubsystems(

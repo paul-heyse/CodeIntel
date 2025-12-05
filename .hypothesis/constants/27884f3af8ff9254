@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/tracking.py
+# hypothesis_version: 6.148.6
+
+['attempts', 'error', 'failed', 'partial', 'record_plugin_steps', 'skipped', 'succeeded']

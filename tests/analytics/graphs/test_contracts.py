@@ -30,8 +30,9 @@ from codeintel.analytics.graphs.contracts import (
     table_exists_checker,
     table_not_empty_checker,
 )
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.gateway import gateway_with_macros
 
 # Test constants (non-repo/commit)
 MIN_FRACTION_HIGH = 0.95
@@ -59,7 +60,7 @@ def memory_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Configured gateway with schema applied.
     """
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = gateway_with_macros()
     try:
         yield gateway
     finally:

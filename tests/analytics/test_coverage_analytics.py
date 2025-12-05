@@ -15,8 +15,9 @@ import pytest
 from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
+from tests._helpers.gateway import gateway_with_macros
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -125,7 +126,7 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway backed by in-memory DuckDB with full schema.
     """
-    gw = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gw = gateway_with_macros()
     try:
         yield gw
     finally:

@@ -13,8 +13,8 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.models import SubsystemCoverageRow, SubsystemProfileRow
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from tests._helpers.gateway import build_duckdb_query_service
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.gateway import build_duckdb_query_service, gateway_with_macros
 
 REPO = "demo/repo"
 COMMIT = "deadbeef"
@@ -28,7 +28,7 @@ HTTP_OK = 200
 
 
 def _seed_subsystem_fixture() -> tuple[StorageGateway, LocalQueryService]:
-    gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+    gateway = gateway_with_macros(validate_schema=False)
     con = gateway.con
     now = datetime.now(UTC)
     gateway.core.insert_repo_map([(REPO, COMMIT, "[]", "[]", now.isoformat())])
@@ -188,7 +188,7 @@ def test_subsystem_coverage_roundtrip() -> None:
 
 def test_subsystem_coverage_not_found_meta() -> None:
     """When no coverage rows exist, meta should surface a not_found message."""
-    gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+    gateway = gateway_with_macros(validate_schema=False)
     query = build_duckdb_query_service(
         gateway,
         repo="demo/repo",

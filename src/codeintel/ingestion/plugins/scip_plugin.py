@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.runtime.errors import PluginSkipRequestError
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.core.base import (
@@ -109,7 +110,7 @@ class ScipIngestPlugin(
 
         Raises
         ------
-        _SkipError
+        PluginSkipRequestError
             When SCIP tools are unavailable.
         RuntimeError
             On SCIP execution failure.
@@ -119,7 +120,7 @@ class ScipIngestPlugin(
         # Check if SCIP binaries are configured
         if ctx.tools.scip_python_bin is None or ctx.tools.scip_bin is None:
             msg = "SCIP binaries not configured"
-            raise _SkipError(msg)
+            raise PluginSkipRequestError(msg)
 
         # Get tool service from provider
         tools_provider = ctx.require(ToolsProvider)
@@ -171,15 +172,11 @@ class ScipIngestPlugin(
         try:
             result = self.compute(ctx)
             return self._build_success_result(result, ctx)
-        except _SkipError as skip:
+        except PluginSkipRequestError as skip:
             return IngestPluginResult.skip(str(skip))
         except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
             log.exception("Plugin %s failed", self.metadata.name)
             return IngestPluginResult.fail(f"{self.metadata.name} failed: {exc}")
-
-
-class _SkipError(Exception):
-    """Internal signal to indicate plugin should skip."""
 
 
 __all__ = ["ScipIngestPlugin"]

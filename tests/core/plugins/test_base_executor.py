@@ -18,7 +18,6 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
-from tests._helpers.factories import make_snapshot
 from codeintel.core.plugins.executor_context import BaseExecutorContext
 from codeintel.core.plugins.policy import BaseExecutionPolicy
 from codeintel.core.plugins.protocol import (
@@ -31,7 +30,8 @@ from codeintel.core.plugins.protocol import (
 from codeintel.core.plugins.report import BaseExecutionReport
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.core.runtime.telemetry import RuntimeTelemetry, TelemetryConfig
-from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.factories import make_snapshot
+from tests._helpers.gateway import gateway_with_macros
 
 # ---------------------------------------------------------------------------
 # Constants for test assertions
@@ -230,7 +230,7 @@ def mock_executor_ctx(mock_snapshot: SnapshotRef) -> MockExecutorContext:
     MockExecutorContext
         Test executor context.
     """
-    gw = open_memory_gateway()
+    gw = gateway_with_macros()
     return MockExecutorContext(
         gateway=gw,
         snapshot=mock_snapshot,

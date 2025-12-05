@@ -23,7 +23,6 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
@@ -38,6 +37,7 @@ from codeintel.core.runtime.errors import (
     PluginFatalError,
 )
 from codeintel.core.runtime.telemetry import get_runtime_telemetry
+from codeintel.core.runtime.timing import utc_now
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.resources.graphs import GraphResource
@@ -183,7 +183,7 @@ def _execute_plugin(
         When fatal failure occurs and fail-fast is enabled.
     """
     start = time.perf_counter()
-    started_at = datetime.now(tz=UTC)
+    started_at = utc_now()
     attempts = 0
     status: Literal["succeeded", "failed", "skipped"] = "failed"
     error_message: str | None = None
@@ -216,7 +216,7 @@ def _execute_plugin(
                     plugin_name=plugin.metadata.name,
                     status=status,
                     started_at=started_at,
-                    ended_at=datetime.now(tz=UTC),
+                    ended_at=utc_now(),
                     duration_ms=round((time.perf_counter() - start) * 1000, 2),
                     attempts=attempts,
                     partial=True,
@@ -230,7 +230,7 @@ def _execute_plugin(
                 raise PluginFatalError(record, exc) from exc
             break
 
-    ended_at = datetime.now(tz=UTC)
+    ended_at = utc_now()
     # Extract hashes from result if present, fallback to settings
     input_hash = (
         plugin_result.input_hash
@@ -374,7 +374,7 @@ def _execute_planned_plugin(
         raise
     except PLUGIN_CATCHABLE_ERRORS:
         log.exception("plugin_failed", extra={"graph_run_id": plan.run_id})
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         record = PluginExecutionRecord(
             plugin_name=plugin.metadata.name,
             status="failed",
@@ -520,7 +520,7 @@ def run_graph_plugins(
         Summary of plugin execution outcomes.
     """
     start = time.perf_counter()
-    started_at = datetime.now(tz=UTC)
+    started_at = utc_now()
 
     run_context = context.run_context
     runs = context.gateway.runs if run_context is not None else None
@@ -536,7 +536,7 @@ def run_graph_plugins(
 
     records, manifest, fatal_error = _execute_plugins_in_plan(plan=plan, context=context)
 
-    ended_at = datetime.now(tz=UTC)
+    ended_at = utc_now()
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
     status_counts = _status_counts(records)

@@ -258,6 +258,10 @@ ban-relative-imports = "all"
 "src/codeintel/core/plugins/executor.py" = ["UP046", "PLR0913", "PLR0917", "FBT001", "PLR6301"]
 # Analytics executor inherits base executor requirements
 "src/codeintel/analytics/core/executor.py" = ["PLR0913", "PLR0917", "FBT001", "PLR6301"]
+# PLR6301: Hook methods in registry are designed for subclass override pattern
+"src/codeintel/core/plugins/registry.py" = ["PLR6301"]
+"src/codeintel/analytics/core/registry.py" = ["PLR6301"]
+"src/codeintel/graphs/core/registry.py" = ["PLR6301"]
 # Tracking module helper functions use boolean parameters naturally
 "src/codeintel/core/plugins/tracking.py" = ["FBT001", "FBT002"]
 

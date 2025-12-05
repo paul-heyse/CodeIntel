@@ -138,9 +138,40 @@ class PluginSkippedError(Exception):
         self.reason = reason
 
 
+class PluginSkipRequestError(Exception):
+    """Internal signal to request a plugin skip execution.
+
+    This is not a true error condition - it signals that a plugin has determined
+    it should skip processing (e.g., no matching files, already processed).
+
+    Unlike PluginSkippedError, this is used for internal control flow within
+    a plugin's execute() method, not for external skip decisions made during
+    planning.
+
+    Examples
+    --------
+    >>> def execute(self, ctx):
+    ...     if not self._has_work_to_do(ctx):
+    ...         raise PluginSkipRequestError("No files to process")
+    ...     # ... do work ...
+    """
+
+    def __init__(self, reason: str = "") -> None:
+        """Initialize with optional skip reason.
+
+        Parameters
+        ----------
+        reason
+            Optional description of why execution is being skipped.
+        """
+        super().__init__(reason)
+        self.reason = reason
+
+
 __all__ = [
     "PLUGIN_CATCHABLE_ERRORS",
     "PluginFatalError",
+    "PluginSkipRequestError",
     "PluginSkippedError",
     "PluginTimeoutError",
 ]

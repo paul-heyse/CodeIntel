@@ -11,7 +11,7 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
@@ -19,6 +19,7 @@ from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginExecutionRecord
 from codeintel.core.recipes import Recipe, RecipeStage
 from codeintel.core.resources import ResourceRegistry
+from codeintel.core.runtime.timing import utc_now
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import NxGraphEngine
@@ -212,7 +213,7 @@ class RecipeExecutor:
         """
         run_id = new_run_id("graphs")
         start = time.perf_counter()
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
 
         log.info(
             "recipe_executor.start recipe=%s run_id=%s stages=%d",
@@ -244,7 +245,7 @@ class RecipeExecutor:
         finally:
             self._scratch.cleanup()
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
         result = RecipeExecutionResult(
@@ -495,7 +496,7 @@ class RecipeExecutor:
                         plugin.metadata.name,
                     )
                     # Create a failure record for the exception
-                    now = datetime.now(tz=UTC)
+                    now = utc_now()
                     records.append(
                         PluginExecutionRecord(
                             plugin_name=plugin.metadata.name,
@@ -549,7 +550,7 @@ class RecipeExecutor:
             Execution record.
         """
         start = time.perf_counter()
-        started_at = datetime.now(tz=UTC)
+        started_at = utc_now()
 
         log.info(
             "recipe_executor.plugin.start recipe=%s stage=%s plugin=%s repo=%s commit=%s",
@@ -600,7 +601,7 @@ class RecipeExecutor:
             error = str(exc)
             result = None
 
-        ended_at = datetime.now(tz=UTC)
+        ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
         log.info(

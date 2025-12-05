@@ -18,9 +18,10 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
+from tests._helpers.gateway import gateway_with_macros
 
 # Test constants (non-repo/commit)
 CONFIDENCE_FULL = 0.9
@@ -39,7 +40,7 @@ def memory_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Configured gateway with schema applied.
     """
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = gateway_with_macros()
     try:
         yield gateway
     finally:

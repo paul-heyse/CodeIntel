@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.runtime import RunContext
-from tests._helpers.factories import make_snapshot
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import (
     PipelineRunRecord,
@@ -14,6 +13,7 @@ from codeintel.storage.tracking import (
     PipelineStepRecord,
     StepCompletionParams,
 )
+from tests._helpers.factories import make_snapshot
 
 
 def test_pipeline_run_record_stores_fields() -> None:

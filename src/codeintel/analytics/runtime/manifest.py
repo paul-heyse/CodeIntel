@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
+
+from codeintel.core.plugins.result import PluginStatus
 
 
 @dataclass(frozen=True)
@@ -37,7 +39,9 @@ class AnalyticsPlanInfo:
     dep_graph: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-AnalyticsStatus = Literal["succeeded", "failed", "skipped"]
+# AnalyticsStatus is semantically identical to PluginStatus.
+# Kept as alias for backward compatibility.
+AnalyticsStatus = PluginStatus
 
 
 @dataclass(frozen=True)

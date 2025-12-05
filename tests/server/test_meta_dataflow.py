@@ -12,8 +12,9 @@ from fastapi.testclient import TestClient
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.http.fastapi import create_app
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
+from tests._helpers.gateway import gateway_with_macros
 
 
 @pytest.fixture
@@ -26,9 +27,7 @@ def gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway connected to an in-memory DuckDB instance.
     """
-    gw = open_memory_gateway(
-        apply_schema=True,
-        ensure_views=True,
+    gw = gateway_with_macros(
         validate_schema=False,
         repo="demo/repo",
         commit="deadbeef",

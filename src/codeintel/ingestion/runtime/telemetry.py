@@ -10,7 +10,6 @@ from __future__ import annotations
 import importlib
 import logging
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.core.runtime.telemetry import (
@@ -19,6 +18,7 @@ from codeintel.core.runtime.telemetry import (
     RuntimeTelemetry,
     TelemetryConfig,
 )
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -178,7 +178,10 @@ class IngestRuntimeTelemetry(RuntimeTelemetry):
         )
 
 
-@lru_cache(maxsize=1)
+class _IngestTelemetryHolder(SingletonHolder[IngestRuntimeTelemetry]):
+    """Singleton holder for IngestRuntimeTelemetry."""
+
+
 def get_ingest_telemetry() -> IngestRuntimeTelemetry:
     """Get the singleton ingestion telemetry instance.
 
@@ -187,7 +190,12 @@ def get_ingest_telemetry() -> IngestRuntimeTelemetry:
     IngestRuntimeTelemetry
         Shared telemetry instance.
     """
-    return IngestRuntimeTelemetry()
+    return _IngestTelemetryHolder.get(IngestRuntimeTelemetry)
+
+
+def reset_ingest_telemetry() -> None:
+    """Reset the telemetry singleton for testing."""
+    _IngestTelemetryHolder.reset()
 
 
 @dataclass
@@ -272,4 +280,5 @@ __all__ = [
     "IngestTelemetryConfig",
     "OtelIngestRunSink",
     "get_ingest_telemetry",
+    "reset_ingest_telemetry",
 ]

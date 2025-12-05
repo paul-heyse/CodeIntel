@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.runtime.errors import PluginSkipRequestError
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.core.base import (
@@ -108,7 +109,7 @@ class CoverageIngestPlugin(
 
         Raises
         ------
-        _SkipError
+        PluginSkipRequestError
             When coverage file is missing (handled by execute).
         RuntimeError
             When coverage ingestion fails.
@@ -117,7 +118,7 @@ class CoverageIngestPlugin(
         coverage_path = self._resolve_coverage_file(ctx)
         if coverage_path is None:
             msg = "missing_coverage_file"
-            raise _SkipError(msg)
+            raise PluginSkipRequestError(msg)
 
         # Get tool service from provider
         tools_provider = ctx.require(ToolsProvider)
@@ -166,7 +167,7 @@ class CoverageIngestPlugin(
         try:
             result = self.compute(ctx)
             return self._build_success_result(result, ctx)
-        except _SkipError as skip:
+        except PluginSkipRequestError as skip:
             return IngestPluginResult.skip(str(skip))
         except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
             log.exception("Plugin %s failed", self.metadata.name)
@@ -197,10 +198,6 @@ class CoverageIngestPlugin(
             if candidate is not None and candidate.exists():
                 return candidate
         return None
-
-
-class _SkipError(Exception):
-    """Internal signal to indicate plugin should skip."""
 
 
 __all__ = ["CoverageIngestPlugin"]

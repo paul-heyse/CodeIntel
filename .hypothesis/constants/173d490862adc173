@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/functions/contracts.py
+# hypothesis_version: 6.148.6
+
+[90000, '3.0.0', 'AstProvider', 'AstResourceData', 'CatalogProvider', 'analytics', 'analytics.docstrings', 'config', 'contracts', 'fatal', 'function', 'function_contracts', 'functions', 'functions.contracts', 'functions.metrics', 'nullability']

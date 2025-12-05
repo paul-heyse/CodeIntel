@@ -95,3 +95,12 @@ def test_backend_resource_limits_and_registry_align(fresh_gateway: StorageGatewa
         pytest.fail("max_rows_per_call mismatch")
     if backend.gateway.datasets.mapping != gateway.datasets.mapping:
         pytest.fail("backend registry mismatch")
+
+
+def test_function_validation_dataset_present() -> None:
+    """Ensure function_validation is exposed via the dataset registry."""
+    registry = build_dataset_registry(include_docs_views="exclude")
+    if "function_validation" not in registry:
+        pytest.fail("function_validation missing from dataset registry")
+    if registry["function_validation"] != "analytics.function_validation":
+        pytest.fail(f"unexpected mapping: {registry['function_validation']}")

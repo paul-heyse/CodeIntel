@@ -248,12 +248,6 @@ def test_tests_for_function_validation(client: TestClient) -> None:
         pytest.fail("Expected validation error when identifiers are absent")
 
 
-def test_backend_registry_matches_gateway(gateway: StorageGateway, backend: DuckDBBackend) -> None:
-    """Backend should inherit dataset registry from the gateway."""
-    if backend.gateway.datasets.mapping != gateway.datasets.mapping:
-        pytest.fail("Backend dataset registry should match gateway mapping")
-
-
 def test_tests_for_function_success(client: TestClient) -> None:
     """Return test rows for a valid function."""
     response = client.get("/function/tests", params={"goid_h128": 1, "limit": 1})

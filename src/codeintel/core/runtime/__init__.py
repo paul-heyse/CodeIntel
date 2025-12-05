@@ -30,6 +30,7 @@ from codeintel.core.runtime.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
     PluginSkippedError,
+    PluginSkipRequestError,
     PluginTimeoutError,
 )
 from codeintel.core.runtime.retry import (
@@ -110,6 +111,7 @@ __all__ = [
     "PROMETHEUS_AVAILABLE",
     "BaseValidationOptions",
     "PluginFatalError",
+    "PluginSkipRequestError",
     "PluginSkippedError",
     "PluginSpan",
     "PluginTimeoutError",

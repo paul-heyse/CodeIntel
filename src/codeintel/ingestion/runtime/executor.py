@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.core.plugins.result import BasePluginExecutionRecord
@@ -23,6 +23,7 @@ from codeintel.core.runtime.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
 )
+from codeintel.core.runtime.timing import utc_now
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginProtocol,
     IngestPluginResult,
@@ -164,7 +165,7 @@ class IngestRunReport:
 
     run_id: str
     records: list[IngestPluginExecutionRecord] = field(default_factory=list)
-    started_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    started_at: datetime = field(default_factory=utc_now)
     ended_at: datetime | None = None
     status: PipelineStatus = "running"
 
@@ -230,7 +231,7 @@ def execute_plugin(
 
     record = IngestPluginExecutionRecord(
         plugin_name=plugin.metadata.name,
-        started_at=datetime.now(tz=UTC),
+        started_at=utc_now(),
     )
 
     span = telemetry.start_plugin_span(plugin, settings.name)
@@ -240,7 +241,7 @@ def execute_plugin(
         record.result = result
         record.rows_written = sum((result.row_counts or {}).values())
         record.table_counts = dict(result.row_counts or {})
-        record.ended_at = datetime.now(tz=UTC)
+        record.ended_at = utc_now()
         telemetry.end_span(span, success=True, rows_written=record.rows_written)
 
         log.info(
@@ -252,7 +253,7 @@ def execute_plugin(
 
     except PLUGIN_CATCHABLE_ERRORS as exc:
         record.error = exc
-        record.ended_at = datetime.now(tz=UTC)
+        record.ended_at = utc_now()
         telemetry.end_span(span, success=False, error=str(exc))
 
         log.warning(
@@ -299,7 +300,7 @@ def execute_plugin_with_timeout(
     telemetry = telemetry or get_ingest_telemetry()
     record = IngestPluginExecutionRecord(
         plugin_name=plugin.metadata.name,
-        started_at=datetime.now(tz=UTC),
+        started_at=utc_now(),
     )
 
     span = telemetry.start_plugin_span(plugin, plugin.metadata.name)
@@ -310,7 +311,7 @@ def execute_plugin_with_timeout(
             return future.result(timeout=timeout_s)
         except FuturesTimeout:
             record.error = TimeoutError(f"Plugin timed out after {timeout_s}s")
-            record.ended_at = datetime.now(tz=UTC)
+            record.ended_at = utc_now()
             telemetry.end_span(span, success=False, error="timeout")
 
             log.warning(
@@ -351,11 +352,11 @@ def execute_plugin_batch(
     config = config or IngestExecutorConfig()
     report = IngestRunReport(
         run_id=config.run_id or "",
-        started_at=datetime.now(tz=UTC),
+        started_at=utc_now(),
     )
 
     if not plugins:
-        report.ended_at = datetime.now(tz=UTC)
+        report.ended_at = utc_now()
         report.status = "succeeded"
         return report
 
@@ -364,7 +365,7 @@ def execute_plugin_batch(
     else:
         report = _execute_batch_sequential(plugins, context, config, report)
 
-    report.ended_at = datetime.now(tz=UTC)
+    report.ended_at = utc_now()
     report.status = "succeeded" if report.success else "failed"
 
     log.info(
