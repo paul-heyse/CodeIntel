@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
-    from codeintel.runtime import RunContext
+    from codeintel.core.execution import RunContext
 
 PipelineStatus = Literal["running", "succeeded", "failed", "partial"]
 """Status of a pipeline run.

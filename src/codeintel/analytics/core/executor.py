@@ -13,8 +13,8 @@ Architecture Note
 This executor follows the patterns established in `codeintel.core.plugins.executor`
 (BasePluginExecutor) and uses:
 - `codeintel.core.plugins.policy.BaseExecutionPolicy` for execution configuration
-- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
-- `codeintel.core.runtime.retry` for tenacity-based retries
+- `codeintel.core.execution.telemetry` for OTel/Prometheus integration
+- `codeintel.core.execution.retry` for tenacity-based retries
 
 The analytics executor has domain-specific features (middleware chain, contract
 validation) that extend beyond the base executor, but follows the same patterns.
@@ -47,17 +47,17 @@ from codeintel.analytics.core.protocol import (
 from codeintel.analytics.core.registry import PluginPlan, PluginRegistry, get_registry
 from codeintel.analytics.core.traits import is_contract_validated
 from codeintel.analytics.plugins.middleware.protocol import MiddlewareChain
-from codeintel.core.plugins.executor_context import BaseExecutorContext
-from codeintel.core.plugins.policy import BaseExecutionPolicy
-from codeintel.core.plugins.report import BaseExecutionReport, ExecutionStatus
-from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
-from codeintel.core.runtime.timing import utc_now
+from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_telemetry
+from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
+from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
+from codeintel.core.plugins.types.report import BaseExecutionReport, ExecutionStatus
 
 if TYPE_CHECKING:
     from codeintel.analytics.plugins.middleware.protocol import PluginMiddleware
     from codeintel.analytics.runtime.manifest import AnalyticsScope
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.runtime import RunContext
+    from codeintel.core.execution import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.pipeline.orchestration.core import (
+from codeintel.pipeline.steps import REGISTRY
+from codeintel.pipeline.steps.base import (
     PipelineStep,
     StepMetadata,
     StepPhase,
 )
-from codeintel.pipeline.orchestration.registry import build_registry
-from codeintel.pipeline.orchestration.steps import REGISTRY
+from codeintel.pipeline.steps.registry import build_registry
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -24,7 +24,7 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.pipeline.orchestration.core import PipelineContext
+    from codeintel.pipeline.execution.context import PipelineContext
 
 
 STEP_PAIR_COUNT = 2

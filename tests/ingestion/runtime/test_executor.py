@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from codeintel.core.plugins.result import BasePluginExecutionRecord
+from codeintel.core.plugins.types.result import BasePluginExecutionRecord
 from codeintel.ingestion.plugins.protocol import IngestPluginResult
 from codeintel.ingestion.runtime.executor import IngestPluginExecutionRecord
 

@@ -41,9 +41,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Self, cast
 
 from codeintel.config.models import ToolsConfig
-from codeintel.core.config_protocol import ConfigAccessor
-from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
-from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
+from codeintel.core.config.accessor import ConfigAccessor
+from codeintel.core.config.registry import ConfigNotFoundError, ConfigRegistry
+from codeintel.core.plugins.execution.context import PluginExecutionContext, PluginScratch
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 
@@ -51,9 +51,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.core.execution.context import RunContext
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
-    from codeintel.runtime.context import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 

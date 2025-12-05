@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from codeintel.core.runtime.telemetry import (
+from codeintel.core.execution.telemetry import (
     OTEL_AVAILABLE,
     PluginSpan,
     RuntimeTelemetry,

@@ -26,7 +26,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
     GraphPluginRetryPolicy,
 )
-from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,

@@ -41,8 +41,8 @@ Some types across domains are semantically identical:
 
 from __future__ import annotations
 
-from codeintel.core.plugins.report import ExecutionStatus
-from codeintel.core.plugins.result import PluginStatus
+from codeintel.core.plugins.types.report import ExecutionStatus
+from codeintel.core.plugins.types.result import PluginStatus
 from codeintel.storage.tracking.run_tracking import PipelineStatus, StepStatus
 
 __all__ = [

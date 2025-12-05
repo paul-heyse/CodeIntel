@@ -26,7 +26,7 @@ from typing import Any, Self, TypeVar
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.core.config_registry import ConfigRegistry
+from codeintel.core.config.registry import ConfigRegistry
 from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure.scanning import (

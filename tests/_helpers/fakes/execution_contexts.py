@@ -23,14 +23,14 @@ from codeintel.analytics.core.context import (
 )
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.plugins.context import ConfigProvider, PluginScratch
+from codeintel.core.plugins.execution.context import ConfigProvider, PluginScratch
 from codeintel.core.resources import ResourceRegistry
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths
-    from codeintel.runtime import RunContext
+    from codeintel.core.execution import RunContext
 
 T = TypeVar("T")
 

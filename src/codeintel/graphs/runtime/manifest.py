@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 if TYPE_CHECKING:
     from codeintel.config.steps_graphs import GraphRunScope

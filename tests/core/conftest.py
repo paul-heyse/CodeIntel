@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.config_registry import ConfigRegistry
-from codeintel.core.plugins.context import ConfigProvider, PluginScratch
-from codeintel.core.plugins.protocol import (
+from codeintel.core.config.registry import ConfigRegistry
+from codeintel.core.plugins.execution.context import ConfigProvider, PluginScratch
+from codeintel.core.plugins.types.protocol import (
     PluginMetadata,
 )
 from codeintel.core.resources.registry import ResourceRegistry

@@ -11,7 +11,7 @@ Key Components
 - run_graph_plugins: Executes a plan and returns a report
 """
 
-from codeintel.core.runtime.errors import PLUGIN_CATCHABLE_ERRORS, PluginFatalError
+from codeintel.core.execution.errors import PLUGIN_CATCHABLE_ERRORS, PluginFatalError
 from codeintel.graphs.runtime.executor import (
     GraphExecutorContext,
     GraphRunReport,

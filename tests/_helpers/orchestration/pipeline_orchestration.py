@@ -21,7 +21,7 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
 )
-from codeintel.pipeline.orchestration.core import PipelineContext
+from codeintel.pipeline.execution.context import PipelineContext
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.pipeline_config import COMMIT, REPO, PipelineEnv

@@ -34,7 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from codeintel.core.plugins.protocol import ValidationResult
+from codeintel.core.plugins.types.protocol import ValidationResult
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,

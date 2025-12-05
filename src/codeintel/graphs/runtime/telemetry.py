@@ -10,7 +10,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.core.runtime.telemetry import (
+from codeintel.core.execution.telemetry import (
     OTEL_AVAILABLE,
     PluginSpan,
     RuntimeTelemetry,
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from opentelemetry.trace import StatusCode as _StatusCodeType
 
     from codeintel.config.steps_graphs import GraphRunScope
-    from codeintel.core.plugins.result import PluginExecutionRecord
+    from codeintel.core.plugins.types.result import PluginExecutionRecord
     from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.graphs.core.protocol import GraphPluginProtocol
 

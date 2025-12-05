@@ -13,8 +13,12 @@ import logging
 from collections.abc import Sequence
 from typing import cast
 
-from codeintel.core.plugins.registry import BasePluginRegistry
-from codeintel.core.plugins.sorting import build_provider_index_from_metadata, topological_sort
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.plugins.registry.base import BasePluginRegistry
+from codeintel.core.plugins.registry.sorting import (
+    build_provider_index_from_metadata,
+    topological_sort,
+)
 from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
@@ -22,7 +26,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginSkip,
 )
-from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 

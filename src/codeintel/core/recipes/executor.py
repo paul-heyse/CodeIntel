@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.execution.context import PluginScratch
 
 
 class BaseRecipeExecutor[R, C, Result](ABC):

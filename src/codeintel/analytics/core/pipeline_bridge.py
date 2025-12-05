@@ -39,8 +39,8 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
+    from codeintel.core.execution import RunContext
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.runtime import RunContext
     from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
@@ -360,7 +360,7 @@ def run_analytics_plugins_for_context(
 
     Examples
     --------
-    >>> from codeintel.runtime import new_run_context
+    >>> from codeintel.core.execution import new_run_context
     >>> from codeintel.config.primitives import SnapshotRef
     >>> from pathlib import Path
     >>> # Create unified context

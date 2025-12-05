@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.runtime.errors import PluginSkipRequestError
+from codeintel.core.execution.errors import PluginSkipRequestError
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.core.base import (

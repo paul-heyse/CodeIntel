@@ -22,12 +22,12 @@ from typing import TYPE_CHECKING
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.models import CliPathsInput, ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.pipeline.op_planner import (
+from codeintel.core.execution import TriggerKind
+from codeintel.pipeline.planning.op_planner import (
     OperationPrereqOptions,
     build_prereq_summary,
     ensure_prerequisites_for_operation,
 )
-from codeintel.runtime import TriggerKind
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.tracking import PipelineRunRecord
 from codeintel.storage.validation import table_has_rows_for_snapshot

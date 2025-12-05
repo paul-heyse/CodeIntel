@@ -11,8 +11,8 @@ from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
-from codeintel.pipeline.orchestration import steps as orchestration_steps
-from codeintel.pipeline.orchestration.steps import SemanticRolesStep
+from codeintel.pipeline import steps as orchestration_steps
+from codeintel.pipeline.steps import SemanticRolesStep
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 

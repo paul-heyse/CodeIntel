@@ -13,11 +13,8 @@ from codeintel.cli import app
 from codeintel.config import SnapshotRef
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
-from codeintel.pipeline.export.export_jsonl import ExportCallOptions
-from codeintel.pipeline.export.runner import ExportOptions
-from codeintel.pipeline.orchestration.core import PipelineContext, StepPhase
-from codeintel.pipeline.orchestration.registry import build_registry
-from codeintel.pipeline.orchestration.runner import (
+from codeintel.pipeline.execution.context import PipelineContext
+from codeintel.pipeline.execution.step_runner import (
     ExportArgs,
     ExportHooks,
     HistoryTimeseriesParams,
@@ -27,6 +24,10 @@ from codeintel.pipeline.orchestration.runner import (
     run_full_pipeline,
     run_pipeline_with_retries,
 )
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
+from codeintel.pipeline.export.runner import ExportOptions
+from codeintel.pipeline.steps.base import StepPhase
+from codeintel.pipeline.steps.registry import build_registry
 from codeintel.storage.gateway import (
     DuckDBConnection,
     StorageConfig,
@@ -43,13 +44,20 @@ runner = CliRunner()
 class _StubStep:
     """Stub pipeline step for testing."""
 
+    name: str
+    description: str
+    phase: StepPhase
+    deps: Sequence[str]
+    run_count: int
+    last_ctx: PipelineContext | None
+
     def __init__(self, name: str, deps: Sequence[str] = ()) -> None:
         self.name = name
         self.description = f"Stub step: {name}"
         self.phase = StepPhase.INGESTION
-        self.deps = tuple(deps)
+        self.deps = deps
         self.run_count = 0
-        self.last_ctx: PipelineContext | None = None
+        self.last_ctx = None
 
     def run(self, ctx: PipelineContext) -> None:
         """Execute stub step."""

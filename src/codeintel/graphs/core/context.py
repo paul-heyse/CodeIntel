@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.context import (
+from codeintel.core.plugins.execution.context import (
     ConfigProvider,
     PluginExecutionContext,
     PluginExecutionContextBuilder,

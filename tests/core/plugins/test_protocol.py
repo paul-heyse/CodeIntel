@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.core.plugins.protocol import (
+from codeintel.core.plugins.types.protocol import (
     CapabilityKind,
     InputSource,
     PluginCapability,
@@ -27,7 +27,7 @@ from codeintel.core.plugins.protocol import (
     PluginStage,
     ValidationResult,
 )
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.result import PluginResult
 
 MIN_ROWS_REQUIRED = 10
 RESOURCE_MAX_RUNTIME_MS = 5000

@@ -9,7 +9,7 @@ This executor follows the patterns established in `codeintel.core.plugins.execut
 (BasePluginExecutor) and uses:
 - `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
 - `codeintel.core.plugins.report.BaseExecutionReport` as a base
-- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+- `codeintel.core.execution.telemetry` for OTel/Prometheus integration
 
 The graphs executor has domain-specific features (manifest tracking, timeout
 execution with ThreadPoolExecutor) that extend beyond the base executor.
@@ -26,18 +26,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
-from codeintel.core.plugins.context import PluginScratch
-from codeintel.core.plugins.executor_context import BaseExecutorContext
-from codeintel.core.plugins.report import BaseExecutionReport
-from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
-from codeintel.core.plugins.tracking import record_plugin_steps
-from codeintel.core.resources import ResourceRegistry
-from codeintel.core.runtime.errors import (
+from codeintel.core.execution.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
 )
-from codeintel.core.runtime.telemetry import get_runtime_telemetry
-from codeintel.core.runtime.timing import utc_now
+from codeintel.core.execution.telemetry import get_runtime_telemetry
+from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
+from codeintel.core.plugins.execution.tracking import record_plugin_steps
+from codeintel.core.plugins.types.report import BaseExecutionReport
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.resources.graphs import GraphResource

@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.core.plugins.meta_options import (
+from codeintel.core.plugins.decorators.meta import (
     BasePluginMetaOptions,
     BasePluginMetaOptionsInput,
 )
-from codeintel.core.plugins.protocol import PluginInputSpec, PluginResourceHints
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.protocol import PluginInputSpec, PluginResourceHints
+from codeintel.core.plugins.types.result import PluginResult
 
 # =============================================================================
 # BasePluginMetaOptions Default Tests

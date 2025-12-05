@@ -9,7 +9,7 @@ Architecture Note
 This executor follows the patterns established in `codeintel.core.plugins.executor`
 (BasePluginExecutor) and uses:
 - `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
-- `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+- `codeintel.core.execution.telemetry` for OTel/Prometheus integration
 
 The ingestion executor has domain-specific features (recipe/stage-based execution,
 parallel plugin execution within stages) that extend beyond the base executor.
@@ -24,9 +24,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.executor_context import BaseExecutorContext
-from codeintel.core.runtime.telemetry import RuntimeTelemetry, get_runtime_telemetry
-from codeintel.core.runtime.timing import utc_now
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_telemetry
+from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
@@ -52,17 +53,16 @@ from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 from codeintel.ingestion.runtime.executor import IngestPluginExecutionRecord
 from codeintel.ingestion.tracker import ChangeTracker
-from codeintel.runtime.ids import new_run_id
 from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
+    from codeintel.core.execution import RunContext
     from codeintel.ingestion.core.runs import IngestRunSink
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.ingestion.engine.service import ToolService
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
-    from codeintel.runtime import RunContext
     from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ class RecipeExecutor:
     This executor follows the patterns from BaseRecipeExecutor
     (codeintel.core.recipes.executor) and uses:
     - `codeintel.core.plugins.executor_context.BaseExecutorContext` as a base
-    - `codeintel.core.runtime.telemetry` for OTel/Prometheus integration
+    - `codeintel.core.execution.telemetry` for OTel/Prometheus integration
 
     It does not formally extend BaseRecipeExecutor because:
     1. Ingestion uses recipe stage-based execution with IngestRecipe
@@ -675,7 +675,7 @@ def execute_recipe_for_context(
 
     Examples
     --------
-    >>> from codeintel.runtime import new_run_context
+    >>> from codeintel.core.execution import new_run_context
     >>> from codeintel.config.primitives import SnapshotRef
     >>> from pathlib import Path
     >>> # Create unified context

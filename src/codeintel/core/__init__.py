@@ -4,20 +4,24 @@ This package contains unified protocols, types, and utilities that are
 used by both the graphs and analytics subsystems, eliminating duplication
 and ensuring consistency.
 
-Modules
--------
+Subpackages
+-----------
+- config: Configuration accessor protocol and registry
+- execution: Runtime execution infrastructure (telemetry, retry, timing)
 - plugins: Unified plugin protocol, result types, and registry
 - recipes: Unified recipe DSL and executor
 - resources: Unified resource provider protocol and registry
-- config_protocol: Shared configuration accessor protocol
-- config_registry: Type-safe configuration registry
+- types: Common type definitions (status types)
+
+Modules
+-------
 - singleton: Thread-safe singleton holder pattern
 """
 
 from __future__ import annotations
 
-from codeintel.core.config_protocol import ConfigAccessor
-from codeintel.core.config_registry import (
+from codeintel.core.config.accessor import ConfigAccessor
+from codeintel.core.config.registry import (
     ConfigNotFoundError,
     ConfigRegistry,
     ConfigTypeError,

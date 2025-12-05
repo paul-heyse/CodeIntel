@@ -43,14 +43,14 @@ from codeintel.cli.project import (
 from codeintel.config.datasets import (
     get_dataset_contracts_by_table_key,
 )
-from codeintel.pipeline.executor import run_pipeline
-from codeintel.pipeline.op_planner import (
+from codeintel.pipeline.execution.runner import run_pipeline
+from codeintel.pipeline.planning.op_planner import (
     OperationPrereqOptions,
     build_prereq_summary,
     ensure_prerequisites_for_operation,
 )
-from codeintel.pipeline.planner import PipelinePlanOptions
-from codeintel.pipeline.spec import FULL_PIPELINE
+from codeintel.pipeline.planning.planner import PipelinePlanOptions
+from codeintel.pipeline.spec.model import FULL_PIPELINE
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
