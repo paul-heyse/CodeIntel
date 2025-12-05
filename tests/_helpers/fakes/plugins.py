@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core import (
     GraphPluginExecutionContext,
     GraphPluginMetadata,

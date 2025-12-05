@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from codeintel.core.plugins.result import (
+from codeintel.core.plugins.types.result import (
     BasePluginExecutionRecord,
     BasePluginResult,
     PluginExecutionRecord,

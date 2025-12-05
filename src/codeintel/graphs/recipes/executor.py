@@ -15,17 +15,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
-from codeintel.core.plugins.context import PluginScratch
-from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.core.recipes import Recipe, RecipeStage
 from codeintel.core.resources import ResourceRegistry
-from codeintel.core.runtime.timing import utc_now
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
-from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

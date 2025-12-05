@@ -12,7 +12,8 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from codeintel.core.plugins.sorting import (
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.plugins.registry.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
@@ -33,7 +34,6 @@ from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
-from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 

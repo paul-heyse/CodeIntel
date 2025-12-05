@@ -18,8 +18,8 @@ from typing import ClassVar, TypedDict, Unpack
 
 import pytest
 
-from codeintel.core.plugins.protocol import PluginKind, PluginMetadata, PluginStage
-from codeintel.core.plugins.registry import (
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
     PluginPlan,
     PluginSkip,

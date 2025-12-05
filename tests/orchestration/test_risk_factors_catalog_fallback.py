@@ -13,7 +13,8 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
 )
-from codeintel.pipeline.orchestration.steps import PipelineContext, RiskFactorsStep
+from codeintel.pipeline.execution.context import PipelineContext
+from codeintel.pipeline.steps import RiskFactorsStep
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 

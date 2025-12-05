@@ -52,14 +52,14 @@ def my_builder_plugin(ctx: GraphPluginExecutionContext) -> PluginResult:
 ```
 """
 
-from codeintel.core.plugins.context import PluginScratch
-from codeintel.core.plugins.protocol import (
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.protocol import (
     PluginIsolation,
     PluginMetadata,
     PluginResourceHints,
     PluginSeverity,
 )
-from codeintel.core.plugins.result import (
+from codeintel.core.plugins.types.result import (
     PluginExecutionRecord,
     PluginResult,
     PluginStatus,

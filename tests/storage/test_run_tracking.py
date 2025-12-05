@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.runtime import RunContext
+from codeintel.core.execution import RunContext
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import (
     PipelineRunRecord,

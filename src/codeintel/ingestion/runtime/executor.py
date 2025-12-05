@@ -18,12 +18,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.core.plugins.result import BasePluginExecutionRecord
-from codeintel.core.runtime.errors import (
+from codeintel.core.execution.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
 )
-from codeintel.core.runtime.timing import utc_now
+from codeintel.core.execution.timing import utc_now
+from codeintel.core.plugins.types.result import BasePluginExecutionRecord
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginProtocol,
     IngestPluginResult,

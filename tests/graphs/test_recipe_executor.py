@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.core.recipes import Recipe, RecipeOptions, RecipeStage
 from codeintel.graphs.recipes.dsl import (
     graph_recipe,

@@ -11,13 +11,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.core.execution.ids import new_run_id
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
     IngestPluginProtocol,
     IngestPluginSkip,
 )
 from codeintel.ingestion.plugins.registry import PlanOptions
-from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

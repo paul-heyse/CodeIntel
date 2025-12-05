@@ -34,14 +34,14 @@ from dataclasses import dataclass, field
 from typing import Self, TypeVar
 
 from codeintel.analytics.runtime.manifest import AnalyticsScope
-from codeintel.core.plugins.context import (
+from codeintel.core.plugins.execution.context import (
     ConfigProvider,
     PluginScratch,
 )
-from codeintel.core.plugins.context import (
+from codeintel.core.plugins.execution.context import (
     PluginExecutionContext as CorePluginExecutionContext,
 )
-from codeintel.core.plugins.context import (
+from codeintel.core.plugins.execution.context import (
     PluginExecutionContextBuilder as CoreContextBuilder,
 )
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry

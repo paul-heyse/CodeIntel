@@ -27,8 +27,8 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.protocol import PluginSeverity
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.protocol import PluginSeverity
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginKind,

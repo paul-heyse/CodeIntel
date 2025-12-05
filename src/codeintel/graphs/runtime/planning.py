@@ -15,6 +15,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
+from codeintel.core.execution.ids import new_run_id
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
     GraphPluginPlan,
@@ -28,7 +29,6 @@ from codeintel.graphs.runtime.manifest import (
     compute_options_hash,
 )
 from codeintel.graphs.runtime.telemetry import GraphRuntimeTelemetry, get_graph_telemetry
-from codeintel.runtime.ids import new_run_id
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

@@ -35,8 +35,8 @@ from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.runtime.timing import utc_now
-from codeintel.runtime.ids import new_run_id
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.execution.timing import utc_now
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:

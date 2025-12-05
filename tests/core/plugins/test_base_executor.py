@@ -17,19 +17,19 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
-from codeintel.core.plugins.executor_context import BaseExecutorContext
-from codeintel.core.plugins.policy import BaseExecutionPolicy
-from codeintel.core.plugins.protocol import (
+from codeintel.core.plugins.execution.context import PluginExecutionContext, PluginScratch
+from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
+from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
+from codeintel.core.plugins.types.protocol import (
     PluginKind,
     PluginMetadata,
     PluginSeverity,
     PluginStage,
     ValidationResult,
 )
-from codeintel.core.plugins.report import BaseExecutionReport
-from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
-from codeintel.core.runtime.telemetry import RuntimeTelemetry, TelemetryConfig
+from codeintel.core.plugins.types.report import BaseExecutionReport
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
+from codeintel.core.execution.telemetry import RuntimeTelemetry, TelemetryConfig
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import gateway_with_macros
 
@@ -325,7 +325,7 @@ def test_base_executor_context_effective_run_id_from_run_context(
     """
     from unittest.mock import MagicMock
 
-    from codeintel.runtime.context import RunContext
+    from codeintel.core.execution.context import RunContext
 
     mock_gw = MagicMock()
     run_ctx = RunContext(

@@ -16,12 +16,12 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.pipeline.op_planner import (
+from codeintel.pipeline.planning.op_planner import (
     OpPrereqSummary,
     build_pipeline_for_operation,
     build_prereq_summary,
 )
-from codeintel.pipeline.spec import (
+from codeintel.pipeline.spec.model import (
     FULL_PIPELINE,
     NOOP_PIPELINE,
 )

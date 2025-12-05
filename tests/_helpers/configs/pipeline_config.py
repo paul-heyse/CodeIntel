@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config import BuildPaths
-from codeintel.pipeline.orchestration.core import PipelineContext
+from codeintel.pipeline.execution.context import PipelineContext
 from codeintel.storage.gateway import StorageGateway
 
 # Default constants for pipeline tests

@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Self
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas

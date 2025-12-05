@@ -20,7 +20,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,

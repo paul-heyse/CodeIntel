@@ -14,9 +14,9 @@ import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.pipeline.executor import run_pipeline
-from codeintel.pipeline.planner import PipelinePlanOptions, build_pipeline_plan
-from codeintel.pipeline.spec import (
+from codeintel.pipeline.execution.runner import run_pipeline
+from codeintel.pipeline.planning.planner import PipelinePlanOptions, build_pipeline_plan
+from codeintel.pipeline.spec.model import (
     ANALYTICS_ONLY,
     FULL_PIPELINE,
     GRAPHS_ONLY,

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.runtime import RunContext
+from codeintel.core.execution import RunContext
 from codeintel.storage.metadata import (
     PIPELINE_INDEXES_DDL,
     PIPELINE_RUNS_DDL,

@@ -242,8 +242,10 @@ ban-relative-imports = "all"
 # PLC0415: Deferred imports for project discovery logic (avoid circular imports)
 "src/codeintel/cli/commands/*.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
 "src/codeintel/cli/main.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
-# Pipeline runner uses deferred imports to avoid circular dependencies with steps.py
-"src/codeintel/pipeline/orchestration/runner.py" = ["PLC0415"]
+# Pipeline step runner uses deferred imports to avoid circular dependencies with steps.py
+"src/codeintel/pipeline/execution/step_runner.py" = ["PLC0415"]
+# Op planner uses deferred imports to avoid circular dependency with execution/runner.py
+"src/codeintel/pipeline/planning/op_planner.py" = ["PLC0415"]
 # Core plugin system uses factory patterns with many configuration options
 "src/codeintel/core/recipes/dsl.py" = ["PLR0913"]
 "src/codeintel/core/recipes/model.py" = ["PLR0913"]
@@ -255,15 +257,15 @@ ban-relative-imports = "all"
 # PLR0913/PLR0917: Abstract _build_report method signature requires all report components
 # FBT001: Boolean fatal_error is required context, not a toggle flag
 # PLR6301: Hook methods (_on_plugin_success/failure) use self for subclass override pattern
-"src/codeintel/core/plugins/executor.py" = ["UP046", "PLR0913", "PLR0917", "FBT001", "PLR6301"]
+"src/codeintel/core/plugins/execution/executor.py" = ["UP046", "PLR0913", "PLR0917", "FBT001", "PLR6301"]
 # Analytics executor inherits base executor requirements
 "src/codeintel/analytics/core/executor.py" = ["PLR0913", "PLR0917", "FBT001", "PLR6301"]
 # PLR6301: Hook methods in registry are designed for subclass override pattern
-"src/codeintel/core/plugins/registry.py" = ["PLR6301"]
+"src/codeintel/core/plugins/registry/base.py" = ["PLR6301"]
 "src/codeintel/analytics/core/registry.py" = ["PLR6301"]
 "src/codeintel/graphs/core/registry.py" = ["PLR6301"]
 # Tracking module helper functions use boolean parameters naturally
-"src/codeintel/core/plugins/tracking.py" = ["FBT001", "FBT002"]
+"src/codeintel/core/plugins/execution/tracking.py" = ["FBT001", "FBT002"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

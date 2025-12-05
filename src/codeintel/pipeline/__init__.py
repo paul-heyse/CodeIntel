@@ -28,16 +28,16 @@ Operation-Driven Orchestration
 >>> # assert spec.id == "full"  # Requires graphs, so needs full pipeline
 """
 
-from codeintel.pipeline import run_registry
-from codeintel.pipeline.executor import run_pipeline
-from codeintel.pipeline.op_planner import (
+from codeintel.pipeline.execution import tracking as run_registry
+from codeintel.pipeline.execution.runner import run_pipeline
+from codeintel.pipeline.planning.op_planner import (
     OperationPrereqOptions,
     OpPrereqSummary,
     build_pipeline_for_operation,
     build_prereq_summary,
     ensure_prerequisites_for_operation,
 )
-from codeintel.pipeline.planner import (
+from codeintel.pipeline.planning.planner import (
     AnalyticsStagePlan,
     GraphsStagePlan,
     IngestionStagePlan,
@@ -45,7 +45,7 @@ from codeintel.pipeline.planner import (
     PipelinePlanOptions,
     build_pipeline_plan,
 )
-from codeintel.pipeline.spec import (
+from codeintel.pipeline.spec.model import (
     ANALYTICS_ONLY,
     FULL_PIPELINE,
     GRAPHS_ONLY,

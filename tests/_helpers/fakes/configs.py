@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.engine.service import ToolService
-from codeintel.runtime import RunContext
+from codeintel.core.execution import RunContext
 
 if TYPE_CHECKING:
-    from codeintel.runtime.context import RunKind, TriggerKind
+    from codeintel.core.execution.context import RunKind, TriggerKind
 
 
 # Import constants from central module (use canonical names)

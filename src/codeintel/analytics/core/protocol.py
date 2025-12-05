@@ -39,8 +39,8 @@ from codeintel.core.plugins import (
 
 # Note: PluginProtocol imported for re-export and documentation purposes.
 # AnalyticsPluginProtocol is structurally compatible with it.
-from codeintel.core.plugins.protocol import PluginProtocol
-from codeintel.core.plugins.result import (
+from codeintel.core.plugins.types.protocol import PluginProtocol
+from codeintel.core.plugins.types.result import (
     PluginExecutionRecord,
     PluginResult,
     PluginStatus,

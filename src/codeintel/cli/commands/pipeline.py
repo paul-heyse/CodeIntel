@@ -51,8 +51,8 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_config_profile,
     profile_from_env,
 )
-from codeintel.pipeline.orchestration.runner import ExportArgs, run_full_pipeline
-from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
+from codeintel.pipeline.execution.step_runner import ExportArgs, run_full_pipeline
+from codeintel.pipeline.steps import REGISTRY, StepPhase
 
 LOG = logging.getLogger(__name__)
 

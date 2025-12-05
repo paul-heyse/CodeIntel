@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.plugins.decorators import make_plugin_instance
-from codeintel.core.plugins.protocol import PluginMetadata
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.protocol import PluginMetadata
+from codeintel.core.plugins.types.result import PluginResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.runtime.errors import PluginSkipRequestError
+from codeintel.core.execution.errors import PluginSkipRequestError
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.core.base import (

@@ -14,13 +14,13 @@ import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.pipeline.op_planner import (
+from codeintel.pipeline.planning.op_planner import (
     OperationPrereqOptions,
     build_pipeline_for_operation,
     ensure_prerequisites_for_operation,
 )
-from codeintel.pipeline.spec import FULL_PIPELINE, NOOP_PIPELINE
-from codeintel.runtime import TriggerKind
+from codeintel.pipeline.spec.model import FULL_PIPELINE, NOOP_PIPELINE
+from codeintel.core.execution import TriggerKind
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.orchestration.tooling import make_tools_config
 

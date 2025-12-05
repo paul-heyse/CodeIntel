@@ -16,10 +16,10 @@ from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
 
 from pydantic import BaseModel
 
-from codeintel.core.plugins.decorators import make_plugin_instance
-from codeintel.core.plugins.functional import BaseFunctionalPlugin
-from codeintel.core.plugins.meta_options import BasePluginMetaOptions
-from codeintel.core.plugins.protocol import (
+from codeintel.core.plugins.decorators.functional import BaseFunctionalPlugin
+from codeintel.core.plugins.decorators.meta import BasePluginMetaOptions
+from codeintel.core.plugins.decorators.step import make_plugin_instance
+from codeintel.core.plugins.types.protocol import (
     PluginCapability,
     PluginInputSpec,
     PluginIsolation,
@@ -31,7 +31,7 @@ from codeintel.core.plugins.protocol import (
     PluginStage,
     ValidationResult,
 )
-from codeintel.core.plugins.result import PluginResult, PluginStatus
+from codeintel.core.plugins.types.result import PluginResult, PluginStatus
 
 # Import at runtime for use in type alias (FunctionalGraphPlugin)
 from codeintel.graphs.core.context import GraphPluginExecutionContext

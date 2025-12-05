@@ -20,15 +20,15 @@ from codeintel.analytics.core.protocol import (
     PluginMetadata,
     PluginResult,
 )
-from codeintel.core.plugins.decorators import make_plugin_instance
-from codeintel.core.plugins.functional import BaseFunctionalPlugin
-from codeintel.core.plugins.meta_options import (
+from codeintel.core.execution.ids import new_run_id
+from codeintel.core.plugins.decorators.functional import BaseFunctionalPlugin
+from codeintel.core.plugins.decorators.meta import (
     BasePluginMetaOptions,
     BasePluginMetaOptionsInput,
 )
-from codeintel.core.plugins.registry import BasePluginRegistry, PluginSkip
+from codeintel.core.plugins.decorators.step import make_plugin_instance
+from codeintel.core.plugins.registry.base import BasePluginRegistry, PluginSkip
 from codeintel.core.singleton import SingletonHolder
-from codeintel.runtime.ids import new_run_id
 
 log = logging.getLogger(__name__)
 

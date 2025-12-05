@@ -24,9 +24,9 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard, runtime_checkabl
 
 from pydantic import BaseModel
 
-from codeintel.core.plugins.context import PluginScratch
-from codeintel.core.plugins.protocol import PluginResourceHints
-from codeintel.core.plugins.result import BasePluginResult
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.protocol import PluginResourceHints
+from codeintel.core.plugins.types.result import BasePluginResult
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

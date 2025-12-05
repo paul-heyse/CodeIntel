@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Final
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,

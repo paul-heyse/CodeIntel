@@ -24,8 +24,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.context import PluginScratch
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.catalog import CatalogResource

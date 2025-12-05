@@ -19,7 +19,7 @@ import pytest
 
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.serving_models import ServingConfig
-from codeintel.runtime import RunContext, RunKind, TriggerKind
+from codeintel.core.execution import RunContext, RunKind, TriggerKind
 from codeintel.serving.auto_pipeline import (
     AUTO_PIPELINE_ENV,
     build_paths_for_serving,

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.plugins.traits import (
     CacheAwareMixin,
     CacheAwarePlugin,
@@ -30,7 +30,7 @@ from codeintel.core.plugins.traits import (
     is_progress_reporting,
     is_retryable,
 )
-from codeintel.core.runtime.retry import PLUGIN_RETRY_POLICY, RetryPolicy
+from codeintel.core.execution.retry import PLUGIN_RETRY_POLICY, RetryPolicy
 
 _default_retryable = RetryableMixin()
 DEFAULT_MAX_RETRIES = _default_retryable.max_retries

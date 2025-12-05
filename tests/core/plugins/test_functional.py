@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.core.plugins.functional import BaseFunctionalPlugin
-from codeintel.core.plugins.protocol import PluginMetadata, ValidationResult
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.decorators.functional import BaseFunctionalPlugin
+from codeintel.core.plugins.types.protocol import PluginMetadata, ValidationResult
+from codeintel.core.plugins.types.result import PluginResult
 
 # =============================================================================
 # Test Context

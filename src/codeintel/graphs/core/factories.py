@@ -18,8 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
-from codeintel.core.plugins.protocol import PluginIsolation, PluginResourceHints, PluginSeverity
-from codeintel.core.plugins.result import PluginResult
+from codeintel.core.plugins.types.protocol import (
+    PluginIsolation,
+    PluginResourceHints,
+    PluginSeverity,
+)
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     GraphPluginKind,

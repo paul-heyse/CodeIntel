@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.runtime import RunContext, new_run_context
+from codeintel.core.execution import RunContext, new_run_context
 from codeintel.storage.tracking import PipelineStepRecord
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from codeintel.core.plugins.result import PluginStatus
+from codeintel.core.plugins.types.result import PluginStatus
 
 
 @dataclass(frozen=True)
