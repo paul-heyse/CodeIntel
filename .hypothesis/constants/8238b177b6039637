@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/steps_ingestion.py
+# hypothesis_version: 6.148.7
+
+['DocstringStepConfig', 'IngestionStepBuilder', 'RepoScanStepConfig', 'ScipIngestStepConfig']

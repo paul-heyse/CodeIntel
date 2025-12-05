@@ -20,7 +20,6 @@ For primitives:
 For CLI boundary models:
     from codeintel.config import RepoConfig, CliPathsInput, ToolsConfig, CodeIntelConfig
 
-Legacy step configs have been migrated to use `ConfigBuilder` and the new step config types.
 Use `ConfigBuilder.from_snapshot()` to create step configurations.
 """
 
@@ -35,12 +34,15 @@ from codeintel.config.models import (
 )
 from codeintel.config.primitives import (
     BuildPaths,
-    ExecutionOptions,
     GraphBackendConfig,
     ScanProfiles,
     SnapshotRef,
-    StepConfig,
     ToolBinaries,
+)
+from codeintel.config.resolver import (
+    resolve_graph_backend,
+    resolve_scan_profiles,
+    resolve_tools_config,
 )
 from codeintel.config.steps_analytics import (
     BehavioralCoverageStepConfig,
@@ -78,7 +80,6 @@ from codeintel.config.steps_ingestion import (
     ConfigIngestStepConfig,
     CoverageIngestStepConfig,
     DocstringStepConfig,
-    PyAstIngestStepConfig,
     RepoScanStepConfig,
     ScipIngestStepConfig,
     TestsIngestStepConfig,
@@ -102,7 +103,6 @@ __all__ = [
     "DocstringStepConfig",
     "EntryPointToggles",
     "EntryPointsStepConfig",
-    "ExecutionOptions",
     "ExternalDependenciesStepConfig",
     "FunctionAnalyticsStepConfig",
     "FunctionContractsStepConfig",
@@ -118,14 +118,12 @@ __all__ = [
     "HotspotsStepConfig",
     "ImportGraphStepConfig",
     "ProfilesAnalyticsStepConfig",
-    "PyAstIngestStepConfig",
     "RepoConfig",
     "RepoScanStepConfig",
     "ScanProfiles",
     "ScipIngestStepConfig",
     "SemanticRolesStepConfig",
     "SnapshotRef",
-    "StepConfig",
     "SubsystemsStepConfig",
     "SymbolUsesStepConfig",
     "TestCoverageStepConfig",
@@ -134,4 +132,7 @@ __all__ = [
     "ToolBinaries",
     "ToolsConfig",
     "TypingIngestStepConfig",
+    "resolve_graph_backend",
+    "resolve_scan_profiles",
+    "resolve_tools_config",
 ]

@@ -1,0 +1,12 @@
+{
+  "dataset": "test_profile",
+  "artifact": "test_profile.jsonl",
+  "schema_id": "test_profile",
+  "schema_version": "1",
+  "schema_digest": "f8f393a92edb9c85958e7166940382713ca774a944088643d91785c25462f38e",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_at": "2025-12-05T12:58:31.923619+00:00",
+  "completed_at": "2025-12-05T12:58:31.925198+00:00"
+}

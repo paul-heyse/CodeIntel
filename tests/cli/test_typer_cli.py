@@ -146,28 +146,6 @@ def test_dataset_describe_unknown_dataset() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Pipeline Commands Tests (No Project Context)
-# -----------------------------------------------------------------------------
-
-
-def test_pipeline_run_full_requires_project() -> None:
-    """Verify pipeline run-full fails without project context."""
-    result = runner.invoke(app, ["pipeline", "run-full", "--root", "/nonexistent/path"])
-
-    assert result.exit_code == 1
-    # Error message may be in stdout, stderr, or combined output
-    output = result.output or result.stdout
-    assert "Error" in output or "not found" in output.lower()
-
-
-def test_pipeline_status_requires_project() -> None:
-    """Verify pipeline status fails without project context."""
-    result = runner.invoke(app, ["pipeline", "status", "--root", "/nonexistent/path"])
-
-    assert result.exit_code == 1
-
-
-# -----------------------------------------------------------------------------
 # Serve Commands Tests
 # -----------------------------------------------------------------------------
 
@@ -200,20 +178,20 @@ def test_main_help() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert "pipeline" in result.stdout
+    assert "build" in result.stdout
     assert "op" in result.stdout
     assert "dataset" in result.stdout
     assert "serve" in result.stdout
+    # Note: "pipeline" is intentionally removed (replaced by "build")
 
 
-def test_pipeline_help() -> None:
-    """Verify pipeline group help shows subcommands."""
-    result = runner.invoke(app, ["pipeline", "--help"])
+def test_pipeline_removed() -> None:
+    """Verify pipeline command has been removed (replaced by build)."""
+    result = runner.invoke(app, ["pipeline"])
 
-    assert result.exit_code == 0
-    assert "run-full" in result.stdout
-    assert "run-op" in result.stdout
-    assert "status" in result.stdout
+    # pipeline command should not exist anymore
+    assert result.exit_code == 2  # Typer returns 2 for unknown command
+    assert "No such command" in result.stdout or "pipeline" not in result.stdout
 
 
 def test_op_help() -> None:
@@ -233,3 +211,47 @@ def test_dataset_help() -> None:
     assert "list" in result.stdout
     assert "describe" in result.stdout
     assert "verify" in result.stdout
+
+
+# -----------------------------------------------------------------------------
+# Build Commands Tests
+# -----------------------------------------------------------------------------
+
+
+def test_build_help() -> None:
+    """Verify build group help shows subcommands."""
+    result = runner.invoke(app, ["build", "--help"])
+
+    assert result.exit_code == 0
+    assert "run" in result.stdout
+    assert "status" in result.stdout
+    assert "history" in result.stdout
+
+
+def test_build_run_help() -> None:
+    """Verify build run --help shows all options."""
+    result = runner.invoke(app, ["build", "run", "--help"])
+
+    assert result.exit_code == 0
+    assert "--module" in result.stdout
+    assert "--all" in result.stdout
+    assert "--dry-run" in result.stdout
+    assert "--force" in result.stdout
+
+
+def test_build_run_all_requires_project() -> None:
+    """Verify build run --all fails without project context."""
+    result = runner.invoke(app, ["build", "run", "--all", "--root", "/nonexistent/path"])
+
+    assert result.exit_code == 1
+    output = result.output or result.stdout
+    assert "Error" in output or "not found" in output.lower()
+
+
+def test_build_status_requires_project() -> None:
+    """Verify build status fails without project context."""
+    result = runner.invoke(app, ["build", "status", "--root", "/nonexistent/path"])
+
+    assert result.exit_code == 1
+    output = result.output or result.stdout
+    assert "Error" in output or "not found" in output.lower()

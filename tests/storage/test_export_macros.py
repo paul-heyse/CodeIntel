@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS, export_jsonl_for_table
-from codeintel.pipeline.export.export_parquet import export_parquet_for_table
+from codeintel.export.export_jsonl import NORMALIZED_MACROS, export_jsonl_for_table
+from codeintel.export.export_parquet import export_parquet_for_table
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 # =============================================================================

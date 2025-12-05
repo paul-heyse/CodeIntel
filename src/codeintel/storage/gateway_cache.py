@@ -1,15 +1,11 @@
 """Gateway caching for storage layer.
 
 This module provides thread-safe caching of StorageGateway instances
-to enable gateway reuse across pipeline stages without repeated
+to enable gateway reuse across build stages without repeated
 connection overhead.
 
 The cache is keyed by the normalized StorageConfig, ensuring that
 gateways with identical configurations are reused.
-
-This is the canonical location for gateway caching. It was moved from
-``codeintel.pipeline.gateway_cache`` to co-locate with the StorageGateway
-implementation.
 """
 
 from __future__ import annotations

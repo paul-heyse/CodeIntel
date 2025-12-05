@@ -1,14 +1,17 @@
-"""Ensure graph validation uses catalog module map when core.modules is empty."""
+"""Ensure graph validation uses catalog module map when core.modules is empty.
+
+Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
+"""
 
 from __future__ import annotations
 
 from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -17,28 +20,12 @@ def _expect(*, condition: bool, detail: str) -> None:
     raise AssertionError(detail)
 
 
-class _CatalogProvider:
-    def __init__(self, module_by_path: dict[str, str]) -> None:
-        self._catalog = FunctionCatalog(functions=(), module_by_path=module_by_path)
-
-    def catalog(self) -> FunctionCatalog:
-        return self._catalog
-
-    def urn_for_goid(self, goid: int) -> str | None:
-        return self._catalog.urn_for_goid(goid)
-
-    def lookup_goid(
-        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
-    ) -> int | None:
-        return self._catalog.lookup_goid(rel_path, start_line, end_line, qualname)
-
-
 def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway) -> None:
     """Graph validation should fall back to catalog module map when modules are absent."""
     gateway = fresh_gateway
     con = gateway.con
     apply_all_schemas(con)
-    provider = _CatalogProvider({"pkg/a.py": "pkg.a"})
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.a"})
     repo = "r"
     commit = "c"
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)

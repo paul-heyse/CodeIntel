@@ -1,12 +1,13 @@
 """Command group implementations for the CodeIntel CLI.
 
 This module provides Typer sub-applications for:
-- **pipeline**: Run full or operation-targeted pipelines, check status
+
 - **op**: List and invoke serving operations (with dynamic per-operation commands)
 - **dataset**: List, describe, and verify dataset contracts
 - **serve**: Start HTTP or MCP servers
 
 Each command group is a Typer app that can be composed into the main CLI.
+For build system commands, see :mod:`codeintel.cli.commands.build`.
 
 Dynamic Operation Commands
 --------------------------
@@ -43,14 +44,7 @@ from codeintel.cli.project import (
 from codeintel.config.datasets import (
     get_dataset_contracts_by_table_key,
 )
-from codeintel.pipeline.execution.runner import run_pipeline
-from codeintel.pipeline.planning.op_planner import (
-    OperationPrereqOptions,
-    build_prereq_summary,
-    ensure_prerequisites_for_operation,
-)
-from codeintel.pipeline.planning.planner import PipelinePlanOptions
-from codeintel.pipeline.spec.model import FULL_PIPELINE
+from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
@@ -80,10 +74,6 @@ JsonOutputOpt = Annotated[
     bool | None,
     typer.Option("--json", help="Output as JSON", is_flag=True),
 ]
-SkipAnalyticsOpt = Annotated[
-    bool | None,
-    typer.Option("--skip-analytics", help="Skip analytics stage", is_flag=True),
-]
 SkipPrereqsOpt = Annotated[
     bool | None,
     typer.Option("--skip-prereqs", help="Skip prerequisite pipeline execution", is_flag=True),
@@ -98,17 +88,6 @@ ReloadOpt = Annotated[
     bool | None,
     typer.Option("--reload", help="Enable auto-reload for development", is_flag=True),
 ]
-
-# -----------------------------------------------------------------------------
-# Pipeline Commands
-# -----------------------------------------------------------------------------
-
-pipeline_app = typer.Typer(
-    name="pipeline",
-    help="Pipeline orchestration commands.",
-    no_args_is_help=True,
-)
-
 
 def _build_runtime_or_exit(project_root: Path | None) -> ProjectRuntime:
     """Build project runtime or exit with error message.
@@ -151,136 +130,6 @@ def _resolve_flag(value: object) -> bool:
     if value is None:
         return False
     return bool(value)
-
-
-@pipeline_app.command("run-full")
-def pipeline_run_full(
-    project_root: ProjectRootOpt = None,
-    verbose: VerboseOpt = None,
-) -> None:
-    """Run the full pipeline (ingest → graphs → analytics)."""
-    if _resolve_flag(verbose):
-        logging.basicConfig(level=logging.DEBUG)
-
-    runtime = _build_runtime_or_exit(project_root)
-
-    typer.echo(f"Running full pipeline for {runtime.project.repo}...")
-
-    options = PipelinePlanOptions(
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        gateway=runtime.gateway,
-        tools=runtime.tools,
-        trigger="cli",
-    )
-
-    run_record = run_pipeline(spec=FULL_PIPELINE, options=options)
-
-    typer.secho(
-        f"Pipeline completed: run_id={run_record.run_id} status={run_record.status}",
-        fg=typer.colors.GREEN if run_record.status == "completed" else typer.colors.RED,
-    )
-
-
-@pipeline_app.command("run-op")
-def pipeline_run_op(
-    op_id: Annotated[str, typer.Argument(help="Operation ID to run prerequisites for")],
-    project_root: ProjectRootOpt = None,
-    skip_analytics: SkipAnalyticsOpt = None,
-    verbose: VerboseOpt = None,
-) -> None:
-    """Run minimal pipeline stages required for an operation.
-
-    Raises
-    ------
-    typer.Exit
-        If operation ID is unknown.
-    """
-    if _resolve_flag(verbose):
-        logging.basicConfig(level=logging.DEBUG)
-
-    runtime = _build_runtime_or_exit(project_root)
-
-    op = get_operation(op_id)
-    if op is None:
-        typer.secho(f"Error: Unknown operation: {op_id}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-
-    typer.echo(f"Running prerequisites for operation '{op_id}'...")
-
-    summary = build_prereq_summary(op_id, runtime.snapshot)
-    typer.echo(f"  Required datasets: {len(summary.expanded_tables)}")
-    typer.echo(f"  Required graphs: {list(summary.required_graphs)}")
-
-    prereq_options = OperationPrereqOptions(
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        gateway=runtime.gateway,
-        tools=runtime.tools,
-        include_analytics=not _resolve_flag(skip_analytics),
-        trigger="cli",
-    )
-
-    run_record = ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
-
-    typer.secho(
-        f"Prerequisites completed: run_id={run_record.run_id} status={run_record.status}",
-        fg=typer.colors.GREEN if run_record.status == "completed" else typer.colors.RED,
-    )
-
-
-RunIdOpt = Annotated[
-    str | None, typer.Option("--run-id", help="Specific run ID to show details for")
-]
-LimitOpt = Annotated[int, typer.Option("--limit", "-n", help="Number of recent runs to show")]
-
-
-@pipeline_app.command("status")
-def pipeline_status(
-    run_id: RunIdOpt = None,
-    limit: LimitOpt = 10,
-    project_root: ProjectRootOpt = None,
-) -> None:
-    """Show pipeline run status and history.
-
-    Raises
-    ------
-    typer.Exit
-        If specified run ID is not found.
-    """
-    runtime = _build_runtime_or_exit(project_root)
-
-    if run_id:
-        record = runtime.gateway.runs.fetch_run(run_id)
-        if record is None:
-            typer.secho(f"Error: Run not found: {run_id}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=1)
-        typer.echo(f"Run: {record.run_id}")
-        typer.echo(f"  Kind: {record.kind}")
-        typer.echo(f"  Pipeline: {record.pipeline_name or 'N/A'}")
-        typer.echo(f"  Status: {record.status}")
-        typer.echo(f"  Trigger: {record.trigger}")
-        typer.echo(f"  Started: {record.started_at}")
-        typer.echo(f"  Completed: {record.completed_at}")
-
-        steps = runtime.gateway.runs.fetch_steps(run_id)
-        if steps:
-            typer.echo("  Steps:")
-            for step in steps:
-                typer.echo(f"    - {step.name}: {step.status}")
-    else:
-        runs = runtime.gateway.runs.fetch_recent_runs(limit=limit)
-        if not runs:
-            typer.echo("No pipeline runs found.")
-            return
-
-        typer.echo(f"Recent pipeline runs (showing {len(runs)}):")
-        for record in runs:
-            status_color = typer.colors.GREEN if record.status == "succeeded" else typer.colors.RED
-            typer.secho(
-                f"  {record.run_id[:8]}  {record.kind:<20} {record.status:<12} {record.started_at}",
-                fg=status_color,
-            )
 
 
 # -----------------------------------------------------------------------------
@@ -454,15 +303,13 @@ def op_call(
     # Run prerequisites if not skipped
     if not _resolve_flag(skip_prereqs):
         typer.echo(f"Running prerequisites for '{op_id}'...")
-        prereq_options = OperationPrereqOptions(
+        run_operation_prereqs(
+            op_id=op_id,
+            gateway=runtime.gateway,
             snapshot=runtime.snapshot,
             paths=runtime.paths,
-            gateway=runtime.gateway,
             tools=runtime.tools,
-            include_analytics=True,
-            trigger="cli",
         )
-        ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
 
     _invoke_operation(op_id, kwargs, runtime)
 
@@ -506,15 +353,13 @@ def _dynamic_op_invoke_callback(
     # Run prerequisites if not skipped
     if not skip_prereqs:
         typer.echo(f"Running prerequisites for '{op_id}'...")
-        prereq_options = OperationPrereqOptions(
+        run_operation_prereqs(
+            op_id=op_id,
+            gateway=runtime.gateway,
             snapshot=runtime.snapshot,
             paths=runtime.paths,
-            gateway=runtime.gateway,
             tools=runtime.tools,
-            include_analytics=True,
-            trigger="cli",
         )
-        ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
 
     # Invoke the operation
     _invoke_operation(op_id, params, runtime)
@@ -749,6 +594,5 @@ def serve_mcp(
 __all__ = [
     "dataset_app",
     "op_app",
-    "pipeline_app",
     "serve_app",
 ]

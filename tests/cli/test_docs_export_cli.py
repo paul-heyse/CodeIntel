@@ -13,7 +13,7 @@ from codeintel.config.models import (
     CodeIntelConfig,
     RepoConfig,
 )
-from codeintel.pipeline.export.runner import ExportOptions
+from codeintel.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import provision_docs_export_ready
 

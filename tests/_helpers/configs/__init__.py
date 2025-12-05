@@ -9,7 +9,6 @@ from __future__ import annotations
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
 from tests._helpers.configs.graph_config import GraphEngineSeed, SpanSnapshot, SpanTestEnv
 from tests._helpers.configs.history_config import SnapshotSpec
-from tests._helpers.configs.pipeline_config import PipelineEnv
 from tests._helpers.configs.provisioning_config import (
     CallgraphFixtureOptions,
     GatewayOptions,
@@ -31,7 +30,6 @@ __all__ = [
     "GatewayOptions",
     "GraphEngineSeed",
     "GraphMetricsGatewayOptions",
-    "PipelineEnv",
     "ProvisionOptions",
     "ProvisionedGateway",
     "ProvisioningConfig",

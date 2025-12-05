@@ -38,6 +38,34 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf8")
 
 
+def _path_is_file(path: Path) -> bool:
+    return path.is_file()
+
+
+def _find_existing_json(output_scip: Path, output_json: Path) -> Path | None:
+    """Find existing SCIP JSON file at expected or alternate location.
+
+    Parameters
+    ----------
+    output_scip
+        Path to SCIP index file (used to derive alternate JSON path).
+    output_json
+        Primary path to check for JSON output.
+
+    Returns
+    -------
+    Path | None
+        Path to existing JSON file, or None if not found.
+    """
+    if output_json.is_file():
+        return output_json
+    # Check for alternate filename pattern (index.scip.json)
+    alt_json = output_scip.with_suffix(".scip.json")
+    if alt_json.is_file():
+        return alt_json
+    return None
+
+
 def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
     if target_dir is not None:
         return target_dir
@@ -100,28 +128,28 @@ class ScipPlugin(ToolPlugin):
         )
     )
 
-    async def run(
+    def _validate_kwargs(
         self,
-        *,
-        repo_root: Path,
-        **kwargs: object,
-    ) -> ToolPluginResult:
-        """
-        Run scip-python index and scip print to produce parsed index.
+        kwargs: dict[str, object],
+    ) -> tuple[Path, Path, Path | None, tuple[str, ...] | None]:
+        """Validate and extract keyword arguments for run method.
 
-        When rel_paths is provided, only those paths are targeted; otherwise
-        the full repo (or target_dir/src) is indexed.
+        Parameters
+        ----------
+        kwargs
+            Keyword arguments to validate.
 
         Returns
         -------
-        ToolPluginResult
-            Normalized execution result with parsed ScipIndexResult.
+        tuple[Path, Path, Path | None, tuple[str, ...] | None]
+            Tuple of (output_scip, output_json, target_dir, rel_paths).
 
         Raises
         ------
         TypeError
-            Raised when required keyword arguments are missing or of wrong type.
+            If required arguments are missing or of wrong type.
         """
+        _ = self  # Required by interface
         output_scip_obj = kwargs.get("output_scip")
         output_json_obj = kwargs.get("output_json")
         target_dir_obj = kwargs.get("target_dir")
@@ -140,10 +168,37 @@ class ScipPlugin(ToolPlugin):
             message = "scip plugin requires rel_paths to be a sequence of strings"
             raise TypeError(message)
 
-        output_scip = output_scip_obj
-        output_json = output_json_obj
-        target_dir = target_dir_obj
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
+        return output_scip_obj, output_json_obj, target_dir_obj, rel_paths
+
+    async def run(
+        self,
+        *,
+        repo_root: Path,
+        **kwargs: object,
+    ) -> ToolPluginResult:
+        """
+        Run scip-python index and scip print to produce parsed index.
+
+        When rel_paths is provided, only those paths are targeted; otherwise
+        the full repo (or target_dir/src) is indexed.
+
+        If the output files already exist, the plugin will skip execution and
+        just parse the existing JSON file to return results.
+
+        Returns
+        -------
+        ToolPluginResult
+            Normalized execution result with parsed ScipIndexResult.
+        """
+        output_scip, output_json, target_dir, rel_paths = self._validate_kwargs(
+            dict(kwargs)
+        )
+
+        # Check for existing output - skip SCIP execution if already present
+        existing_result = await self._try_use_existing(output_scip, output_json)
+        if existing_result is not None:
+            return existing_result
 
         try:
             await self._run_scip_python(
@@ -209,6 +264,53 @@ class ScipPlugin(ToolPlugin):
             status=ToolStatus.OK,
             artifacts=artifacts,
             run=print_result,
+            error=None,
+            parsed=parsed,
+        )
+
+    async def _try_use_existing(
+        self,
+        output_scip: Path,
+        output_json: Path,
+    ) -> ToolPluginResult | None:
+        """Check for existing SCIP output and return parsed result if found.
+
+        Parameters
+        ----------
+        output_scip
+            Path to expected SCIP index file.
+        output_json
+            Path to expected JSON output file.
+
+        Returns
+        -------
+        ToolPluginResult | None
+            Parsed result if existing files found, None otherwise.
+        """
+        _ = self  # Required by interface
+        existing_json = await to_thread.run_sync(
+            _find_existing_json, output_scip, output_json
+        )
+        if existing_json is None:
+            return None
+
+        # Check SCIP index exists too
+        scip_exists = await to_thread.run_sync(_path_is_file, output_scip)
+        if not scip_exists:
+            return None
+
+        log.info("SCIP JSON exists at %s; reusing", existing_json)
+
+        # Parse existing JSON and return without running tools
+        def _parse_existing() -> ScipIndexResult:
+            return _parse_scip_json(existing_json, output_scip)
+
+        parsed = await to_thread.run_sync(_parse_existing)
+        return ToolPluginResult(
+            tool=ToolName.SCIP,
+            status=ToolStatus.OK,
+            artifacts={"index_scip": output_scip, "index_json": existing_json},
+            run=None,
             error=None,
             parsed=parsed,
         )

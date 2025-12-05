@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
-from codeintel.pipeline.export.export_parquet import export_all_parquet
-from codeintel.pipeline.export.validate_exports import validate_files
+from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
+from codeintel.export.export_parquet import export_all_parquet
+from codeintel.export.validate_exports import validate_files
 from codeintel.serving.services.errors import ExportError
 from tests._helpers import (
     GatewayOptions,

@@ -54,7 +54,6 @@ from codeintel.config.steps_ingestion import (
     CoverageIngestStepConfig,
     DocstringStepConfig,
     IngestionStepBuilder,
-    PyAstIngestStepConfig,
     RepoScanStepConfig,
     ScipIngestStepConfig,
     TestsIngestStepConfig,
@@ -272,17 +271,6 @@ class ConfigBuilder:
             Configuration for config-values ingestion.
         """
         return self.ingestion.config_ingest()
-
-    def py_ast_ingest(self) -> PyAstIngestStepConfig:
-        """
-        Build stdlib AST ingestion configuration.
-
-        Returns
-        -------
-        PyAstIngestStepConfig
-            Configuration for AST ingestion.
-        """
-        return self.ingestion.py_ast_ingest()
 
     # Graph Construction Steps ---------------------------------------------
 
@@ -746,7 +734,6 @@ __all__ = [
     "HotspotsStepConfig",
     "ImportGraphStepConfig",
     "ProfilesAnalyticsStepConfig",
-    "PyAstIngestStepConfig",
     "RepoScanStepConfig",
     "ScipIngestStepConfig",
     "SemanticRolesStepConfig",

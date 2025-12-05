@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/build/state.py
+# hypothesis_version: 6.148.7
+
+['DatabaseState', 'StalenessKind', 'StalenessReason', 'StateValidator', 'TargetState', 'TargetStatus', 'blocked', 'computed', 'dependency_blocked', 'dependency_missing', 'dependency_stale', 'input_hash_mismatch', 'missing', 'stale']

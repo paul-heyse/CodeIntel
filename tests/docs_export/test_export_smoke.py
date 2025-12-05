@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.datasets import DatasetContract
-from codeintel.pipeline.export.export_jsonl import (
+from codeintel.export.export_jsonl import (
     ExportCallOptions,
     export_all_jsonl,
     export_dataset_to_jsonl,
 )
-from codeintel.pipeline.export.export_parquet import export_all_parquet, export_dataset_to_parquet
+from codeintel.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers import ProvisionedGateway, provision_docs_export_ready
 

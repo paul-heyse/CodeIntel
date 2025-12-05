@@ -1,4 +1,4 @@
-"""Smoke test that runs the full pipeline target export_docs on a tiny repo."""
+"""Smoke test that runs the full build on a tiny repo."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 runner = CliRunner()
 
 
-def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
-    """Build a minimal repo, run export_docs, and verify GOID export exists.
+def test_build_export_smoke(tmp_path: Path) -> None:
+    """Build a minimal repo using the build system and verify exports.
 
     Raises
     ------
     RuntimeError
-        If the pipeline run fails or GOID export is missing.
+        If the build run fails or exports are missing.
     """
     repo_root = tmp_path / "repo"
     (repo_root / "pkg").mkdir(parents=True, exist_ok=True)
@@ -34,12 +34,13 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
     build_dir = repo_root / "build"
 
     os.environ["CODEINTEL_SKIP_SCIP"] = "true"
-    pytest.xfail("Pipeline export_docs currently fails in function_effects catalog integration")
+    pytest.xfail("Build smoke test currently fails in function_effects catalog integration")
     result = runner.invoke(
         app,
         [
-            "pipeline",
+            "build",
             "run",
+            "--all",
             "--repo-root",
             str(repo_root),
             "--repo",
@@ -50,12 +51,10 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
             str(db_path),
             "--build-dir",
             str(build_dir),
-            "--target",
-            "export_docs",
         ],
     )
     if result.exit_code != 0:
-        message = "Pipeline run failed"
+        message = "Build run failed"
         raise RuntimeError(message)
 
     document_output = repo_root / "Document Output"
@@ -88,12 +87,12 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
     goid_row = con.execute("SELECT COUNT(*) FROM core.goids").fetchone()
     goid_count = int(goid_row[0]) if goid_row is not None else 0
     if goid_count <= 0:
-        message = "core.goids is empty after pipeline run"
+        message = "core.goids is empty after build run"
         raise RuntimeError(message)
     fn_row = con.execute("SELECT COUNT(*) FROM docs.v_function_summary").fetchone()
     fn_summary_count = int(fn_row[0]) if fn_row is not None else 0
     if fn_summary_count <= 0:
-        message = "docs.v_function_summary is empty after pipeline run"
+        message = "docs.v_function_summary is empty after build run"
         raise RuntimeError(message)
 
     # JSONL exports present

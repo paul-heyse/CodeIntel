@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/build/targets.py
+# hypothesis_version: 6.148.7
+
+['OutputTarget', 'TargetGraph', 'TargetModule', 'analytics', 'graphs', 'ingestion']

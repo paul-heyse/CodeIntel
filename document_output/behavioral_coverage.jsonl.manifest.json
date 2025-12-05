@@ -1,0 +1,12 @@
+{
+  "dataset": "behavioral_coverage",
+  "artifact": "behavioral_coverage.jsonl",
+  "schema_id": "behavioral_coverage",
+  "schema_version": "1",
+  "schema_digest": "1192dbdc7f7993f62853546e46d43e68ebc076b453b3377c3c97e38c7ccc15b6",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_at": "2025-12-05T12:58:31.844616+00:00",
+  "completed_at": "2025-12-05T12:58:31.845594+00:00"
+}

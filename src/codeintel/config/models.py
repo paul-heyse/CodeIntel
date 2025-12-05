@@ -18,6 +18,7 @@ See `codeintel.config.builder` for the ConfigBuilder API.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -309,12 +310,17 @@ class ToolsConfig(BaseModel):
         """
         Construct an environment mapping for a tool invocation.
 
+        Inherits the current process environment (including PATH) and overlays
+        any tool-specific settings. This ensures that scripts using shebangs
+        like ``#!/usr/bin/env node`` can find their interpreters.
+
         Parameters
         ----------
         tool
             Tool identifier (unused but reserved for future tool-specific envs).
         base_env
             Baseline environment to merge into the returned mapping.
+            If None, inherits from current process environment.
 
         Returns
         -------
@@ -322,7 +328,11 @@ class ToolsConfig(BaseModel):
             Environment variables to supply to the subprocess call.
         """
         _ = tool
-        env: dict[str, str] = dict(base_env or {})
+        # Start with current environment to preserve PATH and other settings
+        env: dict[str, str] = dict(os.environ)
+        # Overlay any base_env settings
+        if base_env:
+            env.update(base_env)
         env.setdefault("CODEINTEL_TOOL_TIMEOUT", str(int(self.default_timeout_s)))
         return env
 

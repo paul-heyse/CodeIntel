@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.core.pipeline_bridge import (
+from codeintel.analytics.core.build_bridge import (
     AnalyticsPlanRequest,
     AnalyticsRunContext,
     plan_analytics_plugin_run,

@@ -1,4 +1,7 @@
-"""Ensure catalog provider injection is honored across analytics builders."""
+"""Ensure catalog provider injection is honored across analytics builders.
+
+Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,6 @@ from pathlib import Path
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from tests._helpers import TestContext
 from tests._helpers.builders import (
@@ -17,6 +19,7 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 # Sample SCIP JSON for testing
 SCIP_JSON_TWO_FILES = """
@@ -57,69 +60,6 @@ def _expect(*, condition: bool, detail: str) -> None:
     raise AssertionError(detail)
 
 
-class _FakeProvider:
-    """Fake catalog provider for testing.
-
-    Provides a minimal catalog with only module_by_path mapping.
-    """
-
-    def __init__(self, module_by_path: dict[str, str]) -> None:
-        """Initialize with module path mapping.
-
-        Parameters
-        ----------
-        module_by_path
-            Mapping from file paths to module names.
-        """
-        self._catalog = FunctionCatalog(functions=(), module_by_path=module_by_path)
-
-    def catalog(self) -> FunctionCatalog:
-        """Return the catalog.
-
-        Returns
-        -------
-        FunctionCatalog
-            The fake catalog instance.
-        """
-        return self._catalog
-
-    def urn_for_goid(self, goid: int) -> str | None:
-        """Look up URN for a GOID.
-
-        Parameters
-        ----------
-        goid
-            Global object identifier.
-
-        Returns
-        -------
-        str | None
-            URN if found, None otherwise.
-        """
-        return self._catalog.urn_for_goid(goid)
-
-    def lookup_goid(
-        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
-    ) -> int | None:
-        """Look up GOID for a code location.
-
-        Parameters
-        ----------
-        rel_path
-            Relative file path.
-        start_line
-            Starting line number.
-        end_line
-            Ending line number.
-        qualname
-            Qualified name.
-
-        Returns
-        -------
-        int | None
-            GOID if found, None otherwise.
-        """
-        return self._catalog.lookup_goid(rel_path, start_line, end_line, qualname)
 
 
 def _write_scip_json(tmp_path: Path, content: str) -> Path:
@@ -146,7 +86,7 @@ def test_symbol_uses_respects_catalog_module_map(test_ctx: TestContext, tmp_path
     """Verify catalog module map toggles same_module when modules table is empty."""
     scip_path = _write_scip_json(tmp_path, SCIP_JSON_TWO_FILES)
 
-    provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
     cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(test_ctx.gateway, cfg, catalog_provider=provider)
@@ -173,7 +113,7 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
     scip_path = _write_scip_json(tmp_path, SCIP_JSON_TWO_FILES)
 
     # Provide only the defining module via catalog; use module comes from core.modules.
-    provider = _FakeProvider({"pkg/a.py": "pkg.def"})
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.def"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
     cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(test_ctx.gateway, cfg, catalog_provider=provider)
@@ -204,7 +144,7 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
         ],
     )
 
-    provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
     cfg = builder.graph_metrics()
     compute_graph_metrics(
@@ -268,7 +208,7 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
         ],
     )
 
-    provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
+    provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
     cfg = builder.profiles_analytics()
     build_function_profile(test_ctx.gateway, cfg, catalog_provider=provider)

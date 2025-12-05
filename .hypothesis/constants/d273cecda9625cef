@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/build/resolver.py
+# hypothesis_version: 6.148.7
+
+[' (requested goal)', 'BuildResolver', 'ResolutionKind', 'ResolutionReason', 'ResolutionResult', 'blocked', 'blocked_external', 'cascade', 'current', 'dependency', 'forced', 'missing', 'requested', 'stale']

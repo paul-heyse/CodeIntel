@@ -1,0 +1,694 @@
+{
+  "datasets": [
+    {
+      "name": "ast_metrics",
+      "table": "core.ast_metrics",
+      "jsonl": "ast_metrics.jsonl",
+      "parquet": "ast_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "ast_nodes",
+      "table": "core.ast_nodes",
+      "jsonl": "ast_nodes.jsonl",
+      "parquet": "ast_nodes.parquet",
+      "selected": true
+    },
+    {
+      "name": "behavioral_coverage",
+      "table": "analytics.behavioral_coverage",
+      "jsonl": "behavioral_coverage.jsonl",
+      "parquet": "behavioral_coverage.parquet",
+      "selected": true
+    },
+    {
+      "name": "call_graph_edges",
+      "table": "graph.call_graph_edges",
+      "jsonl": "call_graph_edges.jsonl",
+      "parquet": "call_graph_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "call_graph_nodes",
+      "table": "graph.call_graph_nodes",
+      "jsonl": "call_graph_nodes.jsonl",
+      "parquet": "call_graph_nodes.parquet",
+      "selected": true
+    },
+    {
+      "name": "cfg_block_metrics",
+      "table": "analytics.cfg_block_metrics",
+      "jsonl": "cfg_block_metrics.jsonl",
+      "parquet": "cfg_block_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "cfg_blocks",
+      "table": "graph.cfg_blocks",
+      "jsonl": "cfg_blocks.jsonl",
+      "parquet": "cfg_blocks.parquet",
+      "selected": true
+    },
+    {
+      "name": "cfg_edges",
+      "table": "graph.cfg_edges",
+      "jsonl": "cfg_edges.jsonl",
+      "parquet": "cfg_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "cfg_function_metrics",
+      "table": "analytics.cfg_function_metrics",
+      "jsonl": "cfg_function_metrics.jsonl",
+      "parquet": "cfg_function_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "cfg_function_metrics_ext",
+      "table": "analytics.cfg_function_metrics_ext",
+      "selected": false
+    },
+    {
+      "name": "config_data_flow",
+      "table": "analytics.config_data_flow",
+      "jsonl": "config_data_flow.jsonl",
+      "parquet": "config_data_flow.parquet",
+      "selected": true
+    },
+    {
+      "name": "config_graph_metrics_keys",
+      "table": "analytics.config_graph_metrics_keys",
+      "jsonl": "config_graph_metrics_keys.jsonl",
+      "parquet": "config_graph_metrics_keys.parquet",
+      "selected": true
+    },
+    {
+      "name": "config_graph_metrics_modules",
+      "table": "analytics.config_graph_metrics_modules",
+      "jsonl": "config_graph_metrics_modules.jsonl",
+      "parquet": "config_graph_metrics_modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "config_projection_key_edges",
+      "table": "analytics.config_projection_key_edges",
+      "jsonl": "config_projection_key_edges.jsonl",
+      "parquet": "config_projection_key_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "config_projection_module_edges",
+      "table": "analytics.config_projection_module_edges",
+      "jsonl": "config_projection_module_edges.jsonl",
+      "parquet": "config_projection_module_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "config_values",
+      "table": "analytics.config_values",
+      "jsonl": "config_values.jsonl",
+      "parquet": "config_values.parquet",
+      "selected": true
+    },
+    {
+      "name": "coverage_functions",
+      "table": "analytics.coverage_functions",
+      "jsonl": "coverage_functions.jsonl",
+      "parquet": "coverage_functions.parquet",
+      "selected": true
+    },
+    {
+      "name": "coverage_lines",
+      "table": "analytics.coverage_lines",
+      "jsonl": "coverage_lines.jsonl",
+      "parquet": "coverage_lines.parquet",
+      "selected": true
+    },
+    {
+      "name": "cst_nodes",
+      "table": "core.cst_nodes",
+      "jsonl": "cst_nodes.jsonl",
+      "parquet": "cst_nodes.parquet",
+      "selected": true
+    },
+    {
+      "name": "data_model_fields",
+      "table": "analytics.data_model_fields",
+      "jsonl": "data_model_fields.jsonl",
+      "parquet": "data_model_fields.parquet",
+      "selected": true
+    },
+    {
+      "name": "data_model_relationships",
+      "table": "analytics.data_model_relationships",
+      "jsonl": "data_model_relationships.jsonl",
+      "parquet": "data_model_relationships.parquet",
+      "selected": true
+    },
+    {
+      "name": "data_model_usage",
+      "table": "analytics.data_model_usage",
+      "jsonl": "data_model_usage.jsonl",
+      "parquet": "data_model_usage.parquet",
+      "selected": true
+    },
+    {
+      "name": "data_models",
+      "table": "analytics.data_models",
+      "jsonl": "data_models.jsonl",
+      "parquet": "data_models.parquet",
+      "selected": true
+    },
+    {
+      "name": "dfg_block_metrics",
+      "table": "analytics.dfg_block_metrics",
+      "jsonl": "dfg_block_metrics.jsonl",
+      "parquet": "dfg_block_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "dfg_edges",
+      "table": "graph.dfg_edges",
+      "jsonl": "dfg_edges.jsonl",
+      "parquet": "dfg_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "dfg_function_metrics",
+      "table": "analytics.dfg_function_metrics",
+      "jsonl": "dfg_function_metrics.jsonl",
+      "parquet": "dfg_function_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "dfg_function_metrics_ext",
+      "table": "analytics.dfg_function_metrics_ext",
+      "selected": false
+    },
+    {
+      "name": "docstrings",
+      "table": "core.docstrings",
+      "jsonl": "docstrings.jsonl",
+      "parquet": "docstrings.parquet",
+      "selected": true
+    },
+    {
+      "name": "entrypoint_tests",
+      "table": "analytics.entrypoint_tests",
+      "jsonl": "entrypoint_tests.jsonl",
+      "parquet": "entrypoint_tests.parquet",
+      "selected": true
+    },
+    {
+      "name": "entrypoints",
+      "table": "analytics.entrypoints",
+      "jsonl": "entrypoints.jsonl",
+      "parquet": "entrypoints.parquet",
+      "selected": true
+    },
+    {
+      "name": "external_dependencies",
+      "table": "analytics.external_dependencies",
+      "jsonl": "external_dependencies.jsonl",
+      "parquet": "external_dependencies.parquet",
+      "selected": true
+    },
+    {
+      "name": "external_dependency_calls",
+      "table": "analytics.external_dependency_calls",
+      "jsonl": "external_dependency_calls.jsonl",
+      "parquet": "external_dependency_calls.parquet",
+      "selected": true
+    },
+    {
+      "name": "file_profile",
+      "table": "analytics.file_profile",
+      "jsonl": "file_profile.jsonl",
+      "parquet": "file_profile.parquet",
+      "selected": true
+    },
+    {
+      "name": "file_state",
+      "table": "core.file_state",
+      "selected": false
+    },
+    {
+      "name": "function_ast_features",
+      "table": "analytics.function_ast_features",
+      "jsonl": "function_ast_features.jsonl",
+      "parquet": "function_ast_features.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_contracts",
+      "table": "analytics.function_contracts",
+      "jsonl": "function_contracts.jsonl",
+      "parquet": "function_contracts.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_effects",
+      "table": "analytics.function_effects",
+      "jsonl": "function_effects.jsonl",
+      "parquet": "function_effects.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_history",
+      "table": "analytics.function_history",
+      "jsonl": "function_history.jsonl",
+      "parquet": "function_history.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_metrics",
+      "table": "analytics.function_metrics",
+      "jsonl": "function_metrics.jsonl",
+      "parquet": "function_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_profile",
+      "table": "analytics.function_profile",
+      "jsonl": "function_profile.jsonl",
+      "parquet": "function_profile.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_types",
+      "table": "analytics.function_types",
+      "jsonl": "function_types.jsonl",
+      "parquet": "function_types.parquet",
+      "selected": true
+    },
+    {
+      "name": "function_validation",
+      "table": "analytics.function_validation",
+      "jsonl": "function_validation.jsonl",
+      "parquet": "function_validation.parquet",
+      "selected": true
+    },
+    {
+      "name": "goid_crosswalk",
+      "table": "core.goid_crosswalk",
+      "jsonl": "goid_crosswalk.jsonl",
+      "parquet": "goid_crosswalk.parquet",
+      "selected": true
+    },
+    {
+      "name": "goid_risk_factors",
+      "table": "analytics.goid_risk_factors",
+      "jsonl": "goid_risk_factors.jsonl",
+      "parquet": "goid_risk_factors.parquet",
+      "selected": true
+    },
+    {
+      "name": "goids",
+      "table": "core.goids",
+      "jsonl": "goids.jsonl",
+      "parquet": "goids.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_metrics_functions",
+      "table": "analytics.graph_metrics_functions",
+      "jsonl": "graph_metrics_functions.jsonl",
+      "parquet": "graph_metrics_functions.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_metrics_functions_ext",
+      "table": "analytics.graph_metrics_functions_ext",
+      "jsonl": "graph_metrics_functions_ext.jsonl",
+      "parquet": "graph_metrics_functions_ext.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_metrics_modules",
+      "table": "analytics.graph_metrics_modules",
+      "jsonl": "graph_metrics_modules.jsonl",
+      "parquet": "graph_metrics_modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_metrics_modules_ext",
+      "table": "analytics.graph_metrics_modules_ext",
+      "jsonl": "graph_metrics_modules_ext.jsonl",
+      "parquet": "graph_metrics_modules_ext.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_stats",
+      "table": "analytics.graph_stats",
+      "jsonl": "graph_stats.jsonl",
+      "parquet": "graph_stats.parquet",
+      "selected": true
+    },
+    {
+      "name": "graph_validation",
+      "table": "analytics.graph_validation",
+      "jsonl": "graph_validation.jsonl",
+      "parquet": "graph_validation.parquet",
+      "selected": true
+    },
+    {
+      "name": "history_timeseries",
+      "table": "analytics.history_timeseries",
+      "jsonl": "history_timeseries.jsonl",
+      "parquet": "history_timeseries.parquet",
+      "selected": true
+    },
+    {
+      "name": "hotspots",
+      "table": "analytics.hotspots",
+      "jsonl": "hotspots.jsonl",
+      "parquet": "hotspots.parquet",
+      "selected": true
+    },
+    {
+      "name": "import_graph_edges",
+      "table": "graph.import_graph_edges",
+      "jsonl": "import_graph_edges.jsonl",
+      "parquet": "import_graph_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "import_modules",
+      "table": "graph.import_modules",
+      "selected": false
+    },
+    {
+      "name": "ingest_runs",
+      "table": "core.ingest_runs",
+      "selected": false
+    },
+    {
+      "name": "module_profile",
+      "table": "analytics.module_profile",
+      "jsonl": "module_profile.jsonl",
+      "parquet": "module_profile.parquet",
+      "selected": true
+    },
+    {
+      "name": "modules",
+      "table": "core.modules",
+      "jsonl": "modules.jsonl",
+      "parquet": "modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "output_manifests",
+      "table": "build.output_manifests",
+      "selected": false
+    },
+    {
+      "name": "repo_map",
+      "table": "core.repo_map",
+      "selected": false
+    },
+    {
+      "name": "runs",
+      "table": "build.runs",
+      "selected": false
+    },
+    {
+      "name": "semantic_roles_functions",
+      "table": "analytics.semantic_roles_functions",
+      "jsonl": "semantic_roles_functions.jsonl",
+      "parquet": "semantic_roles_functions.parquet",
+      "selected": true
+    },
+    {
+      "name": "semantic_roles_modules",
+      "table": "analytics.semantic_roles_modules",
+      "jsonl": "semantic_roles_modules.jsonl",
+      "parquet": "semantic_roles_modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "static_diagnostics",
+      "table": "analytics.static_diagnostics",
+      "jsonl": "static_diagnostics.jsonl",
+      "parquet": "static_diagnostics.parquet",
+      "selected": true
+    },
+    {
+      "name": "subsystem_agreement",
+      "table": "analytics.subsystem_agreement",
+      "jsonl": "subsystem_agreement.jsonl",
+      "parquet": "subsystem_agreement.parquet",
+      "selected": true
+    },
+    {
+      "name": "subsystem_coverage_cache",
+      "table": "analytics.subsystem_coverage_cache",
+      "selected": false
+    },
+    {
+      "name": "subsystem_graph_metrics",
+      "table": "analytics.subsystem_graph_metrics",
+      "jsonl": "subsystem_graph_metrics.jsonl",
+      "parquet": "subsystem_graph_metrics.parquet",
+      "selected": true
+    },
+    {
+      "name": "subsystem_modules",
+      "table": "analytics.subsystem_modules",
+      "jsonl": "subsystem_modules.jsonl",
+      "parquet": "subsystem_modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "subsystem_profile_cache",
+      "table": "analytics.subsystem_profile_cache",
+      "selected": false
+    },
+    {
+      "name": "subsystems",
+      "table": "analytics.subsystems",
+      "jsonl": "subsystems.jsonl",
+      "parquet": "subsystems.parquet",
+      "selected": true
+    },
+    {
+      "name": "symbol_graph_metrics_functions",
+      "table": "analytics.symbol_graph_metrics_functions",
+      "jsonl": "symbol_graph_metrics_functions.jsonl",
+      "parquet": "symbol_graph_metrics_functions.parquet",
+      "selected": true
+    },
+    {
+      "name": "symbol_graph_metrics_modules",
+      "table": "analytics.symbol_graph_metrics_modules",
+      "jsonl": "symbol_graph_metrics_modules.jsonl",
+      "parquet": "symbol_graph_metrics_modules.parquet",
+      "selected": true
+    },
+    {
+      "name": "symbol_use_edges",
+      "table": "graph.symbol_use_edges",
+      "jsonl": "symbol_use_edges.jsonl",
+      "parquet": "symbol_use_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "tags_index",
+      "table": "analytics.tags_index",
+      "selected": false
+    },
+    {
+      "name": "test_catalog",
+      "table": "analytics.test_catalog",
+      "jsonl": "test_catalog.jsonl",
+      "parquet": "test_catalog.parquet",
+      "selected": true
+    },
+    {
+      "name": "test_coverage_edges",
+      "table": "analytics.test_coverage_edges",
+      "jsonl": "test_coverage_edges.jsonl",
+      "parquet": "test_coverage_edges.parquet",
+      "selected": true
+    },
+    {
+      "name": "test_graph_metrics_functions",
+      "table": "analytics.test_graph_metrics_functions",
+      "jsonl": "test_graph_metrics_functions.jsonl",
+      "parquet": "test_graph_metrics_functions.parquet",
+      "selected": true
+    },
+    {
+      "name": "test_graph_metrics_tests",
+      "table": "analytics.test_graph_metrics_tests",
+      "jsonl": "test_graph_metrics_tests.jsonl",
+      "parquet": "test_graph_metrics_tests.parquet",
+      "selected": true
+    },
+    {
+      "name": "test_profile",
+      "table": "analytics.test_profile",
+      "jsonl": "test_profile.jsonl",
+      "parquet": "test_profile.parquet",
+      "selected": true
+    },
+    {
+      "name": "typedness",
+      "table": "analytics.typedness",
+      "jsonl": "typedness.jsonl",
+      "parquet": "typedness.parquet",
+      "selected": true
+    },
+    {
+      "name": "v_behavioral_classification_input",
+      "table": "docs.v_behavioral_classification_input",
+      "selected": false
+    },
+    {
+      "name": "v_call_graph_enriched",
+      "table": "docs.v_call_graph_enriched",
+      "selected": false
+    },
+    {
+      "name": "v_cfg_block_architecture",
+      "table": "docs.v_cfg_block_architecture",
+      "selected": false
+    },
+    {
+      "name": "v_config_data_flow",
+      "table": "docs.v_config_data_flow",
+      "selected": false
+    },
+    {
+      "name": "v_data_model_fields",
+      "table": "docs.v_data_model_fields",
+      "selected": false
+    },
+    {
+      "name": "v_data_model_relationships",
+      "table": "docs.v_data_model_relationships",
+      "selected": false
+    },
+    {
+      "name": "v_data_model_usage",
+      "table": "docs.v_data_model_usage",
+      "selected": false
+    },
+    {
+      "name": "v_data_models",
+      "table": "docs.v_data_models",
+      "selected": false
+    },
+    {
+      "name": "v_data_models_normalized",
+      "table": "docs.v_data_models_normalized",
+      "selected": false
+    },
+    {
+      "name": "v_dfg_block_architecture",
+      "table": "docs.v_dfg_block_architecture",
+      "selected": false
+    },
+    {
+      "name": "v_entrypoints",
+      "table": "docs.v_entrypoints",
+      "selected": false
+    },
+    {
+      "name": "v_external_dependencies",
+      "table": "docs.v_external_dependencies",
+      "selected": false
+    },
+    {
+      "name": "v_external_dependency_calls",
+      "table": "docs.v_external_dependency_calls",
+      "selected": false
+    },
+    {
+      "name": "v_file_summary",
+      "table": "docs.v_file_summary",
+      "selected": false
+    },
+    {
+      "name": "v_function_architecture",
+      "table": "docs.v_function_architecture",
+      "selected": false
+    },
+    {
+      "name": "v_function_history",
+      "table": "docs.v_function_history",
+      "selected": false
+    },
+    {
+      "name": "v_function_history_timeseries",
+      "table": "docs.v_function_history_timeseries",
+      "selected": false
+    },
+    {
+      "name": "v_function_summary",
+      "table": "docs.v_function_summary",
+      "selected": false
+    },
+    {
+      "name": "v_ide_hints",
+      "table": "docs.v_ide_hints",
+      "selected": false
+    },
+    {
+      "name": "v_module_architecture",
+      "table": "docs.v_module_architecture",
+      "selected": false
+    },
+    {
+      "name": "v_module_history_timeseries",
+      "table": "docs.v_module_history_timeseries",
+      "selected": false
+    },
+    {
+      "name": "v_module_with_subsystem",
+      "table": "docs.v_module_with_subsystem",
+      "selected": false
+    },
+    {
+      "name": "v_subsystem_agreement",
+      "table": "docs.v_subsystem_agreement",
+      "selected": false
+    },
+    {
+      "name": "v_subsystem_coverage",
+      "table": "docs.v_subsystem_coverage",
+      "selected": false
+    },
+    {
+      "name": "v_subsystem_profile",
+      "table": "docs.v_subsystem_profile",
+      "selected": false
+    },
+    {
+      "name": "v_subsystem_summary",
+      "table": "docs.v_subsystem_summary",
+      "selected": false
+    },
+    {
+      "name": "v_symbol_module_graph",
+      "table": "docs.v_symbol_module_graph",
+      "selected": false
+    },
+    {
+      "name": "v_test_architecture",
+      "table": "docs.v_test_architecture",
+      "selected": false
+    },
+    {
+      "name": "v_test_to_function",
+      "table": "docs.v_test_to_function",
+      "selected": false
+    },
+    {
+      "name": "v_validation_summary",
+      "table": "docs.v_validation_summary",
+      "jsonl": "validation_summary.jsonl",
+      "parquet": "validation_summary.parquet",
+      "selected": true
+    }
+  ]
+}

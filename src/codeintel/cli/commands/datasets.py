@@ -1231,7 +1231,7 @@ def datasets_validate_files(
         codeintel datasets validate-files --schema function_profile data.parquet
     """
     setup_logging(verbose)
-    from codeintel.pipeline.export.validate_exports import (
+    from codeintel.export.validate_exports import (
         DEFAULT_SCHEMA_ROOT,
         validate_files,
     )

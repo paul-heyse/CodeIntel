@@ -1,0 +1,40 @@
+{
+  "run_id": "66274758",
+  "repo": "local/repo",
+  "commit": "e5b7cd7f8653",
+  "started_at": "2025-12-05T13:26:25.626558+00:00",
+  "ended_at": "2025-12-05T13:26:58.932585+00:00",
+  "total_duration_ms": 33306.01025500073,
+  "overall_status": "failed",
+  "stages": [
+    {
+      "name": "SCIP Indexing",
+      "status": "success",
+      "duration_ms": 0.04029100091429427,
+      "started_at": "2025-12-05T13:26:25.628077+00:00",
+      "ended_at": "2025-12-05T13:26:25.628129+00:00",
+      "outputs": {
+        "skipped": true,
+        "scip_index": "/home/paul/CodeIntel/build/scip/index.scip",
+        "scip_json": "/home/paul/CodeIntel/build/scip/index.scip.json",
+        "index_size_mb": 32.78491401672363
+      },
+      "error": null
+    },
+    {
+      "name": "Build System Run",
+      "status": "failed",
+      "duration_ms": 33304.39519100037,
+      "started_at": "2025-12-05T13:26:25.628159+00:00",
+      "ended_at": "2025-12-05T13:26:58.932556+00:00",
+      "outputs": {},
+      "error": "Build failed: Ingestion recipe failed"
+    }
+  ],
+  "summary": {
+    "stages_total": 2,
+    "stages_success": 1,
+    "stages_failed": 1,
+    "stages_skipped": 0
+  }
+}

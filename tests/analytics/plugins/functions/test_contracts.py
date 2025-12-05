@@ -21,9 +21,9 @@ from codeintel.analytics.plugins.functions.contracts import (
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.config.steps_analytics import FunctionContractsStepConfig
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.factories import make_snapshot, make_step_config
 from tests._helpers.fakes import TestExecutionContextBuilder
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.context import PluginExecutionContext
@@ -79,10 +79,9 @@ def _create_context(
         builder.with_resource(AstProvider, ast_provider)
 
     if has_catalog:
-        # Create catalog provider with empty preloaded data
-        empty_catalog = FunctionCatalog(functions=[], module_by_path={})
-        catalog_service = FunctionCatalogService(empty_catalog)
-        catalog_provider = CatalogProvider.from_catalog(catalog_service)
+        # Create catalog provider with empty mock catalog
+        catalog_provider = CatalogProvider()
+        catalog_provider.set_preloaded(MockFunctionCatalog())
         builder.with_resource(CatalogProvider, catalog_provider)
 
     return builder.build()

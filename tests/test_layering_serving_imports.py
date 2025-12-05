@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-ALLOWED_SERVING_IMPORTERS = {"cli", "pipeline", "serving", "tests"}
-ALLOWED_PIPELINE_IMPORTERS = {"cli", "pipeline", "serving", "storage", "tests"}
+ALLOWED_SERVING_IMPORTERS = {"cli", "core", "export", "serving", "tests"}
 
 
 def _iter_python_files(root: Path) -> list[Path]:
@@ -52,14 +51,4 @@ def test_no_serving_imports_in_middle_packages() -> None:
         package_root=package_root,
         forbidden_prefix="codeintel.serving",
         allowed_top_levels=ALLOWED_SERVING_IMPORTERS,
-    )
-
-
-def test_no_pipeline_imports_in_middle_packages() -> None:
-    """Ensure analytics/graphs/ingestion/storage do not import codeintel.pipeline.*."""
-    package_root = Path(__file__).resolve().parent.parent / "src" / "codeintel"
-    _assert_no_imports(
-        package_root=package_root,
-        forbidden_prefix="codeintel.pipeline",
-        allowed_top_levels=ALLOWED_PIPELINE_IMPORTERS,
     )
