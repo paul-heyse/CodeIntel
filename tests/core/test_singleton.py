@@ -225,7 +225,7 @@ def test_singleton_factory_returning_none_raises_error() -> None:
 def test_singleton_thread_safe_initialization() -> None:
     """Verify that singleton initialization is thread-safe."""
     results: list[SampleRegistry] = []
-    errors: list[Exception] = []
+    errors: list[threading.BrokenBarrierError | RuntimeError] = []
     barrier = threading.Barrier(10)
 
     def worker() -> None:
@@ -233,7 +233,7 @@ def test_singleton_thread_safe_initialization() -> None:
             barrier.wait()  # Synchronize all threads to start together
             registry = SampleRegistryHolder.get(SampleRegistry.create_default)
             results.append(registry)
-        except Exception as e:
+        except (threading.BrokenBarrierError, RuntimeError) as e:
             errors.append(e)
 
     with ThreadPoolExecutor(max_workers=10) as executor:

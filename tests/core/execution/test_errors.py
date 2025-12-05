@@ -53,7 +53,13 @@ def test_plugin_catchable_errors_includes_common_exceptions() -> None:
 
 
 def test_plugin_catchable_errors_can_catch() -> None:
-    """Verify PLUGIN_CATCHABLE_ERRORS can be used in try/except."""
+    """Verify PLUGIN_CATCHABLE_ERRORS can be used in try/except.
+
+    Raises
+    ------
+    ValueError
+        Test exception caught by PLUGIN_CATCHABLE_ERRORS.
+    """
     caught = False
     try:
         msg = "test"
@@ -132,11 +138,14 @@ def test_plugin_fatal_error_with_chained_exception(
     """Verify PluginFatalError can be chained from original."""
     original = ValueError("Root cause")
 
-    with pytest.raises(PluginFatalError) as exc_info:
+    def raise_chained() -> None:
         try:
             raise original
         except ValueError as e:
             raise PluginFatalError(sample_record, e) from e
+
+    with pytest.raises(PluginFatalError) as exc_info:
+        raise_chained()
 
     assert exc_info.value.__cause__ is original
 
@@ -197,9 +206,10 @@ def test_plugin_timeout_error_inherits_from_exception() -> None:
 
 def test_plugin_timeout_error_can_be_raised() -> None:
     """Verify PluginTimeoutError can be raised and caught."""
+    error = PluginTimeoutError("slow.plugin", 10000, elapsed_ms=15000.0)
+
     with pytest.raises(PluginTimeoutError) as exc_info:
-        msg = "slow.plugin"
-        raise PluginTimeoutError(msg, 10000, elapsed_ms=15000.0)
+        raise error
 
     assert exc_info.value.plugin_name == "slow.plugin"
     assert exc_info.value.timeout_ms == 10000
@@ -233,9 +243,10 @@ def test_plugin_skipped_error_inherits_from_exception() -> None:
 
 def test_plugin_skipped_error_can_be_raised() -> None:
     """Verify PluginSkippedError can be raised and caught."""
+    error = PluginSkippedError("disabled.plugin", "explicitly disabled")
+
     with pytest.raises(PluginSkippedError) as exc_info:
-        msg = "disabled.plugin"
-        raise PluginSkippedError(msg, "explicitly disabled")
+        raise error
 
     assert exc_info.value.plugin_name == "disabled.plugin"
     assert exc_info.value.reason == "explicitly disabled"

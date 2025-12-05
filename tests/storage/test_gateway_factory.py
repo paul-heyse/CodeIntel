@@ -17,6 +17,7 @@ from codeintel.storage.gateway.factory import (
     open_gateway,
     open_memory_gateway,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # StorageConfig Tests
@@ -101,8 +102,7 @@ def test_storage_config_for_readonly(tmp_path: Path) -> None:
 def test_storage_config_is_frozen() -> None:
     """Verify StorageConfig is immutable."""
     cfg = StorageConfig(db_path=Path(":memory:"))
-    with pytest.raises(AttributeError):
-        cfg.db_path = Path("/other")  # type: ignore[misc]
+    assert_frozen(cfg, "db_path", Path("/other"))
 
 
 # =============================================================================

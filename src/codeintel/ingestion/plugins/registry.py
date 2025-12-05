@@ -146,6 +146,26 @@ class IngestPluginRegistry:
             if table in self._by_table:
                 self._by_table[table].discard(name)
 
+    def clear(self) -> None:
+        """Remove all plugins from the registry.
+
+        This is primarily useful for testing scenarios where a clean
+        registry state is needed.
+        """
+        self._plugins.clear()
+        self._by_capability.clear()
+        self._by_stage.clear()
+        self._by_table.clear()
+        self._entrypoints_loaded = True  # Prevent auto-loading after clear
+
+    def skip_entrypoint_loading(self) -> None:
+        """Mark entrypoints as loaded to prevent auto-discovery.
+
+        This is primarily useful for testing scenarios where explicit
+        plugin registration is preferred over auto-discovery.
+        """
+        self._entrypoints_loaded = True
+
     def get(self, name: str) -> IngestPluginProtocol:
         """Return a plugin by name.
 

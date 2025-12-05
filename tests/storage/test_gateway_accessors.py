@@ -17,6 +17,7 @@ from codeintel.storage.gateway.accessors import (
     DocsViews,
     GraphTables,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # CoreTables Tests
@@ -134,8 +135,7 @@ def test_core_tables_insert_goids_inserts_rows(fresh_gateway: StorageGateway) ->
 def test_core_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify CoreTables is immutable."""
     core = CoreTables(fresh_gateway.con)
-    with pytest.raises(AttributeError):
-        core.con = fresh_gateway.con  # type: ignore[misc]
+    assert_frozen(core, "con", fresh_gateway.con)
 
 
 # =============================================================================
@@ -343,8 +343,7 @@ def test_graph_tables_insert_dfg_edges(fresh_gateway: StorageGateway) -> None:
 def test_graph_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify GraphTables is immutable."""
     graph = GraphTables(fresh_gateway.con)
-    with pytest.raises(AttributeError):
-        graph.con = fresh_gateway.con  # type: ignore[misc]
+    assert_frozen(graph, "con", fresh_gateway.con)
 
 
 # =============================================================================
@@ -386,8 +385,7 @@ def test_docs_views_function_profile_returns_relation(fresh_gateway: StorageGate
 def test_docs_views_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify DocsViews is immutable."""
     docs = DocsViews(fresh_gateway.con)
-    with pytest.raises(AttributeError):
-        docs.con = fresh_gateway.con  # type: ignore[misc]
+    assert_frozen(docs, "con", fresh_gateway.con)
 
 
 # =============================================================================
@@ -617,8 +615,7 @@ def test_analytics_tables_insert_config_values(fresh_gateway: StorageGateway) ->
 def test_analytics_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify AnalyticsTables is immutable."""
     analytics = AnalyticsTables(fresh_gateway.con)
-    with pytest.raises(AttributeError):
-        analytics.con = fresh_gateway.con  # type: ignore[misc]
+    assert_frozen(analytics, "con", fresh_gateway.con)
 
 
 # =============================================================================

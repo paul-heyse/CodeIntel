@@ -47,6 +47,12 @@ from tests._helpers.fakes.graph_plugins import (
     make_functional_plugin,
     plugin_registrar,
 )
+from tests._helpers.fakes.graph_runtimes import (
+    MockGraphRuntime,
+    create_mock_runtime_all_graphs,
+    create_mock_runtime_with_call_graph,
+    create_mock_runtime_with_import_graph,
+)
 from tests._helpers.fakes.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 from tests._helpers.fakes.networkx_graphs import (
     bipartite_graph,
@@ -104,6 +110,7 @@ __all__ = [
     "GraphPluginPackCounters",
     "GraphPluginPackSettings",
     "GraphTelemetryTestEnv",
+    "MockGraphRuntime",
     "ScopeRecordingQuery",
     "ServingScopePack",
     "TestExecutionContextBuilder",
@@ -120,6 +127,9 @@ __all__ = [
     "create_graph_plugin_context",
     "create_graph_snapshot",
     "create_graph_telemetry_env",
+    "create_mock_runtime_all_graphs",
+    "create_mock_runtime_with_call_graph",
+    "create_mock_runtime_with_import_graph",
     "create_test_build_paths",
     "create_test_execution_context",
     "create_test_run_context",

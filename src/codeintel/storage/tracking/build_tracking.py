@@ -10,13 +10,82 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
 from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
+
+
+# =============================================================================
+# Row Parsing Helpers
+# =============================================================================
+
+
+def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
+    """Parse a DuckDB row into an OutputManifest.
+
+    Centralizes type coercion from DuckDB result tuples to typed dataclass.
+
+    Parameters
+    ----------
+    row
+        DuckDB row tuple from output_manifests table.
+        Expected column order: target, repo, commit, plugin, computed_at,
+        duration_ms, input_hash, output_hash, row_count, options_hash
+
+    Returns
+    -------
+    OutputManifest
+        Typed manifest dataclass.
+    """
+    return OutputManifest(
+        target=str(row[0]),
+        repo=str(row[1]),
+        commit=str(row[2]),
+        plugin=str(row[3]),
+        computed_at=cast("datetime", row[4]),
+        duration_ms=float(row[5]),
+        input_hash=str(row[6]),
+        output_hash=str(row[7]) if row[7] is not None else None,
+        row_count=int(row[8]) if row[8] is not None else None,
+        options_hash=str(row[9]) if row[9] is not None else None,
+    )
+
+
+def _parse_run_row(row: tuple[Any, ...]) -> BuildRunRecord:
+    """Parse a DuckDB row into a BuildRunRecord.
+
+    Centralizes type coercion from DuckDB result tuples to typed dataclass.
+
+    Parameters
+    ----------
+    row
+        DuckDB row tuple from build.runs table.
+        Expected column order: run_id, repo, commit, requested_targets,
+        computed_targets, skipped_targets, started_at, completed_at,
+        status, error_summary, duration_ms
+
+    Returns
+    -------
+    BuildRunRecord
+        Typed run record dataclass.
+    """
+    return BuildRunRecord(
+        run_id=str(row[0]),
+        repo=str(row[1]),
+        commit=str(row[2]),
+        requested_targets=_deserialize_targets(cast("str | None", row[3])),
+        computed_targets=_deserialize_targets(cast("str | None", row[4])),
+        skipped_targets=_deserialize_targets(cast("str | None", row[5])),
+        started_at=cast("datetime", row[6]),
+        completed_at=cast("datetime | None", row[7]),
+        status=cast("BuildStatus", row[8]),
+        error_summary=str(row[9]) if row[9] is not None else None,
+        duration_ms=float(row[10]) if row[10] is not None else None,
+    )
 
 
 def _now() -> datetime:
@@ -132,9 +201,7 @@ class BuildTracking:
             ],
         )
 
-    def load_manifest(
-        self, target: str, repo: str, commit: str
-    ) -> OutputManifest | None:
+    def load_manifest(self, target: str, repo: str, commit: str) -> OutputManifest | None:
         """Load an output manifest by primary key.
 
         Parameters
@@ -164,18 +231,7 @@ class BuildTracking:
         if result is None:
             return None
 
-        return OutputManifest(
-            target=str(result[0]),
-            repo=str(result[1]),
-            commit=str(result[2]),
-            plugin=str(result[3]),
-            computed_at=result[4],  # type: ignore[arg-type]
-            duration_ms=float(result[5]),
-            input_hash=str(result[6]),
-            output_hash=str(result[7]) if result[7] is not None else None,
-            row_count=int(result[8]) if result[8] is not None else None,
-            options_hash=str(result[9]) if result[9] is not None else None,
-        )
+        return _parse_manifest_row(result)
 
     def list_manifests(self, repo: str, commit: str) -> tuple[OutputManifest, ...]:
         """List all manifests for a repo/commit.
@@ -203,21 +259,7 @@ class BuildTracking:
             [repo, commit],
         ).fetchall()
 
-        return tuple(
-            OutputManifest(
-                target=str(row[0]),
-                repo=str(row[1]),
-                commit=str(row[2]),
-                plugin=str(row[3]),
-                computed_at=row[4],  # type: ignore[arg-type]
-                duration_ms=float(row[5]),
-                input_hash=str(row[6]),
-                output_hash=str(row[7]) if row[7] is not None else None,
-                row_count=int(row[8]) if row[8] is not None else None,
-                options_hash=str(row[9]) if row[9] is not None else None,
-            )
-            for row in results
-        )
+        return tuple(_parse_manifest_row(row) for row in results)
 
     def delete_manifests(self, repo: str, commit: str) -> None:
         """Delete all manifests for a repo/commit.
@@ -304,7 +346,7 @@ class BuildTracking:
 
         duration_ms: float | None = None
         if result is not None and result[0] is not None:
-            started_at: datetime = result[0]  # type: ignore[assignment]
+            started_at: datetime = cast("datetime", result[0])
             duration_ms = (completed_at - started_at).total_seconds() * 1000
 
         self._con.execute(
@@ -356,19 +398,7 @@ class BuildTracking:
         if result is None:
             return None
 
-        return BuildRunRecord(
-            run_id=str(result[0]),
-            repo=str(result[1]),
-            commit=str(result[2]),
-            requested_targets=_deserialize_targets(result[3]),  # type: ignore[arg-type]
-            computed_targets=_deserialize_targets(result[4]),  # type: ignore[arg-type]
-            skipped_targets=_deserialize_targets(result[5]),  # type: ignore[arg-type]
-            started_at=result[6],  # type: ignore[arg-type]
-            completed_at=result[7],  # type: ignore[arg-type]
-            status=result[8],  # type: ignore[arg-type]
-            error_summary=str(result[9]) if result[9] is not None else None,
-            duration_ms=float(result[10]) if result[10] is not None else None,
-        )
+        return _parse_run_row(result)
 
     def list_runs(self, repo: str, limit: int = 100) -> tuple[BuildRunRecord, ...]:
         """List recent runs for a repository.
@@ -398,22 +428,7 @@ class BuildTracking:
             [repo, limit],
         ).fetchall()
 
-        return tuple(
-            BuildRunRecord(
-                run_id=str(row[0]),
-                repo=str(row[1]),
-                commit=str(row[2]),
-                requested_targets=_deserialize_targets(row[3]),  # type: ignore[arg-type]
-                computed_targets=_deserialize_targets(row[4]),  # type: ignore[arg-type]
-                skipped_targets=_deserialize_targets(row[5]),  # type: ignore[arg-type]
-                started_at=row[6],  # type: ignore[arg-type]
-                completed_at=row[7],  # type: ignore[arg-type]
-                status=row[8],  # type: ignore[arg-type]
-                error_summary=str(row[9]) if row[9] is not None else None,
-                duration_ms=float(row[10]) if row[10] is not None else None,
-            )
-            for row in results
-        )
+        return tuple(_parse_run_row(row) for row in results)
 
 
 __all__ = [

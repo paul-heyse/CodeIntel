@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.data_models import (
     DataModelFieldRow,
@@ -21,6 +19,7 @@ from codeintel.storage.repositories.data_models import (
     fetch_models_normalized,
     fetch_relationships,
 )
+from tests._helpers import assert_frozen
 
 # Test constants to avoid magic value warnings
 EXPECTED_INT_42 = 42
@@ -55,8 +54,7 @@ def test_data_model_row_is_frozen() -> None:
         created_at=now,
     )
     assert row.model_name == "TestModel"
-    with pytest.raises(AttributeError):
-        row.model_name = "Other"  # type: ignore[misc]
+    assert_frozen(row, "model_name", "Other")
 
 
 def test_data_model_row_stores_all_fields() -> None:
@@ -110,8 +108,7 @@ def test_data_model_field_row_is_frozen() -> None:
         created_at=now,
     )
     assert row.name == "field1"
-    with pytest.raises(AttributeError):
-        row.name = "other"  # type: ignore[misc]
+    assert_frozen(row, "name", "other")
 
 
 def test_data_model_field_row_stores_all_fields() -> None:
@@ -168,8 +165,7 @@ def test_data_model_relationship_row_is_frozen() -> None:
         created_at=now,
     )
     assert row.relationship_kind == "has_many"
-    with pytest.raises(AttributeError):
-        row.relationship_kind = "other"  # type: ignore[misc]
+    assert_frozen(row, "relationship_kind", "other")
 
 
 def test_data_model_relationship_row_stores_all_fields() -> None:
@@ -228,8 +224,7 @@ def test_normalized_data_model_is_frozen() -> None:
         created_at=now,
     )
     assert model.model_name == "TestModel"
-    with pytest.raises(AttributeError):
-        model.model_name = "Other"  # type: ignore[misc]
+    assert_frozen(model, "model_name", "Other")
 
 
 def test_normalized_data_model_stores_nested_data() -> None:

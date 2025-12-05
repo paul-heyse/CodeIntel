@@ -25,7 +25,7 @@ from codeintel.analytics.testing.graph_metrics import (
     TestMetricsContext,
     compute_test_graph_metrics,
 )
-from tests._helpers import COVERAGE_PACK, METRICS_PACK, TestContext
+from tests._helpers import COVERAGE_PACK, METRICS_PACK, TestContext, assert_frozen
 
 # =============================================================================
 # Test Constants
@@ -81,8 +81,7 @@ class TestTestMetricsContext:
         assert ctx.commit == "abc123"
         assert ctx.risk_by_goid == {1: 0.5, 2: 0.8}
         # Verify frozen - should raise AttributeError on mutation
-        with pytest.raises(AttributeError):
-            ctx.repo = "modified"  # type: ignore[misc]
+        assert_frozen(ctx, "repo", "modified")
 
     @staticmethod
     def test_stores_degrees_data() -> None:

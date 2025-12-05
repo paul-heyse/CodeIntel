@@ -17,6 +17,7 @@ from codeintel.analytics.compute.entrypoints.detection import (
     ImportContext,
     detect_entrypoints,
 )
+from tests._helpers import assert_frozen
 
 TEST_REL_PATH = "app/routes.py"
 TEST_MODULE = "app.routes"
@@ -53,8 +54,7 @@ def test_detector_settings_disabled() -> None:
 def test_detector_settings_immutable() -> None:
     """DetectorSettings is frozen/immutable."""
     settings = DetectorSettings()
-    with pytest.raises(AttributeError):
-        settings.detect_fastapi = False  # type: ignore[misc]
+    assert_frozen(settings, "detect_fastapi", new_value=False)
 
 
 def test_entrypoint_candidate_creation() -> None:
@@ -163,8 +163,7 @@ def test_entrypoint_candidate_immutable() -> None:
         end_lineno=5,
     )
 
-    with pytest.raises(AttributeError):
-        candidate.kind = "cli_command"  # type: ignore[misc]
+    assert_frozen(candidate, "kind", "cli_command")
 
 
 def test_entrypoint_candidate_optional_fields() -> None:
@@ -303,8 +302,7 @@ def test_import_context_immutable() -> None:
         celery_apps=set(),
     )
 
-    with pytest.raises(AttributeError):
-        ctx.alias_to_lib = {"new": "value"}  # type: ignore[misc]
+    assert_frozen(ctx, "alias_to_lib", {"new": "value"})
 
 
 def test_detector_settings_partial_disable() -> None:

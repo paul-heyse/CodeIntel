@@ -19,6 +19,7 @@ from codeintel.analytics.adapters.base import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -311,8 +312,7 @@ def test_delete_scope_with_columns() -> None:
 def test_delete_scope_is_frozen() -> None:
     """Delete scope is immutable."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
-    with pytest.raises(AttributeError):
-        scope.repo = "other"  # type: ignore[misc]
+    assert_frozen(scope, "repo", "other")
 
 
 # =============================================================================

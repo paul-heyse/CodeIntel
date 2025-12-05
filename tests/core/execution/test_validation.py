@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-import pytest
-
 from codeintel.core.execution.validation import (
     BaseValidationOptions,
     SeverityLevel,
@@ -24,6 +22,7 @@ from codeintel.core.execution.validation import (
     group_findings_by_key,
     has_error_findings,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Test Fixtures and Helpers
@@ -103,8 +102,7 @@ def test_base_validation_options_is_frozen() -> None:
     """Verify BaseValidationOptions is immutable."""
     options = BaseValidationOptions()
 
-    with pytest.raises(AttributeError):
-        options.hard_fail = True  # type: ignore[misc]
+    assert_frozen(options, "hard_fail", new_value=True)
 
 
 # =============================================================================

@@ -8,20 +8,96 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 import networkx as nx
 
 from codeintel.analytics.resources.protocol import LazyResource
 from codeintel.analytics.runtime import (
+    GraphRuntime,
     GraphRuntimeOptions,
     build_graph_runtime,
 )
 
 if TYPE_CHECKING:
-    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
+
+
+@runtime_checkable
+class GraphRuntimeLike(Protocol):
+    """Protocol for types providing graph attributes.
+
+    This is a minimal interface for what GraphProvider.from_runtime actually
+    needs to extract graphs. It allows test mocks to satisfy the type
+    checker without implementing the full GraphRuntime class.
+
+    Attributes
+    ----------
+    call_graph
+        Optional call graph (directed).
+    import_graph
+        Optional import graph (directed).
+    symbol_module_graph
+        Optional symbol-to-module bipartite graph.
+    symbol_function_graph
+        Optional symbol-to-function bipartite graph.
+    config_module_bipartite
+        Optional config-to-module bipartite graph.
+    test_function_bipartite
+        Optional test-to-function bipartite graph.
+    cfg_graph
+        Optional control flow graph (directed).
+    backend
+        Optional backend configuration.
+    use_gpu
+        Whether GPU execution is enabled.
+    """
+
+    @property
+    def call_graph(self) -> nx.DiGraph | None:
+        """Call graph or None."""
+        ...
+
+    @property
+    def import_graph(self) -> nx.DiGraph | None:
+        """Import graph or None."""
+        ...
+
+    @property
+    def symbol_module_graph(self) -> nx.Graph | None:
+        """Symbol-module graph or None."""
+        ...
+
+    @property
+    def symbol_function_graph(self) -> nx.Graph | None:
+        """Symbol-function graph or None."""
+        ...
+
+    @property
+    def config_module_bipartite(self) -> nx.Graph | None:
+        """Config-module bipartite graph or None."""
+        ...
+
+    @property
+    def test_function_bipartite(self) -> nx.Graph | None:
+        """Test-function bipartite graph or None."""
+        ...
+
+    @property
+    def cfg_graph(self) -> nx.DiGraph | None:
+        """Control flow graph or None."""
+        ...
+
+    @property
+    def backend(self) -> GraphBackendConfig | None:
+        """Backend configuration or None."""
+        ...
+
+    @property
+    def use_gpu(self) -> bool:
+        """Whether GPU execution is enabled."""
+        ...
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +153,7 @@ class GraphProvider(LazyResource[GraphResources]):
         *,
         gateway: StorageGateway | None = None,
         snapshot: SnapshotRef | None = None,
-        runtime: GraphRuntime | None = None,
+        runtime: GraphRuntime | GraphRuntimeLike | None = None,
         options: GraphRuntimeOptions | None = None,
     ) -> None:
         """Initialize the graph provider.
@@ -94,14 +170,15 @@ class GraphProvider(LazyResource[GraphResources]):
         snapshot
             Snapshot reference for building runtime.
         runtime
-            Pre-built GraphRuntime instance.
+            Pre-built GraphRuntime instance or GraphRuntimeLike mock.
         options
             Options for building a new runtime.
         """
         super().__init__("GraphResources")
         self._gateway = gateway
         self._snapshot = snapshot
-        self._runtime = runtime
+        # Store as the wider type internally, but expose as GraphRuntime via property
+        self._runtime_internal: GraphRuntime | GraphRuntimeLike | None = runtime
         self._options = options
 
     @classmethod
@@ -147,13 +224,14 @@ class GraphProvider(LazyResource[GraphResources]):
         return cls(gateway=gateway, snapshot=snapshot, options=resolved_options)
 
     @classmethod
-    def from_runtime(cls, runtime: GraphRuntime) -> GraphProvider:
+    def from_runtime(cls, runtime: GraphRuntime | GraphRuntimeLike) -> GraphProvider:
         """Create a provider from an existing runtime.
 
         Parameters
         ----------
         runtime
-            Pre-built GraphRuntime instance.
+            Pre-built GraphRuntime instance or any GraphRuntimeLike protocol
+            implementation (e.g., test mocks).
 
         Returns
         -------
@@ -207,12 +285,12 @@ class GraphProvider(LazyResource[GraphResources]):
             cfg_graph=cfg_graph,
         )
 
-    def _get_or_build_runtime(self) -> GraphRuntime:
+    def _get_or_build_runtime(self) -> GraphRuntime | GraphRuntimeLike:
         """Get existing runtime or build a new one.
 
         Returns
         -------
-        GraphRuntime
+        GraphRuntime | GraphRuntimeLike
             The runtime to use.
 
         Raises
@@ -220,16 +298,16 @@ class GraphProvider(LazyResource[GraphResources]):
         ValueError
             If insufficient configuration provided.
         """
-        if self._runtime is not None:
-            return self._runtime
+        if self._runtime_internal is not None:
+            return self._runtime_internal
 
         if self._gateway is None or self._snapshot is None:
             message = "GraphProvider requires either runtime or gateway+snapshot"
             raise ValueError(message)
 
         options = self._options or GraphRuntimeOptions(snapshot=self._snapshot)
-        self._runtime = build_graph_runtime(self._gateway, options)
-        return self._runtime
+        self._runtime_internal = build_graph_runtime(self._gateway, options)
+        return self._runtime_internal
 
     @property
     def runtime(self) -> GraphRuntime | None:
@@ -238,9 +316,28 @@ class GraphProvider(LazyResource[GraphResources]):
         Returns
         -------
         GraphRuntime | None
-            The runtime, or None if not yet built.
+            The runtime, or None if not yet built. Returns None for
+            GraphRuntimeLike test mocks (they don't implement full API).
         """
-        return self._runtime
+        if isinstance(self._runtime_internal, GraphRuntime):
+            return self._runtime_internal
+        return None
+
+    @property
+    def runtime_like(self) -> GraphRuntime | GraphRuntimeLike | None:
+        """Return the underlying runtime or runtime-like mock if available.
+
+        This property returns the internal runtime regardless of whether
+        it's a full GraphRuntime or a test mock implementing GraphRuntimeLike.
+        Use this for testing scenarios where you need to verify the stored
+        runtime reference.
+
+        Returns
+        -------
+        GraphRuntime | GraphRuntimeLike | None
+            The runtime or runtime-like mock, or None if not yet built.
+        """
+        return self._runtime_internal
 
     @property
     def call_graph(self) -> nx.DiGraph | None:
@@ -342,8 +439,8 @@ class GraphProvider(LazyResource[GraphResources]):
         GraphBackendConfig | None
             The backend configuration, or None if runtime not built.
         """
-        if self._runtime is not None:
-            return self._runtime.backend
+        if self._runtime_internal is not None:
+            return self._runtime_internal.backend
         return None
 
     @property
@@ -355,13 +452,13 @@ class GraphProvider(LazyResource[GraphResources]):
         bool
             True if GPU execution is enabled, False otherwise.
         """
-        if self._runtime is not None:
-            return self._runtime.use_gpu
+        if self._runtime_internal is not None:
+            return self._runtime_internal.use_gpu
         return False
 
 
 def _ensure_graph(
-    runtime: GraphRuntime,
+    runtime: GraphRuntime | GraphRuntimeLike,
     graph_attr: str,
 ) -> nx.DiGraph | nx.Graph | None:
     """Ensure a specific graph is loaded.

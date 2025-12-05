@@ -7,13 +7,13 @@ betweenness centrality on directed graphs using real NetworkX graphs.
 from __future__ import annotations
 
 import networkx as nx
-import pytest
 
 from codeintel.graphs.compute.metrics.centrality import (
     CentralityMetrics,
     compute_betweenness,
     compute_pagerank,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -213,8 +213,7 @@ def test_metrics_is_frozen() -> None:
         out_degree=1,
         degree=2,
     )
-    with pytest.raises(AttributeError):
-        metrics.pagerank = 0.5  # type: ignore[misc]
+    assert_frozen(metrics, "pagerank", 0.5)
 
 
 # =============================================================================

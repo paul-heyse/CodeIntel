@@ -7,6 +7,7 @@ interface.
 Command Groups
 --------------
 - **pipeline**: Pipeline orchestration (run-full, run-op, run, list-steps, deps, status)
+- **build**: Build system commands (run, status) for minimal-work target computation
 - **op**: List and invoke serving operations
 - **dataset**: Dataset inspection and verification
 - **datasets**: Extended dataset management (lint, diff, snapshot, scaffold, catalog)
@@ -49,12 +50,19 @@ Example Usage
 
     # Generate dataset catalog
     codeintel datasets catalog
+
+    # Build specific targets with dependency resolution
+    codeintel build run function_metrics
+
+    # Show build target status
+    codeintel build status
 """
 
 from __future__ import annotations
 
 import typer
 
+from codeintel.cli.commands.build import build_app
 from codeintel.cli.commands.datasets import datasets_ext_app
 from codeintel.cli.commands.docs import docs_app
 from codeintel.cli.commands.graphs import graphs_app
@@ -87,6 +95,7 @@ app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(op_app, name="op")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(serve_app, name="serve")
+app.add_typer(build_app, name="build")
 
 # Migrated commands from legacy CLI
 app.add_typer(ingest_app, name="ingest")
@@ -106,6 +115,7 @@ def main() -> None:
 
 __all__ = [
     "app",
+    "build_app",
     "dataset_app",
     "datasets_ext_app",
     "docs_app",

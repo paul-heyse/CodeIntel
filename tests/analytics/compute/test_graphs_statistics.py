@@ -7,7 +7,6 @@ on directed graphs and the type-safe NetworkX wrappers.
 from __future__ import annotations
 
 import networkx as nx
-import pytest
 
 from codeintel.graphs.compute.metrics.statistics import (
     GraphStatistics,
@@ -19,6 +18,7 @@ from codeintel.graphs.compute.metrics.statistics import (
     get_out_degree_values,
     get_out_degrees,
 )
+from tests._helpers import assert_frozen
 
 # =============================================================================
 # Constants
@@ -242,8 +242,7 @@ def test_statistics_is_frozen() -> None:
         weakly_connected_components=EXPECTED_WCC_1,
         is_dag=True,
     )
-    with pytest.raises(AttributeError):
-        stats.node_count = 10  # type: ignore[misc]
+    assert_frozen(stats, "node_count", 10)
 
 
 # =============================================================================

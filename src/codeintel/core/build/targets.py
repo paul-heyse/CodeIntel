@@ -77,12 +77,14 @@ class TargetGraph:
     Examples
     --------
     >>> graph = TargetGraph()
-    >>> graph.register(OutputTarget(
-    ...     name="modules",
-    ...     module="ingestion",
-    ...     plugin="repo_scan",
-    ...     tables=("core.modules",),
-    ... ))
+    >>> graph.register(
+    ...     OutputTarget(
+    ...         name="modules",
+    ...         module="ingestion",
+    ...         plugin="repo_scan",
+    ...         tables=("core.modules",),
+    ...     )
+    ... )
     >>> "modules" in graph
     True
     """

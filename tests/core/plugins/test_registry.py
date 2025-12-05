@@ -25,6 +25,7 @@ from codeintel.core.plugins.registry.base import (
     RegistrablePlugin,
 )
 from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from tests._helpers import assert_frozen
 
 # Test constants
 EXPECTED_PLUGIN_COUNT = 2
@@ -151,8 +152,7 @@ def test_plugin_skip_is_frozen() -> None:
     """Verify PluginSkip is immutable."""
     skip = PluginSkip(name="test", reason="test")
 
-    with pytest.raises(AttributeError):
-        skip.name = "modified"  # type: ignore[misc]
+    assert_frozen(skip, "name", "modified")
 
 
 def test_plugin_skip_common_reasons() -> None:

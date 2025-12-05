@@ -87,7 +87,7 @@ class RetryPolicy:
     use_jitter: bool = True
     log_retries: bool = True
 
-    def _get_wait_strategy(self) -> wait_exponential | wait_random_exponential:
+    def get_wait_strategy(self) -> wait_exponential | wait_random_exponential:
         """Return the appropriate wait strategy based on configuration.
 
         Returns
@@ -105,7 +105,7 @@ class RetryPolicy:
             max=self.backoff_max_s,
         )
 
-    def _get_stop_strategy(self) -> stop_base:
+    def get_stop_strategy(self) -> stop_base:
         """Return the stop strategy combining attempts and delay limits.
 
         Returns
@@ -115,7 +115,7 @@ class RetryPolicy:
         """
         return stop_after_attempt(self.max_attempts) | stop_after_delay(self.max_delay_s)
 
-    def _get_before_sleep(self) -> Callable[[RetryCallState], None] | None:
+    def get_before_sleep(self) -> Callable[[RetryCallState], None] | None:
         """Return the before_sleep callback for logging.
 
         Returns
@@ -146,10 +146,10 @@ class RetryPolicy:
         ...         step2()  # Both steps retry together
         """
         return Retrying(
-            stop=self._get_stop_strategy(),
-            wait=self._get_wait_strategy(),
+            stop=self.get_stop_strategy(),
+            wait=self.get_wait_strategy(),
             retry=retry_if_exception_type(self.retryable_exceptions),
-            before_sleep=self._get_before_sleep(),
+            before_sleep=self.get_before_sleep(),
             reraise=True,
         )
 
@@ -169,10 +169,10 @@ class RetryPolicy:
         ...         await async_operation()
         """
         return AsyncRetrying(
-            stop=self._get_stop_strategy(),
-            wait=self._get_wait_strategy(),
+            stop=self.get_stop_strategy(),
+            wait=self.get_wait_strategy(),
             retry=retry_if_exception_type(self.retryable_exceptions),
-            before_sleep=self._get_before_sleep(),
+            before_sleep=self.get_before_sleep(),
             reraise=True,
         )
 
@@ -194,10 +194,10 @@ class RetryPolicy:
         ...     pass
         """
         return retry(
-            stop=self._get_stop_strategy(),
-            wait=self._get_wait_strategy(),
+            stop=self.get_stop_strategy(),
+            wait=self.get_wait_strategy(),
             retry=retry_if_exception_type(self.retryable_exceptions),
-            before_sleep=self._get_before_sleep(),
+            before_sleep=self.get_before_sleep(),
             reraise=True,
         )
 

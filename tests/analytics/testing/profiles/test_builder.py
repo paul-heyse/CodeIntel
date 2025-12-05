@@ -32,7 +32,7 @@ from codeintel.analytics.testing.profiles.builder import (
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config import ConfigBuilder
-from tests._helpers import TestContext
+from tests._helpers import TestContext, assert_frozen
 
 # =============================================================================
 # Test Constants
@@ -88,8 +88,7 @@ class TestBehavioralProfile:
             raise_count=0,
             markers=[],
         )
-        with pytest.raises(AttributeError):
-            profile.assert_count = 10  # type: ignore[misc]
+        assert_frozen(profile, "assert_count", 10)
 
 
 class TestEmptySentinels:
