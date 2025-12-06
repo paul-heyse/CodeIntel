@@ -1,0 +1,12 @@
+{
+  "dataset": "cfg_block_metrics",
+  "artifact": "cfg_block_metrics.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "8b771a62be16b6fed163a33cc2bad4862c7d602d5cd91fb5035560ae9ece88ce",
+  "started_at": "2025-12-06T13:46:17.513863+00:00",
+  "completed_at": "2025-12-06T13:46:17.608143+00:00"
+}

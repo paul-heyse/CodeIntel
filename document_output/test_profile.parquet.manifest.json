@@ -1,0 +1,12 @@
+{
+  "dataset": "test_profile",
+  "artifact": "test_profile.parquet",
+  "schema_id": "test_profile",
+  "schema_version": "1",
+  "schema_digest": "f8f393a92edb9c85958e7166940382713ca774a944088643d91785c25462f38e",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "a0506286864c586ededb410cfc521e668d3c7892c34ae19b9c3971a316ed3a5f",
+  "started_at": "2025-12-06T13:46:18.512000+00:00",
+  "completed_at": "2025-12-06T13:46:18.514147+00:00"
+}

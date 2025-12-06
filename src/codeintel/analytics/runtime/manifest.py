@@ -1,18 +1,45 @@
-"""Shared manifest schema for analytics runtimes."""
+"""Shared manifest schema for analytics runtimes.
+
+This module provides manifest types for analytics runs, using core plugin
+types where possible and extending them for analytics-specific needs.
+
+Core Type Mappings
+------------------
+- ``PluginExecutionRecord`` from core is used directly for execution records
+- ``PluginSkip`` from core is extended with analytics-specific fields
+- ``BaseExecutionReport`` from core is extended for analytics run reports
+- ``AnalyticsScope`` is analytics-specific (time windows, labels)
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 
-from codeintel.core.plugins.types.result import PluginStatus
+from codeintel.core.plugins.registry.base import PluginSkip
+from codeintel.core.plugins.types.report import BaseExecutionReport
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
 
 
 @dataclass(frozen=True)
 class AnalyticsScope:
-    """Describe the scope of an analytics run."""
+    """Describe the scope of an analytics run.
+
+    This is analytics-specific, supporting time-windowed queries
+    and label-based filtering not found in core plugin types.
+
+    Attributes
+    ----------
+    paths
+        File paths included in the scope.
+    modules
+        Module names included in the scope.
+    time_window
+        Optional start/end datetime for time-bounded analysis.
+    labels
+        Key-value labels for filtering.
+    """
 
     paths: tuple[str, ...] = ()
     modules: tuple[str, ...] = ()
@@ -21,17 +48,43 @@ class AnalyticsScope:
 
 
 @dataclass(frozen=True)
-class AnalyticsSkippedStep:
-    """Reasoned skip for a planned step."""
+class AnalyticsSkippedStep(PluginSkip):
+    """Extended skip metadata with analytics-specific kind field.
 
-    name: str
-    reason: str
+    Extend core ``PluginSkip`` with an optional ``kind`` field for
+    categorizing skipped analytics steps.
+
+    Attributes
+    ----------
+    name
+        Step name (inherited from PluginSkip).
+    reason
+        Reason for skipping (inherited from PluginSkip).
+    kind
+        Optional step kind/category.
+    """
+
     kind: str | None = None
 
 
 @dataclass(frozen=True)
 class AnalyticsPlanInfo:
-    """Planning metadata for an analytics run."""
+    """Planning metadata for an analytics run.
+
+    This is a data-only view of a plan, containing step names rather than
+    actual plugin instances. Used for manifest serialization.
+
+    Attributes
+    ----------
+    plan_id
+        Unique identifier for the plan.
+    ordered_steps
+        Step names in execution order.
+    skipped_steps
+        Steps excluded from execution with reasons.
+    dep_graph
+        Dependency relationships between steps.
+    """
 
     plan_id: str | None = None
     ordered_steps: tuple[str, ...] = ()
@@ -39,43 +92,41 @@ class AnalyticsPlanInfo:
     dep_graph: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-# AnalyticsStatus is semantically identical to PluginStatus.
-# Kept as alias for backward compatibility.
-AnalyticsStatus = PluginStatus
-
-
 @dataclass(frozen=True)
-class AnalyticsRunRecord:
-    """Execution record for a single step in a run."""
+class AnalyticsRunReport(BaseExecutionReport):
+    """Manifest-ready view of an analytics run.
 
-    name: str
-    kind: str
-    status: AnalyticsStatus
-    started_at: datetime
-    ended_at: datetime
-    duration_ms: float
-    attempts: int = 1
-    partial: bool = False
-    error: str | None = None
-    meta: Mapping[str, Any] = field(default_factory=dict)
+    Extend ``BaseExecutionReport`` with analytics-specific fields for
+    repository context, scope, plan info, and tags.
 
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    scope
+        Analytics scope describing what was analyzed.
+    plan
+        Planning information for the run.
+    tags
+        Key-value tags for categorization.
+    """
 
-@dataclass(frozen=True)
-class AnalyticsRunReport:
-    """Manifest-ready view of an analytics run."""
-
-    repo: str
-    commit: str
-    run_id: str
-    scope: AnalyticsScope
-    records: tuple[AnalyticsRunRecord, ...]
-    plan: AnalyticsPlanInfo
+    repo: str = ""
+    commit: str = ""
+    scope: AnalyticsScope = field(default_factory=AnalyticsScope)
+    plan: AnalyticsPlanInfo = field(default_factory=AnalyticsPlanInfo)
     tags: Mapping[str, str] = field(default_factory=dict)
 
 
 def encode_manifest(report: AnalyticsRunReport) -> dict[str, object]:
-    """
-    Encode an AnalyticsRunReport into a JSON-serializable manifest payload.
+    """Encode an AnalyticsRunReport into a JSON-serializable manifest payload.
+
+    Parameters
+    ----------
+    report
+        The analytics run report to encode.
 
     Returns
     -------
@@ -118,18 +169,25 @@ def encode_manifest(report: AnalyticsRunReport) -> dict[str, object]:
     }
 
 
-def _encode_record(record: AnalyticsRunRecord) -> dict[str, object]:
-    """
-    Encode a single AnalyticsRunRecord into manifest-friendly form.
+def _encode_record(record: PluginExecutionRecord) -> dict[str, object]:
+    """Encode a single PluginExecutionRecord into manifest-friendly form.
+
+    Parameters
+    ----------
+    record
+        The execution record to encode.
 
     Returns
     -------
     dict[str, object]
         Serialized record payload.
     """
+    # Extract kind from meta if present (analytics steps store it there)
+    kind = record.meta.get("kind", "") if record.meta else ""
+
     payload: dict[str, object] = {
-        "name": record.name,
-        "kind": record.kind,
+        "name": record.plugin_name,
+        "kind": kind,
         "status": record.status,
         "attempts": record.attempts,
         "started_at": record.started_at.isoformat(),
@@ -137,7 +195,7 @@ def _encode_record(record: AnalyticsRunRecord) -> dict[str, object]:
         "duration_ms": record.duration_ms,
         "partial": record.partial,
         "error": record.error,
-        "meta": dict(record.meta),
+        "meta": dict(record.meta) if record.meta else {},
     }
     contracts = record.meta.get("contracts") if isinstance(record.meta, dict) else None
     if contracts is not None:
@@ -147,10 +205,10 @@ def _encode_record(record: AnalyticsRunRecord) -> dict[str, object]:
 
 __all__ = [
     "AnalyticsPlanInfo",
-    "AnalyticsRunRecord",
     "AnalyticsRunReport",
     "AnalyticsScope",
     "AnalyticsSkippedStep",
-    "AnalyticsStatus",
+    "PluginExecutionRecord",
+    "PluginStatus",
     "encode_manifest",
 ]

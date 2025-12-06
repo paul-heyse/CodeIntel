@@ -1,0 +1,12 @@
+{
+  "dataset": "symbol_use_edges",
+  "artifact": "symbol_use_edges.parquet",
+  "schema_id": "symbol_use_edges",
+  "schema_version": "1",
+  "schema_digest": "849e85cead5093a2c52431b14809245347e36a699bf153bb4cb60efaeaf4889e",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "1555acae943e00a4f091f16229a2a3301aeea0901feb605c01381eed0eb266b5",
+  "started_at": "2025-12-06T13:46:18.484760+00:00",
+  "completed_at": "2025-12-06T13:46:18.485868+00:00"
+}

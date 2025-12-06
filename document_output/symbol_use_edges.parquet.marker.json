@@ -1,0 +1,8 @@
+{
+  "dataset": "symbol_use_edges",
+  "row_count": 0,
+  "schema_version": "1",
+  "validation_profile": "strict",
+  "schema_digest": "849e85cead5093a2c52431b14809245347e36a699bf153bb4cb60efaeaf4889e",
+  "exported_at": "2025-12-06T13:46:18.486025+00:00"
+}

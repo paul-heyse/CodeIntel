@@ -277,9 +277,11 @@ def _seed_symbol_use_edges(gateway: StorageGateway) -> None:
 
     The tuple format is: (symbol, def_path, use_path, same_file, same_module).
     """
-    gateway.graph.insert_symbol_use_edges([
-        ("pkg.a.callee", "pkg/a.py", "pkg/b.py", False, False),
-    ])
+    gateway.graph.insert_symbol_use_edges(
+        [
+            ("pkg.a.callee", "pkg/a.py", "pkg/b.py", False, False),
+        ]
+    )
 
 
 def _load_pkg_for_coverage(repo_root: Path) -> None:

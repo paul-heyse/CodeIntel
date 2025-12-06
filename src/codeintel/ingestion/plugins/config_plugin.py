@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
@@ -76,11 +76,18 @@ class ConfigIngestPlugin(TargetPlugin):
             commit=ctx.commit,
         )
 
-        if not result.success:
-            errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            return TargetResult.failed(f"Config ingest failed: {errors}")
+        # Log parse errors as warnings but don't fail if we processed some files
+        if result.errors:
+            for error in result.errors:
+                log.warning("Config parse warning: %s", error)
 
-        return TargetResult.succeeded(row_counts=result.table_counts or {})
+        # Consider it a success if we wrote any rows, even with some parse failures
+        if result.rows_written > 0 or not result.errors:
+            return TargetResult.succeeded(row_counts=result.table_counts or {})
+
+        # Only fail if there were errors AND no data was written
+        errors = "; ".join(result.errors)
+        return TargetResult.failed(f"Config ingest failed: {errors}")
 
 
 __all__ = ["ConfigIngestPlugin"]

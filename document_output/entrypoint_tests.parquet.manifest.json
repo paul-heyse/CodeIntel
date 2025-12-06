@@ -1,0 +1,12 @@
+{
+  "dataset": "entrypoint_tests",
+  "artifact": "entrypoint_tests.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "3d68f09be3f7f3287663ffc18508bf5cb2c015f30ff1062bf203be8a6371bbe6",
+  "started_at": "2025-12-06T13:46:18.082704+00:00",
+  "completed_at": "2025-12-06T13:46:18.083993+00:00"
+}

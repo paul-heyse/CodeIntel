@@ -1,0 +1,12 @@
+{
+  "dataset": "config_projection_key_edges",
+  "artifact": "config_projection_key_edges.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "cd9523f7becd603bab43dc485bcda6578b00ff04232a860e40ec2039bbabbf57",
+  "started_at": "2025-12-06T13:46:17.724338+00:00",
+  "completed_at": "2025-12-06T13:46:17.725211+00:00"
+}

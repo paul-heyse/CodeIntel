@@ -1,0 +1,12 @@
+{
+  "dataset": "call_graph_edges",
+  "artifact": "call_graph_edges.parquet",
+  "schema_id": "call_graph_edges",
+  "schema_version": "1",
+  "schema_digest": "ae7f743b7e10418bb2149ed950e824feb0c8b2c294335f816ff14dc6508bb845",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "443557a92ad8c77fd421505eeb9090f02f30a96ea71f0198baf6bbf4cf877c2c",
+  "started_at": "2025-12-06T13:46:17.453404+00:00",
+  "completed_at": "2025-12-06T13:46:17.505042+00:00"
+}

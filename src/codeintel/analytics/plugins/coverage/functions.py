@@ -29,7 +29,7 @@ class CoverageFunctionsPlugin(TargetPlugin):
     - analytics.coverage_functions: Function-level coverage metrics
     """
 
-    plugin_name: ClassVar[str] = "coverage.functions"
+    plugin_name: ClassVar[str] = "coverage_functions"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Aggregate line coverage to function-level metrics."
 

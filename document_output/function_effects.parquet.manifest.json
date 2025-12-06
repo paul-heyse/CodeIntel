@@ -1,0 +1,12 @@
+{
+  "dataset": "function_effects",
+  "artifact": "function_effects.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "a999ba3543f996aa3c256f722ff79322aacba3f09f87e68443806df4e06edc18",
+  "started_at": "2025-12-06T13:46:18.145620+00:00",
+  "completed_at": "2025-12-06T13:46:18.163643+00:00"
+}

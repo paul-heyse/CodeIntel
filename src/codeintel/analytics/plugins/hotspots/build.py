@@ -30,7 +30,7 @@ class HotspotsPlugin(TargetPlugin):
     - analytics.hotspots: File-level hotspot scores
     """
 
-    plugin_name: ClassVar[str] = "hotspots.build"
+    plugin_name: ClassVar[str] = "hotspots"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Compute file-level hotspots from AST metrics and Git churn."

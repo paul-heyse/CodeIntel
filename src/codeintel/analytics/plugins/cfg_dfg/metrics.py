@@ -1,0 +1,111 @@
+"""CFG/DFG metrics plugin.
+
+Compute control-flow and data-flow graph metrics per function.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, ClassVar
+
+from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
+
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
+
+log = logging.getLogger(__name__)
+
+
+class CfgDfgMetricsPlugin(TargetPlugin):
+    """Compute CFG and DFG metrics per function.
+
+    Analyzes control-flow graphs and data-flow graphs to produce
+    function-level and block-level metrics including:
+    - Block counts, edge counts, cycle detection
+    - Centrality measures (betweenness, closeness, eigenvector)
+    - Loop analysis (nesting depth, headers)
+    - Dominance analysis (dominator tree, frontiers)
+
+    Outputs
+    -------
+    - analytics.cfg_function_metrics: CFG metrics per function
+    - analytics.cfg_block_metrics: CFG metrics per block
+    - analytics.cfg_function_metrics_ext: Extended CFG metrics
+    - analytics.dfg_function_metrics: DFG metrics per function
+    - analytics.dfg_block_metrics: DFG metrics per block
+    - analytics.dfg_function_metrics_ext: Extended DFG metrics
+    """
+
+    plugin_name: ClassVar[str] = "cfg_dfg_metrics"
+    plugin_version: ClassVar[str] = "3.0.0"
+    plugin_description: ClassVar[str] = (
+        "Compute control-flow and data-flow graph metrics per function."
+    )
+
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+        """Execute CFG/DFG metrics computation.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        TargetResult
+            Execution result with row counts.
+        """
+        _ = self  # Protocol method requires instance
+
+        repo = ctx.snapshot.repo
+        commit = ctx.snapshot.commit
+
+        row_counts: dict[str, int] = {}
+
+        # Compute CFG metrics
+        try:
+            log.info("Computing CFG metrics for %s@%s", repo, commit)
+            compute_cfg_metrics(ctx.gateway, repo=repo, commit=commit)
+
+            # Count rows written
+            for table in (
+                "analytics.cfg_function_metrics",
+                "analytics.cfg_block_metrics",
+                "analytics.cfg_function_metrics_ext",
+            ):
+                row = ctx.gateway.con.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    [repo, commit],
+                ).fetchone()
+                row_counts[table] = int(row[0]) if row else 0
+        except (RuntimeError, ValueError, OSError) as e:
+            log.warning("CFG metrics computation failed: %s", e)
+
+        # Compute DFG metrics
+        try:
+            log.info("Computing DFG metrics for %s@%s", repo, commit)
+            compute_dfg_metrics(ctx.gateway, repo=repo, commit=commit)
+
+            # Count rows written
+            for table in (
+                "analytics.dfg_function_metrics",
+                "analytics.dfg_block_metrics",
+                "analytics.dfg_function_metrics_ext",
+            ):
+                row = ctx.gateway.con.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    [repo, commit],
+                ).fetchone()
+                row_counts[table] = int(row[0]) if row else 0
+        except (RuntimeError, ValueError, OSError) as e:
+            log.warning("DFG metrics computation failed: %s", e)
+
+        total_rows = sum(row_counts.values())
+        log.info("CFG/DFG metrics completed: %d total rows", total_rows)
+
+        return TargetResult.succeeded(row_counts=row_counts)
+
+
+__all__ = ["CfgDfgMetricsPlugin"]

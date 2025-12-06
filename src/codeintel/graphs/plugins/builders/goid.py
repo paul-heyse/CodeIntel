@@ -86,10 +86,10 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
     try:
         rows = con.execute(
             """
-            SELECT DISTINCT rel_path
+            SELECT DISTINCT path
             FROM core.modules
             WHERE repo = ? AND commit = ?
-            ORDER BY rel_path
+            ORDER BY path
             """,
             [repo, commit],
         ).fetchall()
@@ -273,25 +273,9 @@ def _persist_goid_rows(
         return 0
 
     storage = IngestStorageService.from_gateway(gateway)
-    tuples = [
-        (
-            row.goid_h128,
-            row.urn,
-            row.repo,
-            row.commit,
-            row.rel_path,
-            row.language,
-            row.kind,
-            row.qualname,
-            row.start_line,
-            row.end_line,
-            row.created_at,
-        )
-        for row in rows
-    ]
     storage.run_batch(
         "core.goids",
-        tuples,
+        [row.to_tuple() for row in rows],
         delete_params=[repo, commit],
         scope="goids",
     )
@@ -326,28 +310,9 @@ def _persist_crosswalk_rows(
         return 0
 
     storage = IngestStorageService.from_gateway(gateway)
-    tuples = [
-        (
-            row.repo,
-            row.commit,
-            row.goid,
-            row.lang,
-            row.module_path,
-            row.file_path,
-            row.start_line,
-            row.end_line,
-            row.scip_symbol,
-            row.ast_qualname,
-            row.cst_node_id,
-            row.chunk_id,
-            row.symbol_id,
-            row.updated_at,
-        )
-        for row in rows
-    ]
     storage.run_batch(
         "core.goid_crosswalk",
-        tuples,
+        [row.to_tuple() for row in rows],
         delete_params=[repo, commit],
         scope="goid_crosswalk",
     )
@@ -396,10 +361,11 @@ class GoidBuilderPlugin(TargetPlugin):
 
         try:
             # Step 1: Get source root (prefer snapshot, then db, then cwd)
-            source_root = (
-                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
-            )
-            if source_root == Path.cwd():
+            source_root = ctx.snapshot.repo_root
+            if not source_root:
+                source_root = _get_source_root(gateway, repo, commit)
+            if not source_root:
+                source_root = Path.cwd()
                 log.warning("goid_builder: No source root found, using current directory")
 
             # Step 2: Get tracked files

@@ -1,0 +1,12 @@
+{
+  "dataset": "graph_stats",
+  "artifact": "graph_stats.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "568a5d7721a56383cdab7d8ae904fc83325ef153e076d549f7a4dde9dd8520d2",
+  "started_at": "2025-12-06T13:46:18.431633+00:00",
+  "completed_at": "2025-12-06T13:46:18.432946+00:00"
+}

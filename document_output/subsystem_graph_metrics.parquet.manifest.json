@@ -1,0 +1,12 @@
+{
+  "dataset": "subsystem_graph_metrics",
+  "artifact": "subsystem_graph_metrics.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "b5e95e0c71a0d67c6c665d93b085e79284b944885f4571fa88df97a364139b18",
+  "started_at": "2025-12-06T13:46:18.473478+00:00",
+  "completed_at": "2025-12-06T13:46:18.476123+00:00"
+}

@@ -28,7 +28,7 @@ class FunctionMetricsPlugin(TargetPlugin):
     - analytics.function_types: Type annotation data
     """
 
-    plugin_name: ClassVar[str] = "functions.metrics"
+    plugin_name: ClassVar[str] = "function_metrics"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute function complexity and type coverage metrics."
 

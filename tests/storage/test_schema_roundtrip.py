@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import datetime
 from pathlib import Path
@@ -72,9 +73,10 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
 @given(st.from_type(SymbolUseRow))
 def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
-    """Generate schemas should align with symbol use TypedDict and serializer."""
+    """Generate schemas should align with symbol use dataclass and serializer."""
     schema = json_schema_from_typeddict(SymbolUseRow)
-    validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
+    row_dict = dataclasses.asdict(row)
+    validate_row_with_schema({key: _json_safe(value) for key, value in row_dict.items()}, schema)
     values = symbol_use_to_tuple(row)
     contract = get_dataset_contracts_by_table_key()["graph.symbol_use_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0

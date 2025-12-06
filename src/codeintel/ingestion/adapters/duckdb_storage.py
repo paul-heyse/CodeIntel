@@ -6,6 +6,7 @@ macro-based batch inserts, schema management, and query execution.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -480,6 +481,14 @@ class DuckDBStorageAdapter:
         self.con.execute("DROP TABLE IF EXISTS temp_ingest_values")
         schema_rel.limit(0).create("temp_ingest_values")
         df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
+
+        # Convert dict/list columns to JSON strings for DuckDB compatibility
+        for col in df.columns:
+            if df[col].apply(lambda x: isinstance(x, (dict, list))).any():
+                df[col] = df[col].apply(
+                    lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
+                )
+
         self.con.append("temp_ingest_values", df, by_name=True)
 
         try:

@@ -11,6 +11,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from codeintel.core.data_models.rows import DFGEdgeRow
 from codeintel.graphs.compute.cfg import BasicBlock, CFGEdge
 
 
@@ -41,40 +42,6 @@ class DFGEdge:
     function_goid: int
     src_block_idx: int
     dst_block_idx: int
-    src_var: str
-    dst_var: str
-    edge_kind: str
-    via_phi: bool
-    use_kind: str
-
-
-@dataclass(frozen=True)
-class DFGEdgeRow:
-    """Row data for graph.dfg_edges table.
-
-    Attributes
-    ----------
-    function_goid_h128
-        Function GOID.
-    src_block_id
-        Source block identifier.
-    dst_block_id
-        Destination block identifier.
-    src_var
-        Source variable name.
-    dst_var
-        Destination variable name.
-    edge_kind
-        Edge kind.
-    via_phi
-        Whether edge passes through phi node.
-    use_kind
-        Use kind descriptor.
-    """
-
-    function_goid_h128: int
-    src_block_id: str
-    dst_block_id: str
     src_var: str
     dst_var: str
     edge_kind: str

@@ -1,0 +1,12 @@
+{
+  "dataset": "import_graph_edges",
+  "artifact": "import_graph_edges.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "bf0b62ef2dd9045f5f34697ff50f32952aee2821614e318a98953fbf66f040f0",
+  "started_at": "2025-12-06T13:46:18.438757+00:00",
+  "completed_at": "2025-12-06T13:46:18.446481+00:00"
+}

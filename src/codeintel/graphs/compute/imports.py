@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import networkx as nx
 
+from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
+
 
 @dataclass(frozen=True)
 class ImportEdge:
@@ -28,71 +30,6 @@ class ImportEdge:
 
     src_module: str
     dst_module: str
-
-
-@dataclass(frozen=True)
-class ImportModuleRow:
-    """Row data for graph.import_modules table.
-
-    Attributes
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    module
-        Module name.
-    scc_id
-        Strongly connected component ID.
-    component_size
-        Size of the SCC.
-    layer
-        Topological layer.
-    cycle_group
-        Cycle group ID.
-    """
-
-    repo: str
-    commit: str
-    module: str
-    scc_id: int
-    component_size: int
-    layer: int | None
-    cycle_group: int
-
-
-@dataclass(frozen=True)
-class ImportEdgeRow:
-    """Row data for graph.import_graph_edges table.
-
-    Attributes
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    src_module
-        Source module.
-    dst_module
-        Destination module.
-    src_fan_out
-        Fan-out of source module.
-    dst_fan_in
-        Fan-in of destination module.
-    cycle_group
-        Cycle group ID.
-    module_layer
-        Layer of the source module.
-    """
-
-    repo: str
-    commit: str
-    src_module: str
-    dst_module: str
-    src_fan_out: int
-    dst_fan_in: int
-    cycle_group: int
-    module_layer: int | None
 
 
 @dataclass(frozen=True)

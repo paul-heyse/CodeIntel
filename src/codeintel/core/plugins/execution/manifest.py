@@ -407,9 +407,7 @@ def build_manifest_entry(
         Manifest entry suitable for storage.
     """
     row_counts = (
-        dict(record.result.row_counts)
-        if record.result and record.result.row_counts
-        else None
+        dict(record.result.row_counts) if record.result and record.result.row_counts else None
     )
     return {
         "input_hash": input_hash or record.meta.get("input_hash"),

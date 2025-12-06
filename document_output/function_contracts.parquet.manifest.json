@@ -1,0 +1,12 @@
+{
+  "dataset": "function_contracts",
+  "artifact": "function_contracts.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "f3d5d5330da167f91790bdfcb564ece64b9dacdde0cb7f828f40ae95be5adafa",
+  "started_at": "2025-12-06T13:46:18.129555+00:00",
+  "completed_at": "2025-12-06T13:46:18.145044+00:00"
+}

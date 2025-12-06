@@ -1,0 +1,12 @@
+{
+  "dataset": "test_graph_metrics_tests",
+  "artifact": "test_graph_metrics_tests.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "78f437a32319d9fe9cd3c163ac4c16d7e44d90901457c7999c7739dd2a54343a",
+  "started_at": "2025-12-06T13:46:18.510031+00:00",
+  "completed_at": "2025-12-06T13:46:18.511606+00:00"
+}

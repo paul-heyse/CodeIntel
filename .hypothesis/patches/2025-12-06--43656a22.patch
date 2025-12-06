@@ -1,0 +1,24 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.7 <no-reply@hypothesis.works>
+Date: Sat, 06 Dec 2025 09:50:53
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -71,6 +71,15 @@
+ 
+ @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
+ @given(st.from_type(SymbolUseRow))
++@example(
++    row=SymbolUseRow(symbol='',
++     def_path='',
++     use_path='',
++     same_file=False,
++     same_module=False,
++     def_goid_h128=None,
++     use_goid_h128=None),  # or any other generated value
++).via('discovered failure')
+ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
+     """Generate schemas should align with symbol use TypedDict and serializer."""
+     schema = json_schema_from_typeddict(SymbolUseRow)

@@ -1,0 +1,12 @@
+{
+  "dataset": "test_catalog",
+  "artifact": "test_catalog.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "5d38539fea61ad4eabf237591a2a949135c05091c44dfd7d4cba46f2c17d7eb4",
+  "started_at": "2025-12-06T13:46:18.486156+00:00",
+  "completed_at": "2025-12-06T13:46:18.487251+00:00"
+}

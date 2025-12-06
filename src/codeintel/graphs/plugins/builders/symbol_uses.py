@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import SymbolUsesStepConfig
-from codeintel.config.datasets import SymbolUseRow, symbol_use_to_tuple
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
@@ -55,14 +54,14 @@ def build_scip_candidates(
     """
     con = gateway.con
     try:
-        # Load occurrences from scip.occurrences
+        # Load occurrences from core.scip_occurrences
         rows = con.execute(
             """
             SELECT DISTINCT
                 o.symbol,
                 o.rel_path,
                 o.roles
-            FROM scip.occurrences o
+            FROM core.scip_occurrences o
             WHERE o.repo = ? AND o.commit = ?
             ORDER BY o.symbol, o.rel_path
             """,
@@ -128,7 +127,7 @@ def _load_symbol_occurrences(
                 rel_path,
                 start_line,
                 roles
-            FROM scip.occurrences
+            FROM core.scip_occurrences
             WHERE repo = ? AND commit = ?
             ORDER BY symbol, rel_path, start_line
             """,
@@ -211,23 +210,13 @@ def _persist_symbol_use_edges(
     if not edges:
         return 0
 
-    rows: list[SymbolUseRow] = [
-        SymbolUseRow(
-            symbol=edge.symbol,
-            def_path=edge.def_path,
-            use_path=edge.use_path,
-            same_file=edge.same_file,
-            same_module=edge.same_module,
-            def_goid_h128=edge.def_goid,
-            use_goid_h128=edge.use_goid,
-        )
-        for edge in edges
-    ]
+    # Convert SymbolUseEdge to SymbolUseRow using edges_to_rows
+    rows = symbols_compute.edges_to_rows(edges)
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.symbol_use_edges",
-        [symbol_use_to_tuple(row) for row in rows],
+        [row.to_tuple() for row in rows],
         delete_params=[repo, commit],
         scope="symbol_use_edges",
     )

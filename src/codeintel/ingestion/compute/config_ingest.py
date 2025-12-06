@@ -11,7 +11,6 @@ import json
 import logging
 import tomllib
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -186,6 +185,32 @@ def _parse_json(content: str) -> list[tuple[str, Any]] | None:
         return None
 
 
+def _get_config_format(path: Path) -> str:
+    """Get the configuration format from file extension.
+
+    Parameters
+    ----------
+    path
+        File path to check.
+
+    Returns
+    -------
+    str
+        Configuration format (yaml, json, toml, ini, env, or unknown).
+    """
+    suffix = path.suffix.lower()
+    format_map = {
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".json": "json",
+        ".toml": "toml",
+        ".ini": "ini",
+        ".cfg": "ini",
+        ".env": "env",
+    }
+    return format_map.get(suffix, "unknown")
+
+
 def _parse_config_file(path: Path, content: str) -> list[tuple[str, Any]] | None:
     """Parse a configuration file and return flattened key-value pairs.
 
@@ -272,7 +297,6 @@ class ConfigIngestStep:
         StepResult
             Execution result with row counts.
         """
-        created_at = datetime.now(UTC)
         all_rows: list[list[object]] = []
         errors: list[str] = []
 
@@ -286,11 +310,24 @@ class ConfigIngestStep:
                 errors.append(f"Failed to parse {record.rel_path}")
                 continue
 
-            for key, value in kvs:
-                value_str = str(value) if value is not None else None
-                value_type = type(value).__name__ if value is not None else "null"
+            # Determine config format from file extension
+            config_format = _get_config_format(record.file_path)
+
+            for key, _value in kvs:
+                # Schema expects: repo, commit, config_path, format, key,
+                # reference_paths, reference_modules, reference_count
+                # Reference tracking is not implemented yet, use empty defaults
                 all_rows.append(
-                    [repo, commit, record.rel_path, key, value_str, value_type, created_at]
+                    [
+                        repo,
+                        commit,
+                        record.rel_path,
+                        config_format,
+                        key,
+                        "[]",  # reference_paths (JSON)
+                        "[]",  # reference_modules (JSON)
+                        0,  # reference_count
+                    ]
                 )
 
         table_counts: dict[str, int] = {}
@@ -298,8 +335,8 @@ class ConfigIngestStep:
 
         if all_rows:
             scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.config_values", all_rows, scope=scope)
-            table_counts["core.config_values"] = result.rows_written
+            result = self._storage.write_batch("analytics.config_values", all_rows, scope=scope)
+            table_counts["analytics.config_values"] = result.rows_written
             total_rows = result.rows_written
 
         log.info(

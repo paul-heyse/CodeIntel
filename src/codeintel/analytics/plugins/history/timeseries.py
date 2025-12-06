@@ -5,6 +5,7 @@ This plugin aggregates analytics across commits into history timeseries.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import SnapshotGatewayResolver
 
+log = logging.getLogger(__name__)
+
 
 class HistoryTimeseriesPlugin(TargetPlugin):
     """Aggregate analytics across commits into history timeseries.
@@ -25,12 +28,15 @@ class HistoryTimeseriesPlugin(TargetPlugin):
     - Building time-based metrics
     - Tracking evolution patterns
 
+    This plugin requires special configuration (multi-commit analysis) and will
+    skip gracefully if the required parameters are not provided.
+
     Outputs
     -------
     - analytics.history_timeseries: Historical trends data
     """
 
-    plugin_name: ClassVar[str] = "history.timeseries"
+    plugin_name: ClassVar[str] = "history_timeseries"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Aggregate analytics across commits into history timeseries."
@@ -52,15 +58,23 @@ class HistoryTimeseriesPlugin(TargetPlugin):
         _ = self  # Protocol method requires instance
 
         # Get snapshot resolver from parameters (if available)
-        # This is a specialized resource that might need to be provided
+        # This is a specialized resource for multi-commit analysis
         snapshot_resolver = ctx.parameters.get_optional("history_snapshot_resolver", object)
         if snapshot_resolver is None:
-            return TargetResult.failed("history_snapshot_resolver is required in parameters")
+            log.info(
+                "Skipping history timeseries - history_snapshot_resolver not provided "
+                "(multi-commit analysis requires explicit configuration)"
+            )
+            return TargetResult.succeeded(row_counts={"analytics.history_timeseries": 0})
 
         # Get commits from parameters
         commits_raw = ctx.parameters.get_optional("commits", list)
         if not commits_raw:
-            return TargetResult.failed("commits is required in parameters for history timeseries")
+            log.info(
+                "Skipping history timeseries - commits list not provided "
+                "(multi-commit analysis requires explicit configuration)"
+            )
+            return TargetResult.succeeded(row_counts={"analytics.history_timeseries": 0})
         commits = tuple(str(c) for c in commits_raw)
 
         # Build config from context

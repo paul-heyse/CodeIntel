@@ -35,7 +35,7 @@ class ProfilesPlugin(TargetPlugin):
     - analytics.module_profile: Module profiles
     """
 
-    plugin_name: ClassVar[str] = "profiles.build"
+    plugin_name: ClassVar[str] = "profiles"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Build aggregated profiles for functions, files, and modules."

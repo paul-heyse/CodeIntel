@@ -1,0 +1,12 @@
+{
+  "dataset": "cfg_edges",
+  "artifact": "cfg_edges.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "613c9f7423ea43fbd860c7d020b5bb4fe9d17f2d0356b4b5ff16d4262db49c2b",
+  "started_at": "2025-12-06T13:46:17.667412+00:00",
+  "completed_at": "2025-12-06T13:46:17.687325+00:00"
+}

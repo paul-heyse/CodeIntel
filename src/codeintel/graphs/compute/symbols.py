@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from codeintel.core.data_models.rows import SymbolUseRow
+
 
 @dataclass(frozen=True)
 class SymbolOccurrence:
@@ -83,37 +85,6 @@ class SymbolUseEdge:
     same_module: bool
     def_goid: int | None = None
     use_goid: int | None = None
-
-
-@dataclass(frozen=True)
-class SymbolUseRow:
-    """Row data for graph.symbol_use_edges table.
-
-    Attributes
-    ----------
-    symbol
-        Symbol identifier.
-    def_path
-        Definition path.
-    use_path
-        Use path.
-    same_file
-        Whether same file.
-    same_module
-        Whether same module.
-    def_goid_h128
-        Definition GOID.
-    use_goid_h128
-        Use GOID.
-    """
-
-    symbol: str
-    def_path: str
-    use_path: str
-    same_file: bool
-    same_module: bool
-    def_goid_h128: int | None
-    use_goid_h128: int | None
 
 
 def build_def_map(occurrences: Sequence[SymbolOccurrence]) -> dict[str, str]:

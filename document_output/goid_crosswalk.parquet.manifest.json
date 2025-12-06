@@ -1,0 +1,12 @@
+{
+  "dataset": "goid_crosswalk",
+  "artifact": "goid_crosswalk.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "35a6c43acc8a6a7f171ed53cdeec0d635f2e5f93a60cdd3cbde8a58827b9bed8",
+  "started_at": "2025-12-06T13:46:18.322085+00:00",
+  "completed_at": "2025-12-06T13:46:18.335073+00:00"
+}

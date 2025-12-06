@@ -36,7 +36,7 @@ class ExternalDepsPlugin(TargetPlugin):
     - analytics.external_dependencies: Aggregated dependencies
     """
 
-    plugin_name: ClassVar[str] = "deps.external"
+    plugin_name: ClassVar[str] = "external_deps"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Identify external dependency usage across functions."
 

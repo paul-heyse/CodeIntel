@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/builders/symbol_uses.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'SymbolUsesPlugin', 'symbol_use_edges', 'symbol_uses']

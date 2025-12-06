@@ -1,0 +1,12 @@
+{
+  "dataset": "data_models",
+  "artifact": "data_models.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "d73a6c2045062ec1abad851356fca762b7f4de646b7916699d7bea3fe27c1fea",
+  "started_at": "2025-12-06T13:46:17.976895+00:00",
+  "completed_at": "2025-12-06T13:46:17.981691+00:00"
+}

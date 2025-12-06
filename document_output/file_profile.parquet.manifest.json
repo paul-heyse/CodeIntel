@@ -1,0 +1,12 @@
+{
+  "dataset": "file_profile",
+  "artifact": "file_profile.parquet",
+  "schema_id": "file_profile",
+  "schema_version": "1",
+  "schema_digest": "74009e0a4d2a03b838b38e6a8ae06d6d677847426849a74d2b2fdf73d11bbe04",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "d79ba10b7e662b6f85e251994a8723a1ccb5d65df64ab7d7d9a4643728741fa9",
+  "started_at": "2025-12-06T13:46:18.094030+00:00",
+  "completed_at": "2025-12-06T13:46:18.101672+00:00"
+}

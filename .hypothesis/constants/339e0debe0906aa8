@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/cfg.py
+# hypothesis_version: 6.148.7
+
+['BasicBlock', 'CFGBlockRow', 'CFGBuilder', 'CFGEdge', 'CFGEdgeRow', 'CFGResult', 'back', 'body', 'build_cfg', 'cfg_to_rows', 'end_lineno', 'entry', 'exit', 'fallthrough', 'false', 'if_false', 'if_join', 'if_true', 'jump', 'lineno', 'loop', 'loop_body', 'loop_else', 'loop_exit', 'loop_head', 'true']

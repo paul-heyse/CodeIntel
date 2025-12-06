@@ -82,7 +82,7 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # Graph plugins
     (
         "codeintel.graphs.plugins.builders.goid",
-        "GoidPlugin",
+        "GoidBuilderPlugin",
         ("goids",),
     ),
     (
@@ -152,6 +152,11 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("function_ast_features",),
     ),
     (
+        "codeintel.analytics.plugins.cfg_dfg.metrics",
+        "CfgDfgMetricsPlugin",
+        ("cfg_dfg_metrics",),
+    ),
+    (
         "codeintel.analytics.plugins.history.timeseries",
         "HistoryTimeseriesPlugin",
         ("history_timeseries",),
@@ -197,9 +202,29 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("subsystems",),
     ),
     (
+        "codeintel.analytics.plugins.subsystem_metrics.graph_metrics",
+        "SubsystemGraphMetricsPlugin",
+        ("subsystem_graph_metrics",),
+    ),
+    (
+        "codeintel.analytics.plugins.subsystem_metrics.agreement",
+        "SubsystemAgreementPlugin",
+        ("subsystem_agreement",),
+    ),
+    (
         "codeintel.analytics.plugins.tests.profile",
         "TestProfilePlugin",
         ("test_profile",),
+    ),
+    (
+        "codeintel.analytics.plugins.tests.graph_metrics",
+        "TestGraphMetricsPlugin",
+        ("test_graph_metrics",),
+    ),
+    (
+        "codeintel.analytics.plugins.symbol_graph_metrics.compute",
+        "SymbolGraphMetricsPlugin",
+        ("symbol_graph_metrics",),
     ),
     (
         "codeintel.analytics.plugins.tests.behavioral_coverage",

@@ -1,8 +1,11 @@
 """Finding types and validation results for ingestion validation.
 
-This module provides the core data structures for working with
-validation findings, including violation types, result containers,
-and severity handling. Analogous to graphs/validation/findings.py.
+This module provides ingestion-specific validation types and utilities,
+extending the core validation infrastructure with contract-based validation.
+
+Note: The helper functions in this module work with typed ``ContractViolation``
+objects rather than generic dicts, so they have specialized implementations
+that complement the core validation helpers.
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
+
+from codeintel.core.validation import BaseValidationOptions, ValidationSeverity
 
 # =============================================================================
 # Constants
@@ -31,23 +36,23 @@ MAX_FINDINGS_PER_RULE = 50
 
 
 @dataclass(frozen=True)
-class IngestValidationOptions:
+class IngestValidationOptions(BaseValidationOptions):
     """Options for controlling ingestion validation behavior.
+
+    Extend ``BaseValidationOptions`` with ingestion-specific options.
 
     Attributes
     ----------
     severity_overrides
-        Mapping of rule names to severity levels.
+        Mapping of rule names to severity levels (inherited).
     hard_fail
-        Whether to raise an exception on error-level findings.
+        Whether to raise on error-level findings (inherited).
     max_findings_per_rule
-        Maximum findings to collect per rule.
+        Maximum findings per rule (inherited, with different default).
     skip_empty_tables
         Whether to skip validation of empty tables.
     """
 
-    severity_overrides: Mapping[str, Literal["info", "warning", "error"]] | None = None
-    hard_fail: bool = False
     max_findings_per_rule: int | None = MAX_FINDINGS_PER_RULE
     skip_empty_tables: bool = True
 
@@ -270,15 +275,18 @@ class ContractValidationResult:
 
 
 # =============================================================================
-# Finding Helpers
+# Finding Helpers (typed for ContractViolation)
 # =============================================================================
 
 
 def apply_severity_overrides(
     violations: Sequence[ContractViolation],
-    overrides: Mapping[str, Literal["info", "warning", "error"]] | None,
+    overrides: Mapping[str, ValidationSeverity] | None,
 ) -> list[ContractViolation]:
     """Apply severity overrides to violations.
+
+    Note: This is a specialized version that works with typed
+    ``ContractViolation`` objects rather than generic dicts.
 
     Parameters
     ----------
@@ -330,6 +338,9 @@ def cap_findings(
 ) -> list[ContractViolation]:
     """Cap the number of findings per rule/table.
 
+    Note: This is a specialized version that works with typed
+    ``ContractViolation`` objects rather than generic dicts.
+
     Parameters
     ----------
     violations
@@ -361,6 +372,9 @@ def cap_findings(
 def has_error_findings(violations: Sequence[ContractViolation]) -> bool:
     """Check if any violations have error severity.
 
+    Note: This is a specialized version that works with typed
+    ``ContractViolation`` objects rather than generic dicts.
+
     Parameters
     ----------
     violations
@@ -375,15 +389,19 @@ def has_error_findings(violations: Sequence[ContractViolation]) -> bool:
 
 
 __all__ = [
+    # Constants
     "MAX_FINDINGS_PER_RULE",
     "MIN_ROW_THRESHOLD",
     "SAMPLE_LIMIT",
+    # Types
     "ColumnConstraint",
     "ContractValidationResult",
     "ContractViolation",
     "ForeignKeyConstraint",
     "IngestContractSpec",
     "IngestValidationOptions",
+    "ValidationSeverity",
+    # Functions
     "apply_severity_overrides",
     "cap_findings",
     "has_error_findings",

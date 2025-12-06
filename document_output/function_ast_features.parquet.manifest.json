@@ -1,0 +1,12 @@
+{
+  "dataset": "function_ast_features",
+  "artifact": "function_ast_features.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "963fbc9551816b917843c36aee2a35b2b97a7b6d8419633a642b5d412559af99",
+  "started_at": "2025-12-06T13:46:18.102244+00:00",
+  "completed_at": "2025-12-06T13:46:18.128966+00:00"
+}

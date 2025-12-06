@@ -1,0 +1,12 @@
+{
+  "dataset": "ast_nodes",
+  "artifact": "ast_nodes.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "b3a2d5d364c8a7938716ba4014a8abf706e5a66ebe42fcb96972f063f07cf506",
+  "started_at": "2025-12-06T13:46:17.432581+00:00",
+  "completed_at": "2025-12-06T13:46:17.450834+00:00"
+}

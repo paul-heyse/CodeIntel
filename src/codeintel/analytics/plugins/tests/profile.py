@@ -29,7 +29,7 @@ class TestProfilePlugin(TargetPlugin):
     - analytics.test_profile: Per-test profiles
     """
 
-    plugin_name: ClassVar[str] = "tests.profile"
+    plugin_name: ClassVar[str] = "test_profile"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Build per-test profiles with coverage and subsystem context."

@@ -1,0 +1,12 @@
+{
+  "dataset": "data_model_relationships",
+  "artifact": "data_model_relationships.parquet",
+  "schema_id": "data_model_relationships",
+  "schema_version": "1",
+  "schema_digest": "6eb2e50f5ebd972be94611769ca4a130faf02798e7509ee9921871f48ff954fd",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "01e8a5c61a9741e21fb49e2ec149254419032e28c5c7a6c0510e01238bf137ce",
+  "started_at": "2025-12-06T13:46:17.966990+00:00",
+  "completed_at": "2025-12-06T13:46:17.970432+00:00"
+}

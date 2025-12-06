@@ -155,7 +155,7 @@ GOIDS_TARGET = OutputTarget(
 CALL_GRAPH_TARGET = OutputTarget(
     name="call_graph",
     module="graphs",
-    plugin="call_graph",
+    plugin="callgraph",
     tables=("graph.call_graph_nodes", "graph.call_graph_edges"),
     dependencies=("goids", "scip"),
     description="Function call graph construction.",
@@ -173,7 +173,7 @@ IMPORT_GRAPH_TARGET = OutputTarget(
 CFG_TARGET = OutputTarget(
     name="cfg",
     module="graphs",
-    plugin="cfg_builder",
+    plugin="cfg_dfg",
     tables=("graph.cfg_blocks", "graph.cfg_edges"),
     dependencies=("goids", "ast"),
     description="Control flow graph construction per function.",
@@ -182,10 +182,26 @@ CFG_TARGET = OutputTarget(
 DFG_TARGET = OutputTarget(
     name="dfg",
     module="graphs",
-    plugin="dfg_builder",
+    plugin="",  # No separate plugin - CFG target runs cfg_dfg which produces both
     tables=("graph.dfg_edges",),
     dependencies=("cfg",),
     description="Data flow graph construction per function.",
+)
+
+CFG_DFG_METRICS_TARGET = OutputTarget(
+    name="cfg_dfg_metrics",
+    module="analytics",
+    plugin="cfg_dfg_metrics",
+    tables=(
+        "analytics.cfg_function_metrics",
+        "analytics.cfg_block_metrics",
+        "analytics.cfg_function_metrics_ext",
+        "analytics.dfg_function_metrics",
+        "analytics.dfg_block_metrics",
+        "analytics.dfg_function_metrics_ext",
+    ),
+    dependencies=("cfg", "dfg"),
+    description="Control-flow and data-flow graph metrics per function.",
 )
 
 SYMBOL_USES_TARGET = OutputTarget(
@@ -329,7 +345,7 @@ RISK_FACTORS_TARGET = OutputTarget(
 
 GRAPH_METRICS_TARGET = OutputTarget(
     name="graph_metrics",
-    module="analytics",
+    module="graphs",
     plugin="graph_metrics",
     tables=(
         "analytics.graph_metrics_functions",
@@ -357,10 +373,27 @@ SUBSYSTEMS_TARGET = OutputTarget(
     tables=(
         "analytics.subsystems",
         "analytics.subsystem_modules",
-        "analytics.subsystem_graph_metrics",
     ),
     dependencies=("import_graph", "semantic_roles"),
     description="Architectural subsystem inference.",
+)
+
+SUBSYSTEM_GRAPH_METRICS_TARGET = OutputTarget(
+    name="subsystem_graph_metrics",
+    module="analytics",
+    plugin="subsystem_graph_metrics",
+    tables=("analytics.subsystem_graph_metrics",),
+    dependencies=("subsystems", "graph_metrics"),
+    description="Graph metrics for subsystems.",
+)
+
+SUBSYSTEM_AGREEMENT_TARGET = OutputTarget(
+    name="subsystem_agreement",
+    module="analytics",
+    plugin="subsystem_agreement",
+    tables=("analytics.subsystem_agreement",),
+    dependencies=("subsystems", "graph_metrics"),
+    description="Subsystem vs import community agreement.",
 )
 
 TEST_PROFILE_TARGET = OutputTarget(
@@ -370,6 +403,30 @@ TEST_PROFILE_TARGET = OutputTarget(
     tables=("analytics.test_profile",),
     dependencies=("coverage_test_edges", "tests_ingest"),
     description="Per-test profile with coverage and characteristics.",
+)
+
+TEST_GRAPH_METRICS_TARGET = OutputTarget(
+    name="test_graph_metrics",
+    module="analytics",
+    plugin="test_graph_metrics",
+    tables=(
+        "analytics.test_graph_metrics_tests",
+        "analytics.test_graph_metrics_functions",
+    ),
+    dependencies=("coverage_test_edges",),
+    description="Graph metrics from test-function bipartite graph.",
+)
+
+SYMBOL_GRAPH_METRICS_TARGET = OutputTarget(
+    name="symbol_graph_metrics",
+    module="analytics",
+    plugin="symbol_graph_metrics",
+    tables=(
+        "analytics.symbol_graph_metrics_functions",
+        "analytics.symbol_graph_metrics_modules",
+    ),
+    dependencies=("symbol_uses",),
+    description="Graph metrics from symbol usage patterns.",
 )
 
 BEHAVIORAL_COVERAGE_TARGET = OutputTarget(
@@ -470,6 +527,7 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     IMPORT_GRAPH_TARGET,
     CFG_TARGET,
     DFG_TARGET,
+    CFG_DFG_METRICS_TARGET,
     SYMBOL_USES_TARGET,
     GRAPH_VALIDATION_TARGET,
     # Analytics
@@ -488,7 +546,11 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     GRAPH_METRICS_TARGET,
     SEMANTIC_ROLES_TARGET,
     SUBSYSTEMS_TARGET,
+    SUBSYSTEM_GRAPH_METRICS_TARGET,
+    SUBSYSTEM_AGREEMENT_TARGET,
     TEST_PROFILE_TARGET,
+    TEST_GRAPH_METRICS_TARGET,
+    SYMBOL_GRAPH_METRICS_TARGET,
     BEHAVIORAL_COVERAGE_TARGET,
     ENTRYPOINTS_TARGET,
     EXTERNAL_DEPS_TARGET,
@@ -616,6 +678,7 @@ __all__ = [
     "AST_TARGET",
     "BEHAVIORAL_COVERAGE_TARGET",
     "CALL_GRAPH_TARGET",
+    "CFG_DFG_METRICS_TARGET",
     "CFG_TARGET",
     "CONFIG_DATA_FLOW_TARGET",
     "CONFIG_INGEST_TARGET",
@@ -648,8 +711,12 @@ __all__ = [
     "SCIP_TARGET",
     "SEMANTIC_ROLES_TARGET",
     "SUBSYSTEMS_TARGET",
+    "SUBSYSTEM_AGREEMENT_TARGET",
+    "SUBSYSTEM_GRAPH_METRICS_TARGET",
+    "SYMBOL_GRAPH_METRICS_TARGET",
     "SYMBOL_USES_TARGET",
     "TESTS_INGEST_TARGET",
+    "TEST_GRAPH_METRICS_TARGET",
     "TEST_PROFILE_TARGET",
     "TYPING_TARGET",
     "build_target_graph",

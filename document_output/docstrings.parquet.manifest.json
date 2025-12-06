@@ -1,0 +1,12 @@
+{
+  "dataset": "docstrings",
+  "artifact": "docstrings.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "3f7389610161955f5bb736ff0266d214f7d419e5e8f0ececf6d20b38e423fbf1",
+  "started_at": "2025-12-06T13:46:18.061409+00:00",
+  "completed_at": "2025-12-06T13:46:18.082123+00:00"
+}

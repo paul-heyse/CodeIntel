@@ -81,7 +81,7 @@ class RiskFactorsPlugin(TargetPlugin):
     - analytics.goid_risk_factors: Per-function risk scores
     """
 
-    plugin_name: ClassVar[str] = "risk_factors.build"
+    plugin_name: ClassVar[str] = "risk_factors"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Aggregate analytics into per-function risk scores and levels."

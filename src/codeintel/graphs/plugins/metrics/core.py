@@ -8,9 +8,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.analytics.graphs import (
+    compute_graph_metrics,
+    compute_graph_metrics_functions_ext,
+    compute_graph_metrics_modules_ext,
+    compute_graph_stats,
+)
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import GraphMetricsStepConfig
+from codeintel.config.primitives import GraphBackendConfig
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -23,11 +32,13 @@ class CoreMetricsPlugin(TargetPlugin):
 
     Outputs
     -------
-    - analytics.call_graph_metrics: Call graph metrics
-    - analytics.import_graph_metrics: Import graph metrics
+    - analytics.graph_metrics_functions: Function-level graph metrics
+    - analytics.graph_metrics_modules: Module-level graph metrics
+    - analytics.graph_metrics_functions_ext: Extended function metrics
+    - analytics.graph_metrics_modules_ext: Extended module metrics
     """
 
-    plugin_name: ClassVar[str] = "graph_metrics.core"
+    plugin_name: ClassVar[str] = "graph_metrics"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute core graph metrics (PageRank, centrality, etc.)."
 
@@ -49,26 +60,67 @@ class CoreMetricsPlugin(TargetPlugin):
         cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
 
         try:
-            # Core metrics computation requires:
-            # 1. Loading call graph from database
-            # 2. Computing centrality metrics using metrics.centrality module
-            # 3. Computing structural metrics using metrics.structural module
-            # 4. Computing component metrics using metrics.components module
-            # 5. Persisting results
-            #
-            # For now, return success with zero row counts as placeholder.
-            log.debug(
+            log.info(
                 "core_metrics.execute repo=%s commit=%s",
                 cfg.repo,
                 cfg.commit,
             )
 
-            row_counts: dict[str, int] = {
-                "analytics.call_graph_metrics": 0,
-                "analytics.import_graph_metrics": 0,
-            }
+            # Build graph runtime with GPU support
+            backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
+            runtime_options = GraphRuntimeOptions(snapshot=ctx.snapshot, backend=backend_config)
+            runtime = build_graph_runtime(ctx.gateway, runtime_options)
+
+            # Compute core graph metrics (functions and modules)
+            deps = GraphMetricsDeps(
+                catalog_provider=ctx.resources.catalog,
+                runtime=runtime,
+            )
+            compute_graph_metrics(ctx.gateway, cfg, deps=deps)
+
+            # Compute extended function metrics
+            compute_graph_metrics_functions_ext(
+                ctx.gateway,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                runtime=runtime,
+            )
+
+            # Compute extended module metrics
+            compute_graph_metrics_modules_ext(
+                ctx.gateway,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                runtime=runtime,
+            )
+
+            # Compute global graph statistics
+            compute_graph_stats(
+                ctx.gateway,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                runtime=runtime,
+            )
+
+            # Get row counts
+            row_counts: dict[str, int] = {}
+            for table in [
+                "analytics.graph_metrics_functions",
+                "analytics.graph_metrics_modules",
+                "analytics.graph_metrics_functions_ext",
+                "analytics.graph_metrics_modules_ext",
+                "analytics.graph_stats",
+            ]:
+                row = ctx.gateway.con.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    [cfg.repo, cfg.commit],
+                ).fetchone()
+                row_counts[table] = int(row[0]) if row else 0
+
+            log.info("core_metrics.complete row_counts=%s", row_counts)
             return TargetResult.succeeded(row_counts=row_counts)
         except (RuntimeError, ValueError, OSError) as e:
+            log.exception("core_metrics.failed")
             return TargetResult.failed(f"Core metrics computation failed: {e}")
 
 

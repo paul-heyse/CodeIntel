@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/validation/findings.py
+# hypothesis_version: 6.148.7
+
+['*', 'cap_findings', 'check_name', 'error', 'has_error_findings', 'severity']

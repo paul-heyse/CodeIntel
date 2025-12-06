@@ -1,0 +1,12 @@
+{
+  "dataset": "coverage_functions",
+  "artifact": "coverage_functions.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "e6610ba83edd22d49ef64cf1525a608da40fa9b74f4d7b8e7df36d376a7fc807",
+  "started_at": "2025-12-06T13:46:17.728437+00:00",
+  "completed_at": "2025-12-06T13:46:17.745708+00:00"
+}

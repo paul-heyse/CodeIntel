@@ -10,6 +10,8 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
+from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+
 DECIMAL_38_MAX = 10**38 - 1
 
 
@@ -64,101 +66,6 @@ class GoidResult:
     goid_h128: int
     urn: str
     descriptor: GoidDescriptor
-
-
-@dataclass(frozen=True)
-class GoidRow:
-    """Row data for core.goids table.
-
-    Attributes
-    ----------
-    goid_h128
-        128-bit GOID hash.
-    urn
-        GOID URN.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    rel_path
-        Relative file path.
-    language
-        Programming language.
-    kind
-        Entity kind.
-    qualname
-        Fully qualified name.
-    start_line
-        Starting line number.
-    end_line
-        Ending line number.
-    created_at
-        Creation timestamp.
-    """
-
-    goid_h128: int
-    urn: str
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    kind: str
-    qualname: str
-    start_line: int
-    end_line: int | None
-    created_at: datetime
-
-
-@dataclass(frozen=True)
-class GoidCrosswalkRow:
-    """Row data for core.goid_crosswalk table.
-
-    Attributes
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    goid
-        GOID URN.
-    lang
-        Programming language.
-    module_path
-        Module path.
-    file_path
-        File path.
-    start_line
-        Starting line number.
-    end_line
-        Ending line number.
-    scip_symbol
-        Optional SCIP symbol.
-    ast_qualname
-        AST qualified name.
-    cst_node_id
-        Optional CST node ID.
-    chunk_id
-        Optional chunk ID.
-    symbol_id
-        Optional symbol ID.
-    updated_at
-        Update timestamp.
-    """
-
-    repo: str
-    commit: str
-    goid: str
-    lang: str
-    module_path: str
-    file_path: str
-    start_line: int
-    end_line: int | None
-    scip_symbol: str | None
-    ast_qualname: str
-    cst_node_id: str | None
-    chunk_id: str | None
-    symbol_id: str | None
-    updated_at: datetime
 
 
 def compute_goid(descriptor: GoidDescriptor) -> int:

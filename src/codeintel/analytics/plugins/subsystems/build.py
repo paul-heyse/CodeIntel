@@ -31,7 +31,7 @@ class SubsystemsPlugin(TargetPlugin):
     - analytics.subsystem_functions: Function to subsystem associations
     """
 
-    plugin_name: ClassVar[str] = "subsystems.build"
+    plugin_name: ClassVar[str] = "subsystems"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Infer subsystems from module coupling and risk signals."
 
