@@ -1,9 +1,7 @@
 """Shared test helpers package.
 
-This package provides standardized test infrastructure for both analytics
-and ingestion plugins, including:
+This package provides standardized test infrastructure including:
 
-- `PluginTestHarness`: Fluent test harness for analytics plugins
 - `TestContext`: Unified test environment for hexagonal architecture
 - `TestScenario`: Declarative scenario builder
 - `GraphPluginBuilder`: Fluent builder for graph test plugins
@@ -42,13 +40,6 @@ from tests._helpers.fakes.networkx_graphs import (
     diamond_graph,
     disconnected_graph,
     star_graph,
-)
-from tests._helpers.harnesses import (
-    PluginResultAssertions,
-    PluginTestHarness,
-    ValidationResultAssertions,
-    assert_result,
-    assert_validation,
 )
 from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
@@ -105,8 +96,6 @@ __all__ = [
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",
-    "PluginResultAssertions",
-    "PluginTestHarness",
     "ProvisionedGateway",
     "ProvisioningConfig",
     "QueryRow",
@@ -114,11 +103,8 @@ __all__ = [
     "SeedPack",
     "TestContext",
     "TestScenario",
-    "ValidationResultAssertions",
     "assert_all_frozen",
     "assert_frozen",
-    "assert_result",
-    "assert_validation",
     "build_callgraph_fixture_repo",
     "chain_graph",
     "complete_digraph",

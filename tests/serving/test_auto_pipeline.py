@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import pytest
 
+from codeintel.build.operations import get_targets_for_operation
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.serving_models import ServingConfig
 from codeintel.core.execution import RunContext, RunKind, TriggerKind
@@ -1576,7 +1577,11 @@ def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
 def test_operation_prereqs_satisfied_falls_back_to_run_check(
     auto_pipeline_test_env: AutoPipelineTestEnv,
 ) -> None:
-    """Verify operation_prereqs_satisfied falls back to run-based check.
+    """Verify operation_prereqs_satisfied uses build target readiness.
+
+    The function checks DatabaseReadinessView for operations with required_targets.
+    Even with a successful run seeded, if targets are not in 'current' state,
+    the function returns False.
 
     Parameters
     ----------
@@ -1591,28 +1596,39 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
     params = RunParams(repo=repo, commit=commit, status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
-    # Find an operation without required_datasets (if any)
-    # If function.summary has datasets, the run-based fallback won't apply
+    # function.summary has required_targets (from required_graphs), so it uses
+    # DatabaseReadinessView check, not run-based fallback.
+    # Without target readiness data seeded, the check returns False.
     op = get_operation("function.summary")
-    if op is not None and op.required_datasets:
-        # If the operation has datasets, data-aware check takes precedence
+    op_targets = get_targets_for_operation("function.summary")
+
+    if op_targets.required_targets:
+        # Operation has required targets - DatabaseReadinessView check applies
+        # Without target readiness data, result is False
         result = operation_prereqs_satisfied(
             env.gateway,
             "function.summary",
             repo=repo,
             commit=commit,
         )
-        # Data doesn't exist, so even with a run, should be False
+        assert result is False
+    elif op is not None and op.required_datasets:
+        # Fallback: If no required_targets but has required_datasets, data check applies
+        result = operation_prereqs_satisfied(
+            env.gateway,
+            "function.summary",
+            repo=repo,
+            commit=commit,
+        )
         assert result is False
     else:
-        # For operations without declared datasets, run check applies
+        # No requirements declared - consider satisfied
         result = operation_prereqs_satisfied(
             env.gateway,
             "function.summary",
             repo=repo,
             commit=commit,
         )
-        # Run exists, so should be True
         assert result is True
 
 

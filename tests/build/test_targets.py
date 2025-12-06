@@ -25,7 +25,8 @@ class TestOutputTarget:
         assert target.tables == ("core.test_table",)
         assert target.dependencies == ()
         assert not target.description
-        assert target.estimated_duration_ms is None
+        # estimated_duration_ms is now computed from TargetExecution (default: 5000ms)
+        assert target.estimated_duration_ms == 5000
 
     def test_create_target_with_all_fields(self) -> None:
         """Create a target with all optional fields."""
@@ -36,12 +37,12 @@ class TestOutputTarget:
             tables=("analytics.test_table",),
             dependencies=("dep1", "dep2"),
             description="Test target description",
-            estimated_duration_ms=1000,
         )
         assert target.name == "test_target"
         assert target.dependencies == ("dep1", "dep2")
         assert target.description == "Test target description"
-        assert target.estimated_duration_ms == 1000
+        # estimated_duration_ms is computed from default TargetExecution
+        assert target.estimated_duration_ms == 5000
 
     def test_target_is_frozen(self) -> None:
         """Verify target is immutable."""

@@ -1,125 +1,179 @@
-#!/usr/bin/env python3
-"""Audit plugin output tables against TABLE_SCHEMAS.
-
-This script identifies:
-1. Tables declared by plugins but missing from TABLE_SCHEMAS
-2. Tables in TABLE_SCHEMAS not used by any plugin
-3. Artifact-like declarations in output_tables (e.g., "index.scip")
-
-Usage:
-    uv run python tools/audit_plugin_schemas.py
-"""
+"""Audit plugin output tables against TABLE_SCHEMAS."""
 
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from codeintel.ingestion.plugins.registry import (
-    get_ingest_registry,
-    register_class_based_plugins,
-)
-
 from codeintel.config.datasets import TABLE_SCHEMAS
 
+DIVIDER = "=" * 70
+SECTION_DIVIDER = "-" * 70
+ORPHAN_TABLE_DISPLAY_THRESHOLD = 5
 
-def main() -> int:
-    """Run the plugin schema audit."""
-    print("=" * 70)
-    print("PLUGIN SCHEMA AUDIT")
-    print("=" * 70)
-    print()
 
-    # Register plugins
+@dataclass(frozen=True)
+class PluginAuditState:
+    """Computed state for the audit report."""
+
+    plugin_tables: dict[str, list[str]]
+    artifacts: list[tuple[str, str]]
+    missing_schemas: list[tuple[str, list[str]]]
+    orphan_tables_by_schema: dict[str, list[str]]
+    plugin_count: int
+
+
+def _collect_plugin_tables() -> tuple[dict[str, list[str]], list[tuple[str, str]], int]:
     register_class_based_plugins()
     registry = get_ingest_registry()
-
-    # Collect all declared output tables
-    plugin_tables: dict[str, list[str]] = {}  # table_key -> [plugin_names]
-    artifacts: list[tuple[str, str]] = []  # (artifact, plugin_name)
-
+    plugin_tables: dict[str, list[str]] = {}
+    artifacts: list[tuple[str, str]] = []
     for plugin in registry.all_plugins():
         meta = plugin.metadata
         for table_key in meta.output_tables:
-            # Check if this looks like an artifact
             if "." not in table_key or table_key.startswith("index."):
                 artifacts.append((table_key, meta.name))
                 continue
-
             plugin_tables.setdefault(table_key, []).append(meta.name)
+    return plugin_tables, artifacts, len(list(registry.all_plugins()))
 
-    # 1. Tables declared but missing from schemas
-    print("1. MISSING SCHEMAS (declared by plugins, not in TABLE_SCHEMAS)")
-    print("-" * 70)
-    missing = []
-    for table_key, plugins in sorted(plugin_tables.items()):
-        if table_key not in TABLE_SCHEMAS:
-            missing.append((table_key, plugins))
-            print(f"  ❌ {table_key}")
-            print(f"     Declared by: {', '.join(plugins)}")
-    if not missing:
-        print("  ✅ All plugin tables have schemas defined")
-    print()
 
-    # 2. Artifact declarations in output_tables
-    print("2. ARTIFACTS IN output_tables (should use output_artifacts)")
-    print("-" * 70)
-    if artifacts:
-        for artifact, plugin in artifacts:
-            print(f"  ⚠️  {artifact}")
-            print(f"     Declared by: {plugin}")
-    else:
-        print("  ✅ No artifacts found in output_tables")
-    print()
+def _find_missing_schemas(plugin_tables: dict[str, list[str]]) -> list[tuple[str, list[str]]]:
+    return [
+        (table_key, plugins)
+        for table_key, plugins in sorted(plugin_tables.items())
+        if table_key not in TABLE_SCHEMAS
+    ]
 
-    # 3. Tables with schemas but no plugin
-    print("3. ORPHAN SCHEMAS (in TABLE_SCHEMAS, no plugin writes to them)")
-    print("-" * 70)
+
+def _find_orphan_tables(plugin_tables: dict[str, list[str]]) -> dict[str, list[str]]:
     used_tables = set(plugin_tables.keys())
-    orphans = []
+    orphans: dict[str, list[str]] = {}
     for table_key in sorted(TABLE_SCHEMAS.keys()):
-        # Skip views and metadata tables
         if table_key.startswith(("metadata.", "build.", "docs.")):
             continue
-        if table_key not in used_tables:
-            orphans.append(table_key)
+        if table_key in used_tables:
+            continue
+        schema = table_key.split(".", maxsplit=1)[0]
+        orphans.setdefault(schema, []).append(table_key)
+    return orphans
 
-    if orphans:
-        # Group by schema
-        by_schema: dict[str, list[str]] = {}
-        for t in orphans:
-            schema = t.split(".")[0]
-            by_schema.setdefault(schema, []).append(t)
 
-        for schema, tables in sorted(by_schema.items()):
-            if len(tables) > 5:
-                print(f"  {schema}.*: {len(tables)} tables (not from ingestion)")
-            else:
-                for t in tables:
-                    print(f"  {t}")
+def _build_state() -> PluginAuditState:
+    plugin_tables, artifacts, plugin_count = _collect_plugin_tables()
+    missing_schemas = _find_missing_schemas(plugin_tables)
+    orphan_tables_by_schema = _find_orphan_tables(plugin_tables)
+    return PluginAuditState(
+        plugin_tables=plugin_tables,
+        artifacts=artifacts,
+        missing_schemas=missing_schemas,
+        orphan_tables_by_schema=orphan_tables_by_schema,
+        plugin_count=plugin_count,
+    )
+
+
+def _format_missing_schemas(missing: list[tuple[str, list[str]]]) -> list[str]:
+    lines = [
+        "1. MISSING SCHEMAS (declared by plugins, not in TABLE_SCHEMAS)",
+        SECTION_DIVIDER,
+    ]
+    if not missing:
+        lines.append("  ✅ All plugin tables have schemas defined")
+        lines.append("")
+        return lines
+
+    for table_key, plugins in missing:
+        lines.append(f"  ❌ {table_key}")
+        lines.append(f"     Declared by: {', '.join(plugins)}")
+    lines.append("")
+    return lines
+
+
+def _format_artifacts(artifacts: list[tuple[str, str]]) -> list[str]:
+    lines = [
+        "2. ARTIFACTS IN output_tables (should use output_artifacts)",
+        SECTION_DIVIDER,
+    ]
+    if not artifacts:
+        lines.append("  ✅ No artifacts found in output_tables")
+        lines.append("")
+        return lines
+
+    for artifact, plugin in artifacts:
+        lines.append(f"  ⚠️  {artifact}")
+        lines.append(f"     Declared by: {plugin}")
+    lines.append("")
+    return lines
+
+
+def _format_orphans(orphan_tables_by_schema: dict[str, list[str]]) -> list[str]:
+    lines = [
+        "3. ORPHAN SCHEMAS (in TABLE_SCHEMAS, no plugin writes to them)",
+        SECTION_DIVIDER,
+    ]
+    if not orphan_tables_by_schema:
+        lines.append("  ✅ All schemas are used by plugins")
+        lines.append("")
+        return lines
+
+    for schema, tables in sorted(orphan_tables_by_schema.items()):
+        if len(tables) > ORPHAN_TABLE_DISPLAY_THRESHOLD:
+            lines.append(f"  {schema}.*: {len(tables)} tables (not from ingestion)")
+            continue
+        lines.extend(f"  {table}" for table in sorted(tables))
+    lines.append("")
+    return lines
+
+
+def _format_summary(state: PluginAuditState) -> list[str]:
+    lines = [
+        DIVIDER,
+        "SUMMARY",
+        DIVIDER,
+        f"  Plugins registered: {state.plugin_count}",
+        f"  Tables declared: {len(state.plugin_tables)}",
+        f"  Missing schemas: {len(state.missing_schemas)}",
+        f"  Artifacts misclassified: {len(state.artifacts)}",
+        "",
+    ]
+    if state.missing_schemas or state.artifacts:
+        lines.append("⚠️  Issues found - see above for details")
     else:
-        print("  ✅ All schemas are used by plugins")
-    print()
+        lines.append("✅ All checks passed")
+    return lines
 
-    # 4. Summary
-    print("=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print(f"  Plugins registered: {len(list(registry.all_plugins()))}")
-    print(f"  Tables declared: {len(plugin_tables)}")
-    print(f"  Missing schemas: {len(missing)}")
-    print(f"  Artifacts misclassified: {len(artifacts)}")
-    print()
 
-    # Return error code if issues found
-    if missing or artifacts:
-        print("⚠️  Issues found - see above for details")
+def _format_report(state: PluginAuditState) -> str:
+    lines = [
+        DIVIDER,
+        "PLUGIN SCHEMA AUDIT",
+        DIVIDER,
+        "",
+    ]
+    lines.extend(_format_missing_schemas(state.missing_schemas))
+    lines.extend(_format_artifacts(state.artifacts))
+    lines.extend(_format_orphans(state.orphan_tables_by_schema))
+    lines.extend(_format_summary(state))
+    return "\n".join(lines)
+
+
+def main() -> int:
+    """Run the plugin schema audit.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when clean, 1 when issues are detected.
+    """
+    state = _build_state()
+    sys.stdout.write(_format_report(state))
+    sys.stdout.write("\n")
+    if state.missing_schemas or state.artifacts:
         return 1
-
-    print("✅ All checks passed")
     return 0
 
 

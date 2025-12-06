@@ -887,6 +887,11 @@ def ensure_prereqs_for_http(
         LOG.debug("auto_pipeline skipped: %s", skip_reason)
         return None
 
+    # Check if prereqs have already been satisfied
+    if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
+        LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
+        return None
+
     return _run_prereqs(op_id=op_id, config=config, gateway=gateway, trigger="http")
 
 
@@ -919,6 +924,11 @@ def ensure_prereqs_for_mcp(
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
     if not should_run or gateway is None:
         LOG.debug("auto_pipeline skipped: %s", skip_reason)
+        return None
+
+    # Check if prereqs have already been satisfied
+    if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
+        LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
         return None
 
     return _run_prereqs(op_id=op_id, config=config, gateway=gateway, trigger="mcp")

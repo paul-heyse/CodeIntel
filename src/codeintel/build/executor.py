@@ -13,7 +13,7 @@ Key Components
 
 Integration Points
 ------------------
-- Analytics: `plan_analytics_plugin_run()` + `run_analytics_plugins()`
+- Analytics: Direct plugin execution via `_execute_analytics_stage()`
 - Graphs: `plan_graph_plugin_run()` + `run_graph_plugins()`
 - Ingestion: Direct plugin execution via `_execute_target_direct()`
 - Tracking: `BuildTracking` for manifest and run record persistence
@@ -28,12 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.core.build_bridge import (
-    AnalyticsPlanRequest,
-    AnalyticsRunContext,
-    plan_analytics_plugin_run,
-    run_analytics_plugins,
-)
+from codeintel.analytics.plugins.registration import ALL_PLUGINS
 from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.errors import BuildErrorCollection, PluginExecutionError
@@ -43,7 +38,7 @@ from codeintel.build.plan import BuildPlan, PlanStage
 from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
-from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.graphs.runtime.executor import GraphExecutorContext, run_graph_plugins
@@ -934,7 +929,8 @@ class BuildExecutor:
     ) -> StageExecutionResult:
         """Execute an analytics stage.
 
-        Maps stage targets to analytics plugins and executes via plugin executor.
+        Executes analytics plugins directly via the TargetPlugin interface,
+        similar to ingestion targets.
 
         Parameters
         ----------
@@ -948,89 +944,115 @@ class BuildExecutor:
         StageExecutionResult
             Result with completed and failed targets.
         """
-        target_names = [step.target for step in stage.steps]
-        plugin_names = self._get_plugin_names_for_stage(stage)
-
         log.debug(
-            "build.executor.analytics targets=%s plugins=%s",
-            target_names,
-            plugin_names,
+            "build.executor.analytics targets=%s run_id=%s",
+            [step.target for step in stage.steps],
+            run_id,
         )
 
+        # Build plugin lookup from ALL_PLUGINS
+        plugin_lookup = {p.plugin_name: p for p in ALL_PLUGINS}
+
+        completed: list[str] = []
+        failed: list[str] = []
+        durations: dict[str, float] = {}
+        row_counts: dict[str, int | None] = {}
+
+        for step in stage.steps:
+            success, duration_ms, counts = self._execute_analytics_target(
+                step.target,
+                step.plugin,
+                plugin_lookup,
+            )
+            if success:
+                completed.append(step.target)
+                if duration_ms is not None:
+                    durations[step.target] = duration_ms
+                if counts:
+                    row_counts[step.target] = sum(counts.values())
+            else:
+                failed.append(step.target)
+
+        return StageExecutionResult(
+            module="analytics",
+            completed=tuple(completed),
+            failed=tuple(failed),
+            durations_ms=durations,
+            row_counts=row_counts,
+            error=None if not failed else f"Failed targets: {', '.join(failed)}",
+        )
+
+    def _execute_analytics_target(
+        self,
+        target_name: str,
+        plugin_name: str,
+        plugin_lookup: dict[str, Any],
+    ) -> tuple[bool, float | None, dict[str, int]]:
+        """Execute a single analytics target.
+
+        Parameters
+        ----------
+        target_name
+            Name of the target to execute.
+        plugin_name
+            Name of the plugin to use.
+        plugin_lookup
+            Mapping of plugin names to plugin instances.
+
+        Returns
+        -------
+        tuple[bool, float | None, dict[str, int]]
+            (success, duration_ms, row_counts)
+        """
+        plugin = plugin_lookup.get(plugin_name)
+        if plugin is None:
+            log.warning(
+                "No analytics plugin found for '%s' (plugin=%s)",
+                target_name,
+                plugin_name,
+            )
+            return False, None, {}
+
+        start_time = datetime.now(tz=UTC)
         try:
-            # Create plan request
-            request = AnalyticsPlanRequest(
-                plugin_names=plugin_names,
-                policy=GraphPluginPolicy(),
-                repo=self._snapshot.repo,
-                commit=self._snapshot.commit,
-                scope=GraphRunScope(),
-                prior_manifest=None,
-                cfg_options=None,
-                runtime_options=None,
-                run_id=run_id,
-            )
-
-            # Plan the execution
-            plan = plan_analytics_plugin_run(request)
-
-            # Create run context
-            # Note: GraphRuntime is created lazily if needed
-            run_context = AnalyticsRunContext(
+            target = self._graph.get(target_name)
+            resources = ContextResources(
+                providers=self._providers,
                 gateway=self._gateway,
-                graph_runtime=None,  # Created lazily by plugins
-                cfgs={},
-                extra={},
+                modules=(),
+            )
+            ctx = TargetExecutionContext(
+                target=target,
                 snapshot=self._snapshot,
+                paths=self._paths,
+                resources=resources,
+                parameters=self._config.parameters_for(target_name),
             )
 
-            # Execute
-            report = run_analytics_plugins(
-                plan=plan,
-                run_context=run_context,
-                enable_middleware=True,
+            result = asyncio.run(plugin.execute(ctx))
+        except Exception:
+            log.exception(
+                "build.executor.analytics.target.error target=%s",
+                target_name,
             )
+            return False, None, {}
 
-            # Extract results from report
-            completed: list[str] = []
-            failed: list[str] = []
-            durations: dict[str, float] = {}
-            row_counts: dict[str, int | None] = {}
+        duration_ms = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
 
-            for record in report.records:
-                # Map plugin name back to target name
-                target_name = self._plugin_to_target(record.name, target_names)
-                if target_name is None:
-                    continue
-
-                if record.status == "succeeded":
-                    completed.append(target_name)
-                    durations[target_name] = record.duration_ms
-                    # Try to extract row count from meta
-                    meta = record.meta or {}
-                    row_count = meta.get("row_count")
-                    if isinstance(row_count, int):
-                        row_counts[target_name] = row_count
-                else:
-                    failed.append(target_name)
-
-            return StageExecutionResult(
-                module="analytics",
-                completed=tuple(completed),
-                failed=tuple(failed),
-                durations_ms=durations,
-                row_counts=row_counts,
-                error=None if not failed else f"Failed targets: {', '.join(failed)}",
+        if result.success:
+            log.info(
+                "build.executor.analytics.target.success target=%s duration_ms=%.1f",
+                target_name,
+                duration_ms,
             )
+            return True, duration_ms, dict(result.row_counts)
 
-        except Exception as exc:
-            log.exception("build.executor.analytics.error run_id=%s", run_id)
-            return StageExecutionResult(
-                module="analytics",
-                completed=(),
-                failed=tuple(target_names),
-                error=str(exc),
-            )
+        log.warning(
+            "build.executor.analytics.target.failed target=%s error=%s",
+            target_name,
+            result.error_message,
+        )
+        return False, duration_ms, {}
 
     def _execute_export_stage(
         self,

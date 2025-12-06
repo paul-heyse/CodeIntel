@@ -9,7 +9,7 @@ The symbol uses plugin performs the following steps:
 1. Load symbol occurrences from SCIP index data
 2. Build definition map from symbol occurrences
 3. Build use edges connecting definitions to uses
-4. Persist to graphs.symbol_use_edges
+4. Persist to graph.symbol_use_edges
 """
 
 from __future__ import annotations
@@ -226,7 +226,7 @@ def _persist_symbol_use_edges(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.symbol_use_edges",
+        "graph.symbol_use_edges",
         [symbol_use_to_tuple(row) for row in rows],
         delete_params=[repo, commit],
         scope="symbol_use_edges",
@@ -241,11 +241,11 @@ class SymbolUsesPlugin(TargetPlugin):
     1. Loads symbol occurrences from SCIP index
     2. Builds definition map from occurrences
     3. Creates use edges connecting definitions to uses
-    4. Persists to graphs.symbol_use_edges
+    4. Persists to graph.symbol_use_edges
 
     Outputs
     -------
-    - graphs.symbol_use_edges: Symbol use relationships
+    - graph.symbol_use_edges: Symbol use relationships
     """
 
     plugin_name: ClassVar[str] = "symbol_uses"
@@ -283,9 +283,7 @@ class SymbolUsesPlugin(TargetPlugin):
 
             if not occurrences:
                 log.info("symbol_uses: No symbol occurrences found, skipping")
-                return TargetResult.succeeded(
-                    row_counts={"graphs.symbol_use_edges": 0}
-                )
+                return TargetResult.succeeded(row_counts={"graph.symbol_use_edges": 0})
 
             log.info("symbol_uses: Loaded %d symbol occurrences", len(occurrences))
 
@@ -305,9 +303,7 @@ class SymbolUsesPlugin(TargetPlugin):
             edge_count = _persist_symbol_use_edges(gateway, edges, repo, commit)
             log.info("symbol_uses: Persisted %d edges", edge_count)
 
-            return TargetResult.succeeded(
-                row_counts={"graphs.symbol_use_edges": edge_count}
-            )
+            return TargetResult.succeeded(row_counts={"graph.symbol_use_edges": edge_count})
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Symbol use analysis failed: {e}")
 

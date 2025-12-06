@@ -45,6 +45,9 @@ def _path_is_file(path: Path) -> bool:
 def _find_existing_json(output_scip: Path, output_json: Path) -> Path | None:
     """Find existing SCIP JSON file at expected or alternate location.
 
+    Only returns a path if the file exists AND has non-zero size.
+    Empty files (e.g., from interrupted runs) are not considered valid.
+
     Parameters
     ----------
     output_scip
@@ -55,13 +58,13 @@ def _find_existing_json(output_scip: Path, output_json: Path) -> Path | None:
     Returns
     -------
     Path | None
-        Path to existing JSON file, or None if not found.
+        Path to existing non-empty JSON file, or None if not found.
     """
-    if output_json.is_file():
+    if output_json.is_file() and output_json.stat().st_size > 0:
         return output_json
     # Check for alternate filename pattern (index.scip.json)
     alt_json = output_scip.with_suffix(".scip.json")
-    if alt_json.is_file():
+    if alt_json.is_file() and alt_json.stat().st_size > 0:
         return alt_json
     return None
 

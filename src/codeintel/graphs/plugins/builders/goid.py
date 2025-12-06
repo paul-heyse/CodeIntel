@@ -180,9 +180,7 @@ def _extract_entities_from_file(
         )
     )
     crosswalk_rows.append(
-        goid_compute.build_crosswalk_row(
-            module_descriptor, module_result.urn, module_name, now
-        )
+        goid_compute.build_crosswalk_row(module_descriptor, module_result.urn, module_name, now)
     )
 
     # Process all nodes
@@ -226,14 +224,10 @@ def _extract_entities_from_file(
             )
             result = goid_compute.compute_goid_result(descriptor)
             goid_rows.append(
-                goid_compute.build_goid_row(
-                    descriptor, result.goid_h128, result.urn, now
-                )
+                goid_compute.build_goid_row(descriptor, result.goid_h128, result.urn, now)
             )
             crosswalk_rows.append(
-                goid_compute.build_crosswalk_row(
-                    descriptor, result.urn, module_name, now
-                )
+                goid_compute.build_crosswalk_row(descriptor, result.urn, module_name, now)
             )
 
             # Process children with updated parent
@@ -401,11 +395,12 @@ class GoidBuilderPlugin(TargetPlugin):
         commit = cfg.commit
 
         try:
-            # Step 1: Get source root
-            source_root = _get_source_root(gateway, repo, commit)
-            if source_root is None:
+            # Step 1: Get source root (prefer snapshot, then db, then cwd)
+            source_root = (
+                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+            )
+            if source_root == Path.cwd():
                 log.warning("goid_builder: No source root found, using current directory")
-                source_root = Path.cwd()
 
             # Step 2: Get tracked files
             tracked_files = _get_tracked_files(gateway, repo, commit)
@@ -441,9 +436,7 @@ class GoidBuilderPlugin(TargetPlugin):
 
             # Step 4: Persist
             goid_count = _persist_goid_rows(gateway, all_goid_rows, repo, commit)
-            crosswalk_count = _persist_crosswalk_rows(
-                gateway, all_crosswalk_rows, repo, commit
-            )
+            crosswalk_count = _persist_crosswalk_rows(gateway, all_crosswalk_rows, repo, commit)
 
             log.info(
                 "goid_builder: Persisted %d GOIDs and %d crosswalk entries",

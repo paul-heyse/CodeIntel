@@ -1,11 +1,12 @@
 """Plugin registration for the unified analytics system.
 
-This module instantiates analytics plugins that are now used by the
-build system. The legacy registry registration is deprecated.
+This module instantiates analytics plugins as TargetPlugin instances.
+These plugins are discovered and executed by the build executor via ALL_PLUGINS.
 
-NOTE: The analytics plugins now implement TargetPlugin instead of
-AnalyticsPluginProtocol. They are registered via codeintel.build.plugin_registry
-rather than the legacy analytics registry.
+Migration Note
+--------------
+Analytics plugins implement TargetPlugin. The build executor executes them
+directly via `plugin.execute(ctx)` rather than through a separate registry.
 """
 
 from __future__ import annotations
@@ -61,9 +62,9 @@ HISTORY_TIMESERIES_PLUGIN = HistoryTimeseriesPlugin()
 RISK_FACTORS_PLUGIN = RiskFactorsPlugin()
 CONFIG_DATA_FLOW_PLUGIN = ConfigDataFlowPlugin()
 
-# All plugins in registration order
-# Note: Graph metrics plugins are now in graphs.plugins.metrics and
-# are registered separately via the graph plugin system.
+# All plugins - used by build executor for discovery
+# Note: Graph plugins are in graphs.plugins and are executed via
+# the graph plugin system, not this registration module.
 ALL_PLUGINS = (
     FUNCTION_METRICS_PLUGIN,
     FUNCTION_AST_FEATURES_PLUGIN,
@@ -87,40 +88,6 @@ ALL_PLUGINS = (
     CONFIG_DATA_FLOW_PLUGIN,
 )
 
-
-# Track registration state
-class _RegistrationState:
-    """Thread-safe state holder for plugin registration."""
-
-    registered: bool = False
-
-
-def register_all_plugins() -> None:
-    """Register all analytics plugins with the global registry.
-
-    DEPRECATED: The analytics plugins now use the build system's
-    plugin_registry. This function is a no-op for backward compatibility.
-    """
-    # No-op: plugins are now registered via codeintel.build.plugin_registry
-    _RegistrationState.registered = True
-
-
-def ensure_plugins_registered() -> None:
-    """Ensure all plugins are registered.
-
-    This is an alias for register_all_plugins() for clarity in calling code.
-    """
-    register_all_plugins()
-
-
-def reset_registration_state() -> None:
-    """Reset the registration state.
-
-    Primarily useful for testing to ensure clean state between tests.
-    """
-    _RegistrationState.registered = False
-
-
 __all__ = [
     "ALL_PLUGINS",
     "BEHAVIORAL_COVERAGE_PLUGIN",
@@ -143,6 +110,4 @@ __all__ = [
     "SEMANTIC_ROLES_PLUGIN",
     "SUBSYSTEMS_PLUGIN",
     "TEST_PROFILE_PLUGIN",
-    "ensure_plugins_registered",
-    "register_all_plugins",
 ]

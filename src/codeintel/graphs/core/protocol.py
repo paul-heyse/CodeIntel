@@ -523,27 +523,18 @@ def graph_plugin(
 
 
 # Default plugins for different plugin kinds
+# Names must match actual plugin_name values in TargetPlugin implementations
 DEFAULT_BUILDER_PLUGINS: tuple[str, ...] = (
     "goid_builder",
-    "callgraph_builder",
-    "import_graph_builder",
-    "cfg_dfg_builder",
-    "symbol_uses_builder",
+    "callgraph",
+    "import_graph",
+    "cfg_dfg",
+    "symbol_uses",
 )
 
 DEFAULT_METRIC_PLUGINS: tuple[str, ...] = (
-    "core_graph_metrics",
-    "graph_metrics_functions_ext",
-    "graph_metrics_modules_ext",
-    "test_graph_metrics",
-    "cfg_metrics",
-    "dfg_metrics",
-    "symbol_graph_metrics_modules",
-    "symbol_graph_metrics_functions",
-    "config_graph_metrics",
-    "subsystem_graph_metrics",
-    "subsystem_agreement",
-    "graph_stats",
+    "graph_metrics.core",
+    "graph_metrics.secondary",
 )
 
 DEFAULT_VALIDATION_PLUGINS: tuple[str, ...] = ("graph_validation",)

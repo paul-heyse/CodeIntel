@@ -26,7 +26,10 @@ from codeintel.ingestion.infrastructure.safe_sql import (
     SafeColumnRef,
     SafeTableRef,
 )
-from codeintel.storage.gateway import (
+
+# Import exceptions directly from protocol module to avoid circular import
+# (gateway/__init__.py re-exports these but has dependencies that create cycles)
+from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
     DuckDBConnectionException,

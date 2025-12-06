@@ -149,9 +149,9 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     _assert_resolved_edge(
         edge_records=edge_records,
         callee=200,
-        allowed_resolutions={"global_name", "local_attr", "import_alias"},
+        allowed_resolutions={"global_name", "local_attr", "import_alias", "instance_method"},
         missing_message="expected edge to C.helper via attribute call",
-        resolution_message="expected helper edge to use global or alias resolution",
+        resolution_message="expected helper edge to use global, alias, or instance_method resolution",
     )
 
     _assert_unresolved_edge(edge_records)

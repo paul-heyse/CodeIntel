@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/hotspots/build.py
+# hypothesis_version: 6.148.7
+
+[2000, '3.0.0', 'HotspotsPlugin', 'hotspots.build', 'max_commits']
