@@ -22,9 +22,9 @@ import pytest
 from codeintel.config.steps_graphs import (
     GraphMetricsStepConfig,
     GraphPluginPolicy,
-    GraphPluginRetryPolicy,
     GraphRunScope,
 )
+from codeintel.core.execution.retry import RetryPolicy
 from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
@@ -381,7 +381,7 @@ def test_build_plugin_settings_includes_policy_values() -> None:
         default_severity="skip_on_error",
         fail_fast=False,
         timeouts_ms={"policy_settings": TIMEOUT_OVERRIDE_MS},
-        retries={"policy_settings": GraphPluginRetryPolicy(max_attempts=3)},
+        retries={"policy_settings": RetryPolicy(max_attempts=3)},
     )
     coords = PlanCoordinates(
         repo="test/repo",
@@ -394,7 +394,7 @@ def test_build_plugin_settings_includes_policy_values() -> None:
     assert settings.severity == "skip_on_error"
     assert settings.timeout_ms == TIMEOUT_OVERRIDE_MS
     assert settings.fail_fast is False
-    assert settings.retry_cfg.max_attempts == RETRY_MAX_ATTEMPTS
+    assert settings.retry_policy.max_attempts == RETRY_MAX_ATTEMPTS
 
 
 def test_build_plugin_settings_includes_version_hash() -> None:
@@ -546,25 +546,6 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
         # dep_a should come before dep_b
         names = plan.ordered_names
         assert names.index("dep_a") < names.index("dep_b")
-
-
-def test_plan_graph_plugin_run_with_telemetry() -> None:
-    """Plan includes telemetry manager."""
-    plugin = _make_test_plugin("telemetry_plan")
-    snapshot = make_snapshot(repo="plan/repo", commit="abc")
-
-    with _PluginRegistrar([plugin]):
-        context = GraphPlanContext(
-            runtime_snapshot=snapshot,
-            policy=GraphPluginPolicy(),
-        )
-
-        plan = plan_graph_plugin_run(
-            plugin_names=[plugin.metadata.name],
-            context=context,
-        )
-
-        assert plan.telemetry is not None
 
 
 def test_graph_plugin_execution_plan_dep_graph() -> None:

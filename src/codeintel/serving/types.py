@@ -28,8 +28,7 @@ Backend protocols define the interface for query backends:
 
 Note
 ----
-This module consolidates the previous ``protocols.py`` module. Re-exports from
-``codeintel.core.types`` are provided for convenience.
+This module consolidates the previous ``protocols.py`` module.
 """
 
 from __future__ import annotations
@@ -64,15 +63,6 @@ if TYPE_CHECKING:
         TestsForFunctionResponse,
     )
     from codeintel.serving.services.query_service import QueryService
-
-# Re-export core types for convenience (previously from protocols.py)
-from codeintel.core.types import (
-    PytestCallEntry,
-    PytestTestEntry,
-    ScipDocument,
-    ScipOccurrence,
-    ScipRange,
-)
 
 # Type aliases for common patterns
 RowDict = dict[str, object]
@@ -706,16 +696,11 @@ __all__ = [
     "ModuleRepositoryProtocol",
     "ProfileBackendProtocol",
     "ProfileQueryProtocol",
-    "PytestCallEntry",
-    "PytestTestEntry",
     "QueryBackendProtocol",
     "QueryServiceProtocol",
     "RepositoryProtocol",
     "ResponseMetaLike",
     "RowDict",
-    "ScipDocument",
-    "ScipOccurrence",
-    "ScipRange",
     "ServiceFactory",
     "ServiceResult",
     "StorageGatewayProtocol",

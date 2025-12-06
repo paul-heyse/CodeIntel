@@ -14,7 +14,7 @@ Core Infrastructure (graphs/core/):
 Runtime (graphs/runtime/):
 - GraphPluginExecutor: Executes plugins with retry and timeout handling
 - plan_graph_plugin_run: Creates an execution plan from plugin names
-- run_graph_plugins: Executes a plan and returns a report
+- GraphRunReport: Report of plugin execution outcomes
 
 Plugins (graphs/plugins/):
 - builders: Graph construction plugins (goid, callgraph, cfg_dfg, import_graph)

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/policy.py
+# hypothesis_version: 6.148.7
+
+[30.0, 100, 1000, 'BaseExecutionPolicy', 'PluginSeverity', 'fatal', 'skip_on_error', 'soft_fail']

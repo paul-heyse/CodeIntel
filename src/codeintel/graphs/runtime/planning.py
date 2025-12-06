@@ -8,14 +8,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
-    GraphPluginRetryPolicy,
     GraphRunScope,
 )
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.execution.retry import RetryPolicy
+from codeintel.core.plugins.execution.settings import (
+    PluginExecutionSettings,
+    PluginSeverity,
+)
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
     GraphPluginPlan,
@@ -28,48 +32,10 @@ from codeintel.graphs.runtime.manifest import (
     compute_input_hash,
     compute_options_hash,
 )
-from codeintel.graphs.runtime.telemetry import GraphRuntimeTelemetry, get_graph_telemetry
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.config.steps_graphs import GraphMetricsStepConfig
-
-PluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]
-
-
-@dataclass(frozen=True)
-class PluginExecutionSettings:
-    """Resolved execution policy and hashes for a single plugin.
-
-    Attributes
-    ----------
-    name
-        Plugin name.
-    severity
-        Failure severity level.
-    retry_cfg
-        Retry configuration.
-    timeout_ms
-        Execution timeout in milliseconds.
-    fail_fast
-        Whether to abort on first failure.
-    input_hash
-        Content hash of inputs.
-    options_hash
-        Content hash of options.
-    version_hash
-        Plugin version hash.
-    """
-
-    name: str
-    severity: PluginSeverity
-    retry_cfg: GraphPluginRetryPolicy
-    timeout_ms: int | None
-    fail_fast: bool
-    input_hash: str | None
-    options_hash: str | None
-    version_hash: str | None
-
 
 @dataclass(frozen=True)
 class GraphPluginExecutionPlan:
@@ -89,8 +55,6 @@ class GraphPluginExecutionPlan:
         Execution policy.
     prior_manifest
         Prior execution manifest for skip detection.
-    telemetry
-        Telemetry manager.
     scope
         Execution scope.
     plugins
@@ -113,7 +77,6 @@ class GraphPluginExecutionPlan:
     commit: str
     policy: GraphPluginPolicy
     prior_manifest: Mapping[str, Mapping[str, object]] | None
-    telemetry: GraphRuntimeTelemetry
     scope: GraphRunScope
     plugins: tuple[GraphPluginProtocol, ...]
     ordered_names: tuple[str, ...]
@@ -121,6 +84,24 @@ class GraphPluginExecutionPlan:
     dep_graph: dict[str, tuple[str, ...]]
     settings_by_plugin: dict[str, PluginExecutionSettings]
     options_by_plugin: dict[str, object | None]
+
+    def as_plugin_plan(self) -> GraphPluginPlan:
+        """Return as a GraphPluginPlan for use with common executor.
+
+        Extract the core planning information into the simpler
+        `GraphPluginPlan` type used by the registry.
+
+        Returns
+        -------
+        GraphPluginPlan
+            Core plan with plugins, skipped, and dependencies.
+        """
+        return GraphPluginPlan(
+            plugins=self.plugins,
+            plan_id=self.plan_id,
+            skipped_plugins=self.skipped_plugins,
+            dep_graph=dict(self.dep_graph),
+        )
 
 
 @dataclass(frozen=True)
@@ -141,8 +122,6 @@ class GraphPlanContext:
         Runtime options.
     prior_manifest
         Prior manifest for skip detection.
-    telemetry
-        Telemetry manager.
     """
 
     cfg: GraphMetricsStepConfig | None = None
@@ -151,7 +130,6 @@ class GraphPlanContext:
     policy: GraphPluginPolicy = field(default_factory=GraphPluginPolicy)
     run_options: GraphPluginRunOptions | None = None
     prior_manifest: Mapping[str, Mapping[str, object]] | None = None
-    telemetry: GraphRuntimeTelemetry | None = None
 
 
 @dataclass(frozen=True)
@@ -177,7 +155,6 @@ class ResolvedPlanInputs:
     plan_id: str
     run_id: str
     policy: GraphPluginPolicy
-    telemetry: GraphRuntimeTelemetry
     scope: GraphRunScope
     repo: str
     commit: str
@@ -359,10 +336,13 @@ def _build_plugin_settings(
             options_hash=options_hash,
         )
     )
+    # Get retry policy directly (now uses core RetryPolicy)
+    retry_policy = policy.retries.get(plugin.metadata.name, RetryPolicy())
+
     return PluginExecutionSettings(
         name=plugin.metadata.name,
         severity=_effective_severity(plugin, policy),
-        retry_cfg=policy.retries.get(plugin.metadata.name, GraphPluginRetryPolicy()),
+        retry_policy=retry_policy,
         timeout_ms=_effective_timeout(plugin, policy),
         fail_fast=policy.fail_fast,
         input_hash=input_hash,
@@ -388,7 +368,6 @@ def _prepare_execution_inputs(
     cfg = context.cfg
     run_options = context.run_options
     policy = context.policy
-    telemetry = context.telemetry or get_graph_telemetry()
 
     scope = (
         run_options.scope
@@ -430,7 +409,6 @@ def _prepare_execution_inputs(
         plan_id=plan_id,
         run_id=run_id,
         policy=policy,
-        telemetry=telemetry,
         scope=scope,
         repo=repo,
         commit=commit,
@@ -469,7 +447,6 @@ def plan_graph_plugin_run(
         commit=resolved.commit,
         policy=resolved.policy,
         prior_manifest=resolved.prior_manifest,
-        telemetry=resolved.telemetry,
         scope=resolved.scope,
         plugins=plugin_plan.plugins,
         ordered_names=plugin_plan.ordered_names,
