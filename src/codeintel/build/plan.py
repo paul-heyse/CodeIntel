@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 # Module-level Constants
 # =============================================================================
 
-MODULE_ORDER: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
+MODULE_ORDER: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
 """Canonical execution order for target modules."""
 
 MS_PER_SECOND: int = 1000
@@ -427,6 +427,7 @@ class PlanGenerator:
             "ingestion": [],
             "graphs": [],
             "analytics": [],
+            "export": [],
         }
 
         for target_name in resolution.to_compute:

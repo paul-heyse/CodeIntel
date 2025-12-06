@@ -9,6 +9,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from codeintel.build.registry import ALL_TARGETS
 from codeintel.config.datasets import TABLE_SCHEMAS
 
 DIVIDER = "=" * 70
@@ -17,29 +18,27 @@ ORPHAN_TABLE_DISPLAY_THRESHOLD = 5
 
 
 @dataclass(frozen=True)
-class PluginAuditState:
+class TargetAuditState:
     """Computed state for the audit report."""
 
     plugin_tables: dict[str, list[str]]
     artifacts: list[tuple[str, str]]
     missing_schemas: list[tuple[str, list[str]]]
     orphan_tables_by_schema: dict[str, list[str]]
-    plugin_count: int
+    target_count: int
 
 
 def _collect_plugin_tables() -> tuple[dict[str, list[str]], list[tuple[str, str]], int]:
-    register_class_based_plugins()
-    registry = get_ingest_registry()
     plugin_tables: dict[str, list[str]] = {}
     artifacts: list[tuple[str, str]] = []
-    for plugin in registry.all_plugins():
-        meta = plugin.metadata
-        for table_key in meta.output_tables:
+    for target in ALL_TARGETS:
+        for table_key in target.table_keys:
             if "." not in table_key or table_key.startswith("index."):
-                artifacts.append((table_key, meta.name))
+                artifacts.append((table_key, target.plugin))
                 continue
-            plugin_tables.setdefault(table_key, []).append(meta.name)
-    return plugin_tables, artifacts, len(list(registry.all_plugins()))
+            plugin_tables.setdefault(table_key, []).append(target.name)
+        artifacts.extend((artifact.name, target.plugin) for artifact in target.contract.artifacts)
+    return plugin_tables, artifacts, len(ALL_TARGETS)
 
 
 def _find_missing_schemas(plugin_tables: dict[str, list[str]]) -> list[tuple[str, list[str]]]:
@@ -63,16 +62,16 @@ def _find_orphan_tables(plugin_tables: dict[str, list[str]]) -> dict[str, list[s
     return orphans
 
 
-def _build_state() -> PluginAuditState:
-    plugin_tables, artifacts, plugin_count = _collect_plugin_tables()
+def _build_state() -> TargetAuditState:
+    plugin_tables, artifacts, target_count = _collect_plugin_tables()
     missing_schemas = _find_missing_schemas(plugin_tables)
     orphan_tables_by_schema = _find_orphan_tables(plugin_tables)
-    return PluginAuditState(
+    return TargetAuditState(
         plugin_tables=plugin_tables,
         artifacts=artifacts,
         missing_schemas=missing_schemas,
         orphan_tables_by_schema=orphan_tables_by_schema,
-        plugin_count=plugin_count,
+        target_count=target_count,
     )
 
 
@@ -129,12 +128,12 @@ def _format_orphans(orphan_tables_by_schema: dict[str, list[str]]) -> list[str]:
     return lines
 
 
-def _format_summary(state: PluginAuditState) -> list[str]:
+def _format_summary(state: TargetAuditState) -> list[str]:
     lines = [
         DIVIDER,
         "SUMMARY",
         DIVIDER,
-        f"  Plugins registered: {state.plugin_count}",
+        f"  Targets registered: {state.target_count}",
         f"  Tables declared: {len(state.plugin_tables)}",
         f"  Missing schemas: {len(state.missing_schemas)}",
         f"  Artifacts misclassified: {len(state.artifacts)}",
@@ -147,7 +146,7 @@ def _format_summary(state: PluginAuditState) -> list[str]:
     return lines
 
 
-def _format_report(state: PluginAuditState) -> str:
+def _format_report(state: TargetAuditState) -> str:
     lines = [
         DIVIDER,
         "PLUGIN SCHEMA AUDIT",

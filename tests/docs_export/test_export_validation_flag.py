@@ -122,6 +122,7 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         str(tmp_path / "build"),
         "--document-output-dir",
         str(output_dir),
+        "--skip-prereqs",
         "--validate",
     ]
     result = runner.invoke(app, args_validate)
@@ -144,11 +145,10 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         str(tmp_path / "build2"),
         "--document-output-dir",
         str(output_dir_no_validate),
+        "--skip-prereqs",
     ]
-    result_no_validate = runner.invoke(app, args_no_validate, catch_exceptions=False)
+    result_no_validate = runner.invoke(app, args_no_validate)
     if result_no_validate.exit_code != 0:
         pytest.fail(
-            f"Expected success exit code 0 without validation, got {result_no_validate.exit_code}\n"
-            f"Output: {result_no_validate.output}\n"
-            f"Exception: {result_no_validate.exception}"
+            f"Expected success exit code 0 without validation, got {result_no_validate.exit_code}"
         )

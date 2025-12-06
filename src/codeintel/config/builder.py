@@ -49,16 +49,6 @@ from codeintel.config.steps_graphs import (
     ImportGraphStepConfig,
     SymbolUsesStepConfig,
 )
-from codeintel.config.steps_ingestion import (
-    ConfigIngestStepConfig,
-    CoverageIngestStepConfig,
-    DocstringStepConfig,
-    IngestionStepBuilder,
-    RepoScanStepConfig,
-    ScipIngestStepConfig,
-    TestsIngestStepConfig,
-    TypingIngestStepConfig,
-)
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -70,7 +60,6 @@ if TYPE_CHECKING:
         DFGEdgeRow,
     )
     from codeintel.config.parser_types import FunctionParserKind
-    from codeintel.ingestion.compute.scip_ingest import ScipIngestResult
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
@@ -147,11 +136,6 @@ class ConfigBuilder:
         )
 
     @property
-    def ingestion(self) -> IngestionStepBuilder:
-        """Access ingestion-related config builders."""
-        return IngestionStepBuilder(self)
-
-    @property
     def graphs(self) -> GraphStepBuilder:
         """Access graph-related config builders."""
         return GraphStepBuilder(self)
@@ -160,117 +144,6 @@ class ConfigBuilder:
     def analytics(self) -> AnalyticsStepBuilder:
         """Access analytics-related config builders."""
         return AnalyticsStepBuilder(self)
-
-    # SCIP and Source Extraction Steps -------------------------------------
-
-    def scip_ingest(
-        self,
-        *,
-        scip_runner: Callable[..., ScipIngestResult] | None = None,
-        artifact_writer: Callable[[Path, Path, Path], None] | None = None,
-    ) -> ScipIngestStepConfig:
-        """
-        Build SCIP ingestion configuration.
-
-        Returns
-        -------
-        ScipIngestStepConfig
-            Configuration for SCIP index generation.
-        """
-        return self.ingestion.scip_ingest(
-            scip_runner=scip_runner,
-            artifact_writer=artifact_writer,
-        )
-
-    def docstring(self) -> DocstringStepConfig:
-        """
-        Build docstring ingestion configuration.
-
-        Returns
-        -------
-        DocstringStepConfig
-            Configuration for docstring extraction.
-        """
-        return self.ingestion.docstring()
-
-    def repo_scan(
-        self,
-        *,
-        tags_index_path: Path | None = None,
-        tool_runner: object | None = None,
-    ) -> RepoScanStepConfig:
-        """
-        Build repository scan configuration.
-
-        Returns
-        -------
-        RepoScanStepConfig
-            Configuration for module discovery.
-        """
-        return self.ingestion.repo_scan(
-            tags_index_path=tags_index_path,
-            tool_runner=tool_runner,
-        )
-
-    def coverage_ingest(
-        self,
-        *,
-        coverage_file: Path | None = None,
-        tool_runner: object | None = None,
-    ) -> CoverageIngestStepConfig:
-        """
-        Build coverage ingestion configuration.
-
-        Returns
-        -------
-        CoverageIngestStepConfig
-            Configuration for coverage line ingestion.
-        """
-        return self.ingestion.coverage_ingest(
-            coverage_file=coverage_file,
-            tool_runner=tool_runner,
-        )
-
-    def tests_ingest(
-        self,
-        *,
-        pytest_report_path: Path | None = None,
-    ) -> TestsIngestStepConfig:
-        """
-        Build tests ingestion configuration.
-
-        Returns
-        -------
-        TestsIngestStepConfig
-            Configuration for pytest catalog ingestion.
-        """
-        return self.ingestion.tests_ingest(pytest_report_path=pytest_report_path)
-
-    def typing_ingest(
-        self,
-        *,
-        tool_runner: object | None = None,
-    ) -> TypingIngestStepConfig:
-        """
-        Build typing ingestion configuration.
-
-        Returns
-        -------
-        TypingIngestStepConfig
-            Configuration for typedness and diagnostics ingestion.
-        """
-        return self.ingestion.typing_ingest(tool_runner=tool_runner)
-
-    def config_ingest(self) -> ConfigIngestStepConfig:
-        """
-        Build config-values ingestion configuration.
-
-        Returns
-        -------
-        ConfigIngestStepConfig
-            Configuration for config-values ingestion.
-        """
-        return self.ingestion.config_ingest()
 
     # Graph Construction Steps ---------------------------------------------
 
@@ -715,12 +588,9 @@ __all__ = [
     "CallGraphStepConfig",
     "ConfigBuilder",
     "ConfigDataFlowStepConfig",
-    "ConfigIngestStepConfig",
     "CoverageAnalyticsStepConfig",
-    "CoverageIngestStepConfig",
     "DataModelUsageStepConfig",
     "DataModelsStepConfig",
-    "DocstringStepConfig",
     "EntryPointToggles",
     "EntryPointsStepConfig",
     "ExternalDependenciesStepConfig",
@@ -734,13 +604,9 @@ __all__ = [
     "HotspotsStepConfig",
     "ImportGraphStepConfig",
     "ProfilesAnalyticsStepConfig",
-    "RepoScanStepConfig",
-    "ScipIngestStepConfig",
     "SemanticRolesStepConfig",
     "SubsystemsStepConfig",
     "SymbolUsesStepConfig",
     "TestCoverageStepConfig",
     "TestProfileStepConfig",
-    "TestsIngestStepConfig",
-    "TypingIngestStepConfig",
 ]
