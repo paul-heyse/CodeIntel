@@ -29,9 +29,7 @@ class CoreMetricsPlugin(TargetPlugin):
 
     plugin_name: ClassVar[str] = "graph_metrics.core"
     plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Compute core graph metrics (PageRank, centrality, etc.)."
-    )
+    plugin_description: ClassVar[str] = "Compute core graph metrics (PageRank, centrality, etc.)."
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute core metrics computation.

@@ -125,7 +125,6 @@ def create_test_graph() -> TargetGraph:
         plugin="AstPlugin",
         tables=("ingestion.ast",),
         dependencies=(),
-        estimated_duration_ms=5000,
     )
     graph.register(ast)
 
@@ -136,7 +135,6 @@ def create_test_graph() -> TargetGraph:
         plugin="GoidsPlugin",
         tables=("graphs.goids",),
         dependencies=("ast",),
-        estimated_duration_ms=3000,
     )
     graph.register(goids)
 
@@ -147,7 +145,6 @@ def create_test_graph() -> TargetGraph:
         plugin="FunctionMetricsPlugin",
         tables=("analytics.function_metrics",),
         dependencies=("goids",),
-        estimated_duration_ms=10000,
     )
     graph.register(function_metrics)
 
@@ -158,7 +155,6 @@ def create_test_graph() -> TargetGraph:
         plugin="FunctionProfilePlugin",
         tables=("analytics.function_profile",),
         dependencies=("function_metrics",),
-        estimated_duration_ms=2000,
     )
     graph.register(function_profile)
 
@@ -775,17 +771,16 @@ class TestEdgeCases:
         assert "standalone" in view.runnable_targets()
         assert view["standalone"].can_run
 
-    def test_target_with_unknown_duration(self) -> None:
-        """Test time estimation when duration is unknown."""
+    def test_target_with_default_duration(self) -> None:
+        """Test time estimation with default computed duration."""
         graph = TargetGraph()
         graph.register(
             OutputTarget(
-                name="unknown_duration",
+                name="default_duration",
                 module="ingestion",
                 plugin="Plugin",
                 tables=("test.table",),
                 dependencies=(),
-                estimated_duration_ms=None,  # Unknown duration
             )
         )
 
@@ -793,10 +788,11 @@ class TestEdgeCases:
         gateway = MockStorageGateway(build=MockBuildTracking(_manifests={}))
 
         view = DatabaseReadinessView(graph, as_gateway(gateway), as_snapshot(snapshot))
-        readiness = view["unknown_duration"].readiness
+        readiness = view["default_duration"].readiness
 
-        # Time estimation should be None when duration is unknown
-        assert readiness.estimated_time_to_ready_ms is None
+        # Time estimation uses computed duration from TargetExecution
+        # Default duration is 5000ms (base) so estimation should be present
+        assert readiness.estimated_time_to_ready_ms is not None
 
 
 # =============================================================================

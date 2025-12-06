@@ -49,8 +49,6 @@ from codeintel.analytics.plugins.registration import (
     SEMANTIC_ROLES_PLUGIN,
     SUBSYSTEMS_PLUGIN,
     TEST_PROFILE_PLUGIN,
-    ensure_plugins_registered,
-    register_all_plugins,
 )
 from codeintel.analytics.plugins.risk import RiskFactorsPlugin
 from codeintel.analytics.plugins.semantic_roles import SemanticRolesPlugin
@@ -102,6 +100,4 @@ __all__ = [
     "SemanticRolesPlugin",
     "SubsystemsPlugin",
     "TestProfilePlugin",
-    "ensure_plugins_registered",
-    "register_all_plugins",
 ]

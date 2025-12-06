@@ -6,18 +6,73 @@ This package contains all graph plugins organized by category:
 - validation: Graph validation plugin
 
 All plugins implement the TargetPlugin protocol for the build system.
+Adapters are used to register them with the GraphPluginRegistry.
 """
 
-import importlib
+from __future__ import annotations
 
+import logging
+
+from codeintel.graphs.core.adapters import TargetPluginAdapter
+from codeintel.graphs.core.registry import get_graph_registry
+from codeintel.graphs.plugins.builders import (
+    CallGraphPlugin,
+    CfgDfgPlugin,
+    GoidBuilderPlugin,
+    ImportGraphPlugin,
+    SymbolUsesPlugin,
+)
+from codeintel.graphs.plugins.metrics import CoreMetricsPlugin, SecondaryMetricsPlugin
 from codeintel.graphs.plugins.validation import GraphValidationPlugin
+
+_log = logging.getLogger(__name__)
+
+# Flag to prevent double registration
+_plugins_registered = False
 
 
 def load_builtin_plugins() -> None:
-    """Import built-in plugins to ensure registration side effects run once."""
-    importlib.import_module("codeintel.graphs.plugins.builders")
-    importlib.import_module("codeintel.graphs.plugins.metrics")
-    importlib.import_module("codeintel.graphs.plugins.validation")
+    """Register adapted TargetPlugins with the GraphPluginRegistry.
+
+    This function wraps each TargetPlugin implementation with a
+    TargetPluginAdapter and registers it with the global graph registry.
+    The adapters provide the GraphPluginProtocol interface required by
+    the registry.
+
+    This function is idempotent - calling it multiple times has no effect
+    after the first successful registration.
+    """
+    global _plugins_registered  # noqa: PLW0603
+    if _plugins_registered:
+        return
+
+    registry = get_graph_registry()
+
+    # Define all plugins to register with their instances
+    target_plugins = [
+        # Builders
+        GoidBuilderPlugin(),
+        CallGraphPlugin(),
+        ImportGraphPlugin(),
+        CfgDfgPlugin(),
+        SymbolUsesPlugin(),
+        # Metrics
+        CoreMetricsPlugin(),
+        SecondaryMetricsPlugin(),
+        # Validation
+        GraphValidationPlugin(),
+    ]
+
+    for plugin in target_plugins:
+        try:
+            adapted = TargetPluginAdapter(plugin)
+            registry.register(adapted)
+            _log.debug("Registered graph plugin adapter: %s", plugin.plugin_name)
+        except ValueError:
+            # Plugin already registered (e.g., from entry points)
+            _log.debug("Plugin already registered: %s", plugin.plugin_name)
+
+    _plugins_registered = True
 
 
 # Eagerly load built-in plugins so registry has them by default.

@@ -12,8 +12,8 @@ The CFG/DFG plugin performs the following steps:
    - For each function, build CFG using CFGBuilder
    - Build DFG from CFG using DFGBuilder
    - Convert results to row format
-3. Persist CFG blocks and edges to graphs.cfg_*
-4. Persist DFG edges to graphs.dfg_edges
+3. Persist CFG blocks and edges to graph.cfg_*
+4. Persist DFG edges to graph.dfg_edges
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ def _persist_cfg_blocks(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.cfg_blocks",
+        "graph.cfg_blocks",
         [cfg_block_to_tuple(block) for block in blocks],
         delete_params=[repo, commit],
         scope="cfg_blocks",
@@ -260,7 +260,7 @@ def _persist_cfg_edges(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.cfg_edges",
+        "graph.cfg_edges",
         [cfg_edge_to_tuple(edge) for edge in edges],
         delete_params=[repo, commit],
         scope="cfg_edges",
@@ -297,7 +297,7 @@ def _persist_dfg_edges(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.dfg_edges",
+        "graph.dfg_edges",
         [dfg_edge_to_tuple(edge) for edge in edges],
         delete_params=[repo, commit],
         scope="dfg_edges",
@@ -361,13 +361,13 @@ class CfgDfgPlugin(TargetPlugin):
     1. Loads function metadata from core.goids
     2. Parses source files and builds CFG for each function
     3. Builds DFG from CFG using reaching definitions
-    4. Persists blocks and edges to graphs.*
+    4. Persists blocks and edges to graph.*
 
     Outputs
     -------
-    - graphs.cfg_blocks: CFG basic blocks
-    - graphs.cfg_edges: CFG edges
-    - graphs.dfg_edges: DFG data-flow edges
+    - graph.cfg_blocks: CFG basic blocks
+    - graph.cfg_edges: CFG edges
+    - graph.dfg_edges: DFG data-flow edges
     """
 
     plugin_name: ClassVar[str] = "cfg_dfg"
@@ -398,15 +398,21 @@ class CfgDfgPlugin(TargetPlugin):
             if not paths:
                 log.info("cfg_dfg: No functions found, skipping")
                 return TargetResult.succeeded(
-                    row_counts={"graphs.cfg_blocks": 0, "graphs.cfg_edges": 0, "graphs.dfg_edges": 0}
+                    row_counts={"graph.cfg_blocks": 0, "graph.cfg_edges": 0, "graph.dfg_edges": 0}
                 )
 
-            source_root = _get_source_root(gateway, repo, commit) or Path.cwd()
+            # Use snapshot repo_root directly, fall back to db or cwd
+            source_root = (
+                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+            )
             blocks, cfg_edges, dfg_edges = _process_all_files(paths, function_index, source_root)
 
             log.info(
                 "cfg_dfg: Collected %d blocks, %d cfg_edges, %d dfg_edges from %d files",
-                len(blocks), len(cfg_edges), len(dfg_edges), len(paths),
+                len(blocks),
+                len(cfg_edges),
+                len(dfg_edges),
+                len(paths),
             )
 
             bc = _persist_cfg_blocks(gateway, blocks, repo, commit)
@@ -415,7 +421,7 @@ class CfgDfgPlugin(TargetPlugin):
 
             log.info("cfg_dfg: Persisted %d blocks, %d cfg_edges, %d dfg_edges", bc, ce, de)
             return TargetResult.succeeded(
-                row_counts={"graphs.cfg_blocks": bc, "graphs.cfg_edges": ce, "graphs.dfg_edges": de}
+                row_counts={"graph.cfg_blocks": bc, "graph.cfg_edges": ce, "graph.dfg_edges": de}
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"CFG/DFG build failed: {e}")

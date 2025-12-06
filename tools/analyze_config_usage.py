@@ -1,33 +1,41 @@
-#!/usr/bin/env python3
-"""Analyze usage of config package exports across the codebase.
-
-This script identifies potentially unused configuration types, dataclasses,
-and other exports from the codeintel.config package by searching for their
-usage across the entire codebase.
-
-Usage
------
-    uv run python -m tools.analyze_config_usage [--json] [--threshold N]
-
-Options
--------
---json
-    Output results as JSON instead of formatted text.
---threshold N
-    Flag items with fewer than N external uses (default: 1).
---include-tests
-    Include test files in usage counts.
-"""
+"""Analyze usage of config package exports across the codebase."""
 
 from __future__ import annotations
 
 import argparse
 import ast
 import json
-import subprocess
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+CONFIG_DIR = Path("src/codeintel/config")
+DATASETS_DIR = CONFIG_DIR / "datasets"
+ROWS_DIR = DATASETS_DIR / "rows"
+SEARCH_ROOTS: tuple[Path, ...] = (Path("src"), Path("tests"))
+MIN_EXPORT_NAME_LENGTH = 4
+MAX_USAGE_FILE_COUNT = 5
+WELL_USED_REPORT_LIMIT = 20
+WORD_BOUNDARY_TEMPLATE = r"\b{}\b"
+SKIP_NAMES: set[str] = {
+    "repo",
+    "commit",
+    "repo_root",
+    "build_dir",
+    "snapshot",
+    "paths",
+    "default",
+    "analytics",
+    "graphs",
+    "ingestion",
+    "profiles",
+    "code",
+    "config",
+    "from_args",
+    "from_layout",
+    "from_primitives",
+}
 
 
 @dataclass
@@ -53,6 +61,65 @@ class AnalysisResult:
     exports: list[ExportInfo]
 
 
+def _parse_python_file(py_file: Path) -> ast.Module | None:
+    try:
+        return ast.parse(py_file.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return None
+
+
+def _extract_all_exports(tree: ast.AST) -> list[str]:
+    exports: list[str] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple))):
+            continue
+        is_all_assignment = any(
+            isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+        )
+        if not is_all_assignment:
+            continue
+        for element in node.value.elts:
+            if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                export_name = element.value
+                if export_name not in SKIP_NAMES and len(export_name) >= MIN_EXPORT_NAME_LENGTH:
+                    exports.append(export_name)
+    return exports
+
+
+def _extract_class_exports(tree: ast.AST) -> list[str]:
+    return [
+        node.name
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.ClassDef)
+            and not node.name.startswith("_")
+            and node.name not in SKIP_NAMES
+        )
+    ]
+
+
+def _collect_exports_from_file(py_file: Path) -> list[str]:
+    tree = _parse_python_file(py_file)
+    if tree is None:
+        return []
+
+    explicit_exports = _extract_all_exports(tree)
+    if explicit_exports:
+        return explicit_exports
+
+    return _extract_class_exports(tree)
+
+
+def _iter_config_modules() -> list[Path]:
+    return [
+        py_file
+        for directory in (CONFIG_DIR, DATASETS_DIR, ROWS_DIR)
+        if directory.exists()
+        for py_file in directory.glob("*.py")
+        if not py_file.name.startswith("_")
+    ]
+
+
 def get_config_exports() -> dict[str, list[str]]:
     """Extract all exports from config package modules.
 
@@ -61,152 +128,51 @@ def get_config_exports() -> dict[str, list[str]]:
     dict[str, list[str]]
         Mapping of source file to list of exported names.
     """
-    config_dir = Path("src/codeintel/config")
     exports: dict[str, list[str]] = {}
-
-    # Common names to skip (properties, methods, etc.)
-    skip_names = {
-        "repo",
-        "commit",
-        "repo_root",
-        "build_dir",
-        "snapshot",
-        "paths",
-        "default",
-        "analytics",
-        "graphs",
-        "ingestion",
-        "profiles",
-        "code",
-        "config",
-        "from_args",
-        "from_layout",
-        "from_primitives",
-    }
-
-    # Parse each Python file in config
-    for py_file in config_dir.glob("*.py"):
-        if py_file.name.startswith("_"):
-            continue
-
-        try:
-            tree = ast.parse(py_file.read_text())
-        except SyntaxError:
-            continue
-
-        file_exports: list[str] = []
-
-        for node in ast.walk(tree):
-            # Get __all__ if defined - this is the authoritative source
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                    name = elt.value
-                                    if name not in skip_names and len(name) > 3:
-                                        file_exports.append(name)
-
-        # If no __all__, fall back to class definitions
-        if not file_exports:
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    if not node.name.startswith("_") and node.name not in skip_names:
-                        file_exports.append(node.name)
-
+    for py_file in _iter_config_modules():
+        file_exports = _collect_exports_from_file(py_file)
         if file_exports:
             exports[str(py_file)] = file_exports
-
-    # Also check datasets subpackage
-    datasets_dir = config_dir / "datasets"
-    if datasets_dir.exists():
-        for py_file in datasets_dir.glob("*.py"):
-            if py_file.name.startswith("_"):
-                continue
-
-            try:
-                tree = ast.parse(py_file.read_text())
-            except SyntaxError:
-                continue
-
-            file_exports: list[str] = []
-
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        if isinstance(target, ast.Name) and target.id == "__all__":
-                            if isinstance(node.value, (ast.List, ast.Tuple)):
-                                for elt in node.value.elts:
-                                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                        name = elt.value
-                                        if name not in skip_names and len(name) > 3:
-                                            file_exports.append(name)
-
-            # If no __all__, get class definitions
-            if not file_exports:
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.ClassDef):
-                        if not node.name.startswith("_") and node.name not in skip_names:
-                            file_exports.append(node.name)
-
-            if file_exports:
-                exports[str(py_file)] = file_exports
-
-        # Check rows subpackage
-        rows_dir = datasets_dir / "rows"
-        if rows_dir.exists():
-            for py_file in rows_dir.glob("*.py"):
-                if py_file.name.startswith("_"):
-                    continue
-
-                try:
-                    tree = ast.parse(py_file.read_text())
-                except SyntaxError:
-                    continue
-
-                file_exports: list[str] = []
-
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.ClassDef):
-                        if not node.name.startswith("_") and node.name not in skip_names:
-                            file_exports.append(node.name)
-
-                if file_exports:
-                    exports[str(py_file)] = file_exports
-
     return exports
 
 
-def classify_export(name: str, source_file: str) -> str:
+def classify_export(name: str) -> str:
     """Classify an export by its type.
 
     Parameters
     ----------
     name
         Name of the export.
-    source_file
-        Source file path.
 
     Returns
     -------
     str
         Classification: "class", "function", "constant", "type_alias".
     """
-    if name.endswith("Config") or name.endswith("Row") or name.endswith("Schema"):
-        return "class"
-    if name.endswith("StepConfig"):
+    if name.endswith(("Config", "Row", "Schema")):
         return "class"
     if name[0].isupper() and "_" not in name:
         return "class"
-    if name.startswith("resolve_") or name.startswith("build_"):
+    if name.startswith(("resolve_", "build_")):
         return "function"
     if name.isupper():
         return "constant"
     return "unknown"
 
 
-def count_usages(name: str, include_tests: bool = False) -> tuple[int, int, int, list[str]]:
+def _file_contains_pattern(path: Path, pattern: re.Pattern[str]) -> bool:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return bool(pattern.search(content))
+
+
+def count_usages(
+    name: str,
+    *,
+    include_tests: bool = False,
+) -> tuple[int, int, int, list[str]]:
     """Count usages of a name across the codebase.
 
     Parameters
@@ -221,67 +187,41 @@ def count_usages(name: str, include_tests: bool = False) -> tuple[int, int, int,
     tuple[int, int, int, list[str]]
         (external_uses, test_uses, internal_uses, files_list).
     """
-    # Use ripgrep for fast searching - search for the name as a word
-    try:
-        result = subprocess.run(
-            [
-                "rg",
-                "-l",  # Files only
-                "--type=py",
-                "-w",  # Word boundary
-                name,
-                "src/",
-                "tests/",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            cwd=Path.cwd(),
-        )
-        files = [f for f in result.stdout.strip().split("\n") if f]
-    except FileNotFoundError:
-        # Fallback to grep if rg not available
-        result = subprocess.run(
-            [
-                "grep",
-                "-rlw",  # Word boundary
-                "--include=*.py",
-                name,
-                "src/",
-                "tests/",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            cwd=Path.cwd(),
-        )
-        files = [f for f in result.stdout.strip().split("\n") if f]
-
+    pattern = re.compile(WORD_BOUNDARY_TEMPLATE.format(re.escape(name)))
     external_uses = 0
     test_uses = 0
     internal_uses = 0
     external_files: list[str] = []
 
-    for f in files:
-        if not f:
+    for root in SEARCH_ROOTS:
+        if not root.exists():
             continue
-        # Config package files (including datasets subpackage)
-        if "src/codeintel/config/" in f:
-            internal_uses += 1
-        elif f.startswith("tests/"):
-            test_uses += 1
-            if include_tests:
-                external_uses += 1
-                external_files.append(f)
-        else:
+        for path in root.rglob("*.py"):
+            if not _file_contains_pattern(path, pattern):
+                continue
+
+            if path.is_relative_to(CONFIG_DIR):
+                internal_uses += 1
+                continue
+
+            if path.is_relative_to(Path("tests")):
+                test_uses += 1
+                if include_tests:
+                    if len(external_files) < MAX_USAGE_FILE_COUNT:
+                        external_files.append(path.as_posix())
+                    external_uses += 1
+                continue
+
+            if len(external_files) < MAX_USAGE_FILE_COUNT:
+                external_files.append(path.as_posix())
             external_uses += 1
-            external_files.append(f)
 
     return external_uses, test_uses, internal_uses, external_files
 
 
 def analyze_config_usage(
     threshold: int = 1,
+    *,
     include_tests: bool = False,
 ) -> AnalysisResult:
     """Analyze usage of all config exports.
@@ -309,8 +249,8 @@ def analyze_config_usage(
                 continue
             seen_names.add(name)
 
-            kind = classify_export(name, source_file)
-            external, test, internal, files = count_usages(name, include_tests)
+            kind = classify_export(name)
+            external, test, internal, files = count_usages(name, include_tests=include_tests)
 
             info = ExportInfo(
                 name=name,
@@ -319,7 +259,7 @@ def analyze_config_usage(
                 external_uses=external,
                 test_uses=test,
                 internal_uses=internal,
-                used_in_files=files[:5],  # Limit to 5 files
+                used_in_files=files[:MAX_USAGE_FILE_COUNT],
             )
             all_exports.append(info)
 
@@ -415,11 +355,14 @@ def format_text_report(result: AnalysisResult, threshold: int) -> str:
 
     well_used = [e for e in result.exports if e.external_uses >= threshold]
     well_used.sort(key=lambda x: -x.external_uses)  # Descending
-    for export in well_used[:20]:  # Top 20
-        lines.append(f"  ✅ {export.name}: {export.external_uses} external uses")
+    lines.extend(
+        f"  ✅ {export.name}: {export.external_uses} external uses"
+        for export in well_used[:WELL_USED_REPORT_LIMIT]
+    )
 
-    if len(well_used) > 20:
-        lines.append(f"  ... and {len(well_used) - 20} more")
+    if len(well_used) > WELL_USED_REPORT_LIMIT:
+        remaining = len(well_used) - WELL_USED_REPORT_LIMIT
+        lines.append(f"  ... and {remaining} more")
 
     lines.append("")
     lines.append("=" * 80)
@@ -454,7 +397,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print("Analyzing config package usage...", file=sys.stderr)
+    sys.stderr.write("Analyzing config package usage...\n")
     result = analyze_config_usage(
         threshold=args.threshold,
         include_tests=args.include_tests,
@@ -479,9 +422,11 @@ def main() -> int:
                 for e in result.exports
             ],
         }
-        print(json.dumps(data, indent=2))
+        sys.stdout.write(json.dumps(data, indent=2))
+        sys.stdout.write("\n")
     else:
-        print(format_text_report(result, args.threshold))
+        sys.stdout.write(format_text_report(result, args.threshold))
+        sys.stdout.write("\n")
 
     # Return non-zero if there are unused exports
     return 1 if result.unused_count > 0 else 0

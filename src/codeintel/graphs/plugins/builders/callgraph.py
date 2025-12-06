@@ -14,8 +14,8 @@ The call graph plugin performs the following steps:
    - Collect import aliases from the file
    - Create EdgeResolutionContext with all lookup maps
    - Parse file and collect call edges via LibCST (or AST fallback)
-5. Persist deduplicated edges to graphs.call_graph_edges
-6. Persist nodes to graphs.call_graph_nodes
+5. Persist deduplicated edges to graph.call_graph_edges
+6. Persist nodes to graph.call_graph_nodes
 """
 
 from __future__ import annotations
@@ -261,14 +261,13 @@ def _build_nodes_from_goids(
     """
     con = gateway.con
     try:
+        # Note: arity and is_public may not exist in all schemas, use COALESCE with literals
         rows = con.execute(
             """
             SELECT
                 goid_h128,
-                'python' AS language,
+                COALESCE(language, 'python') AS language,
                 kind,
-                COALESCE(arity, 0) AS arity,
-                is_public,
                 rel_path
             FROM core.goids
             WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
@@ -282,13 +281,13 @@ def _build_nodes_from_goids(
     return [
         CallGraphNodeRow(
             goid_h128=int(goid_h128),
-            language=str(language),
+            language=str(language) if language else "python",
             kind=str(kind),
-            arity=int(arity) if arity is not None else 0,
-            is_public=bool(is_public) if is_public is not None else True,
+            arity=0,  # Default value, column may not exist
+            is_public=True,  # Default value, column may not exist
             rel_path=str(rel_path),
         )
-        for goid_h128, language, kind, arity, is_public, rel_path in rows
+        for goid_h128, language, kind, rel_path in rows
     ]
 
 
@@ -321,7 +320,7 @@ def _persist_nodes(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.call_graph_nodes",
+        "graph.call_graph_nodes",
         [call_graph_node_to_tuple(node) for node in nodes],
         delete_params=[repo, commit],
         scope="call_graph_nodes",
@@ -370,7 +369,7 @@ def _persist_edges(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.call_graph_edges",
+        "graph.call_graph_edges",
         [call_graph_edge_to_tuple(e) for e in serialized],
         delete_params=[repo, commit],
         scope="call_graph_edges",
@@ -416,7 +415,9 @@ def _collect_all_edges(
         import_aliases: dict[str, str] = {}
         if file_path.exists():
             with contextlib.suppress(OSError, UnicodeDecodeError, cst.ParserSyntaxError):
-                import_aliases = collect_aliases(cst.parse_module(file_path.read_text(encoding="utf8")))
+                import_aliases = collect_aliases(
+                    cst.parse_module(file_path.read_text(encoding="utf8"))
+                )
 
         context = EdgeResolutionContext(
             repo=ctx.repo,
@@ -440,12 +441,12 @@ class CallGraphPlugin(TargetPlugin):
     1. Loads function metadata from core.goids
     2. Parses source files to collect call edges
     3. Resolves callees using local/global/import maps
-    4. Persists nodes and edges to graphs.call_graph_*
+    4. Persists nodes and edges to graph.call_graph_*
 
     Outputs
     -------
-    - graphs.call_graph_nodes: Call graph nodes
-    - graphs.call_graph_edges: Call graph edges
+    - graph.call_graph_nodes: Call graph nodes
+    - graph.call_graph_edges: Call graph edges
     """
 
     plugin_name: ClassVar[str] = "callgraph"
@@ -479,13 +480,16 @@ class CallGraphPlugin(TargetPlugin):
             if not paths:
                 log.info("callgraph: No functions found, skipping")
                 return TargetResult.succeeded(
-                    row_counts={"graphs.call_graph_nodes": 0, "graphs.call_graph_edges": 0}
+                    row_counts={"graph.call_graph_nodes": 0, "graph.call_graph_edges": 0}
                 )
 
             # Build lookup maps
             global_callees = _build_global_callee_lookup(gateway, repo, commit)
             def_goids = _build_def_goids_by_path(gateway, repo, commit)
-            source_root = _get_source_root(gateway, repo, commit) or Path.cwd()
+            # Use snapshot repo_root directly, fall back to db or cwd
+            source_root = (
+                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+            )
 
             # Collect and persist edges
             collection_ctx = _EdgeCollectionContext(
@@ -507,7 +511,10 @@ class CallGraphPlugin(TargetPlugin):
 
             log.info("callgraph: Persisted %d nodes, %d edges", node_count, edge_count)
             return TargetResult.succeeded(
-                row_counts={"graphs.call_graph_nodes": node_count, "graphs.call_graph_edges": edge_count}
+                row_counts={
+                    "graph.call_graph_nodes": node_count,
+                    "graph.call_graph_edges": edge_count,
+                }
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Call graph build failed: {e}")

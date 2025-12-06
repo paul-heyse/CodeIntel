@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.build.context import ContextResources
 from codeintel.config import ConfigBuilder
-from codeintel.config.primitives import BuildPaths
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
 from codeintel.ingestion import (
     CoverageIngestStep,
@@ -66,6 +67,7 @@ from tests._helpers.orchestration.repo_writers import (
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
+from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -882,6 +884,11 @@ def build_callgraph_fixture_repo(
     -------
     ProvisionedGateway
         Provisioned gateway after callgraph build.
+
+    Raises
+    ------
+    RuntimeError
+        If the CallGraphPlugin fails execution.
     """
     write_callgraph_alias_repo(repo_root)
     opts = options or CallgraphFixtureOptions()
@@ -903,10 +910,37 @@ def build_callgraph_fixture_repo(
         gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002, 1003, 1004)")
         gateway.con.execute("DELETE FROM core.modules WHERE path IN ('pkg/a.py', 'pkg/b.py')")
         seed_callgraph_goids(gateway, repo=opts.repo, commit=opts.commit, entries=opts.goid_entries)
-    # Note: Callgraph building via plugin system has been migrated to TargetPlugin.
-    # Use BuildExecutor with CallGraphPlugin for full callgraph construction.
-    # For now, this code path is a no-op until test infrastructure is updated.
-    _ = CallGraphPlugin()  # Suppress unused import warning
+
+    # Build callgraph using the plugin system
+    snapshot = SnapshotRef(
+        repo=opts.repo,
+        commit=opts.commit,
+        repo_root=repo_root,
+    )
+    build_dir = repo_root / ".build"
+    paths = BuildPaths(
+        build_dir=build_dir,
+        db_path=build_dir / "db" / "codeintel.duckdb",
+        document_output_dir=build_dir / "output",
+        scip_dir=build_dir / "scip",
+        coverage_json=build_dir / "coverage" / "coverage.json",
+        pytest_report=build_dir / "test-results" / "pytest-report.json",
+        tool_cache=build_dir / ".tool_cache",
+        log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
+    )
+    resources = ContextResources(gateway=gateway)
+    test_ctx = PluginTestContext(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        resources=resources,
+    )
+
+    result = execute_target_plugin(CallGraphPlugin(), test_ctx)
+    if not result.success:
+        msg = f"CallGraphPlugin failed: {result.error_message}"
+        raise RuntimeError(msg)
+
     return ctx
 
 

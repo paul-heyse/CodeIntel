@@ -9,7 +9,7 @@ The import graph plugin performs the following steps:
 1. Load module information from core.modules
 2. Extract imports from each Python file
 3. Analyze imports to compute SCCs and layers
-4. Persist module and edge data to graphs.import_*
+4. Persist module and edge data to graph.import_*
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _persist_import_modules(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.import_modules",
+        "graph.import_modules",
         [import_module_to_tuple(r) for r in typed_rows],
         delete_params=[repo, commit],
         scope="import_modules",
@@ -236,7 +236,7 @@ def _persist_import_edges(
 
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
-        "graphs.import_graph_edges",
+        "graph.import_graph_edges",
         [import_edge_to_tuple(r) for r in typed_rows],
         delete_params=[repo, commit],
         scope="import_graph_edges",
@@ -251,12 +251,12 @@ class ImportGraphPlugin(TargetPlugin):
     1. Loads module information from core.modules
     2. Parses source files to extract imports
     3. Analyzes imports to compute SCCs and layers
-    4. Persists to graphs.import_modules and graphs.import_graph_edges
+    4. Persists to graph.import_modules and graph.import_graph_edges
 
     Outputs
     -------
-    - graphs.import_modules: Module metadata with SCC and layer info
-    - graphs.import_graph_edges: Import relationships
+    - graph.import_modules: Module metadata with SCC and layer info
+    - graph.import_graph_edges: Import relationships
     """
 
     plugin_name: ClassVar[str] = "import_graph"
@@ -281,29 +281,39 @@ class ImportGraphPlugin(TargetPlugin):
         gateway, repo, commit = ctx.gateway, config.repo, config.commit
 
         try:
-            source_root = _get_source_root(gateway, repo, commit) or Path.cwd()
+            # Use snapshot repo_root directly, fall back to db or cwd
+            source_root = (
+                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+            )
             module_by_path = _load_modules(gateway, repo, commit)
 
             if not module_by_path:
                 log.info("import_graph: No modules found, skipping")
                 return TargetResult.succeeded(
-                    row_counts={"graphs.import_modules": 0, "graphs.import_graph_edges": 0}
+                    row_counts={"graph.import_modules": 0, "graph.import_graph_edges": 0}
                 )
 
             # Collect edges and analyze
             edges: list[imports_compute.ImportEdge] = []
             for rel_path, module_name in module_by_path.items():
-                edges.extend(imports_compute.collect_import_edges(
-                    module_name, _extract_imports_from_file(source_root / rel_path)
-                ))
+                edges.extend(
+                    imports_compute.collect_import_edges(
+                        module_name, _extract_imports_from_file(source_root / rel_path)
+                    )
+                )
 
             modules = set(module_by_path.values())
             result = imports_compute.analyze_imports(edges, modules)
-            log.info("import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values())))
+            log.info(
+                "import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values()))
+            )
 
             # Persist
             mc = _persist_import_modules(
-                gateway, imports_compute.build_import_module_rows(repo, commit, result), repo, commit
+                gateway,
+                imports_compute.build_import_module_rows(repo, commit, result),
+                repo,
+                commit,
             )
             ec = _persist_import_edges(
                 gateway, imports_compute.build_import_edge_rows(repo, commit, result), repo, commit
@@ -311,7 +321,7 @@ class ImportGraphPlugin(TargetPlugin):
 
             log.info("import_graph: Persisted %d modules, %d edges", mc, ec)
             return TargetResult.succeeded(
-                row_counts={"graphs.import_modules": mc, "graphs.import_graph_edges": ec}
+                row_counts={"graph.import_modules": mc, "graph.import_graph_edges": ec}
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Import graph build failed: {e}")

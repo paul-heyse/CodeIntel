@@ -29,9 +29,7 @@ class SecondaryMetricsPlugin(TargetPlugin):
 
     plugin_name: ClassVar[str] = "graph_metrics.secondary"
     plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Compute secondary graph metrics (CFG/DFG metrics)."
-    )
+    plugin_description: ClassVar[str] = "Compute secondary graph metrics (CFG/DFG metrics)."
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute secondary metrics computation.

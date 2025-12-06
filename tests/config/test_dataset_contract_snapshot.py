@@ -11,9 +11,9 @@ from codeintel.config.datasets import (
     get_table_schemas,
 )
 
-# Expected counts for snapshot verification (captured before refactor)
-EXPECTED_DATASET_CONTRACTS_COUNT = 108
-EXPECTED_TABLE_SCHEMAS_COUNT = 79
+# Expected counts for snapshot verification (updated after TargetPlugin migration)
+EXPECTED_DATASET_CONTRACTS_COUNT = 110
+EXPECTED_TABLE_SCHEMAS_COUNT = 81
 EXPECTED_ROW_BINDINGS_COUNT = 36
 
 

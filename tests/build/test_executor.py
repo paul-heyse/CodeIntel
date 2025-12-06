@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,7 +18,11 @@ from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Test Fixtures
@@ -42,7 +46,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.modules",),
         dependencies=(),
         description="Repository module index",
-        estimated_duration_ms=1000,
     )
 
     ast_target = OutputTarget(
@@ -52,7 +55,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.ast_nodes",),
         dependencies=("modules",),
         description="AST extraction",
-        estimated_duration_ms=5000,
     )
 
     goids_target = OutputTarget(
@@ -62,7 +64,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.goids",),
         dependencies=("ast",),
         description="GOID construction",
-        estimated_duration_ms=10000,
     )
 
     metrics_target = OutputTarget(
@@ -72,7 +73,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("analytics.function_metrics",),
         dependencies=("goids",),
         description="Function metrics",
-        estimated_duration_ms=8000,
     )
 
     graph.register(modules_target)
@@ -84,12 +84,12 @@ def _create_test_graph() -> TargetGraph:
 
 
 def _make_snapshot() -> SnapshotRef:
-    """Create a mock snapshot reference.
+    """Create a test snapshot reference.
 
     Returns
     -------
     SnapshotRef
-        Mock snapshot for testing.
+        Test snapshot for testing.
     """
     return SnapshotRef(
         repo="test-org/test-repo",
@@ -99,27 +99,29 @@ def _make_snapshot() -> SnapshotRef:
 
 
 def _make_paths() -> BuildPaths:
-    """Create mock build paths.
+    """Create test build paths.
 
     Returns
     -------
     BuildPaths
-        Mock paths for testing.
+        Test paths for testing.
     """
     return BuildPaths.from_repo_root(Path.cwd())
 
 
 @dataclass
-class MockBuildTracking:
-    """Mock build tracking accessor."""
+class FakeBuildTracking:
+    """Fake build tracking accessor for testing.
 
-    manifests: dict[str, OutputManifest]
-    runs: dict[str, BuildRunRecord]
+    Implements the minimal interface required by BuildExecutor:
+    - start_run(record)
+    - complete_run(run_id, status, computed_targets, skipped_targets, error_summary)
+    - save_manifest(manifest)
+    - load_manifest(target, repo, commit)
+    """
 
-    def __init__(self) -> None:
-        """Initialize with empty storage."""
-        self.manifests = {}
-        self.runs = {}
+    manifests: dict[str, OutputManifest] = field(default_factory=dict)
+    runs: dict[str, BuildRunRecord] = field(default_factory=dict)
 
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save a manifest.
@@ -196,6 +198,17 @@ class MockBuildTracking:
             _ = (status, computed_targets, skipped_targets, error_summary)
 
 
+@dataclass
+class FakeStorageGateway:
+    """Fake storage gateway for testing BuildExecutor.
+
+    This fake implements the minimal interface required by BuildExecutor,
+    specifically the .build attribute for build tracking.
+    """
+
+    build: FakeBuildTracking = field(default_factory=FakeBuildTracking)
+
+
 @pytest.fixture
 def executor_graph() -> TargetGraph:
     """Provide the test graph for executor tests.
@@ -209,53 +222,51 @@ def executor_graph() -> TargetGraph:
 
 
 @pytest.fixture
-def mock_gateway() -> MagicMock:
-    """Provide a mock StorageGateway.
+def fake_gateway() -> FakeStorageGateway:
+    """Provide a fake StorageGateway.
 
     Returns
     -------
-    MagicMock
-        Mock gateway with build tracking.
+    FakeStorageGateway
+        Fake gateway with build tracking.
     """
-    gateway = MagicMock()
-    gateway.build = MockBuildTracking()
-    return gateway
+    return FakeStorageGateway()
 
 
 @pytest.fixture
-def mock_snapshot() -> SnapshotRef:
-    """Provide a mock snapshot reference.
+def test_snapshot() -> SnapshotRef:
+    """Provide a test snapshot reference.
 
     Returns
     -------
     SnapshotRef
-        Mock snapshot.
+        Test snapshot.
     """
     return _make_snapshot()
 
 
 @pytest.fixture
-def mock_paths() -> BuildPaths:
-    """Provide mock build paths.
+def test_paths() -> BuildPaths:
+    """Provide test build paths.
 
     Returns
     -------
     BuildPaths
-        Mock paths.
+        Test paths.
     """
     return _make_paths()
 
 
 @pytest.fixture
-def mock_tools() -> MagicMock:
-    """Provide mock tools config.
+def test_tools() -> ToolsConfig:
+    """Provide test tools config.
 
     Returns
     -------
-    MagicMock
-        Mock tools config.
+    ToolsConfig
+        Default tools config for testing.
     """
-    return MagicMock()
+    return ToolsConfig.default()
 
 
 def _make_plan(
@@ -458,18 +469,20 @@ class TestBuildExecutorInit:
     def test_init(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Create a build executor."""
+        # Cast to satisfy type checker - FakeStorageGateway is duck-typed
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
         # Verify executor was created (access public behavior)
         plan = _make_plan(requested=(), stages=())
@@ -483,18 +496,19 @@ class TestBuildExecutorRunId:
     def test_run_id_format(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Run ID has expected format."""
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan, dry_run=True)
@@ -510,18 +524,19 @@ class TestBuildExecutorRunId:
     def test_run_ids_unique(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Run IDs are unique across executions."""
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
         plan = _make_plan(requested=(), stages=())
 
@@ -535,18 +550,19 @@ class TestBuildExecutorEmptyPlan:
     def test_execute_empty_plan(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Empty plan returns immediately with success."""
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
 
         plan = _make_plan(
@@ -569,18 +585,19 @@ class TestBuildExecutorDryRun:
     def test_execute_dry_run(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Dry run returns plan info without executing."""
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
 
         step = _make_step("modules", "ingestion", "repo_scan")
@@ -599,25 +616,26 @@ class TestBuildExecutorDryRun:
     def test_dry_run_records_tracking(
         self,
         executor_graph: TargetGraph,
-        mock_gateway: MagicMock,
-        mock_snapshot: SnapshotRef,
-        mock_paths: BuildPaths,
-        mock_tools: MagicMock,
+        fake_gateway: FakeStorageGateway,
+        test_snapshot: SnapshotRef,
+        test_paths: BuildPaths,
+        test_tools: ToolsConfig,
     ) -> None:
         """Dry run still records run tracking."""
+        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
         executor = BuildExecutor(
             graph=executor_graph,
-            gateway=mock_gateway,
-            snapshot=mock_snapshot,
-            paths=mock_paths,
-            tools=mock_tools,
+            gateway=gateway,
+            snapshot=test_snapshot,
+            paths=test_paths,
+            tools=test_tools,
         )
 
         plan = _make_plan(requested=(), stages=())
         executor.execute(plan, dry_run=True)
 
         # Should have recorded a run
-        assert len(mock_gateway.build.runs) == 1
+        assert len(fake_gateway.build.runs) == 1
 
 
 # =============================================================================
@@ -631,11 +649,11 @@ class TestBuildExecutorIntegration:
     def test_with_real_registry(self) -> None:
         """BuildExecutor works with real target registry."""
         graph = get_target_graph()
-        gateway = MagicMock()
-        gateway.build = MockBuildTracking()
+        fake_gw = FakeStorageGateway()
+        gateway: StorageGateway = fake_gw  # type: ignore[assignment]
         snapshot = _make_snapshot()
         paths = _make_paths()
-        tools = MagicMock()
+        tools = ToolsConfig.default()
 
         executor = BuildExecutor(
             graph=graph,
@@ -654,11 +672,11 @@ class TestBuildExecutorIntegration:
     def test_plan_generator_to_executor(self) -> None:
         """Plan from PlanGenerator works with executor."""
         graph = _create_test_graph()
-        gateway = MagicMock()
-        gateway.build = MockBuildTracking()
+        fake_gw = FakeStorageGateway()
+        gateway: StorageGateway = fake_gw  # type: ignore[assignment]
         snapshot = _make_snapshot()
         paths = _make_paths()
-        tools = MagicMock()
+        tools = ToolsConfig.default()
 
         # Create a resolution result
         resolution = ResolutionResult(

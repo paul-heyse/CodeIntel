@@ -53,7 +53,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.modules",),
         dependencies=(),
         description="Repository module index",
-        estimated_duration_ms=1000,
     )
 
     # Target depending on modules
@@ -64,7 +63,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.ast_nodes",),
         dependencies=("modules",),
         description="AST extraction",
-        estimated_duration_ms=5000,
     )
 
     # Target depending on ast
@@ -75,7 +73,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("core.goids",),
         dependencies=("ast",),
         description="GOID construction",
-        estimated_duration_ms=10000,
     )
 
     # Independent target depending on ast
@@ -86,7 +83,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("analytics.typedness",),
         dependencies=("ast",),
         description="Type analysis",
-        estimated_duration_ms=3000,
     )
 
     # Target depending on goids
@@ -97,7 +93,6 @@ def _create_test_graph() -> TargetGraph:
         tables=("analytics.function_metrics",),
         dependencies=("goids",),
         description="Function metrics",
-        estimated_duration_ms=8000,
     )
 
     graph.register(modules_target)

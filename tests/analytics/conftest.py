@@ -1,7 +1,7 @@
 """Shared fixtures for analytics tests.
 
-This module provides fixtures for analytics tests that need graph plugin
-infrastructure. For general test fixtures like TestContext, test_ctx,
+This module provides fixtures for analytics tests that need gateway and
+context infrastructure. For general test fixtures like TestContext, test_ctx,
 graph_ctx, etc., use the fixtures from the main conftest.py.
 """
 
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.plugins.execution.context import PluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_RUN_ID
 from tests._helpers.fakes.configs import create_test_snapshot
@@ -31,13 +31,6 @@ from tests._helpers.fakes.graph_runtimes import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
-from tests._helpers.harnesses.graphs import (
-    GraphPluginTestHarness,
-)
-
-# Backward compatibility alias
-PluginTestHarness = GraphPluginTestHarness
-
 
 # =============================================================================
 # Standard Analytics Test Fixtures
@@ -141,69 +134,6 @@ def test_snapshot(analytics_snapshot: SnapshotRef) -> SnapshotRef:
         Snapshot with standard test defaults.
     """
     return analytics_snapshot
-
-
-# =============================================================================
-# Graph Plugin Test Fixtures
-# =============================================================================
-
-
-@pytest.fixture(name="graph_plugin_harness")
-def _graph_plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
-    """Yield a graph plugin test harness with automatic cleanup.
-
-    This fixture is for testing graph plugins that use RecipeExecutor.
-    For analytics plugins, use the standard test_ctx fixtures instead.
-
-    Yields
-    ------
-    GraphPluginTestHarness
-        Harness configured with in-memory gateway and RecipeExecutor.
-    """
-    harness = GraphPluginTestHarness(tmp_path)
-    try:
-        yield harness
-    finally:
-        harness.cleanup()
-
-
-# Legacy fixture names for backward compatibility
-@pytest.fixture(name="new_plugin_harness")
-def _new_plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
-    """Yield a graph plugin test harness (legacy name).
-
-    .. deprecated::
-        Use graph_plugin_harness instead.
-
-    Yields
-    ------
-    GraphPluginTestHarness
-        Harness configured with in-memory gateway and RecipeExecutor.
-    """
-    harness = GraphPluginTestHarness(tmp_path)
-    try:
-        yield harness
-    finally:
-        harness.cleanup()
-
-
-@pytest.fixture(name="plugin_harness")
-def _plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
-    """Yield a graph plugin test harness (legacy name).
-
-    .. deprecated::
-        Use graph_plugin_harness instead.
-
-    Yields
-    ------
-    GraphPluginTestHarness
-        Harness configured with in-memory gateway and RecipeExecutor.
-    """
-    harness = GraphPluginTestHarness(tmp_path)
-    try:
-        yield harness
-    finally:
-        harness.cleanup()
 
 
 # =============================================================================
@@ -340,5 +270,4 @@ __all__ = [
     "MockFunctionCatalog",
     "MockFunctionMeta",
     "MockGraphRuntime",
-    "PluginTestHarness",
 ]

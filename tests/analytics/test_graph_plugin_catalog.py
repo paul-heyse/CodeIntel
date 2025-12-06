@@ -1,4 +1,4 @@
-"""Catalog generation coverage for graph metric plugins."""
+"""Catalog generation coverage for analytics plugins."""
 
 from __future__ import annotations
 
@@ -10,40 +10,27 @@ from codeintel.analytics.graphs.plugin_catalog import (
     build_plugin_catalog,
     render_plugin_catalog_markdown,
 )
-from codeintel.analytics.plugins.registration import ensure_plugins_registered
 
 
 def test_build_plugin_catalog_includes_expected_fields() -> None:
     """Catalog JSON should expose core metadata fields for each plugin."""
-    ensure_plugins_registered()
     catalog = build_plugin_catalog()
     plugins = cast("dict[str, dict[str, Any]]", catalog.get("plugins", {}))
     if not plugins:
         message = "Catalog should include at least one plugin entry"
         pytest.fail(message)
     first_meta = next(iter(plugins.values()))
+    # TargetPlugin exposes these fields
     required = (
         "name",
         "description",
+        "version",
+        "version_hash",
         "stage",
-        "severity",
         "enabled_by_default",
         "depends_on",
         "provides",
         "requires",
-        "resource_hints",
-        "options_model",
-        "options_default",
-        "version_hash",
-        "contract_checkers",
-        "scope_aware",
-        "supported_scopes",
-        "requires_isolation",
-        "isolation_kind",
-        "config_schema_ref",
-        "row_count_tables",
-        "cache_populates",
-        "cache_consumes",
     )
     missing = tuple(field for field in required if field not in first_meta)
     if missing:
@@ -53,7 +40,6 @@ def test_build_plugin_catalog_includes_expected_fields() -> None:
 
 def test_render_plugin_catalog_markdown_contains_examples() -> None:
     """Markdown render should include plugin names and plan/manifest examples."""
-    ensure_plugins_registered()
     catalog = build_plugin_catalog()
     plugins = cast("dict[str, dict[str, Any]]", catalog.get("plugins", {}))
     if not plugins:

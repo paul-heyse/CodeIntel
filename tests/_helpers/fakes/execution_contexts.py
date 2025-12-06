@@ -18,12 +18,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 
-from codeintel.analytics.core.context import (
-    PluginExecutionContext,
-)
-from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.plugins.execution.context import ConfigProvider, PluginScratch
+from codeintel.core.plugins.execution.context import (
+    ConfigProvider,
+    PluginExecutionContext,
+    PluginScratch,
+)
 from codeintel.core.resources import ResourceRegistry
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
@@ -80,7 +80,6 @@ class TestExecutionContextBuilder:
         self._options: object | None = None
         self._plugin_name: str | None = None
         self._run_context: RunContext | None = None
-        self._scope: AnalyticsScope = AnalyticsScope()
         self._scratch: PluginScratch | None = None
 
     @classmethod
@@ -239,22 +238,6 @@ class TestExecutionContextBuilder:
         self._plugin_name = name
         return self
 
-    def with_scope(self, scope: AnalyticsScope) -> Self:
-        """Set the analytics execution scope.
-
-        Parameters
-        ----------
-        scope
-            Analytics scope for execution.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self._scope = scope
-        return self
-
     def with_scratch(self, scratch: PluginScratch) -> Self:
         """Set a shared scratch store.
 
@@ -307,7 +290,6 @@ class TestExecutionContextBuilder:
             plugin_name=self._plugin_name,
             extra=dict(self._extra),
             run_context=self._run_context,
-            scope=self._scope,
         )
 
 

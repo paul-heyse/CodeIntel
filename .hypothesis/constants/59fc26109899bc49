@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/recipes/__init__.py
+# hypothesis_version: 6.148.7
+
+['COVERAGE_FOCUS', 'FULL_ANALYSIS', 'GRAPH_METRICS', 'QUICK_AUDIT', 'RISK_ANALYSIS', 'Recipe', 'RecipeBuilder', 'RecipeOptions', 'RecipePluginRecord', 'RecipeRegistry', 'RecipeScope', 'RecipeStage', 'TEST_ANALYSIS', 'get_recipe_registry', 'recipe', 'register_recipe']

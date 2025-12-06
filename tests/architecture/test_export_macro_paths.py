@@ -19,7 +19,7 @@ def test_exporters_avoid_direct_table_reads() -> None:
     AssertionError
         When disallowed snippets are found.
     """
-    base = Path("src/codeintel/pipeline/export")
+    base = Path("src/codeintel/export")
     targets = [
         base / "export_jsonl.py",
         base / "export_parquet.py",
