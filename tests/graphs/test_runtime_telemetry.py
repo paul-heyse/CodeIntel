@@ -20,7 +20,6 @@ from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginProtocol,
@@ -32,6 +31,7 @@ from codeintel.graphs.runtime.telemetry import (
     get_graph_telemetry,
 )
 from tests._helpers.fakes.graph_contexts import GraphTelemetryTestEnv
+from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
 PLUGIN_COUNT: Final = 5
@@ -75,7 +75,7 @@ def _make_test_plugin(
         stage=stage,
     )
 
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
 def test_telemetry_init_with_defaults() -> None:

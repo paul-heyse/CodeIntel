@@ -10,46 +10,6 @@ Key Components
 - GraphPluginExecutionContext: Execution context providing storage and engine access
 - PluginResult: Standard result type for plugin execution
 - GraphPluginRegistry: Central registry with dependency resolution
-- graph_plugin: Decorator for defining graph plugins from functions
-- make_metric_plugin, make_builder_plugin: Factory functions for minimal boilerplate
-
-Factory Pattern Example
------------------------
-```python
-from codeintel.graphs.core import make_metric_plugin, ComputationResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
-
-
-def compute_my_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
-    # Compute metrics
-    return ComputationResult.ok(row_counts={"analytics.my_metrics": 100})
-
-
-my_metrics = make_metric_plugin(
-    name="my_metrics",
-    computation=compute_my_metrics,
-    stage="core",
-    depends_on=("callgraph_builder",),
-)
-```
-
-Decorator Example
------------------
-```python
-from codeintel.graphs.core import graph_plugin, GraphPluginExecutionContext, PluginResult
-
-
-@graph_plugin(
-    name="my_builder",
-    description="Build a custom graph structure.",
-    kind="builder",
-    stage="edges",
-    produces_tables=("graph.my_edges",),
-)
-def my_builder_plugin(ctx: GraphPluginExecutionContext) -> PluginResult:
-    # Build graph and persist to database
-    return PluginResult.ok(row_counts={"graph.my_edges": 100})
-```
 """
 
 from codeintel.core.plugins.execution.context import PluginScratch
@@ -68,21 +28,11 @@ from codeintel.graphs.core.context import (
     GraphPluginExecutionContext,
     GraphPluginExecutionContextBuilder,
 )
-from codeintel.graphs.core.factories import (
-    ComputationFn,
-    ComputationResult,
-    FactoryPlugin,
-    make_builder_plugin,
-    make_graph_plugin,
-    make_metric_plugin,
-    make_validation_plugin,
-)
 from codeintel.graphs.core.protocol import (
     DEFAULT_BUILDER_PLUGINS,
     DEFAULT_GRAPH_PLUGINS,
     DEFAULT_METRIC_PLUGINS,
     DEFAULT_VALIDATION_PLUGINS,
-    FunctionalGraphPlugin,
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginPlan,
@@ -90,7 +40,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginSkip,
     GraphPluginStage,
     create_graph_metadata,
-    graph_plugin,
 )
 from codeintel.graphs.core.registry import (
     GraphPluginRegistry,
@@ -107,10 +56,6 @@ __all__ = [
     "DEFAULT_GRAPH_PLUGINS",
     "DEFAULT_METRIC_PLUGINS",
     "DEFAULT_VALIDATION_PLUGINS",
-    "ComputationFn",
-    "ComputationResult",
-    "FactoryPlugin",
-    "FunctionalGraphPlugin",
     "GraphPluginExecutionContext",
     "GraphPluginExecutionContextBuilder",
     "GraphPluginKind",
@@ -130,12 +75,7 @@ __all__ = [
     "PluginStatus",
     "create_graph_metadata",
     "get_graph_registry",
-    "graph_plugin",
     "list_graph_plugins",
-    "make_builder_plugin",
-    "make_graph_plugin",
-    "make_metric_plugin",
-    "make_validation_plugin",
     "plan_graph_plugins",
     "register_graph_plugin",
     "reset_graph_registry",

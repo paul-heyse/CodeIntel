@@ -23,14 +23,13 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from codeintel.core.plugins.types.protocol import PluginSeverity
 from codeintel.core.plugins.types.result import PluginResult
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginProtocol,
@@ -41,8 +40,50 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
 )
 
-if TYPE_CHECKING:
-    from codeintel.graphs.core.context import GraphPluginExecutionContext
+
+@dataclass
+class FakeGraphPlugin:
+    """Simple fake plugin implementing GraphPluginProtocol.
+
+    This is a test double for creating graph plugins in tests without
+    depending on production plugin infrastructure.
+
+    Attributes
+    ----------
+    _metadata
+        Plugin metadata.
+    _execute_fn
+        Function that performs the plugin's work.
+    """
+
+    _metadata: GraphPluginMetadata
+    _execute_fn: Callable[[GraphPluginExecutionContext], PluginResult]
+
+    @property
+    def metadata(self) -> GraphPluginMetadata:
+        """Return plugin metadata.
+
+        Returns
+        -------
+        GraphPluginMetadata
+            Metadata describing the plugin.
+        """
+        return self._metadata
+
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
+        """Execute the plugin.
+
+        Parameters
+        ----------
+        ctx
+            Graph plugin execution context.
+
+        Returns
+        -------
+        PluginResult
+            Result from the execute function.
+        """
+        return self._execute_fn(ctx)
 
 
 @dataclass
@@ -353,7 +394,7 @@ class GraphPluginBuilder:
             produces_tables=self.produces_tables,
         )
 
-        return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
+        return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
 @contextlib.contextmanager
@@ -441,6 +482,7 @@ def make_functional_plugin(
 
 
 __all__ = [
+    "FakeGraphPlugin",
     "GraphPluginBuilder",
     "make_functional_plugin",
     "plugin_registrar",

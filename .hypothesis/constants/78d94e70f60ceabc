@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/core/adapters.py
+# hypothesis_version: 6.148.7
+
+['TargetPluginAdapter', 'Unknown error', 'adapt_target_plugin', 'builder', 'call_graph', 'callgraph', 'cfg', 'cfg_dfg', 'core', 'edges', 'fatal', 'goid', 'goid_builder', 'goids', 'graph_metrics', 'graph_metrics.core', 'graph_validation', 'import_graph', 'metric', 'symbol', 'symbol_uses', 'validation']

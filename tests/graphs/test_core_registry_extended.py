@@ -23,7 +23,6 @@ import pytest
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginProtocol,
@@ -36,6 +35,7 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
+from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"
@@ -126,7 +126,7 @@ def _make_test_plugin(
         produces_tables=plugin_config.produces_tables,
     )
 
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
 @pytest.fixture

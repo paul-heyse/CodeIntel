@@ -4,14 +4,21 @@ This module provides adapters that wrap TargetPlugin instances as
 GraphPluginProtocol implementations, enabling registration with
 the GraphPluginRegistry.
 
-The adapters allow the existing GraphPluginRegistry infrastructure
-to work with build system plugins without modification.
+The adapters bridge the GraphPluginExecutionContext to TargetExecutionContext,
+allowing graph plugins implemented as TargetPlugin to be executed through
+the graph runtime infrastructure.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING
 
+from codeintel.build.context import ContextResources, TargetExecutionContext
+from codeintel.build.parameters import EMPTY_PARAMETERS
+from codeintel.build.registry import get_target_graph
+from codeintel.config.primitives import BuildPaths
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.protocol import (
     GraphPluginKind,
@@ -21,8 +28,12 @@ from codeintel.graphs.core.protocol import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.build.context import TargetResult
     from codeintel.build.plugin import TargetPlugin
+    from codeintel.build.targets import OutputTarget
     from codeintel.graphs.core.context import GraphPluginExecutionContext
+
+log = logging.getLogger(__name__)
 
 
 # Mapping of plugin names to their kind and stage for metadata creation
@@ -40,6 +51,18 @@ _PLUGIN_KIND_STAGE_MAP: dict[str, tuple[GraphPluginKind, GraphPluginStage]] = {
     "graph_validation": ("validation", "validation"),
 }
 
+# Mapping of plugin names to their corresponding target names in the build graph
+_PLUGIN_TO_TARGET_MAP: dict[str, str] = {
+    "goid_builder": "goids",
+    "callgraph": "call_graph",
+    "import_graph": "import_graph",
+    "cfg_dfg": "cfg",
+    "symbol_uses": "symbol_uses",
+    "graph_metrics.core": "graph_metrics",
+    "graph_metrics.secondary": "graph_metrics_secondary",
+    "graph_validation": "graph_validation",
+}
+
 
 class TargetPluginAdapter:
     """Adapter wrapping a TargetPlugin as GraphPluginProtocol.
@@ -48,10 +71,11 @@ class TargetPluginAdapter:
     the GraphPluginRegistry by providing the required metadata property
     and execute method signature.
 
-    The execute method returns a placeholder result since actual execution
-    goes through the build system's TargetExecutionContext, not the graph
-    plugin execution context. This adapter is primarily for planning and
-    introspection purposes.
+    The execute method bridges the GraphPluginExecutionContext to a
+    TargetExecutionContext and runs the actual plugin via asyncio.run().
+    This allows graph plugins implemented as TargetPlugin to be executed
+    through the graph runtime infrastructure with all its features
+    (timeouts, retries, manifest tracking, telemetry).
 
     Attributes
     ----------
@@ -131,26 +155,100 @@ class TargetPluginAdapter:
         )
 
     def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
-        """Execute method satisfying GraphPluginProtocol.
+        """Execute the wrapped TargetPlugin via context bridging.
 
-        This method returns a placeholder result. Actual plugin execution
-        goes through the build system using TargetExecutionContext.
+        This method bridges the GraphPluginExecutionContext to a
+        TargetExecutionContext and executes the actual plugin.
 
         Parameters
         ----------
         ctx
-            Graph plugin execution context (not used for actual execution).
+            Graph plugin execution context.
 
         Returns
         -------
         PluginResult
-            Placeholder success result.
+            Result from the wrapped plugin execution.
         """
-        # Execution goes through the build system, not this adapter.
-        # This satisfies the protocol for planning/introspection.
-        # Reference self to indicate this is an instance method (protocol requirement).
-        _ = (ctx, self._plugin)
-        return PluginResult.ok()
+        try:
+            target_ctx = self._build_target_context(ctx)
+            result = asyncio.run(self._plugin.execute(target_ctx))
+            return self._convert_result(result)
+        except Exception:
+            log.exception(
+                "adapter.execute.error plugin=%s",
+                self._plugin.plugin_name,
+            )
+            return PluginResult.fail("Plugin execution failed")
+
+    def _build_target_context(
+        self,
+        ctx: GraphPluginExecutionContext,
+    ) -> TargetExecutionContext:
+        """Build a TargetExecutionContext from GraphPluginExecutionContext.
+
+        Parameters
+        ----------
+        ctx
+            Graph plugin execution context.
+
+        Returns
+        -------
+        TargetExecutionContext
+            Context suitable for TargetPlugin execution.
+        """
+        target = self._resolve_target()
+
+        # Build paths from snapshot if not provided in context
+        paths = ctx.paths
+        if paths is None:
+            paths = BuildPaths.from_layout(repo_root=ctx.snapshot.repo_root)
+
+        # Build resources from context
+        resources = ContextResources(
+            gateway=ctx.gateway,
+            modules=(),
+        )
+
+        return TargetExecutionContext(
+            target=target,
+            snapshot=ctx.snapshot,
+            paths=paths,
+            resources=resources,
+            parameters=EMPTY_PARAMETERS,
+        )
+
+    def _resolve_target(self) -> OutputTarget:
+        """Resolve the OutputTarget for this plugin.
+
+        Returns
+        -------
+        OutputTarget
+            The target from the build graph.
+        """
+        plugin_name = self._plugin.plugin_name
+        target_name = _PLUGIN_TO_TARGET_MAP.get(plugin_name, plugin_name)
+
+        graph = get_target_graph()
+        return graph.get(target_name)
+
+    @staticmethod
+    def _convert_result(result: TargetResult) -> PluginResult:
+        """Convert a TargetResult to a PluginResult.
+
+        Parameters
+        ----------
+        result
+            Result from TargetPlugin execution.
+
+        Returns
+        -------
+        PluginResult
+            Equivalent PluginResult.
+        """
+        if result.success:
+            return PluginResult.ok(row_counts=dict(result.row_counts))
+        return PluginResult.fail(result.error_message or "Unknown error")
 
 
 def adapt_target_plugin(

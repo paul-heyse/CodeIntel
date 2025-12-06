@@ -9,16 +9,11 @@ like `GraphPluginMetadata` extend them with graph-related fields.
 
 from __future__ import annotations
 
-import importlib
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-from codeintel.core.plugins.decorators.functional import BaseFunctionalPlugin
-from codeintel.core.plugins.decorators.meta import BasePluginMetaOptions
-from codeintel.core.plugins.decorators.step import make_plugin_instance
 from codeintel.core.plugins.types.protocol import (
     PluginCapability,
     PluginInputSpec,
@@ -32,8 +27,6 @@ from codeintel.core.plugins.types.protocol import (
     ValidationResult,
 )
 from codeintel.core.plugins.types.result import PluginResult, PluginStatus
-
-# Import at runtime for use in type alias (FunctionalGraphPlugin)
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.engine import GraphKind
 
@@ -251,146 +244,6 @@ class GraphPluginProtocol(Protocol):
         ...
 
 
-class GraphPluginMetaOptionsInput(TypedDict, total=False):
-    """Typed keyword arguments for GraphPluginMetaOptions.from_kwargs factory."""
-
-    name: str
-    description: str
-    kind: GraphPluginKind
-    stage: GraphPluginStage
-    severity: PluginSeverity
-    enabled_by_default: bool
-    depends_on: tuple[str, ...]
-    provides: tuple[str, ...]
-    requires: tuple[str, ...]
-    produces_tables: tuple[str, ...]
-    produces_graph_kinds: tuple[GraphKind, ...]
-    requires_graph_kinds: tuple[GraphKind, ...]
-    resource_hints: PluginResourceHints | None
-    supports_incremental: bool
-    isolation_kind: PluginIsolation
-    options_model: type[BaseModel] | None
-    options_default: object | None
-    version_hash: str | None
-    config_schema_ref: str | None
-    row_count_tables: tuple[str, ...]
-    cache_populates: tuple[str, ...]
-    cache_consumes: tuple[str, ...]
-    requires_isolation: bool
-    scope_aware: bool
-    supported_scopes: tuple[str, ...]
-    contract_checkers: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class GraphPluginMetaOptions:
-    """Options container for graph plugin metadata."""
-
-    name: str | None = None
-    description: str | None = None
-    kind: GraphPluginKind | None = None
-    stage: GraphPluginStage | None = None
-    severity: PluginSeverity = "fatal"
-    enabled_by_default: bool = True
-    depends_on: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-    requires: tuple[str, ...] = ()
-    produces_tables: tuple[str, ...] = ()
-    produces_graph_kinds: tuple[GraphKind, ...] = ()
-    requires_graph_kinds: tuple[GraphKind, ...] = ()
-    resource_hints: PluginResourceHints | None = None
-    supports_incremental: bool = False
-    isolation_kind: PluginIsolation = "none"
-    options_model: type[BaseModel] | None = None
-    options_default: object | None = None
-    version_hash: str | None = None
-    config_schema_ref: str | None = None
-    row_count_tables: tuple[str, ...] = ()
-    cache_populates: tuple[str, ...] = ()
-    cache_consumes: tuple[str, ...] = ()
-    requires_isolation: bool = False
-    scope_aware: bool = False
-    supported_scopes: tuple[str, ...] = ()
-    contract_checkers: tuple[str, ...] = ()
-
-    @staticmethod
-    def from_kwargs(**kwargs: Unpack[GraphPluginMetaOptionsInput]) -> GraphPluginMetaOptions:
-        """Build options from keyword arguments with validation.
-
-        Delegates validation to BasePluginMetaOptions.validate_option_keys,
-        which raises ValueError if unknown keys are provided.
-
-        Parameters
-        ----------
-        **kwargs
-            Keyword arguments matching GraphPluginMetaOptionsInput fields.
-
-        Returns
-        -------
-        GraphPluginMetaOptions
-            Options built from the provided keyword arguments.
-        """
-        BasePluginMetaOptions.validate_option_keys(
-            set(GraphPluginMetaOptionsInput.__annotations__),
-            kwargs,
-        )
-        return GraphPluginMetaOptions(**kwargs)
-
-    def to_metadata(
-        self,
-        fn: Callable[[GraphPluginExecutionContext], PluginResult],
-    ) -> GraphPluginMetadata:
-        """Convert options to GraphPluginMetadata using function defaults.
-
-        Parameters
-        ----------
-        fn
-            Plugin callable used for deriving defaults (name/docstring).
-
-        Returns
-        -------
-        GraphPluginMetadata
-            Populated metadata instance.
-
-        Raises
-        ------
-        ValueError
-            If required fields (kind/stage) are missing.
-        """
-        resolved_name = self.name or fn.__name__
-        if self.kind is None or self.stage is None:
-            message = "Graph plugin kind and stage must be specified."
-            raise ValueError(message)
-        return create_graph_metadata(
-            name=resolved_name,
-            description=(self.description or fn.__doc__ or "").strip(),
-            kind=self.kind,
-            stage=self.stage,
-            severity=self.severity,
-            enabled_by_default=self.enabled_by_default,
-            depends_on=self.depends_on,
-            provides=self.provides,
-            requires=self.requires,
-            produces_tables=self.produces_tables,
-            produces_graph_kinds=self.produces_graph_kinds,
-            requires_graph_kinds=self.requires_graph_kinds,
-            resource_hints=self.resource_hints,
-            supports_incremental=self.supports_incremental,
-            isolation_kind=self.isolation_kind,
-            options_model=self.options_model,
-            options_default=self.options_default,
-            version_hash=self.version_hash,
-            config_schema_ref=self.config_schema_ref,
-            row_count_tables=self.row_count_tables,
-            cache_populates=self.cache_populates,
-            cache_consumes=self.cache_consumes,
-            requires_isolation=self.requires_isolation,
-            scope_aware=self.scope_aware,
-            supported_scopes=self.supported_scopes,
-            contract_checkers=self.contract_checkers,
-        )
-
-
 @dataclass(frozen=True)
 class GraphPluginSkip:
     """Skip metadata for planned plugins that will not execute.
@@ -451,77 +304,6 @@ class GraphPluginPlan:
         return tuple(plugin.metadata.name for plugin in self.plugins)
 
 
-# Type alias for graph functional plugin using the base class
-FunctionalGraphPlugin = BaseFunctionalPlugin[GraphPluginExecutionContext, GraphPluginMetadata]
-"""Graph plugin implementation wrapping a callable.
-
-This type alias provides graph-specific typing for the base functional
-plugin class. Use with the @graph_plugin decorator.
-"""
-
-
-def graph_plugin(
-    *,
-    meta: GraphPluginMetaOptions | None = None,
-    register: bool = True,
-    **kwargs: Unpack[GraphPluginMetaOptionsInput],
-) -> Callable[[Callable[[GraphPluginExecutionContext], PluginResult]], FunctionalGraphPlugin]:
-    """Decorate a function as a graph plugin.
-
-    Parameters
-    ----------
-    meta
-        Graph plugin metadata/options container.
-    register
-        Whether to auto-register with global registry.
-    **kwargs
-        Legacy metadata fields (name, kind, stage, etc.); prefer `meta`.
-
-    Returns
-    -------
-    Callable[[Callable[[GraphPluginExecutionContext], PluginResult]], FunctionalGraphPlugin]
-        Decorator that creates a FunctionalGraphPlugin.
-    """
-
-    def _get_register_fn() -> Callable[[FunctionalGraphPlugin], None] | None:
-        """Get registration function if register is True.
-
-        Returns
-        -------
-        Callable[[FunctionalGraphPlugin], None] | None
-            Registration function or None if register is False.
-        """
-        if not register:
-            return None
-
-        def _register_plugin(plugin_instance: FunctionalGraphPlugin) -> None:
-            """Register plugin via registry without importing at decorator scope."""
-            registry = importlib.import_module("codeintel.graphs.core.registry")
-            register_fn = registry.register_graph_plugin
-            register_fn(cast("GraphPluginProtocol", plugin_instance))
-
-        return _register_plugin
-
-    def decorator(
-        fn: Callable[[GraphPluginExecutionContext], PluginResult],
-    ) -> FunctionalGraphPlugin:
-        if meta is not None and kwargs:
-            message = "Provide either meta or keyword metadata, not both."
-            raise ValueError(message)
-
-        options = meta or GraphPluginMetaOptions.from_kwargs(**kwargs)
-
-        return make_plugin_instance(
-            fn=fn,
-            options=options,
-            plugin_factory=lambda m, f: FunctionalGraphPlugin(_metadata=m, _execute_fn=f),
-            to_metadata=lambda opts, f: opts.to_metadata(f),
-            register_fn=_get_register_fn(),
-        )
-
-    return decorator
-
-
 # Default plugins for different plugin kinds
 # Names must match actual plugin_name values in TargetPlugin implementations
 DEFAULT_BUILDER_PLUGINS: tuple[str, ...] = (
@@ -550,10 +332,7 @@ __all__ = [
     "DEFAULT_GRAPH_PLUGINS",
     "DEFAULT_METRIC_PLUGINS",
     "DEFAULT_VALIDATION_PLUGINS",
-    "FunctionalGraphPlugin",
     "GraphPluginKind",
-    "GraphPluginMetaOptions",
-    "GraphPluginMetaOptionsInput",
     "GraphPluginMetadata",
     "GraphPluginPlan",
     "GraphPluginProtocol",
@@ -572,5 +351,4 @@ __all__ = [
     "PluginStatus",
     "ValidationResult",
     "create_graph_metadata",
-    "graph_plugin",
 ]

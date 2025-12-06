@@ -18,7 +18,6 @@ from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
@@ -35,6 +34,7 @@ from codeintel.graphs.runtime.manifest import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -68,7 +68,7 @@ def _make_test_plugin(name: str) -> GraphPluginProtocol:
         stage="goid",
     )
 
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
 def test_compute_input_hash_scope_paths_included() -> None:

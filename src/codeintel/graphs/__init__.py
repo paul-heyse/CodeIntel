@@ -9,7 +9,7 @@ Core Infrastructure (graphs/core/):
 - GraphPluginProtocol: Unified interface for all graph plugins
 - GraphPluginExecutionContext: Execution context providing storage and engine access
 - GraphPluginRegistry: Central registry with dependency resolution
-- graph_plugin: Decorator for defining graph plugins from functions
+- make_builder_plugin, make_metric_plugin: Factory functions for creating plugins
 
 Runtime (graphs/runtime/):
 - GraphPluginExecutor: Executes plugins with retry and timeout handling
