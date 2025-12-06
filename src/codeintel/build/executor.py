@@ -14,7 +14,7 @@ Key Components
 Integration Points
 ------------------
 - Analytics: Direct plugin execution via `_execute_analytics_stage()`
-- Graphs: `plan_graph_plugin_run()` + `run_graph_plugins()`
+- Graphs: `plan_graph_plugin_run()` + `GraphPluginExecutor`
 - Ingestion: Direct plugin execution via `_execute_target_direct()`
 - Tracking: `BuildTracking` for manifest and run record persistence
 """
@@ -39,9 +39,10 @@ from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.config.steps_graphs import GraphPluginPolicy
+from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
-from codeintel.graphs.runtime.executor import GraphExecutorContext, run_graph_plugins
+from codeintel.graphs.runtime.graph_executor import GraphExecutorContext, GraphPluginExecutor
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
 
 if TYPE_CHECKING:
@@ -862,23 +863,48 @@ class BuildExecutor:
         try:
             # Create planning context with available fields
             # Note: GraphPlanContext uses cfg/runtime_snapshot/target for inputs
+            graph_policy = GraphPluginPolicy()
             plan_context = GraphPlanContext(
                 runtime_snapshot=self._snapshot,
                 target=(self._snapshot.repo, self._snapshot.commit),
-                policy=GraphPluginPolicy(),
+                policy=graph_policy,
             )
 
-            # Plan and execute
+            # Plan the graph plugin run
             plan = plan_graph_plugin_run(
                 plugin_names=plugin_names if plugin_names else None,
                 context=plan_context,
             )
+
+            # Create execution context and executor
             exec_context = GraphExecutorContext(
                 gateway=self._gateway,
                 snapshot=self._snapshot,
             )
 
-            report = run_graph_plugins(plan=plan, context=exec_context)
+            # Convert GraphPluginPolicy to BaseExecutionPolicy
+            base_policy = BaseExecutionPolicy(
+                fail_fast=graph_policy.fail_fast,
+                default_severity=graph_policy.default_severity,
+                severity_overrides=graph_policy.severity_overrides,
+                skip_on_unchanged=graph_policy.skip_on_unchanged,
+                dry_run=graph_policy.dry_run,
+                timeouts_by_plugin=graph_policy.timeouts_ms,
+            )
+
+            # Execute using the new GraphPluginExecutor
+            executor = GraphPluginExecutor(
+                policy=base_policy,
+                prior_manifest=plan.prior_manifest,
+                scope=plan.scope,
+            )
+
+            report = executor.execute(
+                executor_ctx=exec_context,
+                plugins=plan.plugins,
+                run_id=plan.run_id,
+                settings_by_plugin=plan.settings_by_plugin,
+            )
 
             # Extract results from report
             completed: list[str] = []

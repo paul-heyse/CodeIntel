@@ -25,12 +25,9 @@ from codeintel.graphs.runtime.manifest import (
     GraphPluginManifest,
     InputHashPayload,
     ManifestState,
-    RecordParams,
     compute_input_hash,
     compute_options_hash,
-    dry_run_record,
     is_unchanged,
-    skip_record,
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_cannot_setattr
@@ -38,7 +35,6 @@ from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
-CUSTOM_TIMEOUT_MS: Final = 5000
 
 
 # Test Helpers
@@ -373,66 +369,6 @@ def test_is_unchanged_no_prior_manifest(graph_gateway: StorageGateway) -> None:
     assert not is_unchanged(None, state)
 
 
-def test_dry_run_record_creates_skipped_status() -> None:
-    """Dry run record has skipped status with dry_run reason."""
-    plugin = _make_test_plugin("dry_run_plugin")
-    params = RecordParams(
-        severity="soft_fail",
-        timeout_ms=1000,
-        version_hash="v1",
-        input_hash="inp123",
-        options_hash="opt456",
-        options={"key": "value"},
-    )
-
-    record = dry_run_record(plugin=plugin, params=params)
-
-    assert record.status == "skipped"
-    assert record.plugin_name == "dry_run_plugin"
-    assert record.meta.get("skipped_reason") == "dry_run"
-    assert record.meta.get("input_hash") == "inp123"
-    assert record.meta.get("options_hash") == "opt456"
-    assert record.duration_ms == 0.0
-    assert record.attempts == 0
-
-
-def test_skip_record_creates_skipped_status_with_reason() -> None:
-    """Skip record has skipped status with custom reason."""
-    plugin = _make_test_plugin("skip_plugin")
-    params = RecordParams(
-        severity="fatal",
-        timeout_ms=None,
-        version_hash="v2",
-        input_hash="inp789",
-        options_hash=None,
-        options=None,
-    )
-
-    record = skip_record(plugin=plugin, params=params, reason="unchanged")
-
-    assert record.status == "skipped"
-    assert record.plugin_name == "skip_plugin"
-    assert record.meta.get("skipped_reason") == "unchanged"
-    assert record.meta.get("version_hash") == "v2"
-
-
-def test_skip_record_with_custom_reason() -> None:
-    """Skip record accepts custom skip reasons."""
-    plugin = _make_test_plugin("custom_skip_plugin")
-    params = RecordParams(
-        severity="skip_on_error",
-        timeout_ms=500,
-        version_hash=None,
-        input_hash=None,
-        options_hash=None,
-        options=None,
-    )
-
-    record = skip_record(plugin=plugin, params=params, reason="dependency_missing")
-
-    assert record.meta.get("skipped_reason") == "dependency_missing"
-
-
 def test_graph_plugin_manifest_record_and_to_dict() -> None:
     """Manifest records plugin data and returns as dict."""
     manifest = GraphPluginManifest()
@@ -503,43 +439,6 @@ def test_graph_plugin_manifest_empty() -> None:
     manifest = GraphPluginManifest()
 
     assert manifest.to_dict() == {}
-
-
-def test_record_params_defaults() -> None:
-    """RecordParams has correct default values."""
-    params = RecordParams(
-        severity="soft_fail",
-        timeout_ms=None,
-        version_hash=None,
-        input_hash=None,
-        options_hash=None,
-        options=None,
-    )
-
-    assert params.requires_isolation is False
-    assert params.isolation_kind is None
-    assert params.policy_fail_fast is True
-
-
-def test_record_params_custom_values() -> None:
-    """RecordParams accepts custom values for all fields."""
-    params = RecordParams(
-        severity="fatal",
-        timeout_ms=CUSTOM_TIMEOUT_MS,
-        version_hash="v3",
-        input_hash="inp",
-        options_hash="opt",
-        options={"config": True},
-        requires_isolation=True,
-        isolation_kind="process",
-        policy_fail_fast=False,
-    )
-
-    assert params.severity == "fatal"
-    assert params.timeout_ms == CUSTOM_TIMEOUT_MS
-    assert params.requires_isolation is True
-    assert params.isolation_kind == "process"
-    assert params.policy_fail_fast is False
 
 
 def test_input_hash_payload_frozen() -> None:

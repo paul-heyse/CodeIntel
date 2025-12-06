@@ -35,9 +35,7 @@ from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
-    GraphTelemetryTestEnv,
     create_graph_executor_env,
-    create_graph_telemetry_env,
 )
 from tests._helpers.fakes.graph_runtimes import (
     MockGraphRuntime,
@@ -122,28 +120,6 @@ def graph_executor_env(tmp_path: Path) -> Iterator[GraphExecutorTestEnv]:
         Environment with gateway and snapshot; automatically closed.
     """
     env = create_graph_executor_env(tmp_path)
-    try:
-        yield env
-    finally:
-        env.close()
-
-
-@pytest.fixture
-def graph_telemetry_env() -> Iterator[GraphTelemetryTestEnv]:
-    """Provide a full execution context environment for telemetry tests.
-
-    This fixture provides:
-    - In-memory gateway with full schema
-    - GraphPluginExecutionContext with scratch store
-    - ResourceContainer for graph resources
-    - Automatic cleanup on test completion
-
-    Yields
-    ------
-    GraphTelemetryTestEnv
-        Environment with context and gateway; automatically closed.
-    """
-    env = create_graph_telemetry_env()
     try:
         yield env
     finally:
@@ -304,7 +280,6 @@ __all__ = [
     "graph_gateway",
     "graph_plugin_context",
     "graph_snapshot",
-    "graph_telemetry_env",
     "mock_graph_runtime",
     "mock_runtime_all_graphs",
     "mock_runtime_with_call_graph",

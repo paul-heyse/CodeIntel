@@ -3,8 +3,6 @@
 This module provides additional test coverage for the executor module,
 focusing on specific execution paths not covered by test_runtime.py:
 
-- Timeout handling with ThreadPoolExecutor
-- Retry logic with backoff
 - Dry run and manifest-based skip paths
 - Fatal error propagation
 - Status counts aggregation
@@ -19,55 +17,37 @@ from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Final
 
-import pytest
-
-from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_graphs import (
-    GraphPluginPolicy,
-    GraphPluginRetryPolicy,
-)
+from codeintel.config.steps_graphs import GraphPluginPolicy
+from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
+from codeintel.core.execution.errors import PluginFatalError
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.runtime import executor
-from codeintel.graphs.runtime.executor import (
+from codeintel.graphs.runtime import graph_executor
+from codeintel.graphs.runtime.graph_executor import (
     GraphExecutorContext,
+    GraphPluginExecutor,
     GraphRunReport,
-    PluginFatalError,
-    run_graph_plugin_batch,
-    run_graph_plugins,
 )
 from codeintel.graphs.runtime.planning import (
     GraphPlanContext,
-    PluginExecutionSettings,
     plan_graph_plugin_run,
 )
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fakes.graph_contexts import (
-    GraphExecutorTestEnv,
-    create_graph_plugin_context,
-)
+from tests._helpers.fakes.graph_contexts import GraphExecutorTestEnv
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
-TIMEOUT_SHORT_MS: Final = 50
-TIMEOUT_LONG_MS: Final = 5000
-DELAY_LONG_MS: Final = 2000
-RETRY_COUNT: Final = 3
-BACKOFF_MS: Final = 10
 STATUS_SUCCESS_COUNT: Final = 2
 STATUS_FAILURE_COUNT: Final = 1
 STATUS_SKIPPED_COUNT: Final = 1
 REPORT_SUCCESS_COUNT: Final = 2
 REPORT_FAILURE_COUNT: Final = 1
 REPORT_MIXED_SUCCESS_COUNT: Final = 1
-_EXECUTOR_PRIVATES: Final = executor.__dict__
-EXECUTE_PLUGIN = _EXECUTOR_PRIVATES["_execute_plugin"]
-RUN_WITH_TIMEOUT = _EXECUTOR_PRIVATES["_run_with_timeout"]
+_EXECUTOR_PRIVATES: Final = graph_executor.__dict__
 STATUS_COUNTS = _EXECUTOR_PRIVATES["_status_counts"]
 
 
@@ -191,245 +171,6 @@ def _make_test_plugin(
     return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
-def _make_execution_context(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-) -> GraphPluginExecutionContext:
-    """Create a graph execution context.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
-
-    Returns
-    -------
-    GraphPluginExecutionContext
-        Execution context for plugins.
-    """
-    return create_graph_plugin_context(
-        gateway,
-        snapshot,
-        plugin_name="test_plugin",
-        run_id="test-run-executor",
-    )
-
-
-def test_run_with_timeout_executes_plugin_within_timeout(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Execute a plugin that completes within the timeout window."""
-    plugin = _make_test_plugin("quick_plugin", succeed=True, row_counts={"t": 5})
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    result = RUN_WITH_TIMEOUT(plugin, ctx, timeout_ms=TIMEOUT_LONG_MS)
-
-    assert result.success
-    assert result.row_counts == {"t": 5}
-
-
-def test_run_with_timeout_no_timeout_executes_directly(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Execute a plugin with no timeout set (None) runs directly."""
-    plugin = _make_test_plugin("no_timeout_plugin", succeed=True)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    result = RUN_WITH_TIMEOUT(plugin, ctx, timeout_ms=None)
-
-    assert result.success
-
-
-def test_run_with_timeout_cancels_on_timeout(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Raise TimeoutError when plugin execution exceeds timeout."""
-    plugin = _make_test_plugin("slow_plugin", delay_ms=DELAY_LONG_MS)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    with pytest.raises(TimeoutError, match="timed out"):
-        RUN_WITH_TIMEOUT(plugin, ctx, timeout_ms=TIMEOUT_SHORT_MS)
-
-
-def test_execute_plugin_retry_exhausts_attempts(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Retry logic exhausts all attempts before failing."""
-    plugin = _make_test_plugin("retry_fail_plugin", raise_exception=RuntimeError)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="soft_fail",
-        retry_cfg=GraphPluginRetryPolicy(max_attempts=RETRY_COUNT, backoff_ms=0),
-        timeout_ms=None,
-        fail_fast=False,
-        input_hash="inp123",
-        options_hash="opt456",
-        version_hash="v1",
-    )
-
-    record = EXECUTE_PLUGIN(
-        plugin=plugin,
-        ctx=ctx,
-        settings=settings,
-    )
-
-    assert record.status == "failed"
-    assert record.attempts == RETRY_COUNT
-
-
-def test_execute_plugin_backoff_applied(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Backoff delay is applied between retry attempts."""
-    plugin = _make_test_plugin("backoff_plugin", raise_exception=ValueError)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="soft_fail",
-        retry_cfg=GraphPluginRetryPolicy(max_attempts=2, backoff_ms=BACKOFF_MS),
-        timeout_ms=None,
-        fail_fast=False,
-        input_hash="inp",
-        options_hash=None,
-        version_hash=None,
-    )
-
-    start = time.perf_counter()
-    record = EXECUTE_PLUGIN(
-        plugin=plugin,
-        ctx=ctx,
-        settings=settings,
-    )
-    elapsed_ms = (time.perf_counter() - start) * 1000
-
-    assert record.status == "failed"
-    # Should have at least one backoff delay between the 2 attempts
-    assert elapsed_ms >= BACKOFF_MS * 0.8  # Allow some tolerance
-
-
-def test_execute_plugin_skip_on_error_severity(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Plugin with skip_on_error severity returns skipped status on exception."""
-    plugin = _make_test_plugin("skip_error_plugin", raise_exception=TypeError)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="skip_on_error",
-        retry_cfg=GraphPluginRetryPolicy(),
-        timeout_ms=None,
-        fail_fast=False,
-        input_hash="inp",
-        options_hash=None,
-        version_hash=None,
-    )
-
-    record = EXECUTE_PLUGIN(
-        plugin=plugin,
-        ctx=ctx,
-        settings=settings,
-    )
-
-    assert record.status == "skipped"
-
-
-def test_execute_plugin_fatal_raises_plugin_fatal_error(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Plugin with fatal severity and fail_fast raises PluginFatalError."""
-    plugin = _make_test_plugin("fatal_plugin", raise_exception=RuntimeError)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="fatal",
-        retry_cfg=GraphPluginRetryPolicy(max_attempts=1),
-        timeout_ms=None,
-        fail_fast=True,
-        input_hash="inp",
-        options_hash=None,
-        version_hash=None,
-    )
-
-    with pytest.raises(PluginFatalError) as exc_info:
-        EXECUTE_PLUGIN(
-            plugin=plugin,
-            ctx=ctx,
-            settings=settings,
-        )
-
-    assert exc_info.value.record.status == "failed"
-    assert exc_info.value.record.plugin_name == "fatal_plugin"
-
-
-def test_execute_plugin_timeout_records_error(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Timeout during execution records timeout error in record."""
-    plugin = _make_test_plugin("timeout_plugin", delay_ms=DELAY_LONG_MS)
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="soft_fail",
-        retry_cfg=GraphPluginRetryPolicy(),
-        timeout_ms=TIMEOUT_SHORT_MS,
-        fail_fast=False,
-        input_hash="inp",
-        options_hash=None,
-        version_hash=None,
-    )
-
-    record = EXECUTE_PLUGIN(
-        plugin=plugin,
-        ctx=ctx,
-        settings=settings,
-    )
-
-    assert record.status == "failed"
-    assert record.error == "timeout"
-
-
-def test_execute_plugin_returns_plugin_hashes(
-    graph_executor_env: GraphExecutorTestEnv,
-) -> None:
-    """Plugin-provided hashes override settings hashes in record."""
-    plugin = _make_test_plugin(
-        "hash_plugin",
-        succeed=True,
-        input_hash="plugin_inp",
-        options_hash="plugin_opt",
-    )
-    ctx = _make_execution_context(graph_executor_env.gateway, graph_executor_env.snapshot)
-
-    settings = PluginExecutionSettings(
-        name=plugin.metadata.name,
-        severity="soft_fail",
-        retry_cfg=GraphPluginRetryPolicy(),
-        timeout_ms=None,
-        fail_fast=False,
-        input_hash="settings_inp",
-        options_hash="settings_opt",
-        version_hash="v1",
-    )
-
-    record = EXECUTE_PLUGIN(
-        plugin=plugin,
-        ctx=ctx,
-        settings=settings,
-    )
-
-    assert record.status == "succeeded"
-    assert record.meta.get("input_hash") == "plugin_inp"
-    assert record.meta.get("options_hash") == "plugin_opt"
-
-
 def test_status_counts_aggregates_correctly() -> None:
     """Status counts correctly aggregate success/failure/skip counts."""
     now = datetime.now(tz=UTC)
@@ -464,7 +205,7 @@ def test_status_counts_empty_records() -> None:
     assert counts["skipped"] == 0
 
 
-def test_run_graph_plugins_dry_run_skips_execution(
+def test_graph_plugin_executor_dry_run_skips_execution(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Dry run mode skips actual plugin execution."""
@@ -485,7 +226,21 @@ def test_run_graph_plugins_dry_run_skips_execution(
             snapshot=graph_executor_env.snapshot,
         )
 
-        report = run_graph_plugins(plan=plan, context=executor_context)
+        # Convert policy and use GraphPluginExecutor directly
+        base_policy = BaseExecutionPolicy(
+            dry_run=True,
+        )
+        graph_executor = GraphPluginExecutor(
+            policy=base_policy,
+            scope=plan.scope,
+        )
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=plan.plugins,
+            run_id=plan.run_id,
+            settings_by_plugin=plan.settings_by_plugin,
+        )
 
         assert report.skip_count == 1
         assert report.success_count == 0
@@ -493,7 +248,7 @@ def test_run_graph_plugins_dry_run_skips_execution(
         assert report.records[0].meta.get("skipped_reason") == "dry_run"
 
 
-def test_run_graph_plugins_skip_on_unchanged(
+def test_graph_plugin_executor_skip_on_unchanged(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Plugin skipped when manifest shows inputs unchanged."""
@@ -541,14 +296,29 @@ def test_run_graph_plugins_skip_on_unchanged(
             snapshot=graph_executor_env.snapshot,
         )
 
-        report = run_graph_plugins(plan=plan_with_correct_hash, context=executor_context)
+        # Use GraphPluginExecutor directly
+        base_policy = BaseExecutionPolicy(
+            skip_on_unchanged=True,
+        )
+        graph_executor = GraphPluginExecutor(
+            policy=base_policy,
+            prior_manifest=plan_with_correct_hash.prior_manifest,
+            scope=plan_with_correct_hash.scope,
+        )
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=plan_with_correct_hash.plugins,
+            run_id=plan_with_correct_hash.run_id,
+            settings_by_plugin=plan_with_correct_hash.settings_by_plugin,
+        )
 
         assert report.skip_count == 1
         assert report.records
         assert report.records[0].meta.get("skipped_reason") == "unchanged"
 
 
-def test_run_graph_plugins_builds_manifest(
+def test_graph_plugin_executor_builds_manifest(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Successful plugin execution populates manifest in report."""
@@ -569,7 +339,17 @@ def test_run_graph_plugins_builds_manifest(
             snapshot=graph_executor_env.snapshot,
         )
 
-        report = run_graph_plugins(plan=plan, context=executor_context)
+        # Use GraphPluginExecutor directly
+        graph_executor = GraphPluginExecutor(
+            scope=plan.scope,
+        )
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=plan.plugins,
+            run_id=plan.run_id,
+            settings_by_plugin=plan.settings_by_plugin,
+        )
 
         assert plugin.metadata.name in report.manifest
         entry = report.manifest[plugin.metadata.name]
@@ -577,7 +357,7 @@ def test_run_graph_plugins_builds_manifest(
         assert "executed_at" in entry
 
 
-def test_run_graph_plugins_fatal_stops_remaining(
+def test_graph_plugin_executor_fatal_stops_remaining(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Fatal plugin error stops execution of remaining plugins."""
@@ -599,7 +379,22 @@ def test_run_graph_plugins_fatal_stops_remaining(
             snapshot=graph_executor_env.snapshot,
         )
 
-        report = run_graph_plugins(plan=plan, context=executor_context)
+        # Use GraphPluginExecutor directly
+        base_policy = BaseExecutionPolicy(
+            default_severity="fatal",
+            fail_fast=True,
+        )
+        graph_executor = GraphPluginExecutor(
+            policy=base_policy,
+            scope=plan.scope,
+        )
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=plan.plugins,
+            run_id=plan.run_id,
+            settings_by_plugin=plan.settings_by_plugin,
+        )
 
         assert report.fatal_error
         # Only the fatal plugin should have a record
@@ -660,7 +455,7 @@ def test_plugin_fatal_error_preserves_context() -> None:
     assert "Original exception message" in str(exc)
 
 
-def test_run_graph_plugin_batch_executes_multiple(
+def test_graph_plugin_executor_batch_executes_multiple(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Batch execution runs multiple plugins and reports results."""
@@ -670,18 +465,24 @@ def test_run_graph_plugin_batch_executes_multiple(
     ]
 
     with _PluginRegistrar(plugins):
-        report = run_graph_plugin_batch(
-            plugins=plugins,
+        executor_context = GraphExecutorContext(
             gateway=graph_executor_env.gateway,
             snapshot=graph_executor_env.snapshot,
         )
 
+        graph_executor = GraphPluginExecutor()
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=tuple(plugins),
+            run_id="test-batch-run",
+        )
+
         assert report.success_count == REPORT_SUCCESS_COUNT
         assert report.failure_count == 0
-        assert report.repo == "demo/repo"
 
 
-def test_run_graph_plugin_batch_with_mixed_results(
+def test_graph_plugin_executor_batch_with_mixed_results(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Batch execution handles mixed success and failure results."""
@@ -691,10 +492,17 @@ def test_run_graph_plugin_batch_with_mixed_results(
     ]
 
     with _PluginRegistrar(plugins):
-        report = run_graph_plugin_batch(
-            plugins=plugins,
+        executor_context = GraphExecutorContext(
             gateway=graph_executor_env.gateway,
             snapshot=graph_executor_env.snapshot,
+        )
+
+        graph_executor = GraphPluginExecutor()
+
+        report = graph_executor.execute(
+            executor_ctx=executor_context,
+            plugins=tuple(plugins),
+            run_id="test-mixed-run",
         )
 
         assert report.success_count == REPORT_MIXED_SUCCESS_COUNT

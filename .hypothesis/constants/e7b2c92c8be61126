@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/executor.py
+# hypothesis_version: 6.148.7
+
+['GraphExecutorContext', 'GraphRunReport', 'PluginFatalError', 'failed', 'failure', 'skipped', 'succeeded', 'success']

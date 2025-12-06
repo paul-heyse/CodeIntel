@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         CFGEdgeRow,
         DFGEdgeRow,
     )
+    from codeintel.core.execution.retry import RetryPolicy
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
@@ -184,14 +185,6 @@ class GraphMetricPluginOverrides:
 
 
 @dataclass(frozen=True)
-class GraphPluginRetryPolicy:
-    """Retry behavior for a plugin when errors occur."""
-
-    max_attempts: int = 1
-    backoff_ms: int = 0
-
-
-@dataclass(frozen=True)
 class GraphPluginPolicy:
     """Execution policy for graph metric plugins."""
 
@@ -200,7 +193,7 @@ class GraphPluginPolicy:
     severity_overrides: dict[str, Literal["fatal", "soft_fail", "skip_on_error"]] = field(
         default_factory=dict
     )
-    retries: dict[str, GraphPluginRetryPolicy] = field(default_factory=dict)
+    retries: dict[str, RetryPolicy] = field(default_factory=dict)
     timeouts_ms: dict[str, int] = field(default_factory=dict)
     skip_on_unchanged: bool = False
     dry_run: bool = False

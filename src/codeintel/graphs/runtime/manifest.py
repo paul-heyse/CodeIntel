@@ -3,6 +3,8 @@
 This module provides utilities for tracking plugin execution state,
 computing content hashes for caching, and determining when plugins
 can be skipped due to unchanged inputs.
+
+Re-exports common utilities from core and adds graph-specific extensions.
 """
 
 from __future__ import annotations
@@ -11,11 +13,19 @@ import hashlib
 import json
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.types.result import PluginExecutionRecord
+from codeintel.core.plugins.execution.manifest import (
+    ManifestState as CoreManifestState,
+)
+from codeintel.core.plugins.execution.manifest import (
+    PluginExecutionManifest,
+)
+from codeintel.core.plugins.execution.manifest import (
+    is_unchanged as core_is_unchanged,
+)
 
 if TYPE_CHECKING:
     from codeintel.config.steps_graphs import GraphRunScope
@@ -26,9 +36,16 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Graph-specific InputHashPayload (uses GraphRunScope)
+# =============================================================================
+
+
 @dataclass(frozen=True)
 class InputHashPayload:
     """Inputs contributing to a plugin's content hash.
+
+    Graph-specific version that includes scope from GraphRunScope.
 
     Attributes
     ----------
@@ -41,7 +58,7 @@ class InputHashPayload:
     version_hash
         Plugin version hash.
     scope
-        Execution scope.
+        Graph execution scope.
     options_hash
         Hash of plugin options.
     """
@@ -110,13 +127,23 @@ def compute_options_hash(
         )
         return hashlib.sha256(serialized.encode()).hexdigest()[:16]
     except (TypeError, ValueError):
-        log.warning("graph_manifest.options_hash.serialize_failed plugin=%s", plugin.metadata.name)
+        log.warning(
+            "graph_manifest.options_hash.serialize_failed plugin=%s",
+            plugin.metadata.name,
+        )
         return None
+
+
+# =============================================================================
+# Graph-specific ManifestState (extended fields)
+# =============================================================================
 
 
 @dataclass(frozen=True)
 class ManifestState:
     """State used for manifest-based skip decisions.
+
+    Graph-specific version with additional context fields.
 
     Attributes
     ----------
@@ -163,151 +190,31 @@ def is_unchanged(
     bool
         True if inputs are unchanged and execution can be skipped.
     """
-    if prior_manifest is None:
-        return False
-    prior = prior_manifest.get(state.plugin_name)
-    if prior is None:
-        return False
-    prior_input_hash = prior.get("input_hash")
-    prior_options_hash = prior.get("options_hash")
-    if state.input_hash is None or prior_input_hash is None:
-        return False
-    if state.input_hash != prior_input_hash:
-        return False
-    return state.options_hash == prior_options_hash
-
-
-@dataclass
-class RecordParams:
-    """Parameters for constructing execution records.
-
-    Attributes
-    ----------
-    severity
-        Plugin severity level.
-    timeout_ms
-        Timeout in milliseconds.
-    version_hash
-        Plugin version hash.
-    input_hash
-        Input content hash.
-    options_hash
-        Options content hash.
-    options
-        Plugin options value.
-    requires_isolation
-        Whether isolation is required.
-    isolation_kind
-        Kind of isolation.
-    policy_fail_fast
-        Whether fail-fast is enabled.
-    """
-
-    severity: str
-    timeout_ms: int | None
-    version_hash: str | None
-    input_hash: str | None
-    options_hash: str | None
-    options: object | None
-    requires_isolation: bool = False
-    isolation_kind: str | None = None
-    policy_fail_fast: bool = True
-
-
-def dry_run_record(
-    *,
-    plugin: GraphPluginProtocol,
-    params: RecordParams,
-) -> PluginExecutionRecord:
-    """Create a record for a dry-run execution.
-
-    Parameters
-    ----------
-    plugin
-        Plugin being recorded.
-    params
-        Record parameters.
-
-    Returns
-    -------
-    PluginExecutionRecord
-        Record marked as skipped due to dry-run.
-    """
-    now = datetime.now(tz=UTC)
-    return PluginExecutionRecord(
-        plugin_name=plugin.metadata.name,
-        status="skipped",
-        started_at=now,
-        ended_at=now,
-        duration_ms=0.0,
-        attempts=0,
-        partial=False,
-        error=None,
-        meta={
-            "skipped_reason": "dry_run",
-            "severity": params.severity,
-            "timeout_ms": params.timeout_ms,
-            "version_hash": params.version_hash,
-            "input_hash": params.input_hash,
-            "options_hash": params.options_hash,
-        },
+    # Use core implementation with just the fields it needs
+    core_state = CoreManifestState(
+        plugin_name=state.plugin_name,
+        input_hash=state.input_hash,
+        options_hash=state.options_hash,
     )
+    return core_is_unchanged(prior_manifest, core_state)
 
 
-def skip_record(
-    *,
-    plugin: GraphPluginProtocol,
-    params: RecordParams,
-    reason: str,
-) -> PluginExecutionRecord:
-    """Create a record for a skipped execution.
-
-    Parameters
-    ----------
-    plugin
-        Plugin being recorded.
-    params
-        Record parameters.
-    reason
-        Reason for skipping.
-
-    Returns
-    -------
-    PluginExecutionRecord
-        Record marked as skipped with the specified reason.
-    """
-    now = datetime.now(tz=UTC)
-    return PluginExecutionRecord(
-        plugin_name=plugin.metadata.name,
-        status="skipped",
-        started_at=now,
-        ended_at=now,
-        duration_ms=0.0,
-        attempts=0,
-        partial=False,
-        error=None,
-        meta={
-            "skipped_reason": reason,
-            "severity": params.severity,
-            "timeout_ms": params.timeout_ms,
-            "version_hash": params.version_hash,
-            "input_hash": params.input_hash,
-            "options_hash": params.options_hash,
-        },
-    )
+# =============================================================================
+# GraphPluginManifest (extends core with record() method)
+# =============================================================================
 
 
-@dataclass
-class GraphPluginManifest:
+class GraphPluginManifest(PluginExecutionManifest):
     """Manifest tracking plugin execution history.
+
+    Extend core PluginExecutionManifest with graph-specific record() method
+    for backward compatibility.
 
     Attributes
     ----------
     entries
         Map of plugin name to execution metadata.
     """
-
-    entries: dict[str, dict[str, object]] = field(default_factory=dict)
 
     def record(
         self,
@@ -340,25 +247,12 @@ class GraphPluginManifest:
             "recorded_at": datetime.now(tz=UTC).isoformat(),
         }
 
-    def to_dict(self) -> dict[str, dict[str, object]]:
-        """Return manifest entries as a dictionary.
-
-        Returns
-        -------
-        dict[str, dict[str, object]]
-            Manifest entries.
-        """
-        return dict(self.entries)
-
 
 __all__ = [
     "GraphPluginManifest",
     "InputHashPayload",
     "ManifestState",
-    "RecordParams",
     "compute_input_hash",
     "compute_options_hash",
-    "dry_run_record",
     "is_unchanged",
-    "skip_record",
 ]
