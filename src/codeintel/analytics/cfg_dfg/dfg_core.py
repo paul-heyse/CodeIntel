@@ -110,7 +110,7 @@ def load_dfg_edges(
     try:
         rows: Iterable[tuple[int, int, int, str, str, bool, str]] = gateway.con.execute(
             """
-            SELECT function_goid_h128::BIGINT, src_block_id, dst_block_id,
+            SELECT function_goid_h128, src_block_id, dst_block_id,
                    src_var, dst_var, via_phi, use_kind
             FROM graph.dfg_edges
             """

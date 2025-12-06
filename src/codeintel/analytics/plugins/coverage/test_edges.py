@@ -29,7 +29,7 @@ class CoverageTestEdgesPlugin(TargetPlugin):
     - coverage.test_edges: Test-to-function coverage edges
     """
 
-    plugin_name: ClassVar[str] = "coverage.test_edges"
+    plugin_name: ClassVar[str] = "coverage_test_edges"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Build test-to-function coverage edges from coverage contexts."

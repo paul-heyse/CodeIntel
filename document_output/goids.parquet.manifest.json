@@ -1,0 +1,12 @@
+{
+  "dataset": "goids",
+  "artifact": "goids.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "f451a872818adc05cee704da1b5f9d1e26fab0e2b081c15ef5fab85765066d77",
+  "started_at": "2025-12-06T13:46:18.363044+00:00",
+  "completed_at": "2025-12-06T13:46:18.379221+00:00"
+}

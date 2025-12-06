@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import shutil
@@ -221,15 +222,35 @@ class ToolRunner:
         ToolRunResult
             Structured result from :meth:`run_async`.
         """
-        return asyncio.run(
-            self.run_async(
-                tool,
-                args,
-                cwd=cwd,
-                output_path=output_path,
-                timeout_s=timeout_s,
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already in an async context - run in thread pool
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.run_async(
+                        tool,
+                        args,
+                        cwd=cwd,
+                        output_path=output_path,
+                        timeout_s=timeout_s,
+                    ),
+                )
+                return future.result()
+        else:
+            return asyncio.run(
+                self.run_async(
+                    tool,
+                    args,
+                    cwd=cwd,
+                    output_path=output_path,
+                    timeout_s=timeout_s,
+                )
             )
-        )
 
     @staticmethod
     def load_json(path: Path) -> dict[str, object] | None:

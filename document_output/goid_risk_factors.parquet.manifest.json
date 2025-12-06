@@ -1,0 +1,12 @@
+{
+  "dataset": "goid_risk_factors",
+  "artifact": "goid_risk_factors.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "3fa853d7bde814c09933a0974e828828a9c69b32f15b5d1a955cc0e126678a5f",
+  "started_at": "2025-12-06T13:46:18.335693+00:00",
+  "completed_at": "2025-12-06T13:46:18.362412+00:00"
+}

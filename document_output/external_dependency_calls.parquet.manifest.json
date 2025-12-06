@@ -1,0 +1,12 @@
+{
+  "dataset": "external_dependency_calls",
+  "artifact": "external_dependency_calls.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "0c7daab51b4d7d1194b94c665986d4a27ad95ec5a2ab3ecd068dfd821221fd8b",
+  "started_at": "2025-12-06T13:46:18.091693+00:00",
+  "completed_at": "2025-12-06T13:46:18.093549+00:00"
+}

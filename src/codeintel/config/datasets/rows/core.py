@@ -1,11 +1,13 @@
-"""Core entity TypedDict row models and serializers.
+"""Core entity row models and serializers.
 
-This module provides TypedDict definitions for core DuckDB tables:
-- IngestRunRow and IngestRunLike for core.ingest_runs
-- GoidRow for core.goids
-- GoidCrosswalkRow for core.goid_crosswalk
-- DocstringRow for core.docstrings
-- ConfigValueRow for analytics.config_values
+This module provides row types for core DuckDB tables:
+- IngestRunRow and IngestRunLike for core.ingest_runs (dataclass - not duplicated)
+- DocstringRow for core.docstrings (TypedDict - not duplicated in compute)
+- ConfigValueRow for analytics.config_values (TypedDict - not duplicated in compute)
+- GoidRow and GoidCrosswalkRow are re-exported from codeintel.graphs.data_models.rows
+
+The canonical dataclass definitions for GOID rows live in
+codeintel.graphs.data_models.rows.
 """
 
 from __future__ import annotations
@@ -15,6 +17,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, TypedDict
+
+# Re-export canonical row types from data_models (single source of truth)
+from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+
+# Export to_tuple as method references for backward compatibility
+goid_to_tuple = GoidRow.to_tuple
+goid_crosswalk_to_tuple = GoidCrosswalkRow.to_tuple
 
 
 class IngestRunStatus(StrEnum):
@@ -165,158 +174,6 @@ def ingest_run_to_tuple(run: IngestRunLike) -> tuple[object, ...]:
         run.modules_changed_ratio,
         run.modules_deleted_ratio,
         run.use_full_rebuild,
-    )
-
-
-class GoidRow(TypedDict):
-    """Row shape for core.goids inserts.
-
-    Parameters
-    ----------
-    goid_h128
-        128-bit hash of the GOID.
-    urn
-        Uniform Resource Name for the entity.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    rel_path
-        Relative file path.
-    language
-        Programming language.
-    kind
-        Entity kind (function, class, etc.).
-    qualname
-        Fully qualified name.
-    start_line
-        Starting line number.
-    end_line
-        Ending line number.
-    created_at
-        Creation timestamp.
-    """
-
-    goid_h128: int
-    urn: str
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    kind: str
-    qualname: str
-    start_line: int | None
-    end_line: int | None
-    created_at: datetime
-
-
-def goid_to_tuple(row: GoidRow) -> tuple[object, ...]:
-    """Serialize a GoidRow into the INSERT column order.
-
-    Parameters
-    ----------
-    row
-        The GOID row to serialize.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Values in the order expected by goids INSERTs.
-    """
-    return (
-        row["goid_h128"],
-        row["urn"],
-        row["repo"],
-        row["commit"],
-        row["rel_path"],
-        row["language"],
-        row["kind"],
-        row["qualname"],
-        row["start_line"],
-        row["end_line"],
-        row["created_at"],
-    )
-
-
-class GoidCrosswalkRow(TypedDict):
-    """Row shape for core.goid_crosswalk inserts.
-
-    Parameters
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    goid
-        Global object identifier string.
-    lang
-        Programming language.
-    module_path
-        Module path.
-    file_path
-        File path.
-    start_line
-        Starting line number.
-    end_line
-        Ending line number.
-    scip_symbol
-        SCIP symbol identifier.
-    ast_qualname
-        AST qualified name.
-    cst_node_id
-        CST node identifier.
-    chunk_id
-        Chunk identifier.
-    symbol_id
-        Symbol identifier.
-    updated_at
-        Last update timestamp.
-    """
-
-    repo: str
-    commit: str
-    goid: str
-    lang: str
-    module_path: str
-    file_path: str
-    start_line: int | None
-    end_line: int | None
-    scip_symbol: str | None
-    ast_qualname: str | None
-    cst_node_id: str | None
-    chunk_id: str | None
-    symbol_id: str | None
-    updated_at: datetime
-
-
-def goid_crosswalk_to_tuple(row: GoidCrosswalkRow) -> tuple[object, ...]:
-    """Serialize a GoidCrosswalkRow into the INSERT column order.
-
-    Parameters
-    ----------
-    row
-        The GOID crosswalk row to serialize.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Values in the order expected by goid_crosswalk INSERTs.
-    """
-    return (
-        row["repo"],
-        row["commit"],
-        row["goid"],
-        row["lang"],
-        row["module_path"],
-        row["file_path"],
-        row["start_line"],
-        row["end_line"],
-        row["scip_symbol"],
-        row["ast_qualname"],
-        row["cst_node_id"],
-        row["chunk_id"],
-        row["symbol_id"],
-        row["updated_at"],
     )
 
 

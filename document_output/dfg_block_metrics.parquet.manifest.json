@@ -1,0 +1,12 @@
+{
+  "dataset": "dfg_block_metrics",
+  "artifact": "dfg_block_metrics.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "2f43d96d78939a2bd2cc00bdfa6dfb82e4d207b23d6cfdbb83c901bac35bbc5d",
+  "started_at": "2025-12-06T13:46:17.982111+00:00",
+  "completed_at": "2025-12-06T13:46:18.012445+00:00"
+}

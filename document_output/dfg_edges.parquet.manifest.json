@@ -1,0 +1,12 @@
+{
+  "dataset": "dfg_edges",
+  "artifact": "dfg_edges.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "d0350af4ba9c1a0b820f906007b172ca649a361375253dca7374a8d01cea69b2",
+  "started_at": "2025-12-06T13:46:18.013049+00:00",
+  "completed_at": "2025-12-06T13:46:18.043573+00:00"
+}

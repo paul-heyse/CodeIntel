@@ -1,0 +1,12 @@
+{
+  "dataset": "subsystem_agreement",
+  "artifact": "subsystem_agreement.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "a1af3a975f141876643b91960a0e4d15b76eb7cba10d5d98405f172ce0dd9419",
+  "started_at": "2025-12-06T13:46:18.471159+00:00",
+  "completed_at": "2025-12-06T13:46:18.473159+00:00"
+}

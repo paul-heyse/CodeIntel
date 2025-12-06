@@ -1,17 +1,25 @@
 """Finding types, persistence, and severity handling for graph validation.
 
-This module provides the core data structures and utilities for working
-with validation findings, including persistence to the analytics schema.
+This module provides graph-specific validation types and utilities,
+extending the core validation infrastructure with graph-specific features.
+
+The helper functions are re-exported from core to maintain a consistent API.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.core.validation import (
+    BaseValidationOptions,
+    ValidationSeverity,
+    apply_severity_overrides,
+    cap_findings,
+    has_error_findings,
+)
 from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
@@ -35,26 +43,34 @@ CALL_SCC_MIN = 5
 
 
 @dataclass(frozen=True)
-class GraphValidationOptions:
-    """Optional controls for graph validation behavior."""
+class GraphValidationOptions(BaseValidationOptions):
+    """Options for controlling graph validation behavior.
 
-    severity_overrides: Mapping[str, Literal["info", "warning", "error"]] | None = None
-    hard_fail: bool = False
-    max_findings_per_rule: int | None = None
+    Extend ``BaseValidationOptions`` with graph-specific options.
+    Currently no additional fields, but this allows for future extension.
+
+    Attributes
+    ----------
+    severity_overrides
+        Mapping of rule names to severity levels. Use "*" for all.
+    hard_fail
+        Whether to raise an exception on error-level findings.
+    max_findings_per_rule
+        Maximum findings to collect per rule.
+    """
 
 
 def resolve_validation_options(
     runtime: GraphRuntime | GraphRuntimeOptions,
     options: GraphValidationOptions | None,
 ) -> GraphValidationOptions:
-    """
-    Determine effective validation options, applying runtime feature flags.
+    """Determine effective validation options from runtime feature flags.
 
     Parameters
     ----------
-    runtime : GraphRuntime | GraphRuntimeOptions
+    runtime
         Runtime or options containing feature flags.
-    options : GraphValidationOptions | None
+    options
         Explicit options to use if provided.
 
     Returns
@@ -72,17 +88,16 @@ def resolve_validation_options(
 
 
 # =============================================================================
-# Finding Helpers
+# Graph-Specific Helpers
 # =============================================================================
 
 
 def hub_threshold(node_count: int) -> int:
-    """
-    Compute a hub threshold that scales with graph size.
+    """Compute a hub threshold that scales with graph size.
 
     Parameters
     ----------
-    node_count : int
+    node_count
         Number of nodes in the graph.
 
     Returns
@@ -93,91 +108,6 @@ def hub_threshold(node_count: int) -> int:
     return max(HUB_MIN_DEGREE_FLOOR, int(node_count * HUB_DEGREE_RATIO))
 
 
-def apply_severity_overrides(
-    findings: list[dict[str, object]],
-    overrides: Mapping[str, Literal["info", "warning", "error"]] | None,
-) -> list[dict[str, object]]:
-    """
-    Apply severity overrides to findings.
-
-    Parameters
-    ----------
-    findings : list[dict[str, object]]
-        List of findings to process.
-    overrides : Mapping[str, Literal["info", "warning", "error"]] | None
-        Severity overrides by check name, or "*" for all.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings with severity overrides applied.
-    """
-    if not overrides:
-        return findings
-    normalized: list[dict[str, object]] = []
-    for finding in findings:
-        check = str(finding.get("check_name") or "")
-        override = overrides.get(check) if overrides else None
-        if override is None:
-            override = overrides.get("*") if overrides else None
-        if override is None:
-            normalized.append(finding)
-            continue
-        updated = dict(finding)
-        updated["severity"] = override
-        normalized.append(updated)
-    return normalized
-
-
-def cap_findings(
-    findings: list[dict[str, object]], max_per_rule: int | None
-) -> list[dict[str, object]]:
-    """
-    Cap the number of findings per rule.
-
-    Parameters
-    ----------
-    findings : list[dict[str, object]]
-        List of findings to cap.
-    max_per_rule : int | None
-        Maximum findings per check name. None for unlimited.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Capped list of findings.
-    """
-    if max_per_rule is None or max_per_rule <= 0:
-        return findings
-    counts: dict[str, int] = {}
-    capped: list[dict[str, object]] = []
-    for finding in findings:
-        check = str(finding.get("check_name") or "")
-        seen = counts.get(check, 0)
-        if seen >= max_per_rule:
-            continue
-        counts[check] = seen + 1
-        capped.append(finding)
-    return capped
-
-
-def has_error_findings(findings: list[dict[str, object]]) -> bool:
-    """
-    Check if any findings have error severity.
-
-    Parameters
-    ----------
-    findings : list[dict[str, object]]
-        List of findings to check.
-
-    Returns
-    -------
-    bool
-        True if any finding has error severity.
-    """
-    return any(finding.get("severity") == "error" for finding in findings)
-
-
 # =============================================================================
 # Persistence
 # =============================================================================
@@ -186,18 +116,17 @@ def has_error_findings(findings: list[dict[str, object]]) -> bool:
 def persist_findings(
     gateway: StorageGateway, findings: list[dict[str, object]], repo: str, commit: str
 ) -> None:
-    """
-    Persist validation findings to the analytics schema.
+    """Persist validation findings to the analytics schema.
 
     Parameters
     ----------
-    gateway : StorageGateway
+    gateway
         Storage gateway for database access.
-    findings : list[dict[str, object]]
+    findings
         List of findings to persist.
-    repo : str
+    repo
         Repository identifier.
-    commit : str
+    commit
         Commit identifier.
     """
     if not findings:
@@ -243,10 +172,12 @@ __all__ = [
     "SYMBOL_COMMUNITY_MIN",
     # Types
     "GraphValidationOptions",
-    # Functions
+    "ValidationSeverity",
+    # Core re-exports
     "apply_severity_overrides",
     "cap_findings",
     "has_error_findings",
+    # Graph-specific functions
     "hub_threshold",
     "persist_findings",
     "resolve_validation_options",

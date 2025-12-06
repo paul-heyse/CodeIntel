@@ -400,14 +400,12 @@ def _stage_build_run(  # noqa: PLR0914 - Build orchestration requires many local
     # Execute
     log.info("Executing build plan...")
     tools = resolve_tools_config()
-    # Use incremental recipe to skip SCIP (scip_ingest has missing schemas)
     executor = BuildExecutor(
         graph=graph,
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
         tools=tools,
-        ingestion_recipe="incremental",
     )
 
     result = executor.execute(plan)
@@ -463,8 +461,9 @@ def _stage_export_docs(
     )
 
     # Export JSONL (validation disabled for E2E testing - schemas may be incomplete)
+    # Force full export to ensure fresh data is written (bypasses incremental markers)
     log.info("Exporting JSONL files...")
-    export_opts = ExportCallOptions(validate_exports=False)
+    export_opts = ExportCallOptions(validate_exports=False, force_full_export=True)
     jsonl_files = export_all_jsonl(gateway, output_dir, options=export_opts)
 
     # Export Parquet

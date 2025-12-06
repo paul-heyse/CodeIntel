@@ -26,14 +26,7 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import CFGBuilderStepConfig
-from codeintel.config.datasets import (
-    CFGBlockRow,
-    CFGEdgeRow,
-    DFGEdgeRow,
-    cfg_block_to_tuple,
-    cfg_edge_to_tuple,
-    dfg_edge_to_tuple,
-)
+from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.graphs.catalog import FunctionSpanIndex, load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
@@ -139,59 +132,16 @@ def _build_cfg_dfg_for_function(
     # Build CFG
     cfg_result = cfg_compute.build_cfg(goid, func_node, file_path)
 
-    # Convert CFG to rows
-    cfg_blocks_raw, cfg_edges_raw = cfg_compute.cfg_to_rows(
-        cfg_result, file_path, start_line, end_line
-    )
-
-    # Convert to TypedDict format
-    cfg_blocks: list[CFGBlockRow] = [
-        CFGBlockRow(
-            function_goid_h128=row.function_goid_h128,
-            block_idx=row.block_idx,
-            block_id=row.block_id,
-            label=row.label,
-            file_path=row.file_path,
-            start_line=row.start_line,
-            end_line=row.end_line,
-            kind=row.kind,
-            stmts_json=row.stmts_json,
-            in_degree=row.in_degree,
-            out_degree=row.out_degree,
-        )
-        for row in cfg_blocks_raw
-    ]
-
-    cfg_edges: list[CFGEdgeRow] = [
-        CFGEdgeRow(
-            function_goid_h128=row.function_goid_h128,
-            src_block_id=row.src_block_id,
-            dst_block_id=row.dst_block_id,
-            edge_kind=row.edge_kind,
-        )
-        for row in cfg_edges_raw
-    ]
+    # Convert CFG to rows (already canonical dataclasses)
+    cfg_blocks, cfg_edges = cfg_compute.cfg_to_rows(cfg_result, file_path, start_line, end_line)
 
     # Build DFG from CFG
     dfg_result = dfg_compute.build_dfg(goid, cfg_result.blocks, cfg_result.edges)
 
-    # Convert DFG to rows
-    dfg_edges_raw = dfg_compute.dfg_to_rows(dfg_result)
-    dfg_edges: list[DFGEdgeRow] = [
-        DFGEdgeRow(
-            function_goid_h128=row.function_goid_h128,
-            src_block_id=row.src_block_id,
-            dst_block_id=row.dst_block_id,
-            src_var=row.src_var,
-            dst_var=row.dst_var,
-            edge_kind=row.edge_kind,
-            via_phi=row.via_phi,
-            use_kind=row.use_kind,
-        )
-        for row in dfg_edges_raw
-    ]
+    # Convert DFG to rows (already canonical dataclasses)
+    dfg_edges = dfg_compute.dfg_to_rows(dfg_result)
 
-    return cfg_blocks, cfg_edges, dfg_edges
+    return list(cfg_blocks), list(cfg_edges), list(dfg_edges)
 
 
 def _persist_cfg_blocks(
@@ -224,7 +174,7 @@ def _persist_cfg_blocks(
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.cfg_blocks",
-        [cfg_block_to_tuple(block) for block in blocks],
+        [block.to_tuple() for block in blocks],
         delete_params=[repo, commit],
         scope="cfg_blocks",
     )
@@ -261,7 +211,7 @@ def _persist_cfg_edges(
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.cfg_edges",
-        [cfg_edge_to_tuple(edge) for edge in edges],
+        [edge.to_tuple() for edge in edges],
         delete_params=[repo, commit],
         scope="cfg_edges",
     )
@@ -298,7 +248,7 @@ def _persist_dfg_edges(
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.dfg_edges",
-        [dfg_edge_to_tuple(edge) for edge in edges],
+        [edge.to_tuple() for edge in edges],
         delete_params=[repo, commit],
         scope="dfg_edges",
     )

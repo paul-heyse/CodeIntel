@@ -1,0 +1,12 @@
+{
+  "dataset": "cfg_blocks",
+  "artifact": "cfg_blocks.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "c888c18e14cdf6789344ae4eadc37e1d65cb42b26cef395f7c6087d258d3327c",
+  "started_at": "2025-12-06T13:46:17.608717+00:00",
+  "completed_at": "2025-12-06T13:46:17.666824+00:00"
+}

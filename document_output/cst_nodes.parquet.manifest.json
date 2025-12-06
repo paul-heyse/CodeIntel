@@ -1,0 +1,12 @@
+{
+  "dataset": "cst_nodes",
+  "artifact": "cst_nodes.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "b8cabfc009c8040bcf5b5fac44ae7ed82c946892cec5b9ad648e0e2c53b6f016",
+  "started_at": "2025-12-06T13:46:17.822530+00:00",
+  "completed_at": "2025-12-06T13:46:17.951693+00:00"
+}

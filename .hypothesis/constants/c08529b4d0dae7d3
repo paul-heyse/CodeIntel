@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/data_models/__init__.py
+# hypothesis_version: 6.148.7
+
+['CFGBlockRow', 'CFGEdgeRow', 'DFGEdgeRow', 'GoidCrosswalkRow', 'GoidRow', 'ImportEdgeRow', 'ImportModuleRow', 'SymbolUseRow']

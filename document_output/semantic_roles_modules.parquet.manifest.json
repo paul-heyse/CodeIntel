@@ -1,0 +1,12 @@
+{
+  "dataset": "semantic_roles_modules",
+  "artifact": "semantic_roles_modules.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "f7076c30a6fedc1be59a70b9474548e04ff27e0fa9a01c963f65687c212a4ab2",
+  "started_at": "2025-12-06T13:46:18.467045+00:00",
+  "completed_at": "2025-12-06T13:46:18.469397+00:00"
+}

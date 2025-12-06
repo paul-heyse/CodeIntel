@@ -29,7 +29,7 @@ class DataModelsPlugin(TargetPlugin):
     - analytics.data_models: Extracted data models
     """
 
-    plugin_name: ClassVar[str] = "data_models.build"
+    plugin_name: ClassVar[str] = "data_models"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Extract structured data models from class definitions."
 

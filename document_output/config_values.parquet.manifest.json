@@ -1,0 +1,12 @@
+{
+  "dataset": "config_values",
+  "artifact": "config_values.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "5eec65c8466c2aa25589a7373048f61a2f9f1519bd1fdeb4f12cc51a8c0fbaab",
+  "started_at": "2025-12-06T13:46:17.726563+00:00",
+  "completed_at": "2025-12-06T13:46:17.728141+00:00"
+}

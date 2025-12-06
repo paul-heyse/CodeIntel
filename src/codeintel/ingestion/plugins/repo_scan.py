@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,

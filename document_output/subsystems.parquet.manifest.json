@@ -1,0 +1,12 @@
+{
+  "dataset": "subsystems",
+  "artifact": "subsystems.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "83cac5aafbfe6160560c41026c70d465408ecebf12b2346069b3672e25a232f1",
+  "started_at": "2025-12-06T13:46:18.478114+00:00",
+  "completed_at": "2025-12-06T13:46:18.481435+00:00"
+}

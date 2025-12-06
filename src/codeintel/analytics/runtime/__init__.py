@@ -47,22 +47,20 @@ from codeintel.analytics.runtime.graph import (
 )
 from codeintel.analytics.runtime.manifest import (
     AnalyticsPlanInfo,
-    AnalyticsRunRecord,
     AnalyticsRunReport,
     AnalyticsScope,
     AnalyticsSkippedStep,
-    AnalyticsStatus,
+    PluginExecutionRecord,
+    PluginStatus,
     encode_manifest,
 )
 from codeintel.graphs.engine import GraphKind
 
 __all__ = [
     "AnalyticsPlanInfo",
-    "AnalyticsRunRecord",
     "AnalyticsRunReport",
     "AnalyticsScope",
     "AnalyticsSkippedStep",
-    "AnalyticsStatus",
     "GraphContext",
     "GraphContextCaps",
     "GraphContextSpec",
@@ -70,6 +68,8 @@ __all__ = [
     "GraphRuntime",
     "GraphRuntimeOptions",
     "GraphRuntimePool",
+    "PluginExecutionRecord",
+    "PluginStatus",
     "PooledRuntime",
     "build_graph_context",
     "build_graph_runtime",

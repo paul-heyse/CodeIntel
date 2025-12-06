@@ -1,0 +1,12 @@
+{
+  "dataset": "function_types",
+  "artifact": "function_types.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "f8389438a1fc2bc4660cf4835ba984f070c3239f46c341fac883ee533422a6e5",
+  "started_at": "2025-12-06T13:46:18.294407+00:00",
+  "completed_at": "2025-12-06T13:46:18.319577+00:00"
+}

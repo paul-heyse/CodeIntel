@@ -12,7 +12,6 @@ from typing import cast
 from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.analytics.ast_features.model import IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
-from codeintel.analytics.testing.coverage.inputs import load_test_records
 from codeintel.analytics.testing.profiles.types import (
     BehavioralContext,
     BehavioralLLMRequest,
@@ -59,6 +58,67 @@ class BehaviorRowHooks:
     row_builder: Callable[[TestRecord, BehavioralContext], tuple[object, ...]] | None = None
 
 
+def _default_load_test_records(
+    con: DuckDBConnection, cfg: BehavioralCoverageStepConfig
+) -> list[TestRecord]:
+    """Load test records from the database.
+
+    Returns
+    -------
+    list[TestRecord]
+        Test records for the snapshot.
+    """
+    rows = con.execute(
+        """
+        SELECT
+            t.test_id,
+            t.test_goid_h128,
+            t.urn,
+            t.rel_path,
+            m.module,
+            COALESCE(t.qualname, g.qualname),
+            COALESCE(g.language, 'python'),
+            t.kind,
+            t.status,
+            t.duration_ms,
+            t.markers,
+            t.flaky,
+            g.start_line,
+            g.end_line
+        FROM analytics.test_catalog t
+        LEFT JOIN core.goids g
+          ON g.goid_h128 = t.test_goid_h128
+         AND g.repo = t.repo
+         AND g.commit = t.commit
+        LEFT JOIN core.modules m
+          ON m.repo = t.repo
+         AND m.commit = t.commit
+         AND m.path = t.rel_path
+        WHERE t.repo = ? AND t.commit = ?
+        """,
+        [cfg.repo, cfg.commit],
+    ).fetchall()
+    return [
+        TestRecord(
+            test_id=str(row[0]) if row[0] else "",
+            test_goid_h128=int(row[1]) if row[1] is not None else None,
+            urn=str(row[2]) if row[2] else None,
+            rel_path=str(row[3]) if row[3] else "",
+            module=str(row[4]) if row[4] else None,
+            qualname=str(row[5]) if row[5] else None,
+            language=str(row[6]) if row[6] else "python",
+            kind=str(row[7]) if row[7] else None,
+            status=str(row[8]) if row[8] else None,
+            duration_ms=float(row[9]) if row[9] is not None else None,
+            markers=list(row[10]) if row[10] else [],
+            flaky=bool(row[11]) if row[11] is not None else None,
+            start_line=int(row[12]) if row[12] is not None else None,
+            end_line=int(row[13]) if row[13] is not None else None,
+        )
+        for row in rows
+    ]
+
+
 def build_behavior_rows(
     gateway: StorageGateway,
     cfg: BehavioralCoverageStepConfig,
@@ -77,7 +137,7 @@ def build_behavior_rows(
     ensure_schema(con, "analytics.behavioral_coverage")
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
-        load_tests_fn = load_test_records
+        load_tests_fn = _default_load_test_records
     tests = load_tests_fn(con, cfg)
     if not tests:
         return []

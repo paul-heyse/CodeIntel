@@ -544,9 +544,7 @@ class BasePluginExecutor[
 
         # Determine status - use settings severity if available
         severity = (
-            settings.severity
-            if settings is not None
-            else self._policy.get_severity(meta.name)
+            settings.severity if settings is not None else self._policy.get_severity(meta.name)
         )
 
         if result is not None and result.success:

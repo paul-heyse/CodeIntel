@@ -1,0 +1,12 @@
+{
+  "dataset": "test_coverage_edges",
+  "artifact": "test_coverage_edges.parquet",
+  "schema_id": "test_coverage_edges",
+  "schema_version": "1",
+  "schema_digest": "65023b9b939e69db03a45e384a5ffe542de6c9318419737661be42f13ed88365",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "80eef9e147896fa7a9723c65cb2886e8e0ccf0e4ed784b58c74ad2487acf2b0e",
+  "started_at": "2025-12-06T13:46:18.487554+00:00",
+  "completed_at": "2025-12-06T13:46:18.497505+00:00"
+}

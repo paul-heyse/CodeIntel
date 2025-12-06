@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.plugins.registration import ALL_PLUGINS
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.errors import BuildErrorCollection, PluginExecutionError
@@ -38,10 +39,12 @@ from codeintel.build.plan import BuildPlan, PlanStage
 from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.targets import TargetGraph, TargetModule
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
+from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.runtime.graph_executor import GraphExecutorContext, GraphPluginExecutor
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
 
@@ -1042,10 +1045,26 @@ class BuildExecutor:
         start_time = datetime.now(tz=UTC)
         try:
             target = self._graph.get(target_name)
+
+            # Create catalog provider for analytics plugins
+            catalog = FunctionCatalogService.from_db(
+                self._gateway,
+                repo=self._snapshot.repo,
+                commit=self._snapshot.commit,
+            )
+
+            # Create graph runtime for analytics plugins that need call graphs
+            # Enable GPU backend if available (auto-detection with use_gpu=True)
+            backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
+            runtime_options = GraphRuntimeOptions(snapshot=self._snapshot, backend=backend_config)
+            graph_runtime = build_graph_runtime(self._gateway, runtime_options)
+
             resources = ContextResources(
                 providers=self._providers,
                 gateway=self._gateway,
                 modules=(),
+                catalog=catalog,
+                graph_runtime=graph_runtime,
             )
             ctx = TargetExecutionContext(
                 target=target,
@@ -1191,9 +1210,13 @@ class BuildExecutor:
         Returns
         -------
         list[str]
-            Plugin names for each target in the stage.
+            Plugin names for each target in the stage (excludes empty strings).
         """
-        return [self._graph.get(step.target).plugin for step in stage.steps]
+        return [
+            self._graph.get(step.target).plugin
+            for step in stage.steps
+            if self._graph.get(step.target).plugin  # Filter out empty plugin names
+        ]
 
     def _plugin_to_target(
         self,

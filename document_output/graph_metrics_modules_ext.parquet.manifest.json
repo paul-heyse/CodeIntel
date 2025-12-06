@@ -1,0 +1,12 @@
+{
+  "dataset": "graph_metrics_modules_ext",
+  "artifact": "graph_metrics_modules_ext.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "752ce57e69422fd7affbe660884cb851c8239b9c13bc9a2d3e08529f89154f94",
+  "started_at": "2025-12-06T13:46:18.427244+00:00",
+  "completed_at": "2025-12-06T13:46:18.431254+00:00"
+}

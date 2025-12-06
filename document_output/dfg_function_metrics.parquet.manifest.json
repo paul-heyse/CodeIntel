@@ -1,0 +1,12 @@
+{
+  "dataset": "dfg_function_metrics",
+  "artifact": "dfg_function_metrics.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "d83315381a9cf281e69f26a2d25e124f72bab1df79e0d0da5526f8103e42d6ec",
+  "started_at": "2025-12-06T13:46:18.044142+00:00",
+  "completed_at": "2025-12-06T13:46:18.060832+00:00"
+}

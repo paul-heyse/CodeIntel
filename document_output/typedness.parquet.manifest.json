@@ -1,0 +1,12 @@
+{
+  "dataset": "typedness",
+  "artifact": "typedness.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "3bc3831841935f1069ca69b906c027578240bca8baeca1b5a9033f5716692f18",
+  "started_at": "2025-12-06T13:46:18.514481+00:00",
+  "completed_at": "2025-12-06T13:46:18.516431+00:00"
+}

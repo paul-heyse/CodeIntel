@@ -294,7 +294,7 @@ def _unresolved_call_counts(con: DuckDBConnection, repo: str, commit: str) -> di
     try:
         rows: Iterable[tuple[int, int]] = con.execute(
             """
-            SELECT caller_goid_h128::BIGINT, COUNT(*) AS unresolved_count
+            SELECT caller_goid_h128, COUNT(*) AS unresolved_count
             FROM graph.call_graph_edges
             WHERE repo = ? AND commit = ?
               AND callee_goid_h128 IS NULL

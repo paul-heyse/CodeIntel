@@ -1,0 +1,12 @@
+{
+  "dataset": "graph_metrics_functions",
+  "artifact": "graph_metrics_functions.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "7b110eeabab0fa2b725f7a2eeccecccf15d5e79dfa0f56d6c32b7d8a95edb6a1",
+  "started_at": "2025-12-06T13:46:18.379765+00:00",
+  "completed_at": "2025-12-06T13:46:18.397684+00:00"
+}

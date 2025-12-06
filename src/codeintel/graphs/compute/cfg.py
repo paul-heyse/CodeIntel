@@ -11,6 +11,8 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow
+
 
 @dataclass
 class BasicBlock:
@@ -86,71 +88,6 @@ class CFGResult:
     blocks: tuple[BasicBlock, ...]
     edges: tuple[CFGEdge, ...]
     function_goid: int
-
-
-@dataclass(frozen=True)
-class CFGBlockRow:
-    """Row data for graph.cfg_blocks table.
-
-    Attributes
-    ----------
-    function_goid_h128
-        Function GOID.
-    block_idx
-        Block index.
-    block_id
-        Block identifier string.
-    label
-        Block label.
-    file_path
-        File path.
-    start_line
-        Starting line.
-    end_line
-        Ending line.
-    kind
-        Block kind.
-    stmts_json
-        Statements as JSON.
-    in_degree
-        Number of incoming edges.
-    out_degree
-        Number of outgoing edges.
-    """
-
-    function_goid_h128: int
-    block_idx: int
-    block_id: str
-    label: str
-    file_path: str
-    start_line: int
-    end_line: int
-    kind: str
-    stmts_json: str
-    in_degree: int
-    out_degree: int
-
-
-@dataclass(frozen=True)
-class CFGEdgeRow:
-    """Row data for graph.cfg_edges table.
-
-    Attributes
-    ----------
-    function_goid_h128
-        Function GOID.
-    src_block_id
-        Source block identifier.
-    dst_block_id
-        Destination block identifier.
-    edge_kind
-        Edge kind.
-    """
-
-    function_goid_h128: int
-    src_block_id: str
-    dst_block_id: str
-    edge_kind: str
 
 
 class CFGBuilder:

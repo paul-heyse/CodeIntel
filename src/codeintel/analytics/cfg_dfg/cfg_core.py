@@ -118,7 +118,7 @@ def load_cfg_blocks(
     try:
         block_rows: Iterable[tuple[int, int, str, int, int]] = gateway.con.execute(
             """
-            SELECT function_goid_h128::BIGINT, block_idx, kind, in_degree, out_degree
+            SELECT function_goid_h128, block_idx, kind, in_degree, out_degree
             FROM graph.cfg_blocks
             """
         ).fetchall()
@@ -130,7 +130,7 @@ def load_cfg_blocks(
     try:
         edge_rows: Iterable[tuple[int, int, int, str]] = gateway.con.execute(
             """
-            SELECT function_goid_h128::BIGINT, src_block_id, dst_block_id, edge_kind
+            SELECT function_goid_h128, src_block_id, dst_block_id, edge_kind
             FROM graph.cfg_edges
             """
         ).fetchall()

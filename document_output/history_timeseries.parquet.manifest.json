@@ -1,0 +1,12 @@
+{
+  "dataset": "history_timeseries",
+  "artifact": "history_timeseries.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "8891a40ddb09760ff1c1189fe20b18de0c182bb9aaecea2ed57d8e4aa7a48dce",
+  "started_at": "2025-12-06T13:46:18.434666+00:00",
+  "completed_at": "2025-12-06T13:46:18.435976+00:00"
+}

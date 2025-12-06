@@ -22,12 +22,7 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import ImportGraphStepConfig
-from codeintel.config.datasets import (
-    ImportEdgeRow,
-    ImportModuleRow,
-    import_edge_to_tuple,
-    import_module_to_tuple,
-)
+from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
@@ -94,7 +89,7 @@ def _load_modules(
     try:
         rows = con.execute(
             """
-            SELECT rel_path, module_name
+            SELECT path, module
             FROM core.modules
             WHERE repo = ? AND commit = ?
             """,
@@ -143,7 +138,7 @@ def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ..
 
 def _persist_import_modules(
     gateway: StorageGateway,
-    rows: list[imports_compute.ImportModuleRow],
+    rows: list[ImportModuleRow],
     repo: str,
     commit: str,
 ) -> int:
@@ -168,33 +163,19 @@ def _persist_import_modules(
     if not rows:
         return 0
 
-    # Convert to TypedDict format
-    typed_rows: list[ImportModuleRow] = [
-        ImportModuleRow(
-            repo=row.repo,
-            commit=row.commit,
-            module=row.module,
-            scc_id=row.scc_id,
-            component_size=row.component_size,
-            layer=row.layer,
-            cycle_group=row.cycle_group,
-        )
-        for row in rows
-    ]
-
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.import_modules",
-        [import_module_to_tuple(r) for r in typed_rows],
+        [row.to_tuple() for row in rows],
         delete_params=[repo, commit],
         scope="import_modules",
     )
-    return len(typed_rows)
+    return len(rows)
 
 
 def _persist_import_edges(
     gateway: StorageGateway,
-    rows: list[imports_compute.ImportEdgeRow],
+    rows: list[ImportEdgeRow],
     repo: str,
     commit: str,
 ) -> int:
@@ -219,29 +200,14 @@ def _persist_import_edges(
     if not rows:
         return 0
 
-    # Convert to TypedDict format
-    typed_rows: list[ImportEdgeRow] = [
-        ImportEdgeRow(
-            repo=row.repo,
-            commit=row.commit,
-            src_module=row.src_module,
-            dst_module=row.dst_module,
-            src_fan_out=row.src_fan_out,
-            dst_fan_in=row.dst_fan_in,
-            cycle_group=row.cycle_group,
-            module_layer=row.module_layer,
-        )
-        for row in rows
-    ]
-
     storage = IngestStorageService.from_gateway(gateway)
     storage.run_batch(
         "graph.import_graph_edges",
-        [import_edge_to_tuple(r) for r in typed_rows],
+        [row.to_tuple() for row in rows],
         delete_params=[repo, commit],
         scope="import_graph_edges",
     )
-    return len(typed_rows)
+    return len(rows)
 
 
 class ImportGraphPlugin(TargetPlugin):

@@ -29,7 +29,7 @@ class FunctionHistoryPlugin(TargetPlugin):
     - analytics.function_history: History metrics per function
     """
 
-    plugin_name: ClassVar[str] = "functions.history"
+    plugin_name: ClassVar[str] = "function_history"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Aggregate git churn and commit history per function GOID."
 

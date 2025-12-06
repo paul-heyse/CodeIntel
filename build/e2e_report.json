@@ -1,40 +1,156 @@
 {
-  "run_id": "66274758",
+  "run_id": "77abc739",
   "repo": "local/repo",
-  "commit": "e5b7cd7f8653",
-  "started_at": "2025-12-05T13:26:25.626558+00:00",
-  "ended_at": "2025-12-05T13:26:58.932585+00:00",
-  "total_duration_ms": 33306.01025500073,
-  "overall_status": "failed",
+  "commit": "709f5df69bf9",
+  "started_at": "2025-12-06T13:34:24.460056+00:00",
+  "ended_at": "2025-12-06T13:46:18.722752+00:00",
+  "total_duration_ms": 714262.6828710054,
+  "overall_status": "success",
   "stages": [
     {
       "name": "SCIP Indexing",
       "status": "success",
-      "duration_ms": 0.04029100091429427,
-      "started_at": "2025-12-05T13:26:25.628077+00:00",
-      "ended_at": "2025-12-05T13:26:25.628129+00:00",
+      "duration_ms": 22477.436717003002,
+      "started_at": "2025-12-06T13:34:24.461494+00:00",
+      "ended_at": "2025-12-06T13:34:46.938941+00:00",
       "outputs": {
-        "skipped": true,
+        "skipped": false,
         "scip_index": "/home/paul/CodeIntel/build/scip/index.scip",
         "scip_json": "/home/paul/CodeIntel/build/scip/index.scip.json",
-        "index_size_mb": 32.78491401672363
+        "index_size_mb": 27.38520908355713
       },
       "error": null
     },
     {
       "name": "Build System Run",
-      "status": "failed",
-      "duration_ms": 33304.39519100037,
-      "started_at": "2025-12-05T13:26:25.628159+00:00",
-      "ended_at": "2025-12-05T13:26:58.932556+00:00",
-      "outputs": {},
-      "error": "Build failed: Ingestion recipe failed"
+      "status": "success",
+      "duration_ms": 687680.4040639981,
+      "started_at": "2025-12-06T13:34:46.939053+00:00",
+      "ended_at": "2025-12-06T13:46:14.619464+00:00",
+      "outputs": {
+        "run_id": "build-20251206-133450-103e4370",
+        "status": "succeeded",
+        "computed_count": 41,
+        "skipped_count": 0,
+        "failed_count": 0,
+        "total_duration_ms": 684435.852,
+        "computed_targets": [
+          "modules",
+          "ast",
+          "config_ingest",
+          "coverage_ingest",
+          "cst",
+          "docstrings",
+          "scip",
+          "tests_ingest",
+          "typing",
+          "import_graph",
+          "goids",
+          "call_graph",
+          "cfg",
+          "graph_metrics",
+          "graph_validation",
+          "symbol_uses",
+          "hotspots",
+          "config_data_flow",
+          "coverage_functions",
+          "data_models",
+          "data_model_usage",
+          "cfg_dfg_metrics",
+          "external_deps",
+          "function_ast_features",
+          "function_history",
+          "function_metrics",
+          "function_contracts",
+          "function_effects",
+          "history_timeseries",
+          "semantic_roles",
+          "subsystems",
+          "subsystem_agreement",
+          "subsystem_graph_metrics",
+          "symbol_graph_metrics",
+          "coverage_test_edges",
+          "test_graph_metrics",
+          "test_profile",
+          "behavioral_coverage",
+          "entrypoints",
+          "risk_factors",
+          "profiles"
+        ],
+        "failed_targets": [],
+        "error_summary": null
+      },
+      "error": null
+    },
+    {
+      "name": "Document Export",
+      "status": "success",
+      "duration_ms": 3916.5344490029383,
+      "started_at": "2025-12-06T13:46:14.620102+00:00",
+      "ended_at": "2025-12-06T13:46:18.536645+00:00",
+      "outputs": {
+        "output_dir": "/home/paul/CodeIntel/document_output",
+        "jsonl_files": 70,
+        "parquet_files": 70,
+        "total_size_mb": 121.3,
+        "files_written": 72
+      },
+      "error": null
+    },
+    {
+      "name": "Verify Outputs",
+      "status": "success",
+      "duration_ms": 184.03037999814842,
+      "started_at": "2025-12-06T13:46:18.537856+00:00",
+      "ended_at": "2025-12-06T13:46:18.721894+00:00",
+      "outputs": {
+        "critical_files_missing": [],
+        "file_stats": {
+          "goids.jsonl": {
+            "exists": true,
+            "size_bytes": 2355206
+          },
+          "goids.parquet": {
+            "exists": true,
+            "size_bytes": 275615
+          },
+          "function_metrics.jsonl": {
+            "exists": true,
+            "size_bytes": 2943291
+          },
+          "function_profile.jsonl": {
+            "exists": true,
+            "size_bytes": 9517587
+          },
+          "call_graph_edges.jsonl": {
+            "exists": true,
+            "size_bytes": 7232695
+          },
+          "modules.jsonl": {
+            "exists": true,
+            "size_bytes": 106072
+          }
+        },
+        "table_counts": {
+          "core.goids": 4853,
+          "core.modules": 515,
+          "analytics.function_metrics": 3468,
+          "graph.call_graph_edges": 17183
+        },
+        "all_critical_present": true
+      },
+      "error": null
     }
   ],
   "summary": {
-    "stages_total": 2,
-    "stages_success": 1,
-    "stages_failed": 1,
-    "stages_skipped": 0
+    "stages_total": 4,
+    "stages_success": 4,
+    "stages_failed": 0,
+    "stages_skipped": 0,
+    "targets_computed": 41,
+    "targets_failed": 0,
+    "export_files": 140,
+    "export_size_mb": 121.3,
+    "all_outputs_valid": true
   }
 }

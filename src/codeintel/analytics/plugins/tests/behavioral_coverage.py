@@ -30,7 +30,7 @@ class BehavioralCoveragePlugin(TargetPlugin):
     - analytics.behavioral_coverage: Test behavioral classifications
     """
 
-    plugin_name: ClassVar[str] = "tests.behavioral_coverage"
+    plugin_name: ClassVar[str] = "behavioral_coverage"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = (
         "Assign heuristic behavior tags to tests (unit/integration/etc.)."

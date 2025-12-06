@@ -1,0 +1,12 @@
+{
+  "dataset": "modules",
+  "artifact": "modules.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "83c7be5e241f556a2442bd726d0b2e28bb68222eef0ec7b9061e7f692947d292",
+  "started_at": "2025-12-06T13:46:18.454116+00:00",
+  "completed_at": "2025-12-06T13:46:18.456272+00:00"
+}

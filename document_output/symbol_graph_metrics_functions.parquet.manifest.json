@@ -1,0 +1,12 @@
+{
+  "dataset": "symbol_graph_metrics_functions",
+  "artifact": "symbol_graph_metrics_functions.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "fb2b3239ab930875daa414b4eb7c470547812da844586a9f290df102f99fe01f",
+  "started_at": "2025-12-06T13:46:18.481778+00:00",
+  "completed_at": "2025-12-06T13:46:18.483078+00:00"
+}

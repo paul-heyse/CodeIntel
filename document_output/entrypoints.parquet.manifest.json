@@ -1,0 +1,12 @@
+{
+  "dataset": "entrypoints",
+  "artifact": "entrypoints.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "46676edcb2d5718604e9695c35d58b7c23086985bb9a6f8513faa2d2e98a6483",
+  "started_at": "2025-12-06T13:46:18.084304+00:00",
+  "completed_at": "2025-12-06T13:46:18.089076+00:00"
+}

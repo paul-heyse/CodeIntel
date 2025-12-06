@@ -1,0 +1,12 @@
+{
+  "dataset": "hotspots",
+  "artifact": "hotspots.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "912949a3b9d0d82c7caba971b30d20a8f71904b19344632b69b0d4af574aad72",
+  "started_at": "2025-12-06T13:46:18.436291+00:00",
+  "completed_at": "2025-12-06T13:46:18.438460+00:00"
+}

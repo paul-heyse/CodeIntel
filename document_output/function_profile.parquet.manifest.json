@@ -1,0 +1,12 @@
+{
+  "dataset": "function_profile",
+  "artifact": "function_profile.parquet",
+  "schema_id": "function_profile",
+  "schema_version": "1",
+  "schema_digest": "799e0027510e1cd6b92a604ab099da53dad507469350f4402bf42469283c121c",
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "0f5c2bf25972966c6e58032f247b2c608c5641b86665f26ae5290f6a6cd31a1b",
+  "started_at": "2025-12-06T13:46:18.195757+00:00",
+  "completed_at": "2025-12-06T13:46:18.293525+00:00"
+}

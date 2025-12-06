@@ -31,7 +31,7 @@ class SemanticRolesPlugin(TargetPlugin):
     - analytics.semantic_roles: Semantic role classifications
     """
 
-    plugin_name: ClassVar[str] = "semantic.roles"
+    plugin_name: ClassVar[str] = "semantic_roles"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute semantic roles for functions and calls."
 

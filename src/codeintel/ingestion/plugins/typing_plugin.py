@@ -10,8 +10,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -59,7 +59,7 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
         return list(ctx.resources.modules)
     try:
         rows = ctx.gateway.con.execute(
-            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
             [ctx.repo, ctx.commit],
         ).fetchall()
         return [str(row[0]) for row in rows]

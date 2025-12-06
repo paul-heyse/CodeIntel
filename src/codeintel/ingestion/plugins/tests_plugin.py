@@ -9,8 +9,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -54,7 +54,7 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
         return list(ctx.resources.modules)
     try:
         rows = ctx.gateway.con.execute(
-            "SELECT rel_path FROM core.modules WHERE repo = ? AND commit = ?",
+            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
             [ctx.repo, ctx.commit],
         ).fetchall()
         return [str(row[0]) for row in rows]
@@ -134,11 +134,21 @@ def _resolve_report_file(ctx: TargetExecutionContext) -> Path | None:
     Path | None
         Path to report file or None if not found.
     """
-    # Check common locations
+    # Check common locations - including various naming conventions
     candidates = [
+        # Standard locations
+        ctx.build_dir / "test-results" / "pytest-report.json",
+        ctx.build_dir / "test-results" / "pytest_report.json",
+        ctx.build_dir / "pytest-report.json",
+        ctx.build_dir / "pytest_report.json",
+        ctx.build_dir / "report.json",
+        # Repo root locations
+        ctx.repo_root / "pytest-report.json",
         ctx.repo_root / "pytest_report.json",
         ctx.repo_root / "report.json",
-        ctx.build_dir / "pytest_report.json",
+        # CI common locations
+        ctx.repo_root / "test-results" / "pytest-report.json",
+        ctx.repo_root / ".pytest_cache" / "pytest_report.json",
     ]
     for candidate in candidates:
         if candidate.exists():

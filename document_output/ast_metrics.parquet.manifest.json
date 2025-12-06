@@ -1,0 +1,12 @@
+{
+  "dataset": "ast_metrics",
+  "artifact": "ast_metrics.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "bbd9da63306e96c5fa938fc657c07ac8edc8abef0cfd760d1a83955cba777bc4",
+  "started_at": "2025-12-06T13:46:17.429654+00:00",
+  "completed_at": "2025-12-06T13:46:17.432205+00:00"
+}

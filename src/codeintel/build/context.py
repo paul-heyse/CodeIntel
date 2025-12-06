@@ -45,6 +45,7 @@ from codeintel.build.protocols import (
     ToolRunner,
     TypeChecker,
 )
+from codeintel.build.result import TargetResult
 
 if TYPE_CHECKING:
     from codeintel.analytics.runtime import GraphRuntime
@@ -63,89 +64,6 @@ __all__ = [
     "TargetResult",
     "WriteRecord",
 ]
-
-
-# =============================================================================
-# Target Result
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class TargetResult:
-    """Result of executing a target plugin.
-
-    Attributes
-    ----------
-    success
-        Whether execution succeeded.
-    error_message
-        Error message if failed.
-    row_counts
-        Rows written per table.
-    artifacts_written
-        Artifacts produced.
-    duration_ms
-        Execution time.
-    """
-
-    success: bool
-    error_message: str | None = None
-    row_counts: Mapping[str, int] = field(default_factory=dict)
-    artifacts_written: tuple[str, ...] = ()
-    duration_ms: int = 0
-
-    @classmethod
-    def succeeded(
-        cls,
-        *,
-        row_counts: Mapping[str, int] | None = None,
-        artifacts_written: Sequence[str] | None = None,
-        duration_ms: int = 0,
-    ) -> TargetResult:
-        """Create a success result.
-
-        Parameters
-        ----------
-        row_counts
-            Rows written per table.
-        artifacts_written
-            Artifacts produced.
-        duration_ms
-            Execution time.
-
-        Returns
-        -------
-        TargetResult
-            Success result.
-        """
-        return cls(
-            success=True,
-            row_counts=dict(row_counts) if row_counts else {},
-            artifacts_written=tuple(artifacts_written) if artifacts_written else (),
-            duration_ms=duration_ms,
-        )
-
-    @classmethod
-    def failed(cls, error_message: str, *, duration_ms: int = 0) -> TargetResult:
-        """Create a failure result.
-
-        Parameters
-        ----------
-        error_message
-            Description of the failure.
-        duration_ms
-            Execution time before failure.
-
-        Returns
-        -------
-        TargetResult
-            Failure result.
-        """
-        return cls(
-            success=False,
-            error_message=error_message,
-            duration_ms=duration_ms,
-        )
 
 
 # =============================================================================

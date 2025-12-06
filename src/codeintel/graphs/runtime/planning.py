@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.config.steps_graphs import GraphMetricsStepConfig
 
+
 @dataclass(frozen=True)
 class GraphPluginExecutionPlan:
     """Execution plan for a batch of graph plugins.

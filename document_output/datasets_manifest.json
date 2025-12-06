@@ -412,6 +412,16 @@
       "selected": false
     },
     {
+      "name": "scip_occurrences",
+      "table": "core.scip_occurrences",
+      "selected": false
+    },
+    {
+      "name": "scip_symbols",
+      "table": "core.scip_symbols",
+      "selected": false
+    },
+    {
       "name": "semantic_roles_functions",
       "table": "analytics.semantic_roles_functions",
       "jsonl": "semantic_roles_functions.jsonl",
@@ -530,6 +540,16 @@
       "jsonl": "test_profile.jsonl",
       "parquet": "test_profile.parquet",
       "selected": true
+    },
+    {
+      "name": "test_results",
+      "table": "core.test_results",
+      "selected": false
+    },
+    {
+      "name": "test_summary",
+      "table": "core.test_summary",
+      "selected": false
     },
     {
       "name": "typedness",

@@ -1,0 +1,12 @@
+{
+  "dataset": "call_graph_nodes",
+  "artifact": "call_graph_nodes.parquet",
+  "schema_id": null,
+  "schema_version": "1",
+  "schema_digest": null,
+  "validation_profile": "strict",
+  "row_count": 0,
+  "data_hash": "55f1ac0ffb6ef2b28607e3545ea6dcbccdc0b4ed6706d5add6f70bcd63bec7b0",
+  "started_at": "2025-12-06T13:46:17.505647+00:00",
+  "completed_at": "2025-12-06T13:46:17.513432+00:00"
+}

@@ -31,7 +31,7 @@ class FunctionEffectsPlugin(TargetPlugin):
     - analytics.function_effects_evidence: Effect evidence
     """
 
-    plugin_name: ClassVar[str] = "functions.effects"
+    plugin_name: ClassVar[str] = "function_effects"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Classify side effects and purity for functions."
 

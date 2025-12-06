@@ -132,7 +132,11 @@ def log_empty_graph(name: str, graph: nx.Graph) -> None:
 
 
 def log_projection_skipped(label: str, reason: str, *, nodes: int, graph_nodes: int) -> None:
-    """Emit a warning when a projection cannot be computed.
+    """Log when a projection cannot be computed.
+
+    This is informational, not an error - empty partitions are valid when
+    no cross-partition relationships exist (e.g., config files that don't
+    reference modules).
 
     Parameters
     ----------
@@ -145,7 +149,7 @@ def log_projection_skipped(label: str, reason: str, *, nodes: int, graph_nodes: 
     graph_nodes
         Number of nodes in the bipartite graph.
     """
-    log.warning(
+    log.info(
         "Skipping %s projection: %s (partition_size=%d graph_nodes=%d)",
         label,
         reason,

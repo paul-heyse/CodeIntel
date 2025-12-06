@@ -11,6 +11,7 @@ directly via `plugin.execute(ctx)` rather than through a separate registry.
 
 from __future__ import annotations
 
+from codeintel.analytics.plugins.cfg_dfg import CfgDfgMetricsPlugin
 from codeintel.analytics.plugins.config_data_flow import ConfigDataFlowPlugin
 from codeintel.analytics.plugins.coverage import (
     CoverageFunctionsPlugin,
@@ -34,9 +35,15 @@ from codeintel.analytics.plugins.hotspots import HotspotsPlugin
 from codeintel.analytics.plugins.profiles import ProfilesPlugin
 from codeintel.analytics.plugins.risk import RiskFactorsPlugin
 from codeintel.analytics.plugins.semantic_roles import SemanticRolesPlugin
+from codeintel.analytics.plugins.subsystem_metrics import (
+    SubsystemAgreementPlugin,
+    SubsystemGraphMetricsPlugin,
+)
 from codeintel.analytics.plugins.subsystems import SubsystemsPlugin
+from codeintel.analytics.plugins.symbol_graph_metrics import SymbolGraphMetricsPlugin
 from codeintel.analytics.plugins.tests import (
     BehavioralCoveragePlugin,
+    TestGraphMetricsPlugin,
     TestProfilePlugin,
 )
 
@@ -49,9 +56,12 @@ FUNCTION_HISTORY_PLUGIN = FunctionHistoryPlugin()
 COVERAGE_FUNCTIONS_PLUGIN = CoverageFunctionsPlugin()
 COVERAGE_TEST_EDGES_PLUGIN = CoverageTestEdgesPlugin()
 TEST_PROFILE_PLUGIN = TestProfilePlugin()
+TEST_GRAPH_METRICS_PLUGIN = TestGraphMetricsPlugin()
 BEHAVIORAL_COVERAGE_PLUGIN = BehavioralCoveragePlugin()
 HOTSPOTS_PLUGIN = HotspotsPlugin()
 SUBSYSTEMS_PLUGIN = SubsystemsPlugin()
+SUBSYSTEM_GRAPH_METRICS_PLUGIN = SubsystemGraphMetricsPlugin()
+SUBSYSTEM_AGREEMENT_PLUGIN = SubsystemAgreementPlugin()
 SEMANTIC_ROLES_PLUGIN = SemanticRolesPlugin()
 DATA_MODELS_PLUGIN = DataModelsPlugin()
 DATA_MODEL_USAGE_PLUGIN = DataModelUsagePlugin()
@@ -61,6 +71,8 @@ PROFILES_PLUGIN = ProfilesPlugin()
 HISTORY_TIMESERIES_PLUGIN = HistoryTimeseriesPlugin()
 RISK_FACTORS_PLUGIN = RiskFactorsPlugin()
 CONFIG_DATA_FLOW_PLUGIN = ConfigDataFlowPlugin()
+CFG_DFG_METRICS_PLUGIN = CfgDfgMetricsPlugin()
+SYMBOL_GRAPH_METRICS_PLUGIN = SymbolGraphMetricsPlugin()
 
 # All plugins - used by build executor for discovery
 # Note: Graph plugins are in graphs.plugins and are executed via
@@ -74,9 +86,12 @@ ALL_PLUGINS = (
     COVERAGE_FUNCTIONS_PLUGIN,
     COVERAGE_TEST_EDGES_PLUGIN,
     TEST_PROFILE_PLUGIN,
+    TEST_GRAPH_METRICS_PLUGIN,
     BEHAVIORAL_COVERAGE_PLUGIN,
     HOTSPOTS_PLUGIN,
     SUBSYSTEMS_PLUGIN,
+    SUBSYSTEM_GRAPH_METRICS_PLUGIN,
+    SUBSYSTEM_AGREEMENT_PLUGIN,
     SEMANTIC_ROLES_PLUGIN,
     DATA_MODELS_PLUGIN,
     DATA_MODEL_USAGE_PLUGIN,
@@ -86,11 +101,14 @@ ALL_PLUGINS = (
     HISTORY_TIMESERIES_PLUGIN,
     RISK_FACTORS_PLUGIN,
     CONFIG_DATA_FLOW_PLUGIN,
+    CFG_DFG_METRICS_PLUGIN,
+    SYMBOL_GRAPH_METRICS_PLUGIN,
 )
 
 __all__ = [
     "ALL_PLUGINS",
     "BEHAVIORAL_COVERAGE_PLUGIN",
+    "CFG_DFG_METRICS_PLUGIN",
     "CONFIG_DATA_FLOW_PLUGIN",
     "COVERAGE_FUNCTIONS_PLUGIN",
     "COVERAGE_TEST_EDGES_PLUGIN",
@@ -109,5 +127,9 @@ __all__ = [
     "RISK_FACTORS_PLUGIN",
     "SEMANTIC_ROLES_PLUGIN",
     "SUBSYSTEMS_PLUGIN",
+    "SUBSYSTEM_AGREEMENT_PLUGIN",
+    "SUBSYSTEM_GRAPH_METRICS_PLUGIN",
+    "SYMBOL_GRAPH_METRICS_PLUGIN",
+    "TEST_GRAPH_METRICS_PLUGIN",
     "TEST_PROFILE_PLUGIN",
 ]

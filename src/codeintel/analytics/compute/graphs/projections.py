@@ -6,6 +6,7 @@ graphs and computing metrics on those projections.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,12 @@ from codeintel.graphs.compute.metrics.community import detect_communities_greedy
 
 if TYPE_CHECKING:
     from codeintel.analytics.runtime.context import GraphContext
+
+log = logging.getLogger(__name__)
+
+# Skip expensive metrics (clustering, betweenness, closeness, community) for
+# projections larger than this threshold to avoid very long computation times.
+_MAX_EDGES_FOR_FULL_METRICS = 50_000
 
 
 def build_projection_graph(
@@ -133,24 +140,60 @@ def projection_metrics(
             closeness={},
             community_id={},
         )
+
+    node_count = proj.number_of_nodes()
+    edge_count = proj.number_of_edges()
+    log.info(
+        "projection_metrics.start label=%s nodes=%d edges=%d",
+        label or "unnamed",
+        node_count,
+        edge_count,
+    )
+
+    # Compute degree metrics (fast, always safe)
     degree_view = nx.degree(proj, weight=None)
     weighted_view = nx.degree(proj, weight=weight_attr)
     degree = {node: int(deg) for node, deg in degree_view}
     weighted_degree = {node: float(deg) for node, deg in weighted_view}
-    clustering_val = nx.clustering(proj, weight=weight_attr) if proj.number_of_nodes() > 0 else {}
-    clustering = clustering_val if isinstance(clustering_val, dict) else {}
-    betweenness = (
-        nx.betweenness_centrality(
-            proj,
-            weight=weight_attr,
-            k=_betweenness_sample(proj, ctx),
-            seed=ctx.seed,
+
+    # Skip expensive metrics for large projections to avoid timeouts
+    if edge_count > _MAX_EDGES_FOR_FULL_METRICS:
+        log.warning(
+            "projection_metrics.skip_expensive label=%s edges=%d threshold=%d - "
+            "Projection too large for full metrics. Skipping clustering, betweenness, "
+            "closeness, and community detection. These columns will be 0.0 in output.",
+            label or "unnamed",
+            edge_count,
+            _MAX_EDGES_FOR_FULL_METRICS,
         )
-        if proj.number_of_nodes() > 0
-        else {}
+        return ProjectionMetrics(
+            degree=degree,
+            weighted_degree=weighted_degree,
+            clustering={},
+            betweenness={},
+            closeness={},
+            community_id={},
+        )
+
+    log.debug("projection_metrics.clustering label=%s", label or "unnamed")
+    clustering_val = nx.clustering(proj, weight=weight_attr)
+    clustering = clustering_val if isinstance(clustering_val, dict) else {}
+
+    log.debug("projection_metrics.betweenness label=%s", label or "unnamed")
+    betweenness = nx.betweenness_centrality(
+        proj,
+        weight=weight_attr,
+        k=_betweenness_sample(proj, ctx),
+        seed=ctx.seed,
     )
+
+    log.debug("projection_metrics.closeness label=%s", label or "unnamed")
     closeness = {node: float(val) for node, val in nx.closeness_centrality(proj).items()}
+
+    log.debug("projection_metrics.community label=%s", label or "unnamed")
     communities = community_ids(proj, weight=weight_attr)
+
+    log.info("projection_metrics.complete label=%s", label or "unnamed")
     return ProjectionMetrics(
         degree=degree,
         weighted_degree=weighted_degree,
