@@ -118,9 +118,7 @@ def test_output_contract_accessors_and_validation() -> None:
     assert "Duplicate table key" in errors[0]
     assert any("Duplicate artifact name" in err for err in errors)
 
-    empty_columns = OutputContract(
-        tables=(TableSchema(schema="core", name="empty", columns=[]),)
-    )
+    empty_columns = OutputContract(tables=(TableSchema(schema="core", name="empty", columns=[]),))
     empty_errors = empty_columns.validate()
     assert any("has no columns" in err for err in empty_errors)
 

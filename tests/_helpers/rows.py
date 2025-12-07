@@ -125,7 +125,9 @@ def function_metrics_row(
         return value if isinstance(value, str) else str(value)
 
     created_at_value = defaults.get("created_at")
-    created_at = created_at_value if isinstance(created_at_value, datetime) else datetime.now(tz=UTC)
+    created_at = (
+        created_at_value if isinstance(created_at_value, datetime) else datetime.now(tz=UTC)
+    )
     return FunctionMetricsRow(
         function_goid_h128=goid,
         urn=urn,

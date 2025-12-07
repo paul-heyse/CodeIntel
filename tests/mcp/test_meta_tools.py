@@ -197,9 +197,7 @@ def test_explain_dataset_returns_error_for_unknown_id(monkeypatch: pytest.Monkey
     monkeypatch.setattr(meta_tools, "build_serving_dataflow_graph", lambda: (nodes, edges))
     backend = SimpleNamespace(limits=BackendLimits(), service=SimpleNamespace())
     mcp = _RecordingMcp()
-    meta_tools.register_meta_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend)
-    )
+    meta_tools.register_meta_tools(cast("FastMCP", mcp), cast("QueryBackendOrService", backend))
     (
         _list_datasets,
         _list_operations,

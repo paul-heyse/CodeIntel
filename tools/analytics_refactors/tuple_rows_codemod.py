@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import ClassVar
+from importlib import import_module
+from typing import ClassVar, TypeVar, cast
 
 import libcst as cst
 import libcst.matchers as m
-from libcst import CodemodContext
-from libcst.codemod import CodemodCommand, parallel_exec_transform_with_pretty_print
+from libcst.codemod import CodemodCommand, CodemodContext
 
 from tools.analytics_refactors.tuple_row_config import ALL_SPECS, TupleRowSpec
+
+CSTNodeT = TypeVar("CSTNodeT", bound=cst.CSTNode)
 
 
 @dataclass(frozen=True)
@@ -65,23 +67,22 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
         """
         if isinstance(node, cst.ImportFrom):
             target = ImportTarget.parse(self.spec.row_type_qualname)
-            if m.matches(
-                node,
-                m.ImportFrom(
-                    module=m.Attribute() | m.Name(),
-                    names=m.OneOrMore(
-                        m.ImportAlias(
-                            name=m.Name(target.name) | m.Name(self.spec.row_type_local),
-                        )
-                    ),
-                ),
-            ):
-                self.row_import_present = True
+            if not isinstance(node.names, cst.ImportStar):
+                for alias in node.names:
+                    imported = m.matches(alias.name, m.Name(target.name)) or m.matches(
+                        alias.name, m.Name(self.spec.row_type_local)
+                    )
+                    if imported:
+                        self.row_import_present = True
         if isinstance(node, cst.FunctionDef):
             self.in_target_function.append(node.name.value in self.spec.builder_functions)
         return True
 
-    def on_leave(self, original_node: cst.CSTNode, updated_node: cst.CSTNode) -> cst.CSTNode:
+    def on_leave(
+        self,
+        original_node: CSTNodeT,
+        updated_node: CSTNodeT,
+    ) -> CSTNodeT | cst.RemovalSentinel | cst.FlattenSentinel[CSTNodeT]:
         """
         Rewrite tuple appends when exiting nodes.
 
@@ -90,7 +91,7 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
         cst.CSTNode
             Possibly transformed node.
         """
-        node_out: cst.CSTNode = updated_node
+        node_out: CSTNodeT | cst.RemovalSentinel | cst.FlattenSentinel[CSTNodeT] = updated_node
         if isinstance(original_node, cst.FunctionDef):
             self.in_target_function.pop()
             return node_out
@@ -101,6 +102,8 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
             and self._is_target_append(updated_node)
         ):
             tuple_arg = updated_node.args[0].value
+            if not isinstance(tuple_arg, cst.Tuple):
+                return node_out
             elements = [element.value for element in tuple_arg.elements]
             if len(elements) == len(self.spec.field_names):
                 row_call = cst.Call(
@@ -111,7 +114,7 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
                     ],
                 )
                 self.row_constructor_used = True
-                node_out = updated_node.with_changes(args=[cst.Arg(value=row_call)])
+                node_out = cast("CSTNodeT", updated_node.with_changes(args=[cst.Arg(value=row_call)]))
         return node_out
 
     def _is_target_append(self, call: cst.Call) -> bool:
@@ -160,7 +163,7 @@ class TupleRowToDictTransform(CodemodCommand):
             import_stmt = cst.SimpleStatementLine(
                 body=[
                     cst.ImportFrom(
-                        module=cst.Name.from_value(target.module),
+                        module=_build_module_expr(target.module),
                         names=[
                             cst.ImportAlias(
                                 name=cst.Name(target.name),
@@ -215,6 +218,38 @@ class MultiSpecDriver(CodemodCommand):
         return inner.transform_module_impl(tree)
 
 
+def _build_module_expr(module: str) -> cst.Attribute | cst.Name:
+    """
+    Construct a dotted module expression from a module string.
+
+    Returns
+    -------
+    cst.Attribute | cst.Name
+        ImportFrom-compatible module expression.
+    """
+    parts = module.split(".")
+    expr: cst.Attribute | cst.Name = cst.Name(parts[0])
+    for part in parts[1:]:
+        expr = cst.Attribute(value=expr, attr=cst.Name(part))
+    return expr
+
+
+ParallelExec = Callable[[type[CodemodCommand], Sequence[str], CodemodContext | None], None]
+
+
+def _load_parallel_executor() -> ParallelExec:
+    """
+    Load parallel executor from libcst without relying on stub exports.
+
+    Returns
+    -------
+    ParallelExec
+        Callable that executes codemods in parallel with pretty printing.
+    """
+    module = import_module("libcst.codemod.parallel")
+    return module.parallel_exec_transform_with_pretty_print
+
+
 def main(argv: Iterable[str] | None = None) -> None:
     """Entry point to run the codemod over the provided paths."""
     parser = argparse.ArgumentParser(
@@ -225,7 +260,9 @@ def main(argv: Iterable[str] | None = None) -> None:
         nargs="+",
         help="Files or directories to run the codemod on.",
     )
-    args = parser.parse_args(argv)
+    arg_list: Sequence[str] | None = list(argv) if argv is not None else None
+    args = parser.parse_args(arg_list)
+    parallel_exec_transform_with_pretty_print = _load_parallel_executor()
     parallel_exec_transform_with_pretty_print(MultiSpecDriver, args.paths, None)
 
 

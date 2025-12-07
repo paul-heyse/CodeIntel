@@ -59,11 +59,11 @@ class TestMockFunctionCatalogBasics:
         )
 
         # URN lookups
-        assert catalog.urn_for_goid(1001) == "urn:test:main.py#main"
-        assert catalog.urn_for_goid(1002) == "urn:test:utils.py#helper"
+        assert catalog.urn_for_goid(1001) == "urn:test:test:main.py#main"
+        assert catalog.urn_for_goid(1002) == "urn:test:test:utils.py#helper"
 
         # Reverse lookups
-        assert catalog.goid_for_urn("urn:test:main.py#main") == 1001
+        assert catalog.goid_for_urn("urn:test:test:main.py#main") == 1001
 
         # Span lookups
         assert catalog.lookup_goid("main.py", 10, 25, "main") == 1001

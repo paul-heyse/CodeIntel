@@ -92,9 +92,7 @@ def test_main_uses_register_tools_and_runs(monkeypatch: pytest.MonkeyPatch) -> N
             close=lambda: None,
         )
 
-    def _register_all_tools(
-        mcp: object, backend: object, cfg: ServingConfig | None = None
-    ) -> None:
+    def _register_all_tools(mcp: object, backend: object, cfg: ServingConfig | None = None) -> None:
         _ = mcp
         register_calls.append((backend, cfg))
 

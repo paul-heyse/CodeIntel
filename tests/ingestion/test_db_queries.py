@@ -74,6 +74,7 @@ def _create_numeric_table(gateway: StorageGateway, table: str, values: list[floa
         If an unsupported table is requested.
     """
     params = [(idx, value) for idx, value in enumerate(values, start=1)]
+
     def _insert(query: str) -> None:
         if not params:
             return

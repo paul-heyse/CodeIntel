@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.build.protocols import ToolRunResult
+from codeintel.build.protocols import ToolRunResult as BuildToolRunResult
 from codeintel.build.providers import (
     RealCoverageCollector,
     RealGitHistoryProvider,
@@ -19,7 +19,33 @@ from codeintel.build.providers import (
     SubprocessToolRunner,
 )
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.engine.infrastructure.runner import (
+    ToolRunResult as IngestionToolRunResult,
+)
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
+
+
+def _to_build_result(
+    result: BuildToolRunResult | IngestionToolRunResult,
+) -> BuildToolRunResult:
+    """Normalize ingestion ToolRunResult to the build protocol shape.
+
+    Returns
+    -------
+    BuildToolRunResult
+        Tool run result compatible with build providers.
+    """
+    if isinstance(result, BuildToolRunResult):
+        return result
+    tool_name = result.tool.value if hasattr(result.tool, "value") else str(result.tool)
+    return BuildToolRunResult(
+        tool=tool_name,
+        args=tuple(result.args),
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        duration_ms=int(result.duration_s * 1000),
+    )
 
 
 class StubToolRunner(SubprocessToolRunner):
@@ -27,14 +53,14 @@ class StubToolRunner(SubprocessToolRunner):
 
     def __init__(
         self,
-        result: ToolRunResult,
+        result: BuildToolRunResult | IngestionToolRunResult,
         *,
         hook: Callable[[str, Sequence[str], Path, int | None, Mapping[str, str] | None], None]
         | None = None,
     ) -> None:
         """Initialize stub runner with a result and optional hook."""
         super().__init__(ToolsConfig.default())
-        self.result = result
+        self.result = _to_build_result(result)
         self.hook = hook
         self.calls: list[tuple[str, tuple[str, ...], Path]] = []
 
@@ -46,7 +72,7 @@ class StubToolRunner(SubprocessToolRunner):
         *,
         timeout_ms: int | None = None,
         env: Mapping[str, str] | None = None,
-    ) -> ToolRunResult:
+    ) -> BuildToolRunResult:
         """Return the configured result after recording the call.
 
         Returns

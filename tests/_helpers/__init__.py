@@ -46,6 +46,7 @@ from tests._helpers.fakes.graph_plugins import (
     make_functional_plugin,
     plugin_registrar,
 )
+from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
 from tests._helpers.fakes.ingestion_context import (
     RecordingContext,
     RecordingGateway,
@@ -53,7 +54,6 @@ from tests._helpers.fakes.ingestion_context import (
     build_repo_tree,
     make_target_context,
 )
-from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     complete_digraph,
@@ -107,18 +107,19 @@ from tests._helpers.seeds import (
 __all__ = [
     "CORE_PACK",
     "COVERAGE_PACK",
-    "CallgraphFixtureOptions",
     "DATA_MODELS_PACK",
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
     "DEFAULT_RUN_ID",
     "FUNCTION_TYPES_PACK",
-    "FakeQueryService",
     "GRAPH_PACK",
+    "METRICS_PACK",
+    "SUBSYSTEM_ANALYTICS_PACK",
+    "CallgraphFixtureOptions",
+    "FakeQueryService",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",
-    "METRICS_PACK",
     "ManifestParams",
     "ModelLike",
     "ProvisionedGateway",
@@ -131,7 +132,6 @@ __all__ = [
     "RecordingPlugin",
     "RecordingProviders",
     "RecordingResources",
-    "SUBSYSTEM_ANALYTICS_PACK",
     "ScenarioConfig",
     "SeedPack",
     "TestContext",

@@ -65,9 +65,7 @@ def _seed_function_for_history(
 
     insert_rows(
         ctx.gateway,
-        [
-            row
-        ],
+        [row],
     )
     insert_rows(
         ctx.gateway,
