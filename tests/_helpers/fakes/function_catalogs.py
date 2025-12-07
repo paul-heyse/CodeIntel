@@ -28,8 +28,11 @@ Example
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, cast
+
+from codeintel.graphs.catalog import FunctionMeta
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalog
@@ -120,7 +123,7 @@ class MockFunctionSpan:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(init=False)
 class MockFunctionCatalog:
     """Mock FunctionCatalog for testing analytics plugins.
 
@@ -159,12 +162,21 @@ class MockFunctionCatalog:
     ... )
     """
 
-    functions: list[MockFunctionMeta] = field(default_factory=list)
-    module_by_path: dict[str, str] = field(default_factory=dict)
-    function_spans: list[MockFunctionSpan] = field(default_factory=list)
+    functions: list[MockFunctionMeta]
+    module_by_path: dict[str, str]
+    function_spans: list[MockFunctionSpan]
 
-    def __post_init__(self) -> None:
-        """Build spans from functions if not explicitly provided."""
+    def __init__(
+        self,
+        *,
+        functions: Sequence[MockFunctionMeta | FunctionMeta] | None = None,
+        module_by_path: dict[str, str] | None = None,
+        function_spans: Sequence[MockFunctionSpan] | None = None,
+    ) -> None:
+        """Construct a mock catalog, coercing real FunctionMeta inputs."""
+        self.functions = [self._coerce_function(fn) for fn in functions or ()]
+        self.module_by_path = dict(module_by_path or {})
+        self.function_spans = list(function_spans or [])
         if not self.function_spans and self.functions:
             self.function_spans = [
                 MockFunctionSpan(
@@ -180,6 +192,21 @@ class MockFunctionCatalog:
         # Build internal indexes
         self._goid_to_urn: dict[int, str] = {fn.goid: fn.urn for fn in self.functions}
         self._urn_to_goid: dict[str, int] = {fn.urn: fn.goid for fn in self.functions}
+
+    @staticmethod
+    def _coerce_function(fn: MockFunctionMeta | FunctionMeta) -> MockFunctionMeta:
+        if isinstance(fn, MockFunctionMeta):
+            return fn
+        return MockFunctionMeta(
+            goid=fn.goid,
+            urn=fn.urn,
+            rel_path=fn.rel_path,
+            qualname=fn.qualname,
+            start_line=fn.start_line,
+            end_line=fn.end_line,
+            language=DEFAULT_LANGUAGE,
+            kind=DEFAULT_KIND,
+        )
 
     def catalog(self) -> FunctionCatalog:
         """Return self as the catalog.
@@ -291,7 +318,7 @@ class MockFunctionCatalog:
         list[MockFunctionMeta]
             Functions in the specified file.
         """
-        return [fn for fn in self.functions if fn.rel_path == rel_path]
+        return [cast("MockFunctionMeta", fn) for fn in self.functions if fn.rel_path == rel_path]
 
     def module_for_path(self, rel_path: str) -> str | None:
         """
@@ -367,7 +394,7 @@ def create_mock_catalog_with_functions(
     ]
 
     return MockFunctionCatalog(
-        functions=functions,
+        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
         module_by_path={rel_path: module_name},
     )
 
@@ -420,7 +447,7 @@ def create_mock_catalog_multi_file(
             goid_counter += 1
 
     return MockFunctionCatalog(
-        functions=functions,
+        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
         module_by_path=module_by_path,
     )
 
@@ -495,7 +522,7 @@ def create_mock_catalog_realistic() -> MockFunctionCatalog:
     ]
 
     return MockFunctionCatalog(
-        functions=functions,
+        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
         module_by_path={
             "main.py": "main",
             "utils.py": "utils",

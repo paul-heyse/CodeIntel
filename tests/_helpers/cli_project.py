@@ -5,11 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
+from codeintel.storage import gateway as gateway_pkg
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.schema import apply_all_schemas
 
 PROJECT_FILENAME = "codeintel.yaml"
 
@@ -46,10 +43,19 @@ def _write_project_file(repo_root: Path, repo: str, commit: str, db_rel_path: Pa
 def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectContext:
     """Create a temporary CLI project with real DuckDB backing.
 
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory provided by pytest.
+    repo
+        Repository slug to record in the project config.
+    commit
+        Commit hash to record in the project config.
+
     Returns
     -------
     CLIProjectContext
-        Paths, environment, and storage gateway for the project.
+        Paths, environment variables, and an open storage gateway with schemas applied.
     """
     repo_root = tmp_path / "repo"
     build_dir = repo_root / "build"
@@ -59,18 +65,12 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
 
     cfg_path = _write_project_file(repo_root, repo, commit, db_path.relative_to(repo_root))
 
-    con = duckdb.connect(str(Path(":memory:")))
-    db_path_str = str(db_path).replace("'", "''")
-    con.execute(f"ATTACH DATABASE '{db_path_str}' AS main_db (STORAGE_VERSION 'latest')")
-    con.execute("USE main_db")
-    apply_all_schemas(con)
-    bootstrap_metadata_datasets(con)
-    con.close()
-
     env = {
         "CODEINTEL_REPO_ROOT": str(repo_root),
         "CODEINTEL_BUILD_DIR": str(build_dir),
     }
+
+    gateway = gateway_pkg.open_gateway(gateway_pkg.StorageConfig.for_ingest(db_path))
 
     return CLIProjectContext(
         repo_root=repo_root,
@@ -78,5 +78,5 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
         db_path=db_path,
         cfg_path=cfg_path,
         env=env,
-        gateway=None,
+        gateway=gateway,
     )

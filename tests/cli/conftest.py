@@ -10,9 +10,12 @@ import pytest
 from click.testing import Result
 
 from codeintel.storage import gateway as gateway_pkg
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway_cache import close_gateways
 from tests._helpers.cli import CLIContext, run_cli, temp_repo_context
 from tests._helpers.cli_project import CLIProjectContext, create_cli_project
+
+_GATEWAY_CACHE: dict[Path, StorageGateway] = {}
 
 
 @pytest.fixture
@@ -37,6 +40,7 @@ def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], Result]:
     Callable[[list[str]], Result]
         Function that executes CLI arguments in the prepared environment.
     """
+
     def _run(args: list[str]) -> Result:
         return run_cli(args, env=cli_ctx.env, cwd=cli_ctx.repo_root)
 
@@ -44,7 +48,10 @@ def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], Result]:
 
 
 @pytest.fixture
-def cli_project_ctx(tmp_path: Path) -> Iterator[CLIProjectContext]:
+def cli_project_ctx(
+    tmp_path: Path,
+    _track_and_close_gateways: None,
+) -> Iterator[CLIProjectContext]:
     """Fixture creating a project layout with codeintel.yaml.
 
     Yields
@@ -69,6 +76,7 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
     Callable[[list[str]], Result]
         Runner that executes CLI commands from the project root.
     """
+
     def _run(args: list[str]) -> Result:
         return run_cli(args, env=cli_project_ctx.env, cwd=cli_project_ctx.repo_root)
 
@@ -99,25 +107,28 @@ def _cleanup_gateways() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _track_and_close_gateways(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Track gateways opened during a test and close them afterward."""
-    cache: dict[Path, object] = {}
+    _GATEWAY_CACHE.clear()
 
     real_open = gateway_pkg.open_gateway
 
     def _wrapped_open(config: gateway_pkg.StorageConfig) -> object:
         db_path = Path(config.db_path).resolve()
-        if db_path in cache:
-            return cache[db_path]
+        if db_path in _GATEWAY_CACHE:
+            return _GATEWAY_CACHE[db_path]
         gateway = real_open(config)
-        cache[db_path] = gateway
+        _GATEWAY_CACHE[db_path] = gateway
         return gateway
 
     monkeypatch.setattr("codeintel.storage.gateway.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.storage.gateway.factory.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.cli.commands._common.open_gateway", _wrapped_open)
+    monkeypatch.setattr("codeintel.cli.commands.storage.open_gateway", _wrapped_open)
+    monkeypatch.setattr("codeintel.cli.project.open_gateway", _wrapped_open)
 
     try:
         yield
     finally:
-        for gateway in cache.values():
+        for gateway in _GATEWAY_CACHE.values():
             with suppress(Exception):
                 gateway.close()
+        _GATEWAY_CACHE.clear()

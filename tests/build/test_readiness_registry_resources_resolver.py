@@ -107,7 +107,9 @@ def test_target_readiness_current_is_ready(tmp_path_factory: pytest.TempPathFact
     target = _target("solo")
     gateway = _gateway({})
     current_hash = compute_input_hash(target, snapshot, gateway)  # type: ignore[arg-type]
-    manifest = replace(sample_manifest("solo", ManifestParams(input_hash="x")), input_hash=current_hash)
+    manifest = replace(
+        sample_manifest("solo", ManifestParams(input_hash="x")), input_hash=current_hash
+    )
     gateway = _gateway({"solo": manifest})
 
     view = TargetReadinessView(
@@ -123,7 +125,9 @@ def test_target_readiness_current_is_ready(tmp_path_factory: pytest.TempPathFact
     assert readiness.action_needed.kind == "none"
 
 
-def test_readiness_blocked_dependency_reports_chain(tmp_path_factory: pytest.TempPathFactory) -> None:
+def test_readiness_blocked_dependency_reports_chain(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
     """Stale dependency blocks downstream target with run_first action."""
     snapshot = _snapshot(tmp_path_factory)
     root = _target("root", duration=2000)
@@ -148,7 +152,9 @@ def test_readiness_blocked_dependency_reports_chain(tmp_path_factory: pytest.Tem
     assert readiness.estimated_time_to_ready_ms == root.estimated_duration_ms
 
 
-def test_database_readiness_bottlenecks_and_summary(tmp_path_factory: pytest.TempPathFactory) -> None:
+def test_database_readiness_bottlenecks_and_summary(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
     """DatabaseReadinessView reports bottlenecks and summaries."""
     snapshot = _snapshot(tmp_path_factory)
     root = _target("root")
@@ -192,8 +198,12 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
     """Schema derivation captures duplicates and returns mapping."""
     caplog.set_level("WARNING")
     table = TableSchema(schema="core", name="items", columns=[Column("id", "INTEGER")])
-    t1 = OutputTarget(name="one", module="analytics", plugin="p1", contract=OutputContract(tables=(table,)))
-    t2 = OutputTarget(name="two", module="analytics", plugin="p2", contract=OutputContract(tables=(table,)))
+    t1 = OutputTarget(
+        name="one", module="analytics", plugin="p1", contract=OutputContract(tables=(table,))
+    )
+    t2 = OutputTarget(
+        name="two", module="analytics", plugin="p2", contract=OutputContract(tables=(table,))
+    )
 
     schemas = derive_schemas_from_targets((t1, t2))
 
@@ -290,10 +300,14 @@ def test_target_resources_and_execution_helpers() -> None:
     assert resources.requires_any_tool() is True
     assert TargetResources().requires_any_tool() is False
 
-    execution = TargetExecution(cpu_intensive=True, io_intensive=True, memory_intensive=True, max_runtime_ms=10000)
+    execution = TargetExecution(
+        cpu_intensive=True, io_intensive=True, memory_intensive=True, max_runtime_ms=10000
+    )
     assert execution.estimated_duration_ms() == 10000
 
-    execution_light = TargetExecution(cpu_intensive=True, io_intensive=False, memory_intensive=False, max_runtime_ms=60000)
+    execution_light = TargetExecution(
+        cpu_intensive=True, io_intensive=False, memory_intensive=False, max_runtime_ms=60000
+    )
     assert execution_light.estimated_duration_ms() > 5000
 
 

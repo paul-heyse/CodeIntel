@@ -142,14 +142,20 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
                     rel_path=module_path.relative_to(repo_root).as_posix(),
                     qualname="impure",
                     snapshot=(snapshot.repo, snapshot.commit),
-                    line_span=(ast_map[goids["impure"]].start_line, ast_map[goids["impure"]].end_line),
+                    line_span=(
+                        ast_map[goids["impure"]].start_line,
+                        ast_map[goids["impure"]].end_line,
+                    ),
                 ),
                 function_meta(
                     goid=goids["caller"],
                     rel_path=module_path.relative_to(repo_root).as_posix(),
                     qualname="caller",
                     snapshot=(snapshot.repo, snapshot.commit),
-                    line_span=(ast_map[goids["caller"]].start_line, ast_map[goids["caller"]].end_line),
+                    line_span=(
+                        ast_map[goids["caller"]].start_line,
+                        ast_map[goids["caller"]].end_line,
+                    ),
                 ),
                 function_meta(
                     goid=goids["uses_nonlocal"],

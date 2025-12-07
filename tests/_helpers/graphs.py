@@ -315,14 +315,17 @@ def _function_node(
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef:
     target_name = target.rsplit(".", maxsplit=1)[-1]
     for node in ast.walk(tree):
-        if isinstance(
-            node,
-            (
-                ast.FunctionDef,
-                ast.AsyncFunctionDef,
-                ast.ClassDef,
-            ),
-        ) and node.name == target_name:
+        if (
+            isinstance(
+                node,
+                (
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                    ast.ClassDef,
+                ),
+            )
+            and node.name == target_name
+        ):
             return node
     message = f"Function {target} not found"
     raise ValueError(message)
@@ -353,6 +356,11 @@ def build_ast_map(
     -------
     dict[int, FunctionAst]
         Mapping of GOID to parsed function/class AST metadata.
+
+    Raises
+    ------
+    ValueError
+        If a requested target cannot be found in the provided source or GOID mapping.
     """
     ast_by_goid: dict[int, FunctionAst] = {}
     target_lookup = target_names or {
@@ -366,7 +374,10 @@ def build_ast_map(
         targets_raw = target_lookup[module]
         targets = (targets_raw,) if isinstance(targets_raw, str) else tuple(targets_raw)
         for target in targets:
-            goid = goids[target]
+            goid = goids.get(target)
+            if goid is None:
+                message = f"Function {target} not found"
+                raise ValueError(message)
             func_node = _function_node(tree, target)
             start_line = getattr(func_node, "lineno", 0)
             end_line = getattr(func_node, "end_lineno", start_line)
@@ -419,7 +430,7 @@ def insert_goids(
                 repo=snapshot.repo,
                 commit=snapshot.commit,
                 rel_path=func_ast.rel_path,
-                kind="function",
+                kind="class" if isinstance(func_ast.node, ast.ClassDef) else "function",
                 qualname=func_ast.qualname,
                 start_line=func_ast.start_line,
                 end_line=func_ast.end_line,

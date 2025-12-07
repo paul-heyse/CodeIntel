@@ -167,9 +167,7 @@ def test_backend_raises_problem_detail_on_service_errors() -> None:
     class _BadService(FakeQueryService):
         def get_function_profile(self, *, goid_h128: int) -> ModelLike:
             _ = goid_h128
-            detail = ProblemDetail(
-                type="t", title="bad", detail="fail", status=500, code="boom"
-            )
+            detail = ProblemDetail(type="t", title="bad", detail="fail", status=500, code="boom")
             raise errors.McpError(detail)
 
     backend = _ForwardingBackend(_BadService())

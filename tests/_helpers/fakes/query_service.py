@@ -103,7 +103,7 @@ class FakeQueryService:
         return DatasetSchema(
             dataset_name=dataset_name,
             table_key="docs.v_functions",
-            duckdb_schema=[{"name": "goid", "type": "BIGINT"}],
+            duckdb_schema=[{"name": "goid", "type": "BIGINT", "nullable": False}],
             json_schema={"type": "object"},
             sample_rows=[{"goid": 1, "name": "fn"}],
             capabilities={"validation": True},

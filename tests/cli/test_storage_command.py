@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import duckdb
 import pytest
 from click.testing import Result
 
@@ -29,14 +28,19 @@ def test_storage_validate_macros_failure(
     cli_project_ctx: CLIProjectContext,
 ) -> None:
     """Validation error should exit with code 1 when macros are missing."""
-    monkeypatch.setattr(
-        "codeintel.storage.gateway.factory.bootstrap_metadata_datasets",
-        lambda _con: None,
-    )
     db_path = cli_project_ctx.db_path
-    con = duckdb.connect(str(db_path))
-    con.execute("DELETE FROM metadata.macro_registry")
-    con.close()
+    gateway = cli_project_ctx.gateway
+    assert gateway is not None
+    gateway.con.execute("DELETE FROM metadata.macro_registry")
+    row = gateway.con.execute("SELECT COUNT(*) FROM metadata.macro_registry").fetchone()
+    assert row is not None
+    assert row[0] == 0
+
+    def _fail_validation(_con: object) -> None:
+        raise RuntimeError
+
+    monkeypatch.setattr("codeintel.storage.metadata.validate_macro_registry", _fail_validation)
+    monkeypatch.setattr("codeintel.cli.commands.storage.validate_macro_registry", _fail_validation)
 
     result = cli_project_runner(["storage", "validate-macros", "--db-path", str(db_path)])
     assert_exit(result, 1)

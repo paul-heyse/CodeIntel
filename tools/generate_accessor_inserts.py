@@ -201,7 +201,7 @@ def generate_mixin_class(schema_prefix: str, table_keys: list[str]) -> str:
         Generated Python class code.
     """
     mixin_name = SCHEMA_TO_MIXIN[schema_prefix]
-    methods = []
+    methods: list[str] = []
 
     for table_key in sorted(table_keys):
         if table_key in SKIP_TABLES:
