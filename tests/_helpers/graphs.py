@@ -312,10 +312,17 @@ def build_source_files(repo_root: Path) -> dict[str, Path]:
 def _function_node(
     tree: ast.AST,
     target: str,
-) -> ast.FunctionDef | ast.AsyncFunctionDef:
+) -> ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef:
     target_name = target.rsplit(".", maxsplit=1)[-1]
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == target_name:
+        if isinstance(
+            node,
+            (
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+                ast.ClassDef,
+            ),
+        ) and node.name == target_name:
             return node
     message = f"Function {target} not found"
     raise ValueError(message)

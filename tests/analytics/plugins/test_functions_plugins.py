@@ -6,9 +6,10 @@ from pathlib import Path
 
 from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeaturesPlugin
 from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, FunctionMeta
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.context import create_test_context
 from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.rows import function_meta
 
 
 def _seed_function_sources(repo_root: Path) -> None:
@@ -38,22 +39,20 @@ def _make_catalog(ctx_repo: str, ctx_commit: str) -> FunctionCatalogService:
     FunctionCatalogService
         Catalog provider for the seeded functions.
     """
-    functions: list[FunctionMeta] = [
-        FunctionMeta(
+    functions = [
+        function_meta(
             goid=9001,
-            urn=f"urn:{ctx_repo}:{ctx_commit}:main.py#main",
             rel_path="main.py",
             qualname="main",
-            start_line=1,
-            end_line=5,
+            snapshot=(ctx_repo, ctx_commit),
+            line_span=(1, 5),
         ),
-        FunctionMeta(
+        function_meta(
             goid=9002,
-            urn=f"urn:{ctx_repo}:{ctx_commit}:main.py#helper",
             rel_path="main.py",
             qualname="helper",
-            start_line=7,
-            end_line=8,
+            snapshot=(ctx_repo, ctx_commit),
+            line_span=(7, 8),
         ),
     ]
     catalog = FunctionCatalog(functions=functions, module_by_path={"main.py": "main"})

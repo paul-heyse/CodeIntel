@@ -1,0 +1,234 @@
+"""Additional tests for build resolver edge cases."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import ClassVar
+
+import pytest
+
+from codeintel.build.resolver import BuildResolver
+from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
+from codeintel.build.targets import OutputTarget, TargetGraph
+
+
+def _make_graph() -> TargetGraph:
+    """Create a small graph with a linear chain and extra node.
+
+    Returns
+    -------
+    TargetGraph
+        Graph containing root -> mid -> leaf chain and an extra target.
+    """
+    graph = TargetGraph()
+    graph.register(
+        OutputTarget(
+            name="root",
+            module="ingestion",
+            plugin="root_plugin",
+            tables=("core.root",),
+            dependencies=(),
+            description="root",
+        )
+    )
+    graph.register(
+        OutputTarget(
+            name="mid",
+            module="graphs",
+            plugin="mid_plugin",
+            tables=("core.mid",),
+            dependencies=("root",),
+            description="mid",
+        )
+    )
+    graph.register(
+        OutputTarget(
+            name="leaf",
+            module="analytics",
+            plugin="leaf_plugin",
+            tables=("core.leaf",),
+            dependencies=("mid",),
+            description="leaf",
+        )
+    )
+    graph.register(
+        OutputTarget(
+            name="extra",
+            module="analytics",
+            plugin="extra_plugin",
+            tables=("core.extra",),
+            dependencies=(),
+            description="extra",
+        )
+    )
+    return graph
+
+
+def _state_for(
+    root_status: TargetStatus,
+    mid_status: TargetStatus,
+    leaf_status: TargetStatus,
+    *,
+    mid_blocking: tuple[str, ...] = (),
+) -> DatabaseState:
+    """Create a DatabaseState for the graph with varying statuses.
+
+    Returns
+    -------
+    DatabaseState
+        State with configured statuses for all targets.
+    """
+    targets: dict[str, TargetState] = {
+        "root": TargetState(
+            name="root",
+            status=root_status,
+            manifest=None,
+            staleness_reason=None,
+            blocking_deps=(),
+            current_input_hash=None,
+        ),
+        "mid": TargetState(
+            name="mid",
+            status=mid_status,
+            manifest=None,
+            staleness_reason=StalenessReason(
+                kind="input_hash_mismatch",
+                details="inputs changed",
+            )
+            if mid_status == "stale"
+            else None,
+            blocking_deps=mid_blocking,
+            current_input_hash="mid-hash",
+        ),
+        "leaf": TargetState(
+            name="leaf",
+            status=leaf_status,
+            manifest=None,
+            staleness_reason=None,
+            blocking_deps=(),
+            current_input_hash="leaf-hash",
+        ),
+        "extra": TargetState(
+            name="extra",
+            status="computed",
+            manifest=None,
+            staleness_reason=None,
+            blocking_deps=(),
+            current_input_hash="extra-hash",
+        ),
+    }
+    return DatabaseState(repo="r", commit="c", targets=targets)
+
+
+@pytest.mark.parametrize(
+    ("root_status", "mid_status", "leaf_status", "expected_kinds", "expected_work"),
+    [
+        ("missing", "computed", "computed", ("missing", "cascade", "cascade"), 3),
+        ("computed", "stale", "computed", ("current", "stale", "cascade"), 2),
+    ],
+)
+def test_resolve_cascade_and_stale(
+    root_status: TargetStatus,
+    mid_status: TargetStatus,
+    leaf_status: TargetStatus,
+    expected_kinds: tuple[str, str, str],
+    expected_work: int,
+) -> None:
+    """Resolve computes cascade and stale reasons in topological order."""
+    graph = _make_graph()
+    state = _state_for(root_status, mid_status, leaf_status)
+    resolver = BuildResolver(graph, state)
+
+    result = resolver.resolve(["leaf"])
+
+    kinds = tuple(result.reasons[name].kind for name in ("root", "mid", "leaf"))
+    assert kinds == expected_kinds
+    assert "requested goal" in result.reasons["leaf"].details
+    assert result.total_work == expected_work
+
+
+def test_resolve_handles_blocked_dependencies() -> None:
+    """Blocked targets are reported with dependency or blocked_external kinds."""
+    graph = _make_graph()
+    state = _state_for(
+        "computed",
+        "blocked",
+        "computed",
+        mid_blocking=("root", "external"),
+    )
+    resolver = BuildResolver(graph, state)
+
+    result = resolver.resolve(["leaf"])
+
+    mid_reason = result.reasons["mid"]
+    assert mid_reason.kind == "blocked_external"
+    assert "external" in mid_reason.details
+
+
+def test_dependency_reason_when_blocking_will_compute() -> None:
+    """Blocked targets become dependency reasons when blockers are recomputed."""
+    graph = _make_graph()
+    state = _state_for("missing", "blocked", "computed", mid_blocking=("root",))
+    resolver = BuildResolver(graph, state)
+
+    result = resolver.resolve(["leaf"])
+
+    assert result.reasons["mid"].kind == "dependency"
+    assert result.reasons["root"].kind == "missing"
+    assert "Dependencies" in result.reasons["mid"].details
+
+
+def test_force_recompute_filters_irrelevant_targets(caplog: pytest.LogCaptureFixture) -> None:
+    """Force recompute warnings are emitted for unknown or irrelevant targets."""
+    graph = _make_graph()
+    state = _state_for("computed", "computed", "computed")
+    resolver = BuildResolver(graph, state)
+    caplog.set_level(logging.WARNING)
+
+    result = resolver.resolve(("leaf",), force_recompute=("unknown", "extra"))
+
+    assert result.to_compute == ()
+    assert any("Force target 'unknown'" in rec.message for rec in caplog.records)
+    assert any("not in transitive deps" in rec.message for rec in caplog.records)
+
+
+def test_resolve_all_filters_by_module() -> None:
+    """resolve_all with module restricts goals to that module."""
+    graph = _make_graph()
+
+    @dataclass
+    class FakeState:
+        """DatabaseState stub returning computed states for all targets."""
+
+        repo: ClassVar[str] = "r"
+        commit: ClassVar[str] = "c"
+        targets: ClassVar[dict[str, TargetState]] = {}
+
+        def get(self, name: str) -> TargetState:
+            return TargetState(
+                name=name,
+                status="computed",
+                manifest=None,
+                staleness_reason=None,
+                blocking_deps=(),
+                current_input_hash=f"{name}-hash",
+            )
+
+    resolver = BuildResolver(graph, FakeState())  # type: ignore[arg-type]
+    result = resolver.resolve_all(module="ingestion")
+
+    assert result.requested == ("root",)
+    assert result.to_skip == ("root",)
+    assert result.total_work == 0
+
+
+def test_get_reason_missing_key() -> None:
+    """get_reason raises KeyError when target not in reasons."""
+    graph = _make_graph()
+    state = _state_for("computed", "computed", "computed")
+    resolver = BuildResolver(graph, state)
+    result = resolver.resolve(["leaf"])
+
+    with pytest.raises(KeyError):
+        result.get_reason("nonexistent")

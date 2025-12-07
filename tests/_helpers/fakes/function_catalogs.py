@@ -293,6 +293,22 @@ class MockFunctionCatalog:
         """
         return [fn for fn in self.functions if fn.rel_path == rel_path]
 
+    def module_for_path(self, rel_path: str) -> str | None:
+        """
+        Return module name for a given relative path.
+
+        Parameters
+        ----------
+        rel_path
+            Relative path to look up.
+
+        Returns
+        -------
+        str | None
+            Module name if present, otherwise None.
+        """
+        return self.module_by_path.get(rel_path)
+
 
 # ---------------------------------------------------------------------------
 # Factory Functions

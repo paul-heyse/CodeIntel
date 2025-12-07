@@ -1719,6 +1719,11 @@ class DatasetRowsResponse(BaseModel):
     rows: list[ViewRow]
     meta: ResponseMeta | None = None
 
+    @property
+    def dataset(self) -> str:
+        """Backward-compatible alias for dataset_name."""
+        return self.dataset_name
+
     def to_domain(self) -> dm.DatasetRows:
         """
         Convert to the domain DatasetRows representation.

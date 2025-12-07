@@ -1,0 +1,73 @@
+"""Tests for shared CLI utilities in _common."""
+
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+
+import pytest
+import typer
+
+common = importlib.import_module("codeintel.cli.commands._common")
+
+
+def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flag resolution and backend config selection behave as expected."""
+    assert common.resolve_flag(value=None) is False
+    assert common.resolve_flag(value=True) is True
+    backend = common.build_graph_backend_config(nx_gpu=True, nx_backend="cpu", nx_gpu_strict=True)
+    assert backend.use_gpu is True
+    assert backend.backend == "cpu"
+    assert backend.strict is True
+
+    monkeypatch.setenv("CODEINTEL_GRAPH_EAGER", "true")
+    monkeypatch.setenv("CODEINTEL_GRAPH_COMMUNITY_LIMIT", "25")
+    monkeypatch.setenv("CODEINTEL_GRAPH_VALIDATION_STRICT", "0")
+    flags = common.build_graph_feature_flags_from_env()
+    assert flags.eager_hydration is True
+    assert flags.community_detection_limit == 25
+    assert flags.validation_strict is False
+
+
+def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
+    """Explicit options produce a valid CodeIntelConfig and build paths."""
+    repo_root = tmp_path / "repo"
+    db_path = tmp_path / "build" / "db" / "codeintel.duckdb"
+    build_dir = tmp_path / "build"
+    repo_root.mkdir()
+    cfg = common.build_config_from_options(
+        repo="demo/repo",
+        commit="deadbeef",
+        repo_root=repo_root,
+        db_path=db_path,
+        build_dir=build_dir,
+    )
+    assert cfg.repo.repo == "demo/repo"
+    assert cfg.repo.commit == "deadbeef"
+    assert cfg.paths.db_path == db_path
+    assert cfg.build_paths.db_path == db_path
+
+
+def test_build_runtime_or_exit_fallback_and_missing(tmp_path: Path) -> None:
+    """Fallback options succeed; missing options exit with code 1."""
+    repo_root = tmp_path / "repo"
+    build_dir = tmp_path / "build"
+    db_path = build_dir / "db" / "codeintel.duckdb"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    repo_root.mkdir(parents=True, exist_ok=True)
+
+    runtime = common.build_runtime_or_exit(
+        project_root=None,
+        repo="demo/repo",
+        commit="deadbeef",
+        db_path=db_path,
+        build_dir=build_dir,
+        repo_root=repo_root,
+    )
+    assert runtime.snapshot.repo == "demo/repo"
+    assert runtime.snapshot.commit == "deadbeef"
+    runtime.gateway.close()
+
+    with pytest.raises(typer.Exit) as excinfo:
+        common.build_runtime_or_exit(project_root=tmp_path)
+    assert excinfo.value.exit_code == 1

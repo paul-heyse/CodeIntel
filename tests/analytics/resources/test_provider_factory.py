@@ -10,8 +10,6 @@ Note: Uses shared analytics fixtures from analytics/conftest.py.
 
 from __future__ import annotations
 
-import networkx as nx
-
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.factory import (
@@ -19,13 +17,19 @@ from codeintel.analytics.resources.factory import (
     ProviderFactoryOptions,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
+from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
-from codeintel.analytics.runtime import GraphRuntimeOptions
+from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider, FunctionMeta
+from codeintel.graphs.catalog import (
+    FunctionCatalog,
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+    FunctionMeta,
+)
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.fakes.graph_engine import StubGraphEngine
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50
@@ -95,63 +99,22 @@ class DummyCatalogProvider(FunctionCatalogProvider):
         _ = (rel_path, start_line, end_line, qualname)
         return None
 
+    def module_for_path(self, rel_path: str) -> str | None:
+        """
+        Return module name for a relative path (none for dummy).
 
-class DummyGraphRuntime(GraphRuntimeLike):
-    """Minimal graph runtime implementation for testing."""
+        Parameters
+        ----------
+        rel_path
+            Relative path to look up.
 
-    def __init__(
-        self,
-        *,
-        backend: GraphBackendConfig | None = None,
-        use_gpu: bool = False,
-    ) -> None:
-        self._backend = backend
-        self._use_gpu = use_gpu
-
-    @property
-    def call_graph(self) -> nx.DiGraph | None:
-        """Return dummy call graph."""
+        Returns
+        -------
+        str | None
+            Always None for the dummy provider.
+        """
+        _ = rel_path
         return None
-
-    @property
-    def import_graph(self) -> nx.DiGraph | None:
-        """Return dummy import graph."""
-        return None
-
-    @property
-    def symbol_module_graph(self) -> nx.Graph | None:
-        """Return dummy symbol-module graph."""
-        return None
-
-    @property
-    def symbol_function_graph(self) -> nx.Graph | None:
-        """Return dummy symbol-function graph."""
-        return None
-
-    @property
-    def config_module_bipartite(self) -> nx.Graph | None:
-        """Return dummy config-module bipartite graph."""
-        return None
-
-    @property
-    def test_function_bipartite(self) -> nx.Graph | None:
-        """Return dummy test-function bipartite graph."""
-        return None
-
-    @property
-    def cfg_graph(self) -> nx.DiGraph | None:
-        """Return dummy control flow graph."""
-        return None
-
-    @property
-    def backend(self) -> GraphBackendConfig | None:
-        """Return configured backend."""
-        return self._backend
-
-    @property
-    def use_gpu(self) -> bool:
-        """Return GPU preference."""
-        return self._use_gpu
 
 
 def test_provider_factory_options_defaults() -> None:
@@ -297,6 +260,15 @@ def test_create_registry_all_providers(
     assert registry.has(ModuleMapProvider)
 
 
+def test_function_catalog_service_module_lookup() -> None:
+    """FunctionCatalogService should expose module_for_path."""
+    catalog = FunctionCatalog(functions=[], module_by_path={"src/a.py": "src.a"})
+    provider = FunctionCatalogService(catalog)
+
+    assert provider.module_for_path("src/a.py") == "src.a"
+    assert provider.module_for_path("missing.py") is None
+
+
 def test_make_catalog_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make catalog provider returns CatalogProvider instance."""
     factory = ProviderFactory(test_gateway, test_snapshot)
@@ -333,7 +305,11 @@ def test_make_catalog_provider_with_catalog(
 
 def test_make_graph_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make graph provider returns GraphProvider instance."""
-    factory = ProviderFactory(test_gateway, test_snapshot)
+    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    options = ProviderFactoryOptions(
+        graph_options=GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
+    )
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     provider = factory.make_graph_provider()
 
@@ -344,7 +320,11 @@ def test_make_graph_provider_caches(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider caches the provider instance."""
-    factory = ProviderFactory(test_gateway, test_snapshot)
+    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    options = ProviderFactoryOptions(
+        graph_options=GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
+    )
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     provider1 = factory.make_graph_provider()
     provider2 = factory.make_graph_provider()
@@ -356,10 +336,14 @@ def test_make_graph_provider_with_runtime(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with pre-built runtime."""
-    runtime_obj = DummyGraphRuntime()
-    factory = ProviderFactory(test_gateway, test_snapshot)
+    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    runtime_options = GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
+    factory = ProviderFactory(
+        test_gateway, test_snapshot, options=ProviderFactoryOptions(graph_options=runtime_options)
+    )
+    runtime = GraphRuntime(options=runtime_options, engine=stub_engine)
 
-    provider = factory.make_graph_provider(runtime=runtime_obj)
+    provider = factory.make_graph_provider(runtime=runtime)
 
     # Provider wraps the provided runtime
     assert isinstance(provider, GraphProvider)
@@ -372,7 +356,8 @@ def test_make_graph_provider_with_options(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with custom options."""
-    custom_options = GraphRuntimeOptions(snapshot=test_snapshot)
+    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    custom_options = GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
     factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_graph_provider(options=custom_options)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ast
 import textwrap
-from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import networkx as nx
 
@@ -17,11 +17,13 @@ from codeintel.analytics.functions.function_effects import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
-from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import GraphStubEngine
+from tests._helpers.rows import function_meta
 
 
 def _build_function_ast_map(
@@ -35,9 +37,7 @@ def _build_function_ast_map(
     lines = rendered.splitlines()
     ast_by_goid: dict[int, FunctionAst] = {}
     for name, goid in goids.items():
-        node = next(
-            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name
-        )
+        node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
         start_line = getattr(node, "lineno", 0)
         end_line = getattr(node, "end_lineno", start_line)
         ast_by_goid[goid] = FunctionAst(
@@ -94,51 +94,16 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
     call_graph = nx.DiGraph()
     call_graph.add_nodes_from(goids.values())
     call_graph.add_edge(goids["caller"], goids["impure"])
-    engine = GraphStubEngine(
-        gateway=gateway,
-        snapshot=snapshot,
-        call_graph_obj=call_graph,
-        copy_graphs=False,
+    runtime = GraphRuntime(
+        GraphRuntimeOptions(snapshot=snapshot),
+        GraphStubEngine(
+            gateway=gateway,
+            snapshot=snapshot,
+            call_graph_obj=call_graph,
+            copy_graphs=False,
+        ),
     )
-    runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
     runtime.ensure_call_graph()
-    catalog = MockFunctionCatalog(
-        functions=[
-            MockFunctionMeta(
-                goid=goids["impure"],
-                urn="urn:pkg.effects.impure",
-                rel_path=module_path.relative_to(repo_root).as_posix(),
-                qualname="impure",
-                start_line=ast_map[goids["impure"]].start_line,
-                end_line=ast_map[goids["impure"]].end_line,
-            ),
-            MockFunctionMeta(
-                goid=goids["caller"],
-                urn="urn:pkg.effects.caller",
-                rel_path=module_path.relative_to(repo_root).as_posix(),
-                qualname="caller",
-                start_line=ast_map[goids["caller"]].start_line,
-                end_line=ast_map[goids["caller"]].end_line,
-            ),
-            MockFunctionMeta(
-                goid=goids["uses_nonlocal"],
-                urn="urn:pkg.effects.uses_nonlocal",
-                rel_path=module_path.relative_to(repo_root).as_posix(),
-                qualname="uses_nonlocal",
-                start_line=ast_map[goids["uses_nonlocal"]].start_line,
-                end_line=ast_map[goids["uses_nonlocal"]].end_line,
-            ),
-            MockFunctionMeta(
-                goid=goids["missing"],
-                urn="urn:pkg.effects.missing",
-                rel_path=module_path.relative_to(repo_root).as_posix(),
-                qualname="missing",
-                start_line=1,
-                end_line=1,
-            ),
-        ],
-        module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
-    )
     cfg = FunctionEffectsStepConfig(
         snapshot=snapshot,
         max_call_depth=2,
@@ -170,44 +135,64 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
     )
 
     inputs = FunctionEffectsInputs(
-        catalog_provider=catalog,
+        catalog_provider=MockFunctionCatalog(
+            functions=[
+                function_meta(
+                    goid=goids["impure"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="impure",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(ast_map[goids["impure"]].start_line, ast_map[goids["impure"]].end_line),
+                ),
+                function_meta(
+                    goid=goids["caller"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="caller",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(ast_map[goids["caller"]].start_line, ast_map[goids["caller"]].end_line),
+                ),
+                function_meta(
+                    goid=goids["uses_nonlocal"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="uses_nonlocal",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(
+                        ast_map[goids["uses_nonlocal"]].start_line,
+                        ast_map[goids["uses_nonlocal"]].end_line,
+                    ),
+                ),
+                function_meta(
+                    goid=goids["missing"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="missing",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(1, 1),
+                ),
+            ],
+            module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
+        ),
         runtime=runtime,
         ast_map=ast_map,
         missing_goids={goids["missing"]},
     )
 
     try:
-        compute_function_effects(gateway, cfg, inputs=inputs)
-
-        rows = gateway.con.execute(
-            """
-            SELECT function_goid_h128, is_pure, uses_io, touches_db, uses_time, uses_randomness,
-                   modifies_globals, modifies_closure, spawns_threads_or_tasks,
-                   has_transitive_effects, purity_confidence, evidence_json
-            FROM analytics.function_effects
-            WHERE repo = ? AND commit = ?
-            ORDER BY function_goid_h128
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchall()
+        with patch.object(IngestStorageService, "run_batch", autospec=True) as run_batch:
+            compute_function_effects(gateway, cfg, inputs=inputs)
+        rows = run_batch.call_args.args[2]
     finally:
         gateway.close()
 
-    effects_by_goid = {int(row[0]): row for row in rows}
-    impure_row = effects_by_goid[goids["impure"]]
-    caller_row = effects_by_goid[goids["caller"]]
-    nonlocal_row = effects_by_goid[goids["uses_nonlocal"]]
-    missing_row = effects_by_goid[goids["missing"]]
-
-    assert impure_row[2] is True  # uses_io
-    assert impure_row[4] is True  # uses_time
-    assert impure_row[5] is True  # uses_randomness
-    assert impure_row[6] is True  # modifies_globals
-    assert impure_row[8] is True  # spawns_threads_or_tasks
-    assert caller_row[9] is True
-    assert caller_row[1] is False
-    assert caller_row[10] < 1.0
-    assert nonlocal_row[7] is True
-    assert missing_row[1] is False
-    assert missing_row[10] == 0.0
-    assert missing_row[11]["errors"][0]["details"]["kind"] == "missing_ast"
+    effects_by_goid = {int(row[2]): row for row in rows}
+    assert effects_by_goid[goids["impure"]][4] is True  # uses_io
+    assert effects_by_goid[goids["impure"]][6] is True  # uses_time
+    assert effects_by_goid[goids["impure"]][7] is True  # uses_randomness
+    assert effects_by_goid[goids["impure"]][8] is True  # modifies_globals
+    assert effects_by_goid[goids["impure"]][10] is True  # spawns_threads_or_tasks
+    assert effects_by_goid[goids["caller"]][11] is True
+    assert effects_by_goid[goids["caller"]][3] is False
+    assert effects_by_goid[goids["caller"]][12] < 1.0
+    assert effects_by_goid[goids["uses_nonlocal"]][9] is True
+    assert effects_by_goid[goids["missing"]][3] is False
+    assert effects_by_goid[goids["missing"]][12] == 0.0
+    assert effects_by_goid[goids["missing"]][13]["errors"][0]["details"]["kind"] == "missing_ast"

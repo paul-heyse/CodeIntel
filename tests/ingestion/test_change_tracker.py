@@ -174,9 +174,7 @@ def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
 
 
 def _docstrings_by_path(gateway: StorageGateway) -> dict[str, set[str]]:
-    rows = gateway.con.execute(
-        "SELECT rel_path, raw_docstring FROM core.docstrings",
-    ).fetchall()
+    rows = gateway.con.table("core.docstrings").select("rel_path", "raw_docstring").fetchall()
     grouped: dict[str, set[str]] = {}
     for rel_path, raw_docstring in rows:
         grouped.setdefault(rel_path, set()).add(raw_docstring)

@@ -24,6 +24,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.results import CoverageReport
 from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
 
 # =============================================================================
 # Test Runner Implementations
@@ -77,14 +78,16 @@ class SuccessRunner(ToolRunner):
             ]
             stdout = "{\n" + ",\n".join(lines) + "\n}"
 
-        return ToolRunResult(
-            tool=tool_enum,
-            args=tuple(args),
-            returncode=0,
-            stdout=stdout,
-            stderr="",
-            output_path=output_path,
-            duration_s=0.1,
+        return make_tool_run_result(
+            tool_enum,
+            args=args,
+            options=ToolRunOptions(
+                returncode=0,
+                stdout=stdout,
+                stderr="",
+                output_path=output_path,
+                duration_s=0.1,
+            ),
         )
 
 
@@ -141,25 +144,27 @@ class FailingRunner(ToolRunner):
         self.calls.append((tool_enum, tuple(args)))
 
         if self._raise_exception:
-            result = ToolRunResult(
-                tool=tool_enum,
-                args=tuple(args),
-                returncode=self._return_code,
-                stdout="",
-                stderr="Tool execution failed",
-                output_path=output_path,
-                duration_s=0.1,
+            result = make_tool_run_result(
+                tool_enum,
+                args=args,
+                options=ToolRunOptions(
+                    returncode=self._return_code,
+                    stderr="Tool execution failed",
+                    output_path=output_path,
+                    duration_s=0.1,
+                ),
             )
             raise ToolExecutionError(result)
 
-        return ToolRunResult(
-            tool=tool_enum,
-            args=tuple(args),
-            returncode=self._return_code,
-            stdout="",
-            stderr="Command failed",
-            output_path=output_path,
-            duration_s=0.1,
+        return make_tool_run_result(
+            tool_enum,
+            args=args,
+            options=ToolRunOptions(
+                returncode=self._return_code,
+                stderr="Command failed",
+                output_path=output_path,
+                duration_s=0.1,
+            ),
         )
 
 

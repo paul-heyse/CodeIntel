@@ -1,39 +1,39 @@
 {
-  "run_id": "aaa4a54b",
+  "run_id": "61eeac52",
   "repo": "local/repo",
-  "commit": "3797a312f5de",
-  "started_at": "2025-12-06T14:50:07.507597+00:00",
-  "ended_at": "2025-12-06T15:02:39.106043+00:00",
-  "total_duration_ms": 751598.4347199992,
+  "commit": "0c1fc0b8f92b",
+  "started_at": "2025-12-07T17:55:51.324957+00:00",
+  "ended_at": "2025-12-07T18:08:28.067695+00:00",
+  "total_duration_ms": 756742.726402008,
   "overall_status": "success",
   "stages": [
     {
       "name": "SCIP Indexing",
       "status": "success",
-      "duration_ms": 21592.74430498772,
-      "started_at": "2025-12-06T14:50:07.509240+00:00",
-      "ended_at": "2025-12-06T14:50:29.101998+00:00",
+      "duration_ms": 23332.358159008436,
+      "started_at": "2025-12-07T17:55:51.326373+00:00",
+      "ended_at": "2025-12-07T17:56:14.658741+00:00",
       "outputs": {
         "skipped": false,
         "scip_index": "/home/paul/CodeIntel/build/scip/index.scip",
         "scip_json": "/home/paul/CodeIntel/build/scip/index.scip.json",
-        "index_size_mb": 27.50986671447754
+        "index_size_mb": 28.42879867553711
       },
       "error": null
     },
     {
       "name": "Build System Run",
       "status": "success",
-      "duration_ms": 725611.7938170064,
-      "started_at": "2025-12-06T14:50:29.102130+00:00",
-      "ended_at": "2025-12-06T15:02:34.713932+00:00",
+      "duration_ms": 729059.9518469826,
+      "started_at": "2025-12-07T17:56:14.658856+00:00",
+      "ended_at": "2025-12-07T18:08:23.718814+00:00",
       "outputs": {
-        "run_id": "build-20251206-145032-8b9969d3",
+        "run_id": "build-20251207-175617-dbabdf27",
         "status": "succeeded",
         "computed_count": 41,
         "skipped_count": 0,
         "failed_count": 0,
-        "total_duration_ms": 722466.0129999999,
+        "total_duration_ms": 725846.649,
         "computed_targets": [
           "modules",
           "ast",
@@ -85,14 +85,14 @@
     {
       "name": "Document Export",
       "status": "success",
-      "duration_ms": 4209.003665004275,
-      "started_at": "2025-12-06T15:02:34.714638+00:00",
-      "ended_at": "2025-12-06T15:02:38.923650+00:00",
+      "duration_ms": 4170.083495002473,
+      "started_at": "2025-12-07T18:08:23.719422+00:00",
+      "ended_at": "2025-12-07T18:08:27.889514+00:00",
       "outputs": {
         "output_dir": "/home/paul/CodeIntel/document_output",
         "jsonl_files": 70,
         "parquet_files": 70,
-        "total_size_mb": 144.28,
+        "total_size_mb": 144.81,
         "files_written": 73
       },
       "error": null
@@ -100,31 +100,31 @@
     {
       "name": "Verify Outputs",
       "status": "success",
-      "duration_ms": 180.52607399295084,
-      "started_at": "2025-12-06T15:02:38.925203+00:00",
-      "ended_at": "2025-12-06T15:02:39.105739+00:00",
+      "duration_ms": 176.00225599016994,
+      "started_at": "2025-12-07T18:08:27.891300+00:00",
+      "ended_at": "2025-12-07T18:08:28.067311+00:00",
       "outputs": {
         "critical_files_missing": [],
         "file_stats": {
           "goids.jsonl": {
             "exists": true,
-            "size_bytes": 2356778
+            "size_bytes": 2360360
           },
           "goids.parquet": {
             "exists": true,
-            "size_bytes": 276053
+            "size_bytes": 276324
           },
           "function_metrics.jsonl": {
             "exists": true,
-            "size_bytes": 2945931
+            "size_bytes": 2951951
           },
           "function_profile.jsonl": {
             "exists": true,
-            "size_bytes": 9528075
+            "size_bytes": 9550105
           },
           "call_graph_edges.jsonl": {
             "exists": true,
-            "size_bytes": 7243814
+            "size_bytes": 7251484
           },
           "modules.jsonl": {
             "exists": true,
@@ -132,10 +132,10 @@
           }
         },
         "table_counts": {
-          "core.goids": 4856,
+          "core.goids": 4863,
           "core.modules": 515,
-          "analytics.function_metrics": 3471,
-          "graph.call_graph_edges": 17208
+          "analytics.function_metrics": 3478,
+          "graph.call_graph_edges": 17226
         },
         "all_critical_present": true
       },
@@ -150,7 +150,7 @@
     "targets_computed": 41,
     "targets_failed": 0,
     "export_files": 140,
-    "export_size_mb": 144.28,
+    "export_size_mb": 144.81,
     "all_outputs_valid": true
   }
 }

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.entrypoints.core import build_entrypoints
+from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import EntryPointsStepConfig
 from codeintel.storage.gateway import StorageGateway
@@ -255,7 +256,7 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
 
 def test_entrypoints_no_modules_skip_detection(tmp_path: Path) -> None:
     """Early exit occurs when no module map or module context is available."""
-    snapshot, catalog, _, _, _, _, gateway = _seed_entrypoint_repo(tmp_path)
+    snapshot, _, _, _, _, _, gateway = _seed_entrypoint_repo(tmp_path)
     gateway.con.execute(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
         [snapshot.repo, snapshot.commit],

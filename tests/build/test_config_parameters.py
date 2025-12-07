@@ -1,0 +1,99 @@
+"""Tests for build configuration loading and parameter access."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from codeintel.build.config import load_build_config
+from codeintel.build.parameters import ParameterError, TargetParameters
+from tests._helpers import make_build_config, write_build_config
+
+
+def test_load_build_config_merges_module_and_target(tmp_path: Path) -> None:
+    """Module-level values merge with target-level overrides."""
+    project_root = tmp_path / "repo"
+    project_root.mkdir(parents=True, exist_ok=True)
+    write_build_config(
+        project_root,
+        {
+            "analytics": {"threshold": 1, "shared": "module"},
+            "analytics.hotspots": {"threshold": 3, "enabled": True},
+            "graphs": {"sampling_rate": 0.2},
+        },
+    )
+
+    config = load_build_config(project_root)
+    params = config.parameters_for("hotspots")
+
+    assert params.get("threshold", int) == 3
+    assert params.get("enabled", bool) is True
+    # Module-level settings are merged even if defined in other modules
+    assert params.get("sampling_rate", float) == 0.2
+    assert params.get("shared", str) == "module"
+
+
+def test_load_build_config_missing_or_invalid_returns_empty(tmp_path: Path) -> None:
+    """Missing or invalid config files fall back to empty config."""
+    project_root = tmp_path / "repo"
+    project_root.mkdir(parents=True, exist_ok=True)
+
+    empty_config = load_build_config(project_root)
+    assert empty_config.sections == {}
+    assert empty_config.parameters_for("anything").has("missing") is False
+
+    bad_path = project_root / "codeintel.build.toml"
+    bad_path.write_text("not = { valid = ", encoding="utf-8")
+    recovered = load_build_config(project_root)
+    assert recovered.sections == {}
+
+
+def test_build_config_get_nested_with_defaults() -> None:
+    """Nested lookup handles defaults and None values."""
+    cfg = make_build_config(
+        {
+            "analytics": {
+                "hotspots": {"max_commits": 5},
+                "enabled": True,
+            },
+            "value": None,
+            "nested": 4,
+        }
+    )
+
+    assert cfg.get("analytics.hotspots.max_commits") == 5
+    assert cfg.get("analytics.hotspots.missing", default="fallback") == "fallback"
+    # None values short-circuit traversal and use the provided default
+    assert cfg.get("value", default="default") == "default"
+    # When a non-mapping is encountered mid-path, default is returned
+    assert cfg.get("nested.deeper", default=0) == 0
+
+
+def test_target_parameters_success_and_merge() -> None:
+    """TargetParameters returns typed values and merges overrides."""
+    params = TargetParameters({"count": 10, "enabled": True})
+    assert params.get("count", int) == 10
+    assert params.get("enabled", bool) is True
+    assert params.get_optional("missing", str) is None
+
+    merged = params.merge(TargetParameters({"count": 20, "name": "demo"}))
+    assert merged.get("count", int) == 20
+    assert merged.get("name", str) == "demo"
+    assert merged.has("enabled") is True
+
+
+def test_target_parameters_errors() -> None:
+    """TargetParameters raises on missing or mismatched values."""
+    params = TargetParameters({"count": 10, "flag": "yes"})
+
+    with pytest.raises(ParameterError):
+        params.get("missing", int)
+
+    with pytest.raises(ParameterError) as exc_info:
+        params.get("flag", bool)
+    assert "bool" in str(exc_info.value)
+    assert "str" in str(exc_info.value)
+
+    with pytest.raises(ParameterError):
+        params.get_optional("flag", int)

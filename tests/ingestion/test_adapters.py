@@ -31,60 +31,77 @@ from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
 ROWS_WRITTEN_100 = 100
 DURATION_1_5 = 1.5
 
+
+@pytest.fixture
+def duckdb_adapter(fresh_gateway: StorageGateway) -> DuckDBStorageAdapter:
+    """Provide a DuckDBStorageAdapter backed by the fresh_gateway fixture.
+
+    Returns
+    -------
+    DuckDBStorageAdapter
+        Adapter connected to the in-memory gateway.
+    """
+    return DuckDBStorageAdapter(fresh_gateway)
+
+
+@pytest.fixture
+def success_tool_adapter() -> ToolRunnerAdapter:
+    """Provide ToolRunnerAdapter wired to a success-configured FakeToolService.
+
+    Returns
+    -------
+    ToolRunnerAdapter
+        Adapter with deterministic success responses.
+    """
+    return ToolRunnerAdapter(_make_success_service())
+
+
+@pytest.fixture
+def failing_tool_adapter() -> ToolRunnerAdapter:
+    """Provide ToolRunnerAdapter wired to a failure-configured FakeToolService.
+
+    Returns
+    -------
+    ToolRunnerAdapter
+        Adapter configured to raise errors.
+    """
+    return ToolRunnerAdapter(_make_failing_service())
+
+
 # =============================================================================
 # quote_identifier Tests
 # =============================================================================
 
 
-def test_quote_identifier_valid_simple() -> None:
-    """Should quote simple identifiers."""
-    result = quote_identifier("my_table")
+@pytest.mark.parametrize(
+    ("identifier", "expected"),
+    [
+        ("my_table", '"my_table"'),
+        ("table_123", '"table_123"'),
+        ("MyTable", '"MyTable"'),
+    ],
+)
+def test_quote_identifier_valid(identifier: str, expected: str) -> None:
+    """Should quote valid identifiers."""
+    result = quote_identifier(identifier)
 
-    assert result == '"my_table"'
-
-
-def test_quote_identifier_valid_with_numbers() -> None:
-    """Should quote identifiers with numbers."""
-    result = quote_identifier("table_123")
-
-    assert result == '"table_123"'
-
-
-def test_quote_identifier_valid_uppercase() -> None:
-    """Should quote uppercase identifiers."""
-    result = quote_identifier("MyTable")
-
-    assert result == '"MyTable"'
+    assert result == expected
 
 
-def test_quote_identifier_rejects_spaces() -> None:
-    """Should reject identifiers with spaces."""
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "my table",
+        "my-table",
+        "table; DROP TABLE users;--",
+        'table"name',
+        "table;name",
+    ],
+)
+def test_quote_identifier_rejects_invalid(identifier: str) -> None:
+    """Should reject unsafe identifiers."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        quote_identifier("my table")
-
-
-def test_quote_identifier_rejects_dashes() -> None:
-    """Should reject identifiers with dashes."""
-    with pytest.raises(ValueError, match="Unsafe identifier"):
-        quote_identifier("my-table")
-
-
-def test_quote_identifier_rejects_sql_injection() -> None:
-    """Should reject SQL injection attempts."""
-    with pytest.raises(ValueError, match="Unsafe identifier"):
-        quote_identifier("table; DROP TABLE users;--")
-
-
-def test_quote_identifier_rejects_quotes() -> None:
-    """Should reject identifiers with quotes."""
-    with pytest.raises(ValueError, match="Unsafe identifier"):
-        quote_identifier('table"name')
-
-
-def test_quote_identifier_rejects_semicolons() -> None:
-    """Should reject identifiers with semicolons."""
-    with pytest.raises(ValueError, match="Unsafe identifier"):
-        quote_identifier("table;name")
+        quote_identifier(identifier)
 
 
 # =============================================================================
@@ -197,79 +214,67 @@ def test_query_result_defaults() -> None:
 # =============================================================================
 
 
-def test_duckdb_adapter_initialization(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_initialization(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter should initialize from gateway."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    assert adapter is not None
+    assert duckdb_adapter is not None
 
 
-def test_duckdb_adapter_ensure_schema(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_ensure_schema(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.ensure_schema should not raise for valid tables."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     # Should not raise
-    adapter.ensure_schema("core.modules")
+    duckdb_adapter.ensure_schema("core.modules")
 
 
 def test_duckdb_adapter_ensure_schema_unknown_table(
-    fresh_gateway: StorageGateway,
+    duckdb_adapter: DuckDBStorageAdapter,
 ) -> None:
     """DuckDBStorageAdapter.ensure_schema should raise for unknown tables."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     with pytest.raises(RuntimeError, match="missing from TABLE_SCHEMAS"):
-        adapter.ensure_schema("nonexistent.table_xyz")
+        duckdb_adapter.ensure_schema("nonexistent.table_xyz")
 
 
-def test_duckdb_adapter_execute_query(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_execute_query(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.execute_query should return results."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    result = adapter.execute_query("SELECT 1 as value")
+    result = duckdb_adapter.execute_query("SELECT 1 as value")
 
     assert result is not None
     assert result.row_count >= 0
 
 
 def test_duckdb_adapter_execute_query_with_params(
-    fresh_gateway: StorageGateway,
+    duckdb_adapter: DuckDBStorageAdapter,
 ) -> None:
     """DuckDBStorageAdapter.execute_query should handle parameters."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    result = adapter.execute_query("SELECT ? + ? as sum", [1, 2])
+    result = duckdb_adapter.execute_query("SELECT ? + ? as sum", [1, 2])
 
     assert result is not None
     assert result.row_count == 1
 
 
-def test_duckdb_adapter_write_batch_small(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_write_batch_small(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.write_batch should handle small batches."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     rows = [
         ("test_module", "test/path.py", "test/repo", "abc123", "python", "[]", "[]"),
     ]
 
-    result = adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
+    result = duckdb_adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
 
     assert result.rows_written == 1
 
 
-def test_duckdb_adapter_delete_by_paths(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_delete_by_paths(
+    duckdb_adapter: DuckDBStorageAdapter,
+) -> None:
     """DuckDBStorageAdapter.delete_by_paths should delete matching rows."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     # First insert some data
     rows = [
         ("mod1", "src/a.py", "test/repo", "abc123", "python", "[]", "[]"),
         ("mod2", "src/b.py", "test/repo", "abc123", "python", "[]", "[]"),
     ]
-    adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
+    duckdb_adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
 
     # Delete one path
-    deleted = adapter.delete_by_paths(
+    deleted = duckdb_adapter.delete_by_paths(
         "core.modules",
         ["src/a.py"],
         path_column="path",
@@ -278,11 +283,9 @@ def test_duckdb_adapter_delete_by_paths(fresh_gateway: StorageGateway) -> None:
     assert deleted >= 0  # May be 0 if table structure differs
 
 
-def test_duckdb_adapter_fetch_dataframe(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_fetch_dataframe(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.fetch_dataframe should return dataframe."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    df = adapter.fetch_dataframe("SELECT 1 as value, 'test' as name")
+    df = duckdb_adapter.fetch_dataframe("SELECT 1 as value, 'test' as name")
 
     assert df is not None
     # Check it has expected shape
@@ -294,20 +297,18 @@ def test_duckdb_adapter_fetch_dataframe(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_adapter_write_and_query_cycle(fresh_gateway: StorageGateway) -> None:
+def test_adapter_write_and_query_cycle(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """Adapter should support write-then-query cycle."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     # Write some data
     rows = [
         ("cycle_mod", "cycle/path.py", "cycle/repo", "xyz789", "python", "[]", "[]"),
     ]
-    write_result = adapter.write_batch("core.modules", rows, scope="cycle/repo@xyz789")
+    write_result = duckdb_adapter.write_batch("core.modules", rows, scope="cycle/repo@xyz789")
 
     assert write_result.rows_written == 1
 
     # Query it back
-    query_result = adapter.execute_query(
+    query_result = duckdb_adapter.execute_query(
         "SELECT module, path FROM core.modules WHERE repo = ?",
         ["cycle/repo"],
     )
@@ -349,11 +350,11 @@ def test_quote_macro_name_invalid() -> None:
 # =============================================================================
 
 
-def test_duckdb_adapter_con_property(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_con_property(
+    duckdb_adapter: DuckDBStorageAdapter, fresh_gateway: StorageGateway
+) -> None:
     """DuckDBStorageAdapter.con should return the gateway connection."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    assert adapter.con is fresh_gateway.con
+    assert duckdb_adapter.con is fresh_gateway.con
 
 
 # =============================================================================
@@ -361,39 +362,33 @@ def test_duckdb_adapter_con_property(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_duckdb_adapter_write_batch_empty(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_write_batch_empty(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.write_batch should handle empty rows."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    result = adapter.write_batch("core.modules", [], scope="test@abc")
+    result = duckdb_adapter.write_batch("core.modules", [], scope="test@abc")
 
     assert result.rows_written == 0
     assert result.duration_s == 0.0
 
 
-def test_duckdb_adapter_write_batch_no_scope(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_write_batch_no_scope(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.write_batch should work without scope."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     rows = [
         ("no_scope_mod", "no_scope/path.py", "test", "xyz", "python", "[]", "[]"),
     ]
-    result = adapter.write_batch("core.modules", rows)
+    result = duckdb_adapter.write_batch("core.modules", rows)
 
     assert result.rows_written == 1
 
 
-def test_duckdb_adapter_write_batch_larger(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_write_batch_larger(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.write_batch should handle batches larger than threshold."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     # Create more than SMALL_BATCH_THRESHOLD rows
     rows = [
         (f"mod_{i}", f"path/{i}.py", "test/repo", "abc123", "python", "[]", "[]")
         for i in range(30)  # > SMALL_BATCH_THRESHOLD (25)
     ]
 
-    result = adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
+    result = duckdb_adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
 
     expected_rows = 30
     assert result.rows_written == expected_rows
@@ -404,27 +399,23 @@ def test_duckdb_adapter_write_batch_larger(fresh_gateway: StorageGateway) -> Non
 # =============================================================================
 
 
-def test_duckdb_adapter_delete_by_paths_empty(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_delete_by_paths_empty(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.delete_by_paths should handle empty paths list."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    deleted = adapter.delete_by_paths("core.modules", [])
+    deleted = duckdb_adapter.delete_by_paths("core.modules", [])
 
     assert deleted == 0
 
 
-def test_duckdb_adapter_delete_by_params(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_delete_by_params(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.delete_by_params should execute delete."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
     # First insert data
     rows = [
         ("del_mod", "del/path.py", "test/repo", "abc123", "python", "[]", "[]"),
     ]
-    adapter.write_batch("core.modules", rows)
+    duckdb_adapter.write_batch("core.modules", rows)
 
     # Try delete by params - should not raise
-    deleted = adapter.delete_by_params("core.modules", ["test/repo", "abc123"])
+    deleted = duckdb_adapter.delete_by_params("core.modules", ["test/repo", "abc123"])
 
     assert deleted >= 0  # DuckDB doesn't return count
 
@@ -434,21 +425,19 @@ def test_duckdb_adapter_delete_by_params(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_duckdb_adapter_execute_query_no_params(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_execute_query_no_params(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.execute_query should work without params."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    result = adapter.execute_query("SELECT 42 as answer")
+    result = duckdb_adapter.execute_query("SELECT 42 as answer")
 
     assert result.row_count == 1
     assert result.columns == ("answer",)
 
 
-def test_duckdb_adapter_fetch_dataframe_with_params(fresh_gateway: StorageGateway) -> None:
+def test_duckdb_adapter_fetch_dataframe_with_params(
+    duckdb_adapter: DuckDBStorageAdapter,
+) -> None:
     """DuckDBStorageAdapter.fetch_dataframe should handle params."""
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-
-    df = adapter.fetch_dataframe("SELECT ? as value", [100])
+    df = duckdb_adapter.fetch_dataframe("SELECT ? as value", [100])
 
     assert len(df) == 1
 
@@ -511,140 +500,105 @@ def _make_failing_service() -> FakeToolService:
     return FakeToolService(config)
 
 
-def test_tool_runner_adapter_initialization() -> None:
+def test_tool_runner_adapter_initialization(success_tool_adapter: ToolRunnerAdapter) -> None:
     """ToolRunnerAdapter should initialize with ToolService."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    assert adapter is not None
+    assert success_tool_adapter is not None
 
 
-def test_tool_runner_adapter_run_pyright_success() -> None:
-    """ToolRunnerAdapter.run_pyright should return diagnostics."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_pyright(Path()))
-
-    assert result.status == ToolStatus.OK
-    assert len(result.diagnostics) == 1  # Only mod.py has errors > 0
-    assert result.duration_s > 0
-
-
-def test_tool_runner_adapter_run_pyright_failure() -> None:
-    """ToolRunnerAdapter.run_pyright should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_pyright(Path()))
-
-    assert result.status == ToolStatus.FAILED
-    assert result.error == "pyright failed"
-
-
-def test_tool_runner_adapter_run_pyrefly_success() -> None:
-    """ToolRunnerAdapter.run_pyrefly should return diagnostics."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_pyrefly(Path()))
+@pytest.mark.parametrize(
+    ("method_name", "expected_diagnostics"),
+    [
+        ("run_pyright", 1),
+        ("run_pyrefly", 1),
+        ("run_ruff", 1),
+    ],
+)
+def test_tool_runner_adapter_diagnostic_tools_success(
+    success_tool_adapter: ToolRunnerAdapter,
+    method_name: str,
+    expected_diagnostics: int,
+) -> None:
+    """Diagnostic tools should return OK with expected diagnostic counts."""
+    method = getattr(success_tool_adapter, method_name)
+    result = asyncio.run(method(Path()))
 
     assert result.status == ToolStatus.OK
-    assert len(result.diagnostics) == 1
+    assert len(result.diagnostics) == expected_diagnostics
+    if method_name == "run_pyright":
+        assert result.duration_s > 0
 
 
-def test_tool_runner_adapter_run_pyrefly_failure() -> None:
-    """ToolRunnerAdapter.run_pyrefly should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_pyrefly(Path()))
-
-    assert result.status == ToolStatus.FAILED
-    assert "pyrefly failed" in (result.error or "")
-
-
-def test_tool_runner_adapter_run_ruff_success() -> None:
-    """ToolRunnerAdapter.run_ruff should return diagnostics."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_ruff(Path()))
-
-    assert result.status == ToolStatus.OK
-    assert len(result.diagnostics) == 1
-
-
-def test_tool_runner_adapter_run_ruff_failure() -> None:
-    """ToolRunnerAdapter.run_ruff should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_ruff(Path()))
+@pytest.mark.parametrize(
+    ("method_name", "message"),
+    [
+        ("run_pyright", "pyright failed"),
+        ("run_pyrefly", "pyrefly failed"),
+        ("run_ruff", "ruff failed"),
+    ],
+)
+def test_tool_runner_adapter_diagnostic_tools_failure(
+    failing_tool_adapter: ToolRunnerAdapter,
+    method_name: str,
+    message: str,
+) -> None:
+    """Diagnostic tools should return FAILED with surfaced errors."""
+    method = getattr(failing_tool_adapter, method_name)
+    result = asyncio.run(method(Path()))
 
     assert result.status == ToolStatus.FAILED
+    assert message in (result.error or "")
 
 
-def test_tool_runner_adapter_run_coverage_success() -> None:
+def test_tool_runner_adapter_run_coverage_success(
+    success_tool_adapter: ToolRunnerAdapter,
+) -> None:
     """ToolRunnerAdapter.run_coverage should return file data."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_coverage(Path()))
+    result = asyncio.run(success_tool_adapter.run_coverage(Path()))
 
     assert result.status == ToolStatus.OK
     assert len(result.files) == 1
     assert result.files[0].rel_path == "mod.py"
 
 
-def test_tool_runner_adapter_run_coverage_failure() -> None:
+def test_tool_runner_adapter_run_coverage_failure(
+    failing_tool_adapter: ToolRunnerAdapter,
+) -> None:
     """ToolRunnerAdapter.run_coverage should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
-    result = asyncio.run(adapter.run_coverage(Path()))
+    result = asyncio.run(failing_tool_adapter.run_coverage(Path()))
 
     assert result.status == ToolStatus.FAILED
     assert "coverage failed" in (result.error or "")
 
 
-def test_tool_runner_adapter_run_scip_full_success(tmp_path: Path) -> None:
-    """ToolRunnerAdapter.run_scip should handle full indexing."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
+@pytest.mark.parametrize("rel_paths", [None, ["src/mod.py"]])
+def test_tool_runner_adapter_run_scip_success(
+    success_tool_adapter: ToolRunnerAdapter, tmp_path: Path, rel_paths: list[str] | None
+) -> None:
+    """ToolRunnerAdapter.run_scip should handle full and shard indexing."""
     output_scip = tmp_path / "index.scip"
     output_json = tmp_path / "index.json"
 
     result = asyncio.run(
-        adapter.run_scip(
+        success_tool_adapter.run_scip(
             Path(),
             output_scip=output_scip,
             output_json=output_json,
+            rel_paths=rel_paths,
         )
     )
 
     assert result.status == ToolStatus.OK
 
 
-def test_tool_runner_adapter_run_scip_shard_success(tmp_path: Path) -> None:
-    """ToolRunnerAdapter.run_scip should handle shard indexing."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
-    output_scip = tmp_path / "index.scip"
-    output_json = tmp_path / "index.json"
-
-    result = asyncio.run(
-        adapter.run_scip(
-            Path(),
-            output_scip=output_scip,
-            output_json=output_json,
-            rel_paths=["src/mod.py"],
-        )
-    )
-
-    assert result.status == ToolStatus.OK
-
-
-def test_tool_runner_adapter_run_scip_failure(tmp_path: Path) -> None:
+def test_tool_runner_adapter_run_scip_failure(
+    failing_tool_adapter: ToolRunnerAdapter, tmp_path: Path
+) -> None:
     """ToolRunnerAdapter.run_scip should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
     output_scip = tmp_path / "index.scip"
     output_json = tmp_path / "index.json"
 
     result = asyncio.run(
-        adapter.run_scip(
+        failing_tool_adapter.run_scip(
             Path(),
             output_scip=output_scip,
             output_json=output_json,
@@ -655,43 +609,46 @@ def test_tool_runner_adapter_run_scip_failure(tmp_path: Path) -> None:
     assert "SCIP failed" in (result.error or "")
 
 
-def test_tool_runner_adapter_run_pytest_no_report(tmp_path: Path) -> None:
+def test_tool_runner_adapter_run_pytest_no_report(
+    success_tool_adapter: ToolRunnerAdapter, tmp_path: Path
+) -> None:
     """ToolRunnerAdapter.run_pytest should return OK when report doesn't exist."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
     json_path = tmp_path / "report.json"
 
-    result = asyncio.run(adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
     assert result.status == ToolStatus.OK
     assert result.tests == []
 
 
-def test_tool_runner_adapter_run_pytest_with_report(tmp_path: Path) -> None:
+def test_tool_runner_adapter_run_pytest_with_report(
+    success_tool_adapter: ToolRunnerAdapter, tmp_path: Path
+) -> None:
     """ToolRunnerAdapter.run_pytest should parse existing report."""
-    service = _make_success_service()
-    adapter = ToolRunnerAdapter(service)
     json_path = tmp_path / "report.json"
 
     # Create a valid report
     json_path.write_text(
-        '{"tests": [{"nodeid": "test::a", "outcome": "passed", "duration": 0.1}], "summary": {"passed": 1}}',
+        (
+            '{"tests": [{"nodeid": "test::a", "outcome": "passed", "duration": 0.1}], '
+            '"summary": {"passed": 1}}'
+        ),
         encoding="utf-8",
     )
 
-    result = asyncio.run(adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
     assert result.status == ToolStatus.OK
     assert len(result.tests) == 1
 
 
-def test_tool_runner_adapter_run_pytest_failure(tmp_path: Path) -> None:
+def test_tool_runner_adapter_run_pytest_failure(
+    failing_tool_adapter: ToolRunnerAdapter, tmp_path: Path
+) -> None:
     """ToolRunnerAdapter.run_pytest should handle failures."""
-    service = _make_failing_service()
-    adapter = ToolRunnerAdapter(service)
     json_path = tmp_path / "report.json"
 
-    result = asyncio.run(adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(failing_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
     assert result.status == ToolStatus.FAILED
     assert "pytest failed" in (result.error or "")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,12 +11,9 @@ from codeintel.config import ConfigBuilder
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from tests._helpers import TestContext, TestScenario
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
-from tests._helpers.builders import (
-    FunctionMetricsRow,
-    ModuleRow,
-    insert_rows,
-)
+from tests._helpers.builders import insert_rows
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
+from tests._helpers.rows import function_metrics_row, module_row
 
 # Test constants
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}
@@ -28,7 +26,7 @@ def _seed_function_for_history(
     ctx: TestContext,
     *,
     goid: int,
-    urn: str,
+    urn: str | None = None,
     commit: str,
 ) -> None:
     """Seed function metrics and module for history testing.
@@ -40,54 +38,44 @@ def _seed_function_for_history(
     goid
         Global object identifier.
     urn
-        Unique resource name.
+        Optional URN to assign to the seeded function.
     commit
         Commit hash.
     """
+    row = function_metrics_row(
+        goid=goid,
+        rel_path="pkg/foo.py",
+        qualname="pkg.foo",
+        snapshot=(ctx.repo, commit),
+        metrics={
+            "language": "python",
+            "kind": "function",
+            "start_line": 1,
+            "end_line": 3,
+            "loc": 3,
+            "logical_loc": 3,
+            "param_count": 0,
+            "positional_params": 0,
+            "has_docstring": True,
+            "created_at": datetime.now(tz=UTC),
+        },
+    )
+    if urn is not None:
+        row = replace(row, urn=urn)
+
     insert_rows(
         ctx.gateway,
         [
-            FunctionMetricsRow(
-                function_goid_h128=goid,
-                urn=urn,
-                repo=ctx.repo,
-                commit=commit,
-                rel_path="pkg/foo.py",
-                language="python",
-                kind="function",
-                qualname="pkg.foo",
-                start_line=1,
-                end_line=3,
-                loc=3,
-                logical_loc=3,
-                param_count=0,
-                positional_params=0,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=0,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=1,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=datetime.now(tz=UTC),
-            )
+            row
         ],
     )
     insert_rows(
         ctx.gateway,
         [
-            ModuleRow(
+            module_row(
                 module="pkg.foo",
                 path="pkg/foo.py",
-                repo=ctx.repo,
-                commit=commit,
+                snapshot=(ctx.repo, commit),
             )
         ],
     )
