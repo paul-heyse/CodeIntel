@@ -14,6 +14,19 @@ This package provides standardized test infrastructure including:
 
 from __future__ import annotations
 
+from tests._helpers.build import (
+    ManifestParams,
+    RecordingExecutor,
+    RecordingPlugin,
+    RecordingProviders,
+    make_build_config,
+    make_build_paths,
+    make_snapshot,
+    sample_build_plan,
+    sample_manifest,
+    sample_target_graph,
+    write_build_config,
+)
 from tests._helpers.configs.provisioning_config import (
     CallgraphFixtureOptions,
     GatewayOptions,
@@ -33,6 +46,14 @@ from tests._helpers.fakes.graph_plugins import (
     make_functional_plugin,
     plugin_registrar,
 )
+from tests._helpers.fakes.ingestion_context import (
+    RecordingContext,
+    RecordingGateway,
+    RecordingResources,
+    build_repo_tree,
+    make_target_context,
+)
+from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     complete_digraph,
@@ -41,6 +62,7 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     star_graph,
 )
+from tests._helpers.fakes.query_service import FakeQueryService, ModelLike
 from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
     build_callgraph_fixture_repo,
@@ -63,6 +85,7 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_mcp_backend,
     seed_profile_data,
 )
+from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.scenarios import (
     ScenarioConfig,
     TestScenario,
@@ -84,21 +107,31 @@ from tests._helpers.seeds import (
 __all__ = [
     "CORE_PACK",
     "COVERAGE_PACK",
+    "CallgraphFixtureOptions",
     "DATA_MODELS_PACK",
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
     "DEFAULT_RUN_ID",
     "FUNCTION_TYPES_PACK",
+    "FakeQueryService",
     "GRAPH_PACK",
-    "METRICS_PACK",
-    "SUBSYSTEM_ANALYTICS_PACK",
-    "CallgraphFixtureOptions",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",
+    "METRICS_PACK",
+    "ManifestParams",
+    "ModelLike",
     "ProvisionedGateway",
     "ProvisioningConfig",
     "QueryRow",
+    "RecordingAsyncClient",
+    "RecordingContext",
+    "RecordingExecutor",
+    "RecordingGateway",
+    "RecordingPlugin",
+    "RecordingProviders",
+    "RecordingResources",
+    "SUBSYSTEM_ANALYTICS_PACK",
     "ScenarioConfig",
     "SeedPack",
     "TestContext",
@@ -106,6 +139,7 @@ __all__ = [
     "assert_all_frozen",
     "assert_frozen",
     "build_callgraph_fixture_repo",
+    "build_repo_tree",
     "chain_graph",
     "complete_digraph",
     "coverage_context",
@@ -115,15 +149,25 @@ __all__ = [
     "disconnected_graph",
     "docs_views_ready_gateway",
     "full_context",
+    "function_meta",
+    "function_metrics_row",
     "graph_context",
     "graph_metrics_ready_gateway",
+    "make_build_config",
+    "make_build_paths",
     "make_functional_plugin",
+    "make_snapshot",
+    "make_target_context",
     "minimal_context",
+    "module_row",
     "plugin_registrar",
     "provision_docs_export_ready",
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",
     "provisioned_gateway",
+    "sample_build_plan",
+    "sample_manifest",
+    "sample_target_graph",
     "seed_call_graph_scoping",
     "seed_docs_export_invalid_profile",
     "seed_docs_export_minimal",
@@ -133,4 +177,5 @@ __all__ = [
     "seed_module_graph_inputs",
     "seed_profile_data",
     "star_graph",
+    "write_build_config",
 ]

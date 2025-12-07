@@ -1,0 +1,1 @@
+"""Analytics entrypoints test package."""

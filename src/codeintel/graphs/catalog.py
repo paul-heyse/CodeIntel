@@ -431,6 +431,17 @@ class FunctionCatalogProvider(Protocol):
         """
         raise NotImplementedError
 
+    def module_for_path(self, rel_path: str) -> str | None:
+        """
+        Return module name for a given relative path.
+
+        Returns
+        -------
+        str | None
+            Module name if known.
+        """
+        raise NotImplementedError
+
     def lookup_goid(
         self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
     ) -> int | None:

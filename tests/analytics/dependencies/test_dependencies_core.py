@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
-
-from tests._helpers.assertions import assert_mapping_list
-from tests._helpers.builders import ConfigValueRow, insert_rows
-from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
-from tests._helpers.gateway import GatewayFactory
-
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.dependencies.core import (
@@ -20,14 +15,32 @@ from codeintel.analytics.dependencies.core import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
+from tests._helpers.assertions import assert_mapping_list
+from tests._helpers.builders import ConfigValueRow, insert_rows
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
+from tests._helpers.gateway import GatewayFactory
+from tests._helpers.rows import function_meta
 
 
-def _build_function_ast(module_path: Path, qualname: str, goid: int, repo_root: Path) -> FunctionAst:
+def _as_list(value: object) -> list[object]:
+    if isinstance(value, str):
+        try:
+            loaded = json.loads(value)
+            if isinstance(loaded, list):
+                return loaded
+        except json.JSONDecodeError:
+            return [value]
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return []
+
+
+def _build_function_ast(
+    module_path: Path, qualname: str, goid: int, repo_root: Path
+) -> FunctionAst:
     source = module_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
-    node = next(
-        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == qualname
-    )
+    node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == qualname)
     start_line = getattr(node, "lineno", 0)
     end_line = getattr(node, "end_lineno", start_line)
     return FunctionAst(
@@ -60,9 +73,8 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    patterns_path = repo_root / "config" / "dependency_patterns.yml"
-    patterns_path.parent.mkdir(parents=True, exist_ok=True)
-    patterns_path.write_text(
+    (repo_root / "config").mkdir(parents=True, exist_ok=True)
+    (repo_root / "config" / "dependency_patterns.yml").write_text(
         "libs:\n"
         "  requests:\n"
         "    severity: medium\n"
@@ -82,22 +94,20 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
 
     goid = 5001
     func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
-    catalog = MockFunctionCatalog(
-        functions=[
-            MockFunctionMeta(
-                goid=goid,
-                urn="urn:pkg.client.fetch_data",
-                rel_path=func_ast.rel_path,
-                qualname="fetch_data",
-                start_line=func_ast.start_line,
-                end_line=func_ast.end_line,
-            )
-        ],
-        module_by_path={func_ast.rel_path: "pkg.client"},
-    )
     cfg = ExternalDependenciesStepConfig(snapshot=snapshot)
     inputs = ExternalDependencyInputs(
-        catalog_provider=catalog,
+        catalog_provider=MockFunctionCatalog(
+            functions=[
+                function_meta(
+                    goid=goid,
+                    rel_path=func_ast.rel_path,
+                    qualname="fetch_data",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(func_ast.start_line, func_ast.end_line),
+                )
+            ],
+            module_by_path={func_ast.rel_path: "pkg.client"},
+        ),
         module_map={func_ast.rel_path: "pkg.client"},
         ast_by_goid={goid: func_ast},
         features_map={},
@@ -106,25 +116,27 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
     try:
         build_external_dependency_calls(gateway, cfg, inputs=inputs)
 
-        call_rows = gateway.con.execute(
-            """
-            SELECT library, modes, evidence_json, callsite_count, rel_path
-            FROM analytics.external_dependency_calls
-            WHERE repo = ? AND commit = ?
-            ORDER BY library
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchall()
-        assert len(call_rows) == 2
-        requests_row = next(row for row in call_rows if row[0] == "requests")
-        httpx_row = next(row for row in call_rows if row[0] == "httpx")
+        rows_by_library = {
+            row[0]: row
+            for row in gateway.con.execute(
+                """
+                SELECT library, modes, evidence_json, callsite_count, rel_path
+                FROM analytics.external_dependency_calls
+                WHERE repo = ? AND commit = ?
+                ORDER BY library
+                """,
+                [snapshot.repo, snapshot.commit],
+            ).fetchall()
+        }
+        assert len(rows_by_library) == 2
+        requests_row = rows_by_library["requests"]
+        httpx_row = rows_by_library["httpx"]
 
         assert _as_list(requests_row[1]) == ["read"]
-        evidence_raw = requests_row[2]
-        if isinstance(evidence_raw, str):
-            evidence_raw = json.loads(evidence_raw)
-        evidence = assert_mapping_list({"samples": evidence_raw}, "samples")
-        assert evidence, "expected requests evidence samples"
+        evidence_data = requests_row[2]
+        if isinstance(evidence_data, str):
+            evidence_data = json.loads(evidence_data)
+        assert assert_mapping_list({"samples": evidence_data}, "samples")
         assert requests_row[3] == 1
         assert requests_row[4] == func_ast.rel_path
 
@@ -148,18 +160,21 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
 
         build_external_dependencies(gateway, cfg)
 
-        dep_rows = gateway.con.execute(
-            """
-            SELECT library, usage_modes, config_keys, risk_level, callsite_count, function_count
-            FROM analytics.external_dependencies
-            WHERE repo = ? AND commit = ?
-            ORDER BY library
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchall()
-        assert len(dep_rows) == 2
-        requests_dep = next(row for row in dep_rows if row[0] == "requests")
-        httpx_dep = next(row for row in dep_rows if row[0] == "httpx")
+        deps_by_library = {
+            row[0]: row
+            for row in gateway.con.execute(
+                """
+                SELECT library, usage_modes, config_keys, risk_level, callsite_count, function_count
+                FROM analytics.external_dependencies
+                WHERE repo = ? AND commit = ?
+                ORDER BY library
+                """,
+                [snapshot.repo, snapshot.commit],
+            ).fetchall()
+        }
+        assert len(deps_by_library) == 2
+        requests_dep = deps_by_library["requests"]
+        httpx_dep = deps_by_library["httpx"]
 
         assert _as_list(requests_dep[1]) == ["read"]
         assert _as_list(requests_dep[2]) == ["API_TOKEN"]
@@ -195,11 +210,7 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
     patterns_path = repo_root / "config" / "dependency_patterns.yml"
     patterns_path.parent.mkdir(parents=True, exist_ok=True)
     patterns_path.write_text(
-        "libs:\n"
-        "  requests:\n"
-        "    patterns:\n"
-        '      - mode: ["read"]\n'
-        '        method: "get"\n',
+        'libs:\n  requests:\n    patterns:\n      - mode: ["read"]\n        method: "get"\n',
         encoding="utf-8",
     )
     gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
@@ -208,13 +219,12 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
     func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
     catalog = MockFunctionCatalog(
         functions=[
-            MockFunctionMeta(
+            function_meta(
                 goid=goid,
-                urn="urn:pkg.client.fetch_data",
                 rel_path=func_ast.rel_path,
                 qualname="fetch_data",
-                start_line=func_ast.start_line,
-                end_line=func_ast.end_line,
+                snapshot=(snapshot.repo, snapshot.commit),
+                line_span=(func_ast.start_line, func_ast.end_line),
             )
         ],
         module_by_path={func_ast.rel_path: "pkg.client"},

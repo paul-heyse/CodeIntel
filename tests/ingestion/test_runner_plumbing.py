@@ -56,7 +56,7 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     )
     step.execute(repo="r", commit="c", repo_root=repo_root, profile=profile)
 
-    rows = gateway.con.execute("SELECT path FROM core.modules").fetchall()
+    rows = gateway.con.table("core.modules").select("path").fetchall()
     if rows != [("keep/a.py",)]:
         pytest.fail(f"Unexpected modules: {rows}")
 
@@ -92,7 +92,7 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         errors = "; ".join(result.errors) if result.errors else "unknown"
         pytest.fail(f"Coverage ingest failed: {errors}")
 
-    row = gateway.con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
+    row = gateway.con.table("analytics.coverage_lines").aggregate("count(*)").fetchone()
     count = row[0] if row is not None else 0
     if count != expected_lines:
         pytest.fail(f"Expected {expected_lines} coverage rows, got {count}")

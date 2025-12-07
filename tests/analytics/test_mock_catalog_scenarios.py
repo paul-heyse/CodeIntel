@@ -21,6 +21,7 @@ from tests._helpers.fakes.function_catalogs import (
     create_mock_catalog_realistic,
     create_mock_catalog_with_functions,
 )
+from tests._helpers.rows import function_meta
 
 
 class TestMockFunctionCatalogBasics:
@@ -40,21 +41,19 @@ class TestMockFunctionCatalogBasics:
         """Custom functions are accessible via all lookup methods."""
         catalog = MockFunctionCatalog(
             functions=[
-                MockFunctionMeta(
+                function_meta(
                     goid=1001,
-                    urn="urn:test:main.py#main",
                     rel_path="main.py",
                     qualname="main",
-                    start_line=10,
-                    end_line=25,
+                    snapshot=("test", "test"),
+                    line_span=(10, 25),
                 ),
-                MockFunctionMeta(
+                function_meta(
                     goid=1002,
-                    urn="urn:test:utils.py#helper",
                     rel_path="utils.py",
                     qualname="helper",
-                    start_line=5,
-                    end_line=15,
+                    snapshot=("test", "test"),
+                    line_span=(5, 15),
                 ),
             ]
         )
@@ -81,10 +80,11 @@ class TestMockFunctionCatalogBasics:
         """URN is auto-generated from rel_path and qualname."""
         catalog = MockFunctionCatalog(
             functions=[
-                MockFunctionMeta(
+                function_meta(
                     goid=1001,
                     rel_path="mod.py",
                     qualname="process",
+                    snapshot=("test", "test"),
                 )
             ]
         )
@@ -98,12 +98,12 @@ class TestMockFunctionCatalogBasics:
         """Function spans are automatically derived from function metadata."""
         catalog = MockFunctionCatalog(
             functions=[
-                MockFunctionMeta(
+                function_meta(
                     goid=1001,
                     rel_path="main.py",
                     qualname="main",
-                    start_line=10,
-                    end_line=25,
+                    snapshot=("test", "test"),
+                    line_span=(10, 25),
                 ),
             ]
         )

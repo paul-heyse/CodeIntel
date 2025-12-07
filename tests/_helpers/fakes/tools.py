@@ -22,6 +22,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.results import CoverageReport, ScipIndexResult
 from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.records import CallRecorder, ToolRunCall
 
 
 def _mkdir_parents(path: Path) -> None:
@@ -46,7 +47,7 @@ class FakeToolRunner(ToolRunner):
     ) -> None:
         super().__init__(cache_dir=cache_dir)
         self.payloads = payloads or {}
-        self.calls: list[tuple[ToolName, list[str]]] = []
+        self.calls: CallRecorder[ToolRunCall] = CallRecorder()
         self.on_run = on_run
 
     async def run_async(
@@ -83,7 +84,15 @@ class FakeToolRunner(ToolRunner):
         _ = timeout_s
         tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
         args_list = list(args)
-        self.calls.append((tool_enum, args_list))
+        self.calls.record(
+            ToolRunCall(
+                tool=tool_enum.value,
+                args=args_list,
+                cwd=cwd or self.cache_dir,
+                timeout_ms=None if timeout_s is None else int(timeout_s * 1000),
+                env=None,
+            )
+        )
         if self.on_run is not None:
             self.on_run(tool_enum, args_list)
         payload_stdout = self.payloads.get(tool_enum.value, "")
@@ -138,6 +147,59 @@ def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tupl
     index_scip.write_text("scip-binary", encoding="utf8")
     index_json.write_text(index_content, encoding="utf8")
     return index_scip, index_json
+
+
+@dataclass(frozen=True)
+class ToolRunOptions:
+    """Configuration for a fake ToolRunResult."""
+
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    output_path: Path | None = None
+    duration_s: float = 0.0
+
+
+def make_tool_run_result(
+    tool: ToolName | str,
+    *,
+    args: Sequence[str] | None = None,
+    options: ToolRunOptions | None = None,
+) -> ToolRunResult:
+    """Build a ToolRunResult with sensible defaults for tests.
+
+    Returns
+    -------
+    ToolRunResult
+        Structured result populated with the provided options.
+    """
+    tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
+    opts = options or ToolRunOptions()
+    return ToolRunResult(
+        tool=tool_enum,
+        args=tuple(args or ()),
+        returncode=opts.returncode,
+        stdout=opts.stdout,
+        stderr=opts.stderr,
+        output_path=opts.output_path,
+        duration_s=opts.duration_s,
+    )
+
+
+def make_scip_index_result(base_dir: Path, *, index_content: str = "[]") -> ScipIndexResult:
+    """Create SCIP artifacts and a corresponding ScipIndexResult.
+
+    Returns
+    -------
+    ScipIndexResult
+        Result pointing to the generated SCIP artifacts.
+    """
+    index_scip, index_json = write_dummy_scip_files(base_dir, index_content=index_content)
+    return ScipIndexResult.from_json_documents(
+        [],
+        index_scip_path=index_scip,
+        index_json_path=index_json,
+    )
 
 
 @dataclass
@@ -204,7 +266,7 @@ class FakeToolService(ToolService):
     ----------
     fake_config : FakeToolServiceConfig
         Current configuration.
-    calls : list[tuple[str, dict[str, object]]]
+    calls : CallRecorder[ToolRunCall]
         Log of method calls for verification.
     """
 
@@ -216,7 +278,7 @@ class FakeToolService(ToolService):
         fake_runner = FakeToolRunner(cache_dir=effective_cache)
         super().__init__(fake_runner)
         self.fake_config = config or FakeToolServiceConfig()
-        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.calls: CallRecorder[ToolRunCall] = CallRecorder()
 
     async def run_pyright(self, repo_root: Path) -> dict[str, int]:
         """Run pyright and return configured error counts.
@@ -231,7 +293,9 @@ class FakeToolService(ToolService):
         dict[str, int]
             Configured pyright errors.
         """
-        self.calls.append(("run_pyright", {"repo_root": repo_root}))
+        self.calls.record(
+            ToolRunCall(tool="pyright", args=[], cwd=repo_root, timeout_ms=None, env=None)
+        )
         if self.fake_config.raise_on_pyright is not None:
             raise self.fake_config.raise_on_pyright
         return dict(self.fake_config.pyright_errors)
@@ -249,7 +313,9 @@ class FakeToolService(ToolService):
         dict[str, int]
             Configured pyrefly errors.
         """
-        self.calls.append(("run_pyrefly", {"repo_root": repo_root}))
+        self.calls.record(
+            ToolRunCall(tool="pyrefly", args=[], cwd=repo_root, timeout_ms=None, env=None)
+        )
         if self.fake_config.raise_on_pyrefly is not None:
             raise self.fake_config.raise_on_pyrefly
         return dict(self.fake_config.pyrefly_errors)
@@ -267,7 +333,9 @@ class FakeToolService(ToolService):
         dict[str, int]
             Configured ruff errors.
         """
-        self.calls.append(("run_ruff", {"repo_root": repo_root}))
+        self.calls.record(
+            ToolRunCall(tool="ruff", args=[], cwd=repo_root, timeout_ms=None, env=None)
+        )
         if self.fake_config.raise_on_ruff is not None:
             raise self.fake_config.raise_on_ruff
         return dict(self.fake_config.ruff_errors)
@@ -295,14 +363,18 @@ class FakeToolService(ToolService):
         CoverageReport
             Configured coverage report.
         """
-        self.calls.append(
-            (
-                "run_coverage_report",
-                {
-                    "repo_root": repo_root,
-                    "coverage_file": coverage_file,
-                    "output_path": output_path,
-                },
+        args: list[str] = []
+        if coverage_file is not None:
+            args.append(str(coverage_file))
+        if output_path is not None:
+            args.append(str(output_path))
+        self.calls.record(
+            ToolRunCall(
+                tool="coverage",
+                args=args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
             )
         )
         if self.fake_config.raise_on_coverage is not None:
@@ -335,15 +407,16 @@ class FakeToolService(ToolService):
         ScipIndexResult
             Configured SCIP result.
         """
-        self.calls.append(
-            (
-                "run_scip_full",
-                {
-                    "repo_root": repo_root,
-                    "output_scip": output_scip,
-                    "output_json": output_json,
-                    "target_dir": target_dir,
-                },
+        args = [str(output_scip), str(output_json)]
+        if target_dir is not None:
+            args.append(str(target_dir))
+        self.calls.record(
+            ToolRunCall(
+                tool="scip_full",
+                args=args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
             )
         )
         if self.fake_config.raise_on_scip is not None:
@@ -379,16 +452,16 @@ class FakeToolService(ToolService):
         ScipIndexResult
             Configured SCIP result.
         """
-        self.calls.append(
-            (
-                "run_scip_shard",
-                {
-                    "repo_root": repo_root,
-                    "rel_paths": rel_paths,
-                    "output_scip": output_scip,
-                    "output_json": output_json,
-                    "target_dir": target_dir,
-                },
+        args = [str(output_scip), str(output_json), *rel_paths]
+        if target_dir is not None:
+            args.append(str(target_dir))
+        self.calls.record(
+            ToolRunCall(
+                tool="scip_shard",
+                args=args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
             )
         )
         if self.fake_config.raise_on_scip is not None:
@@ -415,8 +488,14 @@ class FakeToolService(ToolService):
         bool
             Configured pytest success status.
         """
-        self.calls.append(
-            ("run_pytest_report", {"repo_root": repo_root, "json_report_path": json_report_path})
+        self.calls.record(
+            ToolRunCall(
+                tool="pytest_report",
+                args=[str(json_report_path)],
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
+            )
         )
         if self.fake_config.raise_on_pytest is not None:
             raise self.fake_config.raise_on_pytest
@@ -428,5 +507,8 @@ __all__ = [
     "FakeToolRunner",
     "FakeToolService",
     "FakeToolServiceConfig",
+    "ToolRunOptions",
+    "make_scip_index_result",
+    "make_tool_run_result",
     "write_dummy_scip_files",
 ]

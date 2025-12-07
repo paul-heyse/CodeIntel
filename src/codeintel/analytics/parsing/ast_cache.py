@@ -27,7 +27,7 @@ class FunctionAst:
     qualname: str
     start_line: int
     end_line: int
-    node: ast.FunctionDef | ast.AsyncFunctionDef
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
     lines: list[str]
 
 

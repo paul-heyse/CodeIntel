@@ -64,7 +64,7 @@ class ExternalDepsPlugin(TargetPlugin):
             return TargetResult.failed("CatalogProvider is required")
 
         # Get resources from catalog
-        module_map: dict[str, str] = {}
+        module_map: dict[str, str] = dict(catalog.catalog().module_by_path)
         missing_goids: set[int] = set()
         features_map: dict[int, FunctionAstFeatures] = {}
 

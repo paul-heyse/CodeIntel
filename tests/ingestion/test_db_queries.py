@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -46,6 +48,213 @@ EXPECTED_FRACTION_0_5 = 0.5
 EXPECTED_FRACTION_1_0 = 1.0
 EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
+MODULE_INSERT_SQL = """
+    INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+    VALUES (?, ?, ?, ?, ?, '[]', '[]')
+"""
+
+
+def _insert_modules(
+    gateway: StorageGateway, rows: list[tuple[str, str, str, str, str | None]]
+) -> None:
+    """Insert rows into core.modules for tests."""
+    params = [
+        (module, path, repo, commit, language or "python")
+        for module, path, repo, commit, language in rows
+    ]
+    gateway.con.executemany(MODULE_INSERT_SQL, params)
+
+
+def _create_numeric_table(gateway: StorageGateway, table: str, values: list[float]) -> None:
+    """Create a numeric table with id/value rows.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported table is requested.
+    """
+    params = [(idx, value) for idx, value in enumerate(values, start=1)]
+    def _insert(query: str) -> None:
+        if not params:
+            return
+        gateway.con.executemany(query, params)
+
+    if table == "core.test_numeric":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_numeric (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        _insert("INSERT INTO core.test_numeric (id, value) VALUES (?, ?)")
+    elif table == "core.test_numeric2":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_numeric2 (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        _insert("INSERT INTO core.test_numeric2 (id, value) VALUES (?, ?)")
+    elif table == "core.test_empty_num":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_empty_num (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        _insert("INSERT INTO core.test_empty_num (id, value) VALUES (?, ?)")
+    elif table == "core.test_empty_num2":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_empty_num2 (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        _insert("INSERT INTO core.test_empty_num2 (id, value) VALUES (?, ?)")
+    elif table == "core.test_pos":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_pos (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_pos (id, value) VALUES (?, ?)",
+            params,
+        )
+    elif table == "core.test_all_pos":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_all_pos (
+                id INTEGER,
+                value DOUBLE
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_all_pos (id, value) VALUES (?, ?)",
+            params,
+        )
+    else:
+        message = f"Unsupported numeric table for tests: {table}"
+        raise ValueError(message)
+
+
+def _create_varchar_table(
+    gateway: StorageGateway, table: str, values: list[tuple[int, str | None]]
+) -> None:
+    """Create a VARCHAR table with the provided rows.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported table is requested.
+    """
+    if table == "core.test_nulls":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_nulls (
+                id INTEGER,
+                value VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_nulls (id, value) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_dupes":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_dupes (
+                id INTEGER,
+                name VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_dupes (id, name) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_unique":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_unique (
+                id INTEGER,
+                name VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_unique (id, name) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_frac1":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_frac1 (
+                id INTEGER,
+                value VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_frac1 (id, value) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_frac2":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_frac2 (
+                id INTEGER,
+                value VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_frac2 (id, value) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_frac3":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_frac3 (
+                id INTEGER,
+                value VARCHAR
+            )
+            """
+        )
+        gateway.con.executemany(
+            "INSERT INTO core.test_frac3 (id, value) VALUES (?, ?)",
+            values,
+        )
+    elif table == "core.test_frac_empty":
+        gateway.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.test_frac_empty (
+                id INTEGER,
+                value VARCHAR
+            )
+            """
+        )
+        if values:
+            gateway.con.executemany(
+                "INSERT INTO core.test_frac_empty (id, value) VALUES (?, ?)",
+                values,
+            )
+    else:
+        message = f"Unsupported varchar table for tests: {table}"
+        raise ValueError(message)
 
 
 # =============================================================================
@@ -101,36 +310,30 @@ def test_safe_count_existing_table(fresh_gateway: StorageGateway) -> None:
     assert result >= 0
 
 
-def test_safe_count_nonexistent_table(fresh_gateway: StorageGateway) -> None:
-    """safe_count should return None for nonexistent tables."""
-    result = safe_count(fresh_gateway, "nonexistent.table_xyz")
-
-    assert result is None
-
-
-def test_safe_count_invalid_table_key(fresh_gateway: StorageGateway) -> None:
-    """safe_count should return None for invalid table keys."""
-    result = safe_count(fresh_gateway, "no-dot-separator")
-
-    assert result is None
-
-
-def test_safe_count_empty_table_key(fresh_gateway: StorageGateway) -> None:
-    """safe_count should return None for empty table key."""
-    result = safe_count(fresh_gateway, "")
+@pytest.mark.parametrize(
+    "table_key",
+    [
+        "nonexistent.table_xyz",
+        "no-dot-separator",
+        "",
+    ],
+)
+def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, table_key: str) -> None:
+    """safe_count should return None for invalid or missing tables."""
+    result = safe_count(fresh_gateway, table_key)
 
     assert result is None
 
 
 def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway) -> None:
     """safe_count should return accurate row counts."""
-    # Insert some test data
-    fresh_gateway.con.execute("""
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('a', 'a.py', 'test', 'abc', 'python', '[]', '[]'),
-            ('b', 'b.py', 'test', 'abc', 'python', '[]', '[]')
-    """)
+    _insert_modules(
+        fresh_gateway,
+        [
+            ("a", "a.py", "test", "abc", "python"),
+            ("b", "b.py", "test", "abc", "python"),
+        ],
+    )
 
     result = safe_count(fresh_gateway, "core.modules")
 
@@ -147,13 +350,14 @@ def test_safe_count_with_scope_filters_by_snapshot(
 ) -> None:
     """safe_count_with_scope should count only matching repo/commit."""
     # Insert data for different repos/commits
-    fresh_gateway.con.execute("""
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('a', 'a.py', 'repo1', 'commit1', 'python', '[]', '[]'),
-            ('b', 'b.py', 'repo1', 'commit1', 'python', '[]', '[]'),
-            ('c', 'c.py', 'repo2', 'commit2', 'python', '[]', '[]')
-    """)
+    _insert_modules(
+        fresh_gateway,
+        [
+            ("a", "a.py", "repo1", "commit1", "python"),
+            ("b", "b.py", "repo1", "commit1", "python"),
+            ("c", "c.py", "repo2", "commit2", "python"),
+        ],
+    )
 
     snapshot = make_snapshot(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
     result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
@@ -193,18 +397,18 @@ def test_safe_table_exists_for_existing_table(fresh_gateway: StorageGateway) -> 
     assert result is True
 
 
-def test_safe_table_exists_for_nonexistent_table(
-    fresh_gateway: StorageGateway,
+@pytest.mark.parametrize(
+    "table_key",
+    [
+        "nonexistent.table_xyz",
+        "invalid-key",
+    ],
+)
+def test_safe_table_exists_invalid_or_missing(
+    fresh_gateway: StorageGateway, table_key: str
 ) -> None:
-    """safe_table_exists should return False for nonexistent tables."""
-    result = safe_table_exists(fresh_gateway, "nonexistent.table_xyz")
-
-    assert result is False
-
-
-def test_safe_table_exists_invalid_table_key(fresh_gateway: StorageGateway) -> None:
-    """safe_table_exists should return False for invalid keys."""
-    result = safe_table_exists(fresh_gateway, "invalid-key")
+    """safe_table_exists should return False for invalid or missing tables."""
+    result = safe_table_exists(fresh_gateway, table_key)
 
     assert result is False
 
@@ -276,16 +480,18 @@ def test_safe_get_columns_existing_table(fresh_gateway: StorageGateway) -> None:
     assert "path" in result
 
 
-def test_safe_get_columns_nonexistent_table(fresh_gateway: StorageGateway) -> None:
-    """safe_get_columns should return empty set for nonexistent tables."""
-    result = safe_get_columns(fresh_gateway, "nonexistent.table_xyz")
-
-    assert result == set()
-
-
-def test_safe_get_columns_invalid_table_key(fresh_gateway: StorageGateway) -> None:
-    """safe_get_columns should return empty set for invalid keys."""
-    result = safe_get_columns(fresh_gateway, "invalid-key")
+@pytest.mark.parametrize(
+    "table_key",
+    [
+        "nonexistent.table_xyz",
+        "invalid-key",
+    ],
+)
+def test_safe_get_columns_nonexistent_or_invalid(
+    fresh_gateway: StorageGateway, table_key: str
+) -> None:
+    """safe_get_columns should return empty set for nonexistent or invalid tables."""
+    result = safe_get_columns(fresh_gateway, table_key)
 
     assert result == set()
 
@@ -298,12 +504,13 @@ def test_safe_get_columns_invalid_table_key(fresh_gateway: StorageGateway) -> No
 def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway) -> None:
     """safe_count_nulls should return 0 when no NULL values exist."""
     # Insert data with no nulls
-    fresh_gateway.con.execute("""
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('a', 'a.py', 'test', 'abc', 'python', '[]', '[]'),
-            ('b', 'b.py', 'test', 'abc', 'python', '[]', '[]')
-    """)
+    _insert_modules(
+        fresh_gateway,
+        [
+            ("a", "a.py", "test", "abc", "python"),
+            ("b", "b.py", "test", "abc", "python"),
+        ],
+    )
 
     result = safe_count_nulls(fresh_gateway, "core.modules", "module")
 
@@ -312,36 +519,34 @@ def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway) -> None:
     """safe_count_nulls should count NULL values correctly."""
-    # Create a test table with nullable column
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_nulls (
-            id INTEGER,
-            value VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_nulls (id, value) VALUES
-            (1, 'a'),
-            (2, NULL),
-            (3, NULL),
-            (4, 'b')
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_nulls",
+        [
+            (1, "a"),
+            (2, None),
+            (3, None),
+            (4, "b"),
+        ],
+    )
 
     result = safe_count_nulls(fresh_gateway, "core.test_nulls", "value")
 
     assert result == EXPECTED_COUNT_2
 
 
-def test_safe_count_nulls_invalid_column(fresh_gateway: StorageGateway) -> None:
-    """safe_count_nulls should return 0 for invalid column."""
-    result = safe_count_nulls(fresh_gateway, "core.modules", "nonexistent_col")
-
-    assert result == 0
-
-
-def test_safe_count_nulls_invalid_table(fresh_gateway: StorageGateway) -> None:
-    """safe_count_nulls should return 0 for invalid table."""
-    result = safe_count_nulls(fresh_gateway, "invalid.table", "column")
+@pytest.mark.parametrize(
+    ("table_key", "column"),
+    [
+        ("core.modules", "nonexistent_col"),
+        ("invalid.table", "column"),
+    ],
+)
+def test_safe_count_nulls_invalid_inputs(
+    fresh_gateway: StorageGateway, table_key: str, column: str
+) -> None:
+    """safe_count_nulls should return 0 for invalid table or column."""
+    result = safe_count_nulls(fresh_gateway, table_key, column)
 
     assert result == 0
 
@@ -353,18 +558,7 @@ def test_safe_count_nulls_invalid_table(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
     """safe_min_value should return minimum value."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_numeric (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_numeric (id, value) VALUES
-            (1, 10.5),
-            (2, 5.0),
-            (3, 20.0)
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_numeric", [10.5, 5.0, 20.0])
 
     result = safe_min_value(fresh_gateway, "core.test_numeric", "value")
 
@@ -373,18 +567,7 @@ def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
     """safe_max_value should return maximum value."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_numeric2 (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_numeric2 (id, value) VALUES
-            (1, 10.5),
-            (2, 5.0),
-            (3, 20.0)
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_numeric2", [10.5, 5.0, 20.0])
 
     result = safe_max_value(fresh_gateway, "core.test_numeric2", "value")
 
@@ -393,12 +576,7 @@ def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_min_value should return None for empty table."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_empty_num (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_empty_num", [])
 
     result = safe_min_value(fresh_gateway, "core.test_empty_num", "value")
 
@@ -407,12 +585,7 @@ def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_max_value_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_max_value should return None for empty table."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_empty_num2 (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_empty_num2", [])
 
     result = safe_max_value(fresh_gateway, "core.test_empty_num2", "value")
 
@@ -440,19 +613,7 @@ def test_safe_max_value_invalid_column(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -> None:
     """safe_count_non_positive should count values <= 0."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_pos (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_pos (id, value) VALUES
-            (1, -5.0),
-            (2, 0.0),
-            (3, 10.0),
-            (4, -2.0)
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_pos", [-5.0, 0.0, 10.0, -2.0])
 
     result = safe_count_non_positive(fresh_gateway, "core.test_pos", "value")
 
@@ -461,17 +622,7 @@ def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -
 
 def test_safe_count_non_positive_all_positive(fresh_gateway: StorageGateway) -> None:
     """safe_count_non_positive should return 0 when all values are positive."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_all_pos (
-            id INTEGER,
-            value DOUBLE
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_all_pos (id, value) VALUES
-            (1, 5.0),
-            (2, 10.0)
-    """)
+    _create_numeric_table(fresh_gateway, "core.test_all_pos", [5.0, 10.0])
 
     result = safe_count_non_positive(fresh_gateway, "core.test_all_pos", "value")
 
@@ -492,20 +643,17 @@ def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) ->
 
 def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None:
     """safe_count_duplicates should count duplicate values."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_dupes (
-            id INTEGER,
-            name VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_dupes (id, name) VALUES
-            (1, 'alice'),
-            (2, 'bob'),
-            (3, 'alice'),
-            (4, 'alice'),
-            (5, 'charlie')
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_dupes",
+        [
+            (1, "alice"),
+            (2, "bob"),
+            (3, "alice"),
+            (4, "alice"),
+            (5, "charlie"),
+        ],
+    )
 
     result = safe_count_duplicates(fresh_gateway, "core.test_dupes", "name")
 
@@ -515,18 +663,15 @@ def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None
 
 def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway) -> None:
     """safe_count_duplicates should return 0 when all values are unique."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_unique (
-            id INTEGER,
-            name VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_unique (id, name) VALUES
-            (1, 'a'),
-            (2, 'b'),
-            (3, 'c')
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_unique",
+        [
+            (1, "a"),
+            (2, "b"),
+            (3, "c"),
+        ],
+    )
 
     result = safe_count_duplicates(fresh_gateway, "core.test_unique", "name")
 
@@ -547,17 +692,14 @@ def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> N
 
 def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 1.0 when all values are non-null."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_frac1 (
-            id INTEGER,
-            value VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_frac1 (id, value) VALUES
-            (1, 'a'),
-            (2, 'b')
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_frac1",
+        [
+            (1, "a"),
+            (2, "b"),
+        ],
+    )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac1", "value")
 
@@ -566,19 +708,16 @@ def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> N
 
 def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return correct fraction."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_frac2 (
-            id INTEGER,
-            value VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_frac2 (id, value) VALUES
-            (1, 'a'),
-            (2, NULL),
-            (3, 'b'),
-            (4, NULL)
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_frac2",
+        [
+            (1, "a"),
+            (2, None),
+            (3, "b"),
+            (4, None),
+        ],
+    )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac2", "value")
 
@@ -587,17 +726,14 @@ def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None
 
 def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 0.0 when all values are null."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_frac3 (
-            id INTEGER,
-            value VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_frac3 (id, value) VALUES
-            (1, NULL),
-            (2, NULL)
-    """)
+    _create_varchar_table(
+        fresh_gateway,
+        "core.test_frac3",
+        [
+            (1, None),
+            (2, None),
+        ],
+    )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac3", "value")
 
@@ -606,12 +742,7 @@ def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 0.0 for empty table."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_frac_empty (
-            id INTEGER,
-            value VARCHAR
-        )
-    """)
+    _create_varchar_table(fresh_gateway, "core.test_frac_empty", [])
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac_empty", "value")
 

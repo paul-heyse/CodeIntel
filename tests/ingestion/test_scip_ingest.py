@@ -19,6 +19,7 @@ from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngest
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from tests._helpers.sql import count_table_rows
 
 
 def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
@@ -120,11 +121,8 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         if not (scip_dir / "index.scip.json").is_file():
             pytest.fail("index.scip.json was not created under build/scip")
 
-        con = gateway.con
-        row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
-        if row is None:
-            pytest.fail("scip_index_view did not return a row")
-        if row[0] == 0:
+        count = count_table_rows(gateway.con, "scip_index_view")
+        if count == 0:
             pytest.fail("scip_index_view is empty; expected rows after ingest")
 
     finally:

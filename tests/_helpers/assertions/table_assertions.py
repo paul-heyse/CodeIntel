@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.sql import validate_identifier
+from tests._helpers.sql import count_nulls, count_table_rows
 
 
 def assert_table_has_rows(
@@ -28,10 +28,7 @@ def assert_table_has_rows(
     AssertionError
         If the table has fewer rows than expected.
     """
-    safe_table = validate_identifier(table, kind="table")
-    relation = gateway.con.table(safe_table)
-    result = relation.aggregate("count(*)").fetchone()
-    count = result[0] if result else 0
+    count = count_table_rows(gateway.con, table)
     if count < min_rows:
         message = f"Expected at least {min_rows} rows in {table}, got {count}"
         raise AssertionError(message)
@@ -58,13 +55,8 @@ def assert_columns_not_null(
     AssertionError
         If any specified column contains NULL values.
     """
-    safe_table = validate_identifier(table, kind="table")
-    relation = gateway.con.table(safe_table)
     for col in columns:
-        safe_col = validate_identifier(col, kind="column")
-        filtered = relation.filter(f"{safe_col} IS NULL")
-        result = filtered.aggregate("count(*)").fetchone()
-        null_count = result[0] if result else 0
+        null_count = count_nulls(gateway.con, table, col)
         if null_count > 0:
             message = f"Column {col} in {table} contains {null_count} NULL values"
             raise AssertionError(message)

@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, FunctionMeta
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.context import create_test_context
 from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.rows import function_meta
 
 
 def _seed_dependency_sources(ctx_repo_root: Path) -> None:
@@ -17,11 +18,7 @@ def _seed_dependency_sources(ctx_repo_root: Path) -> None:
     config_dir = ctx_repo_root / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "dependency_patterns.yml").write_text(
-        "libs:\n"
-        "  requests:\n"
-        "    patterns:\n"
-        '      - mode: ["read"]\n'
-        '        method: "get"\n',
+        'libs:\n  requests:\n    patterns:\n      - mode: ["read"]\n        method: "get"\n',
         encoding="utf-8",
     )
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
@@ -58,22 +55,20 @@ def _catalog_for_dependencies(repo: str, commit: str) -> FunctionCatalogService:
     FunctionCatalogService
         Catalog provider with spans for seeded functions.
     """
-    functions: list[FunctionMeta] = [
-        FunctionMeta(
+    functions = [
+        function_meta(
             goid=8001,
-            urn=f"urn:{repo}:{commit}:pkg/client.py#fetch",
             rel_path="pkg/client.py",
             qualname="fetch",
-            start_line=3,
-            end_line=5,
+            snapshot=(repo, commit),
+            line_span=(3, 5),
         ),
-        FunctionMeta(
+        function_meta(
             goid=8002,
-            urn=f"urn:{repo}:{commit}:pkg/worker.py#run",
             rel_path="pkg/worker.py",
             qualname="run",
-            start_line=3,
-            end_line=4,
+            snapshot=(repo, commit),
+            line_span=(3, 4),
         ),
     ]
     catalog = FunctionCatalog(

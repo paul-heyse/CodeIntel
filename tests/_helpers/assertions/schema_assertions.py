@@ -23,7 +23,7 @@ def assert_mapping_value[ValueT](
 
     Returns
     -------
-    _ValueT
+    ValueT
         Value stored at ``key``.
 
     Raises

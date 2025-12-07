@@ -30,6 +30,16 @@ from codeintel.build.protocols import (
     TypeCheckResult,
     TypeDiagnostic,
 )
+from tests._helpers.records import (
+    CallRecorder,
+    CollectCall,
+    GitBlameCall,
+    GitLogCall,
+    ScipIndexCall,
+    ScipParseCall,
+    ToolRunCall,
+    TypeCheckCall,
+)
 
 __all__ = [
     "FakeCoverageCollector",
@@ -59,8 +69,8 @@ class FakeToolRunner:
         Pre-configured results by tool name.
     default_result
         Default result for tools not in results dict.
-    call_log
-        Record of all calls made (for verification).
+    calls
+        Recorder of all calls made (for verification).
     """
 
     available_tools: set[str] = field(default_factory=lambda: {"git", "python"})
@@ -68,9 +78,7 @@ class FakeToolRunner:
     default_result: ToolRunResult = field(
         default_factory=lambda: ToolRunResult(tool="unknown", returncode=0)
     )
-    call_log: list[tuple[str, Sequence[str], Path, int | None, Mapping[str, str] | None]] = field(
-        default_factory=list
-    )
+    calls: CallRecorder[ToolRunCall] = field(default_factory=CallRecorder)
 
     async def run(
         self,
@@ -102,7 +110,15 @@ class FakeToolRunner:
             Pre-configured or default result.
         """
         env_snapshot = dict(env) if env is not None else None
-        self.call_log.append((tool, list(args), cwd, timeout_ms, env_snapshot))
+        self.calls.record(
+            ToolRunCall(
+                tool=tool,
+                args=list(args),
+                cwd=cwd,
+                timeout_ms=timeout_ms,
+                env=env_snapshot,
+            )
+        )
         return self.results.get(tool, self.default_result)
 
     def is_available(self, tool: str) -> bool:
@@ -146,10 +162,8 @@ class FakeScipIndexer:
     occurrences: tuple[ScipOccurrence, ...] = ()
     index_success: bool = True
     parse_success: bool = True
-    index_calls: list[
-        tuple[Path, Path, Sequence[str] | None, Sequence[str] | None]
-    ] = field(default_factory=list)
-    parse_calls: list[tuple[Path, Path]] = field(default_factory=list)
+    index_calls: CallRecorder[ScipIndexCall] = field(default_factory=CallRecorder)
+    parse_calls: CallRecorder[ScipParseCall] = field(default_factory=CallRecorder)
 
     async def index(
         self,
@@ -177,7 +191,14 @@ class FakeScipIndexer:
         ScipIndexResult
             Pre-configured result.
         """
-        self.index_calls.append((repo_root, output_path, include_patterns, exclude_patterns))
+        self.index_calls.record(
+            ScipIndexCall(
+                repo_root=repo_root,
+                output_path=output_path,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+            )
+        )
         if self.index_success:
             return ScipIndexResult(
                 success=True,
@@ -208,7 +229,9 @@ class FakeScipIndexer:
         ScipParseResult
             Pre-configured result with symbols and occurrences.
         """
-        self.parse_calls.append((scip_path, output_json_path))
+        self.parse_calls.record(
+            ScipParseCall(scip_path=scip_path, output_json_path=output_json_path)
+        )
         if self.parse_success:
             return ScipParseResult(
                 success=True,
@@ -241,9 +264,7 @@ class FakeTypeChecker:
 
     diagnostics: tuple[TypeDiagnostic, ...] = ()
     success: bool = True
-    call_log: list[tuple[Path, Sequence[Path] | None, Path | None]] = field(
-        default_factory=list
-    )
+    calls: CallRecorder[TypeCheckCall] = field(default_factory=CallRecorder)
 
     async def check(
         self,
@@ -268,7 +289,7 @@ class FakeTypeChecker:
         TypeCheckResult
             Pre-configured result.
         """
-        self.call_log.append((repo_root, paths, config_path))
+        self.calls.record(TypeCheckCall(repo_root=repo_root, paths=paths, config_path=config_path))
         error_count = sum(1 for d in self.diagnostics if d.severity == "error")
         warning_count = sum(1 for d in self.diagnostics if d.severity == "warning")
 
@@ -297,7 +318,7 @@ class FakeCoverageCollector:
     """
 
     coverage_data: dict[str, CoverageData] = field(default_factory=dict)
-    collect_calls: list[Path] = field(default_factory=list)
+    collect_calls: CallRecorder[CollectCall] = field(default_factory=CallRecorder)
 
     async def collect(
         self,
@@ -315,7 +336,7 @@ class FakeCoverageCollector:
         Mapping[str, CoverageData]
             Pre-configured coverage data.
         """
-        self.collect_calls.append(coverage_file)
+        self.collect_calls.record(CollectCall(path=coverage_file))
         return self.coverage_data
 
 
@@ -335,7 +356,7 @@ class FakeTestReporter:
     """
 
     test_results: tuple[TestResult, ...] = ()
-    collect_calls: list[Path] = field(default_factory=list)
+    collect_calls: CallRecorder[CollectCall] = field(default_factory=CallRecorder)
 
     async def collect(
         self,
@@ -353,7 +374,7 @@ class FakeTestReporter:
         tuple[TestResult, ...]
             Pre-configured results.
         """
-        self.collect_calls.append(report_path)
+        self.collect_calls.record(CollectCall(path=report_path))
         return self.test_results
 
 
@@ -376,12 +397,8 @@ class FakeGitHistoryProvider:
 
     log_entries: tuple[GitLogEntry, ...] = ()
     blame_data: dict[str, dict[int, GitLogEntry]] = field(default_factory=dict)
-    log_calls: list[tuple[Path, Path | None, int | None, str | None, str | None]] = field(
-        default_factory=list
-    )
-    blame_calls: list[tuple[Path, Path, int | None, int | None]] = field(
-        default_factory=list
-    )
+    log_calls: CallRecorder[GitLogCall] = field(default_factory=CallRecorder)
+    blame_calls: CallRecorder[GitBlameCall] = field(default_factory=CallRecorder)
 
     async def log(
         self,
@@ -412,7 +429,15 @@ class FakeGitHistoryProvider:
         tuple[GitLogEntry, ...]
             Pre-configured entries (optionally limited).
         """
-        self.log_calls.append((repo_root, path, max_count, since, until))
+        self.log_calls.record(
+            GitLogCall(
+                repo_root=repo_root,
+                path=path,
+                max_count=max_count,
+                since=since,
+                until=until,
+            )
+        )
         entries = self.log_entries
         if max_count:
             entries = entries[:max_count]
@@ -444,7 +469,14 @@ class FakeGitHistoryProvider:
         Mapping[int, GitLogEntry]
             Pre-configured blame data for path.
         """
-        self.blame_calls.append((repo_root, path, start_line, end_line))
+        self.blame_calls.record(
+            GitBlameCall(
+                repo_root=repo_root,
+                path=path,
+                start_line=start_line,
+                end_line=end_line,
+            )
+        )
         return self.blame_data.get(str(path), {})
 
 

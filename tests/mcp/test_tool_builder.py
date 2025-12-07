@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp import models
 from codeintel.serving.mcp.tool_builder import (
     build_tool_from_operation,
     register_tools_for_category,
 )
-from codeintel.serving.operations.catalog import Operation
+from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.mcp import RecordingMcp
 
 
 @dataclass
@@ -51,10 +54,12 @@ def _make_operation(
     backend_method: str,
     *,
     output_model_name: str = "",
+    data_source: DataSourceType = DataSourceType.VIEW,
+    category: str = "functions",
 ) -> Operation:
     return Operation(
         id=op_id,
-        category="functions",
+        category=category,
         summary="test op",
         description=None,
         http_method=None,
@@ -62,7 +67,7 @@ def _make_operation(
         tool_name=f"tool_{op_id}",
         output_model_name=output_model_name,
         backend_method=backend_method,
-        data_source="docs",
+        data_source=data_source,
         source_name=None,
         repository_method=None,
         required_datasets=(),
@@ -77,10 +82,11 @@ def _make_operation(
 def test_build_tool_from_operation_model_serialization(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tool builder should handle from_domain/model_dump paths."""
     backend = _Backend()
+    typed_backend = cast("QueryBackendOrService", backend)
     spec = _make_operation("echo", "do_model", output_model_name="_ModelFromDomain")
     monkeypatch.setattr(models, "_ModelFromDomain", _ModelFromDomain, raising=False)
 
-    tool = build_tool_from_operation(spec, backend, config=None)
+    tool = build_tool_from_operation(spec, typed_backend, config=None)
     response = tool(payload="hello", extra=1)
     assert response == {"value": "hello"}
     # Request context set/reset around call
@@ -90,62 +96,56 @@ def test_build_tool_from_operation_model_serialization(monkeypatch: pytest.Monke
 
 def test_build_tool_from_operation_missing_backend_method() -> None:
     """Missing backend method should raise TypeError."""
-    backend = _Backend()
+    backend = cast("QueryBackendOrService", _Backend())
     spec = _make_operation("missing", "nope")
     with pytest.raises(TypeError):
         build_tool_from_operation(spec, backend, config=None)
 
 
-class _RecordingMcp(FastMCP):
-    def __init__(self) -> None:
-        super().__init__("recorder")
-        self.registered: list[tuple[str, str]] = []
-
-    def tool(self, name: str | None = None, description: str | None = None) -> Callable[[Callable[..., object]], Callable[..., object]]:  # type: ignore[override]
-        def _decorator(func: Callable[..., object]) -> Callable[..., object]:
-            self.registered.append((name or func.__name__, description or ""))
-            return func
-
-        return _decorator
-
-
-def test_register_tools_for_category_registers_expected_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_tools_for_category_registers_expected_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Only matching categories should be registered."""
-    backend = _Backend()
-    mcp = _RecordingMcp()
+    backend = cast("QueryBackendOrService", _Backend())
+    mcp = RecordingMcp()
     specs = [
         _make_operation("fn.one", "do_echo"),
-        _make_operation("datasets.list", "do_echo"),
+        _make_operation("datasets.list", "do_echo", category="datasets"),
     ]
     monkeypatch.setattr(
         "codeintel.serving.mcp.tool_builder.iter_operations",
         lambda: specs,
     )
-    register_tools_for_category(mcp, backend, categories={"functions"})
-    names = {name for name, _ in mcp.registered}
+    typed_mcp = cast("FastMCP", mcp)
+    register_tools_for_category(typed_mcp, backend, categories={"functions"})
+    names = {reg.name for reg in mcp.registrations.calls}
     assert names == {"tool_fn.one"}
+    assert "tool_datasets.list" not in mcp.registry
     # Tool executes and serializes dict payloads
-    registered_callable = mcp.tool()(backend.do_echo)
-    result = registered_callable()
+    registered_callable = mcp.registry["tool_fn.one"]
+    result = registered_callable(message="hi")
     assert isinstance(result, dict)
 
 
 def test_build_tool_auto_pipeline_invokes_prereqs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Auto-pipeline branch should trigger ensure_prereqs_for_mcp when enabled."""
     backend = _Backend()
+    typed_backend = cast("QueryBackendOrService", backend)
     spec = _make_operation("echo", "do_echo")
 
     calls: list[tuple[str, str]] = []
 
-    def _ensure_prereqs(**kwargs: object) -> None:
-        calls.append((kwargs.get("op_id", ""), kwargs.get("backend").repo))  # type: ignore[index]
+    def _ensure_prereqs(*, op_id: str, config: object, backend: _Backend) -> None:
+        _ = config
+        calls.append((op_id, backend.repo))
 
     monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
     monkeypatch.setattr(
-        "codeintel.serving.auto_pipeline.ensure_prereqs_for_mcp",
+        "codeintel.serving.mcp.tool_builder.ensure_prereqs_for_mcp",
         _ensure_prereqs,
     )
-    tool = build_tool_from_operation(spec, backend, config=SimpleNamespace(repo="demo", commit="c"))
+    config = cast("ServingConfig", SimpleNamespace(repo="demo", commit="c"))
+    tool = build_tool_from_operation(spec, typed_backend, config=config)
     _ = tool()
     assert ("echo", "demo/repo") in calls
     # Reset env

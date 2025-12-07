@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
+from tests._helpers.records import CallRecorder, StorageOpCall
 
 
 @dataclass
@@ -28,13 +29,13 @@ class FakeIngestStorage:
         In-memory data store keyed by table_key.
     schemas : set[str]
         Set of table keys for which schema has been ensured.
-    operations : list[tuple[str, str, object]]
+    operations : CallRecorder[StorageOpCall]
         Log of operations for verification (operation_type, table_key, details).
     """
 
     data: dict[str, list[Sequence[object]]] = field(default_factory=dict)
     schemas: set[str] = field(default_factory=set)
-    operations: list[tuple[str, str, object]] = field(default_factory=list)
+    operations: CallRecorder[StorageOpCall] = field(default_factory=CallRecorder)
 
     def ensure_schema(self, table_key: str) -> None:
         """Ensure the schema exists for a table.
@@ -47,7 +48,7 @@ class FakeIngestStorage:
         self.schemas.add(table_key)
         if table_key not in self.data:
             self.data[table_key] = []
-        self.operations.append(("ensure_schema", table_key, None))
+        self.operations.record(StorageOpCall(op="ensure_schema", target=table_key, details=None))
 
     def write_batch(
         self,
@@ -75,7 +76,11 @@ class FakeIngestStorage:
         if table_key not in self.data:
             self.data[table_key] = []
         self.data[table_key].extend(rows)
-        self.operations.append(("write_batch", table_key, {"rows": len(rows), "scope": scope}))
+        self.operations.record(
+            StorageOpCall(
+                op="write_batch", target=table_key, details={"rows": len(rows), "scope": scope}
+            )
+        )
         return BatchResult(table_key=table_key, rows_written=len(rows), duration_s=0.0)
 
     def delete_by_params(
@@ -97,7 +102,9 @@ class FakeIngestStorage:
         int
             Number of rows deleted (always 0 in this fake).
         """
-        self.operations.append(("delete_by_params", table_key, {"params": params}))
+        self.operations.record(
+            StorageOpCall(op="delete_by_params", target=table_key, details={"params": params})
+        )
         return 0
 
     def delete_by_paths(
@@ -123,8 +130,12 @@ class FakeIngestStorage:
         int
             Number of rows deleted (always 0 in this fake).
         """
-        self.operations.append(
-            ("delete_by_paths", table_key, {"paths": paths, "path_column": path_column})
+        self.operations.record(
+            StorageOpCall(
+                op="delete_by_paths",
+                target=table_key,
+                details={"paths": paths, "path_column": path_column},
+            )
         )
         return 0
 
@@ -147,7 +158,9 @@ class FakeIngestStorage:
         QueryResult
             Empty query results (queries not supported in fake).
         """
-        self.operations.append(("execute_query", sql, {"params": params}))
+        self.operations.record(
+            StorageOpCall(op="execute_query", target=sql, details={"params": params})
+        )
         return QueryResult(rows=[], columns=(), row_count=0)
 
     def fetch_dataframe(
@@ -169,7 +182,9 @@ class FakeIngestStorage:
         object
             Empty DataFrame-like object.
         """
-        self.operations.append(("fetch_dataframe", sql, {"params": params}))
+        self.operations.record(
+            StorageOpCall(op="fetch_dataframe", target=sql, details={"params": params})
+        )
         return pd.DataFrame()
 
 

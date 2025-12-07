@@ -8,7 +8,7 @@
 {"rel_path":"src\/codeintel\/graphs\/core\/__init__.py","commit_count":8,"author_count":1,"lines_added":183,"lines_deleted":100,"complexity":0.0,"score":2.2859435508}
 {"rel_path":"src\/codeintel\/graphs\/resources\/storage.py","commit_count":4,"author_count":1,"lines_added":218,"lines_deleted":16,"complexity":7.0,"score":2.1633588797}
 {"rel_path":"src\/codeintel\/graphs\/resources\/graphs.py","commit_count":2,"author_count":1,"lines_added":182,"lines_deleted":15,"complexity":1.0,"score":1.8149037046}
-{"rel_path":"src\/codeintel\/graphs\/resources\/catalog.py","commit_count":3,"author_count":1,"lines_added":216,"lines_deleted":11,"complexity":2.0,"score":1.9869604605}
+{"rel_path":"src\/codeintel\/graphs\/resources\/catalog.py","commit_count":4,"author_count":1,"lines_added":221,"lines_deleted":11,"complexity":2.0,"score":2.080556446}
 {"rel_path":"src\/codeintel\/graphs\/resources\/__init__.py","commit_count":3,"author_count":1,"lines_added":56,"lines_deleted":11,"complexity":0.0,"score":1.6756781577}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/validation.py","commit_count":11,"author_count":1,"lines_added":513,"lines_deleted":260,"complexity":11.0,"score":2.7887161245}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/__init__.py","commit_count":6,"author_count":1,"lines_added":119,"lines_deleted":34,"complexity":3.0,"score":2.1546425255}
@@ -16,7 +16,7 @@
 {"rel_path":"src\/codeintel\/graphs\/plugins\/metrics\/core.py","commit_count":16,"author_count":1,"lines_added":878,"lines_deleted":751,"complexity":3.0,"score":2.9814403418}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/metrics\/__init__.py","commit_count":3,"author_count":1,"lines_added":106,"lines_deleted":88,"complexity":0.0,"score":1.8863765284}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/import_graph.py","commit_count":12,"author_count":1,"lines_added":753,"lines_deleted":457,"complexity":15.0,"score":2.9370855803}
-{"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/symbol_uses.py","commit_count":10,"author_count":1,"lines_added":821,"lines_deleted":521,"complexity":11.0,"score":2.8641294383}
+{"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/symbol_uses.py","commit_count":11,"author_count":1,"lines_added":903,"lines_deleted":522,"complexity":11.0,"score":2.91092747}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/cfg_dfg.py","commit_count":13,"author_count":1,"lines_added":1006,"lines_deleted":626,"complexity":17.0,"score":3.0376458025}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/goid.py","commit_count":14,"author_count":1,"lines_added":895,"lines_deleted":472,"complexity":20.0,"score":3.0444894996}
 {"rel_path":"src\/codeintel\/graphs\/plugins\/builders\/__init__.py","commit_count":5,"author_count":1,"lines_added":70,"lines_deleted":44,"complexity":0.0,"score":1.9429490856}
@@ -90,7 +90,7 @@
 {"rel_path":"src\/codeintel\/core\/plugins\/execution\/executor.py","commit_count":3,"author_count":1,"lines_added":681,"lines_deleted":15,"complexity":21.0,"score":2.3853684024}
 {"rel_path":"src\/codeintel\/core\/plugins\/execution\/__init__.py","commit_count":2,"author_count":1,"lines_added":93,"lines_deleted":0,"complexity":0.0,"score":1.6253627441}
 {"rel_path":"src\/codeintel\/core\/plugins\/registry\/sorting.py","commit_count":1,"author_count":1,"lines_added":210,"lines_deleted":0,"complexity":10.0,"score":1.8040653181}
-{"rel_path":"src\/codeintel\/core\/plugins\/registry\/base.py","commit_count":1,"author_count":1,"lines_added":651,"lines_deleted":0,"complexity":31.0,"score":2.1308626949}
+{"rel_path":"src\/codeintel\/core\/plugins\/registry\/base.py","commit_count":2,"author_count":1,"lines_added":706,"lines_deleted":0,"complexity":31.0,"score":2.309245959}
 {"rel_path":"src\/codeintel\/core\/plugins\/registry\/__init__.py","commit_count":1,"author_count":1,"lines_added":43,"lines_deleted":0,"complexity":0.0,"score":1.3113556712}
 {"rel_path":"src\/codeintel\/core\/plugins\/types\/protocol.py","commit_count":2,"author_count":1,"lines_added":391,"lines_deleted":0,"complexity":2.0,"score":1.9802708737}
 {"rel_path":"src\/codeintel\/core\/plugins\/types\/report.py","commit_count":1,"author_count":1,"lines_added":129,"lines_deleted":0,"complexity":5.0,"score":1.6533009314}
@@ -162,7 +162,7 @@
 {"rel_path":"src\/codeintel\/serving\/mcp\/tool_builder.py","commit_count":2,"author_count":1,"lines_added":261,"lines_deleted":2,"complexity":11.0,"score":2.019073826}
 {"rel_path":"src\/codeintel\/serving\/mcp\/meta_tools.py","commit_count":5,"author_count":1,"lines_added":410,"lines_deleted":33,"complexity":18.0,"score":2.4433860817}
 {"rel_path":"src\/codeintel\/serving\/mcp\/dataset_tools.py","commit_count":8,"author_count":1,"lines_added":244,"lines_deleted":93,"complexity":11.0,"score":2.5079380999}
-{"rel_path":"src\/codeintel\/serving\/mcp\/models.py","commit_count":18,"author_count":1,"lines_added":2088,"lines_deleted":202,"complexity":27.0,"score":3.2697980653}
+{"rel_path":"src\/codeintel\/serving\/mcp\/models.py","commit_count":19,"author_count":1,"lines_added":2093,"lines_deleted":206,"complexity":27.0,"score":3.291099527}
 {"rel_path":"src\/codeintel\/serving\/mcp\/registry.py","commit_count":5,"author_count":1,"lines_added":343,"lines_deleted":307,"complexity":1.0,"score":2.3302110992}
 {"rel_path":"src\/codeintel\/serving\/mcp\/tools.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
 {"rel_path":"src\/codeintel\/serving\/mcp\/tools_base.py","commit_count":8,"author_count":1,"lines_added":106,"lines_deleted":15,"complexity":4.0,"score":2.226814141}
@@ -182,7 +182,7 @@
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/typing_plugin.py","commit_count":7,"author_count":1,"lines_added":316,"lines_deleted":183,"complexity":5.0,"score":2.4772334054}
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/coverage_plugin.py","commit_count":11,"author_count":1,"lines_added":393,"lines_deleted":243,"complexity":7.0,"score":2.7129832029}
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/scip_plugin.py","commit_count":10,"author_count":1,"lines_added":384,"lines_deleted":219,"complexity":7.0,"score":2.6675395606}
-{"rel_path":"src\/codeintel\/ingestion\/plugins\/repo_scan.py","commit_count":7,"author_count":1,"lines_added":247,"lines_deleted":107,"complexity":3.0,"score":2.37508812}
+{"rel_path":"src\/codeintel\/ingestion\/plugins\/repo_scan.py","commit_count":8,"author_count":1,"lines_added":286,"lines_deleted":107,"complexity":3.0,"score":2.4430479582}
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/config_plugin.py","commit_count":8,"author_count":1,"lines_added":178,"lines_deleted":85,"complexity":5.0,"score":2.3966148206}
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/cst_extract.py","commit_count":7,"author_count":1,"lines_added":241,"lines_deleted":119,"complexity":5.0,"score":2.4120873774}
 {"rel_path":"src\/codeintel\/ingestion\/plugins\/tests_plugin.py","commit_count":8,"author_count":1,"lines_added":320,"lines_deleted":161,"complexity":7.0,"score":2.5421452656}
@@ -200,7 +200,7 @@
 {"rel_path":"src\/codeintel\/ingestion\/validation\/checks\/database.py","commit_count":1,"author_count":1,"lines_added":358,"lines_deleted":0,"complexity":15.0,"score":1.9451888385}
 {"rel_path":"src\/codeintel\/ingestion\/validation\/checks\/__init__.py","commit_count":1,"author_count":1,"lines_added":54,"lines_deleted":0,"complexity":0.0,"score":1.3559843815}
 {"rel_path":"src\/codeintel\/ingestion\/adapters\/build_tool_adapter.py","commit_count":1,"author_count":1,"lines_added":314,"lines_deleted":0,"complexity":11.0,"score":1.8922124899}
-{"rel_path":"src\/codeintel\/ingestion\/adapters\/duckdb_storage.py","commit_count":10,"author_count":1,"lines_added":662,"lines_deleted":20,"complexity":25.0,"score":2.8019849218}
+{"rel_path":"src\/codeintel\/ingestion\/adapters\/duckdb_storage.py","commit_count":11,"author_count":1,"lines_added":664,"lines_deleted":21,"complexity":25.0,"score":2.8376660262}
 {"rel_path":"src\/codeintel\/ingestion\/adapters\/filesystem_discovery.py","commit_count":5,"author_count":1,"lines_added":245,"lines_deleted":10,"complexity":13.0,"score":2.3044884509}
 {"rel_path":"src\/codeintel\/ingestion\/adapters\/tool_runner.py","commit_count":9,"author_count":1,"lines_added":551,"lines_deleted":23,"complexity":9.0,"score":2.6396417268}
 {"rel_path":"src\/codeintel\/ingestion\/adapters\/hash_change_detection.py","commit_count":4,"author_count":1,"lines_added":282,"lines_deleted":3,"complexity":12.0,"score":2.2468234143}
@@ -234,7 +234,7 @@
 {"rel_path":"src\/codeintel\/ingestion\/compute\/cst_extract.py","commit_count":1,"author_count":1,"lines_added":250,"lines_deleted":0,"complexity":8.0,"score":1.8205521235}
 {"rel_path":"src\/codeintel\/ingestion\/compute\/typing_ingest.py","commit_count":1,"author_count":1,"lines_added":555,"lines_deleted":0,"complexity":18.0,"score":2.0489299126}
 {"rel_path":"src\/codeintel\/ingestion\/compute\/coverage_ingest.py","commit_count":1,"author_count":1,"lines_added":146,"lines_deleted":0,"complexity":4.0,"score":1.6624654907}
-{"rel_path":"src\/codeintel\/ingestion\/compute\/scip_ingest.py","commit_count":2,"author_count":1,"lines_added":460,"lines_deleted":31,"complexity":28.0,"score":2.2272045511}
+{"rel_path":"src\/codeintel\/ingestion\/compute\/scip_ingest.py","commit_count":3,"author_count":1,"lines_added":475,"lines_deleted":37,"complexity":28.0,"score":2.3506368058}
 {"rel_path":"src\/codeintel\/ingestion\/compute\/tests_ingest.py","commit_count":1,"author_count":1,"lines_added":159,"lines_deleted":0,"complexity":6.0,"score":1.7081819436}
 {"rel_path":"src\/codeintel\/ingestion\/compute\/__init__.py","commit_count":1,"author_count":1,"lines_added":67,"lines_deleted":0,"complexity":0.0,"score":1.3984192855}
 {"rel_path":"src\/codeintel\/ingestion\/compute\/ast_extract.py","commit_count":1,"author_count":1,"lines_added":450,"lines_deleted":0,"complexity":22.0,"score":2.0253018773}
@@ -347,7 +347,7 @@
 {"rel_path":"src\/codeintel\/analytics\/resources\/module_map.py","commit_count":3,"author_count":1,"lines_added":166,"lines_deleted":2,"complexity":2.0,"score":1.9270710777}
 {"rel_path":"src\/codeintel\/analytics\/resources\/protocol.py","commit_count":5,"author_count":1,"lines_added":275,"lines_deleted":244,"complexity":0.0,"score":2.2447284222}
 {"rel_path":"src\/codeintel\/analytics\/resources\/registry.py","commit_count":3,"author_count":1,"lines_added":387,"lines_deleted":369,"complexity":0.0,"score":2.1576492674}
-{"rel_path":"src\/codeintel\/analytics\/resources\/factory.py","commit_count":2,"author_count":1,"lines_added":322,"lines_deleted":2,"complexity":11.0,"score":2.0606490418}
+{"rel_path":"src\/codeintel\/analytics\/resources\/factory.py","commit_count":3,"author_count":1,"lines_added":331,"lines_deleted":5,"complexity":11.0,"score":2.1829734204}
 {"rel_path":"src\/codeintel\/analytics\/resources\/graphs.py","commit_count":9,"author_count":1,"lines_added":623,"lines_deleted":92,"complexity":12.0,"score":2.7076199577}
 {"rel_path":"src\/codeintel\/analytics\/resources\/catalog.py","commit_count":5,"author_count":1,"lines_added":193,"lines_deleted":20,"complexity":2.0,"score":2.136472581}
 {"rel_path":"src\/codeintel\/analytics\/resources\/__init__.py","commit_count":5,"author_count":1,"lines_added":83,"lines_deleted":12,"complexity":0.0,"score":1.9068322982}
@@ -383,7 +383,7 @@
 {"rel_path":"src\/codeintel\/analytics\/plugins\/data_models\/build.py","commit_count":4,"author_count":1,"lines_added":136,"lines_deleted":73,"complexity":2.0,"score":2.0597702614}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/data_models\/__init__.py","commit_count":1,"author_count":1,"lines_added":11,"lines_deleted":0,"complexity":0.0,"score":1.0514990744}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/data_models\/usage.py","commit_count":4,"author_count":1,"lines_added":218,"lines_deleted":105,"complexity":6.0,"score":2.2158121765}
-{"rel_path":"src\/codeintel\/analytics\/plugins\/symbol_graph_metrics\/compute.py","commit_count":1,"author_count":1,"lines_added":109,"lines_deleted":0,"complexity":3.0,"score":1.5862428908}
+{"rel_path":"src\/codeintel\/analytics\/plugins\/symbol_graph_metrics\/compute.py","commit_count":2,"author_count":1,"lines_added":110,"lines_deleted":3,"complexity":3.0,"score":1.7555725506}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/symbol_graph_metrics\/__init__.py","commit_count":1,"author_count":1,"lines_added":12,"lines_deleted":0,"complexity":0.0,"score":1.0675076159}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/cfg_dfg\/metrics.py","commit_count":1,"author_count":1,"lines_added":111,"lines_deleted":0,"complexity":5.0,"score":1.6234938156}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/cfg_dfg\/__init__.py","commit_count":1,"author_count":1,"lines_added":11,"lines_deleted":0,"complexity":0.0,"score":1.0514990744}
@@ -391,10 +391,10 @@
 {"rel_path":"src\/codeintel\/analytics\/plugins\/profiles\/__init__.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/subsystems\/build.py","commit_count":4,"author_count":1,"lines_added":166,"lines_deleted":94,"complexity":2.0,"score":2.1032528367}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/subsystems\/__init__.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
-{"rel_path":"src\/codeintel\/analytics\/plugins\/dependencies\/external.py","commit_count":4,"author_count":1,"lines_added":217,"lines_deleted":116,"complexity":6.0,"score":2.2218916719}
+{"rel_path":"src\/codeintel\/analytics\/plugins\/dependencies\/external.py","commit_count":5,"author_count":1,"lines_added":236,"lines_deleted":130,"complexity":6.0,"score":2.3136644656}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/dependencies\/__init__.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/tests\/profile.py","commit_count":4,"author_count":1,"lines_added":167,"lines_deleted":90,"complexity":2.0,"score":2.1009406722}
-{"rel_path":"src\/codeintel\/analytics\/plugins\/tests\/graph_metrics.py","commit_count":1,"author_count":1,"lines_added":85,"lines_deleted":0,"complexity":3.0,"score":1.5370162769}
+{"rel_path":"src\/codeintel\/analytics\/plugins\/tests\/graph_metrics.py","commit_count":2,"author_count":1,"lines_added":89,"lines_deleted":1,"complexity":3.0,"score":1.7105047622}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/tests\/behavioral_coverage.py","commit_count":4,"author_count":1,"lines_added":186,"lines_deleted":98,"complexity":3.0,"score":2.1431609464}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/tests\/__init__.py","commit_count":2,"author_count":1,"lines_added":19,"lines_deleted":0,"complexity":0.0,"score":1.3158502424}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/functions\/metrics.py","commit_count":4,"author_count":1,"lines_added":160,"lines_deleted":82,"complexity":1.0,"score":2.0601928367}
@@ -407,8 +407,8 @@
 {"rel_path":"src\/codeintel\/analytics\/plugins\/history\/timeseries.py","commit_count":4,"author_count":1,"lines_added":201,"lines_deleted":99,"complexity":4.0,"score":2.172317319}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/hotspots\/build.py","commit_count":4,"author_count":1,"lines_added":143,"lines_deleted":45,"complexity":3.0,"score":2.0610125134}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/hotspots\/__init__.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
-{"rel_path":"src\/codeintel\/analytics\/plugins\/subsystem_metrics\/agreement.py","commit_count":1,"author_count":1,"lines_added":80,"lines_deleted":0,"complexity":2.0,"score":1.5027222934}
-{"rel_path":"src\/codeintel\/analytics\/plugins\/subsystem_metrics\/graph_metrics.py","commit_count":1,"author_count":1,"lines_added":86,"lines_deleted":0,"complexity":2.0,"score":1.5170140862}
+{"rel_path":"src\/codeintel\/analytics\/plugins\/subsystem_metrics\/agreement.py","commit_count":2,"author_count":1,"lines_added":81,"lines_deleted":3,"complexity":2.0,"score":1.674548757}
+{"rel_path":"src\/codeintel\/analytics\/plugins\/subsystem_metrics\/graph_metrics.py","commit_count":2,"author_count":1,"lines_added":87,"lines_deleted":3,"complexity":2.0,"score":1.6881904071}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/subsystem_metrics\/__init__.py","commit_count":1,"author_count":1,"lines_added":15,"lines_deleted":0,"complexity":0.0,"score":1.1090354889}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/risk\/factors.py","commit_count":3,"author_count":1,"lines_added":321,"lines_deleted":77,"complexity":6.0,"score":2.1681983362}
 {"rel_path":"src\/codeintel\/analytics\/plugins\/risk\/__init__.py","commit_count":1,"author_count":1,"lines_added":7,"lines_deleted":0,"complexity":0.0,"score":0.9704060528}
@@ -497,7 +497,7 @@
 {"rel_path":"src\/codeintel\/analytics\/compute\/functions\/loc.py","commit_count":1,"author_count":1,"lines_added":135,"lines_deleted":0,"complexity":4.0,"score":1.6469099505}
 {"rel_path":"src\/codeintel\/analytics\/compute\/functions\/typedness.py","commit_count":2,"author_count":1,"lines_added":276,"lines_deleted":3,"complexity":8.0,"score":2.0046054996}
 {"rel_path":"src\/codeintel\/analytics\/compute\/functions\/__init__.py","commit_count":1,"author_count":1,"lines_added":53,"lines_deleted":0,"complexity":0.0,"score":1.3523145538}
-{"rel_path":"src\/codeintel\/analytics\/compute\/hotspots\/metrics.py","commit_count":2,"author_count":1,"lines_added":269,"lines_deleted":1,"complexity":10.0,"score":2.0163034988}
+{"rel_path":"src\/codeintel\/analytics\/compute\/hotspots\/metrics.py","commit_count":3,"author_count":1,"lines_added":280,"lines_deleted":1,"complexity":10.0,"score":2.1393339778}
 {"rel_path":"src\/codeintel\/analytics\/compute\/hotspots\/__init__.py","commit_count":1,"author_count":1,"lines_added":17,"lines_deleted":0,"complexity":0.0,"score":1.132592096}
 {"rel_path":"src\/codeintel\/cli\/project.py","commit_count":3,"author_count":1,"lines_added":510,"lines_deleted":27,"complexity":18.0,"score":2.319606838}
 {"rel_path":"src\/codeintel\/cli\/op_params.py","commit_count":1,"author_count":1,"lines_added":1033,"lines_deleted":0,"complexity":43.0,"score":2.2541072864}
