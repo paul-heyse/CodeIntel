@@ -85,15 +85,24 @@ def _create_function_ast(
     -------
     FunctionAst
         Parsed function AST.
+
+    Raises
+    ------
+    TypeError
+        If the provided code does not start with a function definition.
     """
     tree = ast.parse(code)
-    func_node = tree.body[0]
+    node = tree.body[0]
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        msg = f"Expected function definition, got {type(node)}"
+        raise TypeError(msg)
+    func_node = node
     lines = code.split("\n")
     return FunctionAst(
         goid=goid,
         rel_path=rel_path,
         qualname=qualname,
-        node=func_node,  # type: ignore[arg-type]
+        node=func_node,
         start_line=1,
         end_line=len(lines),
         lines=lines,

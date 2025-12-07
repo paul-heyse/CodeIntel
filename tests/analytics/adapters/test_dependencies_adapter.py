@@ -24,6 +24,7 @@ from codeintel.analytics.adapters.dependencies import (
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.contracts import count_rows
 
 # =============================================================================
 # Constants
@@ -435,12 +436,12 @@ def test_call_adapter_persist_single_row(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_call_adapter_persist_multiple_rows(
@@ -481,12 +482,12 @@ def test_call_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_3
 
     # Verify rows were inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_3
+    )
+    assert total == EXPECTED_COUNT_3
 
 
 def test_call_adapter_persist_verifies_data(
@@ -574,12 +575,12 @@ def test_aggregate_adapter_persist_single_row(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_aggregate_adapter_persist_multiple_rows(
@@ -610,12 +611,12 @@ def test_aggregate_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_2
+    )
+    assert total == EXPECTED_COUNT_2
 
 
 def test_aggregate_adapter_persist_verifies_data(

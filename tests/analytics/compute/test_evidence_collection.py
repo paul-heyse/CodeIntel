@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
+from typing import cast
 
 import pytest
 
@@ -11,6 +13,7 @@ from codeintel.analytics.compute.evidence.collection import (
     EvidenceSample,
     validate_evidence_samples,
 )
+from tests._helpers.assertions import assert_mapping_value
 
 
 def test_evidence_sample_from_ast_and_to_dict() -> None:
@@ -27,9 +30,10 @@ def test_evidence_sample_from_ast_and_to_dict() -> None:
     serialized = sample.to_dict()
     assert serialized["path"] == "module.py"
     assert serialized["lineno"] == 1
-    assert "def sample" in serialized["snippet"]
-    assert serialized["details"] == {"kind": "function"}
-    assert serialized["tags"] == ["example"]
+    snippet = assert_mapping_value(serialized, "snippet", str)
+    assert "def sample" in snippet
+    assert assert_mapping_value(serialized, "details", dict) == {"kind": "function"}
+    assert assert_mapping_value(serialized, "tags", list) == ["example"]
 
 
 def test_evidence_collector_deduplicates_and_caps() -> None:
@@ -76,5 +80,6 @@ def test_validate_evidence_samples_errors() -> None:
         validate_evidence_samples([{"path": 1, "lineno": 1, "end_lineno": 1, "snippet": "x"}])
     with pytest.raises(ValueError, match="missing required field"):
         validate_evidence_samples([{"path": "p", "lineno": 1, "end_lineno": 1}])
+    invalid_sample = cast("Mapping[str, object]", "not a mapping")
     with pytest.raises(TypeError):
-        validate_evidence_samples(["not a mapping"])  # type: ignore[list-item]
+        validate_evidence_samples([invalid_sample])

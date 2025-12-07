@@ -31,6 +31,7 @@ from tests._helpers.fakes.graph_runtimes import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
+from tests.analytics.integration.sample_repo import SampleRepo, write_sample_repo
 
 # =============================================================================
 # Standard Analytics Test Fixtures
@@ -52,6 +53,23 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     gateway = create_graph_gateway()
     yield gateway
     gateway.close()
+
+
+@pytest.fixture
+def sample_repo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SampleRepo]:
+    """Seed and reuse the analytics sample repository.
+
+    Yields
+    ------
+    SampleRepo
+        Seeded repository with gateway cleaned up after use.
+    """
+    repo_path = tmp_path_factory.mktemp("sample_repo")
+    repo = write_sample_repo(repo_path)
+    try:
+        yield repo
+    finally:
+        repo.gateway.close()
 
 
 @pytest.fixture

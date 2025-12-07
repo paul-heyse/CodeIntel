@@ -78,9 +78,7 @@ class SubsystemGraphMetricsPlugin(TargetPlugin):
         row_count = int(row[0]) if row else 0
 
         log.info("Subsystem graph metrics completed: %d rows", row_count)
-        return TargetResult.succeeded(
-            row_counts={"analytics.subsystem_graph_metrics": row_count}
-        )
+        return TargetResult.succeeded(row_counts={"analytics.subsystem_graph_metrics": row_count})
 
 
 __all__ = ["SubsystemGraphMetricsPlugin"]

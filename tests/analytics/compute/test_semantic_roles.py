@@ -7,6 +7,7 @@ modules into semantic roles based on heuristic signals.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
@@ -90,6 +91,9 @@ class ContextBuilder:
         )
 
 
+Coercer = Callable[[object], object]
+
+
 def _coerce_str(value: object) -> str:
     return str(value)
 
@@ -117,25 +121,39 @@ def _coerce_tuple_str(value: object) -> tuple[str, ...]:
 
 
 def _coerce_pairs(value: object) -> tuple[tuple[str, object], ...]:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return tuple((str(k), v) for k, v in value.items())
-    if isinstance(value, (list, tuple)):
-        return tuple((str(k), v) for k, v in value)  # type: ignore[arg-type]
+    if isinstance(value, Iterable):
+        pairs: list[tuple[str, object]] = []
+        for item in value:
+            if not isinstance(item, Sequence) or len(item) != 2:
+                msg = f"Expected pair sequence, got {type(item)}"
+                raise TypeError(msg)
+            key, pair_value = item
+            pairs.append((str(key), pair_value))
+        return tuple(pairs)
     msg = f"Expected mapping or pair sequence, got {type(value)}"
     raise TypeError(msg)
 
 
 def _coerce_graph(value: object) -> tuple[tuple[str, int], ...]:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return tuple((str(k), int(v)) for k, v in value.items())
-    if isinstance(value, (list, tuple)):
-        return tuple((str(k), int(v)) for k, v in value)  # type: ignore[arg-type]
+    if isinstance(value, Iterable):
+        edges: list[tuple[str, int]] = []
+        for item in value:
+            if not isinstance(item, Sequence) or len(item) != 2:
+                msg = f"Expected pair sequence, got {type(item)}"
+                raise TypeError(msg)
+            key, edge_value = item
+            edges.append((str(key), int(edge_value)))
+        return tuple(edges)
     msg = f"Expected mapping or pair sequence, got {type(value)}"
     raise TypeError(msg)
 
 
 # Mapping of override keys to their coercion functions
-_OVERRIDE_COERCERS: dict[str, object] = {
+_OVERRIDE_COERCERS: dict[str, Coercer] = {
     "goid": _coerce_optional_int,
     "loc": _coerce_optional_int,
     "rel_path": _coerce_str,
@@ -177,7 +195,7 @@ def _make_context(builder: ContextBuilder | None = None, **overrides: object) ->
         if coercer is None:
             msg = f"Unsupported override key: {key}"
             raise KeyError(msg)
-        typed_overrides[key] = coercer(value)  # type: ignore[operator]
+        typed_overrides[key] = coercer(value)
 
     updated = replace(base, **typed_overrides)
     return updated.build()
@@ -232,7 +250,7 @@ def test_context_module_lower_none() -> None:
 
 def test_context_tag_strings() -> None:
     """Normalize tag strings."""
-    context = _make_context(module_tags=["API", "Service", None])  # type: ignore[list-item]
+    context = _make_context(module_tags=["API", "Service", None])
     tags = context.tag_strings
     assert "api" in tags
     assert "service" in tags

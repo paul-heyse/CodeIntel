@@ -146,6 +146,17 @@ def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
     return {path: churn.to_summary() for path, churn in stats.items()}
 
 
+def parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
+    """Public wrapper to parse git log output lines into churn summaries.
+
+    Returns
+    -------
+    dict[str, ChurnSummary]
+        Mapping of path to churn summary values.
+    """
+    return _parse_git_log_lines(lines)
+
+
 def build_hotspots(
     gateway: StorageGateway,
     cfg: HotspotsStepConfig,

@@ -71,7 +71,10 @@ class TestGraphMetricsPlugin(TargetPlugin):
 
         # Count rows written
         row_counts: dict[str, int] = {}
-        for table in ("analytics.test_graph_metrics_tests", "analytics.test_graph_metrics_functions"):
+        for table in (
+            "analytics.test_graph_metrics_tests",
+            "analytics.test_graph_metrics_functions",
+        ):
             row = ctx.gateway.con.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
                 [repo, commit],

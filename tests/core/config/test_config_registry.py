@@ -10,6 +10,7 @@ This module tests:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import pytest
 
@@ -152,7 +153,7 @@ def test_config_registry_register_type_mismatch() -> None:
     wrong_config = AnotherConfig(name="test")
 
     with pytest.raises(ConfigTypeError) as exc_info:
-        registry.register(TestConfig, wrong_config)  # type: ignore[arg-type]
+        registry.register(TestConfig, cast("TestConfig", wrong_config))
 
     assert exc_info.value.config_type is TestConfig
     assert exc_info.value.actual_type is AnotherConfig

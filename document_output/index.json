@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-06T13:46:16.952049+00:00",
+  "generated_at": "2025-12-06T15:02:37.233794+00:00",
   "files": [
     "ast_metrics.jsonl",
     "ast_nodes.jsonl",
@@ -70,6 +70,7 @@
     "test_graph_metrics_tests.jsonl",
     "test_profile.jsonl",
     "typedness.jsonl",
-    "validation_summary.jsonl"
+    "validation_summary.jsonl",
+    "repo_map.json"
   ]
 }

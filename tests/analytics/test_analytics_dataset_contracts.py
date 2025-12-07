@@ -16,34 +16,37 @@ from codeintel.config.datasets import (
     FunctionMetricsRow,
     GraphMetricsFunctionsRow,
 )
+from tests._helpers.contracts import count_rows
 from tests._helpers.gateway import gateway_with_macros
 
+TABLE_QUERIES: dict[str, str] = {
+    "analytics.function_metrics": """
+        SELECT COUNT(*) FROM analytics.function_metrics WHERE repo = ? AND commit = ?
+    """,
+    "analytics.graph_metrics_functions": """
+        SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?
+    """,
+}
 
-def _count_rows(con: DuckDBPyConnection, table: str, repo: str, commit: str) -> int:
-    """
-    Return row count for a repo/commit scope.
+
+def count_table_rows(con: DuckDBPyConnection, table: str, repo: str, commit: str) -> int:
+    """Return row count for a repo/commit scope.
 
     Returns
     -------
     int
-        Number of matching rows.
+        Number of rows for the provided table and scope.
 
     Raises
     ------
     ValueError
-        If the table name is not supported by this test helper.
+        If the table name is not recognized by this helper.
     """
-    if table == "analytics.function_metrics":
-        query = "SELECT COUNT(*) FROM analytics.function_metrics WHERE repo = ? AND commit = ?"
-    elif table == "analytics.graph_metrics_functions":
-        query = (
-            "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?"
-        )
-    else:
+    query = TABLE_QUERIES.get(table)
+    if query is None:
         message = f"Unsupported table for test count: {table}"
         raise ValueError(message)
-    row = con.execute(query, [repo, commit]).fetchone()
-    return int(row[0]) if row is not None else 0
+    return count_rows(con, query, [repo, commit])
 
 
 def _assert_fk_graph_metrics_functions(con: DuckDBPyConnection) -> None:
@@ -107,7 +110,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
         delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
-    first = _count_rows(gateway.con, contract.table_key, repo, commit)
+    first = count_table_rows(gateway.con, contract.table_key, repo, commit)
     insert_analytics_rows(
         gateway,
         contract,
@@ -115,7 +118,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
         delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
-    second = _count_rows(gateway.con, contract.table_key, repo, commit)
+    second = count_table_rows(gateway.con, contract.table_key, repo, commit)
     if first != 1 or second != 1:
         pytest.fail(f"Idempotency failure: first={first} second={second}")
 
@@ -167,7 +170,7 @@ def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
         delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
-    first = _count_rows(gateway.con, contract.table_key, repo, commit)
+    first = count_table_rows(gateway.con, contract.table_key, repo, commit)
     insert_analytics_rows(
         gateway,
         contract,
@@ -175,7 +178,7 @@ def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
         delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
-    second = _count_rows(gateway.con, contract.table_key, repo, commit)
+    second = count_table_rows(gateway.con, contract.table_key, repo, commit)
     if first != 1 or second != 1:
         pytest.fail(f"Idempotency failure: first={first} second={second}")
     _assert_fk_graph_metrics_functions(gateway.con)

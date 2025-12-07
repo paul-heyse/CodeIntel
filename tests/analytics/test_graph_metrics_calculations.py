@@ -14,6 +14,7 @@ from tests._helpers import (
     seed_function_graph_cycle,
     seed_module_graph_inputs,
 )
+from tests._helpers.contracts import count_rows
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -109,12 +110,13 @@ def test_graph_metrics_ready_gateway_smoke(tmp_path: Path) -> None:
         GraphMetricsGatewayOptions(repo=REPO, commit=COMMIT),
     )
     con = ctx.gateway.con
-    row = con.execute(
+    row_count = count_rows(
+        con,
         """
         SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?
         """,
         [REPO, COMMIT],
-    ).fetchone()
-    if row is None or int(row[0]) <= 0:
+    )
+    if row_count <= 0:
         pytest.fail("graph_metrics_ready_gateway did not produce function metrics")
     ctx.close()

@@ -15,42 +15,13 @@ Design Notes
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
+from tests._helpers.sql import validate_identifier
+
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
-
-
-# Regex for validating SQL identifiers (table/column names)
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
-
-
-def _validate_identifier(name: str, kind: str) -> str:
-    """Validate that a string is a safe SQL identifier.
-
-    Parameters
-    ----------
-    name
-        The identifier to validate.
-    kind
-        Description of identifier type for error messages.
-
-    Returns
-    -------
-    str
-        The validated identifier.
-
-    Raises
-    ------
-    ValueError
-        If the identifier contains invalid characters.
-    """
-    if not _IDENTIFIER_RE.fullmatch(name):
-        msg = f"Invalid {kind} identifier: {name!r}"
-        raise ValueError(msg)
-    return name
 
 
 @runtime_checkable
@@ -137,12 +108,12 @@ def insert_rows(
     row_type = type(sample)
 
     # Access class variables - these are defined on the class, not instance
-    table: str = row_type.__table__  # type: ignore[attr-defined]
-    columns: tuple[str, ...] = row_type.__columns__  # type: ignore[attr-defined]
+    table: str = row_type.__table__
+    columns: tuple[str, ...] = row_type.__columns__
 
     # Validate identifiers to prevent SQL injection
-    _validate_identifier(table, "table")
-    validated_columns = [_validate_identifier(col, "column") for col in columns]
+    validate_identifier(table, kind="table")
+    validated_columns = [validate_identifier(col, kind="column") for col in columns]
 
     # Build parameterized SQL by joining validated parts (avoids S608 false positive)
     col_names = ", ".join(validated_columns)

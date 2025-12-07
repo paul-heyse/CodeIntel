@@ -6,7 +6,7 @@
   "schema_digest": null,
   "validation_profile": "strict",
   "row_count": 0,
-  "data_hash": "7ef05d8dc6c022fa2be4443e39cf636580f036cc938687dceefc9c917b18f710",
-  "started_at": "2025-12-06T13:46:15.417325+00:00",
-  "completed_at": "2025-12-06T13:46:15.429219+00:00"
+  "data_hash": "d5761453864a6fd839a923b66f42e28b86107b5692a8252236d9efea2aa7f725",
+  "started_at": "2025-12-06T15:02:35.476106+00:00",
+  "completed_at": "2025-12-06T15:02:35.487208+00:00"
 }

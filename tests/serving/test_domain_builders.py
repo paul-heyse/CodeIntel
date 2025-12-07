@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import cast
 
 import pytest
 
@@ -31,6 +30,7 @@ from codeintel.serving.backend.domain_builders import (
     build_subsystem_summary,
     build_tests_for_function,
 )
+from tests._helpers.assertions import assert_mapping_value
 
 BuilderReturn = (
     dm.FunctionSummaryResult
@@ -214,13 +214,13 @@ def test_build_module_and_subsystem_lists() -> None:
         message="Search rows should be preserved",
     )
     profiles = build_subsystem_profile([{"subsystem_id": "s1"}], meta=meta)
-    first_profile = cast("Mapping[str, object]", profiles.profiles[0])
+    first_profile = assert_mapping_value({"row": profiles.profiles[0]}, "row", Mapping)
     _expect(
         condition=first_profile.get("subsystem_id") == "s1",
         message="Profile rows should be preserved",
     )
     coverage = build_subsystem_coverage([{"subsystem_id": "s1"}], meta=meta)
-    first_coverage = cast("Mapping[str, object]", coverage.coverage[0])
+    first_coverage = assert_mapping_value({"row": coverage.coverage[0]}, "row", Mapping)
     _expect(
         condition=first_coverage.get("subsystem_id") == "s1",
         message="Coverage rows should be preserved",

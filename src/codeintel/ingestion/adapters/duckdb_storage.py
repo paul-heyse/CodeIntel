@@ -484,7 +484,8 @@ class DuckDBStorageAdapter:
 
         # Convert dict/list columns to JSON strings for DuckDB compatibility
         for col in df.columns:
-            if df[col].apply(lambda x: isinstance(x, (dict, list))).any():
+            contains_nested = bool(df[col].apply(lambda x: isinstance(x, (dict, list))).any())
+            if contains_nested:
                 df[col] = df[col].apply(
                     lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
                 )

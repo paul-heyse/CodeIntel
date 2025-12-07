@@ -28,6 +28,10 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.assertions.schema_assertions import (
+    assert_mapping_list,
+    assert_mapping_value,
+)
 from tests._helpers.assertions.table_assertions import (
     assert_columns_not_null,
     assert_table_has_rows,
@@ -41,6 +45,8 @@ __all__ = [
     "assert_failure",
     "assert_has_error",
     "assert_invalid",
+    "assert_mapping_list",
+    "assert_mapping_value",
     "assert_meta_contains",
     "assert_no_error",
     "assert_row_count",

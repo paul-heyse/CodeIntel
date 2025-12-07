@@ -6,6 +6,9 @@ These tests verify that operations correctly map their requirements
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+from typing import Any, cast
+
 import pytest
 
 from codeintel.build.operations import (
@@ -61,8 +64,8 @@ def test_operation_targets_frozen() -> None:
         data_targets=frozenset(),
     )
 
-    with pytest.raises(AttributeError):
-        targets.operation_id = "other"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        cast("Any", targets).operation_id = "other"
 
 
 # =============================================================================

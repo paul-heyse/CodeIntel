@@ -14,6 +14,19 @@ from codeintel.analytics.functions.function_effects import (
 )
 from tests._helpers import assert_frozen
 
+type EvidencePayload = dict[str, list[dict[str, object]]]
+
+
+def _empty_evidence() -> EvidencePayload:
+    """Return an empty evidence payload with explicit typing.
+
+    Returns
+    -------
+    EvidencePayload
+        Empty evidence payload.
+    """
+    return {}
+
 
 def test_effect_analysis_creation() -> None:
     """Create an EffectAnalysis with all fields."""
@@ -25,7 +38,7 @@ def test_effect_analysis_creation() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
 
     assert analysis.uses_io is True
@@ -47,7 +60,7 @@ def test_effect_analysis_pure_function() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
 
     assert analysis.direct_effectful is False
@@ -195,7 +208,7 @@ def test_effect_analysis_immutable() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
 
     assert_frozen(analysis, "uses_io", new_value=True)
@@ -267,7 +280,7 @@ def test_effect_analysis_direct_effectful_all_false() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
 
     # Verify property returns False
@@ -290,9 +303,8 @@ def test_effect_analysis_direct_effectful_any_true() -> None:
     for flag in flags:
         kwargs = dict.fromkeys(flags, False)
         kwargs[flag] = True
-        kwargs["evidence"] = {}  # type: ignore[assignment]
 
-        analysis = EffectAnalysis(**kwargs)  # type: ignore[arg-type]
+        analysis = EffectAnalysis(evidence=_empty_evidence(), **kwargs)
         assert analysis.direct_effectful is True, f"Expected True when {flag}=True"
 
 
@@ -306,7 +318,7 @@ def test_effect_analysis_no_io_no_db() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
     assert analysis.direct_effectful is False
 
@@ -321,7 +333,7 @@ def test_effect_analysis_io_no_db() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
     assert analysis.direct_effectful is True
 
@@ -336,7 +348,7 @@ def test_effect_analysis_no_io_db() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
     assert analysis.direct_effectful is True
 
@@ -351,6 +363,6 @@ def test_effect_analysis_io_and_db() -> None:
         modifies_globals=False,
         modifies_closure=False,
         spawns_threads_or_tasks=False,
-        evidence={},
+        evidence=_empty_evidence(),
     )
     assert analysis.direct_effectful is True

@@ -1,1 +1,24 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="9.605" timestamp="2025-12-06T08:49:54.719949-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.integration.test_analytics_pipeline" name="test_full_analytics_pipeline" time="1.633" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="9.933" timestamp="2025-12-07T11:45:33.997887-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.plugins.test_dependencies_external_plugin" name="test_external_deps_plugin_builds_dependency_rows" time="1.644"><failure message="assert 0 &gt;= 1">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-124/popen-gw10/test_external_deps_plugin_buil0')
+
+    def test_external_deps_plugin_builds_dependency_rows(tmp_path: Path) -&gt; None:
+        """ExternalDepsPlugin should populate dependency tables from imports."""
+        ctx = create_test_context(tmp_path)
+        _seed_dependency_sources(ctx.repo_root)
+        catalog_provider = _catalog_for_dependencies(ctx.repo, ctx.commit)
+    
+        plugin_ctx = PluginTestContext(
+            gateway=ctx.gateway,
+            snapshot=ctx.snapshot,
+            paths=ctx.build_paths,
+        )
+        plugin_ctx.resources.catalog = catalog_provider
+    
+        result = execute_target_plugin(ExternalDepsPlugin(), plugin_ctx)
+        assert result.success
+    
+        calls_count = ctx.query_count("analytics.external_dependency_calls")
+        deps_count = ctx.query_count("analytics.external_dependencies")
+&gt;       assert calls_count &gt;= 1
+E       assert 0 &gt;= 1
+
+tests/analytics/plugins/test_dependencies_external_plugin.py:98: AssertionError</failure></testcase><testcase classname="tests.analytics.plugins.test_functions_plugins" name="test_function_contracts_plugin" time="1.607" /><testcase classname="tests.analytics.plugins.test_functions_plugins" name="test_function_ast_features_plugin" time="1.679" /></testsuite></testsuites>

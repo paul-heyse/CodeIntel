@@ -20,6 +20,7 @@ from codeintel.analytics.adapters.profiles import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.contracts import count_rows
 
 # =============================================================================
 # Constants
@@ -345,12 +346,12 @@ def test_function_profile_adapter_persist_single_row(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_function_profile_adapter_persist_multiple_rows(
@@ -369,12 +370,12 @@ def test_function_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_2
+    )
+    assert total == EXPECTED_COUNT_2
 
 
 # =============================================================================
@@ -423,12 +424,12 @@ def test_file_profile_adapter_persist_single_row(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_file_profile_adapter_persist_multiple_rows(
@@ -447,12 +448,12 @@ def test_file_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_2
+    )
+    assert total == EXPECTED_COUNT_2
 
 
 # =============================================================================
@@ -501,12 +502,12 @@ def test_module_profile_adapter_persist_single_row(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_module_profile_adapter_persist_multiple_rows(
@@ -525,9 +526,9 @@ def test_module_profile_adapter_persist_multiple_rows(
     assert count == EXPECTED_COUNT_2
 
     # Verify rows were inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_2
+    )
+    assert total == EXPECTED_COUNT_2

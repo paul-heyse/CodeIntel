@@ -239,7 +239,7 @@ class MockFunctionCatalog:
         self,
         rel_path: str,
         start_line: int,
-        end_line: int | None,  # noqa: ARG002 - Part of FunctionCatalogProvider protocol
+        end_line: int | None,
         qualname: str | None,
     ) -> int | None:
         """Resolve GOID from span information.
@@ -262,8 +262,9 @@ class MockFunctionCatalog:
         """
         for fn in self.functions:
             path_matches = fn.rel_path == rel_path and fn.start_line == start_line
+            end_matches = end_line is None or fn.end_line == end_line
             name_matches = qualname is None or fn.qualname == qualname
-            if path_matches and name_matches:
+            if path_matches and end_matches and name_matches:
                 return fn.goid
         return None
 

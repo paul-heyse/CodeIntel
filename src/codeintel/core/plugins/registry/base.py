@@ -434,6 +434,31 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
 
         return selected, tuple(skipped)
 
+    def resolve_selection_debug(
+        self,
+        *,
+        plugin_names: Sequence[str] | None,
+        enabled: Sequence[str] | None,
+        disabled: Sequence[str] | None,
+        defaults: Sequence[str] | None = None,
+    ) -> tuple[dict[str, P], tuple[PluginSkip, ...]]:
+        """
+        Public wrapper for selection resolution used in tests and tooling.
+
+        Returns
+        -------
+        tuple[dict[str, P], tuple[PluginSkip, ...]]
+            Selected plugins and skipped plugin reasons.
+        """
+        self._ensure_loaded()
+        base_defaults = defaults if defaults is not None else self._get_default_plugins()
+        return self._resolve_selection(
+            plugin_names=plugin_names,
+            enabled=enabled,
+            disabled=disabled,
+            defaults=base_defaults,
+        )
+
     @staticmethod
     def _resolve_dependencies[Q: RegistrablePlugin](
         selected: dict[str, Q],
@@ -484,6 +509,20 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         return dependencies
 
     @staticmethod
+    def resolve_dependencies_debug[Q: RegistrablePlugin](
+        selected: dict[str, Q],
+    ) -> dict[str, set[str]]:
+        """
+        Public wrapper for dependency resolution used in tests and tooling.
+
+        Returns
+        -------
+        dict[str, set[str]]
+            Dependency mapping for the selected plugins.
+        """
+        return BasePluginRegistry._resolve_dependencies(selected)
+
+    @staticmethod
     def _topological_sort[Q](
         selected: dict[str, Q],
         dependencies: dict[str, set[str]],
@@ -510,6 +549,22 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         May raise `ValueError` if a dependency cycle is detected.
         """
         return topological_sort(selected, dependencies)
+
+    def topological_sort_debug[Q](
+        self,
+        selected: dict[str, Q],
+        dependencies: Mapping[str, set[str]],
+    ) -> tuple[Q, ...]:
+        """
+        Public wrapper for topological sort used in tests and tooling.
+
+        Returns
+        -------
+        tuple[Q, ...]
+            Plugins ordered respecting dependencies.
+        """
+        ordered = self._topological_sort(dict(selected), dict(dependencies))
+        return tuple(ordered)
 
     # -------------------------------------------------------------------------
     # Loading

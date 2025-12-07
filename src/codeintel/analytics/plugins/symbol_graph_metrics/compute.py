@@ -37,9 +37,7 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
 
     plugin_name: ClassVar[str] = "symbol_graph_metrics"
     plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Compute graph metrics from symbol usage patterns."
-    )
+    plugin_description: ClassVar[str] = "Compute graph metrics from symbol usage patterns."
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

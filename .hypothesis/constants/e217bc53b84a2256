@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/config_data_flow/compute.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'ConfigDataFlowPlugin', 'config_data_flow']

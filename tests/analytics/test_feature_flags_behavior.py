@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.config.primitives import GraphFeatureFlags
-from codeintel.graphs.engine import GraphEngine, GraphKind
+from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
+from codeintel.graphs.engine import GraphKind
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
-
-if TYPE_CHECKING:
-    from codeintel.config.primitives import SnapshotRef
+from tests._helpers.graphs import GraphStubEngine
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -24,15 +21,18 @@ def _expect(*, condition: bool, detail: str) -> None:
     raise AssertionError(detail)
 
 
-class _StubEngine(GraphEngine):
+class _StubEngine(GraphStubEngine):
     """Stub GraphEngine counting load calls."""
 
     def __init__(self, gateway: StorageGateway, snapshot: SnapshotRef) -> None:
-        self.gateway: StorageGateway = gateway
-        self._snapshot: SnapshotRef = snapshot
+        super().__init__(
+            gateway=gateway,
+            snapshot=snapshot,
+            call_graph_obj=nx.DiGraph([(1, 2)]),
+            import_graph_obj=nx.DiGraph([("a", "b")]),
+        )
         self.call_loads = 0
         self.import_loads = 0
-        self._empty_graph = nx.Graph()
 
     @property
     def use_gpu(self) -> bool:
@@ -40,45 +40,11 @@ class _StubEngine(GraphEngine):
 
     def load_call_graph(self) -> nx.DiGraph:
         self.call_loads += 1
-        return nx.DiGraph([(1, 2)])
+        return super().load_call_graph()
 
     def load_import_graph(self) -> nx.DiGraph:
         self.import_loads += 1
-        return nx.DiGraph([("a", "b")])
-
-    def call_graph(self) -> nx.DiGraph:  # pragma: no cover - unused
-        return self.load_call_graph()
-
-    def import_graph(self) -> nx.DiGraph:  # pragma: no cover - unused
-        return self.load_import_graph()
-
-    def load_symbol_module_graph(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def symbol_module_graph(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def load_symbol_function_graph(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def symbol_function_graph(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def load_config_module_bipartite(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def config_module_bipartite(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def load_test_function_bipartite(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    def test_function_bipartite(self) -> nx.Graph:  # pragma: no cover - unused
-        return self._empty_graph
-
-    @property
-    def snapshot(self) -> SnapshotRef:
-        return self._snapshot
+        return super().load_import_graph()
 
 
 def test_eager_hydration_respects_feature_override(
