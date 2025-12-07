@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from codeintel.serving.context import current_request_context
+from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp import models
 from codeintel.serving.mcp.tool_builder import (
     build_tool_from_operation,
@@ -78,13 +78,13 @@ def test_build_tool_from_operation_model_serialization(monkeypatch: pytest.Monke
     """Tool builder should handle from_domain/model_dump paths."""
     backend = _Backend()
     spec = _make_operation("echo", "do_model", output_model_name="_ModelFromDomain")
-    monkeypatch.setattr(models, "_ModelFromDomain", _ModelFromDomain, raising=True)
+    monkeypatch.setattr(models, "_ModelFromDomain", _ModelFromDomain, raising=False)
 
     tool = build_tool_from_operation(spec, backend, config=None)
     response = tool(payload="hello", extra=1)
     assert response == {"value": "hello"}
     # Request context set/reset around call
-    ctx = current_request_context.get()
+    ctx = get_current_request_context()
     assert ctx is None
 
 

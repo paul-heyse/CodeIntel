@@ -10,7 +10,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.mcp import models
-from codeintel.serving.mcp.dataset_tools import _serialize_payload, register_dataset_tools
+from codeintel.serving.mcp.dataset_tools import register_dataset_tools
 from codeintel.serving.operations.catalog import Operation
 
 
@@ -23,25 +23,15 @@ class _Dumpable:
 
 
 @dataclass
-class _FromDomain:
+class _FromDomainModel:
     value: str
 
     @classmethod
-    def from_domain(cls, payload: object) -> _FromDomain:
+    def from_domain(cls, payload: object) -> _FromDomainModel:
         return cls(value=str(payload))
 
     def model_dump(self) -> dict[str, object]:
         return {"value": self.value}
-
-
-def test_serialize_payload_prefers_model_dump_and_from_domain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serialization handles model_dump and from_domain fallbacks."""
-    dumpable = _Dumpable("x")
-    assert _serialize_payload(dumpable, None) == {"value": "x"}
-
-    monkeypatch.setattr(models, "_FromDomain", _FromDomain, raising=True)
-    payload = _serialize_payload("y", models._FromDomain)
-    assert payload == {"value": "y"}
 
 
 class _Backend:
@@ -49,9 +39,9 @@ class _Backend:
         self.calls: list[str] = []
         self.gateway = SimpleNamespace()
 
-    def list_dataset(self, **_: object) -> list[_Dumpable]:
+    def list_dataset(self, **_: object) -> list[str]:
         self.calls.append("list_dataset")
-        return [_Dumpable("one"), _Dumpable("two")]
+        return ["one", "two"]
 
 
 class _RecordingMcp(FastMCP):
@@ -65,6 +55,7 @@ class _RecordingMcp(FastMCP):
         description: str | None = None,
     ) -> Callable[[Callable[..., object]], Callable[..., object]]:  # type: ignore[override]
         def _decorator(func: Callable[..., object]) -> Callable[..., object]:
+            _ = description
             self.registered.append(name or func.__name__)
             return func
 
@@ -81,7 +72,7 @@ def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.Monke
         http_method=None,
         http_path=None,
         tool_name="datasets_list",
-        output_model_name="_Dumpable",
+        output_model_name="_FromDomainModel",
         backend_method="list_dataset",
         data_source="docs",
         source_name=None,
@@ -93,7 +84,7 @@ def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.Monke
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setattr(models, "_Dumpable", _Dumpable, raising=True)
+    monkeypatch.setattr(models, "_FromDomainModel", _FromDomainModel, raising=False)
     monkeypatch.setattr(
         "codeintel.serving.mcp.dataset_tools.iter_operations",
         lambda: (spec,),

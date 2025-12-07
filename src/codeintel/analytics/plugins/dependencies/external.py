@@ -5,20 +5,20 @@ This plugin identifies external dependency usage across functions.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.dependencies import (
     build_external_dependencies,
     build_external_dependency_calls,
 )
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
+from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.build.context import TargetExecutionContext
 
 
@@ -65,22 +65,27 @@ class ExternalDepsPlugin(TargetPlugin):
 
         # Get resources from catalog
         module_map: dict[str, str] = {}
-        ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
         features_map: dict[int, FunctionAstFeatures] = {}
 
-        mm_resource = None  # Resources not yet populated via build context
-        if mm_resource is not None:
-            module_map = mm_resource
+        try:
+            ast_by_goid, missing_goids = load_function_asts(
+                ctx.gateway,
+                FunctionAstLoadRequest(
+                    repo=ctx.snapshot.repo,
+                    commit=ctx.snapshot.commit,
+                    repo_root=ctx.snapshot.repo_root,
+                    catalog_provider=catalog,
+                ),
+            )
+        except (RuntimeError, ValueError, OSError) as e:
+            return TargetResult.failed(f"External dependency AST load failed: {e}")
 
-        ast_data = None  # Resources not yet populated via build context
-        if ast_data is not None:
-            ast_by_goid = ast_data.function_ast_map
-            missing_goids = ast_data.missing_function_goids
-
-        feat_resource = None  # Resources not yet populated via build context
-        if feat_resource is not None:
-            features_map = cast("dict[int, FunctionAstFeatures]", feat_resource)
+        for rel_path in {func_ast.rel_path for func_ast in ast_by_goid.values()}:
+            module = catalog.module_for_path(rel_path)
+            if module is None:
+                module = rel_path.replace("/", ".").removesuffix(".py")
+            module_map[rel_path] = module
 
         try:
             inputs = ExternalDependencyInputs(

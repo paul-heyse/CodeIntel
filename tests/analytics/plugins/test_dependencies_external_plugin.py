@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, FunctionMeta
 from tests._helpers.context import create_test_context
-from codeintel.graphs.catalog import FunctionMeta
 from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
 
 
@@ -15,6 +14,16 @@ def _seed_dependency_sources(ctx_repo_root: Path) -> None:
     """Write simple modules that import an external library."""
     pkg_dir = ctx_repo_root / "pkg"
     pkg_dir.mkdir(parents=True, exist_ok=True)
+    config_dir = ctx_repo_root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "dependency_patterns.yml").write_text(
+        "libs:\n"
+        "  requests:\n"
+        "    patterns:\n"
+        '      - mode: ["read"]\n'
+        '        method: "get"\n',
+        encoding="utf-8",
+    )
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
     (pkg_dir / "client.py").write_text(
         "\n".join(
@@ -56,7 +65,7 @@ def _catalog_for_dependencies(repo: str, commit: str) -> FunctionCatalogService:
             rel_path="pkg/client.py",
             qualname="fetch",
             start_line=3,
-            end_line=4,
+            end_line=5,
         ),
         FunctionMeta(
             goid=8002,

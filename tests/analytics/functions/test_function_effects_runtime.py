@@ -18,6 +18,7 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.sql.builder import ensure_schema
+from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import GraphStubEngine
@@ -149,9 +150,23 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
     )
 
     ensure_schema(gateway.con, "graph.call_graph_edges")
-    gateway.con.execute(
-        "INSERT INTO graph.call_graph_edges VALUES (?, ?, ?, ?)",
-        (goids["caller"], None, snapshot.repo, snapshot.commit),
+    insert_rows(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                caller_goid_h128=goids["caller"],
+                callee_goid_h128=None,
+                callsite_path=ast_map[goids["caller"]].rel_path,
+                callsite_line=ast_map[goids["caller"]].start_line,
+                callsite_col=0,
+                language="python",
+                kind="call",
+                resolved_via="static",
+                confidence=1.0,
+            )
+        ],
     )
 
     inputs = FunctionEffectsInputs(
