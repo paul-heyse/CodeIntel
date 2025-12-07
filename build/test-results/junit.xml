@@ -1,24 +1,284 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="9.933" timestamp="2025-12-07T11:45:33.997887-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.plugins.test_dependencies_external_plugin" name="test_external_deps_plugin_builds_dependency_rows" time="1.644"><failure message="assert 0 &gt;= 1">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-124/popen-gw10/test_external_deps_plugin_buil0')
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="9.849" timestamp="2025-12-07T11:53:33.070536-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.dependencies.test_dependencies_core" name="test_dependency_calls_and_aggregation" time="1.528"><failure message="NameError: name '_as_list' is not defined">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-133/popen-gw9/test_dependency_calls_and_aggr0')
 
-    def test_external_deps_plugin_builds_dependency_rows(tmp_path: Path) -&gt; None:
-        """ExternalDepsPlugin should populate dependency tables from imports."""
-        ctx = create_test_context(tmp_path)
-        _seed_dependency_sources(ctx.repo_root)
-        catalog_provider = _catalog_for_dependencies(ctx.repo, ctx.commit)
-    
-        plugin_ctx = PluginTestContext(
-            gateway=ctx.gateway,
-            snapshot=ctx.snapshot,
-            paths=ctx.build_paths,
+    def test_dependency_calls_and_aggregation(tmp_path: Path) -&gt; None:
+        """Dependency calls are collected, then aggregated with config keys and modes."""
+        repo_root = tmp_path / "repo"
+        module_path = repo_root / "pkg" / "client.py"
+        module_path.parent.mkdir(parents=True, exist_ok=True)
+        module_path.write_text(
+            "\n".join(
+                [
+                    "import requests as rq",
+                    "import httpx",
+                    "",
+                    "def fetch_data(url: str) -&gt; int:",
+                    "    response = rq.get(url)",
+                    "    httpx.post(url)",
+                    "    return response.status_code if hasattr(response, 'status_code') else 0",
+                ]
+            ),
+            encoding="utf-8",
         )
-        plugin_ctx.resources.catalog = catalog_provider
+        patterns_path = repo_root / "config" / "dependency_patterns.yml"
+        patterns_path.parent.mkdir(parents=True, exist_ok=True)
+        patterns_path.write_text(
+            "libs:\n"
+            "  requests:\n"
+            "    severity: medium\n"
+            "    patterns:\n"
+            '      - mode: ["read"]\n'
+            '        method: "get"\n'
+            "  httpx:\n"
+            "    patterns:\n"
+            '      - mode: ["write"]\n'
+            '        method_prefix: "httpx.post"\n'
+            "        criticality: 2.0\n",
+            encoding="utf-8",
+        )
     
-        result = execute_target_plugin(ExternalDepsPlugin(), plugin_ctx)
-        assert result.success
+        snapshot = SnapshotRef(repo="demo", commit="abc123", repo_root=repo_root)
+        gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
     
-        calls_count = ctx.query_count("analytics.external_dependency_calls")
-        deps_count = ctx.query_count("analytics.external_dependencies")
-&gt;       assert calls_count &gt;= 1
-E       assert 0 &gt;= 1
+        goid = 5001
+        func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
+        catalog = MockFunctionCatalog(
+            functions=[
+                MockFunctionMeta(
+                    goid=goid,
+                    urn="urn:pkg.client.fetch_data",
+                    rel_path=func_ast.rel_path,
+                    qualname="fetch_data",
+                    start_line=func_ast.start_line,
+                    end_line=func_ast.end_line,
+                )
+            ],
+            module_by_path={func_ast.rel_path: "pkg.client"},
+        )
+        cfg = ExternalDependenciesStepConfig(snapshot=snapshot)
+        inputs = ExternalDependencyInputs(
+            catalog_provider=catalog,
+            module_map={func_ast.rel_path: "pkg.client"},
+            ast_by_goid={goid: func_ast},
+            features_map={},
+        )
+    
+        try:
+            build_external_dependency_calls(gateway, cfg, inputs=inputs)
+    
+            call_rows = gateway.con.execute(
+                """
+                SELECT library, modes, evidence_json, callsite_count, rel_path
+                FROM analytics.external_dependency_calls
+                WHERE repo = ? AND commit = ?
+                ORDER BY library
+                """,
+                [snapshot.repo, snapshot.commit],
+            ).fetchall()
+            assert len(call_rows) == 2
+            requests_row = next(row for row in call_rows if row[0] == "requests")
+            httpx_row = next(row for row in call_rows if row[0] == "httpx")
+    
+&gt;           assert _as_list(requests_row[1]) == ["read"]
+                   ^^^^^^^^
+E           NameError: name '_as_list' is not defined
 
-tests/analytics/plugins/test_dependencies_external_plugin.py:98: AssertionError</failure></testcase><testcase classname="tests.analytics.plugins.test_functions_plugins" name="test_function_contracts_plugin" time="1.607" /><testcase classname="tests.analytics.plugins.test_functions_plugins" name="test_function_ast_features_plugin" time="1.679" /></testsuite></testsuites>
+tests/analytics/dependencies/test_dependencies_core.py:122: NameError</failure></testcase><testcase classname="tests.analytics.functions.test_function_effects_runtime" name="test_compute_function_effects_with_transitive_and_missing" time="1.551"><failure message="_duckdb.ConversionException: Conversion Error: Malformed JSON at byte 1 of input: unexpected character.  Input: &quot;{'io_calls': [{'path': 'pkg/effects.py', 'linen...&quot; when casting from source column effects_json">self = &lt;codeintel.ingestion.adapters.duckdb_storage.DuckDBStorageAdapter object at 0x7b1a4064fa10&gt;
+table_key = 'analytics.function_effects'
+registry_cols = ['repo', 'commit', 'function_goid_h128', 'is_pure', 'uses_io', 'touches_db', ...]
+rows = [('demo', 'effects', 1001, False, True, False, ...), ('demo', 'effects', 1002, False, False, False, ...), ('demo', 'effects', 1003, False, False, False, ...), ('demo', 'effects', 1004, False, False, False, ...)]
+
+    def _fallback_prepared_insert(
+        self,
+        table_key: str,
+        registry_cols: Sequence[str],
+        rows: Sequence[Sequence[object]],
+    ) -&gt; int:
+        """Fallback path when macros are unavailable.
+    
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        _, _, table_sql = _quote_table_key(table_key)
+        df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
+        try:
+&gt;           self.con.from_df(df).insert_into(table_sql)
+E           _duckdb.ConversionException: Conversion Error: Malformed JSON at byte 1 of input: unexpected character.  Input: "{'io_calls': [{'path': 'pkg/effects.py', 'linen..." when casting from source column effects_json
+
+src/codeintel/ingestion/adapters/duckdb_storage.py:558: ConversionException
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-133/popen-gw3/test_compute_function_effects_0')
+
+    def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) -&gt; None:
+        """compute_function_effects records direct, transitive, and missing AST effects."""
+        repo_root = tmp_path / "repo"
+        source = """
+        import os
+        import random
+        import time
+        import threading
+    
+        GLOBAL_STATE = 0
+    
+        def impure(target: str) -&gt; int:
+            os.getenv("HOME")
+            random.random()
+            time.time()
+            threading.Thread(target=print).start()
+            global GLOBAL_STATE
+            GLOBAL_STATE += 1
+            return 1
+    
+        def caller() -&gt; int:
+            return impure("x")
+    
+        def uses_nonlocal() -&gt; int:
+            value = 0
+    
+            def inner() -&gt; int:
+                nonlocal value
+                value += 1
+                return value
+    
+            return inner()
+        """
+        goids = {"impure": 1001, "caller": 1002, "uses_nonlocal": 1003, "missing": 1004}
+        ast_map, module_path = _build_function_ast_map(
+            repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
+        )
+        snapshot = SnapshotRef(repo="demo", commit="effects", repo_root=repo_root)
+        gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
+        call_graph = nx.DiGraph()
+        call_graph.add_nodes_from(goids.values())
+        call_graph.add_edge(goids["caller"], goids["impure"])
+        engine = GraphStubEngine(
+            gateway=gateway,
+            snapshot=snapshot,
+            call_graph_obj=call_graph,
+            copy_graphs=False,
+        )
+        runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
+        runtime.ensure_call_graph()
+        catalog = MockFunctionCatalog(
+            functions=[
+                MockFunctionMeta(
+                    goid=goids["impure"],
+                    urn="urn:pkg.effects.impure",
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="impure",
+                    start_line=ast_map[goids["impure"]].start_line,
+                    end_line=ast_map[goids["impure"]].end_line,
+                ),
+                MockFunctionMeta(
+                    goid=goids["caller"],
+                    urn="urn:pkg.effects.caller",
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="caller",
+                    start_line=ast_map[goids["caller"]].start_line,
+                    end_line=ast_map[goids["caller"]].end_line,
+                ),
+                MockFunctionMeta(
+                    goid=goids["uses_nonlocal"],
+                    urn="urn:pkg.effects.uses_nonlocal",
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="uses_nonlocal",
+                    start_line=ast_map[goids["uses_nonlocal"]].start_line,
+                    end_line=ast_map[goids["uses_nonlocal"]].end_line,
+                ),
+                MockFunctionMeta(
+                    goid=goids["missing"],
+                    urn="urn:pkg.effects.missing",
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="missing",
+                    start_line=1,
+                    end_line=1,
+                ),
+            ],
+            module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
+        )
+        cfg = FunctionEffectsStepConfig(
+            snapshot=snapshot,
+            max_call_depth=2,
+            io_apis={"os": ["getenv"]},
+            db_apis={},
+            time_apis={"time": ["time"]},
+            random_apis={"random": ["random"]},
+            threading_apis={"threading": ["Thread"]},
+        )
+    
+        ensure_schema(gateway.con, "graph.call_graph_edges")
+        insert_rows(
+            gateway,
+            [
+                CallGraphEdgeRow(
+                    repo=snapshot.repo,
+                    commit=snapshot.commit,
+                    caller_goid_h128=goids["caller"],
+                    callee_goid_h128=None,
+                    callsite_path=ast_map[goids["caller"]].rel_path,
+                    callsite_line=ast_map[goids["caller"]].start_line,
+                    callsite_col=0,
+                    language="python",
+                    kind="call",
+                    resolved_via="static",
+                    confidence=1.0,
+                )
+            ],
+        )
+    
+        inputs = FunctionEffectsInputs(
+            catalog_provider=catalog,
+            runtime=runtime,
+            ast_map=ast_map,
+            missing_goids={goids["missing"]},
+        )
+    
+        try:
+&gt;           compute_function_effects(gateway, cfg, inputs=inputs)
+
+tests/analytics/functions/test_function_effects_runtime.py:180: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/analytics/functions/function_effects.py:163: in compute_function_effects
+    storage_service.run_batch(
+src/codeintel/ingestion/adapters/duckdb_storage.py:614: in run_batch
+    return self.storage.write_batch(table_key, rows, scope=scope)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/ingestion/adapters/duckdb_storage.py:313: in write_batch
+    rows_inserted = self._ingest_via_macro(table_key, rows)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/ingestion/adapters/duckdb_storage.py:459: in _ingest_via_macro
+    return self._fallback_prepared_insert(table_key, registry_cols, rows)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;codeintel.ingestion.adapters.duckdb_storage.DuckDBStorageAdapter object at 0x7b1a4064fa10&gt;
+table_key = 'analytics.function_effects'
+registry_cols = ['repo', 'commit', 'function_goid_h128', 'is_pure', 'uses_io', 'touches_db', ...]
+rows = [('demo', 'effects', 1001, False, True, False, ...), ('demo', 'effects', 1002, False, False, False, ...), ('demo', 'effects', 1003, False, False, False, ...), ('demo', 'effects', 1004, False, False, False, ...)]
+
+    def _fallback_prepared_insert(
+        self,
+        table_key: str,
+        registry_cols: Sequence[str],
+        rows: Sequence[Sequence[object]],
+    ) -&gt; int:
+        """Fallback path when macros are unavailable.
+    
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        _, _, table_sql = _quote_table_key(table_key)
+        df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
+        try:
+            self.con.from_df(df).insert_into(table_sql)
+        except DuckDBError:
+            apply_all_schemas(self.con)
+&gt;           self.con.from_df(df).insert_into(table_sql)
+E           _duckdb.ConversionException: Conversion Error: Malformed JSON at byte 1 of input: unexpected character.  Input: "{'io_calls': [{'path': 'pkg/effects.py', 'linen..." when casting from source column effects_json
+
+src/codeintel/ingestion/adapters/duckdb_storage.py:561: ConversionException</failure></testcase><testcase classname="tests.analytics.dependencies.test_dependencies_core" name="test_dependency_calls_respect_feature_gates" time="1.476" /></testsuite></testsuites>

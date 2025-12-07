@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
+from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.analytics.entrypoints.core import build_entrypoints
+from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_analytics import EntryPointsStepConfig
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.assertions import assert_mapping_value
 from tests._helpers.builders import (
     CoverageFunctionRow,
@@ -11,44 +19,119 @@ from tests._helpers.builders import (
     TestCoverageEdgeRow,
     insert_rows,
 )
-from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
-from tests.analytics.integration.sample_repo import SampleRepo
-
-from codeintel.analytics.entrypoints.core import build_entrypoints
-from codeintel.config.steps_analytics import EntryPointsStepConfig
-from codeintel.graphs.catalog import FunctionCatalogService
-from codeintel.storage.sql.builder import ensure_schema
+from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
+from tests._helpers.gateway import GatewayFactory
+from tests._helpers.graphs import build_ast_map, build_module_map, insert_goids, insert_modules
 
 
-def test_entrypoints_materialize_with_test_summary(sample_repo: SampleRepo) -> None:
-    """Entry points and entrypoint_tests rows capture coverage and test meta."""
-    catalog = FunctionCatalogService.from_db(
-        sample_repo.gateway,
-        repo=sample_repo.snapshot.repo,
-        commit=sample_repo.snapshot.commit,
+def _seed_entrypoint_repo(
+    tmp_path: Path,
+) -> tuple[
+    SnapshotRef,
+    MockFunctionCatalog,
+    dict[str, str],
+    FunctionAstFeatures,
+    Path,
+    FunctionAst,
+    StorageGateway,
+]:
+    repo_root = tmp_path / "repo"
+    module_path = repo_root / "pkg" / "api.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_text(
+        "\n".join(
+            [
+                "from fastapi import FastAPI",
+                "",
+                "app = FastAPI()",
+                "",
+                "@app.get('/items')",
+                "def list_items(limit: int | None = None) -> int:",
+                "    if limit is None:",
+                "        return 0",
+                "    return limit",
+            ]
+        ),
+        encoding="utf-8",
     )
-    con = sample_repo.gateway.con
+    snapshot = SnapshotRef(repo="demo", commit="entry", repo_root=repo_root)
+    gateway_factory = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit)
+    gateway = gateway_factory.open()
+
+    paths = {"pkg.api": module_path}
+    goids = {"list_items": 7001}
+    qualname_full = "pkg.api.list_items"
+    ast_map = build_ast_map(
+        paths,
+        goids,
+        snapshot.repo_root,
+        target_names={"pkg.api": "list_items"},
+    )
+    insert_modules(gateway, snapshot, paths)
+    insert_goids(gateway, snapshot, ast_map, now=datetime.now(tz=UTC))
+    module_map = build_module_map(ast_map, {goids["list_items"]: "pkg.api"})
+    func_ast = ast_map[goids["list_items"]]
+
+    catalog = MockFunctionCatalog(
+        functions=[
+            MockFunctionMeta(
+                goid=goids["list_items"],
+                urn="urn:pkg.api.list_items",
+                rel_path=func_ast.rel_path,
+                qualname=qualname_full,
+                start_line=func_ast.start_line,
+                end_line=func_ast.end_line,
+            )
+        ],
+        module_by_path={func_ast.rel_path: "pkg.api"},
+    )
+    ensure_schema(gateway.con, "analytics.coverage_functions")
+    ensure_schema(gateway.con, "analytics.test_catalog")
+    ensure_schema(gateway.con, "analytics.test_coverage_edges")
+    features = FunctionAstFeatures(
+        goid=goids["list_items"],
+        rel_path=func_ast.rel_path,
+        qualname=qualname_full,
+        is_async=False,
+        decorators=("@app.get('/items')",),
+        imports={"fastapi": "fastapi"},
+        libraries_used=frozenset({"fastapi"}),
+        io_flags=IoFlags(uses_network=True),
+        uses_concurrency_lib=False,
+        uses_threading=False,
+        uses_asyncio_lib=False,
+        http_client_libs=frozenset(),
+        http_server_libs=frozenset({"fastapi"}),
+        db_libs=frozenset(),
+        message_libs=frozenset(),
+        config_read_count=0,
+        feature_flag_count=0,
+    )
+    return snapshot, catalog, module_map, features, module_path, func_ast, gateway
+
+
+def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
+    """Entry points and entrypoint_tests rows capture coverage and test meta."""
+    snapshot, catalog, module_map, features, module_path, func_ast, gateway = _seed_entrypoint_repo(
+        tmp_path
+    )
+    con = gateway.con
     ensure_schema(con, "analytics.subsystem_modules")
     ensure_schema(con, "analytics.subsystems")
-    con.execute(
-        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-        [sample_repo.snapshot.repo, sample_repo.snapshot.commit],
-    )
 
     now = datetime.now(tz=UTC)
-    func_ast = sample_repo.ast_map[sample_repo.goid_route]
     insert_rows(
-        sample_repo.gateway,
+        gateway,
         [
             CoverageFunctionRow(
-                function_goid_h128=sample_repo.goid_route,
+                function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=sample_repo.snapshot.repo,
-                commit=sample_repo.snapshot.commit,
-                rel_path=func_ast.rel_path,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
                 language="python",
                 kind="function",
-                qualname="list_items",
+                qualname=features.qualname,
                 start_line=func_ast.start_line,
                 end_line=func_ast.end_line,
                 executable_lines=10,
@@ -61,23 +144,23 @@ def test_entrypoints_materialize_with_test_summary(sample_repo: SampleRepo) -> N
         ],
     )
     insert_rows(
-        sample_repo.gateway,
+        gateway,
         [
             TestCatalogRow(
                 test_id="tests/test_api.py::test_failed",
-                repo=sample_repo.snapshot.repo,
-                commit=sample_repo.snapshot.commit,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
                 rel_path="tests/test_api.py",
                 qualname="test_failed",
                 status="failed",
-                duration_ms=1500,
+                duration_ms=800,
                 flaky=False,
                 created_at=now,
             ),
             TestCatalogRow(
                 test_id="tests/test_api.py::test_slow_flaky",
-                repo=sample_repo.snapshot.repo,
-                commit=sample_repo.snapshot.commit,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
                 rel_path="tests/test_api.py",
                 qualname="test_slow_flaky",
                 status="passed",
@@ -88,16 +171,16 @@ def test_entrypoints_materialize_with_test_summary(sample_repo: SampleRepo) -> N
         ],
     )
     insert_rows(
-        sample_repo.gateway,
+        gateway,
         [
             TestCoverageEdgeRow(
                 test_id="tests/test_api.py::test_failed",
-                function_goid_h128=sample_repo.goid_route,
+                function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=sample_repo.snapshot.repo,
-                commit=sample_repo.snapshot.commit,
-                rel_path=func_ast.rel_path,
-                qualname="list_items",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
+                qualname=features.qualname,
                 covered_lines=5,
                 executable_lines=10,
                 coverage_ratio=0.5,
@@ -106,12 +189,12 @@ def test_entrypoints_materialize_with_test_summary(sample_repo: SampleRepo) -> N
             ),
             TestCoverageEdgeRow(
                 test_id="tests/test_api.py::test_slow_flaky",
-                function_goid_h128=sample_repo.goid_route,
+                function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=sample_repo.snapshot.repo,
-                commit=sample_repo.snapshot.commit,
-                rel_path=func_ast.rel_path,
-                qualname="list_items",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
+                qualname=features.qualname,
                 covered_lines=4,
                 executable_lines=10,
                 coverage_ratio=0.4,
@@ -121,71 +204,79 @@ def test_entrypoints_materialize_with_test_summary(sample_repo: SampleRepo) -> N
         ],
     )
 
-    build_entrypoints(
-        sample_repo.gateway,
-        EntryPointsStepConfig(snapshot=sample_repo.snapshot),
-        catalog_provider=catalog,
-        module_map=sample_repo.module_map,
-        features_map=sample_repo.features,
-    )
+    try:
+        build_entrypoints(
+            gateway,
+            EntryPointsStepConfig(snapshot=snapshot),
+            catalog_provider=catalog,
+            module_map=module_map,
+            features_map={features.goid: features},
+        )
 
-    entry_row = sample_repo.gateway.con.execute(
-        """
-        SELECT tests_touching, failing_tests, slow_tests, flaky_tests,
-               entrypoint_coverage_ratio, last_test_status, extra
-        FROM analytics.entrypoints
-        WHERE repo = ? AND commit = ?
-        """,
-        [sample_repo.snapshot.repo, sample_repo.snapshot.commit],
-    ).fetchone()
-    assert entry_row is not None
-    assert entry_row[0] == 2
-    assert entry_row[1] == 1
-    assert entry_row[2] == 1
-    assert entry_row[3] == 1
-    assert entry_row[4] == 0.6
-    assert entry_row[5] == "some_failing"
+        entry_row = gateway.con.execute(
+            """
+            SELECT tests_touching, failing_tests, slow_tests, flaky_tests,
+                   entrypoint_coverage_ratio, last_test_status, extra
+            FROM analytics.entrypoints
+            WHERE repo = ? AND commit = ?
+            """,
+            [snapshot.repo, snapshot.commit],
+        ).fetchone()
+        assert entry_row is not None
+        assert entry_row[0] == 2
+        assert entry_row[1] == 1
+        assert entry_row[2] == 1
+        assert entry_row[3] == 1
+        assert entry_row[4] == 0.6
+        assert entry_row[5] == "some_failing"
 
-    extra_payload = assert_mapping_value(entry_row[6], "ast_features", dict)
-    assert extra_payload["uses_network"] is True
-    assert extra_payload["http_server_libs"] == ["fastapi"]
+        extra = entry_row[6]
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        extra_payload = assert_mapping_value(extra, "ast_features", dict)
+        assert extra_payload["uses_network"] is True
+        assert extra_payload["http_server_libs"] == ["fastapi"]
 
-    test_rows = sample_repo.gateway.con.execute(
-        """
-        SELECT test_id, coverage_ratio, status, duration_ms
-        FROM analytics.entrypoint_tests
-        WHERE repo = ? AND commit = ?
-        ORDER BY test_id
-        """,
-        [sample_repo.snapshot.repo, sample_repo.snapshot.commit],
-    ).fetchall()
-    assert len(test_rows) == 2
-    assert test_rows[0][2] == "failed"
-    assert test_rows[1][3] == 1500
+        test_rows = gateway.con.execute(
+            """
+            SELECT test_id, coverage_ratio, status, duration_ms
+            FROM analytics.entrypoint_tests
+            WHERE repo = ? AND commit = ?
+            ORDER BY test_id
+            """,
+            [snapshot.repo, snapshot.commit],
+        ).fetchall()
+        assert len(test_rows) == 2
+        assert test_rows[0][2] == "failed"
+        assert test_rows[1][3] == 1500
+    finally:
+        gateway.close()
 
 
-def test_entrypoints_no_modules_skip_detection(sample_repo: SampleRepo) -> None:
-    """Early exit occurs when no module map is available."""
-    catalog = MockFunctionCatalog()
-    con = sample_repo.gateway.con
-    con.execute(
+def test_entrypoints_no_modules_skip_detection(tmp_path: Path) -> None:
+    """Early exit occurs when no module map or module context is available."""
+    snapshot, catalog, _, _, _, _, gateway = _seed_entrypoint_repo(tmp_path)
+    gateway.con.execute(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-        [sample_repo.snapshot.repo, sample_repo.snapshot.commit],
+        [snapshot.repo, snapshot.commit],
     )
 
-    build_entrypoints(
-        sample_repo.gateway,
-        EntryPointsStepConfig(snapshot=sample_repo.snapshot),
-        catalog_provider=catalog,
-        module_map={},
-        features_map={},
-    )
+    try:
+        build_entrypoints(
+            gateway,
+            EntryPointsStepConfig(snapshot=snapshot),
+            catalog_provider=MockFunctionCatalog(),
+            module_map={},
+            features_map={},
+        )
 
-    count = sample_repo.gateway.con.execute(
-        """
-        SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?
-        """,
-        [sample_repo.snapshot.repo, sample_repo.snapshot.commit],
-    ).fetchone()
-    assert count is not None
-    assert count[0] == 0
+        count = gateway.con.execute(
+            """
+            SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?
+            """,
+            [snapshot.repo, snapshot.commit],
+        ).fetchone()
+        assert count is not None
+        assert count[0] == 0
+    finally:
+        gateway.close()

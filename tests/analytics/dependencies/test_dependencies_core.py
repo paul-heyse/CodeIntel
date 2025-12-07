@@ -10,6 +10,7 @@ from tests._helpers.builders import ConfigValueRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
 from tests._helpers.gateway import GatewayFactory
 
+
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.dependencies.core import (
     ExternalDependencyInputs,
@@ -118,13 +119,16 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
         requests_row = next(row for row in call_rows if row[0] == "requests")
         httpx_row = next(row for row in call_rows if row[0] == "httpx")
 
-        assert requests_row[1] == ["read"]
-        evidence = assert_mapping_list({"samples": requests_row[2]}, "samples")
+        assert _as_list(requests_row[1]) == ["read"]
+        evidence_raw = requests_row[2]
+        if isinstance(evidence_raw, str):
+            evidence_raw = json.loads(evidence_raw)
+        evidence = assert_mapping_list({"samples": evidence_raw}, "samples")
         assert evidence, "expected requests evidence samples"
         assert requests_row[3] == 1
         assert requests_row[4] == func_ast.rel_path
 
-        assert httpx_row[1] == ["write"]
+        assert _as_list(httpx_row[1]) == ["write"]
 
         insert_rows(
             gateway,
@@ -157,14 +161,14 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
         requests_dep = next(row for row in dep_rows if row[0] == "requests")
         httpx_dep = next(row for row in dep_rows if row[0] == "httpx")
 
-        assert requests_dep[1] == ["read"]
-        assert requests_dep[2] == ["API_TOKEN"]
+        assert _as_list(requests_dep[1]) == ["read"]
+        assert _as_list(requests_dep[2]) == ["API_TOKEN"]
         assert requests_dep[3] == "medium"
         assert requests_dep[4] == 1
         assert requests_dep[5] == 1
 
-        assert httpx_dep[1] == ["write"]
-        assert httpx_dep[2] == ["API_TOKEN"]
+        assert _as_list(httpx_dep[1]) == ["write"]
+        assert _as_list(httpx_dep[2]) == ["API_TOKEN"]
         assert httpx_dep[3] == "high"
     finally:
         gateway.close()

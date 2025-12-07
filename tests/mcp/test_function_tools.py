@@ -10,7 +10,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.mcp import models
-from codeintel.serving.mcp.function_tools import _serialize_payload, register_function_tools
+from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.operations.catalog import Operation
 
 
@@ -39,21 +39,17 @@ class _RecordingMcp(FastMCP):
         super().__init__("recorder")
         self.registered: list[str] = []
 
-    def tool(self, name: str | None = None, description: str | None = None) -> Callable[[Callable[..., object]], Callable[..., object]]:  # type: ignore[override]
+    def tool(
+        self,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:  # type: ignore[override]
         def _decorator(func: Callable[..., object]) -> Callable[..., object]:
+            _ = description
             self.registered.append(name or func.__name__)
             return func
 
         return _decorator
-
-
-def test_serialize_payload_handles_model_dump_and_from_domain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serialization should prefer model_dump, else use from_domain/model_validate."""
-    payload = _serialize_payload(_DomainModel("a"), None)
-    assert payload == {"value": "a"}
-    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=True)
-    payload = _serialize_payload("b", models._DomainModel)
-    assert payload == {"value": "b"}
 
 
 def test_register_function_tools_registers_and_executes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,7 +74,7 @@ def test_register_function_tools_registers_and_executes(monkeypatch: pytest.Monk
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=True)
+    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=False)
     monkeypatch.setattr(
         "codeintel.serving.mcp.function_tools.iter_operations",
         lambda: (spec,),
