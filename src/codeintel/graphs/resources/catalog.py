@@ -73,6 +73,11 @@ class CatalogResource:
         self._cached_spans = None
 
     @property
+    def cached_spans(self) -> tuple[FunctionSpanData, ...] | None:
+        """Return cached spans if already materialized."""
+        return self._cached_spans
+
+    @property
     def function_spans(self) -> Sequence[FunctionSpanData]:
         """All function spans in the catalog.
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, cast
 
 import anyio
 import httpx
@@ -16,6 +15,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import BackendLimits, HttpBackend
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import assert_mapping_list, assert_mapping_value
 from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
@@ -97,9 +97,7 @@ def test_health_reports_limits(architecture_gateway: StorageGateway, tmp_path: P
     with TestClient(app) as client:
         resp = client.get("/health")
         payload = _expect_dict(_json_or_fail(resp))
-        limits = cast("dict[str, int] | None", payload.get("limits"))
-        if limits is None:
-            pytest.fail("Health payload missing limits")
+        limits = assert_mapping_value(payload, "limits", dict)
         if limits.get("max_rows_per_call") != BackendLimits().max_rows_per_call:
             pytest.fail(f"Unexpected limits payload: {limits}")
 
@@ -110,7 +108,7 @@ def _assert_function_summary(client: TestClient) -> None:
         params={"urn": "goid:demo/repo#python:function:pkg.mod.func"},
     )
     payload = _expect_dict(_json_or_fail(resp))
-    summary = cast("dict[str, object]", payload["summary"])
+    summary = assert_mapping_value(payload, "summary", dict)
     if not payload["found"]:
         pytest.fail("Function should be found")
     if summary.get("qualname") != "pkg.mod.func":
@@ -129,7 +127,7 @@ def _assert_callgraph(client: TestClient) -> None:
 def _assert_tests_for_function(client: TestClient) -> None:
     resp = client.get("/function/tests", params={"goid_h128": 1})
     tests_payload = _expect_dict(_json_or_fail(resp))
-    tests = cast("list[dict[str, Any]]", tests_payload["tests"])
+    tests = assert_mapping_list(tests_payload, "tests")
     if not tests:
         pytest.fail("Expected tests for function")
     if tests[0]["test_id"] != "pkg/mod.py::test_func":
@@ -154,7 +152,9 @@ def _assert_dataset_listing(client: TestClient) -> None:
     datasets = _json_or_fail(resp)
     if not isinstance(datasets, list):
         pytest.fail("Datasets payload was not a list")
-    dataset_rows = [cast("dict[str, object]", ds) for ds in datasets if isinstance(ds, dict)]
+    dataset_rows = [
+        assert_mapping_value({"row": ds}, "row", dict) for ds in datasets if isinstance(ds, dict)
+    ]
     if not dataset_rows:
         pytest.fail("Dataset rows were not objects")
     if not any(ds.get("name") == "function_metrics" for ds in dataset_rows):
@@ -166,7 +166,7 @@ def _assert_dataset_listing(client: TestClient) -> None:
 def _assert_function_metrics_dataset(client: TestClient) -> None:
     resp = client.get("/datasets/function_metrics", params={"limit": 5})
     rows_payload = _expect_dict(_json_or_fail(resp))
-    rows = cast("list[dict[str, Any]]", rows_payload["rows"])
+    rows = assert_mapping_list(rows_payload, "rows")
     if not rows:
         pytest.fail("Expected dataset rows for function_metrics")
     if rows[0]["qualname"] != "pkg.mod.func":
@@ -177,7 +177,7 @@ def _assert_function_validation_dataset(client: TestClient) -> None:
     max_expected_limit = 2
     resp = client.get("/datasets/function_validation", params={"limit": 5})
     fv_payload = _expect_dict(_json_or_fail(resp))
-    fv_rows = cast("list[dict[str, Any]]", fv_payload["rows"])
+    fv_rows = assert_mapping_list(fv_payload, "rows")
     if not fv_rows:
         pytest.fail("Expected dataset rows for function_validation")
     if fv_rows[0].get("issue") != "span_not_found":
@@ -188,8 +188,8 @@ def _assert_function_validation_dataset(client: TestClient) -> None:
         params={"limit": max_expected_limit, "offset": -5},
     )
     clamped = _expect_dict(_json_or_fail(resp))
-    meta = cast("dict[str, Any]", clamped.get("meta", {}))
-    messages = cast("list[dict[str, Any]]", meta.get("messages", []))
+    meta = assert_mapping_value(clamped, "meta", dict)
+    messages = assert_mapping_list(meta, "messages")
     codes = {m.get("code") for m in messages}
     if "offset_invalid" not in codes:
         pytest.fail(f"Expected offset_invalid message codes; got {codes}")
@@ -206,7 +206,7 @@ def _assert_architecture_endpoints(client: TestClient) -> None:
     func_payload = _expect_dict(_json_or_fail(func_resp))
     if not func_payload.get("found"):
         pytest.fail("Function architecture should be found")
-    func_arch = cast("dict[str, Any]", func_payload["architecture"])
+    func_arch = assert_mapping_value(func_payload, "architecture", dict)
     if func_arch.get("call_fan_out") != expected_call_fan_out:
         pytest.fail("Unexpected call_fan_out in function architecture")
 
@@ -214,7 +214,7 @@ def _assert_architecture_endpoints(client: TestClient) -> None:
     mod_payload = _expect_dict(_json_or_fail(mod_resp))
     if not mod_payload.get("found"):
         pytest.fail("Module architecture should be found")
-    mod_arch = cast("dict[str, Any]", mod_payload["architecture"])
+    mod_arch = assert_mapping_value(mod_payload, "architecture", dict)
     if mod_arch.get("import_fan_in") != expected_import_fan_in:
         pytest.fail("Unexpected import_fan_in in module architecture")
 
@@ -224,7 +224,7 @@ def _assert_architecture_endpoints(client: TestClient) -> None:
 def _assert_subsystem_endpoints(client: TestClient) -> None:
     subs_resp = client.get("/architecture/subsystems")
     subs_payload = _expect_dict(_json_or_fail(subs_resp))
-    subsystems = cast("list[dict[str, Any]]", subs_payload.get("subsystems", []))
+    subsystems = assert_mapping_list(subs_payload, "subsystems")
     if not subsystems:
         pytest.fail("Expected subsystem summaries")
     if subsystems[0].get("subsystem_id") != "subsysdemo":
@@ -232,7 +232,7 @@ def _assert_subsystem_endpoints(client: TestClient) -> None:
 
     memberships_resp = client.get("/architecture/module-subsystems", params={"module": "pkg.mod"})
     membership_payload = _expect_dict(_json_or_fail(memberships_resp))
-    memberships = cast("list[dict[str, Any]]", membership_payload.get("memberships", []))
+    memberships = assert_mapping_list(membership_payload, "memberships")
     if not memberships:
         pytest.fail("Expected subsystem memberships")
     if memberships[0].get("subsystem_id") != "subsysdemo":
@@ -242,7 +242,7 @@ def _assert_subsystem_endpoints(client: TestClient) -> None:
     detail_payload = _expect_dict(_json_or_fail(detail_resp))
     if not detail_payload.get("found"):
         pytest.fail("Subsystem detail should be found")
-    modules = cast("list[dict[str, Any]]", detail_payload.get("modules", []))
+    modules = assert_mapping_list(detail_payload, "modules")
     if not modules or modules[0].get("module") != "pkg.mod":
         pytest.fail("Subsystem detail modules missing or incorrect")
 
@@ -250,7 +250,7 @@ def _assert_subsystem_endpoints(client: TestClient) -> None:
 def _assert_ide_hints(client: TestClient) -> None:
     resp = client.get("/ide/hints", params={"rel_path": "pkg/mod.py"})
     hints_payload = _expect_dict(_json_or_fail(resp))
-    hints = cast("list[dict[str, Any]]", hints_payload.get("hints", []))
+    hints = assert_mapping_list(hints_payload, "hints")
     if not hints_payload.get("found"):
         pytest.fail("IDE hints should be found")
     if not hints:
@@ -263,7 +263,7 @@ def _assert_ide_hints(client: TestClient) -> None:
 def _assert_subsystem_filters(client: TestClient) -> None:
     resp = client.get("/architecture/subsystems", params={"role": "api", "q": "api"})
     payload = _expect_dict(_json_or_fail(resp))
-    subs = cast("list[dict[str, Any]]", payload.get("subsystems", []))
+    subs = assert_mapping_list(payload, "subsystems")
     if not subs:
         pytest.fail("Expected subsystem list with filters")
     if subs[0].get("subsystem_id") != "subsysdemo":

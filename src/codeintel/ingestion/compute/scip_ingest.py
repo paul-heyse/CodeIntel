@@ -158,9 +158,7 @@ class ScipIngestStep:
 
         # Build rows
         symbol_rows = _build_symbol_rows(documents, config.repo, config.commit, created_at)
-        occurrence_rows = _build_occurrence_rows(
-            documents, config.repo, config.commit, created_at
-        )
+        occurrence_rows = _build_occurrence_rows(documents, config.repo, config.commit, created_at)
 
         # Delete existing data for this repo/commit before inserting
         self._storage.execute_query(
@@ -265,7 +263,9 @@ def _parse_scip_occurrences(raw_occurrences: list[Any]) -> list[ScipOccurrence]:
                 range_start_line=int(rng[0]),
                 range_start_col=int(rng[1]) if len(rng) > 1 else 0,
                 range_end_line=int(rng[0]),
-                range_end_col=int(rng[_SCIP_RANGE_END_CHAR_IDX]) if len(rng) > _SCIP_RANGE_END_CHAR_IDX else 0,
+                range_end_col=int(rng[_SCIP_RANGE_END_CHAR_IDX])
+                if len(rng) > _SCIP_RANGE_END_CHAR_IDX
+                else 0,
                 symbol_roles=role_int,
             )
         )
@@ -286,7 +286,9 @@ def _parse_scip_document(doc: Mapping[str, Any]) -> ScipDocument | None:
     raw_symbols = doc.get("symbols", [])
     symbols = _parse_scip_symbols(raw_symbols) if isinstance(raw_symbols, list) else []
     raw_occurrences = doc.get("occurrences", [])
-    occurrences = _parse_scip_occurrences(raw_occurrences) if isinstance(raw_occurrences, list) else []
+    occurrences = (
+        _parse_scip_occurrences(raw_occurrences) if isinstance(raw_occurrences, list) else []
+    )
     return ScipDocument(
         relative_path=str(rel_path),
         symbols=tuple(symbols),
@@ -374,7 +376,14 @@ def _build_symbol_rows(
         for sym in doc.symbols:
             key = (doc.relative_path, sym.symbol)
             if key not in seen:
-                seen[key] = [repo, commit, doc.relative_path, sym.symbol, sym.documentation, created_at]
+                seen[key] = [
+                    repo,
+                    commit,
+                    doc.relative_path,
+                    sym.symbol,
+                    sym.documentation,
+                    created_at,
+                ]
     return list(seen.values())
 
 

@@ -13,11 +13,7 @@ from tests._helpers.gateway import GatewayFactory
 
 def test_build_hotspots_inserts_scores() -> None:
     """Build hotspots table from core.ast_metrics with git scan disabled."""
-    gateway = (
-        GatewayFactory()
-        .with_snapshot(repo="demo", commit="abc123")
-        .open()
-    )
+    gateway = GatewayFactory().with_snapshot(repo="demo", commit="abc123").open()
     con = gateway.con
     con.execute("DELETE FROM core.ast_metrics")
     con.execute("DELETE FROM analytics.hotspots")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import cast
 
 import pytest
 
@@ -20,9 +20,7 @@ from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Test Fixtures
@@ -466,8 +464,8 @@ class TestBuildResult:
 class TestBuildExecutorInit:
     """Tests for BuildExecutor initialization."""
 
+    @staticmethod
     def test_init(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -475,8 +473,7 @@ class TestBuildExecutorInit:
         test_tools: ToolsConfig,
     ) -> None:
         """Create a build executor."""
-        # Cast to satisfy type checker - FakeStorageGateway is duck-typed
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -493,8 +490,8 @@ class TestBuildExecutorInit:
 class TestBuildExecutorRunId:
     """Tests for run ID generation."""
 
+    @staticmethod
     def test_run_id_format(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -502,7 +499,7 @@ class TestBuildExecutorRunId:
         test_tools: ToolsConfig,
     ) -> None:
         """Run ID has expected format."""
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -521,8 +518,8 @@ class TestBuildExecutorRunId:
         assert len(parts[2]) == 6  # HHMMSS
         assert len(parts[3]) == 8  # hex suffix
 
+    @staticmethod
     def test_run_ids_unique(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -530,7 +527,7 @@ class TestBuildExecutorRunId:
         test_tools: ToolsConfig,
     ) -> None:
         """Run IDs are unique across executions."""
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -556,7 +553,7 @@ class TestBuildExecutorEmptyPlan:
         test_tools: ToolsConfig,
     ) -> None:
         """Empty plan returns immediately with success."""
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -591,7 +588,7 @@ class TestBuildExecutorDryRun:
         test_tools: ToolsConfig,
     ) -> None:
         """Dry run returns plan info without executing."""
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -622,7 +619,7 @@ class TestBuildExecutorDryRun:
         test_tools: ToolsConfig,
     ) -> None:
         """Dry run still records run tracking."""
-        gateway: StorageGateway = fake_gateway  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gateway)
         executor = BuildExecutor(
             graph=executor_graph,
             gateway=gateway,
@@ -650,7 +647,7 @@ class TestBuildExecutorIntegration:
         """BuildExecutor works with real target registry."""
         graph = get_target_graph()
         fake_gw = FakeStorageGateway()
-        gateway: StorageGateway = fake_gw  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gw)
         snapshot = _make_snapshot()
         paths = _make_paths()
         tools = ToolsConfig.default()
@@ -673,7 +670,7 @@ class TestBuildExecutorIntegration:
         """Plan from PlanGenerator works with executor."""
         graph = _create_test_graph()
         fake_gw = FakeStorageGateway()
-        gateway: StorageGateway = fake_gw  # type: ignore[assignment]
+        gateway = cast("StorageGateway", fake_gw)
         snapshot = _make_snapshot()
         paths = _make_paths()
         tools = ToolsConfig.default()

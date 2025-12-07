@@ -16,6 +16,7 @@ import pytest
 from codeintel.analytics.adapters.data_models import DataModelUsageAdapter
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.contracts import count_rows
 
 # =============================================================================
 # Constants
@@ -148,12 +149,12 @@ def test_adapter_persist_single(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.data_model_usage WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_adapter_persist_multiple(

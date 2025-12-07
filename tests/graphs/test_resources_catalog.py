@@ -238,7 +238,7 @@ def test_invalidate_clears_cache(catalog_resource: CatalogResource) -> None:
     """invalidate() clears the cached spans."""
     _ = catalog_resource.function_spans  # Populate cache
     catalog_resource.invalidate()
-    assert catalog_resource._cached_spans is None  # noqa: SLF001
+    assert catalog_resource.cached_spans is None
 
 
 def test_function_spans_repopulates_after_invalidate(

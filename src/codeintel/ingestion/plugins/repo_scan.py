@@ -6,7 +6,10 @@ and builds change-tracker state. Part of the build system.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.plugin import TargetPlugin
@@ -104,10 +107,46 @@ class RepoScanPlugin(TargetPlugin):
         # This is accessed via ctx.resources.change_tracker
         ctx.resources.change_tracker = tracker
 
+        # Write repo_map entry for this repo/commit
+        self._write_repo_map(ctx, modules)
+
         # Compute row counts from tables
         row_counts = self._compute_row_counts(ctx)
 
         return TargetResult.succeeded(row_counts=row_counts)
+
+    @staticmethod
+    def _write_repo_map(
+        ctx: TargetExecutionContext,
+        modules: Sequence[object],
+    ) -> None:
+        """Write repo_map entry for this scan.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+        modules
+            List of discovered module records.
+        """
+        generated_at = datetime.now(tz=UTC).isoformat()
+        # Extract module names from ModuleRecord objects
+        module_names = [
+            getattr(m, "name", str(m)) if hasattr(m, "name") else str(m) for m in modules
+        ]
+        modules_json = json.dumps(sorted(module_names))
+        overlays_json = json.dumps({})
+
+        # Delete existing entry for this repo/commit
+        ctx.gateway.con.execute(
+            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        )
+
+        # Insert new entry
+        ctx.gateway.core.insert_repo_map(
+            [(ctx.repo, ctx.commit, modules_json, overlays_json, generated_at)]
+        )
 
     @staticmethod
     def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:

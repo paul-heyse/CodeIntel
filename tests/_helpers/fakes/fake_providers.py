@@ -68,7 +68,9 @@ class FakeToolRunner:
     default_result: ToolRunResult = field(
         default_factory=lambda: ToolRunResult(tool="unknown", returncode=0)
     )
-    call_log: list[tuple[str, Sequence[str], Path]] = field(default_factory=list)
+    call_log: list[tuple[str, Sequence[str], Path, int | None, Mapping[str, str] | None]] = field(
+        default_factory=list
+    )
 
     async def run(
         self,
@@ -76,8 +78,8 @@ class FakeToolRunner:
         args: Sequence[str],
         cwd: Path,
         *,
-        timeout_ms: int | None = None,  # noqa: ARG002
-        env: Mapping[str, str] | None = None,  # noqa: ARG002
+        timeout_ms: int | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> ToolRunResult:
         """Return pre-configured result for tool.
 
@@ -90,16 +92,17 @@ class FakeToolRunner:
         cwd
             Working directory.
         timeout_ms
-            Timeout (ignored).
+            Timeout for tool execution.
         env
-            Environment (ignored).
+            Environment variables to pass.
 
         Returns
         -------
         ToolRunResult
             Pre-configured or default result.
         """
-        self.call_log.append((tool, list(args), cwd))
+        env_snapshot = dict(env) if env is not None else None
+        self.call_log.append((tool, list(args), cwd, timeout_ms, env_snapshot))
         return self.results.get(tool, self.default_result)
 
     def is_available(self, tool: str) -> bool:
@@ -143,33 +146,38 @@ class FakeScipIndexer:
     occurrences: tuple[ScipOccurrence, ...] = ()
     index_success: bool = True
     parse_success: bool = True
+    index_calls: list[
+        tuple[Path, Path, Sequence[str] | None, Sequence[str] | None]
+    ] = field(default_factory=list)
+    parse_calls: list[tuple[Path, Path]] = field(default_factory=list)
 
     async def index(
         self,
-        repo_root: Path,  # noqa: ARG002
+        repo_root: Path,
         output_path: Path,
         *,
-        include_patterns: Sequence[str] | None = None,  # noqa: ARG002
-        exclude_patterns: Sequence[str] | None = None,  # noqa: ARG002
+        include_patterns: Sequence[str] | None = None,
+        exclude_patterns: Sequence[str] | None = None,
     ) -> ScipIndexResult:
         """Return pre-configured index result.
 
         Parameters
         ----------
         repo_root
-            Repository root (ignored).
+            Repository root.
         output_path
             Output path to report.
         include_patterns
-            Patterns (ignored).
+            Include patterns.
         exclude_patterns
-            Patterns (ignored).
+            Exclude patterns.
 
         Returns
         -------
         ScipIndexResult
             Pre-configured result.
         """
+        self.index_calls.append((repo_root, output_path, include_patterns, exclude_patterns))
         if self.index_success:
             return ScipIndexResult(
                 success=True,
@@ -183,7 +191,7 @@ class FakeScipIndexer:
 
     async def parse(
         self,
-        scip_path: Path,  # noqa: ARG002
+        scip_path: Path,
         output_json_path: Path,
     ) -> ScipParseResult:
         """Return pre-configured parse result.
@@ -191,7 +199,7 @@ class FakeScipIndexer:
         Parameters
         ----------
         scip_path
-            SCIP path (ignored).
+            SCIP path.
         output_json_path
             Output path to report.
 
@@ -200,6 +208,7 @@ class FakeScipIndexer:
         ScipParseResult
             Pre-configured result with symbols and occurrences.
         """
+        self.parse_calls.append((scip_path, output_json_path))
         if self.parse_success:
             return ScipParseResult(
                 success=True,
@@ -232,30 +241,34 @@ class FakeTypeChecker:
 
     diagnostics: tuple[TypeDiagnostic, ...] = ()
     success: bool = True
+    call_log: list[tuple[Path, Sequence[Path] | None, Path | None]] = field(
+        default_factory=list
+    )
 
     async def check(
         self,
-        repo_root: Path,  # noqa: ARG002
+        repo_root: Path,
         *,
-        paths: Sequence[Path] | None = None,  # noqa: ARG002
-        config_path: Path | None = None,  # noqa: ARG002
+        paths: Sequence[Path] | None = None,
+        config_path: Path | None = None,
     ) -> TypeCheckResult:
         """Return pre-configured type check result.
 
         Parameters
         ----------
         repo_root
-            Repository root (ignored).
+            Repository root.
         paths
-            Paths to check (ignored).
+            Paths to check.
         config_path
-            Config path (ignored).
+            Config path.
 
         Returns
         -------
         TypeCheckResult
             Pre-configured result.
         """
+        self.call_log.append((repo_root, paths, config_path))
         error_count = sum(1 for d in self.diagnostics if d.severity == "error")
         warning_count = sum(1 for d in self.diagnostics if d.severity == "warning")
 
@@ -284,23 +297,25 @@ class FakeCoverageCollector:
     """
 
     coverage_data: dict[str, CoverageData] = field(default_factory=dict)
+    collect_calls: list[Path] = field(default_factory=list)
 
     async def collect(
         self,
-        coverage_file: Path,  # noqa: ARG002
+        coverage_file: Path,
     ) -> Mapping[str, CoverageData]:
         """Return pre-configured coverage data.
 
         Parameters
         ----------
         coverage_file
-            Coverage file (ignored).
+            Coverage file path.
 
         Returns
         -------
         Mapping[str, CoverageData]
             Pre-configured coverage data.
         """
+        self.collect_calls.append(coverage_file)
         return self.coverage_data
 
 
@@ -320,23 +335,25 @@ class FakeTestReporter:
     """
 
     test_results: tuple[TestResult, ...] = ()
+    collect_calls: list[Path] = field(default_factory=list)
 
     async def collect(
         self,
-        report_path: Path,  # noqa: ARG002
+        report_path: Path,
     ) -> tuple[TestResult, ...]:
         """Return pre-configured test results.
 
         Parameters
         ----------
         report_path
-            Report path (ignored).
+            Report path.
 
         Returns
         -------
         tuple[TestResult, ...]
             Pre-configured results.
         """
+        self.collect_calls.append(report_path)
         return self.test_results
 
 
@@ -359,36 +376,43 @@ class FakeGitHistoryProvider:
 
     log_entries: tuple[GitLogEntry, ...] = ()
     blame_data: dict[str, dict[int, GitLogEntry]] = field(default_factory=dict)
+    log_calls: list[tuple[Path, Path | None, int | None, str | None, str | None]] = field(
+        default_factory=list
+    )
+    blame_calls: list[tuple[Path, Path, int | None, int | None]] = field(
+        default_factory=list
+    )
 
     async def log(
         self,
-        repo_root: Path,  # noqa: ARG002
+        repo_root: Path,
         *,
-        path: Path | None = None,  # noqa: ARG002
+        path: Path | None = None,
         max_count: int | None = None,
-        since: str | None = None,  # noqa: ARG002
-        until: str | None = None,  # noqa: ARG002
+        since: str | None = None,
+        until: str | None = None,
     ) -> tuple[GitLogEntry, ...]:
         """Return pre-configured log entries.
 
         Parameters
         ----------
         repo_root
-            Repository root (ignored).
+            Repository root.
         path
-            Path filter (ignored).
+            Path filter.
         max_count
             Maximum entries.
         since
-            Start date (ignored).
+            Start date.
         until
-            End date (ignored).
+            End date.
 
         Returns
         -------
         tuple[GitLogEntry, ...]
             Pre-configured entries (optionally limited).
         """
+        self.log_calls.append((repo_root, path, max_count, since, until))
         entries = self.log_entries
         if max_count:
             entries = entries[:max_count]
@@ -396,30 +420,31 @@ class FakeGitHistoryProvider:
 
     async def blame(
         self,
-        repo_root: Path,  # noqa: ARG002
+        repo_root: Path,
         path: Path,
         *,
-        start_line: int | None = None,  # noqa: ARG002
-        end_line: int | None = None,  # noqa: ARG002
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> Mapping[int, GitLogEntry]:
         """Return pre-configured blame data.
 
         Parameters
         ----------
         repo_root
-            Repository root (ignored).
+            Repository root.
         path
             File path to look up.
         start_line
-            Start line (ignored).
+            Start line.
         end_line
-            End line (ignored).
+            End line.
 
         Returns
         -------
         Mapping[int, GitLogEntry]
             Pre-configured blame data for path.
         """
+        self.blame_calls.append((repo_root, path, start_line, end_line))
         return self.blame_data.get(str(path), {})
 
 

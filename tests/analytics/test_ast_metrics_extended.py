@@ -9,9 +9,8 @@ behavior that may change with implementation details.
 
 from __future__ import annotations
 
-# We test internal functions to verify git log parsing behavior.
-# ruff: noqa: PLC2701
-from codeintel.analytics.compute.hotspots.metrics import FileChurn, _parse_git_log_lines
+# We test git log parsing behavior via the public wrapper.
+from codeintel.analytics.compute.hotspots.metrics import FileChurn, parse_git_log_lines
 
 # =============================================================================
 # Test Constants
@@ -73,13 +72,13 @@ def test_file_churn_multiple_authors() -> None:
 
 
 # =============================================================================
-# _parse_git_log_lines Tests
+# parse_git_log_lines Tests
 # =============================================================================
 
 
 def test_parse_git_log_empty_lines() -> None:
     """Empty input returns empty dict."""
-    result = _parse_git_log_lines([])
+    result = parse_git_log_lines([])
     assert not result
 
 
@@ -89,7 +88,7 @@ def test_parse_git_log_simple_commit() -> None:
         "COMMIT\tabc123\tAlice",
         "10\t5\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert "src/module.py" in result
     stats = result["src/module.py"]
     assert stats["commit_count"] == EXPECTED_COMMITS_1
@@ -106,7 +105,7 @@ def test_parse_git_log_multiple_commits_same_file() -> None:
         "COMMIT\tdef456\tBob",
         "5\t3\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     stats = result["src/module.py"]
     assert stats["commit_count"] == EXPECTED_COMMITS_2
     assert stats["author_count"] == EXPECTED_AUTHORS_2
@@ -121,7 +120,7 @@ def test_parse_git_log_multiple_files() -> None:
         "10\t0\tsrc/a.py",
         "20\t5\tsrc/b.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert len(result) == EXPECTED_FILES_2
     assert "src/a.py" in result
     assert "src/b.py" in result
@@ -135,7 +134,7 @@ def test_parse_git_log_empty_line_handling() -> None:
         "10\t0\tsrc/module.py",
         "",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert "src/module.py" in result
 
 
@@ -146,7 +145,7 @@ def test_parse_git_log_binary_file_numstat() -> None:
         "-\t-\timage.png",  # Binary files show - - path
         "10\t0\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     # Binary file should have 0 lines (- is not a digit)
     assert "image.png" in result
     stats = result["image.png"]
@@ -159,7 +158,7 @@ def test_parse_git_log_normalize_path_separators() -> None:
         "COMMIT\tabc123\tAlice",
         "10\t0\tsrc\\windows\\module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert "src/windows/module.py" in result
 
 
@@ -170,7 +169,7 @@ def test_parse_git_log_skip_lines_before_commit() -> None:
         "COMMIT\tabc123\tAlice",
         "5\t0\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert "orphan.py" not in result
     assert "src/module.py" in result
 
@@ -182,7 +181,7 @@ def test_parse_git_log_malformed_numstat_line() -> None:
         "not\ta\tvalid\tnumstat",  # 4 fields, not 3
         "10\t0\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     assert len(result) == EXPECTED_COMMITS_1
 
 
@@ -194,7 +193,7 @@ def test_parse_git_log_same_author_multiple_commits() -> None:
         "COMMIT\tdef456\tAlice",
         "5\t0\tsrc/module.py",
     ]
-    result = _parse_git_log_lines(lines)
+    result = parse_git_log_lines(lines)
     stats = result["src/module.py"]
     assert stats["commit_count"] == EXPECTED_COMMITS_2
     assert stats["author_count"] == EXPECTED_AUTHORS_1

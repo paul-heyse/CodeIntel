@@ -10,6 +10,8 @@ Note: Uses shared analytics fixtures from analytics/conftest.py.
 
 from __future__ import annotations
 
+import networkx as nx
+
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.factory import (
@@ -17,15 +19,139 @@ from codeintel.analytics.resources.factory import (
     ProviderFactoryOptions,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider, FunctionMeta
 from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50
+
+
+class DummyCatalogProvider(FunctionCatalogProvider):
+    """Minimal catalog provider for testing."""
+
+    def __init__(self) -> None:
+        empty_functions: list[FunctionMeta] = []
+        self._catalog = FunctionCatalog(functions=empty_functions, module_by_path={})
+
+    def catalog(self) -> FunctionCatalog:
+        """
+        Return the cached catalog.
+
+        Returns
+        -------
+        FunctionCatalog
+            Empty catalog instance for testing.
+        """
+        return self._catalog
+
+    def urn_for_goid(self, goid: int) -> str | None:
+        """
+        Return URN for GOID (none for dummy).
+
+        Parameters
+        ----------
+        goid
+            GOID to look up.
+
+        Returns
+        -------
+        str | None
+            Always None for the dummy provider.
+        """
+        _ = goid
+        return None
+
+    def lookup_goid(
+        self,
+        rel_path: str,
+        start_line: int,
+        end_line: int | None,
+        qualname: str | None,
+    ) -> int | None:
+        """
+        Lookup GOID for a span (none for dummy).
+
+        Parameters
+        ----------
+        rel_path
+            Relative path of the function.
+        start_line
+            Starting line number.
+        end_line
+            Optional end line number.
+        qualname
+            Optional qualified name.
+
+        Returns
+        -------
+        int | None
+            Always None for the dummy provider.
+        """
+        _ = (rel_path, start_line, end_line, qualname)
+        return None
+
+
+class DummyGraphRuntime(GraphRuntimeLike):
+    """Minimal graph runtime implementation for testing."""
+
+    def __init__(
+        self,
+        *,
+        backend: GraphBackendConfig | None = None,
+        use_gpu: bool = False,
+    ) -> None:
+        self._backend = backend
+        self._use_gpu = use_gpu
+
+    @property
+    def call_graph(self) -> nx.DiGraph | None:
+        """Return dummy call graph."""
+        return None
+
+    @property
+    def import_graph(self) -> nx.DiGraph | None:
+        """Return dummy import graph."""
+        return None
+
+    @property
+    def symbol_module_graph(self) -> nx.Graph | None:
+        """Return dummy symbol-module graph."""
+        return None
+
+    @property
+    def symbol_function_graph(self) -> nx.Graph | None:
+        """Return dummy symbol-function graph."""
+        return None
+
+    @property
+    def config_module_bipartite(self) -> nx.Graph | None:
+        """Return dummy config-module bipartite graph."""
+        return None
+
+    @property
+    def test_function_bipartite(self) -> nx.Graph | None:
+        """Return dummy test-function bipartite graph."""
+        return None
+
+    @property
+    def cfg_graph(self) -> nx.DiGraph | None:
+        """Return dummy control flow graph."""
+        return None
+
+    @property
+    def backend(self) -> GraphBackendConfig | None:
+        """Return configured backend."""
+        return self._backend
+
+    @property
+    def use_gpu(self) -> bool:
+        """Return GPU preference."""
+        return self._use_gpu
 
 
 def test_provider_factory_options_defaults() -> None:
@@ -74,8 +200,8 @@ def test_provider_factory_with_options(
 
     factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
-    assert factory._options.max_functions == MAX_FUNCTIONS_TEST_VALUE  # noqa: SLF001
-    assert factory._options.language == "python"  # noqa: SLF001
+    assert factory.options.max_functions == MAX_FUNCTIONS_TEST_VALUE
+    assert factory.options.language == "python"
 
 
 def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -196,10 +322,10 @@ def test_make_catalog_provider_with_catalog(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make catalog provider with pre-loaded catalog."""
-    catalog_obj = object()  # Use plain object as placeholder
+    catalog_obj = DummyCatalogProvider()
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    provider = factory.make_catalog_provider(catalog=catalog_obj)  # type: ignore[arg-type]
+    provider = factory.make_catalog_provider(catalog=catalog_obj)
 
     # Provider wraps the provided catalog
     assert isinstance(provider, CatalogProvider)
@@ -230,10 +356,10 @@ def test_make_graph_provider_with_runtime(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with pre-built runtime."""
-    runtime_obj = object()  # Use plain object as placeholder
+    runtime_obj = DummyGraphRuntime()
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    provider = factory.make_graph_provider(runtime=runtime_obj)  # type: ignore[arg-type]
+    provider = factory.make_graph_provider(runtime=runtime_obj)
 
     # Provider wraps the provided runtime
     assert isinstance(provider, GraphProvider)

@@ -10,9 +10,10 @@ This module tests the thread-safe singleton holder pattern including:
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import pytest
 
@@ -209,10 +210,11 @@ def test_singleton_factory_returning_none_raises_error() -> None:
     def null_factory() -> SampleRegistry | None:
         return None
 
+    factory: Callable[[], SampleRegistry] = cast("Callable[[], SampleRegistry]", null_factory)
     # The factory returns None, which should trigger the error after the factory runs
     # The SingletonHolder stores None, then checks and raises
     with pytest.raises(SingletonNotInitializedError) as exc_info:
-        SampleRegistryHolder.get(null_factory)  # type: ignore[arg-type]
+        SampleRegistryHolder.get(factory)
 
     assert "SampleRegistryHolder" in str(exc_info.value)
 

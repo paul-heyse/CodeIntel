@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/repo_scan.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'RepoScanPlugin', 'python', 'repo_scan']

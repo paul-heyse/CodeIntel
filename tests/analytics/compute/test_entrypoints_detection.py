@@ -6,6 +6,7 @@ from codeintel.analytics.compute.entrypoints.detection import (
     DetectorSettings,
     detect_entrypoints,
 )
+from tests._helpers.assertions import assert_mapping_list
 
 
 def test_detects_fastapi_and_flask_routes() -> None:
@@ -73,19 +74,17 @@ def generic() -> None:
         module="cli",
         settings=DetectorSettings(),
     )
-    click_entry = next(
-        candidate for candidate in candidates if candidate.framework == "click"
-    )
+    click_entry = next(candidate for candidate in candidates if candidate.framework == "click")
     assert click_entry.kind == "cli"
     assert click_entry.command_name == "main"
     assert click_entry.arguments_schema is not None
-    assert click_entry.arguments_schema["options"][0]["flags"] == ["--count"]
+    options = assert_mapping_list(click_entry.arguments_schema, "options")
+    assert options[0]["flags"] == ["--count"]
 
     typer_entry = next(candidate for candidate in candidates if candidate.framework == "typer")
     assert typer_entry.arguments_schema is not None
-    param_names = [
-        param["name"] for param in typer_entry.arguments_schema["params"]  # type: ignore[index]
-    ]
+    params = assert_mapping_list(typer_entry.arguments_schema, "params")
+    param_names = [str(param["name"]) for param in params]
     assert param_names == ["name", "excited"]
 
     generic_route = next(candidate for candidate in candidates if candidate.framework == "generic")

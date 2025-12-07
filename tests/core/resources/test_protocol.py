@@ -388,11 +388,11 @@ def test_lazy_resource_invalidate() -> None:
     """Verify invalidate() clears cached value and error."""
     resource = LazyString("test", "value")
     resource.get()
-    assert resource.is_loaded is True
+    assert resource.is_loaded
 
     resource.invalidate()
 
-    assert resource.is_loaded is False
+    assert not resource.is_loaded
 
 
 def test_lazy_resource_invalidate_clears_error() -> None:

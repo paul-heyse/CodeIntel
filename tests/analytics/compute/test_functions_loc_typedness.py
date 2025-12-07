@@ -75,7 +75,9 @@ def test_compute_param_stats_non_function_defaults() -> None:
 
 def test_compute_typedness_flags_variants() -> None:
     """Compute typedness flags for fully typed, partial, and untyped cases."""
-    fully_typed = compute_typedness_flags(total_params=2, annotated_params=2, has_return_annotation=True)
+    fully_typed = compute_typedness_flags(
+        total_params=2, annotated_params=2, has_return_annotation=True
+    )
     assert fully_typed == TypednessFlags(
         param_typed_ratio=1.0,
         unannotated_params=0,
@@ -86,11 +88,15 @@ def test_compute_typedness_flags_variants() -> None:
         typedness_source="annotations",
     )
 
-    partial = compute_typedness_flags(total_params=3, annotated_params=1, has_return_annotation=False)
+    partial = compute_typedness_flags(
+        total_params=3, annotated_params=1, has_return_annotation=False
+    )
     assert partial.partial_typed is True
     assert partial.typedness_bucket == "partial"
     assert partial.unannotated_params == 2
 
-    untyped = compute_typedness_flags(total_params=1, annotated_params=0, has_return_annotation=False)
+    untyped = compute_typedness_flags(
+        total_params=1, annotated_params=0, has_return_annotation=False
+    )
     assert untyped.untyped is True
     assert untyped.typedness_bucket == "untyped"

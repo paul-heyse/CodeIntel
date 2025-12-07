@@ -36,9 +36,18 @@ def _parse_function(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
     -------
     ast.FunctionDef | ast.AsyncFunctionDef
         The parsed function node.
+
+    Raises
+    ------
+    TypeError
+        If the parsed body does not start with a function definition.
     """
     tree = ast.parse(source)
-    return tree.body[0]  # type: ignore[return-value]
+    node = tree.body[0]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node
+    msg = f"Expected function node, got {type(node)}"
+    raise TypeError(msg)
 
 
 class TestComplexityMetrics:

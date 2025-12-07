@@ -21,6 +21,7 @@ from codeintel.config import FunctionContractsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.contracts import count_rows
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import gateway_with_macros
 
@@ -160,13 +161,12 @@ def test_compute_function_contracts_empty_catalog(
         catalog=None,
     )
 
-    result = memory_gateway.con.execute(
+    total = count_rows(
+        memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
         [DEFAULT_REPO, DEFAULT_COMMIT],
-    ).fetchone()
-
-    assert result is not None
-    assert result[0] == 0
+    )
+    assert total == 0
 
 
 def test_compute_function_contracts_with_simple_function(
@@ -234,13 +234,12 @@ def test_compute_function_contracts_with_assert_guard(
     )
 
     # With no catalog, contracts aren't computed
-    result = memory_gateway.con.execute(
+    total = count_rows(
+        memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
         [DEFAULT_REPO, DEFAULT_COMMIT],
-    ).fetchone()
-
-    assert result is not None
-    assert result[0] == 0
+    )
+    assert total == 0
 
 
 def test_compute_function_contracts_with_raise(
@@ -271,11 +270,8 @@ def test_compute_function_contracts_with_raise(
     )
 
     # Verify table exists and is accessible
-    result = memory_gateway.con.execute(
-        "SELECT COUNT(*) FROM analytics.function_contracts"
-    ).fetchone()
-
-    assert result is not None
+    result = count_rows(memory_gateway.con, "SELECT COUNT(*) FROM analytics.function_contracts", [])
+    assert result >= 0
 
 
 def test_compute_function_contracts_with_isinstance_check(
@@ -420,11 +416,12 @@ def test_compute_function_contracts_table_exists(
     )
 
     # Verify table was created
-    result = memory_gateway.con.execute(
-        "SELECT COUNT(*) FROM analytics.function_contracts"
-    ).fetchone()
-    assert result is not None
-    assert result[0] == 0
+    total = count_rows(
+        memory_gateway.con,
+        "SELECT COUNT(*) FROM analytics.function_contracts",
+        [],
+    )
+    assert total == 0
 
 
 def test_compute_function_contracts_typed_function(
@@ -799,10 +796,12 @@ def test_compute_function_contracts_idempotent(
     )
 
     # Should not error and should be idempotent
-    result = memory_gateway.con.execute(
-        "SELECT COUNT(*) FROM analytics.function_contracts"
-    ).fetchone()
-    assert result is not None
+    total = count_rows(
+        memory_gateway.con,
+        "SELECT COUNT(*) FROM analytics.function_contracts",
+        [],
+    )
+    assert total >= 0
 
 
 def test_compute_function_contracts_complex_assertions(

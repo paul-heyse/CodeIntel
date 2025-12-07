@@ -7,71 +7,17 @@ from pathlib import Path
 import networkx as nx
 
 from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
+from tests._helpers.graphs import GraphStubEngine
 
 
 def _expect(*, condition: bool, detail: str) -> None:
     if condition:
         return
     raise AssertionError(detail)
-
-
-class _DummyEngine(GraphEngine):
-    """Minimal stub satisfying GraphEngine protocol for strict validation tests."""
-
-    def __init__(self, gateway: StorageGateway, snapshot: SnapshotRef) -> None:
-        self.gateway: StorageGateway = gateway
-        self._snapshot: SnapshotRef = snapshot
-        self._empty_graph = nx.DiGraph()
-        self._empty_undirected = nx.Graph()
-
-    @property
-    def use_gpu(self) -> bool:
-        return False
-
-    def call_graph(self) -> nx.DiGraph:
-        return self._empty_graph
-
-    def load_call_graph(self) -> nx.DiGraph:
-        return self._empty_graph
-
-    def import_graph(self) -> nx.DiGraph:
-        return self._empty_graph
-
-    def load_import_graph(self) -> nx.DiGraph:
-        return self._empty_graph
-
-    def symbol_module_graph(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def load_symbol_module_graph(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def symbol_function_graph(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def load_symbol_function_graph(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def config_module_bipartite(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def load_config_module_bipartite(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def test_function_bipartite(self) -> nx.Graph:
-        return self._empty_undirected
-
-    def load_test_function_bipartite(self) -> nx.Graph:
-        return self._empty_undirected
-
-    @property
-    def snapshot(self) -> SnapshotRef:
-        return self._snapshot
 
 
 def _runtime_options(
@@ -84,7 +30,16 @@ def _runtime_options(
     return GraphRuntimeOptions(
         snapshot=snapshot,
         features=GraphFeatureFlags(validation_strict=strict),
-        engine=_DummyEngine(gateway, snapshot),
+        engine=GraphStubEngine(
+            gateway=gateway,
+            snapshot=snapshot,
+            call_graph_obj=nx.DiGraph(),
+            import_graph_obj=nx.DiGraph(),
+            symbol_module_graph_obj=nx.Graph(),
+            symbol_function_graph_obj=nx.Graph(),
+            config_bipartite_obj=nx.Graph(),
+            test_function_bipartite_obj=nx.Graph(),
+        ),
     )
 
 

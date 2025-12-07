@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntimeOptions
@@ -104,6 +104,11 @@ class ProviderFactory:
         """Return the snapshot reference."""
         return self._snapshot
 
+    @property
+    def options(self) -> ProviderFactoryOptions:
+        """Return the factory options."""
+        return self._options
+
     def create_registry(
         self,
         *,
@@ -187,7 +192,7 @@ class ProviderFactory:
     def make_graph_provider(
         self,
         *,
-        runtime: GraphRuntime | None = None,
+        runtime: GraphRuntime | GraphRuntimeLike | None = None,
         options: GraphRuntimeOptions | None = None,
     ) -> GraphProvider:
         """Create a graph provider.
@@ -195,7 +200,8 @@ class ProviderFactory:
         Parameters
         ----------
         runtime
-            Optional pre-built runtime to wrap.
+            Optional pre-built runtime to wrap. Can be a GraphRuntime or
+            any object implementing GraphRuntimeLike.
         options
             Optional runtime options (overrides factory options).
 

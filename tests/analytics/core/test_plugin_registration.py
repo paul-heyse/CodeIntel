@@ -26,26 +26,26 @@ def test_all_plugins_have_names() -> None:
 def test_expected_plugins_are_present() -> None:
     """Verify all expected plugin names are present in ALL_PLUGINS."""
     expected_plugins = {
-        "functions.metrics",
-        "functions.ast_features",
-        "functions.effects",
-        "functions.contracts",
-        "functions.history",
-        "coverage.functions",
-        "coverage.test_edges",
-        "tests.profile",
-        "tests.behavioral_coverage",
-        "hotspots.build",
-        "subsystems.build",
-        "semantic.roles",
-        "data_models.build",
-        "data_models.usage",
-        "entrypoints.build",
-        "deps.external",
-        "profiles.build",
-        "history.timeseries",
-        "risk_factors.build",
-        "config.data_flow",
+        "function_metrics",
+        "function_ast_features",
+        "function_effects",
+        "function_contracts",
+        "function_history",
+        "coverage_functions",
+        "coverage_test_edges",
+        "test_profile",
+        "behavioral_coverage",
+        "hotspots",
+        "subsystems",
+        "semantic_roles",
+        "data_models",
+        "data_model_usage",
+        "entrypoints",
+        "external_deps",
+        "profiles",
+        "history_timeseries",
+        "risk_factors",
+        "config_data_flow",
     }
 
     registered_names = {p.plugin_name for p in ALL_PLUGINS}
@@ -80,10 +80,10 @@ def test_plugins_are_target_plugins() -> None:
 @pytest.mark.parametrize(
     "plugin_name",
     [
-        "functions.metrics",
-        "functions.ast_features",
-        "coverage.functions",
-        "tests.profile",
+        "function_metrics",
+        "function_ast_features",
+        "coverage_functions",
+        "test_profile",
     ],
 )
 def test_specific_plugins_present(plugin_name: str) -> None:

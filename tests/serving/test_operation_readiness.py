@@ -7,7 +7,9 @@ readiness model to check if operations can run.
 from __future__ import annotations
 
 import inspect
+from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -76,8 +78,8 @@ def test_prerequisite_error_frozen() -> None:
         human_message="Test",
     )
 
-    with pytest.raises(AttributeError):
-        error.op_id = "other"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        cast("Any", error).op_id = "other"
 
 
 # =============================================================================

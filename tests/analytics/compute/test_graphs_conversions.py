@@ -345,9 +345,9 @@ class TestLogProjectionSkipped:
     """Tests for log_projection_skipped function."""
 
     @staticmethod
-    def test_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
-        """Verify warning log is emitted with correct details."""
-        with caplog.at_level(logging.WARNING):
+    def test_logs_info(caplog: pytest.LogCaptureFixture) -> None:
+        """Verify info log is emitted with correct details."""
+        with caplog.at_level(logging.INFO):
             log_projection_skipped(
                 "test_projection",
                 "insufficient nodes",
@@ -370,7 +370,7 @@ class TestLogProjectionSkipped:
         ]
 
         for reason in reasons:
-            with caplog.at_level(logging.WARNING):
+            with caplog.at_level(logging.INFO):
                 log_projection_skipped("proj", reason, nodes=1, graph_nodes=2)
                 assert reason in caplog.text
             caplog.clear()

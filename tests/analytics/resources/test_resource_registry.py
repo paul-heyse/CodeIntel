@@ -429,14 +429,14 @@ def test_mock_provider_protocol_compliance() -> None:
     assert hasattr(provider, "invalidate")
 
     assert provider.resource_name == "TestProvider"
-    assert provider.is_loaded is False
+    assert not provider.is_loaded
 
     value = provider.get()
     assert value == "test"
-    assert provider.is_loaded is True
+    assert provider.is_loaded
 
     provider.invalidate()
-    assert provider.is_loaded is False
+    assert not provider.is_loaded
 
 
 def test_resource_registry_multiple_registrations() -> None:

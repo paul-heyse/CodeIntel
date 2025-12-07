@@ -459,7 +459,7 @@ def test_resolve_selection_with_enabled(registry: TestRegistry) -> None:
     registry.register(make_plugin("b"))
     registry.register(make_plugin("c"))
 
-    selected, _skipped = registry._resolve_selection(  # noqa: SLF001
+    selected, _skipped = registry.resolve_selection_debug(
         plugin_names=None,
         enabled=["a", "b"],
         disabled=None,
@@ -475,7 +475,7 @@ def test_resolve_selection_with_disabled(registry: TestRegistry) -> None:
     registry.register(make_plugin("b"))
     registry.register(make_plugin("c"))
 
-    selected, skipped = registry._resolve_selection(  # noqa: SLF001
+    selected, skipped = registry.resolve_selection_debug(
         plugin_names=["a", "b", "c"],
         enabled=None,
         disabled=["b"],
@@ -493,7 +493,7 @@ def test_resolve_selection_uses_defaults(registry: TestRegistry) -> None:
     registry.register(make_plugin("default1"))
     registry.register(make_plugin("default2"))
 
-    selected, _ = registry._resolve_selection(  # noqa: SLF001
+    selected, _ = registry.resolve_selection_debug(
         plugin_names=None,
         enabled=None,
         disabled=None,
@@ -507,7 +507,7 @@ def test_resolve_selection_missing_plugin(registry: TestRegistry) -> None:
     """Verify _resolve_selection skips missing plugins."""
     registry.register(make_plugin("exists"))
 
-    selected, skipped = registry._resolve_selection(  # noqa: SLF001
+    selected, skipped = registry.resolve_selection_debug(
         plugin_names=["exists", "missing"],
         enabled=None,
         disabled=None,
@@ -531,7 +531,7 @@ def test_resolve_dependencies_explicit(registry: TestRegistry) -> None:
     b = make_plugin("b", depends_on=())
 
     selected = {"a": a, "b": b}
-    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
+    deps = registry.resolve_dependencies_debug(selected)
 
     assert deps["a"] == {"b"}
     assert deps["b"] == set()
@@ -543,7 +543,7 @@ def test_resolve_dependencies_capability_based(registry: TestRegistry) -> None:
     provider = make_plugin("provider", provides=("data.source",))
 
     selected = {"consumer": consumer, "provider": provider}
-    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
+    deps = registry.resolve_dependencies_debug(selected)
 
     assert "provider" in deps["consumer"]
 
@@ -553,7 +553,7 @@ def test_resolve_dependencies_missing_capability(registry: TestRegistry) -> None
     consumer = make_plugin("consumer", requires=("missing.capability",))
 
     selected = {"consumer": consumer}
-    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
+    deps = registry.resolve_dependencies_debug(selected)
 
     # Should not raise, just logs warning
     assert deps["consumer"] == set()
@@ -568,7 +568,7 @@ def test_resolve_dependencies_self_provide(registry: TestRegistry) -> None:
     )
 
     selected = {"self_sufficient": plugin}
-    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
+    deps = registry.resolve_dependencies_debug(selected)
 
     assert "self_sufficient" not in deps["self_sufficient"]
 
@@ -587,7 +587,7 @@ def test_topological_sort_linear(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c}
     deps = {"a": {"b"}, "b": {"c"}, "c": set()}
 
-    result = registry._topological_sort(selected, deps)  # noqa: SLF001
+    result = registry.topological_sort_debug(selected, deps)
     names = [p.metadata.name for p in result]
 
     # c must come before b, b before a
@@ -606,7 +606,7 @@ def test_topological_sort_diamond(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c, "d": d}
     deps = {"a": set(), "b": {"a"}, "c": {"a"}, "d": {"b", "c"}}
 
-    result = registry._topological_sort(selected, deps)  # noqa: SLF001
+    result = registry.topological_sort_debug(selected, deps)
     names = [p.metadata.name for p in result]
 
     # a must come first, d must come last
@@ -623,7 +623,7 @@ def test_topological_sort_cycle_detection(registry: TestRegistry) -> None:
     deps = {"a": {"b"}, "b": {"a"}}  # Cycle!
 
     with pytest.raises(ValueError, match=r"[Cc]ycle"):
-        registry._topological_sort(selected, deps)  # noqa: SLF001
+        registry.topological_sort_debug(selected, deps)
 
 
 def test_topological_sort_independent(registry: TestRegistry) -> None:
@@ -635,7 +635,7 @@ def test_topological_sort_independent(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c}
     deps = {"a": set(), "b": set(), "c": set()}
 
-    result = registry._topological_sort(selected, deps)  # noqa: SLF001
+    result = registry.topological_sort_debug(selected, deps)
 
     # All plugins should be in result
     assert len(result) == EXPECTED_INDEPENDENT_COUNT

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Final
 
 from codeintel.config.steps_graphs import GraphPluginPolicy
+from codeintel.core.execution.errors import PluginFatalError
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
@@ -25,7 +26,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
-from codeintel.core.execution.errors import PluginFatalError
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
 from codeintel.graphs.runtime import graph_executor
 from codeintel.graphs.runtime.graph_executor import (

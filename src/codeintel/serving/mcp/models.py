@@ -1598,7 +1598,7 @@ class DatasetDescriptor(BaseModel):
     schema_version: str | None = None
     stable_id: str | None = None
     validation_profile: Literal["strict", "lenient"] | None = None
-    capabilities: dict[str, bool] = Field(
+    capabilities: Mapping[str, bool] = Field(
         default_factory=dict,
         description="Capability flags (validation, export, docs_view, read_only).",
     )
@@ -1624,7 +1624,7 @@ class DatasetSpecDescriptor(BaseModel):
     stable_id: str | None = None
     validation_profile: Literal["strict", "lenient"] | None = None
     upstream_dependencies: list[str] = Field(default_factory=list)
-    capabilities: dict[str, bool] = Field(
+    capabilities: Mapping[str, bool] = Field(
         default_factory=dict,
         description="Capability flags (validation, export, docs_view, read_only).",
     )
@@ -1646,7 +1646,7 @@ class DatasetSchemaResponse(BaseModel):
     duckdb_schema: list[DatasetSchemaColumn] = Field(default_factory=list)
     json_schema: dict[str, object] | None = None
     sample_rows: list[ViewRow] = Field(default_factory=list)
-    capabilities: dict[str, bool] = Field(default_factory=dict)
+    capabilities: Mapping[str, bool] = Field(default_factory=dict)
     owner: str | None = None
     freshness_sla: str | None = None
     retention_policy: str | None = None
@@ -1690,6 +1690,7 @@ class DatasetSchemaResponse(BaseModel):
         DatasetSchemaResponse
             Transport model reflecting the domain payload.
         """
+        capabilities: Mapping[str, bool] = dict(schema.capabilities)
         return cls(
             dataset=schema.dataset_name,
             table_key=schema.table_key,
@@ -1698,7 +1699,7 @@ class DatasetSchemaResponse(BaseModel):
             ],
             json_schema=schema.json_schema,
             sample_rows=[ViewRow.model_validate(row) for row in schema.sample_rows],
-            capabilities=schema.capabilities,
+            capabilities=capabilities,
             owner=schema.owner,
             freshness_sla=schema.freshness_sla,
             retention_policy=schema.retention_policy,

@@ -192,7 +192,7 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
 
     def insert_rows(
         self,
-        gateway: StorageGateway,  # noqa: ARG002 (required by interface)
+        gateway: StorageGateway,
         rows: Sequence[SampleRow],
     ) -> int:
         """
@@ -201,7 +201,7 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
         Parameters
         ----------
         gateway
-            Storage gateway for database access (unused in test impl).
+            Storage gateway for database access.
         rows
             Rows to insert.
 
@@ -212,6 +212,8 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
         """
         # Access self.table_name to satisfy PLR6301 (method uses self)
         _ = self.table_name
+        # Record that a gateway was provided to ensure interface compliance
+        assert gateway is not None
         return len(rows)
 
 

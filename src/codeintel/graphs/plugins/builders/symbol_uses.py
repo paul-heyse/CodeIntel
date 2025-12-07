@@ -183,6 +183,82 @@ def _load_module_map(
         return {}
 
 
+def _load_path_to_goid_map(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> dict[str, int]:
+    """Load a mapping of file paths to their module/file GOID.
+
+    This maps each file to a single representative GOID for that file.
+    For function-level tracking, we use the first function GOID in each file.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping of relative path to representative GOID.
+    """
+    con = gateway.con
+    try:
+        rows = con.execute(
+            """
+            SELECT rel_path, MIN(goid_h128) as goid
+            FROM core.goids
+            WHERE repo = ? AND commit = ? AND kind = 'function'
+            GROUP BY rel_path
+            """,
+            [repo, commit],
+        ).fetchall()
+        return {normalize_rel_path(str(row[0])): int(row[1]) for row in rows if row[1] is not None}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _enrich_edges_with_goids(
+    edges: list[symbols_compute.SymbolUseEdge],
+    path_to_goid: dict[str, int],
+) -> list[symbols_compute.SymbolUseEdge]:
+    """Enrich symbol use edges with GOID information.
+
+    Parameters
+    ----------
+    edges
+        Symbol use edges without GOIDs.
+    path_to_goid
+        Mapping of file paths to representative GOIDs.
+
+    Returns
+    -------
+    list[SymbolUseEdge]
+        Edges enriched with def_goid and use_goid.
+    """
+    enriched: list[symbols_compute.SymbolUseEdge] = []
+    for edge in edges:
+        def_goid = path_to_goid.get(edge.def_path)
+        use_goid = path_to_goid.get(edge.use_path)
+        enriched.append(
+            symbols_compute.SymbolUseEdge(
+                symbol=edge.symbol,
+                def_path=edge.def_path,
+                use_path=edge.use_path,
+                same_file=edge.same_file,
+                same_module=edge.same_module,
+                def_goid=def_goid,
+                use_goid=use_goid,
+            )
+        )
+    return enriched
+
+
 def _persist_symbol_use_edges(
     gateway: StorageGateway,
     edges: list[symbols_compute.SymbolUseEdge],
@@ -288,7 +364,12 @@ class SymbolUsesPlugin(TargetPlugin):
             edges = symbols_compute.build_use_edges(occurrences, def_map, module_by_path)
             log.info("symbol_uses: Built %d use edges", len(edges))
 
-            # Step 5: Persist
+            # Step 5: Enrich edges with GOIDs for function-level tracking
+            path_to_goid = _load_path_to_goid_map(gateway, repo, commit)
+            log.debug("symbol_uses: Loaded %d path->goid mappings", len(path_to_goid))
+            edges = _enrich_edges_with_goids(edges, path_to_goid)
+
+            # Step 6: Persist
             edge_count = _persist_symbol_use_edges(gateway, edges, repo, commit)
             log.info("symbol_uses: Persisted %d edges", edge_count)
 

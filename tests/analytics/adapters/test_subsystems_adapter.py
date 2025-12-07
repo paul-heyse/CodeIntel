@@ -18,6 +18,7 @@ from codeintel.analytics.adapters.subsystems import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.contracts import count_rows
 
 # =============================================================================
 # Constants
@@ -183,12 +184,12 @@ def test_subsystems_adapter_persist_single(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.subsystems WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_subsystems_adapter_persist_multiple(
@@ -280,12 +281,12 @@ def test_subsystem_modules_adapter_persist_single(
     assert count == EXPECTED_COUNT_1
 
     # Verify row was inserted
-    result = fresh_gateway.con.execute(
+    total = count_rows(
+        fresh_gateway.con,
         "SELECT COUNT(*) FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
-    ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_1
+    )
+    assert total == EXPECTED_COUNT_1
 
 
 def test_subsystem_modules_adapter_persist_multiple(
