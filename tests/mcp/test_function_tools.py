@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -9,8 +10,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.serving.context import get_current_request_context
-from codeintel.serving.mcp import function_tools, models
-from codeintel.serving.mcp.function_tools import register_function_tools
+from codeintel.serving.mcp.function_tools import FunctionToolOptions, register_function_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -20,8 +20,6 @@ from tests._helpers.assertions import (
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
-
     from codeintel.config.serving_models import ServingConfig
 
 
@@ -79,7 +77,7 @@ class _ValidatingModel:
         return _DomainModel.from_domain(payload)
 
 
-def test_register_function_tools_registers_and_executes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_function_tools_registers_and_executes() -> None:
     """Function tool registration wraps backend calls with context and serialization."""
     spec = Operation(
         id="functions.summary",
@@ -101,22 +99,31 @@ def test_register_function_tools_registers_and_executes(monkeypatch: pytest.Monk
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=False)
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.function_tools.iter_operations",
-        lambda: (spec,),
-    )
     backend = _Backend()
     typed_backend = cast("QueryBackendOrService", backend)
     mcp = RecordingMcp()
-    register_function_tools(cast("FastMCP", mcp), typed_backend, config=None)
+
+    def _resolve_model(name: str) -> type[_DomainModel] | None:
+        if name == "_DomainModel":
+            return _DomainModel
+        return None
+
+    register_function_tools(
+        mcp,
+        typed_backend,
+        config=None,
+        options=FunctionToolOptions(
+            operations=(spec,),
+            model_resolver=_resolve_model,
+        ),
+    )
     expect_equal([reg.name for reg in mcp.registrations.calls], ["functions_summary"])
     tool_func = mcp.registry["functions_summary"]
     result = tool_func(payload="hello")
     expect_equal(result, {"value": "hello"})
 
 
-def test_serialize_payload_validator_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serialize_payload_validator_path() -> None:
     """Validator-only model classes should serialize payloads."""
     spec = Operation(
         id="functions.validate",
@@ -140,16 +147,26 @@ def test_serialize_payload_validator_path(monkeypatch: pytest.MonkeyPatch) -> No
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
-    monkeypatch.setattr(models, "_ValidatingModel", _ValidatingModel, raising=False)
+
+    def _resolve_model(name: str) -> type[_ValidatingModel] | None:
+        if name == "_ValidatingModel":
+            return _ValidatingModel
+        return None
+
     register_function_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=FunctionToolOptions(
+            operations=(spec,),
+            model_resolver=_resolve_model,
+        ),
     )
     result = mcp.registry["functions_validate"]()
     expect_equal(result, {"value": "validated"})
 
 
-def test_function_tool_sets_scope_and_resets_context(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_function_tool_sets_scope_and_resets_context() -> None:
     """Graph scope should flow into request context and reset after call."""
     spec = Operation(
         id="graph.scope",
@@ -173,9 +190,11 @@ def test_function_tool_sets_scope_and_resets_context(monkeypatch: pytest.MonkeyP
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
     register_function_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=FunctionToolOptions(operations=(spec,)),
     )
     result = mcp.registry["graph_scope"](scope="abc")
     expect_equal(result, {"value": "abc"})
@@ -183,7 +202,7 @@ def test_function_tool_sets_scope_and_resets_context(monkeypatch: pytest.MonkeyP
     expect_true(get_current_request_context() is None)
 
 
-def test_function_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_function_tool_resets_context_on_error() -> None:
     """Request context should reset even when backend raises."""
     spec = Operation(
         id="graph.error",
@@ -207,16 +226,18 @@ def test_function_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) 
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
     register_function_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=FunctionToolOptions(operations=(spec,)),
     )
     with pytest.raises(RuntimeError):
         mcp.registry["graph_error"]()
     expect_true(get_current_request_context() is None)
 
 
-def test_function_tool_from_domain_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_function_tool_from_domain_path() -> None:
     """Payloads without model_dump should serialize via model_cls.from_domain."""
     spec = Operation(
         id="functions.domain",
@@ -240,17 +261,19 @@ def test_function_tool_from_domain_path(monkeypatch: pytest.MonkeyPatch) -> None
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
-    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=False)
     register_function_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=FunctionToolOptions(
+            operations=(spec,),
+            model_resolver=lambda name: _DomainModel if name == "_DomainModel" else None,
+        ),
     )
     expect_equal(mcp.registry["functions_domain"](), {"value": "payload"})
 
 
-def test_function_tool_passes_through_raw_dict_when_no_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_function_tool_passes_through_raw_dict_when_no_model() -> None:
     """Raw dict payloads should pass through when no model class is found."""
     spec = Operation(
         id="functions.raw",
@@ -274,14 +297,16 @@ def test_function_tool_passes_through_raw_dict_when_no_model(
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
     register_function_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=FunctionToolOptions(operations=(spec,)),
     )
     expect_equal(mcp.registry["functions_raw"](), {"id": "raw-fn"})
 
 
-def test_function_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_function_tool_invokes_auto_pipeline() -> None:
     """Auto-pipeline hook should trigger when env enabled and gateway present."""
     spec = Operation(
         id="functions.summary",
@@ -303,27 +328,32 @@ def test_function_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) ->
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
     calls: list[str] = []
 
-    def _ensure_prereqs_for_mcp(*, op_id: str, config: object, backend: object) -> None:
+    def _ensure_prereqs_for_mcp(op_id: str, config: object, backend: object) -> None:
         _ = config
         _ = backend
         calls.append(op_id)
 
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(function_tools, "iter_operations", lambda: (spec,))
-    monkeypatch.setattr(models, "_DomainModel", _DomainModel, raising=False)
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.function_tools.ensure_prereqs_for_mcp",
-        _ensure_prereqs_for_mcp,
-    )
-    register_function_tools(
-        cast("FastMCP", mcp),
-        cast("QueryBackendOrService", backend),
-        config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
-    )
-    mcp.registry["functions_summary"]()
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    try:
+        register_function_tools(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            options=FunctionToolOptions(
+                operations=(spec,),
+                model_resolver=lambda name: _DomainModel if name == "_DomainModel" else None,
+                prereq_runner=_ensure_prereqs_for_mcp,
+            ),
+        )
+        mcp.registry["functions_summary"]()
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
     expect_equal(calls, ["functions.summary"])
-    monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

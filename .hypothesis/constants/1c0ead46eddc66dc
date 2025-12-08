@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/history.py
+# hypothesis_version: 6.148.7
+
+[500, '--commits', '--db-dir', '--entity-kind', '--max-entities', '--output-db', '--repo', '--repo-root', '--selection-strategy', '.tool_cache', 'Path | str | None', 'build', 'build/db', 'commits', 'db_dir', 'entity_kind', 'function', 'history', 'history_app', 'int | str | None', 'max_entities', 'output_db', 'repo', 'repo_root', 'risk_score', 'selection_strategy', 'str | None', 'timeseries', 'verbose']

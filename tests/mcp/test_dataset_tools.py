@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -10,8 +11,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.serving.context import get_current_request_context
-from codeintel.serving.mcp import dataset_tools, models
-from codeintel.serving.mcp.dataset_tools import register_dataset_tools
+from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -22,8 +22,6 @@ from tests._helpers.assertions import (
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
-
     from codeintel.config.serving_models import ServingConfig
 
 
@@ -90,7 +88,7 @@ class _Backend:
         raise RuntimeError(message)
 
 
-def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_dataset_tools_registers_and_executes() -> None:
     """Dataset tool registration should wrap backend methods and serialize lists."""
     spec = Operation(
         id="datasets.list",
@@ -112,15 +110,24 @@ def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.Monke
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setattr(models, "_FromDomainModel", _FromDomainModel, raising=False)
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.dataset_tools.iter_operations",
-        lambda: (spec,),
-    )
     backend = _Backend()
     typed_backend = cast("QueryBackendOrService", backend)
     mcp = RecordingMcp()
-    register_dataset_tools(cast("FastMCP", mcp), typed_backend, config=None)
+
+    def _resolve_model(name: str) -> type[_FromDomainModel] | None:
+        if name == "_FromDomainModel":
+            return _FromDomainModel
+        return None
+
+    register_dataset_tools(
+        mcp,
+        typed_backend,
+        config=None,
+        options=DatasetToolOptions(
+            operations=(spec,),
+            model_resolver=_resolve_model,
+        ),
+    )
     expect_equal([reg.name for reg in mcp.registrations.calls], ["datasets_list"])
     # Execute registered tool
     tool_func = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_list"])
@@ -129,9 +136,7 @@ def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.Monke
     expect_equal(result[0], {"value": "one"})
 
 
-def test_serialize_list_payload_prefers_model_dump_when_no_model_cls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_serialize_list_payload_prefers_model_dump_when_no_model_cls() -> None:
     """When no model class is provided, model_dump objects should be serialized directly."""
     spec = Operation(
         id="datasets.models",
@@ -155,15 +160,17 @@ def test_serialize_list_payload_prefers_model_dump_when_no_model_cls(
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
     register_dataset_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=DatasetToolOptions(operations=(spec,)),
     )
     result = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_models"])()
     expect_equal(result, [{"value": "a"}, {"value": "b"}])
 
 
-def test_serialize_payload_uses_validator_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serialize_payload_uses_validator_fallback() -> None:
     """Validator-only response models should serialize via model_validate."""
     spec = Operation(
         id="datasets.validate",
@@ -187,16 +194,26 @@ def test_serialize_payload_uses_validator_fallback(monkeypatch: pytest.MonkeyPat
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
-    monkeypatch.setattr(models, "_ValidatingModel", _ValidatingModel, raising=False)
+
+    def _resolve_model(name: str) -> type[_ValidatingModel] | None:
+        if name == "_ValidatingModel":
+            return _ValidatingModel
+        return None
+
     register_dataset_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=DatasetToolOptions(
+            operations=(spec,),
+            model_resolver=_resolve_model,
+        ),
     )
     result = cast("Callable[[], dict[str, object]]", mcp.registry["datasets_validate"])()
     expect_equal(result, {"value": "hello"})
 
 
-def test_dataset_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_tool_resets_context_on_error() -> None:
     """Request context must reset even when backend raises."""
     spec = Operation(
         id="datasets.error",
@@ -220,17 +237,27 @@ def test_dataset_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(models, "_FromDomainModel", _FromDomainModel, raising=False)
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
+
+    def _resolve_model(name: str) -> type[_FromDomainModel] | None:
+        if name == "_FromDomainModel":
+            return _FromDomainModel
+        return None
+
     register_dataset_tools(
-        cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=DatasetToolOptions(
+            operations=(spec,),
+            model_resolver=_resolve_model,
+        ),
     )
     with pytest.raises(RuntimeError):
         mcp.registry["datasets_error"](dataset_name="d1")
     expect_true(get_current_request_context() is None)
 
 
-def test_dataset_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_tool_invokes_auto_pipeline() -> None:
     """Auto-pipeline hook should be invoked when enabled and gateway present."""
     spec = Operation(
         id="datasets.list",
@@ -252,34 +279,40 @@ def test_dataset_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> 
         default_limit=None,
         max_limit=None,
     )
-    monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
     calls: list[str] = []
 
-    def _ensure_prereqs_for_mcp(*, op_id: str, config: object, backend: object) -> None:
+    def _ensure_prereqs_for_mcp(op_id: str, config: object, backend: object) -> None:
         _ = config
         _ = backend
         calls.append(op_id)
 
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.dataset_tools.ensure_prereqs_for_mcp",
-        _ensure_prereqs_for_mcp,
-    )
     backend = cast("QueryBackendOrService", _Backend())
     mcp = RecordingMcp()
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
-    register_dataset_tools(
-        cast("FastMCP", mcp),
-        backend,
-        config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
-    )
-    cast("Callable[[], object]", mcp.registry["datasets_list"])()
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    try:
+        register_dataset_tools(
+            mcp,
+            backend,
+            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            options=DatasetToolOptions(
+                operations=(spec,),
+                model_resolver=lambda name: _FromDomainModel
+                if name == "_FromDomainModel"
+                else None,
+                prereq_runner=_ensure_prereqs_for_mcp,
+            ),
+        )
+        cast("Callable[[], object]", mcp.registry["datasets_list"])()
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
     expect_equal(calls, ["datasets.list"])
-    monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)
 
 
-def test_serialize_payload_passes_through_raw_dict_when_no_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_serialize_payload_passes_through_raw_dict_when_no_model() -> None:
     """When no model class exists, raw dict payloads should return unchanged."""
     spec = Operation(
         id="datasets.raw",
@@ -303,18 +336,18 @@ def test_serialize_payload_passes_through_raw_dict_when_no_model(
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
     register_dataset_tools(
-        cast("FastMCP", mcp),
+        mcp,
         cast("QueryBackendOrService", backend),
         config=None,
+        options=DatasetToolOptions(operations=(spec,)),
     )
     expect_equal(
         cast("Callable[[], dict[str, object]]", mcp.registry["datasets_raw"])(), {"id": "raw"}
     )
 
 
-def test_serialize_list_payload_passes_through_raw_dicts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serialize_list_payload_passes_through_raw_dicts() -> None:
     """List serialization should keep raw dict items when no model provided."""
     spec = Operation(
         id="datasets.raw_list",
@@ -338,11 +371,11 @@ def test_serialize_list_payload_passes_through_raw_dicts(monkeypatch: pytest.Mon
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    monkeypatch.setattr(dataset_tools, "iter_operations", lambda: (spec,))
     register_dataset_tools(
-        cast("FastMCP", mcp),
+        mcp,
         cast("QueryBackendOrService", backend),
         config=None,
+        options=DatasetToolOptions(operations=(spec,)),
     )
     expect_equal(
         cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_raw_list"])(),

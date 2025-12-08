@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -24,6 +25,8 @@ from codeintel.ingestion.engine.infrastructure.runner import (
 )
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
+
+pytestmark = pytest.mark.anyio
 
 
 def _to_build_result(
@@ -127,16 +130,18 @@ class _TimeoutProcess(_FakeProcess):
 
 
 @pytest.mark.asyncio
-async def test_subprocess_runner_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_subprocess_runner_success(tmp_path: Path) -> None:
     """SubprocessToolRunner returns decoded output on success."""
-    runner = SubprocessToolRunner(ToolsConfig.default())
 
-    async def make_process(*args: object, **kwargs: object) -> _FakeProcess:
+    async def make_process(*args: object, **kwargs: object) -> asyncio.subprocess.Process:
         _ = (args, kwargs)
         await asyncio.sleep(0)
-        return _FakeProcess()
+        return cast("asyncio.subprocess.Process", _FakeProcess())
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", make_process)
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        subprocess_runner=make_process,
+    )
 
     result = await runner.run("pyright", ["--version"], tmp_path)
 
@@ -146,16 +151,18 @@ async def test_subprocess_runner_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_subprocess_runner_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_subprocess_runner_timeout(tmp_path: Path) -> None:
     """Timeouts yield returncode -1 and timeout message."""
-    runner = SubprocessToolRunner(ToolsConfig.default())
 
-    async def make_timeout_process(*args: object, **kwargs: object) -> _TimeoutProcess:
+    async def make_timeout_process(*args: object, **kwargs: object) -> asyncio.subprocess.Process:
         _ = (args, kwargs)
         await asyncio.sleep(0)
-        return _TimeoutProcess()
+        return cast("asyncio.subprocess.Process", _TimeoutProcess())
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", make_timeout_process)
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        subprocess_runner=make_timeout_process,
+    )
 
     result = await runner.run("pyright", [], tmp_path)
 
@@ -164,19 +171,19 @@ async def test_subprocess_runner_timeout(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_subprocess_runner_missing_binary(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_subprocess_runner_missing_binary(tmp_path: Path) -> None:
     """Missing executable returns tool-not-found error."""
-    runner = SubprocessToolRunner(ToolsConfig.default())
 
-    async def raise_missing(*args: object, **kwargs: object) -> _FakeProcess:
+    async def raise_missing(*args: object, **kwargs: object) -> asyncio.subprocess.Process:
         _ = (args, kwargs)
         message = "missing"
         await asyncio.sleep(0)
         raise FileNotFoundError(message)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", raise_missing)
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        subprocess_runner=raise_missing,
+    )
 
     result = await runner.run("pyright", [], tmp_path)
 
@@ -185,19 +192,19 @@ async def test_subprocess_runner_missing_binary(
 
 
 @pytest.mark.asyncio
-async def test_subprocess_runner_unexpected_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_subprocess_runner_unexpected_error(tmp_path: Path) -> None:
     """Unexpected exceptions are captured in the result."""
-    runner = SubprocessToolRunner(ToolsConfig.default())
 
-    async def raise_error(*args: object, **kwargs: object) -> _FakeProcess:
+    async def raise_error(*args: object, **kwargs: object) -> asyncio.subprocess.Process:
         _ = (args, kwargs)
         message = "boom"
         await asyncio.sleep(0)
         raise RuntimeError(message)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", raise_error)
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        subprocess_runner=raise_error,
+    )
 
     result = await runner.run("pyright", [], tmp_path)
 
@@ -205,12 +212,17 @@ async def test_subprocess_runner_unexpected_error(
     expect_equal(result.stderr, "boom")
 
 
-def test_subprocess_runner_is_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_subprocess_runner_is_available() -> None:
     """is_available reflects shutil.which."""
-    runner = SubprocessToolRunner(ToolsConfig.default())
-    monkeypatch.setattr("codeintel.build.providers.shutil.which", lambda _path: "/bin/tool")
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        which_resolver=lambda _path: "/bin/tool",
+    )
     expect_true(runner.is_available("git"))
-    monkeypatch.setattr("codeintel.build.providers.shutil.which", lambda _path: None)
+    runner = SubprocessToolRunner(
+        ToolsConfig.default(),
+        which_resolver=lambda _path: None,
+    )
     expect_false(runner.is_available("git"))
 
 

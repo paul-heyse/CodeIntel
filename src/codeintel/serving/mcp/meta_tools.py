@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import cast
-
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
@@ -20,8 +18,10 @@ from codeintel.serving.mcp.models import (
     OperationMetaResponse,
     ProblemDetail,
 )
+from codeintel.serving.mcp.tool_builder import McpToolRegistrar
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations.catalog import (
+    Operation,
     build_dataset_meta,
     build_serving_dataflow_graph,
     iter_registry_operations,
@@ -58,10 +58,17 @@ class _MetaToolsContext:
     node_by_id: dict[str, DataflowNode]
 
     @classmethod
-    def from_backend(cls, backend: QueryBackendOrService) -> _MetaToolsContext:
+    def from_backend(
+        cls,
+        backend: QueryBackendOrService,
+        *,
+        dataflow_builder: Callable[
+            [], tuple[list[DataflowNode], list[DataflowEdge]]
+        ] = build_serving_dataflow_graph,
+    ) -> _MetaToolsContext:
         limits = _get_limits(backend)
         service = _get_service(backend)
-        nodes, edges = build_serving_dataflow_graph()
+        nodes, edges = dataflow_builder()
         node_by_id = {node.id: node for node in nodes}
 
         incoming: dict[str, list[DataflowEdge]] = {}
@@ -141,7 +148,9 @@ def _reconstruct_path(
     return edges
 
 
-def _build_list_datasets_tool(context: _MetaToolsContext) -> Callable[[], object]:
+def _build_list_datasets_tool(
+    context: _MetaToolsContext, dataset_meta: Iterable[object]
+) -> Callable[[], object]:
     @_wrap
     def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
         """List dataset metadata and serving limits via MCP.
@@ -151,7 +160,6 @@ def _build_list_datasets_tool(context: _MetaToolsContext) -> Callable[[], object
         list[dict[str, object]] | dict[str, ProblemDetail]
             Serialized DatasetMetaResponse payloads or a ProblemDetail on error.
         """
-        metas = build_dataset_meta(context.service, context.limits)
         return [
             DatasetMetaResponse(
                 id=meta.id,
@@ -165,13 +173,15 @@ def _build_list_datasets_tool(context: _MetaToolsContext) -> Callable[[], object
                 default_limit=meta.default_limit,
                 max_limit=meta.max_limit,
             ).model_dump()
-            for meta in metas
+            for meta in dataset_meta
         ]
 
     return _tool
 
 
-def _build_list_operations_tool(context: _MetaToolsContext) -> Callable[[], object]:
+def _build_list_operations_tool(
+    context: _MetaToolsContext, operations: Iterable[Operation]
+) -> Callable[[], object]:
     @_wrap
     def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
         """List available operations and their characteristics via MCP.
@@ -182,7 +192,7 @@ def _build_list_operations_tool(context: _MetaToolsContext) -> Callable[[], obje
             Serialized OperationMetaResponse payloads or a ProblemDetail on error.
         """
         payloads: list[OperationMetaResponse] = []
-        for spec in iter_registry_operations():
+        for spec in operations:
             default_limit = spec.default_limit or context.limits.default_limit
             max_limit = spec.max_limit or context.limits.max_rows_per_call
             payloads.append(
@@ -362,16 +372,39 @@ def _build_explain_path_tool(context: _MetaToolsContext) -> Callable[[str, str, 
     return _tool
 
 
-def register_meta_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register meta MCP tools on the given FastMCP instance."""
-    context = _MetaToolsContext.from_backend(backend)
+@dataclass
+class MetaToolOptions:
+    """Optional overrides for meta tool registration."""
 
-    mcp.tool()(_build_list_datasets_tool(context))
-    mcp.tool()(_build_list_operations_tool(context))
+    operations: Iterable[Operation] | None = None
+    dataflow_builder: Callable[[], tuple[list[DataflowNode], list[DataflowEdge]]] = (
+        build_serving_dataflow_graph
+    )
+    dataset_meta_builder: Callable[[QueryService, BackendLimits], Iterable[object]] = (
+        build_dataset_meta
+    )
+
+
+def register_meta_tools(
+    mcp: McpToolRegistrar,
+    backend: QueryBackendOrService,
+    *,
+    options: MetaToolOptions | None = None,
+) -> None:
+    """Register meta MCP tools on the given registrar."""
+    opts = options or MetaToolOptions()
+    context = _MetaToolsContext.from_backend(
+        backend,
+        dataflow_builder=opts.dataflow_builder,
+    )
+    dataset_meta = list(opts.dataset_meta_builder(context.service, context.limits))
+    operations = list(opts.operations or iter_registry_operations())
+    mcp.tool()(_build_list_datasets_tool(context, dataset_meta))
+    mcp.tool()(_build_list_operations_tool(context, operations))
     mcp.tool()(_build_list_dataflow_graph_tool(context))
     mcp.tool()(_build_explain_dataset_tool(context))
     mcp.tool()(_build_explain_operation_tool(context))
     mcp.tool()(_build_explain_path_tool(context))
 
 
-__all__ = ["register_meta_tools"]
+__all__ = ["MetaToolOptions", "register_meta_tools"]

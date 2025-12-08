@@ -13,10 +13,9 @@ See Also
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
-
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
@@ -31,6 +30,7 @@ from codeintel.serving.mcp.serialization import (
     SupportsFromDomain,
     SupportsModelValidate,
 )
+from codeintel.serving.mcp.tool_builder import McpToolRegistrar
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations import Operation, iter_operations
 from codeintel.serving.services.errors import generate_correlation_id
@@ -67,6 +67,9 @@ def _build_function_tool(
     spec: Operation,
     backend: QueryBackendOrService,
     config: ServingConfig | None = None,
+    *,
+    model_resolver: Callable[[str], ResponseFactory | None] | None = None,
+    prereq_runner: Callable[[str, ServingConfig, QueryBackend], object] | None = None,
 ) -> Callable[..., dict[str, object] | dict[str, ProblemDetail]]:
     backend_attr = getattr(backend, spec.backend_method, None)
     if not callable(backend_attr):
@@ -76,18 +79,18 @@ def _build_function_tool(
         )
         raise TypeError(message)
     backend_method: Callable[..., object] = backend_attr
-    model_cls = cast("ResponseFactory | None", getattr(models, spec.output_model_name, None))
+    resolver = model_resolver or (lambda name: getattr(models, name, None))
+    model_cls = cast("ResponseFactory | None", resolver(spec.output_model_name))
+    run_prereqs = prereq_runner or (
+        lambda op_id, cfg, bkd: ensure_prereqs_for_mcp(op_id=op_id, config=cfg, backend=bkd)
+    )
 
     @_wrap
     def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
         # Check for auto-pipeline prerequisites
         # We check gateway attribute presence as a proxy for QueryBackend
         if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
-            ensure_prereqs_for_mcp(
-                op_id=spec.id,
-                config=config,
-                backend=cast("QueryBackend", backend),
-            )
+            run_prereqs(spec.id, config, cast("QueryBackend", backend))
 
         correlation_id = generate_correlation_id()
         dataset = kwargs.get("dataset_name") or kwargs.get("dataset")
@@ -113,10 +116,20 @@ def _build_function_tool(
     return cast("Callable[..., dict[str, object] | dict[str, ProblemDetail]]", _tool)
 
 
+@dataclass
+class FunctionToolOptions:
+    """Optional overrides for function tool registration."""
+
+    operations: Iterable[Operation] | None = None
+    model_resolver: Callable[[str], ResponseFactory | None] | None = None
+    prereq_runner: Callable[[str, ServingConfig, QueryBackend], object] | None = None
+
+
 def register_function_tools(
-    mcp: FastMCP,
+    mcp: McpToolRegistrar,
     backend: QueryBackendOrService,
     config: ServingConfig | None = None,
+    options: FunctionToolOptions | None = None,
 ) -> None:
     """Register function- and graph-related MCP tools based on Operation.
 
@@ -128,11 +141,20 @@ def register_function_tools(
         Concrete MCP backend or QueryService implementation.
     config
         Optional serving config for auto-pipeline support.
+    options
+        Optional overrides for operations, model resolution, and prereq runner.
     """
-    for spec in iter_operations():
+    opts = options or FunctionToolOptions()
+    for spec in opts.operations or iter_operations():
         if spec.category not in FUNCTION_TOOL_CATEGORIES or spec.tool_name is None:
             continue
-        tool = _build_function_tool(spec, backend, config)
+        tool = _build_function_tool(
+            spec,
+            backend,
+            config,
+            model_resolver=opts.model_resolver,
+            prereq_runner=opts.prereq_runner,
+        )
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
         mcp.tool(
@@ -141,4 +163,4 @@ def register_function_tools(
         )(tool)
 
 
-__all__ = ["register_function_tools"]
+__all__ = ["FunctionToolOptions", "register_function_tools"]

@@ -18,7 +18,6 @@ from codeintel.build.registry import (
     build_target_graph,
     derive_schemas_from_targets,
     get_target_by_table,
-    get_target_graph,
 )
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.resources import TargetExecution, TargetResources
@@ -289,7 +288,7 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
     expect_true(any("Duplicate schema" in rec.message for rec in caplog.records))
 
 
-def test_registry_build_target_graph_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registry_build_target_graph_validation_error() -> None:
     """build_target_graph raises when targets have missing deps."""
     bad_target = OutputTarget(
         name="bad",
@@ -298,17 +297,14 @@ def test_registry_build_target_graph_validation_error(monkeypatch: pytest.Monkey
         tables=("core.bad",),
         dependencies=("missing_dep",),
     )
-    monkeypatch.setattr("codeintel.build.registry.ALL_TARGETS", (bad_target,))
-    get_target_graph.cache_clear()
 
     with pytest.raises(ValueError, match="missing_dep") as excinfo:
-        build_target_graph()
+        build_target_graph((bad_target,))
 
     expect_in("missing_dep", str(excinfo.value))
-    get_target_graph.cache_clear()
 
 
-def test_registry_get_target_by_table(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registry_get_target_by_table() -> None:
     """get_target_by_table returns producer target for table."""
     target = OutputTarget(
         name="producer",
@@ -316,13 +312,10 @@ def test_registry_get_target_by_table(monkeypatch: pytest.MonkeyPatch) -> None:
         plugin="p",
         tables=("core.produced",),
     )
-    monkeypatch.setattr("codeintel.build.registry.ALL_TARGETS", (target,))
-    get_target_graph.cache_clear()
 
-    found = get_target_by_table("core.produced")
+    found = get_target_by_table("core.produced", targets=(target,))
 
     expect_true(found is target)
-    get_target_graph.cache_clear()
 
 
 def _state_with_status(graph: TargetGraph, status: TargetStatus = "computed") -> DatabaseState:

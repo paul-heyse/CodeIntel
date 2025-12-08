@@ -10,17 +10,16 @@ Commands
 
 from __future__ import annotations
 
+import inspect
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, cast
+from typing import cast
 
 import typer
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.commands._common import VerboseOpt, setup_logging
-from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
@@ -48,63 +47,74 @@ RepoOpt = typer.Option(
     "--repo",
     help="Repository slug (e.g., 'my-org/my-repo').",
 )
-
-RepoArg = Annotated[str, RepoOpt]
-
 CommitsOpt = typer.Option(
-    ...,
+    None,
     "--commits",
     help="Commits to include in the timeseries (latest first).",
 )
-
-CommitsArg = Annotated[list[str], CommitsOpt]
 
 RepoRootOptInfo = typer.Option(
     Path(),
     "--repo-root",
     help="Path to the repository root (default: current directory).",
 )
-RepoRootOpt = Annotated[Path, RepoRootOptInfo]
 
 DbDirOptInfo = typer.Option(
     Path("build/db"),
     "--db-dir",
     help="Directory with per-commit DuckDB snapshots (codeintel-<commit>.duckdb).",
 )
-DbDirOpt = Annotated[Path, DbDirOptInfo]
 
 OutputDbOptInfo = typer.Option(
     Path("build/db/history.duckdb"),
     "--output-db",
     help="Destination DuckDB for history_timeseries (will be created if missing).",
 )
-OutputDbOpt = Annotated[Path, OutputDbOptInfo]
 
 EntityKindOptInfo = typer.Option(
     "function",
     "--entity-kind",
     help="Entity kind to include: function, module, or both.",
 )
-EntityKindOpt = Annotated[str, EntityKindOptInfo]
 
 MaxEntitiesOptInfo = typer.Option(
     500,
     "--max-entities",
     help="Maximum entities to track (top-N by selection strategy).",
 )
-MaxEntitiesOpt = Annotated[int, MaxEntitiesOptInfo]
 
 SelectionStrategyOptInfo = typer.Option(
     "risk_score",
     "--selection-strategy",
     help="Selection strategy for picking entities (default: risk_score).",
 )
-SelectionStrategyOpt = Annotated[str, SelectionStrategyOptInfo]
+
+REPO_OPT = RepoOpt
+COMMITS_OPT = CommitsOpt
+REPO_ROOT_OPT = RepoRootOptInfo
+DB_DIR_OPT = DbDirOptInfo
+OUTPUT_DB_OPT = OutputDbOptInfo
+ENTITY_KIND_OPT = EntityKindOptInfo
+MAX_ENTITIES_OPT = MaxEntitiesOptInfo
+SELECTION_STRATEGY_OPT = SelectionStrategyOptInfo
+VERBOSE_OPT = VerboseOpt
 
 
 @dataclass(frozen=True)
 class HistoryOptions:
     """Selection and storage options for history aggregation."""
+
+    repo_root: Path
+    db_dir: Path
+    output_db: Path
+    entity_kind: str
+    max_entities: int
+    selection_strategy: str
+
+
+@dataclass(frozen=True)
+class HistoryOptionsInput:
+    """Raw CLI values before normalization."""
 
     repo_root: Path
     db_dir: Path
@@ -209,42 +219,136 @@ def history_timeseries_handler(
     )
 
 
-def _bundle_history(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
-    return {
-        "repo": cast("str", cli_kwargs["repo"]),
-        "commits": cast("list[str]", cli_kwargs["commits"]),
-        "options": HistoryOptions(
-            repo_root=cast("Path", cli_kwargs.get("repo_root", Path())),
-            db_dir=cast("Path", cli_kwargs.get("db_dir", Path("build/db"))),
-            output_db=cast("Path", cli_kwargs.get("output_db", Path("build/db/history.duckdb"))),
-            entity_kind=cast("str", cli_kwargs.get("entity_kind", "function")),
-            max_entities=int(cast("int | str", cli_kwargs.get("max_entities", 500)) or 500),
-            selection_strategy=cast("str", cli_kwargs.get("selection_strategy", "risk_score")),
+def _normalize_commits(commits: tuple[str, ...] | list[str] | None) -> list[str]:
+    """Flatten repeatable commit arguments into a list of strings.
+
+    Returns
+    -------
+    list[str]
+        Normalized commit identifiers.
+    """
+    if commits is None:
+        return []
+    return [str(value) for value in commits]
+
+
+def _build_history_options(values: HistoryOptionsInput) -> HistoryOptions:
+    """Construct HistoryOptions with normalized types.
+
+    Returns
+    -------
+    HistoryOptions
+        Aggregated history command options.
+    """
+    return HistoryOptions(
+        repo_root=Path(values.repo_root),
+        db_dir=Path(values.db_dir),
+        output_db=Path(values.output_db),
+        entity_kind=str(values.entity_kind),
+        max_entities=int(values.max_entities),
+        selection_strategy=str(values.selection_strategy),
+    )
+
+
+def history_timeseries(**cli_kwargs: object) -> None:
+    """CLI entrypoint for history_timeseries."""
+    commits_raw = cast("tuple[str, ...] | list[str] | None", cli_kwargs.get("commits"))
+    repo_root_raw = cast("Path | str | None", cli_kwargs.get("repo_root"))
+    db_dir_raw = cast("Path | str | None", cli_kwargs.get("db_dir"))
+    output_db_raw = cast("Path | str | None", cli_kwargs.get("output_db"))
+    entity_kind_raw = cast("str | None", cli_kwargs.get("entity_kind"))
+    max_entities_raw = cast("int | str | None", cli_kwargs.get("max_entities"))
+    selection_strategy_raw = cast("str | None", cli_kwargs.get("selection_strategy"))
+    verbose_raw = cast("int | str | None", cli_kwargs.get("verbose"))
+
+    history_timeseries_handler(
+        repo=str(cli_kwargs["repo"]),
+        commits=_normalize_commits(list(commits_raw) if commits_raw is not None else None),
+        options=_build_history_options(
+            HistoryOptionsInput(
+                repo_root=Path(repo_root_raw or Path()),
+                db_dir=Path(db_dir_raw or Path("build/db")),
+                output_db=Path(output_db_raw or Path("build/db/history.duckdb")),
+                entity_kind=str(entity_kind_raw or "function"),
+                max_entities=int(max_entities_raw or 500),
+                selection_strategy=str(selection_strategy_raw or "risk_score"),
+            )
         ),
-        "verbose": int(cast("int | str", cli_kwargs.get("verbose", 0)) or 0),
-    }
+        verbose=int(verbose_raw or 0),
+    )
 
 
-_HISTORY_SPECS = [
-    OptionSpec("repo", str, RepoOpt),
-    OptionSpec("commits", list[str], CommitsOpt),
-    OptionSpec("repo_root", Path, RepoRootOptInfo),
-    OptionSpec("db_dir", Path, DbDirOptInfo),
-    OptionSpec("output_db", Path, OutputDbOptInfo),
-    OptionSpec("entity_kind", str, EntityKindOptInfo),
-    OptionSpec("max_entities", int, MaxEntitiesOptInfo),
-    OptionSpec("selection_strategy", str, SelectionStrategyOptInfo),
-    OptionSpec("verbose", int, VerboseOpt),
+_HISTORY_PARAMETERS = [
+    inspect.Parameter(
+        "repo",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=REPO_OPT,
+        annotation=str,
+    ),
+    inspect.Parameter(
+        "commits",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=COMMITS_OPT,
+        annotation=list[str],
+    ),
+    inspect.Parameter(
+        "repo_root",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=REPO_ROOT_OPT,
+        annotation=Path,
+    ),
+    inspect.Parameter(
+        "db_dir",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=DB_DIR_OPT,
+        annotation=Path,
+    ),
+    inspect.Parameter(
+        "output_db",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=OUTPUT_DB_OPT,
+        annotation=Path,
+    ),
+    inspect.Parameter(
+        "entity_kind",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=ENTITY_KIND_OPT,
+        annotation=str,
+    ),
+    inspect.Parameter(
+        "max_entities",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=MAX_ENTITIES_OPT,
+        annotation=int,
+    ),
+    inspect.Parameter(
+        "selection_strategy",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=SELECTION_STRATEGY_OPT,
+        annotation=str,
+    ),
+    inspect.Parameter(
+        "verbose",
+        inspect.Parameter.KEYWORD_ONLY,
+        default=VERBOSE_OPT,
+        annotation=int,
+    ),
 ]
 
-history_timeseries = history_app.command("timeseries")(
-    wrap_command(
-        history_timeseries_handler,
-        _HISTORY_SPECS,
-        bundle=_bundle_history,
-        name="history_timeseries",
-    )
-)
+history_timeseries.__signature__ = inspect.Signature(_HISTORY_PARAMETERS)
+history_timeseries.__annotations__ = {
+    "repo": str,
+    "commits": list[str],
+    "repo_root": Path,
+    "db_dir": Path,
+    "output_db": Path,
+    "entity_kind": str,
+    "max_entities": int,
+    "selection_strategy": str,
+    "verbose": int,
+}
+
+history_timeseries = history_app.command("timeseries")(history_timeseries)
 
 
 __all__ = ["history_app"]

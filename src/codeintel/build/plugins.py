@@ -37,7 +37,8 @@ Example
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, ClassVar, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext, TargetResult
@@ -129,17 +130,35 @@ class PluginCatalog:
         self._registry: dict[str, type[TargetPlugin]] = {}
 
     def register(self, plugin_class: type[TargetPlugin]) -> type[TargetPlugin]:
-        """Register a plugin class and return it."""
+        """Register a plugin class and return it.
+
+        Returns
+        -------
+        type[TargetPlugin]
+            The registered plugin class.
+        """
         name = plugin_class.plugin_name
         self._registry[name] = plugin_class
         return plugin_class
 
     def get(self, name: str) -> type[TargetPlugin] | None:
-        """Return a plugin class by name."""
+        """Return a plugin class by name.
+
+        Returns
+        -------
+        type[TargetPlugin] | None
+            Plugin class if present, else None.
+        """
         return self._registry.get(name)
 
     def all(self) -> dict[str, type[TargetPlugin]]:
-        """Return a copy of the registry."""
+        """Return a copy of the registry.
+
+        Returns
+        -------
+        dict[str, type[TargetPlugin]]
+            Mapping of plugin name to class.
+        """
         return dict(self._registry)
 
     def clear(self) -> None:
@@ -191,6 +210,8 @@ def get_plugin(name: str, *, catalog: PluginCatalog | None = None) -> type[Targe
     ----------
     name
         Plugin name to look up.
+    catalog
+        Optional catalog to look up (defaults to module catalog).
 
     Returns
     -------
@@ -203,6 +224,11 @@ def get_plugin(name: str, *, catalog: PluginCatalog | None = None) -> type[Targe
 
 def all_plugins(*, catalog: PluginCatalog | None = None) -> dict[str, type[TargetPlugin]]:
     """Get all registered plugins.
+
+    Parameters
+    ----------
+    catalog
+        Optional catalog to read from (defaults to module catalog).
 
     Returns
     -------

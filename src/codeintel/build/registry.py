@@ -636,7 +636,6 @@ def derive_schemas_from_targets(
     return schemas
 
 
-def get_all_target_table_keys() -> frozenset[str]:
 def get_all_target_table_keys(targets: tuple[OutputTarget, ...] | None = None) -> frozenset[str]:
     """Return all table keys declared by any target.
 
@@ -665,6 +664,8 @@ def get_target_by_table(
     ----------
     table_key
         Fully-qualified table name.
+    targets
+        Optional set of targets to search (defaults to ALL_TARGETS).
 
     Returns
     -------

@@ -30,7 +30,10 @@ from codeintel.graphs.core.protocol import (
     GraphPluginStage,
 )
 from codeintel.graphs.core.registry import (
+    DependencyPolicy,
     GraphPluginRegistry,
+    PlanningOptions,
+    SelectionPolicy,
     get_graph_registry,
     register_graph_plugin,
     unregister_graph_plugin,
@@ -383,8 +386,66 @@ def test_resolve_dependencies_missing_raises(fresh_registry: GraphPluginRegistry
     main_plugin = _make_test_plugin("missing_dep", depends_on=(f"{TEST_PLUGIN_PREFIX}nonexistent",))
     fresh_registry.register(main_plugin)
 
-    with pytest.raises(ValueError, match=r"depends on.*not in the selected"):
+    with pytest.raises(ValueError, match=r"depends on.*not registered"):
         fresh_registry.plan(plugin_names=[main_plugin.metadata.name])
+
+
+@pytest.mark.parametrize(
+    ("selection_policy", "raises"),
+    [
+        (SelectionPolicy.LENIENT, False),
+        (SelectionPolicy.STRICT, True),
+    ],
+)
+def test_unknown_plugin_selection_policy(
+    fresh_registry: GraphPluginRegistry, *, selection_policy: SelectionPolicy, raises: bool
+) -> None:
+    """Unknown requested plugins are skipped in lenient mode and raise in strict mode."""
+    plan_opts = PlanningOptions(selection_policy=selection_policy)
+    if raises:
+        with pytest.raises(ValueError, match="is not registered"):
+            fresh_registry.plan(plugin_names=["unknown_plugin"], plan_options=plan_opts)
+        return
+
+    plan = fresh_registry.plan(plugin_names=["unknown_plugin"], plan_options=plan_opts)
+    skipped = {skip.name: skip.reason for skip in plan.skipped_plugins}
+    expect_equal(skipped.get("unknown_plugin"), "missing_graph")
+    expect_true("unknown_plugin" in plan.dep_graph)
+
+
+@pytest.mark.parametrize(
+    ("dependency_policy", "allow_missing", "raises"),
+    [
+        (DependencyPolicy.SKIP, False, False),
+        (DependencyPolicy.STRICT, False, True),
+        (DependencyPolicy.SKIP, True, False),
+    ],
+)
+def test_missing_dependency_policy_controls_skip(
+    fresh_registry: GraphPluginRegistry,
+    *,
+    dependency_policy: DependencyPolicy,
+    allow_missing: bool,
+    raises: bool,
+) -> None:
+    """Missing dependencies can be skipped or raised depending on policy."""
+    dep_name = f"{TEST_PLUGIN_PREFIX}missing_dep"
+    main_plugin = _make_test_plugin("needs_missing", depends_on=(dep_name,))
+    fresh_registry.register(main_plugin)
+
+    plan_opts = PlanningOptions(
+        dependency_policy=dependency_policy,
+        allow_missing_dependencies=allow_missing,
+    )
+    if raises:
+        with pytest.raises(ValueError, match="not registered"):
+            fresh_registry.plan(plugin_names=[main_plugin.metadata.name], plan_options=plan_opts)
+        return
+
+    plan = fresh_registry.plan(plugin_names=[main_plugin.metadata.name], plan_options=plan_opts)
+    skipped = {skip.name: skip.reason for skip in plan.skipped_plugins}
+    expect_equal(skipped.get(dep_name), "missing_dependency")
+    expect_true(dep_name in plan.dep_graph)
 
 
 def test_resolve_dependencies_by_capability(fresh_registry: GraphPluginRegistry) -> None:
@@ -531,7 +592,7 @@ def test_plan_skips_unknown_plugins(fresh_registry: GraphPluginRegistry) -> None
     skipped = plan.skipped_plugins
     expect_length(skipped, 1)
     expect_equal(skipped[0].name, "nonexistent_plugin")
-    expect_equal(skipped[0].reason, "missing_dependency")
+    expect_equal(skipped[0].reason, "missing_graph")
 
 
 def test_plan_duplicate_plugin_raises(fresh_registry: GraphPluginRegistry) -> None:
@@ -638,7 +699,10 @@ def test_graph_plugin_plan_plugins_tuple(fresh_registry: GraphPluginRegistry) ->
 
 def test_graph_plugin_plan_skipped_tuple(fresh_registry: GraphPluginRegistry) -> None:
     """GraphPluginPlan.skipped_plugins is a tuple."""
-    plan = fresh_registry.plan(plugin_names=["unknown"])
+    plan = fresh_registry.plan(
+        plugin_names=["unknown"],
+        plan_options=PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+    )
 
     expect_is_instance(plan.skipped_plugins, tuple)
 

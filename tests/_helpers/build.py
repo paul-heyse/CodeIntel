@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.executor import StageExecutionResult
 from codeintel.build.manifest import OutputManifest
 from codeintel.build.plan import MODULE_ORDER, BuildPlan, PlanStage, PlanStep
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -116,8 +116,13 @@ def sample_target_graph(
 def make_plugin_registry_store(
     loader: Callable[[PluginRegistryStore], None] | None = None,
 ) -> PluginRegistryStore:
-    """Create a plugin registry store with an optional loader."""
+    """Create a plugin registry store with an optional loader.
 
+    Returns
+    -------
+    PluginRegistryStore
+        Registry store configured with the provided loader.
+    """
     return PluginRegistryStore(loader=loader)
 
 

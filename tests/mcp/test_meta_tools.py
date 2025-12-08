@@ -5,13 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, TypedDict, cast
-
-import pytest
+from typing import TypedDict, cast
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp import meta_tools
+from codeintel.serving.mcp.meta_tools import MetaToolOptions, register_meta_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -21,9 +19,6 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-
-if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
 
 
 @dataclass
@@ -43,19 +38,16 @@ class _OpMeta:
 
 class _RecordingMcp:
     def __init__(self) -> None:
-        self.registry: list[Callable[..., list[dict[str, object]]]] = []
+        self.registry: list[Callable[..., object]] = []
 
     def tool(
-        self, name: str | None = None, description: str | None = None
-    ) -> Callable[
-        [Callable[..., list[dict[str, object]]]],
-        Callable[..., list[dict[str, object]]],
-    ]:
+        self, name: str | None = None, **options: object
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:
         def _decorator(
-            func: Callable[..., list[dict[str, object]]],
-        ) -> Callable[..., list[dict[str, object]]]:
+            func: Callable[..., object],
+        ) -> Callable[..., object]:
             _ = name
-            _ = description
+            _ = options
             self.registry.append(func)
             return func
 
@@ -96,32 +88,23 @@ def _make_operation(op_id: str, tool_name: str) -> Operation:
     )
 
 
-def test_register_meta_tools_registers_expected_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_meta_tools_registers_expected_tools() -> None:
     """Meta tools should register and return serialized payloads."""
-    # Stub dataset metadata and operations
-    monkeypatch.setattr(
-        meta_tools,
-        "build_dataset_meta",
-        lambda _service, _limits: (
-            SimpleNamespace(
-                id="d1",
-                name="Dataset One",
-                table_key="table1",
-                description="desc",
-                schema_version="1",
-                family="fam",
-                is_docs_view=True,
-                is_read_only=False,
-                default_limit=10,
-                max_limit=100,
-            ),
+    dataset_meta = (
+        SimpleNamespace(
+            id="d1",
+            name="Dataset One",
+            table_key="table1",
+            description="desc",
+            schema_version="1",
+            family="fam",
+            is_docs_view=True,
+            is_read_only=False,
+            default_limit=10,
+            max_limit=100,
         ),
     )
-    monkeypatch.setattr(
-        meta_tools,
-        "iter_registry_operations",
-        lambda: (_make_operation("op.one", "tool_one"),),
-    )
+    operations = (_make_operation("op.one", "tool_one"),)
 
     nodes = [
         DataflowNode(
@@ -141,16 +124,18 @@ def test_register_meta_tools_registers_expected_tools(monkeypatch: pytest.Monkey
     ]
     edges = [DataflowEdge(src="table1", dst="op.one", edge_type="reads")]
 
-    monkeypatch.setattr(
-        meta_tools,
-        "build_serving_dataflow_graph",
-        lambda: (nodes, edges),
-    )
-
     backend = SimpleNamespace(limits=BackendLimits(), service=SimpleNamespace())
     mcp = _RecordingMcp()
 
-    meta_tools.register_meta_tools(cast("FastMCP", mcp), cast("QueryBackendOrService", backend))
+    register_meta_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        options=MetaToolOptions(
+            operations=operations,
+            dataflow_builder=lambda: (nodes, edges),
+            dataset_meta_builder=lambda _service, _limits: dataset_meta,
+        ),
+    )
 
     expect_length(mcp.registry, 6)
     (
@@ -162,35 +147,25 @@ def test_register_meta_tools_registers_expected_tools(monkeypatch: pytest.Monkey
         explain_path,
     ) = mcp.registry
 
-    datasets = list_datasets()
-    dataflow = cast("list[_DataflowPayload]", list_dataflow())
+    expect_equal(cast("list[dict[str, object]]", list_datasets())[0]["id"], "d1")
+    expect_equal(cast("list[dict[str, object]]", list_operations())[0]["id"], "op.one")
+    expect_length(cast("list[_DataflowPayload]", list_dataflow())[0]["nodes"], 2)
     dataset_details = cast("list[_ExplainPayload]", explain_dataset("table1"))
-    op_details = cast("list[_ExplainPayload]", explain_operation("op.one"))
-    path = cast("list[_DataflowPayload]", explain_path("table1", "op.one", max_hops=2))
-
-    expect_equal(datasets[0]["id"], "d1")
-    expect_equal(list_operations()[0]["id"], "op.one")
-    expect_length(dataflow[0]["nodes"], 2)
     expect_equal(dataset_details[0]["node"]["id"], "table1")
     expect_equal(dataset_details[0]["incoming_edges"], [])
     expect_length(dataset_details[0]["outgoing_edges"], 1)
+    op_details = cast("list[_ExplainPayload]", explain_operation("op.one"))
     expect_length(op_details[0]["incoming_edges"], 1)
     expect_equal(op_details[0]["outgoing_edges"], [])
-    expect_true(bool(path[0]["edges"]))
+    expect_true(
+        bool(
+            cast("list[_DataflowPayload]", explain_path("table1", "op.one", max_hops=2))[0]["edges"]
+        )
+    )
 
 
-def test_explain_dataset_returns_error_for_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_explain_dataset_returns_error_for_unknown_id() -> None:
     """Unknown dataset id should yield ProblemDetail payload."""
-    monkeypatch.setattr(
-        meta_tools,
-        "build_dataset_meta",
-        lambda _service, _limits: (),
-    )
-    monkeypatch.setattr(
-        meta_tools,
-        "iter_registry_operations",
-        lambda: (),
-    )
     nodes = [
         DataflowNode(
             id="existing",
@@ -201,10 +176,17 @@ def test_explain_dataset_returns_error_for_unknown_id(monkeypatch: pytest.Monkey
         )
     ]
     edges: list[DataflowEdge] = []
-    monkeypatch.setattr(meta_tools, "build_serving_dataflow_graph", lambda: (nodes, edges))
     backend = SimpleNamespace(limits=BackendLimits(), service=SimpleNamespace())
     mcp = _RecordingMcp()
-    meta_tools.register_meta_tools(cast("FastMCP", mcp), cast("QueryBackendOrService", backend))
+    register_meta_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        options=MetaToolOptions(
+            operations=(),
+            dataflow_builder=lambda: (nodes, edges),
+            dataset_meta_builder=lambda _service, _limits: (),
+        ),
+    )
     (
         _list_datasets,
         _list_operations,

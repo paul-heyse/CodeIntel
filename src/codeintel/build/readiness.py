@@ -526,6 +526,9 @@ class TargetReadinessView:
 
         total_ms = 0
         for info in blocker_chain:
+            if info.target == self.name:
+                # Skip the current target; we only count work needed to unblock it.
+                continue
             target = self._graph.get(info.target)
             if target.estimated_duration_ms is not None:
                 total_ms += target.estimated_duration_ms
