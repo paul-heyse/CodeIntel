@@ -49,6 +49,7 @@ class RecordingResources:
 
     modules: tuple[str, ...] = ()
     type_checker: object | None = None
+    gateway: StorageGateway | RecordingGateway | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,13 @@ class LegacyTargetContextOptions:
 
     @classmethod
     def with_modules(cls, modules: Iterable[str], **kwargs: object) -> LegacyTargetContextOptions:
-        """Convenience constructor to set modules explicitly."""
+        """Create options with explicit modules.
+
+        Returns
+        -------
+        LegacyTargetContextOptions
+            Options with the provided modules applied.
+        """
         return cls(modules=tuple(modules), **kwargs)
 
 
@@ -82,36 +89,54 @@ class RecordingContext:
 def make_target_context(
     repo_root: Path,
     options: LegacyTargetContextOptions | None = None,
-    *,
-    modules: Iterable[str] | None = None,
-    gateway: StorageGateway | RecordingGateway | None = None,
-    type_checker: object | None = None,
-    use_real_gateway: bool | None = None,
-    tmp_path: Path | None = None,
-    snapshot: tuple[str, str] | None = None,
+    **overrides: object,
 ) -> RecordingContext:
     """Construct a recording context matching plugin expectations.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root directory.
+    options
+        Pre-built options bundle. Mutually exclusive with overrides.
+    overrides
+        Optional overrides: modules, gateway, type_checker, use_real_gateway, tmp_path, snapshot.
 
     Returns
     -------
     RecordingContext
         Context populated with provided options.
+
+    Raises
+    ------
+    ValueError
+        If both options and overrides are provided or unexpected keys are supplied.
     """
-    if options is not None and any(
-        val is not None
-        for val in (modules, gateway, type_checker, use_real_gateway, tmp_path, snapshot)
-    ):
+    allowed_keys = {
+        "modules",
+        "gateway",
+        "type_checker",
+        "use_real_gateway",
+        "tmp_path",
+        "snapshot",
+    }
+    unexpected_keys = set(overrides) - allowed_keys
+    if options is not None and overrides:
         message = "Pass either options or individual overrides, not both."
+        raise ValueError(message)
+    if unexpected_keys:
+        unexpected_list = ", ".join(sorted(unexpected_keys))
+        message = f"Unexpected overrides: {unexpected_list}"
         raise ValueError(message)
 
     if options is None:
         opts = LegacyTargetContextOptions(
-            modules=tuple(modules) if modules is not None else None,
-            snapshot=snapshot or (DEFAULT_REPO, DEFAULT_COMMIT),
-            type_checker=type_checker,
-            gateway=gateway,
-            use_real_gateway=use_real_gateway if use_real_gateway is not None else True,
-            tmp_path=tmp_path,
+            modules=tuple(overrides["modules"]) if "modules" in overrides else None,
+            snapshot=overrides.get("snapshot", (DEFAULT_REPO, DEFAULT_COMMIT)),
+            type_checker=overrides.get("type_checker"),
+            gateway=overrides.get("gateway"),
+            use_real_gateway=overrides.get("use_real_gateway", True),
+            tmp_path=overrides.get("tmp_path"),
         )
     else:
         opts = options
@@ -129,6 +154,7 @@ def make_target_context(
     resources = RecordingResources(
         modules=opts.modules or (),
         type_checker=opts.type_checker,
+        gateway=gateway_obj,
     )
     return RecordingContext(
         repo_root=repo_root,
@@ -142,21 +168,31 @@ def make_target_context(
 def make_target_context_from_modules(
     repo_root: Path,
     modules: Iterable[str],
-    *,
-    snapshot: tuple[str, str] | None = None,
-    gateway: StorageGateway | RecordingGateway | None = None,
-    type_checker: object | None = None,
-    use_real_gateway: bool | None = None,
-    tmp_path: Path | None = None,
+    **overrides: object,
 ) -> RecordingContext:
-    """Helper to build a RecordingContext when only modules and a few overrides are needed."""
+    """Build a RecordingContext with explicit modules and optional overrides.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root directory.
+    modules
+        Module paths to include in the context.
+    overrides
+        Optional overrides forwarded to `make_target_context`.
+
+    Returns
+    -------
+    RecordingContext
+        Context populated with provided modules and overrides.
+    """
     opts = LegacyTargetContextOptions(
         modules=tuple(modules),
-        snapshot=snapshot or (DEFAULT_REPO, DEFAULT_COMMIT),
-        type_checker=type_checker,
-        gateway=gateway,
-        use_real_gateway=True if use_real_gateway is None else use_real_gateway,
-        tmp_path=tmp_path,
+        snapshot=overrides.get("snapshot", (DEFAULT_REPO, DEFAULT_COMMIT)),
+        type_checker=overrides.get("type_checker"),
+        gateway=overrides.get("gateway"),
+        use_real_gateway=overrides.get("use_real_gateway", True),
+        tmp_path=overrides.get("tmp_path"),
     )
     return make_target_context(repo_root=repo_root, options=opts)
 
@@ -219,6 +255,7 @@ __all__ = [
     "RecordingContext",
     "RecordingGateway",
     "RecordingResources",
+    "_RecordingConnection",
     "build_repo_tree",
     "build_target_context",
     "make_target_context",

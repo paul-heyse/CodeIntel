@@ -18,8 +18,8 @@ from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.contracts import count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
-    GraphStubEngine,
     build_ast_map,
+    build_graph_engine_double,
     build_module_map,
     insert_goids,
     insert_modules,
@@ -258,10 +258,10 @@ def build_runtime(sample: SampleRepo) -> GraphRuntime:
     call_graph = nx.DiGraph()
     call_graph.add_edge(sample.goid_route, sample.goid_method)
 
-    engine = GraphStubEngine(
-        gateway=sample.gateway,
-        snapshot=sample.snapshot,
-        call_graph_obj=call_graph,
+    engine = build_graph_engine_double(
+        sample.gateway,
+        sample.snapshot,
+        call_graph=call_graph,
     )
     runtime = GraphRuntime(GraphRuntimeOptions(snapshot=sample.snapshot), engine)
     runtime.ensure_call_graph()

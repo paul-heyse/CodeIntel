@@ -16,7 +16,6 @@ from tests._helpers.fakes.coverage import FakeCoverage, build_fake_coverage_from
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
 
 if TYPE_CHECKING:
-    from coverage import Coverage
     from duckdb import DuckDBPyConnection
 
 

@@ -11,7 +11,7 @@ from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
-from tests._helpers.graphs import GraphStubEngine
+from tests._helpers.graphs import build_graph_engine_double
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -30,15 +30,15 @@ def _runtime_options(
     return GraphRuntimeOptions(
         snapshot=snapshot,
         features=GraphFeatureFlags(validation_strict=strict),
-        engine=GraphStubEngine(
-            gateway=gateway,
-            snapshot=snapshot,
-            call_graph_obj=nx.DiGraph(),
-            import_graph_obj=nx.DiGraph(),
-            symbol_module_graph_obj=nx.Graph(),
-            symbol_function_graph_obj=nx.Graph(),
-            config_bipartite_obj=nx.Graph(),
-            test_function_bipartite_obj=nx.Graph(),
+        engine=build_graph_engine_double(
+            gateway,
+            snapshot,
+            call_graph=nx.DiGraph(),
+            import_graph=nx.DiGraph(),
+            symbol_module_graph=nx.Graph(),
+            symbol_function_graph=nx.Graph(),
+            config_graph=nx.Graph(),
+            test_function_graph=nx.Graph(),
         ),
     )
 

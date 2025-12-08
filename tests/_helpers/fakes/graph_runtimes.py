@@ -24,7 +24,7 @@ def create_mock_runtime_with_call_graph(
         edges = [("func_a", "func_b"), ("func_b", "func_c")]
     call_g = nx.DiGraph()
     call_g.add_edges_from(edges)
-    return MockGraphRuntime(call_graph_obj=call_g)
+    return MockGraphRuntime(call_graph=call_g)
 
 
 def create_mock_runtime_with_import_graph(
@@ -41,7 +41,7 @@ def create_mock_runtime_with_import_graph(
         edges = [("mod_a", "mod_b"), ("mod_b", "mod_c")]
     import_g = nx.DiGraph()
     import_g.add_edges_from(edges)
-    return MockGraphRuntime(import_graph_obj=import_g)
+    return MockGraphRuntime(import_graph=import_g)
 
 
 def create_mock_runtime_all_graphs() -> MockGraphRuntime:
@@ -60,12 +60,12 @@ def create_mock_runtime_all_graphs() -> MockGraphRuntime:
     test_func_g = nx.Graph([("test1", "func1")])
     cfg_g = nx.DiGraph([("entry", "block1"), ("block1", "exit")])
     return MockGraphRuntime(
-        call_graph_obj=call_g,
-        import_graph_obj=import_g,
-        symbol_module_graph_obj=symbol_mod_g,
-        symbol_function_graph_obj=symbol_func_g,
-        config_bipartite_obj=config_mod_g,
-        test_function_bipartite_obj=test_func_g,
+        call_graph=call_g,
+        import_graph=import_g,
+        symbol_module_graph=symbol_mod_g,
+        symbol_function_graph=symbol_func_g,
+        config_graph=config_mod_g,
+        test_function_graph=test_func_g,
         cfg_graph=cfg_g,
     )
 

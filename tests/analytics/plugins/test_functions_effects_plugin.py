@@ -10,7 +10,7 @@ from codeintel.analytics.plugins.functions.effects import FunctionEffectsPlugin
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_true
-from tests._helpers.fakes.graph_engine import StubGraphEngine
+from tests._helpers.graphs import build_graph_engine_double
 from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta
 from tests.analytics.conftest import PluginTestHarness
@@ -85,9 +85,9 @@ def test_function_effects_plugin_detects_transitive_effects(
     _seed_effect_sources(plugin_harness.ctx.repo_root)
     catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    engine = StubGraphEngine(
-        gateway=plugin_harness.ctx.gateway,
-        snapshot=plugin_harness.ctx.snapshot,
+    engine = build_graph_engine_double(
+        plugin_harness.ctx.gateway,
+        plugin_harness.ctx.snapshot,
         call_graph=_call_graph(),
     )
     runtime = GraphRuntime(

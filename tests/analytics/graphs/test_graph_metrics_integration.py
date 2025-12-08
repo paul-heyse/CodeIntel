@@ -51,8 +51,8 @@ from tests._helpers.assertions import (
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
-    GraphStubEngine,
     build_ast_map,
+    build_graph_engine_double,
     build_module_map,
     build_sample_graphs,
     build_source_files,
@@ -62,6 +62,14 @@ from tests._helpers.graphs import (
     insert_modules,
     insert_subsystems,
     insert_symbol_edges,
+)
+from tests._helpers.repo import (
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    MOD_A_FQN,
+    MOD_B_FQN,
+    MOD_C_FQN,
 )
 
 MIN_CONFIG_DATA_FLOW_ROWS = 2
@@ -102,10 +110,15 @@ def _build_graph_sample(tmp_path: Path) -> GraphSample:
     ):
         ensure_schema(gateway.con, table)
 
-    goids = {"api_handler": 501, "process": 502, "calc": 503}
+    goids = {"func_a": GOID_FUNC_A, "func_b": GOID_FUNC_B, "func_c": GOID_FUNC_C}
     insert_modules(gateway, snapshot, paths)
 
-    ast_by_goid = build_ast_map(paths, goids, snapshot.repo_root)
+    target_names = {
+        MOD_A_FQN: "func_a",
+        MOD_B_FQN: "func_b",
+        MOD_C_FQN: "func_c",
+    }
+    ast_by_goid = build_ast_map(paths, goids, snapshot.repo_root, target_names=target_names)
     insert_goids(gateway, snapshot, ast_by_goid, now=now)
     insert_config_values(gateway, snapshot, goids, ast_by_goid)
     insert_entrypoints(gateway, snapshot, goids, ast_by_goid, now=now)
@@ -115,19 +128,24 @@ def _build_graph_sample(tmp_path: Path) -> GraphSample:
     graphs = build_sample_graphs(goids)
     runtime_options = GraphRuntimeOptions(
         snapshot=snapshot,
-        engine=GraphStubEngine.from_fixtures(
-            gateway=gateway,
-            snapshot=snapshot,
-            fixtures=graphs,
+        engine=build_graph_engine_double(
+            gateway,
+            snapshot,
+            call_graph=graphs.call_graph,
+            import_graph=graphs.import_graph,
+            config_graph=graphs.config_graph,
+            symbol_module_graph=graphs.symbol_module_graph,
+            symbol_function_graph=graphs.symbol_function_graph,
+            cfg_graph=graphs.cfg_graph,
         ),
     )
 
     module_map = build_module_map(
         ast_by_goid,
         {
-            goids["api_handler"]: "pkg.api",
-            goids["process"]: "pkg.service",
-            goids["calc"]: "pkg.utils",
+            goids["func_a"]: MOD_A_FQN,
+            goids["func_b"]: MOD_B_FQN,
+            goids["func_c"]: MOD_C_FQN,
         },
     )
 
@@ -241,7 +259,7 @@ def test_graph_metrics_end_to_end(tmp_path: Path) -> None:
             pytest.fail("Expected config_data_flow row")
 
         chain_json = chain_row[0]
-        expect_in(str(sample.goids["api_handler"]), chain_json)
+        expect_in(str(sample.goids["func_a"]), chain_json)
 
         expect_equal(
             count_rows(

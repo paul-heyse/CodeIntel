@@ -22,7 +22,14 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
-from tests._helpers.fakes.graph_runtime import GraphRuntimeDouble as GraphStubEngine
+from tests._helpers.fakes.graph_runtime import (
+    CountingGraphEngineAdapter,
+    GraphEngineAdapter,
+    build_graph_engine_double,
+)
+from tests._helpers.fakes.graph_runtime import (
+    GraphRuntimeDouble as GraphStubEngine,
+)
 from tests._helpers.fakes.networkx_graphs import (
     DEFAULT_CHAIN_LENGTH,
     DEFAULT_CYCLE_SIZE,
@@ -31,6 +38,7 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     star_graph,
 )
+from tests._helpers.repo import write_canonical_repo
 
 
 @dataclass
@@ -125,57 +133,8 @@ def build_source_files(repo_root: Path) -> dict[str, Path]:
     dict[str, Path]
         Mapping of module name to written file path.
     """
-    pkg_dir = repo_root / "pkg"
-    pkg_dir.mkdir(parents=True, exist_ok=True)
-    api_path = pkg_dir / "api.py"
-    service_path = pkg_dir / "service.py"
-    utils_path = pkg_dir / "utils.py"
-
-    api_path.write_text(
-        "\n".join(
-            [
-                "import os",
-                "from pkg import service",
-                "",
-                "def api_handler(limit: int, factor: int = 2) -> int:",
-                '    token = os.getenv("API_TOKEN")',
-                "    if not token:",
-                '        token = "fallback"',
-                "    if limit > 0:",
-                "        service.process(limit, token)",
-                "    return limit * factor",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    service_path.write_text(
-        "\n".join(
-            [
-                "import os",
-                "from pkg import utils",
-                "",
-                "def process(limit: int, token: str | None = None) -> int:",
-                '    token_env = os.getenv("API_TOKEN")',
-                '    flag = os.environ.get("FEATURE_FLAG")',
-                "    result = utils.calc(limit)",
-                "    if token_env:",
-                "        result += 1",
-                "    if flag:",
-                "        return result + 1",
-                "    return result",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    utils_path.write_text(
-        "def calc(value: int) -> int:\n    return value * 2\n",
-        encoding="utf-8",
-    )
-    return {
-        "pkg.api": api_path,
-        "pkg.service": service_path,
-        "pkg.utils": utils_path,
-    }
+    canonical = write_canonical_repo(repo_root)
+    return {module: repo_root / rel_path for module, rel_path in canonical.module_paths.items()}
 
 
 def _function_node(
@@ -236,6 +195,10 @@ def build_ast_map(
         "pkg.api": "api_handler",
         "pkg.service": "process",
         "pkg.utils": "calc",
+        "pkg.mod_a": "func_a",
+        "pkg.mod_b": "func_b",
+        "pkg.mod_c": "func_c",
+        "pkg.util": ("helper", "util_func", "func_b"),
     }
     for module, path in paths.items():
         source = path.read_text(encoding="utf-8")
@@ -424,16 +387,16 @@ def insert_symbol_edges(
         gateway,
         [
             SymbolUseEdgeRow(
-                symbol="pkg.service.process",
-                def_path=ast_by_goid[goids["process"]].rel_path,
-                use_path=ast_by_goid[goids["api_handler"]].rel_path,
+                symbol="pkg.mod_b.func_b",
+                def_path=ast_by_goid[goids["func_b"]].rel_path,
+                use_path=ast_by_goid[goids["func_a"]].rel_path,
                 same_file=False,
                 same_module=False,
             ),
             SymbolUseEdgeRow(
-                symbol="pkg.utils.calc",
-                def_path=ast_by_goid[goids["calc"]].rel_path,
-                use_path=ast_by_goid[goids["process"]].rel_path,
+                symbol="pkg.mod_c.func_c",
+                def_path=ast_by_goid[goids["func_c"]].rel_path,
+                use_path=ast_by_goid[goids["func_b"]].rel_path,
                 same_file=False,
                 same_module=False,
             ),
@@ -455,31 +418,31 @@ def build_sample_graphs(goids: Mapping[str, int]) -> GraphFixtures:
         Collection of seeded graph objects keyed by purpose.
     """
     call_graph = nx.DiGraph()
-    call_graph.add_edge(goids["api_handler"], goids["process"], weight=1.0)
-    call_graph.add_edge(goids["process"], goids["calc"], weight=1.0)
-    call_graph.add_edge(goids["api_handler"], goids["calc"], weight=0.5)
+    call_graph.add_edge(goids["func_a"], goids["func_b"], weight=1.0)
+    call_graph.add_edge(goids["func_b"], goids["func_c"], weight=1.0)
+    call_graph.add_edge(goids["func_a"], goids["func_c"], weight=0.5)
 
     import_graph = nx.DiGraph()
-    import_graph.add_edge("pkg.api", "pkg.service", weight=2.0)
-    import_graph.add_edge("pkg.service", "pkg.utils", weight=1.0)
-    import_graph.add_edge("pkg.utils", "pkg.api", weight=0.5)
+    import_graph.add_edge("pkg.mod_a", "pkg.mod_b", weight=2.0)
+    import_graph.add_edge("pkg.mod_b", "pkg.mod_c", weight=1.0)
+    import_graph.add_edge("pkg.mod_c", "pkg.mod_a", weight=0.5)
 
     config_graph = nx.Graph()
     config_graph.add_node(("config_key", "API_TOKEN"), bipartite=0)
     config_graph.add_node(("config_key", "FEATURE_FLAG"), bipartite=0)
-    config_graph.add_node(("module", "pkg.api"), bipartite=1)
-    config_graph.add_node(("module", "pkg.service"), bipartite=1)
-    config_graph.add_edge(("config_key", "API_TOKEN"), ("module", "pkg.api"), weight=1.0)
-    config_graph.add_edge(("config_key", "API_TOKEN"), ("module", "pkg.service"), weight=1.0)
-    config_graph.add_edge(("config_key", "FEATURE_FLAG"), ("module", "pkg.service"), weight=2.0)
+    config_graph.add_node(("module", "pkg.mod_a"), bipartite=1)
+    config_graph.add_node(("module", "pkg.mod_b"), bipartite=1)
+    config_graph.add_edge(("config_key", "API_TOKEN"), ("module", "pkg.mod_a"), weight=1.0)
+    config_graph.add_edge(("config_key", "API_TOKEN"), ("module", "pkg.mod_b"), weight=1.0)
+    config_graph.add_edge(("config_key", "FEATURE_FLAG"), ("module", "pkg.mod_b"), weight=2.0)
 
     symbol_module_graph = nx.Graph()
-    symbol_module_graph.add_edge("pkg.api", "pkg.service", weight=3.0)
-    symbol_module_graph.add_edge("pkg.service", "pkg.utils", weight=1.0)
+    symbol_module_graph.add_edge("pkg.mod_a", "pkg.mod_b", weight=3.0)
+    symbol_module_graph.add_edge("pkg.mod_b", "pkg.mod_c", weight=1.0)
 
     symbol_function_graph = nx.Graph()
-    symbol_function_graph.add_edge(goids["api_handler"], goids["process"], weight=1.5)
-    symbol_function_graph.add_edge(goids["process"], goids["calc"], weight=1.0)
+    symbol_function_graph.add_edge(goids["func_a"], goids["func_b"], weight=1.5)
+    symbol_function_graph.add_edge(goids["func_b"], goids["func_c"], weight=1.0)
 
     return GraphFixtures(
         call_graph=call_graph,
@@ -516,9 +479,12 @@ def build_module_map(
 
 
 __all__ = [
+    "CountingGraphEngineAdapter",
+    "GraphEngineAdapter",
     "GraphFixtures",
     "GraphStubEngine",
     "build_ast_map",
+    "build_graph_engine_double",
     "build_module_map",
     "build_sample_graphs",
     "build_source_files",

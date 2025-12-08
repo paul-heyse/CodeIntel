@@ -23,7 +23,7 @@ from tests._helpers.assertions import expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.graphs import GraphStubEngine
+from tests._helpers.graphs import build_graph_engine_double
 from tests._helpers.rows import function_meta
 
 
@@ -95,15 +95,13 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
     call_graph = nx.DiGraph()
     call_graph.add_nodes_from(goids.values())
     call_graph.add_edge(goids["caller"], goids["impure"])
-    runtime = GraphRuntime(
-        GraphRuntimeOptions(snapshot=snapshot),
-        GraphStubEngine(
-            gateway=gateway,
-            snapshot=snapshot,
-            call_graph_obj=call_graph,
-            copy_graphs=False,
-        ),
+    engine = build_graph_engine_double(
+        gateway,
+        snapshot,
+        call_graph=call_graph,
+        copy_graphs=False,
     )
+    runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
     runtime.ensure_call_graph()
     cfg = FunctionEffectsStepConfig(
         snapshot=snapshot,

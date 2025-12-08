@@ -12,56 +12,60 @@ from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.graphs import GraphFixtures, GraphStubEngine
+from tests._helpers.graphs import (
+    CountingGraphEngineAdapter,
+    GraphFixtures,
+    GraphStubEngine,
+)
 
 
-class _CountingGraphEngine(GraphStubEngine):
-    """Graph stub that tracks load invocations."""
+def _make_counting_engine(snapshot_root: Path) -> CountingGraphEngineAdapter:
+    """Build a counting engine seeded with simple graphs.
 
-    def __init__(self, snapshot_root: Path) -> None:
-        snapshot = make_snapshot(repo_root=snapshot_root)
-        gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
-        fixtures = GraphFixtures(
-            call_graph=nx.DiGraph([("a", "b")]),
-            import_graph=nx.DiGraph(),
-            config_graph=nx.Graph(),
-            symbol_module_graph=nx.Graph(),
-            symbol_function_graph=nx.Graph(),
-        )
-        super().__init__(
-            gateway=gateway,
-            snapshot=snapshot,
-            call_graph_obj=fixtures.call_graph,
-            import_graph_obj=fixtures.import_graph,
-            symbol_module_graph_obj=fixtures.symbol_module_graph,
-            symbol_function_graph_obj=fixtures.symbol_function_graph,
-            config_bipartite_obj=fixtures.config_graph,
-            copy_graphs=False,
-        )
-        self.calls = 0
-
-    def load_call_graph(self) -> nx.DiGraph:
-        self.calls += 1
-        return super().load_call_graph()
+    Returns
+    -------
+    CountingGraphEngineAdapter
+        Adapter that records load invocations for assertions.
+    """
+    snapshot = make_snapshot(repo_root=snapshot_root)
+    gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
+    fixtures = GraphFixtures(
+        call_graph=nx.DiGraph([("a", "b")]),
+        import_graph=nx.DiGraph(),
+        config_graph=nx.Graph(),
+        symbol_module_graph=nx.Graph(),
+        symbol_function_graph=nx.Graph(),
+    )
+    runtime = GraphStubEngine(
+        gateway=gateway,
+        snapshot=snapshot,
+        call_graph=fixtures.call_graph,
+        import_graph=fixtures.import_graph,
+        config_graph=fixtures.config_graph,
+        symbol_module_graph=fixtures.symbol_module_graph,
+        symbol_function_graph=fixtures.symbol_function_graph,
+        copy_graphs=False,
+    )
+    return CountingGraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
 
 def test_disk_cache_round_trip(tmp_path: Path) -> None:
     """Graphs should be read from disk cache when metadata matches."""
-    engine = _CountingGraphEngine(tmp_path)
+    engine = _make_counting_engine(tmp_path)
     try:
         opts = GraphRuntimeOptions(snapshot=engine.snapshot, graph_cache_dir=tmp_path)
         runtime = GraphRuntime(options=opts, engine=engine)
 
         graph1 = runtime.ensure_call_graph()
-        expect_equal(engine.calls, 1)
+        expect_equal(engine.method_counts.get("load_call_graph", 0), 1)
         expected_nodes = 2
         expect_equal(graph1.number_of_nodes(), expected_nodes)
 
-        engine2 = _CountingGraphEngine(tmp_path)
+        engine2 = _make_counting_engine(tmp_path)
         try:
             runtime2 = GraphRuntime(options=opts, engine=engine2)
             graph2 = runtime2.ensure_call_graph()
-            expect_equal(engine2.calls, 0)
+            expect_equal(engine2.method_counts.get("load_call_graph", 0), 0)
             expect_equal(graph2.number_of_edges(), 1)
         finally:
             engine2.gateway.close()
@@ -71,7 +75,7 @@ def test_disk_cache_round_trip(tmp_path: Path) -> None:
 
 def test_disk_cache_mismatch_falls_back_to_loader(tmp_path: Path) -> None:
     """Cache metadata mismatch should trigger loader path."""
-    engine = _CountingGraphEngine(tmp_path)
+    engine = _make_counting_engine(tmp_path)
     opts = GraphRuntimeOptions(snapshot=engine.snapshot, graph_cache_dir=tmp_path)
 
     base = f"other__c__auto__False__{('CALL_GRAPH').lower()}"
@@ -85,6 +89,6 @@ def test_disk_cache_mismatch_falls_back_to_loader(tmp_path: Path) -> None:
     runtime = GraphRuntime(options=opts, engine=engine)
     try:
         runtime.ensure_call_graph()
-        expect_equal(engine.calls, 1)
+        expect_equal(engine.method_counts.get("load_call_graph", 0), 1)
     finally:
         engine.gateway.close()

@@ -34,7 +34,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.fakes.graph_engine import StubGraphEngine
+from tests._helpers.graphs import build_graph_engine_double
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50
@@ -310,7 +310,7 @@ def test_make_catalog_provider_with_catalog(
 
 def test_make_graph_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """Make graph provider returns GraphProvider instance."""
-    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    stub_engine = build_graph_engine_double(test_gateway, test_snapshot)
     options = ProviderFactoryOptions(
         graph_options=GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
     )
@@ -325,7 +325,7 @@ def test_make_graph_provider_caches(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider caches the provider instance."""
-    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    stub_engine = build_graph_engine_double(test_gateway, test_snapshot)
     options = ProviderFactoryOptions(
         graph_options=GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
     )
@@ -341,7 +341,7 @@ def test_make_graph_provider_with_runtime(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with pre-built runtime."""
-    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    stub_engine = build_graph_engine_double(test_gateway, test_snapshot)
     runtime_options = GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
     factory = ProviderFactory(
         test_gateway, test_snapshot, options=ProviderFactoryOptions(graph_options=runtime_options)
@@ -361,7 +361,7 @@ def test_make_graph_provider_with_options(
     test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with custom options."""
-    stub_engine = StubGraphEngine(gateway=test_gateway, snapshot=test_snapshot)
+    stub_engine = build_graph_engine_double(test_gateway, test_snapshot)
     custom_options = GraphRuntimeOptions(snapshot=test_snapshot, engine=stub_engine)
     factory = ProviderFactory(test_gateway, test_snapshot)
 

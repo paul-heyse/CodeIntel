@@ -10,7 +10,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.tool_context import McpToolContext, ModelResolver
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations import Operation
-from tests._helpers.mcp import RecordingMcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.tool_builder import McpToolRegistrar
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class McpTestContext:
     """Bundled MCP context for tests."""
 
-    mcp: RecordingMcp
+    mcp: RecordingMcpRegistrar
     backend: QueryBackendOrService
     operations: Iterable[Operation]
     model_resolver: ModelResolver | None = None
@@ -53,7 +53,7 @@ def make_mcp_context(
         Context that can register tools for given categories.
     """
     return McpTestContext(
-        mcp=RecordingMcp(),
+        mcp=RecordingMcpRegistrar(),
         backend=backend,
         operations=operations,
         model_resolver=model_resolver,
