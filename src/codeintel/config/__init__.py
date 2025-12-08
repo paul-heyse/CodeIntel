@@ -9,10 +9,10 @@ This package provides:
 Preferred Import Patterns
 -------------------------
 For step configurations (new, preferred):
-    from codeintel.config import ConfigBuilder
+    from codeintel.config import ConfigBuilder, SnapshotInit
 
     builder = ConfigBuilder.from_snapshot(
-        SnapshotInit(repo="my-org/repo", commit="abc", repo_root=Path(".")),
+        snapshot=SnapshotInit(repo="my-org/repo", commit="abc", repo_root=Path(".")),
     )
     cfg = builder.graph_metrics(max_betweenness_sample=100)
 

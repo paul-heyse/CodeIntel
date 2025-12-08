@@ -106,7 +106,7 @@ def test_profile_builders_aggregate_expected_fields(
         ),
         layout=BuildLayoutOptions(build_dir=provisioned_repo.build_dir),
     )
-    cfg = builder.profiles_analytics()
+    cfg = builder.analytics.profiles_analytics()
     build_function_profile(gateway, cfg)
     build_file_profile(gateway, cfg)
     build_module_profile(gateway, cfg)

@@ -10,6 +10,7 @@ import pytest
 from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -43,12 +44,15 @@ def gateway() -> Iterator[StorageGateway]:
         gw.close()
 
 
+def _coverage_cfg(repo_root: Path) -> CoverageAnalyticsStepConfig:
+    snapshot_init = SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root)
+    return ConfigBuilder.from_snapshot(snapshot=snapshot_init).analytics.coverage_analytics()
+
+
 def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -> None:
     """Aggregate executable and covered lines into coverage_functions."""
     repo_root = Path.cwd()
-    cfg = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root),
-    ).coverage_analytics()
+    cfg = _coverage_cfg(repo_root)
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con
     seed_goid(
@@ -118,9 +122,7 @@ def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -
 def test_compute_coverage_functions_idempotent_for_snapshot(gateway: StorageGateway) -> None:
     """Re-running coverage aggregation replaces prior rows for the snapshot."""
     repo_root = Path.cwd()
-    cfg = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root),
-    ).coverage_analytics()
+    cfg = _coverage_cfg(repo_root)
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con
     seed_goid(

@@ -53,10 +53,9 @@ def test_adapter_infers_metadata_from_target_graph() -> None:
     expect_true(metadata.supports_incremental)
     expect_equal(metadata.isolation_kind, "thread")
     expect_true(metadata.requires_isolation)
-    resource_hints = metadata.resource_hints
-    if resource_hints is None:
-        raise AssertionError("Expected resource_hints to be populated.")
-    expect_equal(resource_hints.max_runtime_ms, 60000)
+    expect_true(metadata.resource_hints is not None)
+    if metadata.resource_hints is not None:
+        expect_equal(metadata.resource_hints.max_runtime_ms, 60000)
 
 
 def test_adapter_sets_metric_requirements() -> None:

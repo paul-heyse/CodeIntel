@@ -15,7 +15,7 @@ and reduces boilerplate.
 
 Example
 -------
->>> from codeintel.config import ConfigBuilder
+>>> from codeintel.config import ConfigBuilder, SnapshotInit
 >>> builder = ConfigBuilder.from_snapshot(
 ...     snapshot=SnapshotInit(repo="org/repo", commit="abc123", repo_root=Path("/repo")),
 ... )

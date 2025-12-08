@@ -19,6 +19,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
+    expect_true,
     require_row,
 )
 from tests._helpers.contracts import count_rows
@@ -205,6 +206,40 @@ def test_functions_adapter_persist_verifies_data(
     expect_equal(confidence, pytest.approx(CONFIDENCE_0_75))
 
 
+def test_functions_adapter_applies_defaults(
+    fresh_gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist fills optional fields and created_at."""
+    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    row = (DEMO_REPO, DEMO_COMMIT, TEST_GOID_12345, "api_handler", CONFIDENCE_0_85)
+
+    adapter.persist([row])
+
+    result = fresh_gateway.con.execute(
+        """
+        SELECT framework, role_sources_json, created_at
+        FROM analytics.semantic_roles_functions
+        WHERE repo = ? AND commit = ?
+        """,
+        [DEMO_REPO, DEMO_COMMIT],
+    ).fetchone()
+    db_row = require_row(result, message="Expected semantic role function row with defaults")
+    expect_equal(db_row[0], None)
+    expect_equal(db_row[1], "[]")
+    expect_true(db_row[2] is not None)
+
+
+def test_functions_adapter_rejects_bad_length(
+    fresh_gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist raises when tuple length is invalid."""
+    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    with pytest.raises(ValueError, match="legacy 5-tuple"):
+        adapter.persist([(DEMO_REPO, DEMO_COMMIT, TEST_GOID_12345, "api_handler")])
+
+
 # =============================================================================
 # SemanticRolesModulesAdapter Tests
 # =============================================================================
@@ -340,3 +375,36 @@ def test_modules_adapter_persist_verifies_data(
     expect_equal(row[0], "utils.helpers")
     expect_equal(row[1], "utility")
     expect_equal(confidence, pytest.approx(CONFIDENCE_0_85))
+
+
+def test_modules_adapter_applies_defaults(
+    fresh_gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist fills optional fields and created_at for module rows."""
+    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    row = (DEMO_REPO, DEMO_COMMIT, "api.users", "service", CONFIDENCE_0_90)
+
+    adapter.persist([row])
+
+    result = fresh_gateway.con.execute(
+        """
+        SELECT role_sources_json, created_at
+        FROM analytics.semantic_roles_modules
+        WHERE repo = ? AND commit = ?
+        """,
+        [DEMO_REPO, DEMO_COMMIT],
+    ).fetchone()
+    db_row = require_row(result, message="Expected semantic role module row with defaults")
+    expect_equal(db_row[0], "[]")
+    expect_true(db_row[1] is not None)
+
+
+def test_modules_adapter_rejects_bad_length(
+    fresh_gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist raises when module tuple length is invalid."""
+    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    with pytest.raises(ValueError, match="legacy 5-tuple"):
+        adapter.persist([(DEMO_REPO, DEMO_COMMIT, "api.users", "service")])

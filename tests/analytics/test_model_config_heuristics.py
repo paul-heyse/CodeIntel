@@ -16,7 +16,7 @@ from codeintel.analytics.data_models import compute_data_models
 from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.graphs.engine.views import load_call_graph
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
@@ -340,9 +340,7 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
         _seed_entrypoints(con, goid_index["config_checks"])
 
         builder = ConfigBuilder.from_snapshot(
-            repo=REPO,
-            commit=COMMIT,
-            repo_root=repo_root,
+            snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=repo_root),
         )
         snapshot = make_snapshot(repo_root=repo_root, repo=REPO, commit=COMMIT)
 
@@ -361,17 +359,17 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
         # Build call graph for config data flow
         call_graph = load_call_graph(gateway, repo=REPO, commit=COMMIT)
 
-        compute_data_models(gateway, builder.data_models())
+        compute_data_models(gateway, builder.analytics.data_models())
         compute_data_model_usage(
             gateway=gateway,
-            cfg=builder.data_model_usage(),
+            cfg=builder.analytics.data_model_usage(),
             module_map=module_map,
             ast_by_goid=ast_by_goid,
             missing_goids=missing_goids,
         )
         compute_config_data_flow(
             gateway=gateway,
-            cfg=builder.config_data_flow(),
+            cfg=builder.graphs.config_data_flow(),
             call_graph=call_graph,
             ast_by_goid=ast_by_goid,
             missing_goids=missing_goids,

@@ -118,6 +118,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         enabled: Sequence[str] | None = None,
         disabled: Sequence[str] | None = None,
         defaults: Sequence[str] | None = None,
+        allow_missing_dependencies: bool = False,
     ) -> GraphPluginPlan:
         """Build an execution plan with dependency resolution.
 
@@ -136,6 +137,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             Plugins to exclude from the plan.
         defaults
             Default plugins if no explicit list provided.
+        allow_missing_dependencies
+            If True, ignore missing dependencies instead of raising.
 
         Returns
         -------
@@ -150,10 +153,14 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             enabled=enabled,
             disabled=disabled,
             defaults=defaults or self._get_default_plugins(),
+            allow_missing_dependencies=allow_missing_dependencies,
         )
 
         # Build dependency graph
-        dependencies = self._resolve_graph_dependencies(selected)
+        dependencies = self._resolve_graph_dependencies(
+            selected,
+            allow_missing_dependencies=allow_missing_dependencies,
+        )
 
         # Topological sort using shared utility
         ordered = topological_sort(selected, dependencies)
@@ -172,6 +179,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         enabled: Sequence[str] | None,
         disabled: Sequence[str] | None,
         defaults: Sequence[str],
+        allow_missing_dependencies: bool,
     ) -> tuple[dict[str, GraphPluginProtocol], tuple[GraphPluginSkip, ...]]:
         """Resolve which plugins to include in the plan.
 
@@ -183,7 +191,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         Raises
         ------
         ValueError
-            If a plugin name appears more than once.
+            If a plugin name appears more than once or required dependencies are disabled.
         """
         # Determine base selection
         if enabled:
@@ -215,11 +223,65 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
 
             selected[name] = plugin
 
+        self._expand_dependencies(
+            selected,
+            disabled_set=disabled_set,
+            allow_missing=allow_missing_dependencies,
+        )
+
         return selected, tuple(skipped)
+
+    def _expand_dependencies(
+        self,
+        selected: dict[str, GraphPluginProtocol],
+        *,
+        disabled_set: set[str],
+        allow_missing: bool,
+    ) -> None:
+        """Ensure all explicit depends_on plugins are included."""
+        added = True
+        while added:
+            added = False
+            for name, plugin in list(selected.items()):
+                for dep in plugin.metadata.depends_on:
+                    if dep in selected:
+                        continue
+                    if dep in disabled_set:
+                        if allow_missing:
+                            log.warning(
+                                "Dependency %s for plugin %s is disabled; skipping inclusion",
+                                dep,
+                                name,
+                            )
+                            continue
+                        message = (
+                            f"Graph plugin '{name}' depends on '{dep}', "
+                            "which is disabled or missing. "
+                            "Re-enable it or set allow_missing_dependencies."
+                        )
+                        raise ValueError(message)
+                    try:
+                        selected[dep] = self.get(dep)
+                        added = True
+                    except KeyError as exc:
+                        if allow_missing:
+                            log.warning(
+                                "Skipping missing dependency %s for plugin %s",
+                                dep,
+                                name,
+                            )
+                            continue
+                        message = (
+                            f"Graph plugin '{name}' depends on '{dep}', "
+                            "which is not registered"
+                        )
+                        raise ValueError(message) from exc
 
     @staticmethod
     def _resolve_graph_dependencies(
         selected: dict[str, GraphPluginProtocol],
+        *,
+        allow_missing_dependencies: bool,
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
 
@@ -227,6 +289,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         ----------
         selected
             Selected plugins keyed by name.
+        allow_missing_dependencies
+            If True, ignore missing dependencies and capability providers.
 
         Returns
         -------
@@ -236,14 +300,40 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         Raises
         ------
         ValueError
-            If dependencies are missing or ambiguous.
+            If dependencies are missing or ambiguous and allow_missing_dependencies is False.
         """
         dependencies: dict[str, set[str]] = {name: set() for name in selected}
 
-        # Explicit depends_on
+        self._add_explicit_dependencies(
+            selected,
+            dependencies,
+            allow_missing_dependencies=allow_missing_dependencies,
+        )
+        self._add_capability_dependencies(
+            selected,
+            dependencies,
+            allow_missing_dependencies=allow_missing_dependencies,
+        )
+
+        return dependencies
+
+    def _add_explicit_dependencies(
+        self,
+        selected: Mapping[str, GraphPluginProtocol],
+        dependencies: dict[str, set[str]],
+        *,
+        allow_missing_dependencies: bool,
+    ) -> None:
         for name, plugin in selected.items():
             for dep in plugin.metadata.depends_on:
                 if dep not in selected:
+                    if allow_missing_dependencies:
+                        log.warning(
+                            "Skipping missing dependency %s for plugin %s due to allow_missing_dependencies",
+                            dep,
+                            name,
+                        )
+                        continue
                     message = (
                         f"Graph plugin '{name}' depends on '{dep}', "
                         "which is not in the selected plugin set"
@@ -251,7 +341,13 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     raise ValueError(message)
                 dependencies[name].add(dep)
 
-        # Capability-based dependencies using shared utility
+    def _add_capability_dependencies(
+        self,
+        selected: Mapping[str, GraphPluginProtocol],
+        dependencies: dict[str, set[str]],
+        *,
+        allow_missing_dependencies: bool,
+    ) -> None:
         provider_index = build_provider_index_from_metadata(
             selected,
             get_provides=lambda p: p.metadata.provides,
@@ -260,6 +356,14 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             for requirement in plugin.metadata.requires:
                 providers = provider_index.get(requirement, set())
                 if not providers:
+                    if allow_missing_dependencies:
+                        log.warning(
+                            "No providers for capability %s required by %s; skipping due to allow_missing_dependencies",
+                            requirement,
+                            name,
+                        )
+                        continue
+                if not providers:
                     message = (
                         f"Graph plugin '{name}' requires capability '{requirement}', "
                         "but no provider plugin is selected"
@@ -267,7 +371,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     raise ValueError(message)
                 if name in providers:
                     continue
-                # Check if already in explicit deps
                 explicit_deps = dependencies[name]
                 if providers.intersection(explicit_deps):
                     continue
@@ -280,8 +383,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     )
                     raise ValueError(message)
                 dependencies[name].add(next(iter(providers)))
-
-        return dependencies
 
 
 def get_graph_registry() -> GraphPluginRegistry:
@@ -342,6 +443,7 @@ def plan_graph_plugins(
     enabled: Sequence[str] | None = None,
     disabled: Sequence[str] | None = None,
     defaults: Sequence[str] | None = None,
+    allow_missing_dependencies: bool = False,
 ) -> GraphPluginPlan:
     """Build an execution plan for graph plugins.
 
@@ -366,6 +468,7 @@ def plan_graph_plugins(
         enabled=enabled,
         disabled=disabled,
         defaults=defaults,
+        allow_missing_dependencies=allow_missing_dependencies,
     )
 
 

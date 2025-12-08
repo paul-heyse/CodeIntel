@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
@@ -1013,7 +1013,7 @@ def _normalize_to_mapping(
     if len(row) != len(columns):
         message = f"Row for {table_key} has {len(row)} values, expected {len(columns)}"
         raise ValueError(message)
-    return {column: cast("object", row[index]) for index, column in enumerate(columns)}
+    return {column: row[index] for index, column in enumerate(columns)}
 
 
 @dataclass

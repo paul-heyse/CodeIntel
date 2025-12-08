@@ -64,7 +64,7 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
     builder = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo=repo, commit=commit_new, repo_root=git_ctx.repo_root),
     )
-    cfg = builder.history_timeseries(
+    cfg = builder.analytics.history_timeseries(
         commits=(commit_new, commit_old),
         entity_kind="function",
     )

@@ -36,6 +36,7 @@ from codeintel.cli.commands._common import (
     ProjectRootOpt,
     RepoOpt,
     RepoRootOpt,
+    RuntimeCliOptions,
     VerboseOpt,
     build_runtime_or_exit,
     open_gateway_from_config,
@@ -616,10 +617,10 @@ SpecsSnapshotOpt = Annotated[
 DryRunModeOpt = Annotated[
     DryRunMode,
     typer.Option(
-        ...,
+        DryRunMode.EXECUTE,
         "--dry-run",
-        flag_value=DryRunMode.DRY_RUN,
         help="Plan without writing files.",
+        flag_value=DryRunMode.DRY_RUN,
         case_sensitive=False,
     ),
 ]
@@ -648,10 +649,10 @@ BootstrapSnippetOpt = Annotated[
 RegistryCheckOpt = Annotated[
     RegistryCheck,
     typer.Option(
-        ...,
+        RegistryCheck.DISABLED,
         "--check-registry",
-        flag_value=RegistryCheck.ENABLED,
         help="Validate against live registry for clashes.",
+        flag_value=RegistryCheck.ENABLED,
         case_sensitive=False,
     ),
 ]
@@ -1118,7 +1119,7 @@ def _scaffold_options(
 
 # -----------------------------------------------------------------------------
 def _resolve_runtime(runtime: RuntimeOptions) -> ProjectRuntime:
-    return build_runtime_or_exit(
+    cli_options = RuntimeCliOptions(
         project_root=runtime.project.project_root,
         repo=runtime.project.repo,
         commit=runtime.project.commit,
@@ -1126,6 +1127,7 @@ def _resolve_runtime(runtime: RuntimeOptions) -> ProjectRuntime:
         build_dir=runtime.build.build_dir,
         repo_root=runtime.project.repo_root,
     )
+    return build_runtime_or_exit(cli_options)
 
 
 def _open_gateway(
@@ -1546,7 +1548,9 @@ def _bundle_generate_schemas(cli_kwargs: Mapping[str, object]) -> Mapping[str, o
         schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
         datasets=cast("list[str] | None", cli_kwargs.get("datasets")),
         output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
-        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
+        run_mode=(
+            DryRunMode.DRY_RUN if bool(cli_kwargs.get("run_mode", False)) else DryRunMode.EXECUTE
+        ),
     )
     schema_opts = GenerateSchemasOptions(
         output_dir=cast(
@@ -1569,7 +1573,7 @@ _GENERATE_SCHEMAS_SPECS = [
     OptionSpec("schemas", SchemasFilterOpt, None),
     OptionSpec("datasets", DatasetsFilterOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),
-    OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("run_mode", bool, DryRunFlagOpt),
     OptionSpec("verbose", int, VerboseOpt),
 ]
 
@@ -1755,11 +1759,13 @@ def _bundle_scaffold(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
         ),
     )
     behavior = _scaffold_behavior_options(
-        dry_run=cast("DryRunMode", cli_kwargs.get("dry_run", DryRunMode.EXECUTE)),
-        bootstrap=cast("BootstrapSnippet", cli_kwargs.get("bootstrap", BootstrapSnippet.SKIP)),
-        registry_check=cast(
-            "RegistryCheck", cli_kwargs.get("registry_check", RegistryCheck.DISABLED)
+        dry_run=(
+            DryRunMode.DRY_RUN if bool(cli_kwargs.get("dry_run", False)) else DryRunMode.EXECUTE
         ),
+        bootstrap=cast("BootstrapSnippet", cli_kwargs.get("bootstrap", BootstrapSnippet.SKIP)),
+        registry_check=RegistryCheck.ENABLED
+        if bool(cli_kwargs.get("registry_check", False))
+        else RegistryCheck.DISABLED,
     )
     options = _scaffold_options(
         metadata=metadata,
@@ -1793,9 +1799,9 @@ _SCAFFOLD_SPECS = [
     OptionSpec("output_dir", OutputDirOpt, Path("build/dataset_scaffolds")),
     OptionSpec("overwrite_policy", OverwritePolicyOpt, OverwritePolicy.ERROR),
     OptionSpec("specs_snapshot", SpecsSnapshotOpt, Path("build/catalog/dataset_specs.json")),
-    OptionSpec("dry_run", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("dry_run", bool, DryRunFlagOpt),
     OptionSpec("bootstrap", BootstrapSnippetOpt, BootstrapSnippet.SKIP),
-    OptionSpec("registry_check", RegistryCheckOpt, RegistryCheck.DISABLED),
+    OptionSpec("registry_check", bool, RegistryCheckOpt),
     OptionSpec("verbose", int, VerboseOpt),
 ]
 
@@ -1903,7 +1909,9 @@ def _bundle_validate_files(cli_kwargs: Mapping[str, object]) -> Mapping[str, obj
         schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
         datasets=cast("list[str] | None", cli_kwargs.get("datasets")),
         output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
-        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
+        run_mode=(
+            DryRunMode.DRY_RUN if bool(cli_kwargs.get("run_mode", False)) else DryRunMode.EXECUTE
+        ),
     )
     return {
         "schema": cast("str", cli_kwargs["schema"]),
@@ -1926,7 +1934,7 @@ _VALIDATE_FILES_SPECS = [
     OptionSpec("schemas", SchemasFilterOpt, None),
     OptionSpec("datasets", DatasetsFilterOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),
-    OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("run_mode", bool, DryRunFlagOpt),
     OptionSpec("schema_root", SchemaRootOpt, None),
     OptionSpec("verbose", int, VerboseOpt),
 ]

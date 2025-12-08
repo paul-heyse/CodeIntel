@@ -119,6 +119,7 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
         names: list[str] | None = None,
         enable: list[str] | None = None,
         disable: list[str] | None = None,
+        allow_missing_dependencies: bool | None = None,
     ) -> dict[str, object] | dict[str, ProblemDetail]:
         """
         Compute graph metric plugin execution plan with ordering and dep graph.
@@ -143,6 +144,7 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
                 plugin_names=tuple(names) if names else None,
                 enabled=tuple(enable) if enable else None,
                 disabled=tuple(disable) if disable else None,
+                allow_missing_dependencies=bool(allow_missing_dependencies),
             )
             metadata = {
                 plugin.metadata.name: GraphPlanPluginMetadata(

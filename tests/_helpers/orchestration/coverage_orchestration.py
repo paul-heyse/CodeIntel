@@ -114,7 +114,7 @@ def compute_coverage_edges(
     coverage_loader
         Optional custom coverage loader function.
     """
-    cfg = env.builder.test_coverage(coverage_file=coverage_file)
+    cfg = env.builder.analytics.test_coverage(coverage_file=coverage_file)
     compute_test_coverage_edges(
         env.gateway,
         cfg,

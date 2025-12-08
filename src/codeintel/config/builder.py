@@ -48,6 +48,60 @@ from codeintel.config.steps_graphs import (
     SymbolUsesStepConfig,
 )
 
+LegacyStepConfig = (
+    CallGraphStepConfig
+    | CFGBuilderStepConfig
+    | ConfigDataFlowStepConfig
+    | ExternalDependenciesStepConfig
+    | GoidBuilderStepConfig
+    | GraphMetricsStepConfig
+    | ImportGraphStepConfig
+    | SymbolUsesStepConfig
+    | BehavioralCoverageStepConfig
+    | CoverageAnalyticsStepConfig
+    | DataModelsStepConfig
+    | DataModelUsageStepConfig
+    | EntryPointsStepConfig
+    | FunctionAnalyticsStepConfig
+    | FunctionContractsStepConfig
+    | FunctionEffectsStepConfig
+    | FunctionHistoryStepConfig
+    | HistoryTimeseriesStepConfig
+    | HotspotsStepConfig
+    | ProfilesAnalyticsStepConfig
+    | SemanticRolesStepConfig
+    | SubsystemsStepConfig
+    | TestCoverageStepConfig
+    | TestProfileStepConfig
+)
+LegacyDelegateCallable = Callable[..., LegacyStepConfig]
+LegacyDelegateName = Literal[
+    "call_graph",
+    "cfg_builder",
+    "goid_builder",
+    "import_graph",
+    "symbol_uses",
+    "graph_metrics",
+    "config_data_flow",
+    "external_dependencies",
+    "hotspots",
+    "function_history",
+    "history_timeseries",
+    "coverage_analytics",
+    "test_coverage",
+    "test_profile",
+    "behavioral_coverage",
+    "function_analytics",
+    "function_effects",
+    "function_contracts",
+    "semantic_roles",
+    "data_models",
+    "data_model_usage",
+    "profiles_analytics",
+    "subsystems",
+    "entrypoints",
+]
+
 
 class _LegacySnapshotKwargs(TypedDict, total=False):
     repo: str
@@ -251,7 +305,19 @@ class ConfigBuilder:
         )
 
         snapshot_ref = snapshot_init.to_snapshot_ref()
-        paths = layout_options.materialize(snapshot_ref.repo_root)
+        has_layout_overrides = any(
+            value is not None
+            for value in (
+                layout_options.build_dir,
+                layout_options.db_path,
+                layout_options.document_output_dir,
+                layout_options.log_db_path,
+            )
+        )
+        paths = layout_options.materialize(
+            snapshot_ref.repo_root,
+            check_collisions=has_layout_overrides,
+        )
         binaries, profiles, graph_backend = dependencies.resolved()
         profiles = cls._ensure_profiles(profiles)
         return cls(
@@ -297,6 +363,14 @@ class ConfigBuilder:
     def analytics(self) -> AnalyticsStepBuilder:
         """Access analytics-related config builders."""
         return AnalyticsStepBuilder(self)
+
+    if TYPE_CHECKING:
+
+        @overload
+        def __getattr__(self, name: LegacyDelegateName) -> LegacyDelegateCallable: ...
+
+        @overload
+        def __getattr__(self, name: str) -> object: ...
 
     def __getattr__(self, name: str) -> object:
         """Delegate legacy step helpers to the underlying facet builders.
@@ -396,129 +470,6 @@ class ConfigBuilder:
             target.mkdir(parents=True, exist_ok=True)
             created.append(target)
         return tuple(created)
-
-    if TYPE_CHECKING:
-
-        @overload
-        def __getattr__(
-            self, name: Literal["call_graph"]
-        ) -> Callable[..., CallGraphStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["cfg_builder"]
-        ) -> Callable[..., CFGBuilderStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["goid_builder"]
-        ) -> Callable[..., GoidBuilderStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["import_graph"]
-        ) -> Callable[..., ImportGraphStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["symbol_uses"]
-        ) -> Callable[..., SymbolUsesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["graph_metrics"]
-        ) -> Callable[..., GraphMetricsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["config_data_flow"]
-        ) -> Callable[..., ConfigDataFlowStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["external_dependencies"]
-        ) -> Callable[..., ExternalDependenciesStepConfig]: ...
-
-        @overload
-        def __getattr__(self, name: Literal["hotspots"]) -> Callable[..., HotspotsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_history"]
-        ) -> Callable[..., FunctionHistoryStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["history_timeseries"]
-        ) -> Callable[..., HistoryTimeseriesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["coverage_analytics"]
-        ) -> Callable[..., CoverageAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["test_coverage"]
-        ) -> Callable[..., TestCoverageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["test_profile"]
-        ) -> Callable[..., TestProfileStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["behavioral_coverage"]
-        ) -> Callable[..., BehavioralCoverageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_analytics"]
-        ) -> Callable[..., FunctionAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_effects"]
-        ) -> Callable[..., FunctionEffectsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_contracts"]
-        ) -> Callable[..., FunctionContractsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["semantic_roles"]
-        ) -> Callable[..., SemanticRolesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["data_models"]
-        ) -> Callable[..., DataModelsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["data_model_usage"]
-        ) -> Callable[..., DataModelUsageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["profiles_analytics"]
-        ) -> Callable[..., ProfilesAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["subsystems"]
-        ) -> Callable[..., SubsystemsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["entrypoints"]
-        ) -> Callable[..., EntryPointsStepConfig]: ...
-
-        @overload
-        def __getattr__(self, name: str) -> object: ...
 
 
 __all__ = [
