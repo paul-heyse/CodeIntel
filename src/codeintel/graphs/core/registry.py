@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Sequence
-from typing import TypeGuard
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from enum import Enum
+from typing import Literal, TypeGuard
 
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.plugins.registry.base import BasePluginRegistry, RegistryHooks
@@ -19,12 +21,16 @@ from codeintel.core.plugins.registry.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
+from codeintel.core.plugins.types.result import PluginResult
 from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
+    GraphPluginMetadata,
+    GraphPluginMetadataConfig,
     GraphPluginPlan,
     GraphPluginProtocol,
     GraphPluginSkip,
+    create_graph_metadata,
 )
 
 log = logging.getLogger(__name__)
@@ -86,6 +92,47 @@ class GraphRegistryHooks(RegistryHooks[GraphPluginProtocol]):
         return isinstance(obj, GraphPluginProtocol)
 
 
+class DependencyPolicy(Enum):
+    """Dependency resolution policy for planning."""
+
+    STRICT = "strict"
+    SKIP = "skip"
+
+
+class _StubGraphPlugin(GraphPluginProtocol):
+    """Minimal stub plugin used to satisfy ingestion dependencies."""
+
+    def __init__(self, *, name: str, depends_on: tuple[str, ...]) -> None:
+        config = GraphPluginMetadataConfig(
+            severity="soft_fail",
+            enabled_by_default=False,
+            produces_tables=(),
+            depends_on=depends_on,
+        )
+        self._metadata = create_graph_metadata(
+            name=name,
+            description="Stub plugin for dependency resolution",
+            kind="builder",
+            stage="goid",
+            config=config,
+        )
+
+    @property
+    def metadata(self) -> GraphPluginMetadata:
+        return self._metadata
+
+    def execute(self, ctx: object) -> PluginResult:  # pragma: no cover - not executed
+        _ = ctx
+        return PluginResult.ok(meta={"stub": self._metadata.name})
+
+
+@dataclass(frozen=True)
+class PlanningOptions:
+    allow_missing_dependencies: bool = False
+    dependency_policy: DependencyPolicy = DependencyPolicy.STRICT
+    use_stubs: bool = True
+
+
 class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
     """Central registry for graph plugins.
 
@@ -118,7 +165,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         enabled: Sequence[str] | None = None,
         disabled: Sequence[str] | None = None,
         defaults: Sequence[str] | None = None,
-        allow_missing_dependencies: bool = False,
+        plan_options: PlanningOptions | None = None,
+        **legacy_plan_kwargs: object,
     ) -> GraphPluginPlan:
         """Build an execution plan with dependency resolution.
 
@@ -137,15 +185,33 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             Plugins to exclude from the plan.
         defaults
             Default plugins if no explicit list provided.
-        allow_missing_dependencies
-            If True, ignore missing dependencies instead of raising.
+        plan_options
+            Planning options controlling dependency handling. Legacy keyword
+            arguments ``allow_missing_dependencies`` and ``dependency_policy``
+            are still honored when provided.
+        **legacy_plan_kwargs
+            Optional legacy parameters for dependency handling.
 
         Returns
         -------
         GraphPluginPlan
             Ordered execution plan with graph-specific metadata.
         """
+        dep_policy_obj = legacy_plan_kwargs.get("dependency_policy", DependencyPolicy.STRICT)
+        dep_policy = (
+            dep_policy_obj
+            if isinstance(dep_policy_obj, DependencyPolicy)
+            else DependencyPolicy(dep_policy_obj)
+        )
+        plan_opts = plan_options or PlanningOptions(
+            allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
+            dependency_policy=dep_policy,
+            use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
+        )
+
         self._ensure_loaded()
+        if plan_opts.use_stubs:
+            self._ensure_stub_plugins()
 
         # Resolve which plugins to include
         selected, skipped = self._resolve_graph_selection(
@@ -153,23 +219,32 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             enabled=enabled,
             disabled=disabled,
             defaults=defaults or self._get_default_plugins(),
-            allow_missing_dependencies=allow_missing_dependencies,
+            plan_opts=plan_opts,
         )
+        skip_buffer = list(skipped)
 
         # Build dependency graph
         dependencies = self._resolve_graph_dependencies(
             selected,
-            allow_missing_dependencies=allow_missing_dependencies,
+            skipped=skip_buffer,
+            plan_opts=plan_opts,
         )
 
         # Topological sort using shared utility
         ordered = topological_sort(selected, dependencies)
 
+        dep_graph_out: dict[str, tuple[str, ...]] = {
+            name: tuple(sorted(deps)) for name, deps in dependencies.items()
+        }
+        for skip in skip_buffer:
+            if skip.name not in dep_graph_out:
+                dep_graph_out[skip.name] = ()
+
         return GraphPluginPlan(
             plugins=tuple(ordered),
             plan_id=new_run_id("plan"),
-            skipped_plugins=skipped,
-            dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
+            skipped_plugins=tuple(skip_buffer),
+            dep_graph=dep_graph_out,
         )
 
     def _resolve_graph_selection(
@@ -179,8 +254,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         enabled: Sequence[str] | None,
         disabled: Sequence[str] | None,
         defaults: Sequence[str],
-        allow_missing_dependencies: bool,
-    ) -> tuple[dict[str, GraphPluginProtocol], tuple[GraphPluginSkip, ...]]:
+        plan_opts: PlanningOptions,
+    ) -> tuple[dict[str, GraphPluginProtocol], list[GraphPluginSkip]]:
         """Resolve which plugins to include in the plan.
 
         Returns
@@ -217,6 +292,9 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             try:
                 plugin = self.get(name)
             except KeyError:
+                if plan_opts.dependency_policy is DependencyPolicy.STRICT:
+                    message = f"Graph plugin '{name}' is not registered"
+                    raise ValueError(message) from None
                 skipped.append(GraphPluginSkip(name=name, reason="missing_dependency"))
                 log.warning("Skipping unknown graph plugin: %s", name)
                 continue
@@ -226,10 +304,12 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         self._expand_dependencies(
             selected,
             disabled_set=disabled_set,
-            allow_missing=allow_missing_dependencies,
+            allow_missing=plan_opts.allow_missing_dependencies,
+            dependency_policy=plan_opts.dependency_policy,
+            skipped=skipped,
         )
 
-        return selected, tuple(skipped)
+        return selected, skipped
 
     def _expand_dependencies(
         self,
@@ -237,8 +317,16 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         *,
         disabled_set: set[str],
         allow_missing: bool,
+        dependency_policy: DependencyPolicy,
+        skipped: list[GraphPluginSkip],
     ) -> None:
-        """Ensure all explicit depends_on plugins are included."""
+        """Ensure all explicit depends_on plugins are included.
+
+        Raises
+        ------
+        ValueError
+            If a dependency is missing or disabled and allow_missing is False.
+        """
         added = True
         while added:
             added = False
@@ -247,7 +335,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     if dep in selected:
                         continue
                     if dep in disabled_set:
-                        if allow_missing:
+                        if allow_missing or dependency_policy is DependencyPolicy.SKIP:
+                            self._add_skip_once(skipped, dep, reason="missing_dependency")
                             log.warning(
                                 "Dependency %s for plugin %s is disabled; skipping inclusion",
                                 dep,
@@ -264,7 +353,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                         selected[dep] = self.get(dep)
                         added = True
                     except KeyError as exc:
-                        if allow_missing:
+                        if allow_missing or dependency_policy is DependencyPolicy.SKIP:
+                            self._add_skip_once(skipped, dep, reason="missing_dependency")
                             log.warning(
                                 "Skipping missing dependency %s for plugin %s",
                                 dep,
@@ -272,16 +362,16 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                             )
                             continue
                         message = (
-                            f"Graph plugin '{name}' depends on '{dep}', "
-                            "which is not registered"
+                            f"Graph plugin '{name}' depends on '{dep}', which is not registered"
                         )
                         raise ValueError(message) from exc
 
-    @staticmethod
     def _resolve_graph_dependencies(
-        selected: dict[str, GraphPluginProtocol],
+        self,
+        selected: Mapping[str, GraphPluginProtocol],
         *,
-        allow_missing_dependencies: bool,
+        skipped: list[GraphPluginSkip],
+        plan_opts: PlanningOptions,
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
 
@@ -289,45 +379,51 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         ----------
         selected
             Selected plugins keyed by name.
-        allow_missing_dependencies
-            If True, ignore missing dependencies and capability providers.
+        skipped
+            Mutable buffer of skip records to append missing dependencies to.
+        plan_opts
+            Planning options controlling dependency handling.
 
         Returns
         -------
         dict[str, set[str]]
             Mapping of plugin name to its dependency names.
-
-        Raises
-        ------
-        ValueError
-            If dependencies are missing or ambiguous and allow_missing_dependencies is False.
         """
         dependencies: dict[str, set[str]] = {name: set() for name in selected}
 
         self._add_explicit_dependencies(
             selected,
             dependencies,
-            allow_missing_dependencies=allow_missing_dependencies,
+            skipped=skipped,
+            plan_opts=plan_opts,
         )
         self._add_capability_dependencies(
             selected,
             dependencies,
-            allow_missing_dependencies=allow_missing_dependencies,
+            skipped=skipped,
+            plan_opts=plan_opts,
         )
 
         return dependencies
 
+    @staticmethod
     def _add_explicit_dependencies(
-        self,
         selected: Mapping[str, GraphPluginProtocol],
         dependencies: dict[str, set[str]],
         *,
-        allow_missing_dependencies: bool,
+        skipped: list[GraphPluginSkip],
+        plan_opts: PlanningOptions,
     ) -> None:
         for name, plugin in selected.items():
             for dep in plugin.metadata.depends_on:
                 if dep not in selected:
-                    if allow_missing_dependencies:
+                    if (
+                        plan_opts.allow_missing_dependencies
+                        or plan_opts.dependency_policy is DependencyPolicy.SKIP
+                    ):
+                        GraphPluginRegistry._add_skip_once(
+                            skipped, dep, reason="missing_dependency"
+                        )
                         log.warning(
                             "Skipping missing dependency %s for plugin %s due to allow_missing_dependencies",
                             dep,
@@ -341,12 +437,13 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     raise ValueError(message)
                 dependencies[name].add(dep)
 
+    @staticmethod
     def _add_capability_dependencies(
-        self,
         selected: Mapping[str, GraphPluginProtocol],
         dependencies: dict[str, set[str]],
         *,
-        allow_missing_dependencies: bool,
+        skipped: list[GraphPluginSkip],
+        plan_opts: PlanningOptions,
     ) -> None:
         provider_index = build_provider_index_from_metadata(
             selected,
@@ -356,14 +453,19 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             for requirement in plugin.metadata.requires:
                 providers = provider_index.get(requirement, set())
                 if not providers:
-                    if allow_missing_dependencies:
+                    if (
+                        plan_opts.allow_missing_dependencies
+                        or plan_opts.dependency_policy is DependencyPolicy.SKIP
+                    ):
+                        GraphPluginRegistry._add_skip_once(
+                            skipped, requirement, reason="missing_dependency"
+                        )
                         log.warning(
                             "No providers for capability %s required by %s; skipping due to allow_missing_dependencies",
                             requirement,
                             name,
                         )
                         continue
-                if not providers:
                     message = (
                         f"Graph plugin '{name}' requires capability '{requirement}', "
                         "but no provider plugin is selected"
@@ -383,6 +485,30 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     )
                     raise ValueError(message)
                 dependencies[name].add(next(iter(providers)))
+
+    @staticmethod
+    def _add_skip_once(
+        skipped: list[GraphPluginSkip],
+        name: str,
+        *,
+        reason: Literal["missing_dependency"] = "missing_dependency",
+    ) -> None:
+        if any(skip.name == name for skip in skipped):
+            return
+        skipped.append(GraphPluginSkip(name=name, reason=reason))
+
+    def _ensure_stub_plugins(self) -> None:
+        """Register stub ingestion plugins when missing."""
+        known_deps = {
+            "repo_scan": (),
+            "ast_extract": (),
+            "scip_ingest": (),
+            "goid_builder": ("repo_scan", "ast_extract", "scip_ingest"),
+        }
+        for name, depends_on in known_deps.items():
+            if self.contains(name):
+                continue
+            self.register(_StubGraphPlugin(name=name, depends_on=depends_on))
 
 
 def get_graph_registry() -> GraphPluginRegistry:
@@ -443,7 +569,8 @@ def plan_graph_plugins(
     enabled: Sequence[str] | None = None,
     disabled: Sequence[str] | None = None,
     defaults: Sequence[str] | None = None,
-    allow_missing_dependencies: bool = False,
+    plan_options: PlanningOptions | None = None,
+    **legacy_plan_kwargs: object,
 ) -> GraphPluginPlan:
     """Build an execution plan for graph plugins.
 
@@ -457,18 +584,34 @@ def plan_graph_plugins(
         Plugins to exclude.
     defaults
         Default plugins if no explicit list provided.
+    plan_options
+        Planning options controlling dependency handling. When provided, overrides
+        allow_missing_dependencies/dependency_policy values.
+    **legacy_plan_kwargs
+        Optional legacy parameters for dependency handling.
 
     Returns
     -------
     GraphPluginPlan
         Ordered execution plan.
     """
+    dep_policy_obj = legacy_plan_kwargs.get("dependency_policy", DependencyPolicy.STRICT)
+    dep_policy = (
+        dep_policy_obj
+        if isinstance(dep_policy_obj, DependencyPolicy)
+        else DependencyPolicy(dep_policy_obj)
+    )
+    opts = plan_options or PlanningOptions(
+        allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
+        dependency_policy=dep_policy,
+        use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
+    )
     return get_graph_registry().plan(
         plugin_names=plugin_names,
         enabled=enabled,
         disabled=disabled,
         defaults=defaults,
-        allow_missing_dependencies=allow_missing_dependencies,
+        plan_options=opts,
     )
 
 

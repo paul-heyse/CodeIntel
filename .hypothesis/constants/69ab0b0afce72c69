@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/build.py
+# hypothesis_version: 6.148.7
+
+[100, '(dry-run mode)', '-', '--all', '--dry-run', '--force', '--limit', '--module', '--run-id', '-a', '-f', '-i', '-m', '-n', '=', '?', 'Blocked', 'Build Complete', 'Computed', 'Error Details:', 'Missing', 'No build runs found.', 'OutputFormat', 'Path | None', 'RunMode', 'Stale', 'TargetScope', 'all', 'analytics', 'blocked', 'build', 'build.run.error', 'build_app', 'build_history', 'build_run', 'build_status', 'computed', 'ctx_opts', 'dry_run', 'execute', 'failed', 'force', 'graphs', 'history', 'ingestion', 'int', 'json', 'list[str] | None', 'missing', 'module', 'options', 'output_format', 'project_root', 'requested', 'run', 'run_mode', 'stale', 'status', 'str | None', 'succeeded', 'target_scope', 'targets', 'verbose', '⊘', '⚠', '✓', '✗']

@@ -27,7 +27,7 @@ def test_span_alignment_across_components(
     build_span_graph_components(span_env)
     compute_test_coverage_edges(
         span_env.gateway,
-        span_env.builder.test_coverage(coverage_file=span_coverage_artifact),
+        span_env.builder.analytics.test_coverage(coverage_file=span_coverage_artifact),
     )
 
     snapshot = collect_span_snapshot(span_env.gateway.con)

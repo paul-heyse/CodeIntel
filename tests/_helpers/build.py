@@ -6,8 +6,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.executor import StageExecutionResult
 from codeintel.build.manifest import OutputManifest
@@ -110,6 +111,14 @@ def sample_target_graph(
     for target in targets or _default_targets():
         graph.register(target)
     return graph
+
+
+def make_plugin_registry_store(
+    loader: Callable[[PluginRegistryStore], None] | None = None,
+) -> PluginRegistryStore:
+    """Create a plugin registry store with an optional loader."""
+
+    return PluginRegistryStore(loader=loader)
 
 
 def sample_build_plan(

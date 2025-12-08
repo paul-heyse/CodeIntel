@@ -275,7 +275,7 @@ def test_subsystems_cluster_and_risk_aggregation(test_ctx: TestContext) -> None:
         snapshot=SnapshotInit(
             repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
         ),
-    ).subsystems(
+    ).analytics.subsystems(
         max_subsystems=2,
         min_modules=1,
     )

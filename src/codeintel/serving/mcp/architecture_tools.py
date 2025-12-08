@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
 
-from codeintel.graphs.core.registry import plan_graph_plugins
+from codeintel.graphs.core.registry import (
+    DependencyPolicy,
+    PlanningOptions,
+    plan_graph_plugins,
+)
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -119,7 +123,9 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
         names: list[str] | None = None,
         enable: list[str] | None = None,
         disable: list[str] | None = None,
-        allow_missing_dependencies: bool | None = None,
+        *,
+        allow_missing_dependencies: bool = False,
+        dependency_policy: str = "strict",
     ) -> dict[str, object] | dict[str, ProblemDetail]:
         """
         Compute graph metric plugin execution plan with ordering and dep graph.
@@ -132,6 +138,10 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
             Ordered list of plugins to enable (overrides defaults when provided).
         disable
             Plugins to drop from the selected set.
+        allow_missing_dependencies
+            When True, ignore missing or disabled dependencies instead of failing the plan.
+        dependency_policy
+            Dependency handling strategy: strict or skip.
 
         Returns
         -------
@@ -144,7 +154,10 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
                 plugin_names=tuple(names) if names else None,
                 enabled=tuple(enable) if enable else None,
                 disabled=tuple(disable) if disable else None,
-                allow_missing_dependencies=bool(allow_missing_dependencies),
+                plan_options=PlanningOptions(
+                    allow_missing_dependencies=allow_missing_dependencies,
+                    dependency_policy=DependencyPolicy(dependency_policy),
+                ),
             )
             metadata = {
                 plugin.metadata.name: GraphPlanPluginMetadata(

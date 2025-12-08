@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from codeintel.build.plugin import TargetPlugin
@@ -256,7 +257,54 @@ _PLUGINS: dict[str, type[TargetPlugin]] = {}
 _REGISTERED: bool = False
 
 
-def register_plugin(target_name: str, plugin_class: type[TargetPlugin]) -> None:
+@dataclass
+class PluginRegistryStore:
+    """Mutable registry store with injectable loader for testability."""
+
+    loader: Callable[["PluginRegistryStore"], None] | None = None
+    plugins: dict[str, type[TargetPlugin]] = field(default_factory=dict)
+    registered: bool = False
+
+    def register(self, target_name: str, plugin_class: type[TargetPlugin]) -> None:
+        """Register a plugin class for a target."""
+        if target_name in self.plugins:
+            log.warning("Overwriting plugin for target '%s'", target_name)
+        self.plugins[target_name] = plugin_class
+
+    def get(self, target_name: str) -> type[TargetPlugin]:
+        """Return plugin class for a target or raise KeyError."""
+        self.ensure_registered()
+        if target_name not in self.plugins:
+            available = ", ".join(sorted(self.plugins.keys()))
+            msg = f"No plugin registered for target '{target_name}'. Available: {available}"
+            raise KeyError(msg)
+        return self.plugins[target_name]
+
+    def get_all(self) -> dict[str, type[TargetPlugin]]:
+        """Return a copy of the registry."""
+        self.ensure_registered()
+        return dict(self.plugins)
+
+    def clear(self) -> None:
+        """Reset registry state."""
+        self.plugins.clear()
+        self.registered = False
+
+    def ensure_registered(self) -> None:
+        """Invoke loader once to populate plugins."""
+        if self.registered:
+            return
+        if self.loader is not None:
+            self.loader(self)
+        self.registered = True
+
+
+_DEFAULT_REGISTRY = PluginRegistryStore()
+
+
+def register_plugin(
+    target_name: str, plugin_class: type[TargetPlugin], registry: PluginRegistryStore | None = None
+) -> None:
     """Register a plugin for a target.
 
     Parameters
@@ -266,12 +314,13 @@ def register_plugin(target_name: str, plugin_class: type[TargetPlugin]) -> None:
     plugin_class
         Plugin class that implements the target.
     """
-    if target_name in _PLUGINS:
-        log.warning("Overwriting plugin for target '%s'", target_name)
-    _PLUGINS[target_name] = plugin_class
+    store = registry or _DEFAULT_REGISTRY
+    store.register(target_name, plugin_class)
 
 
-def get_plugin_for_target(target_name: str) -> TargetPlugin:
+def get_plugin_for_target(
+    target_name: str, registry: PluginRegistryStore | None = None
+) -> TargetPlugin:
     """Get a plugin instance for a target.
 
     Parameters
@@ -289,15 +338,12 @@ def get_plugin_for_target(target_name: str) -> TargetPlugin:
     KeyError
         If no plugin is registered for the target.
     """
-    _ensure_registered()
-    if target_name not in _PLUGINS:
-        available = ", ".join(sorted(_PLUGINS.keys()))
-        msg = f"No plugin registered for target '{target_name}'. Available: {available}"
-        raise KeyError(msg)
-    return _PLUGINS[target_name]()
+    store = registry or _DEFAULT_REGISTRY
+    plugin_class = store.get(target_name)
+    return plugin_class()
 
 
-def get_all_plugins() -> dict[str, type[TargetPlugin]]:
+def get_all_plugins(registry: PluginRegistryStore | None = None) -> dict[str, type[TargetPlugin]]:
     """Get all registered plugins.
 
     Returns
@@ -305,15 +351,14 @@ def get_all_plugins() -> dict[str, type[TargetPlugin]]:
     dict[str, type[TargetPlugin]]
         Mapping of target names to plugin classes.
     """
-    _ensure_registered()
-    return dict(_PLUGINS)
+    store = registry or _DEFAULT_REGISTRY
+    return store.get_all()
 
 
-def clear_registry() -> None:
+def clear_registry(registry: PluginRegistryStore | None = None) -> None:
     """Clear the plugin registry (for testing)."""
-    global _REGISTERED  # noqa: PLW0603
-    _PLUGINS.clear()
-    _REGISTERED = False
+    store = registry or _DEFAULT_REGISTRY
+    store.clear()
 
 
 # =============================================================================
@@ -323,21 +368,20 @@ def clear_registry() -> None:
 
 def _ensure_registered() -> None:
     """Ensure all plugins are registered (lazy loading)."""
-    global _REGISTERED  # noqa: PLW0603
-    if _REGISTERED:
+    if _DEFAULT_REGISTRY.registered:
         return
-    _register_all_plugins()
-    _REGISTERED = True
+    _register_all_plugins(_DEFAULT_REGISTRY)
+    _DEFAULT_REGISTRY.registered = True
 
 
-def _register_all_plugins() -> None:
+def _register_all_plugins(registry: PluginRegistryStore) -> None:
     """Register all built-in plugins from definitions."""
     for module_path, class_name, target_names in _PLUGIN_DEFINITIONS:
         try:
             module = importlib.import_module(module_path)
             plugin_class = getattr(module, class_name)
             for target_name in target_names:
-                register_plugin(target_name, plugin_class)
+                registry.register(target_name, plugin_class)
         except (ImportError, AttributeError) as e:
             log.warning(
                 "Failed to register plugin %s.%s: %s",
@@ -347,9 +391,13 @@ def _register_all_plugins() -> None:
             )
 
 
+_DEFAULT_REGISTRY.loader = _register_all_plugins
+
+
 __all__ = [
     "clear_registry",
     "get_all_plugins",
     "get_plugin_for_target",
+    "PluginRegistryStore",
     "register_plugin",
 ]

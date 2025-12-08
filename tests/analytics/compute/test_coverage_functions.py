@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.compute.coverage import compute_coverage_functions
-from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
 )
+from tests._helpers.config_factory import coverage_analytics_cfg
 from tests._helpers.coverage import (
     CoverageLineSeedData,
     GoidSeedData,
@@ -45,8 +45,8 @@ def gateway() -> Iterator[StorageGateway]:
 
 
 def _coverage_cfg(repo_root: Path) -> CoverageAnalyticsStepConfig:
-    snapshot_init = SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root)
-    return ConfigBuilder.from_snapshot(snapshot=snapshot_init).analytics.coverage_analytics()
+    snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=repo_root)
+    return coverage_analytics_cfg(snapshot)
 
 
 def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -> None:

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
+from typer.models import OptionInfo
 
 from codeintel.analytics.runtime import (
     GraphRuntime,
@@ -129,6 +130,34 @@ class RuntimeCliOptions:
 
 
 @dataclass(frozen=True)
+class RepoSelection:
+    """Repository identification inputs."""
+
+    repo: str | None
+    commit: str | None
+
+
+@dataclass(frozen=True)
+class PathSelection:
+    """Repository path inputs for storage and builds."""
+
+    repo_root: Path | None
+    db_path: Path | None
+    build_dir: Path | None
+    document_output_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeSelection:
+    """Aggregated runtime inputs split by domain."""
+
+    project_root: Path | None
+    repo: RepoSelection
+    paths: PathSelection
+    backend: BackendFlags = field(default_factory=BackendFlags)
+
+
+@dataclass(frozen=True)
 class GatewayOptions:
     """Gateway usage preferences."""
 
@@ -144,16 +173,11 @@ JsonOutputOpt = typer.Option(
     show_choices=True,
 )
 
-JsonFlagOpt = Annotated[
-    OutputFormat,
-    typer.Option(
-        OutputFormat.TEXT,
-        "--json",
-        flag_value=OutputFormat.JSON,
-        help="Output as JSON (alias for --output-format json).",
-        case_sensitive=False,
-    ),
-]
+JsonFlagOpt = OptionInfo(
+    default=False,
+    param_decls=("--json",),
+    help="Output as JSON (alias for --output-format json).",
+)
 
 # Repository configuration options (fallback when no project file)
 RepoOpt = Annotated[
@@ -485,8 +509,26 @@ def parse_scope_args(
 # -----------------------------------------------------------------------------
 
 
+def _runtime_selection_from_options(
+    options: RuntimeSelection | RuntimeCliOptions,
+) -> RuntimeSelection:
+    if isinstance(options, RuntimeSelection):
+        return options
+    return RuntimeSelection(
+        project_root=options.project_root,
+        repo=RepoSelection(repo=options.repo, commit=options.commit),
+        paths=PathSelection(
+            repo_root=options.repo_root,
+            db_path=options.db_path,
+            build_dir=options.build_dir,
+            document_output_dir=options.document_output_dir,
+        ),
+        backend=options.backend,
+    )
+
+
 def build_runtime_or_exit(
-    options: RuntimeCliOptions,
+    options: RuntimeSelection | RuntimeCliOptions,
 ) -> ProjectRuntime:
     """Build project runtime with fallback to explicit options.
 
@@ -508,14 +550,16 @@ def build_runtime_or_exit(
     typer.Exit
         If configuration cannot be resolved.
     """
+    selection = _runtime_selection_from_options(options)
+
     # Try project file discovery first
     try:
-        return build_project_runtime(options.project_root)
+        return build_project_runtime(selection.project_root)
     except ProjectNotFoundError:
         pass
 
     # Check if we have explicit fallback options
-    if options.repo is None or options.commit is None:
+    if selection.repo.repo is None or selection.repo.commit is None:
         typer.secho(
             "Error: No codeintel.yaml found. Provide --repo and --commit explicitly.",
             fg=typer.colors.RED,
@@ -524,21 +568,21 @@ def build_runtime_or_exit(
         raise typer.Exit(code=1)
 
     # Build from explicit options
-    resolved_repo_root = options.repo_root or Path.cwd()
-    resolved_db_path = options.db_path or Path("build/db/codeintel.duckdb")
-    resolved_build_dir = options.build_dir or Path("build")
+    resolved_repo_root = selection.paths.repo_root or Path.cwd()
+    resolved_db_path = selection.paths.db_path or Path("build/db/codeintel.duckdb")
+    resolved_build_dir = selection.paths.build_dir or Path("build")
     paths_cfg = CliPathsInput(
         repo_root=resolved_repo_root,
         build_dir=resolved_build_dir,
         db_path=resolved_db_path,
-        document_output_dir=options.document_output_dir,
+        document_output_dir=selection.paths.document_output_dir,
     )
 
     cfg = build_config_from_options(
-        repo=options.repo,
-        commit=options.commit,
+        repo=selection.repo.repo,
+        commit=selection.repo.commit,
         paths_cfg=paths_cfg,
-        backend=options.backend,
+        backend=selection.backend,
     )
 
     snapshot = SnapshotRef(
@@ -556,7 +600,7 @@ def build_runtime_or_exit(
 
     # Build minimal project config for the runtime
     project = ProjectConfig(
-        repo=repo,
+        repo=selection.repo.repo,
         storage=StorageProjectConfig(db_path=resolved_db_path),
     )
 
@@ -692,8 +736,8 @@ class ProjectContext:
 
 
 def build_project_context(
-    runtime_options: RuntimeCliOptions,
-    gateway_options: GatewayOptions = GatewayOptions(),
+    runtime_options: RuntimeSelection | RuntimeCliOptions,
+    gateway_options: GatewayOptions | None = None,
 ) -> ProjectContext:
     """Build a unified project context for CLI commands.
 
@@ -717,13 +761,14 @@ def build_project_context(
     This function may exit via ``typer.Exit`` (raised by ``build_runtime_or_exit``)
     if configuration cannot be resolved.
     """
+    resolved_gateway_options = gateway_options or GatewayOptions()
     runtime = build_runtime_or_exit(runtime_options)
 
     # Use the cached or non-cached gateway based on preference
-    if gateway_options.use_cache:
+    if resolved_gateway_options.use_cache:
         storage_cfg = (
             StorageConfig.for_readonly(runtime.paths.db_path)
-            if gateway_options.read_only
+            if resolved_gateway_options.read_only
             else StorageConfig.for_ingest(runtime.paths.db_path)
         )
         gateway = get_gateway(storage_cfg)
@@ -740,7 +785,7 @@ def build_project_context(
 
 def resolve_gateway_for_command(
     cfg: CodeIntelConfig,
-    gateway_options: GatewayOptions = GatewayOptions(),
+    gateway_options: GatewayOptions | None = None,
 ) -> StorageGateway:
     """Resolve a StorageGateway for a CLI command.
 
@@ -758,14 +803,15 @@ def resolve_gateway_for_command(
     """
     cfg.paths.db_dir.mkdir(parents=True, exist_ok=True)
 
-    if gateway_options.use_cache:
+    resolved_gateway_options = gateway_options or GatewayOptions()
+    if resolved_gateway_options.use_cache:
         storage_cfg = (
             StorageConfig.for_readonly(cfg.paths.db_path)
-            if gateway_options.read_only
+            if resolved_gateway_options.read_only
             else StorageConfig.for_ingest(cfg.paths.db_path)
         )
         return get_gateway(storage_cfg)
-    return open_gateway_from_config(cfg, read_only=gateway_options.read_only)
+    return open_gateway_from_config(cfg, read_only=resolved_gateway_options.read_only)
 
 
 def cleanup_command_resources() -> None:
@@ -791,11 +837,14 @@ __all__ = [
     "NxBackendOpt",
     "NxGpuOpt",
     "NxGpuStrictOpt",
+    "PathSelection",
     "ProjectContext",
     "ProjectRootOpt",
     "RepoOpt",
     "RepoRootOpt",
+    "RepoSelection",
     "RuntimeCliOptions",
+    "RuntimeSelection",
     "ScopeModuleOpt",
     "ScopePathOpt",
     "ScopeTimeWindowEndOpt",

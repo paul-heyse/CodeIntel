@@ -7,7 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config import SnapshotInit
+from tests._helpers.config_factory import subsystems_cfg
 
 EXPECTED_MIN_MODULES = 5
 EXPECTED_MAX_SUBSYSTEMS = 10
@@ -18,10 +19,8 @@ EXPECTED_CONFIG_WEIGHT = 0.75
 
 def test_overrides_are_applied_and_typed() -> None:
     """Overrides should populate config with validated numeric values."""
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
-    )
-    cfg = builder.subsystems(
+    cfg = subsystems_cfg(
+        SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
         min_modules=EXPECTED_MIN_MODULES,
         max_subsystems=EXPECTED_MAX_SUBSYSTEMS,
         import_weight=EXPECTED_IMPORT_WEIGHT,
@@ -51,11 +50,11 @@ def test_overrides_are_applied_and_typed() -> None:
 )
 def test_invalid_overrides_raise(overrides: dict[str, object], message: str) -> None:
     """Invalid override types should raise a TypeError."""
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
-    )
     kwargs = cast("dict[str, Any]", overrides)
     with pytest.raises(TypeError) as excinfo:
-        builder.subsystems(**kwargs)
+        subsystems_cfg(
+            SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
+            **kwargs,
+        )
     if message not in str(excinfo.value):
         pytest.fail(f"Expected '{message}' in error: {excinfo.value}")

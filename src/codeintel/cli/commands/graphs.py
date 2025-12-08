@@ -13,14 +13,21 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from enum import Enum
 from textwrap import indent
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
 from codeintel.cli.commands._common import JsonFlagOpt, JsonOutputOpt, OutputFormat
-from codeintel.graphs.core.protocol import DEFAULT_GRAPH_PLUGINS
+from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
+from codeintel.graphs.core.protocol import (
+    DEFAULT_GRAPH_PLUGINS,
+    GraphPluginPlan,
+    GraphPluginProtocol,
+)
 from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
 
 LOG = logging.getLogger(__name__)
@@ -33,7 +40,7 @@ graphs_app = typer.Typer(
 
 
 # -----------------------------------------------------------------------------
-# Option Type Aliases
+# Option Types
 # -----------------------------------------------------------------------------
 
 
@@ -44,12 +51,14 @@ class PlanMode(Enum):
     PLAN = "plan"
 
 
-PlanFlagOpt = typer.Option(
-    False,
-    "--plan",
-    help="Show planned execution order plus dependency graph and metadata.",
-    is_flag=True,
-)
+PlanModeFlagOpt = Annotated[
+    bool,
+    typer.Option(
+        "--plan",
+        help="Show planned execution order plus dependency graph and metadata.",
+        is_flag=True,
+    ),
+]
 
 NamesOpt = Annotated[
     list[str] | None,
@@ -76,8 +85,48 @@ DisableOpt = Annotated[
 ]
 
 
-def _build_plugin_metadata_map(plugins: list[object]) -> dict[str, dict[str, object]]:
-    """Construct a metadata map for plugins."""
+# -----------------------------------------------------------------------------
+# Data structures
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GraphPluginsOptions:
+    """Options for graph plugin listing and planning."""
+
+    mode: PlanMode
+    names: tuple[str, ...] | None
+    enable: tuple[str, ...] | None
+    disable: tuple[str, ...]
+    output_format: OutputFormat
+
+
+@dataclass(frozen=True)
+class ParsedOptions:
+    """Parsed CLI options for graph plugin operations."""
+
+    plan: bool
+    names: tuple[str, ...] | None
+    enable: tuple[str, ...] | None
+    disable: tuple[str, ...]
+    output_format: OutputFormat
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+
+def _build_plugin_metadata_map(
+    plugins: Iterable[GraphPluginProtocol],
+) -> dict[str, dict[str, object]]:
+    """Construct a metadata map for plugins.
+
+    Returns
+    -------
+    dict[str, dict[str, object]]
+        Metadata keyed by plugin name.
+    """
     metadata: dict[str, dict[str, object]] = {}
     for plugin in plugins:
         meta = plugin.metadata
@@ -114,148 +163,189 @@ def _build_plugin_metadata_map(plugins: list[object]) -> dict[str, dict[str, obj
     return metadata
 
 
-# -----------------------------------------------------------------------------
-# Commands
-# -----------------------------------------------------------------------------
-
-
-@graphs_app.command("plugins")
-def graph_plugins(
-    plan: bool = PlanFlagOpt,
-    names: NamesOpt = None,
-    enable: EnableOpt = None,
-    disable: DisableOpt = None,
-    json_flag: bool = JsonFlagOpt,
-    output_format: OutputFormat = JsonOutputOpt,
-) -> None:
-    """List registered graph metric plugins or show execution plan.
-
-    Shows all registered graph plugins with their metadata. Use --plan to
-    see the planned execution order including dependency resolution.
-
-    Raises
-    ------
-    typer.Exit
-        If planning fails due to invalid plugin selection.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # List all plugins
-        codeintel graph plugins
-
-        # Show execution plan
-        codeintel graph plugins --plan
-
-        # Output as JSON with full metadata
-        codeintel graph plugins --json
-    """
-    enabled = tuple(enable) if enable else None
-    requested_names = tuple(names) if names else None
-    disabled = tuple(disable) if disable else ()
-
-    plan_requested = bool(plan)
-    as_json = json_flag or output_format is OutputFormat.JSON
+def _configure_registry_logger(output_format: OutputFormat) -> tuple[logging.Logger, int | None]:
     registry_logger = logging.getLogger("codeintel.graphs.core.registry")
     previous_registry_level: int | None = None
-    if as_json:
+    if output_format is OutputFormat.JSON:
         previous_registry_level = registry_logger.level
         registry_logger.setLevel(logging.ERROR)
+    return registry_logger, previous_registry_level
+
+
+def _restore_registry_logger(logger: logging.Logger, previous_level: int | None) -> None:
+    if previous_level is not None:
+        logger.setLevel(previous_level)
+
+
+def _render_plan_json(plan_result: GraphPluginPlan) -> None:
+    metadata_map = _build_plugin_metadata_map(list(plan_result.plugins))
+    payload = {
+        "plan_id": plan_result.plan_id,
+        "ordered_plugins": list(plan_result.ordered_names),
+        "skipped_plugins": [
+            {"name": skipped.name, "reason": skipped.reason}
+            for skipped in plan_result.skipped_plugins
+        ],
+        "dep_graph": {name: list(deps) for name, deps in plan_result.dep_graph.items()},
+        "plugin_metadata": metadata_map,
+    }
+    sys.stdout.write(json.dumps(payload, indent=2))
+    sys.stdout.write("\n")
+
+
+def _render_plan_text(plan_result: GraphPluginPlan) -> None:
+    sys.stdout.write(f"Plan ID: {plan_result.plan_id}\n")
+    sys.stdout.write("Execution order (stage | severity | isolation | scope-aware):\n")
+    for plugin in plan_result.plugins:
+        meta = plugin.metadata
+        isolation = meta.isolation_kind or ("yes" if meta.requires_isolation else "no")
+        scope_flag = "yes" if meta.scope_aware else "no"
+        sys.stdout.write(
+            f"  - {meta.name} [{meta.stage} | {meta.severity} | {isolation} | {scope_flag}]\n"
+        )
+    if plan_result.skipped_plugins:
+        sys.stdout.write("Skipped:\n")
+        for skipped in plan_result.skipped_plugins:
+            sys.stdout.write(f"  - {skipped.name} ({skipped.reason})\n")
+
+
+def _render_fallback_plan(output_format: OutputFormat) -> None:
+    fallback_plugins = list_graph_plugins()
+    metadata_map = _build_plugin_metadata_map(list(fallback_plugins))
+    if output_format is OutputFormat.JSON:
+        payload = {
+            "plan_id": "fallback",
+            "ordered_plugins": [plugin.metadata.name for plugin in fallback_plugins],
+            "skipped_plugins": [],
+            "dep_graph": {},
+            "plugin_metadata": metadata_map,
+        }
+        sys.stdout.write(json.dumps(payload, indent=2))
+        sys.stdout.write("\n")
+        return
+
+    typer.secho(
+        "Failed to compute plan; showing available plugins instead.",
+        fg=typer.colors.YELLOW,
+    )
+    _render_list_text(fallback_plugins)
+
+
+def _plan_plugins(options: GraphPluginsOptions) -> GraphPluginPlan | None:
+    try:
+        return plan_graph_plugins(
+            plugin_names=options.names,
+            enabled=options.enable,
+            disabled=options.disable,
+            defaults=DEFAULT_GRAPH_PLUGINS,
+        )
+    except ValueError:
+        LOG.debug("Invalid graph plugin plan for names=%s", options.names)
+        return None
+
+
+def _render_plan(plan_result: GraphPluginPlan, output_format: OutputFormat) -> None:
+    if output_format is OutputFormat.JSON:
+        _render_plan_json(plan_result)
+        return
+
+    _render_plan_text(plan_result)
+
+
+def _render_list_json(plugins: Iterable[GraphPluginProtocol]) -> None:
+    plugin_list = list(plugins)
+    metadata_map = _build_plugin_metadata_map(plugin_list)
+    payload = {
+        "count": len(plugin_list),
+        "plugins": metadata_map,
+    }
+    sys.stdout.write(json.dumps(payload, indent=2))
+    sys.stdout.write("\n")
+
+
+def _render_list_text(plugins: Iterable[GraphPluginProtocol]) -> None:
+    for plugin in plugins:
+        sys.stdout.write(f"- {plugin.metadata.name} [{plugin.metadata.stage}]\n")
+        sys.stdout.write(indent(plugin.metadata.description, "    "))
+        sys.stdout.write("\n")
+
+
+# -----------------------------------------------------------------------------
+# Command
+# -----------------------------------------------------------------------------
+
+
+def graph_plugins_handler(options: GraphPluginsOptions) -> None:
+    """List registered graph plugins or display an execution plan."""
+    registry_logger, previous_registry_level = _configure_registry_logger(options.output_format)
 
     try:
-        if plan_requested:
-            try:
-                plan_result = plan_graph_plugins(
-                    plugin_names=requested_names,
-                    enabled=enabled,
-                    disabled=disabled,
-                    defaults=DEFAULT_GRAPH_PLUGINS,
-                )
-            except ValueError:
-                if as_json:
-                    LOG.debug("Invalid graph plugin plan for names=%s", requested_names)
-                else:
-                    LOG.warning("Invalid graph plugin plan for names=%s", requested_names)
-                fallback_plugins = list_graph_plugins()
-                metadata_map = _build_plugin_metadata_map(list(fallback_plugins))
-                if as_json:
-                    payload = {
-                        "plan_id": "fallback",
-                        "ordered_plugins": [plugin.metadata.name for plugin in fallback_plugins],
-                        "skipped_plugins": [],
-                        "dep_graph": {},
-                        "plugin_metadata": metadata_map,
-                    }
-                    sys.stdout.write(json.dumps(payload, indent=2))
-                    sys.stdout.write("\n")
-                else:
-                    typer.secho(
-                        "Failed to compute plan; showing available plugins instead.",
-                        fg=typer.colors.YELLOW,
-                    )
-                    for plugin in fallback_plugins:
-                        meta = plugin.metadata
-                        isolation = meta.isolation_kind or (
-                            "yes" if meta.requires_isolation else "no"
-                        )
-                        scope_flag = "yes" if meta.scope_aware else "no"
-                        sys.stdout.write(
-                            f"  - {meta.name} [{meta.stage} | {meta.severity} | "
-                            f"{isolation} | {scope_flag}]\n"
-                        )
+        if options.mode is PlanMode.PLAN:
+            plan_result = _plan_plugins(options)
+            if plan_result is None:
+                _render_fallback_plan(options.output_format)
                 return
-
-            ordered = plan_result.ordered_names
-            metadata_map = _build_plugin_metadata_map(list(plan_result.plugins))
-            if as_json:
-                payload = {
-                    "plan_id": plan_result.plan_id,
-                    "ordered_plugins": list(ordered),
-                    "skipped_plugins": [
-                        {"name": skipped.name, "reason": skipped.reason}
-                        for skipped in plan_result.skipped_plugins
-                    ],
-                    "dep_graph": {name: list(deps) for name, deps in plan_result.dep_graph.items()},
-                    "plugin_metadata": metadata_map,
-                }
-                sys.stdout.write(json.dumps(payload, indent=2))
-                sys.stdout.write("\n")
-            else:
-                sys.stdout.write(f"Plan ID: {plan_result.plan_id}\n")
-                sys.stdout.write("Execution order (stage | severity | isolation | scope-aware):\n")
-                for plugin in plan_result.plugins:
-                    meta = plugin.metadata
-                    isolation = meta.isolation_kind or ("yes" if meta.requires_isolation else "no")
-                    scope_flag = "yes" if meta.scope_aware else "no"
-                    sys.stdout.write(
-                        f"  - {meta.name} [{meta.stage} | {meta.severity} | "
-                        f"{isolation} | {scope_flag}]\n"
-                    )
-                if plan_result.skipped_plugins:
-                    sys.stdout.write("Skipped:\n")
-                    for skipped in plan_result.skipped_plugins:
-                        sys.stdout.write(f"  - {skipped.name} ({skipped.reason})\n")
+            _render_plan(plan_result, options.output_format)
             return
 
         plugins = list_graph_plugins()
-        metadata_map = _build_plugin_metadata_map(list(plugins))
-        if as_json:
-            payload = {
-                "count": len(plugins),
-                "plugins": metadata_map,
-            }
-            sys.stdout.write(json.dumps(payload, indent=2))
-            sys.stdout.write("\n")
-            return
-
-        for plugin in plugins:
-            sys.stdout.write(f"- {plugin.metadata.name} [{plugin.metadata.stage}]\n")
-            sys.stdout.write(indent(plugin.metadata.description, "    "))
-            sys.stdout.write("\n")
+        if options.output_format is OutputFormat.JSON:
+            _render_list_json(plugins)
+        else:
+            _render_list_text(plugins)
     finally:
-        if previous_registry_level is not None:
-            registry_logger.setLevel(previous_registry_level)
+        _restore_registry_logger(registry_logger, previous_registry_level)
+
+
+def _to_tuple(value: object | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    return tuple(cast("list[str]", value))
+
+
+def parse_graph_options(cli_kwargs: Mapping[str, object]) -> ParsedOptions:
+    output_format = cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT))
+    if bool(cli_kwargs.get("json", False)):
+        output_format = OutputFormat.JSON
+    return ParsedOptions(
+        plan=bool(cli_kwargs.get("mode", False)),
+        names=_to_tuple(cli_kwargs.get("names")),
+        enable=_to_tuple(cli_kwargs.get("enable")),
+        disable=_to_tuple(cli_kwargs.get("disable")) or (),
+        output_format=output_format,
+    )
+
+
+def _bundle_graph_plugins(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    parsed = parse_graph_options(cli_kwargs)
+    return {
+        "options": GraphPluginsOptions(
+            mode=PlanMode.PLAN if parsed.plan else PlanMode.LIST,
+            names=parsed.names,
+            enable=parsed.enable,
+            disable=parsed.disable,
+            output_format=parsed.output_format,
+        )
+    }
+
+
+_GRAPH_PLUGIN_SPECS = [
+    OptionSpec("mode", PlanModeFlagOpt, default=False),
+    OptionSpec("names", NamesOpt, None),
+    OptionSpec("enable", EnableOpt, None),
+    OptionSpec("disable", DisableOpt, None),
+    OptionSpec("json", JsonFlagOpt, default=False),
+    OptionSpec("output_format", OutputFormat, JsonOutputOpt),
+]
+
+graphs_app.command("plugins")(
+    wrap_command(
+        graph_plugins_handler,
+        _GRAPH_PLUGIN_SPECS,
+        bundle=_bundle_graph_plugins,
+        name="graph_plugins",
+    )
+)
 
 
 __all__ = ["graphs_app"]

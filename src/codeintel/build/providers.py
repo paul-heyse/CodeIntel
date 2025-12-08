@@ -23,7 +23,7 @@ import logging
 import re
 import shutil
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -204,10 +204,18 @@ class SubprocessToolRunner:
         Configuration with tool binary paths.
     default_timeout_ms
         Default timeout if not specified in run().
+    subprocess_runner
+        Callable used to create subprocesses (injectable for testing).
+    which_resolver
+        Callable used to resolve executable paths (injectable for testing).
     """
 
     tools_config: ToolsConfig
     default_timeout_ms: int = 60000
+    subprocess_runner: Callable[..., Awaitable[asyncio.subprocess.Process]] = (
+        asyncio.create_subprocess_exec
+    )
+    which_resolver: Callable[[str], str | None] = shutil.which
 
     def _resolve_tool_path(self, tool: str) -> str:
         """Resolve tool name to executable path.
@@ -277,7 +285,7 @@ class SubprocessToolRunner:
         try:
             log.debug("Running %s %s in %s", tool_path, args, cwd)
 
-            proc = await asyncio.create_subprocess_exec(
+            proc = await self.subprocess_runner(
                 tool_path,
                 *args,
                 cwd=cwd,
@@ -343,7 +351,7 @@ class SubprocessToolRunner:
             True if executable exists.
         """
         tool_path = self._resolve_tool_path(tool)
-        return shutil.which(tool_path) is not None
+        return self.which_resolver(tool_path) is not None
 
 
 # =============================================================================
