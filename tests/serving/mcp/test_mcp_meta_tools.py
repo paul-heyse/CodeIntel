@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mcp.server.fastmcp import FastMCP
-
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.meta_tools import register_meta_tools
@@ -24,6 +22,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.mcp_fast import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -90,7 +89,7 @@ def test_register_meta_tools_success(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Meta Tools", json_response=True)
+    mcp = wrap_fastmcp("Test Meta Tools")
     backend = _build_backend(provisioned_repo)
 
     # Should not raise
@@ -110,7 +109,7 @@ def test_register_meta_tools_different_backend(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Different Backend", json_response=True)
+    mcp = wrap_fastmcp("Test Different Backend")
     backend = _build_backend(provisioned_repo)
 
     # First registration
@@ -129,7 +128,7 @@ def test_register_meta_tools_with_service_directly(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Service Direct", json_response=True)
+    mcp = wrap_fastmcp("Test Service Direct")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -157,7 +156,7 @@ def test_register_meta_tools_with_local_query_service(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Local Service", json_response=True)
+    mcp = wrap_fastmcp("Test Local Service")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -194,12 +193,12 @@ def test_register_meta_tools_different_servers(
     backend = _build_backend(provisioned_repo)
 
     # Register on first server
-    mcp1 = FastMCP("Server One", json_response=True)
+    mcp1 = wrap_fastmcp("Server One")
     register_meta_tools(mcp1, backend)
     expect_equal(mcp1.name, "Server One")
 
     # Register on second server
-    mcp2 = FastMCP("Server Two", json_response=True)
+    mcp2 = wrap_fastmcp("Server Two")
     register_meta_tools(mcp2, backend)
     expect_equal(mcp2.name, "Server Two")
 
@@ -219,7 +218,7 @@ def test_register_meta_tools_backend_with_limits(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Backend Limits", json_response=True)
+    mcp = wrap_fastmcp("Test Backend Limits")
     backend = _build_backend(provisioned_repo)
 
     register_meta_tools(mcp, backend)
@@ -236,7 +235,7 @@ def test_register_meta_tools_backend_with_service(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test With Service", json_response=True)
+    mcp = wrap_fastmcp("Test With Service")
     backend = _build_backend(provisioned_repo)
 
     # Backend was built with service
@@ -283,7 +282,7 @@ def test_register_meta_tools_custom_limits(
         service=service,
     )
 
-    mcp = FastMCP("Test Custom Limits", json_response=True)
+    mcp = wrap_fastmcp("Test Custom Limits")
     register_meta_tools(mcp, backend)
 
     expect_equal(mcp.name, "Test Custom Limits")
@@ -306,7 +305,7 @@ def test_register_meta_tools_duckdb_backend(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test DuckDB Backend", json_response=True)
+    mcp = wrap_fastmcp("Test DuckDB Backend")
     backend = _build_backend(provisioned_repo)
 
     # Verify backend is DuckDBBackend
@@ -326,7 +325,7 @@ def test_register_meta_tools_preserves_backend_properties(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Properties", json_response=True)
+    mcp = wrap_fastmcp("Test Properties")
     backend = _build_backend(provisioned_repo)
 
     original_repo = backend.repo
@@ -489,7 +488,7 @@ def test_registered_tools_after_meta_registration(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Tools", json_response=True)
+    mcp = wrap_fastmcp("Test Tools")
     backend = _build_backend(provisioned_repo)
 
     register_meta_tools(mcp, backend)

@@ -441,6 +441,8 @@ def plan_graph_plugin_run(
         Explicit plugin names to run.
     context
         Planning context.
+    plan_options
+        Optional planning policies (selection/dependency) to apply during planning.
 
     Returns
     -------
