@@ -21,10 +21,10 @@ See `codeintel.config.builder` for the ConfigBuilder API.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -40,6 +40,30 @@ if TYPE_CHECKING:
 
 
 DEFAULT_TOOL_TIMEOUT_S = 300.0
+TargetValue = str | bytes | bytearray
+
+
+def _normalize_targets(
+    targets: Sequence[TargetValue] | None,
+    *,
+    default: Sequence[TargetValue] = ("export_docs",),
+) -> list[TargetValue]:
+    """Normalize optional target inputs to a concrete list.
+
+    Returns
+    -------
+    list[TargetValue]
+        Resolved targets (bytes coerced to utf-8) or the provided default when empty/None.
+    """
+    if targets is None or len(targets) == 0:
+        return [cast("TargetValue", str(item)) for item in default]
+    normalized: list[TargetValue] = []
+    for item in targets:
+        if isinstance(item, (bytes, bytearray)):
+            normalized.append(cast("TargetValue", item.decode("utf-8", errors="ignore")))
+        else:
+            normalized.append(cast("TargetValue", str(item)))
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -47,7 +71,7 @@ class CliConfigOptions:
     """Optional inputs for constructing CodeIntelConfig."""
 
     tools_cfg: ToolsConfig | None = None
-    default_targets: list[str] | None = None
+    default_targets: list[TargetValue] | None = None
     graph_backend: GraphBackendConfig | None = None
     graph_features: GraphFeatureFlags | None = None
 
@@ -359,12 +383,14 @@ class CodeIntelConfig(BaseModel):
         )
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     repo: RepoConfig
     paths: CliPathsInput
     tools: ToolsConfig = Field(default_factory=ToolsConfig.default)
 
-    default_targets: list[str] = Field(
-        default_factory=lambda: ["export_docs"],
+    default_targets: list[TargetValue] = Field(
+        default_factory=lambda: _normalize_targets(None),
         description="Default pipeline target(s) when none are specified",
     )
     graph_backend: GraphBackendConfig = Field(default_factory=GraphBackendConfig)
@@ -433,7 +459,7 @@ class CodeIntelConfig(BaseModel):
             repo=repo_cfg,
             paths=paths_cfg,
             tools=opts.tools_cfg or ToolsConfig.default(),
-            default_targets=opts.default_targets or ["export_docs"],
+            default_targets=_normalize_targets(opts.default_targets),
             graph_backend=opts.graph_backend or GraphBackendConfig(),
             graph_features=opts.graph_features or GraphFeatureFlags(),
         )

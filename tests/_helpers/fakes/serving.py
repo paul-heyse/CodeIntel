@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving.backend.pagination import BackendLimits
@@ -41,7 +41,7 @@ class ScopeRecordingQuery:
         self.repo = "demo/repo"
         self.commit = "deadbeef"
         self.limits = BackendLimits()
-        self.graph_engine = None
+        self.graph_engine: Any | None = None
         self.functions = self
         self.modules = self
         self.subsystems = self

@@ -130,7 +130,7 @@ include = ["codeintel*"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-required-version = ">=0.14.2"
+required-version = ">=0.14.8"
 output-format = "grouped"
 src = ["src"]
 extend-exclude = []
