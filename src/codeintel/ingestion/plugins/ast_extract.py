@@ -15,9 +15,11 @@ from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
+    StorageAdapterProtocol,
 )
 from codeintel.ingestion.compute import AstExtractStep
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.ports.storage import DiscoveryAdapterProtocol
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -70,6 +72,29 @@ class AstExtractPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Parse Python AST and persist rows + metrics into core.ast_* tables."
     )
+    _storage_adapter_factory: ClassVar[
+        Callable[[object], StorageAdapterProtocol]
+    ] = DuckDBStorageAdapter
+    _discovery_adapter_factory: ClassVar[
+        Callable[[Path], DiscoveryAdapterProtocol]
+    ] = FilesystemDiscoveryAdapter
+    _step_factory: ClassVar[
+        Callable[[StorageAdapterProtocol, DiscoveryAdapterProtocol], AstExtractStep]
+    ] = AstExtractStep
+
+    def __init__(
+        self,
+        *,
+        storage_adapter_factory: Callable[[object], StorageAdapterProtocol]
+        | None = None,
+        discovery_adapter_factory: Callable[[Path], DiscoveryAdapterProtocol]
+        | None = None,
+        step_factory: Callable[[StorageAdapterProtocol, DiscoveryAdapterProtocol], AstExtractStep]
+        | None = None,
+    ) -> None:
+        self._storage_factory = storage_adapter_factory or self._storage_adapter_factory
+        self._discovery_factory = discovery_adapter_factory or self._discovery_adapter_factory
+        self._step_factory = step_factory or self._step_factory
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute AST extraction.
@@ -87,15 +112,15 @@ class AstExtractPlugin(TargetPlugin):
         _ = self  # Protocol method requires instance
 
         # Create adapters
-        storage = DuckDBStorageAdapter(ctx.gateway)
-        discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
+        storage = self._storage_factory(ctx.gateway)
+        discovery = self._discovery_factory(ctx.repo_root)
 
         # Get module paths and convert to ModuleRecord
         paths = _get_module_paths(ctx)
         modules = _paths_to_modules(paths, ctx.repo_root)
 
         # Execute step
-        step = AstExtractStep(storage=storage, discovery=discovery)
+        step = self._step_factory(storage, discovery)
         result = step.execute(
             modules,
             repo=ctx.repo,

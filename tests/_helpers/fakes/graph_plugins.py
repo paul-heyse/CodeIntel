@@ -428,6 +428,8 @@ def plugin_registrar(
 
     # Register all plugins
     for plugin in plugins:
+        if registry.contains(plugin.metadata.name):
+            registry.unregister(plugin.metadata.name)
         register_graph_plugin(plugin)
 
     try:

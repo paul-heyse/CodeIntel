@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -55,6 +56,9 @@ PlanBuilder = Callable[
 PrereqRunner = Callable[[str, "ServingConfig", "QueryBackend"], object]
 
 
+LOG = logging.getLogger(__name__)
+
+
 @dataclass
 class ArchitectureToolOptions:
     """Optional overrides for architecture tool registration."""
@@ -70,6 +74,43 @@ class _RegistrationContext:
     backend: QueryBackendOrService
     config: ServingConfig | None
     prereq_runner: PrereqRunner
+
+
+def _parse_planning_overrides(planning: Mapping[str, object] | None) -> PlanningOptions:
+    allowed_keys = {
+        "allow_missing_dependencies",
+        "dependency_policy",
+        "selection_policy",
+        "requested_required",
+    }
+    payload = planning or {}
+    unknown = set(payload) - allowed_keys
+    if unknown:
+        message = f"Unsupported planning override keys: {sorted(unknown)}"
+        raise ValueError(message)
+
+    allow_missing = bool(payload.get("allow_missing_dependencies", True))
+    dep_raw = payload.get("dependency_policy", "skip")
+    dep_policy = dep_raw if isinstance(dep_raw, DependencyPolicy) else DependencyPolicy(dep_raw)
+    sel_raw = payload.get("selection_policy", "lenient")
+    selection_policy = sel_raw if isinstance(sel_raw, SelectionPolicy) else SelectionPolicy(sel_raw)
+
+    requested_raw = payload.get("requested_required")
+    requested_required = None
+    if requested_raw is not None:
+        if not isinstance(requested_raw, bool):
+            message = "requested_required must be a boolean when provided"
+            raise ValueError(message)
+        requested_required = requested_raw
+        if requested_required is False:
+            LOG.debug("mcp planning: requested_required explicitly false (lenient requests)")
+
+    return PlanningOptions(
+        allow_missing_dependencies=allow_missing,
+        dependency_policy=dep_policy,
+        selection_policy=selection_policy,
+        requested_required=requested_required,
+    )
 
 
 def _require_spec(op_id: str) -> Operation:
@@ -301,6 +342,7 @@ def _register_graph_plugin_plan_tool(
                 - allow_missing_dependencies (bool, default True)
                 - dependency_policy ("strict" | "skip", default "skip")
                 - selection_policy ("lenient" | "strict", default "lenient")
+                - requested_required (bool, optional) to require requested plugins
 
         Returns
         -------
@@ -309,19 +351,12 @@ def _register_graph_plugin_plan_tool(
         """
 
         def _build_response() -> dict[str, object]:
-            planning_opts = planning or {}
-            allow_missing = bool(planning_opts.get("allow_missing_dependencies", True))
-            dependency_policy = DependencyPolicy(planning_opts.get("dependency_policy", "skip"))
-            selection_policy = SelectionPolicy(planning_opts.get("selection_policy", "lenient"))
+            plan_opts = _parse_planning_overrides(planning)
             plan_obj = planner(
                 tuple(names) if names else None,
                 tuple(enable) if enable else None,
                 tuple(disable) if disable else None,
-                PlanningOptions(
-                    allow_missing_dependencies=allow_missing,
-                    dependency_policy=dependency_policy,
-                    selection_policy=selection_policy,
-                ),
+                plan_opts,
             )
             graph_plan = _graph_plan_from_plugin_plan(plan_obj)
             if model_cls is None:

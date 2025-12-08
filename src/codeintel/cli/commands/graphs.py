@@ -97,7 +97,8 @@ SelectionPolicyOpt = Annotated[
         case_sensitive=False,
         help=(
             "How to handle unknown requested plugins. "
-            "lenient (default) records a skip; strict raises."
+            "lenient (default) records a skip; strict raises. "
+            "Validation mode may still require explicit requests."
         ),
         show_default=True,
     ),
@@ -123,7 +124,7 @@ ValidationModeOpt = Annotated[
         is_flag=True,
         help=(
             "Validate plugin selection strictly: selection=strict, dependency=strict, "
-            "and disable stub plugins."
+            "treat requested plugins as required, and disable stub plugins."
         ),
     ),
 ]
@@ -293,6 +294,7 @@ def _plan_plugins(options: GraphPluginsOptions) -> GraphPluginPlan | None:
         plan_opts = PlanningOptions(
             selection_policy=options.selection_policy,
             dependency_policy=options.dependency_policy,
+            requested_required=False,
         )
     try:
         return plan_graph_plugins(

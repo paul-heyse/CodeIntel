@@ -6,6 +6,7 @@ dependency on the analytics subsystem.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -40,6 +41,9 @@ from codeintel.graphs.runtime.manifest import (
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.config.steps_graphs import GraphMetricsStepConfig
+
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -389,12 +393,22 @@ def _prepare_execution_inputs(
     )
     coords = PlanCoordinates(repo=repo, commit=commit, scope=scope)
 
+    auto_plan_options = PlanningOptions(
+        selection_policy=SelectionPolicy.LENIENT,
+        requested_required=False,
+    )
+    effective_plan_options = plan_options or auto_plan_options
+    if effective_plan_options.requested_required is False and plugin_names:
+        LOG.debug(
+            "graph planning: explicit requested_required=False for plugin_names=%s",
+            list(plugin_names),
+        )
     plugin_plan: GraphPluginPlan = get_graph_registry().plan(
         plugin_names=plugin_names or list(DEFAULT_GRAPH_PLUGINS),
         enabled=cfg.enabled_plugins if cfg is not None else None,
         disabled=cfg.disabled_plugins if cfg is not None else None,
         defaults=list(DEFAULT_GRAPH_PLUGINS),
-        plan_options=plan_options or PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+        plan_options=effective_plan_options,
     )
 
     options_by_plugin = _resolve_plugin_options_map(

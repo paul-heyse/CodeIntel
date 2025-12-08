@@ -34,15 +34,17 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schema import apply_all_schemas
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
+from tests._helpers.env import (
+    DEFAULT_COMMIT,
+    DEFAULT_REPO,
+    DEFAULT_RUN_ID,
+    build_test_gateway,
+    create_test_env,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DEFAULT_REPO = "demo/repo"
-DEFAULT_COMMIT = "deadbeef"
-DEFAULT_RUN_ID = "test-run-123"
 DEFAULT_PLUGIN_NAME = "test_plugin"
 
 
@@ -208,17 +210,15 @@ def create_graph_gateway() -> StorageGateway:
 
     Returns
     -------
-    StorageGateway
-        Gateway with schema, views, and macros applied.
+        StorageGateway
+            Gateway with schema, views, and macros applied.
         Caller is responsible for closing.
     """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
+    return build_test_gateway(
+        file_backed=False,
+        repo=DEFAULT_REPO,
+        commit=DEFAULT_COMMIT,
     )
-    apply_all_schemas(gateway.con)
-    return gateway
 
 
 def create_graph_snapshot(
@@ -269,9 +269,8 @@ def create_graph_executor_env(
         Environment with gateway and snapshot.
         Caller is responsible for calling close() or using as context manager.
     """
-    gateway = create_graph_gateway()
-    snapshot = create_graph_snapshot(tmp_path, repo=repo, commit=commit)
-    return GraphExecutorTestEnv(gateway=gateway, snapshot=snapshot)
+    env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
+    return GraphExecutorTestEnv(gateway=env_ctx.gateway, snapshot=env_ctx.snapshot)
 
 
 def create_graph_telemetry_env(
@@ -303,18 +302,16 @@ def create_graph_telemetry_env(
         Environment with context and gateway.
         Caller is responsible for calling close() or using as context manager.
     """
-    gateway = create_graph_gateway()
-    effective_root = repo_root or Path()
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=effective_root)
-    scratch = PluginScratch()
+    root = repo_root or Path()
+    env_ctx = create_test_env(root, repo=repo, commit=commit, repo_root=root)
     context = GraphPluginExecutionContext(
-        snapshot=snapshot,
-        gateway=gateway,
-        scratch=scratch,
+        snapshot=env_ctx.snapshot,
+        gateway=env_ctx.gateway,
+        scratch=PluginScratch(),
         plugin_name=plugin_name,
         run_id=run_id,
     )
-    return GraphTelemetryTestEnv(context=context, gateway=gateway)
+    return GraphTelemetryTestEnv(context=context, gateway=env_ctx.gateway)
 
 
 def create_graph_planning_env(
@@ -340,9 +337,8 @@ def create_graph_planning_env(
         Environment with gateway and snapshot.
         Caller is responsible for calling close() or using as context manager.
     """
-    gateway = create_graph_gateway()
-    snapshot = create_graph_snapshot(tmp_path, repo=repo, commit=commit)
-    return GraphPlanningTestEnv(gateway=gateway, snapshot=snapshot)
+    env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
+    return GraphPlanningTestEnv(gateway=env_ctx.gateway, snapshot=env_ctx.snapshot)
 
 
 def create_graph_plugin_context(
