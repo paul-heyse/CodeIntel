@@ -17,6 +17,7 @@ from tests._helpers.fakes.contexts import (
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.protocols import TypeChecker
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -53,26 +54,15 @@ class RecordingResources:
 
 
 @dataclass(frozen=True)
-class LegacyTargetContextOptions:
-    """Configuration for legacy RecordingContext construction."""
+class TargetContextOverrides:
+    """Typed overrides for building ingestion target contexts."""
 
-    modules: tuple[str, ...] | None = None
+    modules: tuple[str, ...] = ()
     snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT)
-    type_checker: object | None = None
+    type_checker: TypeChecker | None = None
     gateway: StorageGateway | RecordingGateway | None = None
     use_real_gateway: bool = True
     tmp_path: Path | None = None
-
-    @classmethod
-    def with_modules(cls, modules: Iterable[str], **kwargs: object) -> LegacyTargetContextOptions:
-        """Create options with explicit modules.
-
-        Returns
-        -------
-        LegacyTargetContextOptions
-            Options with the provided modules applied.
-        """
-        return cls(modules=tuple(modules), **kwargs)
 
 
 @dataclass

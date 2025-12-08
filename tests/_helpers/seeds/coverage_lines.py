@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tests._helpers.builders import CoverageLineRow, insert_rows
+from tests._helpers.repo import MOD_A_PATH, MOD_B_PATH, MOD_C_PATH, MOD_UTIL_PATH
 from tests._helpers.seeds.core import (
     CORE_PACK,
-    MOD_A_PATH,
-    MOD_B_PATH,
-    MOD_C_PATH,
-    MOD_UTIL_PATH,
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    GOID_HELPER,
 )
 
 if TYPE_CHECKING:
@@ -29,15 +30,12 @@ if TYPE_CHECKING:
 # Coverage Lines Constants
 # =============================================================================
 
-# Line ranges for each module (matching CORE_PACK GOIDs)
-MOD_A_START = 1
-MOD_A_END = 10
-MOD_B_START = 1
-MOD_B_END = 15
-MOD_C_START = 1
-MOD_C_END = 8
-MOD_UTIL_START = 1
-MOD_UTIL_END = 5
+FUNCTION_SPANS = {
+    GOID_FUNC_A: (MOD_A_PATH, 1, 3),
+    GOID_FUNC_B: (MOD_B_PATH, 1, 6),
+    GOID_FUNC_C: (MOD_C_PATH, 1, 2),
+    GOID_HELPER: (MOD_UTIL_PATH, 1, 2),
+}
 
 
 # =============================================================================
@@ -94,72 +92,28 @@ class CoverageLinesPack:
         """
         rows: list[CoverageLineRow] = []
 
-        # Module A: fully covered
-        rows.extend(
-            self._make_coverage_lines(
-                ctx=ctx,
-                rel_path=MOD_A_PATH,
-                start_line=MOD_A_START,
-                end_line=MOD_A_END,
-                coverage_ratio=self.full_coverage_ratio,
+        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_A, self.full_coverage_ratio))
+        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_B, self.partial_coverage_ratio))
+        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_C, self.full_coverage_ratio))
+        if self.include_uncovered_function:
+            rows.extend(
+                self._coverage_lines_for_function(ctx, GOID_HELPER, self.partial_coverage_ratio)
             )
-        )
-
-        # Module B: partially covered (some lines not covered)
-        rows.extend(
-            self._make_coverage_lines(
-                ctx=ctx,
-                rel_path=MOD_B_PATH,
-                start_line=MOD_B_START,
-                end_line=MOD_B_END,
-                coverage_ratio=self.partial_coverage_ratio,
-            )
-        )
-
-        # Module C: fully covered
-        rows.extend(
-            self._make_coverage_lines(
-                ctx=ctx,
-                rel_path=MOD_C_PATH,
-                start_line=MOD_C_START,
-                end_line=MOD_C_END,
-                coverage_ratio=self.full_coverage_ratio,
-            )
-        )
-
-        # Utility module: partially covered
-        rows.extend(
-            self._make_coverage_lines(
-                ctx=ctx,
-                rel_path=MOD_UTIL_PATH,
-                start_line=MOD_UTIL_START,
-                end_line=MOD_UTIL_END,
-                coverage_ratio=self.partial_coverage_ratio,
-            )
-        )
 
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _make_coverage_lines(
-        ctx: TestContext,
-        rel_path: str,
-        start_line: int,
-        end_line: int,
-        coverage_ratio: float,
+    def _coverage_lines_for_function(
+        ctx: TestContext, goid: int, coverage_ratio: float
     ) -> list[CoverageLineRow]:
-        """Create coverage line rows for a function's line range.
+        """Create coverage line rows for a function's span.
 
         Parameters
         ----------
         ctx
             Test context for repo/commit.
-        rel_path
-            Relative path to the source file.
-        start_line
-            First line number of the function.
-        end_line
-            Last line number of the function.
+        goid
+            Canonical GOID for the target function (matches CORE_PACK).
         coverage_ratio
             Ratio of lines that should be marked as covered.
 
@@ -168,10 +122,11 @@ class CoverageLinesPack:
         list[CoverageLineRow]
             List of coverage line rows.
         """
-        rows: list[CoverageLineRow] = []
-        total_lines = end_line - start_line + 1
+        rel_path, start_line, end_line = FUNCTION_SPANS[goid]
+        total_lines = max(0, end_line - start_line + 1)
         covered_count = int(total_lines * coverage_ratio)
 
+        rows: list[CoverageLineRow] = []
         for idx, line in enumerate(range(start_line, end_line + 1)):
             is_covered = idx < covered_count
             rows.append(
@@ -196,13 +151,6 @@ COVERAGE_LINES_PACK = CoverageLinesPack()
 
 __all__ = [
     "COVERAGE_LINES_PACK",
-    "MOD_A_END",
-    "MOD_A_START",
-    "MOD_B_END",
-    "MOD_B_START",
-    "MOD_C_END",
-    "MOD_C_START",
-    "MOD_UTIL_END",
-    "MOD_UTIL_START",
+    "FUNCTION_SPANS",
     "CoverageLinesPack",
 ]
