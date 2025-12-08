@@ -2,24 +2,27 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.context import get_current_request_context
-from codeintel.serving.mcp import models
 from codeintel.serving.mcp.tool_builder import (
+    ToolRegistrationOptions,
     build_tool_from_operation,
     register_tools_for_category,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
-from tests._helpers.mcp import RecordingMcp
+from tests._helpers.mcp_tools import make_mcp_context
+
+if TYPE_CHECKING:
+    from codeintel.serving.mcp.backend import QueryBackend
 
 
 @dataclass
@@ -80,14 +83,23 @@ def _make_operation(
     )
 
 
-def test_build_tool_from_operation_model_serialization(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_tool_from_operation_model_serialization() -> None:
     """Tool builder should handle from_domain/model_dump paths."""
     backend = _Backend()
     typed_backend = cast("QueryBackendOrService", backend)
     spec = _make_operation("echo", "do_model", output_model_name="_ModelFromDomain")
-    monkeypatch.setattr(models, "_ModelFromDomain", _ModelFromDomain, raising=False)
 
-    tool = build_tool_from_operation(spec, typed_backend, config=None)
+    def _resolve_model(name: str) -> type[_ModelFromDomain] | None:
+        if name == "_ModelFromDomain":
+            return _ModelFromDomain
+        return None
+
+    tool = build_tool_from_operation(
+        spec,
+        typed_backend,
+        config=None,
+        model_resolver=_resolve_model,
+    )
     response = tool(payload="hello", extra=1)
     expect_equal(response, {"value": "hello"})
     # Request context set/reset around call
@@ -103,32 +115,30 @@ def test_build_tool_from_operation_missing_backend_method() -> None:
         build_tool_from_operation(spec, backend, config=None)
 
 
-def test_register_tools_for_category_registers_expected_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_register_tools_for_category_registers_expected_tools() -> None:
     """Only matching categories should be registered."""
     backend = cast("QueryBackendOrService", _Backend())
-    mcp = RecordingMcp()
     specs = [
         _make_operation("fn.one", "do_echo"),
         _make_operation("datasets.list", "do_echo", category="datasets"),
     ]
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.tool_builder.iter_operations",
-        lambda: specs,
+    ctx = make_mcp_context(backend=backend, operations=specs)
+    register_tools_for_category(
+        ctx.mcp,
+        ctx.backend,
+        categories={"functions"},
+        options=ToolRegistrationOptions(operations=ctx.operations),
     )
-    typed_mcp = cast("FastMCP", mcp)
-    register_tools_for_category(typed_mcp, backend, categories={"functions"})
-    names = {reg.name for reg in mcp.registrations.calls}
+    names = {reg.name for reg in ctx.mcp.registrations.calls}
     expect_equal(names, {"tool_fn.one"})
-    expect_true("tool_datasets.list" not in mcp.registry)
+    expect_true("tool_datasets.list" not in ctx.mcp.registry)
     # Tool executes and serializes dict payloads
-    registered_callable = mcp.registry["tool_fn.one"]
+    registered_callable = ctx.mcp.registry["tool_fn.one"]
     result = registered_callable(message="hi")
     expect_is_instance(result, dict)
 
 
-def test_build_tool_auto_pipeline_invokes_prereqs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_tool_auto_pipeline_invokes_prereqs() -> None:
     """Auto-pipeline branch should trigger ensure_prereqs_for_mcp when enabled."""
     backend = _Backend()
     typed_backend = cast("QueryBackendOrService", backend)
@@ -136,18 +146,25 @@ def test_build_tool_auto_pipeline_invokes_prereqs(monkeypatch: pytest.MonkeyPatc
 
     calls: list[tuple[str, str]] = []
 
-    def _ensure_prereqs(*, op_id: str, config: object, backend: _Backend) -> None:
-        _ = config
-        calls.append((op_id, backend.repo))
+    def _record_prereqs(op_id: str, cfg: ServingConfig, bkd: QueryBackend) -> None:
+        _ = cfg
+        calls.append((op_id, cast("_Backend", bkd).repo))
 
-    monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.tool_builder.ensure_prereqs_for_mcp",
-        _ensure_prereqs,
-    )
-    config = cast("ServingConfig", SimpleNamespace(repo="demo", commit="c"))
-    tool = build_tool_from_operation(spec, typed_backend, config=config)
-    _ = tool()
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    try:
+        config = cast("ServingConfig", SimpleNamespace(repo="demo", commit="c"))
+        tool = build_tool_from_operation(
+            spec,
+            typed_backend,
+            config=config,
+            prereq_runner=_record_prereqs,
+        )
+        _ = tool()
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
+
     expect_in(("echo", "demo/repo"), calls)
-    # Reset env
-    monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

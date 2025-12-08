@@ -26,7 +26,11 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginSkip,
 )
-from codeintel.graphs.core.registry import get_graph_registry
+from codeintel.graphs.core.registry import (
+    PlanningOptions,
+    SelectionPolicy,
+    get_graph_registry,
+)
 from codeintel.graphs.runtime.manifest import (
     InputHashPayload,
     compute_input_hash,
@@ -355,6 +359,8 @@ def _build_plugin_settings(
 def _prepare_execution_inputs(
     plugin_names: Sequence[str] | None,
     context: GraphPlanContext,
+    *,
+    plan_options: PlanningOptions | None = None,
 ) -> ResolvedPlanInputs:
     """
     Resolve all derived inputs needed to build an execution plan.
@@ -388,6 +394,8 @@ def _prepare_execution_inputs(
         enabled=cfg.enabled_plugins if cfg is not None else None,
         disabled=cfg.disabled_plugins if cfg is not None else None,
         defaults=list(DEFAULT_GRAPH_PLUGINS),
+        plan_options=plan_options
+        or PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
     )
 
     options_by_plugin = _resolve_plugin_options_map(
@@ -424,6 +432,7 @@ def plan_graph_plugin_run(
     *,
     plugin_names: Sequence[str] | None = None,
     context: GraphPlanContext,
+    plan_options: PlanningOptions | None = None,
 ) -> GraphPluginExecutionPlan:
     """Build an execution plan and per-plugin settings for a batch run.
 
@@ -439,7 +448,11 @@ def plan_graph_plugin_run(
     GraphPluginExecutionPlan
         Concrete plan for execution.
     """
-    resolved = _prepare_execution_inputs(plugin_names, context)
+    resolved = _prepare_execution_inputs(
+        plugin_names,
+        context,
+        plan_options=plan_options,
+    )
     plugin_plan = resolved.plugin_plan
     return GraphPluginExecutionPlan(
         plan_id=resolved.plan_id,

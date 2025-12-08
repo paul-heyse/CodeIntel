@@ -2,90 +2,189 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.mcp import tool_builder, tools_base
-from tests._helpers.assertions import expect_equal
+from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
+from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.assertions import expect_equal, expect_in
+from tests._helpers.mcp_tools import make_mcp_context
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
 
-class _RecorderMcp:
-    def __init__(self) -> None:
-        self.recorded_tools: list[object] = []
-        self.tools: list[object] | None = None
+@dataclass
+class _StubBackend:
+    """Backend with generic call recording."""
 
-    def list_tools(self) -> list[object]:
-        return self.recorded_tools
+    calls: list[str]
+
+    def functions(self) -> str:
+        self.calls.append("functions")
+        return "ok"
+
+    def profiles(self) -> str:
+        self.calls.append("profiles")
+        return "ok"
+
+    def architecture(self) -> str:
+        self.calls.append("architecture")
+        return "ok"
+
+    def datasets(self) -> str:
+        self.calls.append("datasets")
+        return "ok"
 
 
-def test_register_tools_delegates_to_category_registrars(monkeypatch: pytest.MonkeyPatch) -> None:
-    """register_tools should delegate to each category and expose tools list."""
-    calls: list[tuple[str, object | None]] = []
+def _operations() -> list[Operation]:
+    """Minimal operations across categories.
 
-    def _recorder(
-        name: str,
-    ) -> Callable[[_RecorderMcp, object, ServingConfig | None], None]:
-        def _stub(mcp: _RecorderMcp, backend: object, config: ServingConfig | None = None) -> None:
-            _ = mcp
-            _ = backend
-            calls.append((name, getattr(config, "mode", None)))
+    Returns
+    -------
+    list[Operation]
+        Operations spanning multiple categories for MCP registration tests.
+    """
+    return [
+        Operation(
+            id="fn.op",
+            category="functions",
+            summary="fn",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="fn_tool",
+            output_model_name="",
+            backend_method="functions",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+        Operation(
+            id="prof.op",
+            category="profiles",
+            summary="prof",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="prof_tool",
+            output_model_name="",
+            backend_method="profiles",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+        Operation(
+            id="arch.op",
+            category="architecture",
+            summary="arch",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="arch_tool",
+            output_model_name="",
+            backend_method="architecture",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+        Operation(
+            id="data.op",
+            category="datasets",
+            summary="data",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="data_tool",
+            output_model_name="",
+            backend_method="datasets",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+    ]
 
-        return _stub
 
-    monkeypatch.setattr(tools_base, "register_function_tools", _recorder("functions"))
-    monkeypatch.setattr(tools_base, "register_profile_tools", _recorder("profiles"))
-    monkeypatch.setattr(tools_base, "register_architecture_tools", _recorder("architecture"))
-    monkeypatch.setattr(tools_base, "register_dataset_tools", _recorder("datasets"))
-    monkeypatch.setattr(tools_base, "register_meta_tools", _recorder("meta"))
-    mcp = _RecorderMcp()
-    backend = SimpleNamespace()
-    config = ServingConfig(mode="remote_api", api_base_url="https://example.invalid")
-
-    tools_base.register_tools(
-        cast("FastMCP", mcp), cast("tools_base.QueryBackendOrService", backend), config
+def test_register_tools_registers_all_categories() -> None:
+    """Tools are registered for all categories with injected operations."""
+    backend = _StubBackend(calls=[])
+    ctx = make_mcp_context(
+        backend=cast("QueryBackendOrService", backend),
+        operations=_operations(),
     )
 
-    expect_equal(
-        calls,
-        [
-            ("functions", "remote_api"),
-            ("profiles", "remote_api"),
-            ("architecture", "remote_api"),
-            ("datasets", "remote_api"),
-            ("meta", None),
+    ctx.register({"functions", "profiles", "architecture", "datasets"})
+
+    expect_equal(set(ctx.mcp.registry.keys()), {"fn_tool", "prof_tool", "arch_tool", "data_tool"})
+    # Invoke tools to ensure backend wiring
+    ctx.mcp.registry["fn_tool"]()
+    ctx.mcp.registry["prof_tool"]()
+    ctx.mcp.registry["arch_tool"]()
+    ctx.mcp.registry["data_tool"]()
+    expect_equal(backend.calls, ["functions", "profiles", "architecture", "datasets"])
+
+
+def test_register_tools_for_category_type_error_propagates() -> None:
+    """TypeError bubbles when backend method is missing."""
+    backend = SimpleNamespace()
+    mcp_ctx = make_mcp_context(
+        backend=cast("QueryBackendOrService", backend),
+        operations=[
+            Operation(
+                id="unknown.op",
+                category="unknown",
+                summary="bad",
+                description=None,
+                http_method=None,
+                http_path=None,
+                tool_name="bad_tool",
+                output_model_name="",
+                backend_method="does_not_exist",
+                data_source=DataSourceType.VIEW,
+                source_name=None,
+                repository_method=None,
+                required_datasets=(),
+                required_graphs=(),
+                exposed_datasets=(),
+                supports_pagination=False,
+                default_limit=None,
+                max_limit=None,
+            )
         ],
     )
-    expect_equal(mcp.tools, mcp.recorded_tools)
-
-
-def test_register_tools_for_category_type_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """TypeError from build phase should bubble up for unknown backend method."""
-    backend = SimpleNamespace()
-    mcp = _RecorderMcp()
-    spec = SimpleNamespace(
-        id="unknown.op",
-        category="unknown",
-        tool_name="bad_tool",
-        backend_method="does_not_exist",
-        output_model_name="",
-        summary="bad",
-        description=None,
-    )
-    monkeypatch.setattr(
-        "codeintel.serving.mcp.tool_builder.iter_operations",
-        lambda: (spec,),
-    )
-    with pytest.raises(TypeError):
-        tool_builder.register_tools_for_category(
-            cast("FastMCP", mcp),
-            cast("tools_base.QueryBackendOrService", backend),
+    with pytest.raises(TypeError) as excinfo:
+        register_tools_for_category(
+            mcp_ctx.mcp,
+            mcp_ctx.backend,
             categories={"unknown"},
             config=None,
+            options=ToolRegistrationOptions(operations=mcp_ctx.operations),
         )
+    expect_in("does_not_exist", str(excinfo.value))

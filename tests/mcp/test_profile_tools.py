@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
-import pytest
-
-from codeintel.serving.mcp import errors, profile_tools
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.profile_tools import ProfileToolOptions, register_profile_tools
+from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
-
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.tool_utils import QueryBackendOrService
-else:
-    FastMCP = QueryBackendOrService = ServingConfig = object
 
 
 class _ProfileModel:
@@ -64,35 +61,106 @@ class _ExplodingBackend(_Backend):
         raise errors.backend_failure(message)
 
 
-def _patch_models(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(profile_tools, "FunctionProfileResponse", _ProfileModel, raising=False)
-    monkeypatch.setattr(profile_tools, "FileProfileResponse", _ProfileModel, raising=False)
-    monkeypatch.setattr(profile_tools, "ModuleProfileResponse", _ProfileModel, raising=False)
+def _profile_operations() -> tuple[Operation, Operation, Operation]:
+    return (
+        Operation(
+            id="profiles.function",
+            category="profiles",
+            summary="function profile",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="get_function_profile",
+            output_model_name="_ProfileModel",
+            backend_method="get_function_profile",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+        Operation(
+            id="profiles.file",
+            category="profiles",
+            summary="file profile",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="get_file_profile",
+            output_model_name="_ProfileModel",
+            backend_method="get_file_profile",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+        Operation(
+            id="profiles.module",
+            category="profiles",
+            summary="module profile",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="get_module_profile",
+            output_model_name="_ProfileModel",
+            backend_method="get_module_profile",
+            data_source=DataSourceType.VIEW,
+            source_name=None,
+            repository_method=None,
+            required_datasets=(),
+            required_graphs=(),
+            exposed_datasets=(),
+            supports_pagination=False,
+            default_limit=None,
+            max_limit=None,
+        ),
+    )
 
 
-def test_register_profile_tools_registers_and_serializes(monkeypatch: pytest.MonkeyPatch) -> None:
+def _resolve_profile_model(name: str) -> type[_ProfileModel] | None:
+    if name == "_ProfileModel":
+        return _ProfileModel
+    return None
+
+
+def test_register_profile_tools_registers_and_serializes() -> None:
     """Profile tools should serialize via from_domain/model_validate and support auto-pipeline."""
-    _patch_models(monkeypatch)
     backend = _Backend()
     mcp = RecordingMcp()
-    # Enable auto-pipeline path
-    monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
     calls: list[str] = []
 
-    def _ensure_prereqs_for_mcp(*, op_id: str, config: object, backend: object) -> None:
+    def _ensure_prereqs_for_mcp(op_id: str, config: object, backend: object) -> None:
         _ = config
         _ = backend
         calls.append(op_id)
 
-    monkeypatch.setattr(
-        profile_tools, "ensure_prereqs_for_mcp", _ensure_prereqs_for_mcp, raising=False
-    )
-
-    profile_tools.register_profile_tools(
-        cast("FastMCP", mcp),
-        cast("QueryBackendOrService", backend),
-        config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
-    )
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    try:
+        register_profile_tools(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            options=ProfileToolOptions(
+                operations=_profile_operations(),
+                model_resolver=_resolve_profile_model,
+                prereq_runner=_ensure_prereqs_for_mcp,
+            ),
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
 
     result_fn = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_profile"])(
         goid_h128=1
@@ -115,18 +183,20 @@ def test_register_profile_tools_registers_and_serializes(monkeypatch: pytest.Mon
             "profiles.module",
         },
     )
-    monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)
 
 
-def test_profile_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_tools_wrap_mcp_error() -> None:
     """Backend McpError should serialize to error payload."""
-    _patch_models(monkeypatch)
     backend = _ExplodingBackend()
     mcp = RecordingMcp()
-    profile_tools.register_profile_tools(
-        cast("FastMCP", mcp),
+    register_profile_tools(
+        mcp,
         cast("QueryBackendOrService", backend),
         config=None,
+        options=ProfileToolOptions(
+            operations=_profile_operations(),
+            model_resolver=_resolve_profile_model,
+        ),
     )
     result = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_profile"])(
         goid_h128=1
@@ -134,29 +204,38 @@ def test_profile_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> None:
     expect_in("error", result)
 
 
-def test_profile_tools_skip_auto_pipeline_without_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_tools_skip_auto_pipeline_without_gateway() -> None:
     """Auto-pipeline should not run when backend lacks gateway attribute."""
-    _patch_models(monkeypatch)
-    monkeypatch.setenv("CODEINTEL_AUTO_PIPELINE", "1")
-    backend = SimpleNamespace(
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    backend = SimpleNamespace(  # type: ignore[assignment]
         get_file_profile=lambda rel_path: {"value": rel_path},
         get_function_profile=lambda goid_h128: {"value": goid_h128},
         get_module_profile=lambda module: {"value": module},
     )
     calls: list[str] = []
 
-    def _record(*, op_id: str, config: object, backend: object) -> None:
+    def _record(op_id: str, config: object, backend: object) -> None:
         _ = config
         _ = backend
         calls.append(op_id)
 
-    monkeypatch.setattr(profile_tools, "ensure_prereqs_for_mcp", _record, raising=False)
     mcp = RecordingMcp()
-    profile_tools.register_profile_tools(
-        cast("FastMCP", mcp),
-        cast("QueryBackendOrService", backend),
-        config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
-    )
+    try:
+        register_profile_tools(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            options=ProfileToolOptions(
+                operations=_profile_operations(),
+                model_resolver=_resolve_profile_model,
+                prereq_runner=_record,
+            ),
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
     cast("Callable[..., dict[str, object]]", mcp.registry["get_file_profile"])(rel_path="a.py")
     expect_equal(calls, [])
-    monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

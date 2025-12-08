@@ -99,6 +99,13 @@ class DependencyPolicy(Enum):
     SKIP = "skip"
 
 
+class SelectionPolicy(Enum):
+    """Selection handling policy for requested plugin names."""
+
+    LENIENT = "lenient"
+    STRICT = "strict"
+
+
 class _StubGraphPlugin(GraphPluginProtocol):
     """Minimal stub plugin used to satisfy ingestion dependencies."""
 
@@ -128,9 +135,33 @@ class _StubGraphPlugin(GraphPluginProtocol):
 
 @dataclass(frozen=True)
 class PlanningOptions:
+    """Options controlling graph planning and dependency handling."""
+
     allow_missing_dependencies: bool = False
     dependency_policy: DependencyPolicy = DependencyPolicy.STRICT
+    selection_policy: SelectionPolicy = SelectionPolicy.LENIENT
     use_stubs: bool = True
+
+
+GraphSkipReason = Literal[
+    "disabled",
+    "missing_dependency",
+    "missing_graph",
+    "config_error",
+    "incremental_skip",
+    "unchanged",
+]
+
+
+@dataclass
+class _DependencyContext:
+    """Mutable context used during dependency expansion."""
+
+    selected: dict[str, GraphPluginProtocol]
+    disabled_set: set[str]
+    allow_missing: bool
+    dependency_policy: DependencyPolicy
+    skipped: list[GraphPluginSkip]
 
 
 class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
@@ -188,7 +219,9 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         plan_options
             Planning options controlling dependency handling. Legacy keyword
             arguments ``allow_missing_dependencies`` and ``dependency_policy``
-            are still honored when provided.
+            are still honored when provided. Selection defaults to
+            ``SelectionPolicy.LENIENT`` so unknown requested plugins are
+            recorded as skips unless strict mode is requested.
         **legacy_plan_kwargs
             Optional legacy parameters for dependency handling.
 
@@ -203,15 +236,37 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             if isinstance(dep_policy_obj, DependencyPolicy)
             else DependencyPolicy(dep_policy_obj)
         )
+        sel_policy_obj = legacy_plan_kwargs.get("selection_policy", SelectionPolicy.LENIENT)
+        selection_policy = (
+            sel_policy_obj
+            if isinstance(sel_policy_obj, SelectionPolicy)
+            else SelectionPolicy(sel_policy_obj)
+        )
         plan_opts = plan_options or PlanningOptions(
             allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
             dependency_policy=dep_policy,
+            selection_policy=selection_policy,
             use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
         )
 
         self._ensure_loaded()
         if plan_opts.use_stubs:
             self._ensure_stub_plugins()
+
+        if (
+            plan_opts.selection_policy is not SelectionPolicy.LENIENT
+            or plan_opts.dependency_policy is not DependencyPolicy.STRICT
+            or plan_opts.allow_missing_dependencies
+            or not plan_opts.use_stubs
+        ):
+            log.info(
+                "Planning with selection_policy=%s dependency_policy=%s "
+                "allow_missing=%s use_stubs=%s",
+                plan_opts.selection_policy.value,
+                plan_opts.dependency_policy.value,
+                plan_opts.allow_missing_dependencies,
+                plan_opts.use_stubs,
+            )
 
         # Resolve which plugins to include
         selected, skipped = self._resolve_graph_selection(
@@ -282,7 +337,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
 
         for name in names:
             if name in disabled_set:
-                skipped.append(GraphPluginSkip(name=name, reason="disabled"))
+                self._add_skip_once(skipped, name, reason="disabled")
                 continue
 
             if name in selected:
@@ -292,10 +347,10 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             try:
                 plugin = self.get(name)
             except KeyError:
-                if plan_opts.dependency_policy is DependencyPolicy.STRICT:
-                    message = f"Graph plugin '{name}' is not registered"
+                if plan_opts.selection_policy is SelectionPolicy.STRICT:
+                    message = self._unknown_plugin_message(name)
                     raise ValueError(message) from None
-                skipped.append(GraphPluginSkip(name=name, reason="missing_dependency"))
+                self._add_skip_once(skipped, name, reason="missing_graph")
                 log.warning("Skipping unknown graph plugin: %s", name)
                 continue
 
@@ -327,44 +382,27 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         ValueError
             If a dependency is missing or disabled and allow_missing is False.
         """
+        ctx = _DependencyContext(
+            selected=selected,
+            disabled_set=disabled_set,
+            allow_missing=allow_missing,
+            dependency_policy=dependency_policy,
+            skipped=skipped,
+        )
         added = True
         while added:
             added = False
             for name, plugin in list(selected.items()):
                 for dep in plugin.metadata.depends_on:
-                    if dep in selected:
-                        continue
-                    if dep in disabled_set:
-                        if allow_missing or dependency_policy is DependencyPolicy.SKIP:
-                            self._add_skip_once(skipped, dep, reason="missing_dependency")
-                            log.warning(
-                                "Dependency %s for plugin %s is disabled; skipping inclusion",
-                                dep,
-                                name,
-                            )
-                            continue
-                        message = (
-                            f"Graph plugin '{name}' depends on '{dep}', "
-                            "which is disabled or missing. "
-                            "Re-enable it or set allow_missing_dependencies."
-                        )
+                    outcome, message = self._process_dependency(
+                        requester=name,
+                        dependency=dep,
+                        ctx=ctx,
+                    )
+                    if outcome == "error" and message is not None:
                         raise ValueError(message)
-                    try:
-                        selected[dep] = self.get(dep)
+                    if outcome == "added":
                         added = True
-                    except KeyError as exc:
-                        if allow_missing or dependency_policy is DependencyPolicy.SKIP:
-                            self._add_skip_once(skipped, dep, reason="missing_dependency")
-                            log.warning(
-                                "Skipping missing dependency %s for plugin %s",
-                                dep,
-                                name,
-                            )
-                            continue
-                        message = (
-                            f"Graph plugin '{name}' depends on '{dep}', which is not registered"
-                        )
-                        raise ValueError(message) from exc
 
     def _resolve_graph_dependencies(
         self,
@@ -430,10 +468,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                             name,
                         )
                         continue
-                    message = (
-                        f"Graph plugin '{name}' depends on '{dep}', "
-                        "which is not in the selected plugin set"
-                    )
+                    message = GraphPluginRegistry._missing_in_selection_message(name, dep)
                     raise ValueError(message)
                 dependencies[name].add(dep)
 
@@ -487,15 +522,97 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                 dependencies[name].add(next(iter(providers)))
 
     @staticmethod
+    def _unknown_plugin_message(name: str) -> str:
+        return f"Graph plugin '{name}' is not registered"
+
+    @staticmethod
     def _add_skip_once(
         skipped: list[GraphPluginSkip],
         name: str,
         *,
-        reason: Literal["missing_dependency"] = "missing_dependency",
+        reason: GraphSkipReason = "missing_dependency",
     ) -> None:
         if any(skip.name == name for skip in skipped):
             return
         skipped.append(GraphPluginSkip(name=name, reason=reason))
+
+    def _process_dependency(
+        self,
+        *,
+        requester: str,
+        dependency: str,
+        ctx: _DependencyContext,
+    ) -> tuple[Literal["present", "added", "skipped", "error"], str | None]:
+        outcome: Literal["present", "added", "skipped", "error"] = "present"
+        message: str | None = None
+
+        if dependency in ctx.selected:
+            return outcome, message
+
+        if dependency in ctx.disabled_set:
+            if ctx.allow_missing or ctx.dependency_policy is DependencyPolicy.SKIP:
+                self._add_skip_once(ctx.skipped, dependency, reason="missing_dependency")
+                log.warning(
+                    "Dependency %s for plugin %s is disabled; skipping inclusion",
+                    dependency,
+                    requester,
+                )
+                outcome = "skipped"
+            else:
+                outcome = "error"
+                message = self._disabled_dependency_message(requester, dependency)
+            return outcome, message
+
+        if not self.contains(dependency):
+            if ctx.allow_missing or ctx.dependency_policy is DependencyPolicy.SKIP:
+                self._add_skip_once(ctx.skipped, dependency, reason="missing_dependency")
+                log.warning(
+                    "Skipping missing dependency %s for plugin %s",
+                    dependency,
+                    requester,
+                )
+                outcome = "skipped"
+            else:
+                outcome = "error"
+                message = self._missing_dependency_message(requester, dependency)
+            return outcome, message
+
+        try:
+            ctx.selected[dependency] = self.get(dependency)
+        except KeyError:
+            if ctx.allow_missing or ctx.dependency_policy is DependencyPolicy.SKIP:
+                self._add_skip_once(ctx.skipped, dependency, reason="missing_dependency")
+                log.warning(
+                    "Skipping missing dependency %s for plugin %s",
+                    dependency,
+                    requester,
+                )
+                outcome = "skipped"
+            else:
+                outcome = "error"
+                message = self._missing_dependency_message(requester, dependency)
+        else:
+            outcome = "added"
+
+        return outcome, message
+
+    @staticmethod
+    def _missing_dependency_message(requester: str, dependency: str) -> str:
+        return f"Graph plugin '{requester}' depends on '{dependency}', which is not registered"
+
+    @staticmethod
+    def _missing_in_selection_message(requester: str, dependency: str) -> str:
+        return (
+            f"Graph plugin '{requester}' depends on '{dependency}', "
+            "which is not in the selected plugin set"
+        )
+
+    @staticmethod
+    def _disabled_dependency_message(requester: str, dependency: str) -> str:
+        return (
+            f"Graph plugin '{requester}' depends on '{dependency}', "
+            "which is disabled or missing. Re-enable it or set allow_missing_dependencies."
+        )
 
     def _ensure_stub_plugins(self) -> None:
         """Register stub ingestion plugins when missing."""
@@ -587,6 +704,8 @@ def plan_graph_plugins(
     plan_options
         Planning options controlling dependency handling. When provided, overrides
         allow_missing_dependencies/dependency_policy values.
+        Selection defaults to ``SelectionPolicy.LENIENT`` to preserve
+        backward-compatible skipping of unknown plugins.
     **legacy_plan_kwargs
         Optional legacy parameters for dependency handling.
 
@@ -601,9 +720,16 @@ def plan_graph_plugins(
         if isinstance(dep_policy_obj, DependencyPolicy)
         else DependencyPolicy(dep_policy_obj)
     )
+    sel_policy_obj = legacy_plan_kwargs.get("selection_policy", SelectionPolicy.LENIENT)
+    selection_policy = (
+        sel_policy_obj
+        if isinstance(sel_policy_obj, SelectionPolicy)
+        else SelectionPolicy(sel_policy_obj)
+    )
     opts = plan_options or PlanningOptions(
         allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
         dependency_policy=dep_policy,
+        selection_policy=selection_policy,
         use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
     )
     return get_graph_registry().plan(
@@ -616,8 +742,11 @@ def plan_graph_plugins(
 
 
 __all__ = [
+    "DependencyPolicy",
     "GraphPluginRegistry",
     "GraphRegistryHooks",
+    "PlanningOptions",
+    "SelectionPolicy",
     "get_graph_registry",
     "list_graph_plugins",
     "plan_graph_plugins",

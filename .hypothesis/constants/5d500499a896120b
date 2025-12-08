@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/graphs.py
+# hypothesis_version: 6.148.7
+
+['--dependency-policy', '--disable', '--enable', '--names', '--plan', '--selection-policy', '--validate-plan', 'OutputFormat', 'Skipped:\n', 'cache_consumes', 'cache_populates', 'config_schema_ref', 'contract_checkers', 'count', 'dep_graph', 'dependency_policy', 'depends_on', 'description', 'disable', 'enable', 'enabled_by_default', 'fallback', 'graph', 'graph_plugins', 'graphs_app', 'isolation_kind', 'json', 'list', 'list[str]', 'max_memory_mb', 'max_runtime_ms', 'mode', 'name', 'names', 'no', 'options', 'options_default', 'options_model', 'ordered_plugins', 'output_format', 'plan', 'plan_id', 'plugin_metadata', 'plugins', 'provides', 'reason', 'requires', 'requires_isolation', 'resource_hints', 'row_count_tables', 'scope_aware', 'selection_policy', 'severity', 'skipped_plugins', 'stage', 'supported_scopes', 'validate_plan', 'version_hash', 'yes']

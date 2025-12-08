@@ -42,10 +42,9 @@ See Also
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
-
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
@@ -74,6 +73,18 @@ class _ModelLike(Protocol):
 
     def model_dump(self) -> dict[str, object]:
         """Serialize model to dictionary."""
+        ...
+
+
+class McpToolRegistrar(Protocol):
+    """Minimal MCP registrar interface consumed by tool registration."""
+
+    def tool(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:
+        """Decorate and register an MCP tool callable."""
         ...
 
 
@@ -112,6 +123,9 @@ def build_tool_from_operation(
     spec: Operation,
     backend: QueryBackendOrService,
     config: ServingConfig | None = None,
+    *,
+    model_resolver: Callable[[str], ResponseFactory | None] | None = None,
+    prereq_runner: Callable[[str, ServingConfig, QueryBackend], object] | None = None,
 ) -> Callable[..., dict[str, object] | dict[str, ProblemDetail]]:
     """Build an MCP tool function from an Operation specification.
 
@@ -131,6 +145,11 @@ def build_tool_from_operation(
         Backend or service providing the implementation method.
     config
         Optional serving config for auto-pipeline support.
+    model_resolver
+        Optional resolver for response models (defaults to module lookup).
+    prereq_runner
+        Optional runner for auto-pipeline prerequisites (defaults to
+        ``ensure_prereqs_for_mcp``).
 
     Returns
     -------
@@ -150,17 +169,17 @@ def build_tool_from_operation(
         )
         raise TypeError(message)
     backend_method: Callable[..., object] = backend_attr
-    model_cls = cast("ResponseFactory | None", getattr(models, spec.output_model_name, None))
+    resolver = model_resolver or (lambda name: getattr(models, name, None))
+    model_cls = cast("ResponseFactory | None", resolver(spec.output_model_name))
+    run_prereqs = prereq_runner or (
+        lambda op_id, cfg, bkd: ensure_prereqs_for_mcp(op_id=op_id, config=cfg, backend=bkd)
+    )
 
     @_wrap
     def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
         # Check for auto-pipeline prerequisites
         if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
-            ensure_prereqs_for_mcp(
-                op_id=spec.id,
-                config=config,
-                backend=cast("QueryBackend", backend),
-            )
+            run_prereqs(spec.id, config, cast("QueryBackend", backend))
 
         correlation_id = generate_correlation_id()
         dataset = kwargs.get("dataset_name") or kwargs.get("dataset")
@@ -186,11 +205,20 @@ def build_tool_from_operation(
     return cast("Callable[..., dict[str, object] | dict[str, ProblemDetail]]", _tool)
 
 
+@dataclass
+class ToolRegistrationOptions:
+    """Optional overrides for tool registration."""
+
+    operations: Iterable[Operation] | None = None
+    model_resolver: Callable[[str], ResponseFactory | None] | None = None
+
+
 def register_tools_for_category(
-    mcp: FastMCP,
+    mcp: McpToolRegistrar,
     backend: QueryBackendOrService,
     categories: set[str],
     config: ServingConfig | None = None,
+    options: ToolRegistrationOptions | None = None,
 ) -> None:
     """Register MCP tools for specific categories from the Operation catalog.
 
@@ -207,11 +235,19 @@ def register_tools_for_category(
         Set of category names to register (e.g., {"functions", "graph"}).
     config
         Optional serving config for auto-pipeline support.
+    options
+        Optional overrides for operations and model resolution.
     """
-    for spec in iter_operations():
+    opts = options or ToolRegistrationOptions()
+    for spec in opts.operations or iter_operations():
         if spec.category not in categories or spec.tool_name is None:
             continue
-        tool = build_tool_from_operation(spec, backend, config)
+        tool = build_tool_from_operation(
+            spec,
+            backend,
+            config,
+            model_resolver=opts.model_resolver,
+        )
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
         mcp.tool(
@@ -221,9 +257,10 @@ def register_tools_for_category(
 
 
 def register_all_tools(
-    mcp: FastMCP,
+    mcp: McpToolRegistrar,
     backend: QueryBackendOrService,
     config: ServingConfig | None = None,
+    options: ToolRegistrationOptions | None = None,
 ) -> None:
     """Register all MCP tools from the Operation catalog.
 
@@ -239,11 +276,19 @@ def register_all_tools(
         Backend or service providing implementations.
     config
         Optional serving config for auto-pipeline support.
+    options
+        Optional overrides for operations and model resolution.
     """
-    for spec in iter_operations():
+    opts = options or ToolRegistrationOptions()
+    for spec in opts.operations or iter_operations():
         if spec.tool_name is None:
             continue
-        tool = build_tool_from_operation(spec, backend, config)
+        tool = build_tool_from_operation(
+            spec,
+            backend,
+            config,
+            model_resolver=opts.model_resolver,
+        )
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
         mcp.tool(
@@ -253,6 +298,8 @@ def register_all_tools(
 
 
 __all__ = [
+    "McpToolRegistrar",
+    "ToolRegistrationOptions",
     "build_tool_from_operation",
     "register_all_tools",
     "register_tools_for_category",

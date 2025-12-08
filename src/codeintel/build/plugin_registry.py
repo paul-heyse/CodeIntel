@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.build.plugin import TargetPlugin
@@ -253,15 +254,12 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 # Plugin Registry
 # =============================================================================
 
-_PLUGINS: dict[str, type[TargetPlugin]] = {}
-_REGISTERED: bool = False
-
 
 @dataclass
 class PluginRegistryStore:
     """Mutable registry store with injectable loader for testability."""
 
-    loader: Callable[["PluginRegistryStore"], None] | None = None
+    loader: Callable[[PluginRegistryStore], None] | None = None
     plugins: dict[str, type[TargetPlugin]] = field(default_factory=dict)
     registered: bool = False
 
@@ -272,7 +270,18 @@ class PluginRegistryStore:
         self.plugins[target_name] = plugin_class
 
     def get(self, target_name: str) -> type[TargetPlugin]:
-        """Return plugin class for a target or raise KeyError."""
+        """Return plugin class for a target or raise KeyError.
+
+        Raises
+        ------
+        KeyError
+            If no plugin is registered for the target.
+
+        Returns
+        -------
+        type[TargetPlugin]
+            Registered plugin class.
+        """
         self.ensure_registered()
         if target_name not in self.plugins:
             available = ", ".join(sorted(self.plugins.keys()))
@@ -281,7 +290,13 @@ class PluginRegistryStore:
         return self.plugins[target_name]
 
     def get_all(self) -> dict[str, type[TargetPlugin]]:
-        """Return a copy of the registry."""
+        """Return a copy of the registry.
+
+        Returns
+        -------
+        dict[str, type[TargetPlugin]]
+            Mapping of target names to plugin classes.
+        """
         self.ensure_registered()
         return dict(self.plugins)
 
@@ -313,6 +328,8 @@ def register_plugin(
         Name of the target (e.g., "ast", "hotspots").
     plugin_class
         Plugin class that implements the target.
+    registry
+        Optional registry store to register into (defaults to module store).
     """
     store = registry or _DEFAULT_REGISTRY
     store.register(target_name, plugin_class)
@@ -327,16 +344,13 @@ def get_plugin_for_target(
     ----------
     target_name
         Name of the target.
+    registry
+        Optional registry store to use (defaults to module store).
 
     Returns
     -------
     TargetPlugin
         Instantiated plugin.
-
-    Raises
-    ------
-    KeyError
-        If no plugin is registered for the target.
     """
     store = registry or _DEFAULT_REGISTRY
     plugin_class = store.get(target_name)
@@ -350,6 +364,8 @@ def get_all_plugins(registry: PluginRegistryStore | None = None) -> dict[str, ty
     -------
     dict[str, type[TargetPlugin]]
         Mapping of target names to plugin classes.
+    registry
+        Optional registry store to read from (defaults to module store).
     """
     store = registry or _DEFAULT_REGISTRY
     return store.get_all()
@@ -359,19 +375,6 @@ def clear_registry(registry: PluginRegistryStore | None = None) -> None:
     """Clear the plugin registry (for testing)."""
     store = registry or _DEFAULT_REGISTRY
     store.clear()
-
-
-# =============================================================================
-# Lazy Registration
-# =============================================================================
-
-
-def _ensure_registered() -> None:
-    """Ensure all plugins are registered (lazy loading)."""
-    if _DEFAULT_REGISTRY.registered:
-        return
-    _register_all_plugins(_DEFAULT_REGISTRY)
-    _DEFAULT_REGISTRY.registered = True
 
 
 def _register_all_plugins(registry: PluginRegistryStore) -> None:
@@ -395,9 +398,9 @@ _DEFAULT_REGISTRY.loader = _register_all_plugins
 
 
 __all__ = [
+    "PluginRegistryStore",
     "clear_registry",
     "get_all_plugins",
     "get_plugin_for_target",
-    "PluginRegistryStore",
     "register_plugin",
 ]

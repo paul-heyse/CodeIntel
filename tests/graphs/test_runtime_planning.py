@@ -32,7 +32,12 @@ from codeintel.graphs.core.protocol import (
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
-from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
+from codeintel.graphs.core.registry import (
+    PlanningOptions,
+    SelectionPolicy,
+    get_graph_registry,
+    register_graph_plugin,
+)
 from codeintel.graphs.runtime import planning
 from codeintel.graphs.runtime.planning import (
     GraphPlanContext,
@@ -599,6 +604,24 @@ def test_graph_plugin_execution_plan_skipped_plugins() -> None:
 
         skipped_names = [s.name for s in plan.skipped_plugins]
         expect_in("nonexistent_plugin", skipped_names)
+
+
+def test_graph_plugin_execution_plan_unknown_strict_raises() -> None:
+    """Plan raises for unknown plugin when selection policy is strict."""
+    plugin = _make_test_plugin("skip_test")
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
+
+    with _PluginRegistrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        with pytest.raises(ValueError, match="is not registered"):
+            plan_graph_plugin_run(
+                plugin_names=["skip_test", "nonexistent_plugin"],
+                context=context,
+                plan_options=PlanningOptions(selection_policy=SelectionPolicy.STRICT),
+            )
 
 
 def test_plan_coordinates_frozen() -> None:

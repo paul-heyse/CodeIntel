@@ -28,7 +28,13 @@ from codeintel.graphs.core.protocol import (
     GraphPluginPlan,
     GraphPluginProtocol,
 )
-from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
+from codeintel.graphs.core.registry import (
+    DependencyPolicy,
+    PlanningOptions,
+    SelectionPolicy,
+    list_graph_plugins,
+    plan_graph_plugins,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -84,6 +90,44 @@ DisableOpt = Annotated[
     ),
 ]
 
+SelectionPolicyOpt = Annotated[
+    SelectionPolicy,
+    typer.Option(
+        "--selection-policy",
+        case_sensitive=False,
+        help=(
+            "How to handle unknown requested plugins. "
+            "lenient (default) records a skip; strict raises."
+        ),
+        show_default=True,
+    ),
+]
+
+DependencyPolicyOpt = Annotated[
+    DependencyPolicy,
+    typer.Option(
+        "--dependency-policy",
+        case_sensitive=False,
+        help=(
+            "How to handle missing/disabled dependencies. "
+            "strict (default) raises; skip records a missing_dependency skip."
+        ),
+        show_default=True,
+    ),
+]
+
+ValidationModeOpt = Annotated[
+    bool,
+    typer.Option(
+        "--validate-plan",
+        is_flag=True,
+        help=(
+            "Validate plugin selection strictly: selection=strict, dependency=strict, "
+            "and disable stub plugins."
+        ),
+    ),
+]
+
 
 # -----------------------------------------------------------------------------
 # Data structures
@@ -98,6 +142,9 @@ class GraphPluginsOptions:
     names: tuple[str, ...] | None
     enable: tuple[str, ...] | None
     disable: tuple[str, ...]
+    selection_policy: SelectionPolicy
+    dependency_policy: DependencyPolicy
+    validation_mode: bool
     output_format: OutputFormat
 
 
@@ -109,6 +156,9 @@ class ParsedOptions:
     names: tuple[str, ...] | None
     enable: tuple[str, ...] | None
     disable: tuple[str, ...]
+    selection_policy: SelectionPolicy
+    dependency_policy: DependencyPolicy
+    validation_mode: bool
     output_format: OutputFormat
 
 
@@ -232,12 +282,25 @@ def _render_fallback_plan(output_format: OutputFormat) -> None:
 
 
 def _plan_plugins(options: GraphPluginsOptions) -> GraphPluginPlan | None:
+    if options.validation_mode:
+        plan_opts = PlanningOptions(
+            selection_policy=SelectionPolicy.STRICT,
+            dependency_policy=DependencyPolicy.STRICT,
+            use_stubs=False,
+            allow_missing_dependencies=False,
+        )
+    else:
+        plan_opts = PlanningOptions(
+            selection_policy=options.selection_policy,
+            dependency_policy=options.dependency_policy,
+        )
     try:
         return plan_graph_plugins(
             plugin_names=options.names,
             enabled=options.enable,
             disabled=options.disable,
             defaults=DEFAULT_GRAPH_PLUGINS,
+            plan_options=plan_opts,
         )
     except ValueError:
         LOG.debug("Invalid graph plugin plan for names=%s", options.names)
@@ -312,6 +375,13 @@ def parse_graph_options(cli_kwargs: Mapping[str, object]) -> ParsedOptions:
         names=_to_tuple(cli_kwargs.get("names")),
         enable=_to_tuple(cli_kwargs.get("enable")),
         disable=_to_tuple(cli_kwargs.get("disable")) or (),
+        selection_policy=SelectionPolicy(
+            cast("str | SelectionPolicy", cli_kwargs.get("selection_policy", SelectionPolicy.LENIENT))
+        ),
+        dependency_policy=DependencyPolicy(
+            cast("str | DependencyPolicy", cli_kwargs.get("dependency_policy", DependencyPolicy.STRICT))
+        ),
+        validation_mode=bool(cli_kwargs.get("validate_plan", False)),
         output_format=output_format,
     )
 
@@ -324,6 +394,9 @@ def _bundle_graph_plugins(cli_kwargs: Mapping[str, object]) -> Mapping[str, obje
             names=parsed.names,
             enable=parsed.enable,
             disable=parsed.disable,
+            selection_policy=parsed.selection_policy,
+            dependency_policy=parsed.dependency_policy,
+            validation_mode=parsed.validation_mode,
             output_format=parsed.output_format,
         )
     }
@@ -334,6 +407,9 @@ _GRAPH_PLUGIN_SPECS = [
     OptionSpec("names", NamesOpt, None),
     OptionSpec("enable", EnableOpt, None),
     OptionSpec("disable", DisableOpt, None),
+    OptionSpec("selection_policy", SelectionPolicyOpt, SelectionPolicy.LENIENT),
+    OptionSpec("dependency_policy", DependencyPolicyOpt, DependencyPolicy.STRICT),
+    OptionSpec("validate_plan", ValidationModeOpt, default=False),
     OptionSpec("json", JsonFlagOpt, default=False),
     OptionSpec("output_format", OutputFormat, JsonOutputOpt),
 ]

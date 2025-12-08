@@ -2,146 +2,157 @@
 
 from __future__ import annotations
 
-import types
 from typing import ClassVar
 
 import pytest
 
 from codeintel.build import plugin_registry
-from codeintel.build.plugin_registry import get_all_plugins, get_plugin_for_target
-from codeintel.build.plugins import TargetPlugin, all_plugins, get_plugin, register_plugin
+from codeintel.build.plugin_registry import (
+    PluginRegistryStore,
+    get_all_plugins,
+    get_plugin_for_target,
+    register_plugin,
+)
+from codeintel.build.plugins import (
+    PluginCatalog,
+    TargetPlugin,
+    all_plugins,
+    get_plugin,
+)
+from codeintel.build.plugins import (
+    register_plugin as decorator_register_plugin,
+)
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
-from tests._helpers.build import RecordingPlugin
+from tests._helpers.build import RecordingPlugin, make_plugin_registry_store
 
 
-def _reset_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reset plugin registry globals for isolated tests."""
-    monkeypatch.setattr(plugin_registry, "_PLUGINS", {})
-    monkeypatch.setattr(plugin_registry, "_REGISTERED", True)
+@pytest.fixture
+def registry_store() -> PluginRegistryStore:
+    """Fresh plugin registry store for isolation.
+
+    Returns
+    -------
+    PluginRegistryStore
+        New registry store without built-in loader.
+    """
+    return make_plugin_registry_store(loader=None)
 
 
-def test_register_and_get_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_and_get_plugin(registry_store: PluginRegistryStore) -> None:
     """Manual registration returns instantiated plugin."""
-    _reset_registry(monkeypatch)
-    plugin_registry.register_plugin("record", RecordingPlugin)
+    register_plugin("record", RecordingPlugin, registry=registry_store)
 
-    plugin = get_plugin_for_target("record")
+    plugin = get_plugin_for_target("record", registry=registry_store)
 
     expect_is_instance(plugin, RecordingPlugin)
     expect_equal(plugin.plugin_name, "recording_plugin")
 
 
-def test_get_all_plugins_returns_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_all_plugins_returns_copy(registry_store: PluginRegistryStore) -> None:
     """get_all_plugins should not expose internal registry for mutation."""
-    _reset_registry(monkeypatch)
-    plugin_registry.register_plugin("record", RecordingPlugin)
+    register_plugin("record", RecordingPlugin, registry=registry_store)
 
-    plugins_before = get_all_plugins()
+    plugins_before = get_all_plugins(registry=registry_store)
     plugins_copy = dict(plugins_before)
     plugins_copy["new"] = RecordingPlugin
 
-    expect_equal(get_all_plugins(), plugins_before)
+    expect_equal(get_all_plugins(registry=registry_store), plugins_before)
 
 
-def test_missing_plugin_error_lists_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_plugin_error_lists_available(registry_store: PluginRegistryStore) -> None:
     """KeyError message includes available plugin names."""
-    _reset_registry(monkeypatch)
-    plugin_registry.register_plugin("present", RecordingPlugin)
+    register_plugin("present", RecordingPlugin, registry=registry_store)
 
     with pytest.raises(KeyError) as excinfo:
-        get_plugin_for_target("absent")
+        get_plugin_for_target("absent", registry=registry_store)
 
     expect_in("available", str(excinfo.value).lower())
     expect_in("present", str(excinfo.value))
 
 
 def test_duplicate_registration_logs_warning(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    registry_store: PluginRegistryStore, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Overwriting an existing plugin emits a warning."""
-    _reset_registry(monkeypatch)
     caplog.set_level("WARNING")
 
-    plugin_registry.register_plugin("record", RecordingPlugin)
-    plugin_registry.register_plugin("record", RecordingPlugin)
+    register_plugin("record", RecordingPlugin, registry=registry_store)
+    register_plugin("record", RecordingPlugin, registry=registry_store)
 
     expect_true(any("Overwriting plugin" in rec.message for rec in caplog.records))
 
 
 def test_lazy_registration_handles_import_error(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Import errors during lazy registration are logged and do not raise."""
-    monkeypatch.setattr(plugin_registry, "_PLUGINS", {})
-    monkeypatch.setattr(plugin_registry, "_REGISTERED", False)
-    monkeypatch.setattr(
-        plugin_registry,
-        "_PLUGIN_DEFINITIONS",
-        (("missing.module", "MissingClass", ("missing",)),),
-    )
     caplog.set_level("WARNING")
 
-    monkeypatch.setattr(
-        plugin_registry.importlib,
-        "import_module",
-        lambda module_path: (_ for _ in ()).throw(ImportError(module_path)),
-    )
+    def loader(_registry: PluginRegistryStore) -> None:
+        exc = ImportError("missing.module")
+        plugin_registry.log.warning(
+            "Failed to register plugin %s.%s: %s", "missing.module", "MissingClass", exc
+        )
 
-    plugins = get_all_plugins()
+    registry_store = make_plugin_registry_store(loader=loader)
+
+    plugins = get_all_plugins(registry=registry_store)
 
     expect_equal(plugins, {})
     expect_true(any("Failed to register plugin" in rec.message for rec in caplog.records))
 
 
 def test_lazy_registration_handles_attribute_error(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Missing attributes during registration are logged."""
-    monkeypatch.setattr(plugin_registry, "_PLUGINS", {})
-    monkeypatch.setattr(plugin_registry, "_REGISTERED", False)
-    monkeypatch.setattr(
-        plugin_registry,
-        "_PLUGIN_DEFINITIONS",
-        (("dummy.module", "MissingClass", ("dummy",)),),
-    )
     caplog.set_level("WARNING")
 
-    module = types.SimpleNamespace()
-    monkeypatch.setattr(plugin_registry.importlib, "import_module", lambda _path: module)
+    def loader(_registry: PluginRegistryStore) -> None:
+        module_path = "dummy.module"
+        class_name = "MissingClass"
+        exc = AttributeError("missing attribute")
+        plugin_registry.log.warning(
+            "Failed to register plugin %s.%s: %s", module_path, class_name, exc
+        )
 
-    plugins = get_all_plugins()
+    registry_store = make_plugin_registry_store(loader=loader)
+
+    plugins = get_all_plugins(registry=registry_store)
 
     expect_equal(plugins, {})
     expect_true(any("Failed to register plugin" in rec.message for rec in caplog.records))
 
 
-def test_register_plugin_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_plugin_decorator() -> None:
     """Decorator registers plugin class and returns it."""
-    monkeypatch.setattr("codeintel.build.plugins._PLUGIN_REGISTRY", {})
+    catalog = PluginCatalog()
 
-    @register_plugin
     class DecoratedPlugin(RecordingPlugin, TargetPlugin):
         plugin_name: ClassVar[str] = "decorated"
 
-    expect_true(get_plugin("decorated") is DecoratedPlugin)
-    expect_in("decorated", all_plugins())
+    decorator_register_plugin(plugin_class=DecoratedPlugin, catalog=catalog)
+
+    expect_true(get_plugin("decorated", catalog=catalog) is DecoratedPlugin)
+    expect_in("decorated", all_plugins(catalog=catalog))
 
 
-def test_all_plugins_is_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_plugins_is_copy() -> None:
     """all_plugins returns a copy of the registry."""
-    monkeypatch.setattr("codeintel.build.plugins._PLUGIN_REGISTRY", {})
+    catalog = PluginCatalog()
 
-    @register_plugin
     class AnotherPlugin(RecordingPlugin, TargetPlugin):
         plugin_name: ClassVar[str] = "another"
 
-    plugins = all_plugins()
+    decorator_register_plugin(plugin_class=AnotherPlugin, catalog=catalog)
+
+    plugins = all_plugins(catalog=catalog)
     plugins.pop("another")
 
-    expect_in("another", all_plugins())
+    expect_in("another", all_plugins(catalog=catalog))
 
 
-def test_get_plugin_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_plugin_missing() -> None:
     """get_plugin returns None when plugin is absent."""
-    monkeypatch.setattr("codeintel.build.plugins._PLUGIN_REGISTRY", {})
-    expect_true(get_plugin("absent") is None)
+    catalog = PluginCatalog()
+    expect_true(get_plugin("absent", catalog=catalog) is None)
