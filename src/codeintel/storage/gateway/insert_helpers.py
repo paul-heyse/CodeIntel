@@ -8,7 +8,7 @@ keeping runtime behavior identical.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Final, TypedDict, cast
 
 from codeintel.storage.gateway.protocol import DuckDBConnection
@@ -76,6 +76,8 @@ def insert_rows(
     con: DuckDBConnection,
     table_key: str,
     rows: Iterable[Mapping[str, object]],
+    executor: Callable[[DuckDBConnection, str, Iterable[tuple[object, ...]]], None]
+    | None = macro_insert_rows,
 ) -> None:
     """Insert mapping rows into the given table using registry-driven ordering.
 
@@ -88,19 +90,24 @@ def insert_rows(
     rows
         Iterable of mapping-based rows (e.g., TypedDict models) whose keys
         align with the table's schema columns.
+    executor
+        Optional callable to execute the inserts (defaults to macro_insert_rows).
     """
     metadata = _lookup_metadata(table_key)
     columns = metadata["columns"]
     normalized_rows = [_normalize_row(row, columns, table_key) for row in rows]
     if not normalized_rows:
         return
-    macro_insert_rows(con, metadata["table"], normalized_rows)
+    insert_executor = executor or macro_insert_rows
+    insert_executor(con, metadata["table"], normalized_rows)
 
 
 def insert_one(
     con: DuckDBConnection,
     table_key: str,
     row: Mapping[str, object],
+    executor: Callable[[DuckDBConnection, str, Iterable[tuple[object, ...]]], None]
+    | None = macro_insert_rows,
 ) -> None:
     """Insert a single mapping row into the given table."""
-    insert_rows(con, table_key, (row,))
+    insert_rows(con, table_key, (row,), executor=executor)

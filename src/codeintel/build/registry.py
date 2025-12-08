@@ -562,7 +562,7 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
 )
 
 
-def build_target_graph() -> TargetGraph:
+def build_target_graph(targets: tuple[OutputTarget, ...] | None = None) -> TargetGraph:
     """Construct the complete target graph from all registered targets.
 
     Returns
@@ -575,8 +575,9 @@ def build_target_graph() -> TargetGraph:
     ValueError
         If the graph has validation errors (cycles, missing deps).
     """
+    active_targets = targets or ALL_TARGETS
     graph = TargetGraph()
-    for target in ALL_TARGETS:
+    for target in active_targets:
         graph.register(target)
     errors = graph.validate()
     if errors:
@@ -636,6 +637,7 @@ def derive_schemas_from_targets(
 
 
 def get_all_target_table_keys() -> frozenset[str]:
+def get_all_target_table_keys(targets: tuple[OutputTarget, ...] | None = None) -> frozenset[str]:
     """Return all table keys declared by any target.
 
     This includes both contract tables and legacy tables.
@@ -646,7 +648,7 @@ def get_all_target_table_keys() -> frozenset[str]:
         Set of all table keys.
     """
     keys: set[str] = set()
-    for target in ALL_TARGETS:
+    for target in targets or ALL_TARGETS:
         # Add contract tables
         keys.update(target.contract.table_keys)
         # Add legacy tables
@@ -654,7 +656,9 @@ def get_all_target_table_keys() -> frozenset[str]:
     return frozenset(keys)
 
 
-def get_target_by_table(table_key: str) -> OutputTarget | None:
+def get_target_by_table(
+    table_key: str, *, targets: tuple[OutputTarget, ...] | None = None
+) -> OutputTarget | None:
     """Find the target that produces a given table.
 
     Parameters
@@ -667,7 +671,7 @@ def get_target_by_table(table_key: str) -> OutputTarget | None:
     OutputTarget | None
         Target that produces this table, or None.
     """
-    for target in ALL_TARGETS:
+    for target in targets or ALL_TARGETS:
         if table_key in target.table_keys:
             return target
     return None

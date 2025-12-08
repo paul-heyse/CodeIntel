@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
-from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 from codeintel.storage.gateway import StorageGateway
@@ -22,6 +21,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.config_factory import coverage_analytics_cfg
 from tests._helpers.coverage import (
     CoverageLineSeedData,
     CoverageRangeSeedData,
@@ -140,22 +140,6 @@ def _query_coverage_function(
     ).fetchone()
 
 
-def _builder_from_snapshot(snapshot: SnapshotRef) -> ConfigBuilder:
-    """Construct a ConfigBuilder using SnapshotInit from an existing snapshot.
-
-    Returns
-    -------
-    ConfigBuilder
-        Builder initialized with the provided snapshot.
-    """
-    snapshot_init = SnapshotInit(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        repo_root=snapshot.repo_root,
-    )
-    return ConfigBuilder.from_snapshot(snapshot=snapshot_init)
-
-
 def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
     """Build a typed CoverageAnalyticsStepConfig for a snapshot.
 
@@ -164,10 +148,7 @@ def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
     CoverageAnalyticsStepConfig
         Coverage analytics configuration scoped to the snapshot.
     """
-    return cast(
-        "CoverageAnalyticsStepConfig",
-        _builder_from_snapshot(snapshot).analytics.coverage_analytics(),
-    )
+    return coverage_analytics_cfg(snapshot)
 
 
 # ---------------------------------------------------------------------------

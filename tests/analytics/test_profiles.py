@@ -10,10 +10,11 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config import SnapshotInit
 from codeintel.config.primitives import BuildLayoutOptions
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers import ProvisionedGateway, seed_profile_data
+from tests._helpers.config_factory import profiles_analytics_cfg
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"
@@ -98,15 +99,14 @@ def test_profile_builders_aggregate_expected_fields(
         rel_path=REL_PATH,
         module=MODULE,
     )
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(
+    cfg = profiles_analytics_cfg(
+        SnapshotInit(
             repo=provisioned_repo.repo,
             commit=provisioned_repo.commit,
             repo_root=provisioned_repo.repo_root,
         ),
         layout=BuildLayoutOptions(build_dir=provisioned_repo.build_dir),
     )
-    cfg = builder.analytics.profiles_analytics()
     build_function_profile(gateway, cfg)
     build_file_profile(gateway, cfg)
     build_module_profile(gateway, cfg)

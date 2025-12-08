@@ -614,14 +614,12 @@ SpecsSnapshotOpt = Annotated[
     ),
 ]
 
-DryRunModeOpt = Annotated[
-    DryRunMode,
+DryRunFlagOpt = Annotated[
+    bool,
     typer.Option(
-        DryRunMode.EXECUTE,
         "--dry-run",
         help="Plan without writing files.",
-        flag_value=DryRunMode.DRY_RUN,
-        case_sensitive=False,
+        is_flag=True,
     ),
 ]
 
@@ -646,14 +644,12 @@ BootstrapSnippetOpt = Annotated[
     ),
 ]
 
-RegistryCheckOpt = Annotated[
-    RegistryCheck,
+RegistryCheckFlagOpt = Annotated[
+    bool,
     typer.Option(
-        RegistryCheck.DISABLED,
         "--check-registry",
         help="Validate against live registry for clashes.",
-        flag_value=RegistryCheck.ENABLED,
-        case_sensitive=False,
+        is_flag=True,
     ),
 ]
 
@@ -1573,7 +1569,7 @@ _GENERATE_SCHEMAS_SPECS = [
     OptionSpec("schemas", SchemasFilterOpt, None),
     OptionSpec("datasets", DatasetsFilterOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),
-    OptionSpec("run_mode", bool, DryRunFlagOpt),
+    OptionSpec(name="run_mode", annotation=DryRunFlagOpt, default=False),
     OptionSpec("verbose", int, VerboseOpt),
 ]
 
@@ -1763,9 +1759,11 @@ def _bundle_scaffold(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
             DryRunMode.DRY_RUN if bool(cli_kwargs.get("dry_run", False)) else DryRunMode.EXECUTE
         ),
         bootstrap=cast("BootstrapSnippet", cli_kwargs.get("bootstrap", BootstrapSnippet.SKIP)),
-        registry_check=RegistryCheck.ENABLED
-        if bool(cli_kwargs.get("registry_check", False))
-        else RegistryCheck.DISABLED,
+        registry_check=(
+            RegistryCheck.ENABLED
+            if bool(cli_kwargs.get("registry_check", False))
+            else RegistryCheck.DISABLED
+        ),
     )
     options = _scaffold_options(
         metadata=metadata,
@@ -1799,9 +1797,9 @@ _SCAFFOLD_SPECS = [
     OptionSpec("output_dir", OutputDirOpt, Path("build/dataset_scaffolds")),
     OptionSpec("overwrite_policy", OverwritePolicyOpt, OverwritePolicy.ERROR),
     OptionSpec("specs_snapshot", SpecsSnapshotOpt, Path("build/catalog/dataset_specs.json")),
-    OptionSpec("dry_run", bool, DryRunFlagOpt),
+    OptionSpec(name="dry_run", annotation=DryRunFlagOpt, default=False),
     OptionSpec("bootstrap", BootstrapSnippetOpt, BootstrapSnippet.SKIP),
-    OptionSpec("registry_check", bool, RegistryCheckOpt),
+    OptionSpec(name="registry_check", annotation=RegistryCheckFlagOpt, default=False),
     OptionSpec("verbose", int, VerboseOpt),
 ]
 
@@ -1934,7 +1932,7 @@ _VALIDATE_FILES_SPECS = [
     OptionSpec("schemas", SchemasFilterOpt, None),
     OptionSpec("datasets", DatasetsFilterOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),
-    OptionSpec("run_mode", bool, DryRunFlagOpt),
+    OptionSpec(name="run_mode", annotation=DryRunFlagOpt, default=False),
     OptionSpec("schema_root", SchemaRootOpt, None),
     OptionSpec("verbose", int, VerboseOpt),
 ]

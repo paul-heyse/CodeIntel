@@ -6,6 +6,7 @@ This module tests the architecture and subsystem MCP tools using real gateways.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -23,7 +24,9 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
+    expect_true,
 )
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -108,6 +111,24 @@ def _build_architecture_backend(gateway: StorageGateway) -> DuckDBBackend:
         observability=None,
         service=service,
     )
+
+
+@pytest.fixture(autouse=True)
+def _register_scip_ingest_plugin() -> Iterator[None]:
+    """Ensure the scip_ingest dependency plugin exists for planning tests.
+
+    Yields
+    ------
+    Iterator[None]
+        Context where the plugin is registered.
+    """
+    plugins = [
+        GraphPluginBuilder(name="scip_ingest").build(),
+        GraphPluginBuilder(name="ast_extract").build(),
+        GraphPluginBuilder(name="repo_scan").build(),
+    ]
+    with plugin_registrar(plugins):
+        yield
 
 
 # =============================================================================

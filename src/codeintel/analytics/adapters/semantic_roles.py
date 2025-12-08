@@ -116,7 +116,7 @@ def _timestamp_str(timestamp: datetime | None) -> str:
 def _coerce_int(value: object, field: str) -> int:
     if not isinstance(value, (int, float, str)):
         message = f"{field} must be int-convertible"
-        raise ValueError(message)
+        raise TypeError(message)
     try:
         return int(value)
     except Exception as exc:
@@ -129,7 +129,7 @@ def _coerce_optional_float(value: object | None, field: str) -> float | None:
         return None
     if not isinstance(value, (int, float, str)):
         message = f"{field} must be float-convertible"
-        raise ValueError(message)
+        raise TypeError(message)
     try:
         return float(value)
     except Exception as exc:

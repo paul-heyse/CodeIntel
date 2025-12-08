@@ -37,7 +37,7 @@ Example
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext, TargetResult
@@ -122,10 +122,37 @@ class TargetPlugin(Protocol):
 # =============================================================================
 
 
-_PLUGIN_REGISTRY: dict[str, type[TargetPlugin]] = {}
+class PluginCatalog:
+    """Container for decorator-registered plugins."""
+
+    def __init__(self) -> None:
+        self._registry: dict[str, type[TargetPlugin]] = {}
+
+    def register(self, plugin_class: type[TargetPlugin]) -> type[TargetPlugin]:
+        """Register a plugin class and return it."""
+        name = plugin_class.plugin_name
+        self._registry[name] = plugin_class
+        return plugin_class
+
+    def get(self, name: str) -> type[TargetPlugin] | None:
+        """Return a plugin class by name."""
+        return self._registry.get(name)
+
+    def all(self) -> dict[str, type[TargetPlugin]]:
+        """Return a copy of the registry."""
+        return dict(self._registry)
+
+    def clear(self) -> None:
+        """Clear registry entries (for tests)."""
+        self._registry.clear()
 
 
-def register_plugin(plugin_class: type[TargetPlugin]) -> type[TargetPlugin]:
+_DEFAULT_PLUGIN_CATALOG = PluginCatalog()
+
+
+def register_plugin(
+    plugin_class: type[TargetPlugin] | None = None, *, catalog: PluginCatalog | None = None
+) -> type[TargetPlugin] | Callable[[type[TargetPlugin]], type[TargetPlugin]]:
     """Register a plugin class for discovery.
 
     Use as a decorator:
@@ -139,18 +166,25 @@ def register_plugin(plugin_class: type[TargetPlugin]) -> type[TargetPlugin]:
     ----------
     plugin_class
         Plugin class to register.
+    catalog
+        Optional catalog to register into (defaults to module singleton).
 
     Returns
     -------
     type[TargetPlugin]
         The same class (for decorator use).
     """
-    name = plugin_class.plugin_name
-    _PLUGIN_REGISTRY[name] = plugin_class
-    return plugin_class
+
+    def _decorator(cls: type[TargetPlugin]) -> type[TargetPlugin]:
+        target_catalog = catalog or _DEFAULT_PLUGIN_CATALOG
+        return target_catalog.register(cls)
+
+    if plugin_class is None:
+        return _decorator
+    return _decorator(plugin_class)
 
 
-def get_plugin(name: str) -> type[TargetPlugin] | None:
+def get_plugin(name: str, *, catalog: PluginCatalog | None = None) -> type[TargetPlugin] | None:
     """Get a registered plugin by name.
 
     Parameters
@@ -163,10 +197,11 @@ def get_plugin(name: str) -> type[TargetPlugin] | None:
     type[TargetPlugin] | None
         Plugin class if found.
     """
-    return _PLUGIN_REGISTRY.get(name)
+    target_catalog = catalog or _DEFAULT_PLUGIN_CATALOG
+    return target_catalog.get(name)
 
 
-def all_plugins() -> dict[str, type[TargetPlugin]]:
+def all_plugins(*, catalog: PluginCatalog | None = None) -> dict[str, type[TargetPlugin]]:
     """Get all registered plugins.
 
     Returns
@@ -174,4 +209,14 @@ def all_plugins() -> dict[str, type[TargetPlugin]]:
     dict[str, type[TargetPlugin]]
         Mapping of plugin name to class.
     """
-    return dict(_PLUGIN_REGISTRY)
+    target_catalog = catalog or _DEFAULT_PLUGIN_CATALOG
+    return target_catalog.all()
+
+
+__all__ = [
+    "PluginCatalog",
+    "TargetPlugin",
+    "all_plugins",
+    "get_plugin",
+    "register_plugin",
+]

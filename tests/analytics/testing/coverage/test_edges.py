@@ -312,7 +312,7 @@ class TestBackfillTestGoids:
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
-        ).test_coverage()
+        ).analytics.test_coverage()
 
         goid_by_id, urn_by_id = backfill_test_goids_for_catalog(test_ctx.gateway, cfg)
 
@@ -348,7 +348,7 @@ class TestComputeTestCoverageEdges:
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
-        ).test_coverage()
+        ).analytics.test_coverage()
         # Coverage file path doesn't exist by default in test context
 
         # Should not raise - just logs warning and returns
@@ -370,7 +370,7 @@ class TestComputeTestCoverageEdges:
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
-        ).test_coverage()
+        ).analytics.test_coverage()
 
         # Custom loader that returns None (no coverage data)
         def null_loader(_cfg: TestCoverageStepConfig) -> None:
@@ -389,7 +389,7 @@ class TestComputeTestCoverageEdges:
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
-        ).test_coverage()
+        ).analytics.test_coverage()
 
         # Custom loader that returns None
         def null_loader(_cfg: TestCoverageStepConfig) -> None:

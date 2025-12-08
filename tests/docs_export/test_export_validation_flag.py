@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from codeintel.cli import app
+from codeintel.cli.errors import CLI_EXIT_USAGE
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_rows
 
@@ -128,6 +129,8 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
     result = runner.invoke(app, args_validate)
     if result.exit_code != 1:
         pytest.fail(f"Expected validation failure exit code 1, got {result.exit_code}")
+    if "Validation failed" not in result.stderr:
+        pytest.fail("Expected validation failure message in stderr")
 
     output_dir_no_validate = tmp_path / "out_no_validate"
     args_no_validate = [
@@ -152,3 +155,22 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         pytest.fail(
             f"Expected success exit code 0 without validation, got {result_no_validate.exit_code}"
         )
+
+
+def test_docs_export_usage_error_exit_code(tmp_path: Path) -> None:
+    """Unknown flags should produce a usage error exit code 2."""
+    result = runner.invoke(
+        app,
+        [
+            "docs",
+            "export",
+            "--unknown-flag",
+            "value",
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+    if result.exit_code != CLI_EXIT_USAGE:
+        pytest.fail(f"Expected usage error exit code 2, got {result.exit_code}")
+    if "No such option" not in result.stderr:
+        pytest.fail("Expected usage error message in stderr")

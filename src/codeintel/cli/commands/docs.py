@@ -25,6 +25,7 @@ from codeintel.build.plan import PlanGenerator
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
 from codeintel.cli.commands._common import (
+    BackendFlags,
     BuildDirOpt,
     CommitOpt,
     DbPathOpt,
@@ -41,6 +42,7 @@ from codeintel.cli.commands._common import (
     setup_logging,
 )
 from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
+from codeintel.cli.errors import CLI_EXIT_VALIDATION, DocsValidationError
 from codeintel.cli.project import (
     ProjectNotFoundError,
     detect_commit,
@@ -228,17 +230,6 @@ DatasetsOpt = Annotated[
     ),
 ]
 
-PrereqModeOpt = Annotated[
-    PrereqMode,
-    typer.Option(
-        ...,
-        "--skip-prereqs",
-        flag_value=PrereqMode.SKIP,
-        help="Skip prerequisite computation (assume analytics already complete).",
-        case_sensitive=False,
-    ),
-]
-
 NxGpuModeOpt = Annotated[
     NxGpuMode,
     typer.Option(
@@ -265,6 +256,15 @@ DryRunModeOpt = Annotated[
         flag_value=DryRunMode.DRY_RUN,
         help="Plan without executing exports.",
         case_sensitive=False,
+    ),
+]
+
+PrereqSkipFlagOpt = Annotated[
+    bool,
+    typer.Option(
+        "--skip-prereqs",
+        help="Skip prerequisite computation (assume analytics already complete).",
+        is_flag=True,
     ),
 ]
 
@@ -319,12 +319,13 @@ def _docs_selection_options(
 def _docs_execution_options(
     output_format: OutputFormat,
     run_mode: DryRunMode,
-    prereq_mode: PrereqMode,
+    prereq_mode: PrereqMode | None,
 ) -> DocsExecutionOptions:
+    prereq = prereq_mode or PrereqMode.RUN
     return DocsExecutionOptions(
         output_format=output_format,
         run_mode=run_mode,
-        prereq_mode=prereq_mode,
+        prereq_mode=prereq,
     )
 
 
@@ -396,9 +397,11 @@ def _resolve_export_config(
         }
 
     graph_backend = build_graph_backend_config(
-        backend.nx_gpu_mode in {NxGpuMode.ENABLED, NxGpuMode.STRICT},
-        backend.nx_backend,
-        backend.nx_gpu_mode is NxGpuMode.STRICT,
+        BackendFlags(
+            use_gpu=backend.nx_gpu_mode in {NxGpuMode.ENABLED, NxGpuMode.STRICT},
+            backend=backend.nx_backend,
+            strict=backend.nx_gpu_mode is NxGpuMode.STRICT,
+        )
     )
     graph_features = build_graph_feature_flags_from_env()
 
@@ -560,7 +563,9 @@ def run_docs_export(
     Raises
     ------
     typer.Exit
-        When export validation fails or execution errors occur.
+        When required paths are missing.
+    DocsValidationError
+        When dataset validation or export validation fails.
     """
     maybe_enable_nx_gpu(cfg.graph_backend)
     gateway = open_gateway_from_config(cfg, read_only=True)
@@ -609,9 +614,14 @@ def run_docs_export(
                 validator=validator,
             ),
         )
+    except DocsValidationError:
+        raise
+    except ValueError as exc:
+        raise DocsValidationError(str(exc)) from exc
     except ExportError as exc:
         log_problem(LOG, exc.detail)
-        raise typer.Exit(code=1) from exc
+        message = str(exc.detail.detail or exc.detail.title or "Export validation failed")
+        raise DocsValidationError(message) from exc
 
     LOG.info("Export complete.")
     if options.output_format is OutputFormat.JSON:
@@ -643,6 +653,10 @@ def docs_export_handler(
     Use --skip-prereqs to skip prerequisite computation if analytics are
     already complete.
 
+    Exit codes
+    ----------
+    0 on success, 1 on validation failure, 2 on usage/argument errors.
+
     Examples
     --------
     .. code-block:: bash
@@ -658,6 +672,11 @@ def docs_export_handler(
 
         # Skip prerequisites (assume analytics complete)
         codeintel docs export --skip-prereqs
+
+    Raises
+    ------
+    typer.Exit
+        When validation fails or a required path cannot be resolved.
     """
     setup_logging(verbose)
 
@@ -684,20 +703,24 @@ def docs_export_handler(
             typer.secho("Dry run: exports planned, no actions taken.", fg=typer.colors.YELLOW)
         return
 
-    if export_opts.prereq_mode is PrereqMode.SKIP:
-        # Direct export without build system (legacy behavior)
-        run_docs_export(
-            cfg=cfg,
-            options=export_opts,
-            validator=validate_dataset_registry,
-            export_runner=run_validated_exports,
-        )
-    else:
-        # Use build system with all options
-        run_docs_export_via_build_system(
-            cfg,
-            options=export_opts,
-        )
+    try:
+        if export_opts.prereq_mode is PrereqMode.SKIP:
+            # Direct export without build system (legacy behavior)
+            run_docs_export(
+                cfg=cfg,
+                options=export_opts,
+                validator=validate_dataset_registry,
+                export_runner=run_validated_exports,
+            )
+        else:
+            # Use build system with all options
+            run_docs_export_via_build_system(
+                cfg,
+                options=export_opts,
+            )
+    except DocsValidationError as exc:
+        typer.secho(f"Validation failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=CLI_EXIT_VALIDATION) from exc
 
 
 def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
@@ -735,7 +758,9 @@ def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> Mapping[str, object
     execution = _docs_execution_options(
         output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
         run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
-        prereq_mode=cast("PrereqMode", cli_kwargs.get("prereq_mode", PrereqMode.RUN)),
+        prereq_mode=(
+            PrereqMode.SKIP if bool(cli_kwargs.get("prereq_mode", False)) else PrereqMode.RUN
+        ),
     )
     export_options = _docs_export_options(validation, selection, execution)
     return {
@@ -762,7 +787,7 @@ _DOCS_EXPORT_SPECS = [
     OptionSpec("datasets", DatasetsOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),
     OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
-    OptionSpec("prereq_mode", PrereqModeOpt, PrereqMode.RUN),
+    OptionSpec(name="prereq_mode", annotation=PrereqSkipFlagOpt, default=False),
     OptionSpec("verbose", int, VerboseOpt),
 ]
 

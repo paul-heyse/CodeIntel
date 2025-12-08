@@ -421,7 +421,7 @@ class TestBuildTestProfile:
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
-        ).test_profile()
+        ).analytics.test_profile()
 
         # Should not raise - just logs and returns
         build_test_profile(test_ctx.gateway, cfg)
@@ -442,7 +442,7 @@ class TestBuildTestProfile:
                 commit=coverage_ctx.commit,
                 repo_root=coverage_ctx.repo_root,
             ),
-        ).test_profile()
+        ).analytics.test_profile()
 
         build_test_profile(coverage_ctx.gateway, cfg)
 

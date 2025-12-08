@@ -56,7 +56,6 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.commands._common import (
-    JsonFlagOpt,
     JsonOutputOpt,
     OutputFormat,
     ProjectRootOpt,
@@ -107,15 +106,13 @@ class RunMode(Enum):
     DRY_RUN = "dry_run"
 
 
-RunModeOpt = Annotated[
-    RunMode,
+RunModeFlagOpt = Annotated[
+    bool,
     typer.Option(
-        RunMode.EXECUTE,
         "--dry-run",
         "-n",
-        flag_value=RunMode.DRY_RUN,
         help="Show build plan without executing",
-        case_sensitive=False,
+        is_flag=True,
     ),
 ]
 
@@ -136,15 +133,22 @@ class TargetScope(Enum):
     ALL = "all"
 
 
-TargetScopeOpt = Annotated[
-    TargetScope,
+TargetScopeFlagOpt = Annotated[
+    bool,
     typer.Option(
-        TargetScope.REQUESTED,
         "--all",
         "-a",
-        flag_value=TargetScope.ALL,
         help="Build all targets across all modules",
-        case_sensitive=False,
+        is_flag=True,
+    ),
+]
+
+JsonFlagOpt = Annotated[
+    bool,
+    typer.Option(
+        "--json",
+        help="Output as JSON (alias for --output-format json).",
+        is_flag=True,
     ),
 ]
 
@@ -227,22 +231,6 @@ def _resolve_goals(
 
     msg = "Specify targets, --module, or --all"
     raise typer.BadParameter(msg)
-
-
-def _build_run_options(
-    targets: TargetsArg = None,
-    module: ModuleOpt = None,
-    target_scope: TargetScope = TargetScopeOpt,
-    run_mode: RunMode = RunModeOpt,
-    force: ForceOpt = None,
-) -> BuildRunOptions:
-    return BuildRunOptions(
-        targets=targets,
-        module=module,
-        target_scope=target_scope,
-        run_mode=run_mode,
-        force=force,
-    )
 
 
 def _build_run_context(
@@ -750,14 +738,16 @@ def build_run_handler(
 
 def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
     output_format = cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT))
-    json_override = cast("OutputFormat", cli_kwargs.get("json", OutputFormat.TEXT))
-    if json_override is OutputFormat.JSON:
+    json_override = bool(cli_kwargs.get("json", False))
+    if json_override:
         output_format = OutputFormat.JSON
+    target_scope_flag = bool(cli_kwargs.get("target_scope", False))
+    run_mode_flag = bool(cli_kwargs.get("run_mode", False))
     options = BuildRunOptions(
         targets=cast("list[str] | None", cli_kwargs.get("targets")),
         module=cast("str | None", cli_kwargs.get("module")),
-        target_scope=cast("TargetScope", cli_kwargs.get("target_scope", TargetScope.REQUESTED)),
-        run_mode=cast("RunMode", cli_kwargs.get("run_mode", RunMode.EXECUTE)),
+        target_scope=TargetScope.ALL if target_scope_flag else TargetScope.REQUESTED,
+        run_mode=RunMode.DRY_RUN if run_mode_flag else RunMode.EXECUTE,
         force=cast("list[str] | None", cli_kwargs.get("force")),
     )
     ctx_opts = BuildRunContext(
@@ -773,13 +763,13 @@ def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
 build_run_option_specs = [
     OptionSpec("targets", TargetsArg, None),
     OptionSpec("module", ModuleOpt, None),
-    OptionSpec("target_scope", TargetScope, TargetScopeOpt),
-    OptionSpec("run_mode", RunMode, RunModeOpt),
+    OptionSpec("target_scope", TargetScopeFlagOpt, default=False),
+    OptionSpec("run_mode", RunModeFlagOpt, default=False),
     OptionSpec("force", ForceOpt, None),
     OptionSpec("project_root", Path | None, ProjectRootOpt),
     OptionSpec("verbose", int, VerboseOpt),
     OptionSpec("output_format", OutputFormat, JsonOutputOpt),
-    OptionSpec("json", OutputFormat, JsonFlagOpt),
+    OptionSpec("json", JsonFlagOpt, default=False),
 ]
 
 build_run = build_app.command("run")(
