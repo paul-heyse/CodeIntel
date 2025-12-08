@@ -13,11 +13,24 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
-    GoidRow,
-    ModuleRow,
-    RepoMapRow,
-    insert_rows,
+from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
+from tests._helpers.repo import (
+    GOID_CALLEE,
+    GOID_CALLER,
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    GOID_HELPER,
+    MOD_A_FQN,
+    MOD_A_PATH,
+    MOD_B_FQN,
+    MOD_B_PATH,
+    MOD_C_FQN,
+    MOD_C_PATH,
+    MOD_UTIL_FQN,
+    MOD_UTIL_PATH,
+    CanonicalRepo,
+    write_canonical_repo,
 )
 
 if TYPE_CHECKING:
@@ -27,28 +40,6 @@ if TYPE_CHECKING:
 # =============================================================================
 # Sample Data Constants
 # =============================================================================
-
-# Module paths used consistently across tests
-MOD_A_PATH = "pkg/mod_a.py"
-MOD_B_PATH = "pkg/mod_b.py"
-MOD_C_PATH = "pkg/mod_c.py"
-MOD_UTIL_PATH = "pkg/util.py"
-
-# Fully qualified module names
-MOD_A_FQN = "pkg.mod_a"
-MOD_B_FQN = "pkg.mod_b"
-MOD_C_FQN = "pkg.mod_c"
-MOD_UTIL_FQN = "pkg.util"
-
-# Standard GOID hashes for test functions
-# Using consistent hashes enables cross-pack references
-GOID_FUNC_A = 1001
-GOID_FUNC_B = 1002
-GOID_FUNC_C = 1003
-GOID_HELPER = 1004
-GOID_CALLER = 1005
-GOID_CALLEE = 1006
-
 
 # =============================================================================
 # Core Pack Implementation
@@ -108,17 +99,18 @@ class CorePack:
             Test context to seed.
         """
         now = datetime.now(UTC)
+        canonical = write_canonical_repo(ctx.repo_root)
 
         # Seed repo_map
-        self._seed_repo_map(ctx, now)
+        self._seed_repo_map(ctx, now, canonical)
 
         # Seed modules
-        self._seed_modules(ctx)
+        self._seed_modules(ctx, canonical)
 
         # Seed GOIDs
-        self._seed_goids(ctx, now)
+        self._seed_goids(ctx, now, canonical)
 
-    def _seed_repo_map(self, ctx: TestContext, now: datetime) -> None:
+    def _seed_repo_map(self, ctx: TestContext, now: datetime, canonical: CanonicalRepo) -> None:
         """Seed the repo_map table.
 
         Parameters
@@ -127,14 +119,12 @@ class CorePack:
             Test context with gateway.
         now
             Timestamp for created_at fields.
+        canonical
+            Canonical repo metadata.
         """
-        modules_dict = {
-            MOD_A_FQN: MOD_A_PATH,
-            MOD_B_FQN: MOD_B_PATH,
-            MOD_C_FQN: MOD_C_PATH,
-        }
-        if self.include_util:
-            modules_dict[MOD_UTIL_FQN] = MOD_UTIL_PATH
+        modules_dict = dict(canonical.module_paths)
+        if not self.include_util and MOD_UTIL_FQN in modules_dict:
+            modules_dict.pop(MOD_UTIL_FQN, None)
 
         insert_rows(
             ctx.gateway,
@@ -149,27 +139,25 @@ class CorePack:
             ],
         )
 
-    def _seed_modules(self, ctx: TestContext) -> None:
+    def _seed_modules(self, ctx: TestContext, canonical: CanonicalRepo) -> None:
         """Seed the modules table.
 
         Parameters
         ----------
         ctx
             Test context with gateway.
+        canonical
+            Canonical repo metadata.
         """
         rows = [
-            ModuleRow(module=MOD_A_FQN, path=MOD_A_PATH, repo=ctx.repo, commit=ctx.commit),
-            ModuleRow(module=MOD_B_FQN, path=MOD_B_PATH, repo=ctx.repo, commit=ctx.commit),
-            ModuleRow(module=MOD_C_FQN, path=MOD_C_PATH, repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(module=module, path=path, repo=ctx.repo, commit=ctx.commit)
+            for module, path in canonical.module_paths.items()
+            if self.include_util or module != MOD_UTIL_FQN
         ]
-        if self.include_util:
-            rows.append(
-                ModuleRow(module=MOD_UTIL_FQN, path=MOD_UTIL_PATH, repo=ctx.repo, commit=ctx.commit)
-            )
 
         insert_rows(ctx.gateway, rows[: self.module_count])
 
-    def _seed_goids(self, ctx: TestContext, now: datetime) -> None:
+    def _seed_goids(self, ctx: TestContext, now: datetime, canonical: CanonicalRepo) -> None:
         """Seed the goids table.
 
         Parameters
@@ -178,61 +166,29 @@ class CorePack:
             Test context with gateway.
         now
             Timestamp for created_at fields.
+        canonical
+            Canonical repo metadata.
         """
-        goid_rows = [
-            GoidRow(
-                goid_h128=GOID_FUNC_A,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_A_PATH}#func_a",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_A_PATH,
-                kind="function",
-                qualname="func_a",
-                start_line=1,
-                end_line=10,
-                language="python",
-                created_at=now,
-            ),
-            GoidRow(
-                goid_h128=GOID_FUNC_B,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_B_PATH}#func_b",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_B_PATH,
-                kind="function",
-                qualname="func_b",
-                start_line=1,
-                end_line=15,
-                language="python",
-                created_at=now,
-            ),
-            GoidRow(
-                goid_h128=GOID_FUNC_C,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_C_PATH}#func_c",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_C_PATH,
-                kind="function",
-                qualname="func_c",
-                start_line=1,
-                end_line=8,
-                language="python",
-                created_at=now,
-            ),
-            GoidRow(
-                goid_h128=GOID_HELPER,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_UTIL_PATH}#helper",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_UTIL_PATH,
-                kind="function",
-                qualname="helper",
-                start_line=1,
-                end_line=5,
-                language="python",
-                created_at=now,
-            ),
-        ]
+        goid_rows = []
+        for qualname in ("func_a", "func_b", "func_c", "helper"):
+            if not self.include_util and qualname == "helper":
+                continue
+            meta = canonical.functions[qualname]
+            goid_rows.append(
+                GoidRow(
+                    goid_h128=meta.goid,
+                    urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{meta.rel_path}#{meta.qualname}",
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                    rel_path=meta.rel_path,
+                    kind="function",
+                    qualname=meta.qualname,
+                    start_line=meta.start_line,
+                    end_line=meta.end_line,
+                    language="python",
+                    created_at=now,
+                )
+            )
 
         insert_rows(ctx.gateway, goid_rows[: self.function_count])
 

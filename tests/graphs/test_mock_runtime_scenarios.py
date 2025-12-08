@@ -354,7 +354,7 @@ class TestEnsureMethods:
     def test_ensure_call_graph_returns_graph() -> None:
         """ensure_call_graph returns the call graph."""
         call_g = nx.DiGraph([("a", "b")])
-        mock = MockGraphRuntime(call_graph=call_g)
+        mock = MockGraphRuntime(call_graph=call_g, copy_graphs=False)
 
         result = mock.ensure_call_graph()
 
@@ -364,7 +364,7 @@ class TestEnsureMethods:
     def test_ensure_import_graph_returns_graph() -> None:
         """ensure_import_graph returns the import graph."""
         import_g = nx.DiGraph([("mod1", "mod2")])
-        mock = MockGraphRuntime(import_graph=import_g)
+        mock = MockGraphRuntime(import_graph=import_g, copy_graphs=False)
 
         result = mock.ensure_import_graph()
 

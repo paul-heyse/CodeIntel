@@ -2,76 +2,63 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from codeintel.build.context import TargetExecutionContext
+from codeintel.ingestion.compute import AstExtractStep
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins import ast_extract
 from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
-from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.fakes.ingestion_context import RecordingGateway
+from tests._helpers.fakes.ingestion_context import RecordingGateway, _RecordingConnection
+from tests._helpers.fakes.ingestion_plugins import (
+    RecordingDiscoveryAdapter,
+    RecordingStep,
+    RecordingStorageAdapter,
+    StepCallCapture,
+)
 
 
-@dataclass
-class _Capture:
-    gateway: object | None = None
-    repo_root: Path | None = None
-    modules: list[ModuleRecord] = field(default_factory=list)
-    repo: str | None = None
-    commit: str | None = None
+def _make_plugin(
+    capture: StepCallCapture,
+    *,
+    table_key: str = "core.ast_nodes",
+    result: StepResult | None = None,
+) -> AstExtractPlugin:
+    return AstExtractPlugin(
+        storage_adapter_factory=lambda gateway: RecordingStorageAdapter(gateway, capture=capture),
+        discovery_adapter_factory=lambda repo_root: RecordingDiscoveryAdapter(
+            repo_root, capture=capture
+        ),
+        step_factory=lambda storage, discovery: cast(
+            "AstExtractStep",
+            RecordingStep(
+                storage,
+                discovery,
+                capture=capture,
+                table_key=table_key,
+                result=result,
+            ),
+        ),
+    )
 
 
 @pytest.mark.anyio
-async def test_execute_invokes_step_and_returns_row_counts(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_execute_invokes_step_and_returns_row_counts(tmp_path: Path) -> None:
     """Happy path: modules from resources flow through adapters to the step."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
     ctx = make_target_context(repo_root=repo_root, modules=("pkg/mod.py",))
-    captured = _Capture()
+    captured = StepCallCapture()
 
-    class FakeStep:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            storage = kwargs.get("storage") or (args[0] if args else None)
-            discovery = kwargs.get("discovery") or (args[1] if len(args) > 1 else None)
-            captured.gateway = storage
-            captured.repo_root = cast("Path", discovery)
-
-        @staticmethod
-        def execute(
-            modules: list[ModuleRecord],
-            *,
-            repo: str,
-            commit: str,
-        ) -> StepResult:
-            captured.modules = modules
-            captured.repo = repo
-            captured.commit = commit
-            return StepResult.ok(table_counts={"core.ast_nodes": len(modules)})
-
-    def fake_storage_adapter(gateway: object) -> object:
-        captured.gateway = gateway
-        return gateway
-
-    def fake_discovery_adapter(repo_root_arg: Path) -> object:
-        captured.repo_root = repo_root_arg
-        return repo_root_arg
-
-    monkeypatch.setattr(ast_extract, "DuckDBStorageAdapter", fake_storage_adapter)
-    monkeypatch.setattr(ast_extract, "FilesystemDiscoveryAdapter", fake_discovery_adapter)
-    monkeypatch.setattr(ast_extract, "AstExtractStep", FakeStep)
-
-    result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
+    result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {"core.ast_nodes": 1})
-    expect_true(captured.gateway is ctx.gateway)
+    expect_true(captured.storage is not None)
+    expect_true(isinstance(captured.storage, RecordingStorageAdapter))
     expect_equal(captured.repo_root, repo_root)
     expect_equal(captured.repo, DEFAULT_REPO)
     expect_equal(captured.commit, DEFAULT_COMMIT)
@@ -81,36 +68,14 @@ async def test_execute_invokes_step_and_returns_row_counts(
 
 
 @pytest.mark.anyio
-async def test_execute_queries_gateway_when_modules_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_execute_queries_gateway_when_modules_missing(tmp_path: Path) -> None:
     """When modules are absent in resources, the gateway should be queried."""
     repo_root = build_repo_tree(tmp_path / "repo", {})
     gateway = RecordingGateway(result_rows=[("pkg/db_mod.py",)])
     ctx = make_target_context(repo_root=repo_root, modules=(), gateway=gateway)
-    captured = _Capture()
+    captured = StepCallCapture()
 
-    class FakeStep:
-        def __init__(self, *_: object, **__: object) -> None:
-            return
-
-        @staticmethod
-        def execute(
-            modules: list[ModuleRecord],
-            *,
-            repo: str,
-            commit: str,
-        ) -> StepResult:
-            captured.modules = modules
-            captured.repo = repo
-            captured.commit = commit
-            return StepResult.ok(table_counts={"core.ast_nodes": len(modules)})
-
-    monkeypatch.setattr(ast_extract, "DuckDBStorageAdapter", lambda gateway_arg: gateway_arg)
-    monkeypatch.setattr(ast_extract, "FilesystemDiscoveryAdapter", lambda root_arg: root_arg)
-    monkeypatch.setattr(ast_extract, "AstExtractStep", FakeStep)
-
-    result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
+    result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
 
     expect_equal(result.row_counts, {"core.ast_nodes": 1})
     sql, params = gateway.executions[0]
@@ -123,42 +88,26 @@ async def test_execute_queries_gateway_when_modules_missing(
     expect_equal(captured.commit, DEFAULT_COMMIT)
 
 
-@pytest.mark.anyio
-async def test_execute_recovers_from_gateway_errors(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Database lookup failures should result in an empty module set."""
-    repo_root = build_repo_tree(tmp_path / "repo", {})
-    gateway = RecordingGateway()
-    ctx = make_target_context(repo_root=repo_root, modules=(), gateway=gateway)
-    captured = _Capture()
+class _FailingConnection(_RecordingConnection):
+    def __init__(self, gateway: RecordingGateway) -> None:
+        super().__init__(gateway)
 
-    def _raise(*_: object, **__: object) -> object:
+    def execute(self, sql: str, params: object) -> _RecordingConnection:
+        _ = sql, params
         message = "db down"
         raise RuntimeError(message)
 
-    class FakeStep:
-        def __init__(self, *_: object, **__: object) -> None:
-            return
 
-        @staticmethod
-        def execute(
-            modules: list[ModuleRecord],
-            *,
-            repo: str,
-            commit: str,
-        ) -> StepResult:
-            captured.modules = modules
-            captured.repo = repo
-            captured.commit = commit
-            return StepResult.ok()
+@pytest.mark.anyio
+async def test_execute_recovers_from_gateway_errors(tmp_path: Path) -> None:
+    """Database lookup failures should result in an empty module set."""
+    repo_root = build_repo_tree(tmp_path / "repo", {})
+    gateway = RecordingGateway()
+    gateway.con = _FailingConnection(gateway)
+    ctx = make_target_context(repo_root=repo_root, modules=(), gateway=gateway)
+    captured = StepCallCapture()
 
-    monkeypatch.setattr(gateway.con, "execute", _raise)
-    monkeypatch.setattr(ast_extract, "DuckDBStorageAdapter", lambda gateway_arg: gateway_arg)
-    monkeypatch.setattr(ast_extract, "FilesystemDiscoveryAdapter", lambda root_arg: root_arg)
-    monkeypatch.setattr(ast_extract, "AstExtractStep", FakeStep)
-
-    result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
+    result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
 
     expect_true(result.success is True)
     expect_equal(captured.modules, [])

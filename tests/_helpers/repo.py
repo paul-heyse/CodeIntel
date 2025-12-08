@@ -52,7 +52,13 @@ class CanonicalRepo:
 
 
 def write_canonical_repo(repo_root: Path) -> CanonicalRepo:
-    """Write canonical pkg/ modules and return metadata."""
+    """Write canonical pkg/ modules and return metadata.
+
+    Returns
+    -------
+    CanonicalRepo
+        Module paths and GOID/function metadata for the written repo.
+    """
     pkg_dir = repo_root / "pkg"
     pkg_dir.mkdir(parents=True, exist_ok=True)
     module_sources = {
@@ -93,7 +99,7 @@ def write_canonical_repo(repo_root: Path) -> CanonicalRepo:
         abs_path.write_text(source + "\n", encoding="utf-8")
         written_paths[rel_path] = abs_path
 
-    functions = _compute_function_meta(written_paths)
+    locations = _compute_function_meta(written_paths)
     goids = {
         "func_a": GOID_FUNC_A,
         "func_b": GOID_FUNC_B,
@@ -101,16 +107,16 @@ def write_canonical_repo(repo_root: Path) -> CanonicalRepo:
         "helper": GOID_HELPER,
     }
     func_meta: dict[str, CanonicalFunction] = {}
-    for qualname, meta in functions.items():
+    for qualname, meta in locations.items():
         goid = goids.get(qualname)
         if goid is None:
             continue
         func_meta[qualname] = CanonicalFunction(
             qualname=qualname,
             goid=goid,
-            rel_path=meta["rel_path"],
-            start_line=meta["start_line"],
-            end_line=meta["end_line"],
+            rel_path=meta.rel_path,
+            start_line=meta.start_line,
+            end_line=meta.end_line,
         )
 
     module_map = {
@@ -126,9 +132,24 @@ def write_canonical_repo(repo_root: Path) -> CanonicalRepo:
     )
 
 
-def _compute_function_meta(written_paths: dict[str, Path]) -> dict[str, dict[str, int]]:
-    """Parse written files to compute start/end lines."""
-    meta: dict[str, dict[str, int]] = {}
+@dataclass(frozen=True)
+class FunctionLocation:
+    """Function start/end locations within a file."""
+
+    rel_path: str
+    start_line: int
+    end_line: int
+
+
+def _compute_function_meta(written_paths: dict[str, Path]) -> dict[str, FunctionLocation]:
+    """Parse written files to compute start/end lines.
+
+    Returns
+    -------
+    dict[str, FunctionLocation]
+        Mapping of qualname to relative path and line span.
+    """
+    meta: dict[str, FunctionLocation] = {}
     for rel_path, abs_path in written_paths.items():
         source = abs_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
@@ -137,17 +158,15 @@ def _compute_function_meta(written_paths: dict[str, Path]) -> dict[str, dict[str
                 qualname = node.name
                 start_line = getattr(node, "lineno", 1)
                 end_line = getattr(node, "end_lineno", start_line)
-                meta[qualname] = {
-                    "rel_path": rel_path,
-                    "start_line": start_line,
-                    "end_line": end_line,
-                }
+                meta[qualname] = FunctionLocation(
+                    rel_path=rel_path,
+                    start_line=start_line,
+                    end_line=end_line,
+                )
     return meta
 
 
 __all__ = [
-    "CanonicalFunction",
-    "CanonicalRepo",
     "GOID_CALLEE",
     "GOID_CALLER",
     "GOID_FUNC_A",
@@ -162,5 +181,7 @@ __all__ = [
     "MOD_C_PATH",
     "MOD_UTIL_FQN",
     "MOD_UTIL_PATH",
+    "CanonicalFunction",
+    "CanonicalRepo",
     "write_canonical_repo",
 ]

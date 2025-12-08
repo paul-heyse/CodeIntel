@@ -1,0 +1,146 @@
+"""Unified MCP registrars for tests.
+
+Provides a single recording registrar that supports sync decorators, async
+`list_tools`, and FastMCP compatibility. All tool registrations are captured
+for assertions in tests.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from mcp.server.fastmcp import FastMCP
+
+
+@dataclass(frozen=True)
+class ToolRegistration:
+    """Recorded MCP tool registration."""
+
+    name: str
+    options: dict[str, object]
+
+
+class RecordingMcpRegistrar:
+    """Recording registrar providing sync decorator API."""
+
+    def __init__(self, app_name: str = "recorder") -> None:
+        self.app_name = app_name
+        self.registry: dict[str, Callable[..., object]] = {}
+        self.registrations: list[ToolRegistration] = []
+
+    def tool(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:
+        """Register a tool and record metadata.
+
+        Returns
+        -------
+        Callable[[Callable[..., object]], Callable[..., object]]
+            Decorator that registers the function.
+        """
+
+        def _decorator(func: Callable[..., object]) -> Callable[..., object]:
+            tool_name = name or func.__name__
+            self.registrations.append(ToolRegistration(name=tool_name, options=dict(options)))
+            self.registry[tool_name] = func
+            return func
+
+        return _decorator
+
+    def list_tools(self) -> list[dict[str, object]]:
+        """Return registered tools in FastMCP-compatible shape.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Serialized tool metadata.
+        """
+        return [
+            {"name": name, **options}
+            for name, options in ((r.name, r.options) for r in self.registrations)
+        ]
+
+
+class AsyncRecordingMcpRegistrar(RecordingMcpRegistrar):
+    """Async-compatible registrar exposing async list_tools."""
+
+    async def list_tools(self) -> list[dict[str, object]]:  # type: ignore[override]
+        return super().list_tools()
+
+
+class FastMcpAdapter:
+    """Adapter exposing RecordingMcpRegistrar over a FastMCP instance."""
+
+    def __init__(self, mcp: FastMCP) -> None:
+        self._mcp = mcp
+        self._registrar = RecordingMcpRegistrar(app_name=mcp.name)
+        self.name = mcp.name
+
+    def tool(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:
+        return self._registrar.tool(name=name, **options)
+
+    def list_tools(self) -> list[Any]:
+        """Return registered tools; awaits FastMCP coroutine if needed.
+
+        Returns
+        -------
+        list[Any]
+            Tool entries from the underlying FastMCP.
+        """
+        result = self._mcp.list_tools()
+        if asyncio.iscoroutine(result):
+            return asyncio.run(result)
+        return list(result)
+
+    def run(
+        self,
+        transport: Literal["stdio", "sse", "streamable-http"] = "stdio",
+        mount_path: str | None = None,
+    ) -> object:
+        """Forward run to the underlying FastMCP instance.
+
+        Returns
+        -------
+        object
+            Result of FastMCP.run.
+        """
+        return self._mcp.run(transport=transport, mount_path=mount_path)
+
+    def __getattr__(self, item: str) -> object:
+        """Delegate unknown attributes to the underlying FastMCP.
+
+        Returns
+        -------
+        object
+            Attribute from the wrapped FastMCP instance.
+        """
+        return getattr(self._mcp, item)
+
+
+def wrap_fastmcp(name: str) -> FastMcpAdapter:
+    """Construct a FastMCP and wrap it as a registrar.
+
+    Returns
+    -------
+    FastMcpAdapter
+        Adapter exposing the recording registrar API.
+    """
+    return FastMcpAdapter(FastMCP(name, json_response=True))
+
+
+__all__ = [
+    "AsyncRecordingMcpRegistrar",
+    "FastMcpAdapter",
+    "RecordingMcpRegistrar",
+    "ToolRegistration",
+    "wrap_fastmcp",
+]

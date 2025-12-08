@@ -7,6 +7,7 @@ and persists rows + metrics into core.ast_* tables.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -15,16 +16,22 @@ from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
-    StorageAdapterProtocol,
 )
 from codeintel.ingestion.compute import AstExtractStep
-from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.ports.storage import DiscoveryAdapterProtocol
+from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+from codeintel.ingestion.ports.storage import IngestStoragePort
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.storage.gateway import StorageGateway
+else:
+    StorageGateway = object
 
 log = logging.getLogger(__name__)
+
+StorageFactory = Callable[[StorageGateway], IngestStoragePort]
+DiscoveryFactory = Callable[[Path], ModuleDiscoveryPort]
+StepFactory = Callable[[IngestStoragePort, ModuleDiscoveryPort], AstExtractStep]
 
 
 def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
@@ -72,25 +79,16 @@ class AstExtractPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Parse Python AST and persist rows + metrics into core.ast_* tables."
     )
-    _storage_adapter_factory: ClassVar[
-        Callable[[object], StorageAdapterProtocol]
-    ] = DuckDBStorageAdapter
-    _discovery_adapter_factory: ClassVar[
-        Callable[[Path], DiscoveryAdapterProtocol]
-    ] = FilesystemDiscoveryAdapter
-    _step_factory: ClassVar[
-        Callable[[StorageAdapterProtocol, DiscoveryAdapterProtocol], AstExtractStep]
-    ] = AstExtractStep
+    _storage_adapter_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
+    _discovery_adapter_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
+    _step_factory: ClassVar[StepFactory] = AstExtractStep
 
     def __init__(
         self,
         *,
-        storage_adapter_factory: Callable[[object], StorageAdapterProtocol]
-        | None = None,
-        discovery_adapter_factory: Callable[[Path], DiscoveryAdapterProtocol]
-        | None = None,
-        step_factory: Callable[[StorageAdapterProtocol, DiscoveryAdapterProtocol], AstExtractStep]
-        | None = None,
+        storage_adapter_factory: StorageFactory | None = None,
+        discovery_adapter_factory: DiscoveryFactory | None = None,
+        step_factory: StepFactory | None = None,
     ) -> None:
         self._storage_factory = storage_adapter_factory or self._storage_adapter_factory
         self._discovery_factory = discovery_adapter_factory or self._discovery_adapter_factory
@@ -108,11 +106,20 @@ class AstExtractPlugin(TargetPlugin):
         -------
         TargetResult
             Success result with row counts.
+
+        Raises
+        ------
+        ValueError
+            If no storage gateway is available.
         """
         _ = self  # Protocol method requires instance
 
         # Create adapters
-        storage = self._storage_factory(ctx.gateway)
+        gateway = ctx.resources.gateway
+        if gateway is None:
+            message = "Storage gateway is required for AST extraction"
+            raise ValueError(message)
+        storage = self._storage_factory(gateway)
         discovery = self._discovery_factory(ctx.repo_root)
 
         # Get module paths and convert to ModuleRecord

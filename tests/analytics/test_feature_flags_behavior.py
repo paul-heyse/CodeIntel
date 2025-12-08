@@ -13,33 +13,19 @@ from codeintel.graphs.engine import GraphKind
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_snapshot
-from tests._helpers.graphs import GraphStubEngine
+from tests._helpers.graphs import CountingGraphEngineAdapter, GraphStubEngine
 
 
-class _StubEngine(GraphStubEngine):
-    """Stub GraphEngine counting load calls."""
-
-    def __init__(self, gateway: StorageGateway, snapshot: SnapshotRef) -> None:
-        super().__init__(
-            gateway=gateway,
-            snapshot=snapshot,
-            call_graph_obj=nx.DiGraph([(1, 2)]),
-            import_graph_obj=nx.DiGraph([("a", "b")]),
-        )
-        self.call_loads = 0
-        self.import_loads = 0
-
-    @property
-    def use_gpu(self) -> bool:
-        return False
-
-    def load_call_graph(self) -> nx.DiGraph:
-        self.call_loads += 1
-        return super().load_call_graph()
-
-    def load_import_graph(self) -> nx.DiGraph:
-        self.import_loads += 1
-        return super().load_import_graph()
+def _make_counting_engine(
+    gateway: StorageGateway, snapshot: SnapshotRef
+) -> CountingGraphEngineAdapter:
+    runtime = GraphStubEngine(
+        gateway=gateway,
+        snapshot=snapshot,
+        call_graph=nx.DiGraph([(1, 2)]),
+        import_graph=nx.DiGraph([("a", "b")]),
+    )
+    return CountingGraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
 
 def test_eager_hydration_respects_feature_override(
@@ -47,7 +33,7 @@ def test_eager_hydration_respects_feature_override(
 ) -> None:
     """Eager hydration should preload graphs when the feature flag is enabled."""
     snapshot = make_snapshot(repo_root=tmp_path)
-    stub = _StubEngine(fresh_gateway, snapshot)
+    stub = _make_counting_engine(fresh_gateway, snapshot)
 
     opts = GraphRuntimeOptions(
         snapshot=snapshot,
@@ -59,7 +45,8 @@ def test_eager_hydration_respects_feature_override(
     build_graph_runtime(fresh_gateway, opts)
 
     expect_true(
-        stub.call_loads > 0 and stub.import_loads > 0,
+        stub.method_counts.get("load_call_graph", 0) > 0
+        and stub.method_counts.get("load_import_graph", 0) > 0,
         message="Eager hydration should load call and import graphs when enabled",
     )
 
@@ -69,7 +56,7 @@ def test_eager_hydration_off_defers_graph_loads(
 ) -> None:
     """Absent eager flag should defer graph loads until explicitly requested."""
     snapshot = make_snapshot(repo_root=tmp_path)
-    stub = _StubEngine(fresh_gateway, snapshot)
+    stub = _make_counting_engine(fresh_gateway, snapshot)
 
     opts = GraphRuntimeOptions(
         snapshot=snapshot,
@@ -81,7 +68,8 @@ def test_eager_hydration_off_defers_graph_loads(
     build_graph_runtime(fresh_gateway, opts)
 
     expect_true(
-        stub.call_loads == 0 and stub.import_loads == 0,
+        stub.method_counts.get("load_call_graph", 0) == 0
+        and stub.method_counts.get("load_import_graph", 0) == 0,
         message="Graphs should not be preloaded when eager hydration is disabled",
     )
 
