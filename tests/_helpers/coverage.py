@@ -1,4 +1,9 @@
-"""Helper utilities for seeding coverage-related test data."""
+"""Helper utilities for seeding coverage-related test data.
+
+CoveragePack is the canonical way to seed coverage tables. Direct insert
+helpers are retained for legacy tests; prefer applying CoveragePack via
+`seed_coverage_pack` and loading coverage via `build_fake_coverage`.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.context import TestContext
+from tests._helpers.fakes.coverage import FakeCoverage, build_fake_coverage_from_gateway
+from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
 
 if TYPE_CHECKING:
+    from coverage import Coverage
     from duckdb import DuckDBPyConnection
 
 
@@ -118,3 +127,19 @@ def seed_coverage_lines_range(
                 is_covered=data.is_covered,
             ),
         )
+
+
+def seed_coverage_pack(ctx: TestContext, pack: CoveragePack | None = None) -> None:
+    """Apply the canonical coverage seed pack to a TestContext."""
+    (pack or COVERAGE_PACK).apply(ctx)
+
+
+def build_fake_coverage(ctx: TestContext) -> FakeCoverage:
+    """Load coverage data from the context gateway into a Coverage-compatible object.
+
+    Returns
+    -------
+    FakeCoverage
+        Coverage-compatible shim backed by seeded tables.
+    """
+    return build_fake_coverage_from_gateway(ctx.gateway, ctx.snapshot)

@@ -401,7 +401,10 @@ def test_unknown_plugin_selection_policy(
     fresh_registry: GraphPluginRegistry, *, selection_policy: SelectionPolicy, raises: bool
 ) -> None:
     """Unknown requested plugins are skipped in lenient mode and raise in strict mode."""
-    plan_opts = PlanningOptions(selection_policy=selection_policy)
+    plan_opts = PlanningOptions(
+        selection_policy=selection_policy,
+        requested_required=selection_policy is SelectionPolicy.STRICT,
+    )
     if raises:
         with pytest.raises(ValueError, match="is not registered"):
             fresh_registry.plan(plugin_names=["unknown_plugin"], plan_options=plan_opts)
@@ -587,7 +590,10 @@ def test_plan_tracks_skipped_plugins(fresh_registry: GraphPluginRegistry) -> Non
 
 def test_plan_skips_unknown_plugins(fresh_registry: GraphPluginRegistry) -> None:
     """Plan skips unknown plugins with missing_dependency reason."""
-    plan = fresh_registry.plan(plugin_names=["nonexistent_plugin"])
+    plan = fresh_registry.plan(
+        plugin_names=["nonexistent_plugin"],
+        plan_options=PlanningOptions(requested_required=False),
+    )
 
     skipped = plan.skipped_plugins
     expect_length(skipped, 1)
@@ -701,7 +707,10 @@ def test_graph_plugin_plan_skipped_tuple(fresh_registry: GraphPluginRegistry) ->
     """GraphPluginPlan.skipped_plugins is a tuple."""
     plan = fresh_registry.plan(
         plugin_names=["unknown"],
-        plan_options=PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+        plan_options=PlanningOptions(
+            selection_policy=SelectionPolicy.LENIENT,
+            requested_required=False,
+        ),
     )
 
     expect_is_instance(plan.skipped_plugins, tuple)

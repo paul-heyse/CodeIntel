@@ -41,6 +41,13 @@ from tests._helpers.context import (
     TestContext,
     create_test_context,
 )
+from tests._helpers.coverage import build_fake_coverage, seed_coverage_pack
+from tests._helpers.env import build_test_gateway, create_test_env
+from tests._helpers.fakes.contexts import (
+    ExecutionContextBuilder,
+    build_plugin_execution_context,
+    build_target_execution_context,
+)
 from tests._helpers.fakes.graph_plugins import (
     GraphPluginBuilder,
     make_functional_plugin,
@@ -116,6 +123,7 @@ __all__ = [
     "METRICS_PACK",
     "SUBSYSTEM_ANALYTICS_PACK",
     "CallgraphFixtureOptions",
+    "ExecutionContextBuilder",
     "FakeQueryService",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
@@ -139,11 +147,16 @@ __all__ = [
     "assert_all_frozen",
     "assert_frozen",
     "build_callgraph_fixture_repo",
+    "build_fake_coverage",
+    "build_plugin_execution_context",
     "build_repo_tree",
+    "build_target_execution_context",
+    "build_test_gateway",
     "chain_graph",
     "complete_digraph",
     "coverage_context",
     "create_test_context",
+    "create_test_env",
     "cyclic_graph",
     "diamond_graph",
     "disconnected_graph",
@@ -169,6 +182,7 @@ __all__ = [
     "sample_manifest",
     "sample_target_graph",
     "seed_call_graph_scoping",
+    "seed_coverage_pack",
     "seed_docs_export_invalid_profile",
     "seed_docs_export_minimal",
     "seed_function_graph_cycle",

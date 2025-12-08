@@ -18,10 +18,22 @@ def test_lenient_selection_skips_unknown_plugin() -> None:
     """Lenient selection records missing_graph skips for unknown plugins."""
     plan = plan_graph_plugins(
         plugin_names=("nonexistent_plugin",),
-        plan_options=PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+        plan_options=PlanningOptions(
+            selection_policy=SelectionPolicy.LENIENT,
+            requested_required=False,
+        ),
     )
     skipped = {skip.name: skip.reason for skip in plan.skipped_plugins}
     expect_equal(skipped["nonexistent_plugin"], "missing_graph")
+
+
+def test_lenient_selection_with_required_requests_raises() -> None:
+    """Lenient selection still raises when requests are marked required."""
+    with pytest.raises(ValueError, match="is not registered"):
+        plan_graph_plugins(
+            plugin_names=("nonexistent_plugin",),
+            plan_options=PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+        )
 
 
 def test_strict_selection_raises_on_unknown_plugin() -> None:

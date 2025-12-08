@@ -39,6 +39,7 @@ def test_skip_policy_records_skipped_dependencies() -> None:
             allow_missing_dependencies=False,
             dependency_policy=DependencyPolicy.SKIP,
             use_stubs=False,
+            requested_required=False,
         ),
     )
     skipped_names = {skip.name for skip in plan.skipped_plugins}

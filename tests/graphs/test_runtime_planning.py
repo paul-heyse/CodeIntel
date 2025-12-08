@@ -600,10 +600,33 @@ def test_graph_plugin_execution_plan_skipped_plugins() -> None:
         plan = plan_graph_plugin_run(
             plugin_names=["skip_test", "nonexistent_plugin"],
             context=context,
+            plan_options=PlanningOptions.for_lenient_requests(
+                selection_policy=SelectionPolicy.LENIENT
+            ),
         )
 
         skipped_names = [s.name for s in plan.skipped_plugins]
         expect_in("nonexistent_plugin", skipped_names)
+
+
+def test_graph_plugin_execution_plan_requested_required_raises() -> None:
+    """Plan raises on missing requested plugin when requests are required."""
+    plugin = _make_test_plugin("skip_test")
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
+
+    with _PluginRegistrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        with pytest.raises(ValueError, match="is not registered"):
+            plan_graph_plugin_run(
+                plugin_names=["skip_test", "nonexistent_plugin"],
+                context=context,
+                plan_options=PlanningOptions.for_required_requests(
+                    selection_policy=SelectionPolicy.LENIENT
+                ),
+            )
 
 
 def test_graph_plugin_execution_plan_unknown_strict_raises() -> None:

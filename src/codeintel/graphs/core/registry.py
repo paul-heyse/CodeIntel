@@ -135,12 +135,35 @@ class _StubGraphPlugin(GraphPluginProtocol):
 
 @dataclass(frozen=True)
 class PlanningOptions:
-    """Options controlling graph planning and dependency handling."""
+    """Options controlling graph planning and dependency handling.
+
+    ``requested_required`` controls whether explicitly requested plugins must be
+    present even when ``selection_policy`` is lenient. When left as ``None``,
+    it is derived from dependency strictness and stub usage so that strict
+    dependency plans treat requested plugins as required by default.
+    """
 
     allow_missing_dependencies: bool = False
     dependency_policy: DependencyPolicy = DependencyPolicy.STRICT
     selection_policy: SelectionPolicy = SelectionPolicy.LENIENT
     use_stubs: bool = True
+    requested_required: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.requested_required is not None:
+            return
+        auto_required = self.dependency_policy is DependencyPolicy.STRICT or not self.use_stubs
+        object.__setattr__(self, "requested_required", auto_required)
+
+    @classmethod
+    def for_required_requests(cls, **kwargs: object) -> PlanningOptions:
+        """Build planning options that treat explicit requests as required."""
+        return cls(requested_required=True, **kwargs)
+
+    @classmethod
+    def for_lenient_requests(cls, **kwargs: object) -> PlanningOptions:
+        """Build planning options that treat explicit requests as optional."""
+        return cls(requested_required=False, **kwargs)
 
 
 GraphSkipReason = Literal[
@@ -220,8 +243,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             Planning options controlling dependency handling. Legacy keyword
             arguments ``allow_missing_dependencies`` and ``dependency_policy``
             are still honored when provided. Selection defaults to
-            ``SelectionPolicy.LENIENT`` so unknown requested plugins are
-            recorded as skips unless strict mode is requested.
+            ``SelectionPolicy.LENIENT`` and explicit requests can still be
+            treated as required via ``requested_required``.
         **legacy_plan_kwargs
             Optional legacy parameters for dependency handling.
 
@@ -258,14 +281,16 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             or plan_opts.dependency_policy is not DependencyPolicy.STRICT
             or plan_opts.allow_missing_dependencies
             or not plan_opts.use_stubs
+            or plan_opts.requested_required
         ):
             log.info(
                 "Planning with selection_policy=%s dependency_policy=%s "
-                "allow_missing=%s use_stubs=%s",
+                "allow_missing=%s use_stubs=%s requested_required=%s",
                 plan_opts.selection_policy.value,
                 plan_opts.dependency_policy.value,
                 plan_opts.allow_missing_dependencies,
                 plan_opts.use_stubs,
+                plan_opts.requested_required,
             )
 
         # Resolve which plugins to include
@@ -331,6 +356,7 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         else:
             names = list(defaults)
 
+        requested_names = set(plugin_names or ())
         disabled_set = set(disabled or ())
         selected: dict[str, GraphPluginProtocol] = {}
         skipped: list[GraphPluginSkip] = []
@@ -347,7 +373,9 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             try:
                 plugin = self.get(name)
             except KeyError:
-                if plan_opts.selection_policy is SelectionPolicy.STRICT:
+                if plan_opts.selection_policy is SelectionPolicy.STRICT or (
+                    plan_opts.requested_required and name in requested_names
+                ):
                     message = self._unknown_plugin_message(name)
                     raise ValueError(message) from None
                 self._add_skip_once(skipped, name, reason="missing_graph")

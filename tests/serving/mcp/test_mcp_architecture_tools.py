@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.graphs.core.registry import plan_graph_plugins
+from codeintel.graphs.core.registry import (
+    PlanningOptions,
+    SelectionPolicy,
+    plan_graph_plugins,
+)
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.backend import DuckDBBackend
@@ -730,7 +734,7 @@ def test_backend_summarize_subsystem_via_tools(
 def test_graph_plugin_plan_basic() -> None:
     """Verify graph plugin plan can be computed."""
     # Test the underlying planning function directly
-    plan = plan_graph_plugins()
+    plan = plan_graph_plugins(plan_options=PlanningOptions.for_lenient_requests())
     expect_is_not_none(plan)
     expect_is_not_none(plan.plan_id)
 
@@ -752,7 +756,12 @@ def test_graph_plugin_plan_with_disable() -> None:
 def test_graph_plugin_plan_with_names() -> None:
     """Verify graph plugin plan with explicit names."""
     # Test with explicit plugin names
-    plan = plan_graph_plugins(plugin_names=("pagerank",))
+    plan = plan_graph_plugins(
+        plugin_names=("pagerank",),
+        plan_options=PlanningOptions.for_lenient_requests(
+            selection_policy=SelectionPolicy.LENIENT,
+        ),
+    )
     expect_is_not_none(plan)
 
 

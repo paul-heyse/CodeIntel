@@ -19,14 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.storage.gateway import (
-    StorageConfig,
-    StorageGateway,
-    open_gateway,
-    open_memory_gateway,
-)
-from codeintel.storage.macros import ensure_ingest_macros
-from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.env import DEFAULT_COMMIT, DEFAULT_REPO, create_test_env
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,9 +29,6 @@ if TYPE_CHECKING:
 
     from tests._helpers.configs.provisioning_config import ProvisionedGateway
 
-
-# Import constants from central module
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 # =============================================================================
 # Seed Pack Protocol
@@ -435,62 +426,12 @@ def create_test_context(
     commit: str = DEFAULT_COMMIT,
     file_backed: bool = False,
 ) -> TestContext:
-    """Create a minimal TestContext for testing.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory for test artifacts.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    file_backed
-        When True, creates a file-backed DuckDB; otherwise in-memory.
-
-    Returns
-    -------
-    TestContext
-        Configured test context with gateway and paths.
-    """
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-
-    build_dir = tmp_path / "build"
-    build_dir.mkdir(parents=True, exist_ok=True)
-
-    gateway: StorageGateway
-    if file_backed:
-        db_path = build_dir / "db" / "codeintel.duckdb"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        gateway = open_gateway(
-            StorageConfig(
-                db_path=db_path,
-                apply_schema=True,
-                ensure_views=True,
-                validate_schema=True,
-                repo=repo,
-                commit=commit,
-            )
-        )
-    else:
-        gateway = open_memory_gateway(
-            apply_schema=True,
-            ensure_views=True,
-            validate_schema=True,
-        )
-
-    # Ensure schemas and macros
-    apply_all_schemas(gateway.con)
-    ensure_ingest_macros(gateway.con)
-
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
-    build_paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
-
-    return TestContext(
-        snapshot=snapshot,
-        gateway=gateway,
-        build_paths=build_paths,
+    """Create a minimal TestContext for testing."""
+    return create_test_env(
+        tmp_path,
+        repo=repo,
+        commit=commit,
+        file_backed=file_backed,
     )
 
 

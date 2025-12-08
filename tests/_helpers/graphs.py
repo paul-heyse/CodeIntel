@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TypeVar, cast
 
 import networkx as nx
 
@@ -23,6 +22,7 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+from tests._helpers.fakes.graph_runtime import GraphRuntimeDouble as GraphStubEngine
 from tests._helpers.fakes.networkx_graphs import (
     DEFAULT_CHAIN_LENGTH,
     DEFAULT_CYCLE_SIZE,
@@ -31,8 +31,6 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     star_graph,
 )
-
-_GraphT = TypeVar("_GraphT", nx.Graph, nx.DiGraph)
 
 
 @dataclass
@@ -112,211 +110,6 @@ def standard_graph_fixtures(
         symbol_function_graph=symbol_star_graph(star_spokes),
         cfg_graph=nx.DiGraph(),
     )
-
-
-@dataclass
-class GraphStubEngine:
-    """Minimal GraphEngine implementation backed by seeded graphs."""
-
-    gateway: StorageGateway
-    snapshot: SnapshotRef
-    call_graph_obj: nx.DiGraph | None = None
-    import_graph_obj: nx.DiGraph | None = None
-    symbol_module_graph_obj: nx.Graph | None = None
-    symbol_function_graph_obj: nx.Graph | None = None
-    config_bipartite_obj: nx.Graph | None = None
-    test_function_bipartite_obj: nx.Graph | None = None
-    copy_graphs: bool = True
-
-    @classmethod
-    def from_fixtures(
-        cls,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
-        fixtures: GraphFixtures,
-        *,
-        copy_graphs: bool = True,
-    ) -> GraphStubEngine:
-        """
-        Construct a stub engine from bundled fixtures.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway for analytics operations.
-        snapshot
-            Snapshot reference bound to the engine.
-        fixtures
-            Seeded graph fixtures.
-        copy_graphs
-            Whether to return defensive copies of seeded graphs.
-
-        Returns
-        -------
-        GraphStubEngine
-            Stub configured with the provided graphs.
-        """
-        return cls(
-            gateway=gateway,
-            snapshot=snapshot,
-            call_graph_obj=fixtures.call_graph,
-            import_graph_obj=fixtures.import_graph,
-            symbol_module_graph_obj=fixtures.symbol_module_graph,
-            symbol_function_graph_obj=fixtures.symbol_function_graph,
-            config_bipartite_obj=fixtures.config_graph,
-            test_function_bipartite_obj=nx.Graph(),
-            copy_graphs=copy_graphs,
-        )
-
-    @property
-    def use_gpu(self) -> bool:
-        """
-        Prefer CPU execution.
-
-        Returns
-        -------
-        bool
-            ``False`` to keep execution on CPU.
-        """
-        return False
-
-    def call_graph(self) -> nx.DiGraph:
-        """Return a copy of the seeded call graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            Seeded call graph for the snapshot.
-        """
-        graph = self.call_graph_obj or nx.DiGraph()
-        return self._clone(graph)
-
-    def load_call_graph(self) -> nx.DiGraph:
-        """Alias for call_graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            Seeded call graph for the snapshot.
-        """
-        return self.call_graph()
-
-    def import_graph(self) -> nx.DiGraph:
-        """Return a copy of the seeded import graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            Seeded import graph for the snapshot.
-        """
-        graph = self.import_graph_obj or nx.DiGraph()
-        return self._clone(graph)
-
-    def load_import_graph(self) -> nx.DiGraph:
-        """Alias for import_graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            Seeded import graph for the snapshot.
-        """
-        return self.import_graph()
-
-    def symbol_module_graph(self) -> nx.Graph:
-        """Return a copy of the seeded symbol-module graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded symbol-module coupling graph.
-        """
-        graph = self.symbol_module_graph_obj or nx.Graph()
-        return self._clone(graph)
-
-    def load_symbol_module_graph(self) -> nx.Graph:
-        """Alias for symbol_module_graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded symbol-module coupling graph.
-        """
-        return self.symbol_module_graph()
-
-    def symbol_function_graph(self) -> nx.Graph:
-        """Return a copy of the seeded symbol-function graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded symbol-function coupling graph.
-        """
-        graph = self.symbol_function_graph_obj or nx.Graph()
-        return self._clone(graph)
-
-    def load_symbol_function_graph(self) -> nx.Graph:
-        """Alias for symbol_function_graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded symbol-function coupling graph.
-        """
-        return self.symbol_function_graph()
-
-    def config_module_bipartite(self) -> nx.Graph:
-        """Return a copy of the seeded config bipartite graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded config-module bipartite graph.
-        """
-        graph = self.config_bipartite_obj or nx.Graph()
-        return self._clone(graph)
-
-    def load_config_module_bipartite(self) -> nx.Graph:
-        """Alias for config_module_bipartite.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded config-module bipartite graph.
-        """
-        return self.config_module_bipartite()
-
-    def test_function_bipartite(self) -> nx.Graph:
-        """Return a copy of the seeded test-function bipartite graph.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded test-function bipartite graph.
-        """
-        graph = self.test_function_bipartite_obj or nx.Graph()
-        return self._clone(graph)
-
-    def load_test_function_bipartite(self) -> nx.Graph:
-        """Alias for test_function_bipartite.
-
-        Returns
-        -------
-        nx.Graph
-            Seeded test-function bipartite graph.
-        """
-        return self.test_function_bipartite()
-
-    def _clone(self, graph: _GraphT) -> _GraphT:
-        """Copy graphs when requested to isolate mutations in tests.
-
-        Returns
-        -------
-        _GraphT
-            Cloned graph when `copy_graphs` is enabled.
-        """
-        if self.copy_graphs:
-            return cast("_GraphT", graph.copy())
-        return graph
 
 
 def build_source_files(repo_root: Path) -> dict[str, Path]:
