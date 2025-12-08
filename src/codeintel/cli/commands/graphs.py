@@ -376,10 +376,15 @@ def parse_graph_options(cli_kwargs: Mapping[str, object]) -> ParsedOptions:
         enable=_to_tuple(cli_kwargs.get("enable")),
         disable=_to_tuple(cli_kwargs.get("disable")) or (),
         selection_policy=SelectionPolicy(
-            cast("str | SelectionPolicy", cli_kwargs.get("selection_policy", SelectionPolicy.LENIENT))
+            cast(
+                "str | SelectionPolicy", cli_kwargs.get("selection_policy", SelectionPolicy.LENIENT)
+            )
         ),
         dependency_policy=DependencyPolicy(
-            cast("str | DependencyPolicy", cli_kwargs.get("dependency_policy", DependencyPolicy.STRICT))
+            cast(
+                "str | DependencyPolicy",
+                cli_kwargs.get("dependency_policy", DependencyPolicy.STRICT),
+            )
         ),
         validation_mode=bool(cli_kwargs.get("validate_plan", False)),
         output_format=output_format,

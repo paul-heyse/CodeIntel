@@ -35,10 +35,11 @@ async def test_async_get_and_close_use_client_methods() -> None:
 class _DatasetService:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.include_bad = False
 
     def list_datasets(self) -> list[object]:
         self.calls.append("list_datasets")
-        return [
+        datasets: list[object] = [
             DatasetDescriptor(
                 name="docs.functions",
                 table="docs.v_functions",
@@ -53,6 +54,12 @@ class _DatasetService:
             ),
             _DatasetModel(value="model_dump"),
         ]
+        if self.include_bad:
+            datasets.append(_BadDataset())
+        return datasets
+
+    def enable_bad_dataset(self) -> None:
+        self.include_bad = True
 
 
 @dataclass
@@ -76,14 +83,22 @@ class _DatasetModel:
         }
 
 
+class _BadDataset:
+    def model_dump(self) -> dict[str, object]:
+        _ = self
+        message = "fail"
+        raise errors.backend_failure(message)
+
+
 class _DatasetBackend(DatasetBackendMixin):
     def __init__(self, service: object) -> None:
         self.service = cast("QueryService", service)
 
 
-def test_list_datasets_serializes_mixed_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_datasets_serializes_mixed_inputs() -> None:
     """DatasetBackendMixin should normalize dataclasses, model_dump, and raw models."""
-    backend = _DatasetBackend(_DatasetService())
+    service = _DatasetService()
+    backend = _DatasetBackend(service)
     datasets = backend.list_datasets()
     expect_equal(
         {d.name for d in datasets},
@@ -99,11 +114,7 @@ def test_list_datasets_serializes_mixed_inputs(monkeypatch: pytest.MonkeyPatch) 
         message = "fail"
         raise errors.backend_failure(message)
 
-    monkeypatch.setattr(
-        DatasetDescriptor,
-        "model_validate",
-        staticmethod(_raise_validation),
-    )
+    service.enable_bad_dataset()
     with pytest.raises(errors.McpError):
         _ = backend.list_datasets()
 

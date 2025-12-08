@@ -6,7 +6,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.graphs.core.protocol import GraphPluginPlan
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     PlanningOptions,
@@ -211,7 +210,7 @@ def _run_prereqs_if_needed(
 
 
 def _graph_plan_from_plugin_plan(plan: object) -> dm.GraphPlan:
-    plan_any = cast(Any, plan)
+    plan_any = cast("Any", plan)
     metadata_entries = []
     for plugin in plan_any.plugins:
         meta = plugin.metadata
