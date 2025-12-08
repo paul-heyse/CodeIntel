@@ -825,7 +825,11 @@ def build_dataset_meta(service: QueryService, limits: BackendLimits) -> list[Dat
     list[DatasetMeta]
         One entry per dataset in the registry.
     """
-    specs: list[DatasetSpecDescriptor] = service.dataset_specs()
+    dataset_specs = getattr(service, "dataset_specs", None)
+    if dataset_specs is None:
+        return []
+
+    specs: list[DatasetSpecDescriptor] = dataset_specs()
     metas: list[DatasetMeta] = []
 
     for spec in specs:

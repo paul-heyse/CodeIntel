@@ -29,13 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.analytics.runtime import GraphRuntime
-    from codeintel.build.protocols import (
-        CoverageCollector,
-        GitHistoryProvider,
-        ScipIndexer,
-        ToolRunner,
-        TypeChecker,
-    )
+    from codeintel.build.protocols import CoverageCollector, GitHistoryProvider, ScipIndexer, ToolRunner, TypeChecker
     from codeintel.build.providers import Providers, RealTestReporter
 
 T = TypeVar("T")
@@ -116,20 +110,29 @@ class BuilderOptions:
 
 
 @dataclass(frozen=True)
+class EnvOverrides:
+    """Environment overrides for execution contexts."""
+
+    snapshot: tuple[str, str] | None = None
+    gateway: StorageGateway | RecordingGateway | None = None
+    tmp_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class TargetResourceOverrides:
     """Optional resource overrides for target execution contexts."""
 
-    providers: object | None = None
+    providers: Providers | None = None
     modules: tuple[str, ...] = ()
     change_tracker: object | None = None
-    graph_runtime: object | None = None
+    graph_runtime: GraphRuntime | None = None
     catalog: object | None = None
-    test_reporter: object | None = None
-    coverage_collector: object | None = None
-    scip_indexer: object | None = None
-    type_checker: object | None = None
-    tool_runner: object | None = None
-    git_history: object | None = None
+    test_reporter: RealTestReporter | None = None
+    coverage_collector: CoverageCollector | None = None
+    scip_indexer: ScipIndexer | None = None
+    type_checker: TypeChecker | None = None
+    tool_runner: ToolRunner | None = None
+    git_history: GitHistoryProvider | None = None
 
 
 @dataclass
@@ -163,6 +166,7 @@ class ExecutionContextBuilder:
         cls,
         tmp_path: Path | None = None,
         options: BuilderOptions | None = None,
+        env_overrides: EnvOverrides | None = None,
     ) -> Self:
         """Create a builder with a fresh gateway and snapshot.
 
@@ -172,18 +176,30 @@ class ExecutionContextBuilder:
             Configured builder.
         """
         opts = options or BuilderOptions()
-        base_path = tmp_path if tmp_path is not None else Path("/mock/repo")
-        env_ctx = create_test_env(
-            base_path,
-            repo=opts.repo,
-            commit=opts.commit,
-            file_backed=opts.file_backed,
-            repo_root=base_path,
-        )
+        overrides = env_overrides or EnvOverrides()
+        base_path = overrides.tmp_path or tmp_path or Path("/mock/repo")
+        repo, commit = overrides.snapshot or (opts.repo, opts.commit)
+        gateway = overrides.gateway
+        snapshot = None
+        build_paths = None
+        if gateway is None:
+            env_ctx = create_test_env(
+                base_path,
+                repo=repo,
+                commit=commit,
+                file_backed=opts.file_backed,
+                repo_root=base_path,
+            )
+            gateway = env_ctx.gateway
+            snapshot = env_ctx.snapshot
+            build_paths = env_ctx.build_paths
+        else:
+            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=base_path)
+            build_paths = BuildPaths.from_repo_root(base_path)
         return cls(
-            gateway=env_ctx.gateway,
-            snapshot=env_ctx.snapshot,
-            paths=env_ctx.build_paths,
+            gateway=gateway,
+            snapshot=snapshot,
+            paths=build_paths,
             run_id=opts.run_id,
             record_sql=opts.record_sql,
         )
@@ -386,17 +402,7 @@ def build_target_execution_context(
     return builder.build_target_context(
         target=target,
         parameters=parameters,
-        providers=cast("Providers | None", overrides.providers),
-        modules=overrides.modules,
-        change_tracker=overrides.change_tracker,
-        graph_runtime=cast("GraphRuntime | None", overrides.graph_runtime),
-        catalog=overrides.catalog,
-        test_reporter=cast("RealTestReporter | None", overrides.test_reporter),
-        coverage_collector=cast("CoverageCollector | None", overrides.coverage_collector),
-        scip_indexer=cast("ScipIndexer | None", overrides.scip_indexer),
-        type_checker=cast("TypeChecker | None", overrides.type_checker),
-        tool_runner=cast("ToolRunner | None", overrides.tool_runner),
-        git_history=cast("GitHistoryProvider | None", overrides.git_history),
+        resources=overrides,
     )
 
 

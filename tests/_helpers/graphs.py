@@ -291,10 +291,10 @@ def insert_config_values(
                 format="yaml",
                 key="API_TOKEN",
                 reference_paths=[
-                    ast_by_goid[goids["api_handler"]].rel_path,
-                    ast_by_goid[goids["process"]].rel_path,
+                    ast_by_goid[goids["func_a"]].rel_path,
+                    ast_by_goid[goids["func_b"]].rel_path,
                 ],
-                reference_modules=["pkg.api", "pkg.service"],
+                reference_modules=["pkg.mod_a", "pkg.mod_b"],
                 reference_count=2,
             ),
             ConfigValueRow(
@@ -303,8 +303,8 @@ def insert_config_values(
                 config_path="config/settings.yml",
                 format="yaml",
                 key="FEATURE_FLAG",
-                reference_paths=[ast_by_goid[goids["process"]].rel_path],
-                reference_modules=["pkg.service"],
+                reference_paths=[ast_by_goid[goids["func_b"]].rel_path],
+                reference_modules=["pkg.mod_b"],
                 reference_count=1,
             ),
         ],
@@ -329,20 +329,20 @@ def insert_entrypoints(
             handler_qualname, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (
-            snapshot.repo,
-            snapshot.commit,
-            "api.get_items",
-            "http",
-            "fastapi",
-            goids["api_handler"],
-            "urn:pkg.api.api_handler",
-            ast_by_goid[goids["api_handler"]].rel_path,
-            "pkg.api",
-            "api_handler",
-            now,
-        ),
-    )
+            (
+                snapshot.repo,
+                snapshot.commit,
+                "api.get_items",
+                "http",
+                "fastapi",
+                goids["func_a"],
+                "urn:pkg.mod_a.func_a",
+                ast_by_goid[goids["func_a"]].rel_path,
+                "pkg.mod_a",
+                "func_a",
+                now,
+            ),
+        )
 
 
 def insert_subsystems(gateway: StorageGateway, snapshot: SnapshotRef) -> None:

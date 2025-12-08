@@ -23,13 +23,37 @@ class ToolRegistration:
     options: dict[str, object]
 
 
+class McpRegistrationRecorder:
+    """Recorder that tracks tool registrations with simple counters."""
+
+    def __init__(self) -> None:
+        self.calls: list[ToolRegistration] = []
+
+    def increment(self, name: str, options: dict[str, object]) -> None:
+        """Record a tool registration."""
+        self.calls.append(ToolRegistration(name=name, options=options))
+
+    def count(self, name: str | None = None) -> int:
+        """Count registrations, optionally filtered by name.
+
+        Returns
+        -------
+        int
+            Number of registrations matching the filter.
+        """
+        if name is None:
+            return len(self.calls)
+        return sum(1 for call in self.calls if call.name == name)
+
+
 class RecordingMcpRegistrar:
     """Recording registrar providing sync decorator API."""
 
     def __init__(self, app_name: str = "recorder") -> None:
         self.app_name = app_name
         self.registry: dict[str, Callable[..., object]] = {}
-        self.registrations: list[ToolRegistration] = []
+        self._registrations: list[ToolRegistration] = []
+        self.registrations = McpRegistrationRecorder()
 
     def tool(
         self,
@@ -46,7 +70,9 @@ class RecordingMcpRegistrar:
 
         def _decorator(func: Callable[..., object]) -> Callable[..., object]:
             tool_name = name or func.__name__
-            self.registrations.append(ToolRegistration(name=tool_name, options=dict(options)))
+            opts = dict(options)
+            self.registrations.increment(tool_name, opts)
+            self._registrations.append(ToolRegistration(name=tool_name, options=opts))
             self.registry[tool_name] = func
             return func
 
@@ -60,10 +86,7 @@ class RecordingMcpRegistrar:
         list[dict[str, object]]
             Serialized tool metadata.
         """
-        return [
-            {"name": name, **options}
-            for name, options in ((r.name, r.options) for r in self.registrations)
-        ]
+        return [{"name": reg.name, **reg.options} for reg in self._registrations]
 
 
 class AsyncRecordingMcpRegistrar(RecordingMcpRegistrar):
@@ -140,6 +163,7 @@ def wrap_fastmcp(name: str) -> FastMcpAdapter:
 __all__ = [
     "AsyncRecordingMcpRegistrar",
     "FastMcpAdapter",
+    "McpRegistrationRecorder",
     "RecordingMcpRegistrar",
     "ToolRegistration",
     "wrap_fastmcp",

@@ -193,24 +193,26 @@ docs_app = typer.Typer(
 ValidationOpt = Annotated[
     ExportValidationMode,
     typer.Option(
-        ...,
+        ExportValidationMode.SKIP,
         "--validation",
         "--validate",
         flag_value=ExportValidationMode.REQUIRED,
-        help="Validation strategy for exports.",
+        help="Validation strategy for exports. Use --validate to require validation.",
         case_sensitive=False,
+        show_default=True,
     ),
 ]
 
 MacroRequirementOpt = Annotated[
     MacroRequirement,
     typer.Option(
-        ...,
+        MacroRequirement.ALLOW_PARTIAL,
         "--macro-requirement",
         "--require-normalized-macros",
         flag_value=MacroRequirement.REQUIRE_NORMALIZED,
         help="Requirement policy for normalized macros.",
         case_sensitive=False,
+        show_default=True,
     ),
 ]
 
