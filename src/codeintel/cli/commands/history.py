@@ -120,7 +120,7 @@ def history_timeseries(
     entity_kind: EntityKindOpt = "function",
     max_entities: MaxEntitiesOpt = 500,
     selection_strategy: SelectionStrategyOpt = "risk_score",
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     r"""Aggregate analytics.history_timeseries across multiple commits.
 

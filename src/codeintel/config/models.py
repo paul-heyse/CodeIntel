@@ -9,7 +9,7 @@ Migration Guide
 For step configurations, prefer the composition-based system:
 
 Preferred:
-    from codeintel.config import ConfigBuilder
+    from codeintel.config import ConfigBuilder, SnapshotInit
     builder = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo="r", commit="c", repo_root=Path(".")),
     )
@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from codeintel.config.primitives import BuildPaths, GraphBackendConfig, GraphFeatureFlags
+from codeintel.config.primitives import (
+    BuildPathOverrides,
+    BuildPaths,
+    GraphBackendConfig,
+    GraphFeatureFlags,
+)
 
 if TYPE_CHECKING:
     from codeintel.ingestion.engine.infrastructure import ToolName
@@ -196,8 +201,7 @@ class CliPathsInput(BaseModel):
             Internal paths configuration.
         """
         doc_dir = self.document_output_dir or (self.repo_root / "Document Output")
-        return BuildPaths(
-            build_dir=self.build_dir,
+        overrides = BuildPathOverrides(
             db_path=self.db_path,
             document_output_dir=doc_dir,
             scip_dir=self.scip_dir,
@@ -205,6 +209,10 @@ class CliPathsInput(BaseModel):
             pytest_report=self.build_dir / "test-results" / "pytest-report.json",
             tool_cache=self.build_dir / ".tool_cache",
             log_db_path=self.build_dir / "db" / "codeintel_logs.duckdb",
+        )
+        return BuildPaths.from_explicit(
+            build_dir=self.build_dir,
+            overrides=overrides,
         )
 
 

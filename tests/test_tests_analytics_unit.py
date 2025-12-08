@@ -15,7 +15,12 @@ from codeintel.analytics.testing.coverage.edges import (
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
 )
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import (
+    BuildLayoutOptions,
+    ConfigBuilder,
+    SnapshotInit,
+    TestCoverageStepConfig,
+)
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.assertions import assert_single_edge
 from tests._helpers.configs import CoverageEdgeEnv, ProvisionOptions
@@ -51,12 +56,10 @@ def test_backfill_test_goids_updates_catalog() -> None:
     con = gateway.con
 
     builder = ConfigBuilder.from_snapshot(
-        repo=ctx.repo,
-        commit=ctx.commit,
-        repo_root=repo_root,
-        build_dir=ctx.build_dir,
+        snapshot=SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=repo_root),
+        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
     )
-    cfg = builder.test_coverage()
+    cfg = builder.analytics.test_coverage()
 
     _insert_goids(con, cfg)
     con.execute(
@@ -109,10 +112,8 @@ def test_edges_for_file_uses_test_meta() -> None:
     contexts_by_lineno = {1: {"tests/test_mod.py::test_func"}, 2: {"tests/test_mod.py::test_func"}}
     temp_root = Path(tempfile.mkdtemp())
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=temp_root,
-    ).test_coverage()
+        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=temp_root),
+    ).analytics.test_coverage()
     ctx = EdgeContext(
         status_by_test={"tests/test_mod.py::test_func": "passed"},
         cfg=cfg,

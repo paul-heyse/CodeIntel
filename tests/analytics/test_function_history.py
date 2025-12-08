@@ -9,6 +9,7 @@ from pathlib import Path
 from codeintel.analytics.functions import compute_function_history
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.config.steps_analytics import FunctionHistoryStepConfig
 from tests._helpers import TestContext, TestScenario
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import insert_rows
@@ -20,6 +21,12 @@ EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}
 MIN_EXPECTED_LINES_ADDED = 2
 GOID_TEST_FUNC_1 = 1
 GOID_TEST_FUNC_2 = 2
+
+
+def _function_history_cfg(ctx: TestContext, commit: str) -> FunctionHistoryStepConfig:
+    return ConfigBuilder.from_snapshot(
+        snapshot=SnapshotInit(repo=ctx.repo, commit=commit, repo_root=ctx.repo_root),
+    ).analytics.function_history()
 
 
 def _seed_function_for_history(
@@ -94,10 +101,7 @@ def test_function_history_populates_rows(
     try:
         _seed_function_for_history(ctx, goid=GOID_TEST_FUNC_1, urn="urn:fn", commit=commit)
 
-        builder = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(repo=ctx.repo, commit=commit, repo_root=repo_root),
-        )
-        cfg = builder.function_history()
+        cfg = _function_history_cfg(ctx, commit)
         compute_function_history(ctx.gateway, cfg, runner=git_ctx.runner)
 
         rows = ctx.con.execute("SELECT * FROM analytics.function_history").fetchall()
@@ -138,10 +142,8 @@ def test_function_history_respects_min_threshold(
     try:
         _seed_function_for_history(ctx, goid=GOID_TEST_FUNC_2, urn="urn:fn2", commit=commit)
 
-        builder = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(repo=ctx.repo, commit=commit, repo_root=repo_root),
-        )
-        cfg = builder.function_history(min_lines_threshold=10)
+        cfg = _function_history_cfg(ctx, commit)
+        cfg = replace(cfg, min_lines_threshold=10)
         compute_function_history(ctx.gateway, cfg, runner=git_ctx.runner)
 
         rows = ctx.con.execute(

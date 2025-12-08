@@ -56,9 +56,11 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.commands._common import (
+    JsonFlagOpt,
     JsonOutputOpt,
     OutputFormat,
     ProjectRootOpt,
+    RuntimeCliOptions,
     VerboseOpt,
     build_runtime_or_exit,
     setup_logging,
@@ -105,9 +107,10 @@ class RunMode(Enum):
     DRY_RUN = "dry_run"
 
 
-DryRunOpt = Annotated[
+RunModeOpt = Annotated[
     RunMode,
     typer.Option(
+        RunMode.EXECUTE,
         "--dry-run",
         "-n",
         flag_value=RunMode.DRY_RUN,
@@ -133,9 +136,10 @@ class TargetScope(Enum):
     ALL = "all"
 
 
-AllOpt = Annotated[
+TargetScopeOpt = Annotated[
     TargetScope,
     typer.Option(
+        TargetScope.REQUESTED,
         "--all",
         "-a",
         flag_value=TargetScope.ALL,
@@ -160,7 +164,7 @@ class BuildRunOptions:
 class BuildRunContext:
     """Execution context options for a build run."""
 
-    project_root: Path | None
+    runtime_options: RuntimeCliOptions
     verbose: int
     output_format: OutputFormat
 
@@ -228,8 +232,8 @@ def _resolve_goals(
 def _build_run_options(
     targets: TargetsArg = None,
     module: ModuleOpt = None,
-    target_scope: AllOpt = TargetScope.REQUESTED,
-    run_mode: DryRunOpt = RunMode.EXECUTE,
+    target_scope: TargetScope = TargetScopeOpt,
+    run_mode: RunMode = RunModeOpt,
     force: ForceOpt = None,
 ) -> BuildRunOptions:
     return BuildRunOptions(
@@ -247,7 +251,7 @@ def _build_run_context(
     output_format: OutputFormat = JsonOutputOpt,
 ) -> BuildRunContext:
     return BuildRunContext(
-        project_root=project_root,
+        runtime_options=RuntimeCliOptions(project_root=project_root),
         verbose=verbose,
         output_format=output_format,
     )
@@ -589,7 +593,7 @@ def build_status(
     """
     setup_logging(verbose)
 
-    runtime = build_runtime_or_exit(project_root)
+    runtime = build_runtime_or_exit(RuntimeCliOptions(project_root=project_root))
     graph = get_target_graph()
 
     LOG.info(
@@ -676,7 +680,7 @@ def build_run_handler(
     run_options = options
     run_ctx = ctx_opts
 
-    runtime = build_runtime_or_exit(run_ctx.project_root)
+    runtime = build_runtime_or_exit(run_ctx.runtime_options)
     graph = get_target_graph()
 
     LOG.info(
@@ -745,6 +749,10 @@ def build_run_handler(
 
 
 def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
+    output_format = cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT))
+    json_override = cast("OutputFormat", cli_kwargs.get("json", OutputFormat.TEXT))
+    if json_override is OutputFormat.JSON:
+        output_format = OutputFormat.JSON
     options = BuildRunOptions(
         targets=cast("list[str] | None", cli_kwargs.get("targets")),
         module=cast("str | None", cli_kwargs.get("module")),
@@ -753,9 +761,11 @@ def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
         force=cast("list[str] | None", cli_kwargs.get("force")),
     )
     ctx_opts = BuildRunContext(
-        project_root=cast("Path | None", cli_kwargs.get("project_root")),
+        runtime_options=RuntimeCliOptions(
+            project_root=cast("Path | None", cli_kwargs.get("project_root")),
+        ),
         verbose=int(cast("int", cli_kwargs.get("verbose", 0))),
-        output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.JSON)),
+        output_format=output_format,
     )
     return {"options": options, "ctx_opts": ctx_opts}
 
@@ -763,12 +773,13 @@ def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
 build_run_option_specs = [
     OptionSpec("targets", TargetsArg, None),
     OptionSpec("module", ModuleOpt, None),
-    OptionSpec("target_scope", AllOpt, TargetScope.REQUESTED),
-    OptionSpec("run_mode", DryRunOpt, RunMode.EXECUTE),
+    OptionSpec("target_scope", TargetScope, TargetScopeOpt),
+    OptionSpec("run_mode", RunMode, RunModeOpt),
     OptionSpec("force", ForceOpt, None),
     OptionSpec("project_root", Path | None, ProjectRootOpt),
     OptionSpec("verbose", int, VerboseOpt),
     OptionSpec("output_format", OutputFormat, JsonOutputOpt),
+    OptionSpec("json", OutputFormat, JsonFlagOpt),
 ]
 
 build_run = build_app.command("run")(
@@ -973,7 +984,7 @@ def build_history(
         codeintel build history --json
     """
     setup_logging(verbose)
-    runtime = build_runtime_or_exit(project_root)
+    runtime = build_runtime_or_exit(RuntimeCliOptions(project_root=project_root))
 
     if run_id:
         record = _lookup_run_by_id(runtime, run_id)

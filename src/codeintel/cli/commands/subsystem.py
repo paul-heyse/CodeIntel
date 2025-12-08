@@ -30,6 +30,7 @@ from codeintel.cli.commands._common import (
     ProjectRootOpt,
     RepoOpt,
     RepoRootOpt,
+    RuntimeCliOptions,
     VerboseOpt,
     build_graph_runtime,
     build_runtime_or_exit,
@@ -119,7 +120,7 @@ def _build_backend(
     """
     setup_logging(verbose)
 
-    runtime = build_runtime_or_exit(
+    runtime_options = RuntimeCliOptions(
         project_root=project_root,
         repo=repo,
         commit=commit,
@@ -127,6 +128,7 @@ def _build_backend(
         build_dir=build_dir,
         repo_root=repo_root,
     )
+    runtime = build_runtime_or_exit(runtime_options)
 
     gateway = open_gateway_from_config(runtime.cfg, read_only=True)
     graph_runtime = build_graph_runtime(runtime.cfg, gateway)

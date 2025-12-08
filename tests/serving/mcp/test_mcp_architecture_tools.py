@@ -733,3 +733,28 @@ def test_graph_plugin_plan_with_names() -> None:
     # Test with explicit plugin names
     plan = plan_graph_plugins(plugin_names=("pagerank",))
     expect_is_not_none(plan)
+
+
+def test_graph_plugin_plan_auto_includes_dependencies() -> None:
+    """Planner should include required dependencies automatically."""
+    plan = plan_graph_plugins(plugin_names=("goid_builder",))
+    expect_is_not_none(plan)
+    expect_true("scip_ingest" in plan.dep_graph["goid_builder"])
+    expect_true("scip_ingest" in plan.ordered_names)
+
+
+def test_graph_plugin_plan_disable_dependency_errors() -> None:
+    """Planner should error when dependencies are disabled."""
+    with pytest.raises(ValueError, match="allow_missing_dependencies"):
+        plan_graph_plugins(plugin_names=("goid_builder",), disabled=("scip_ingest",))
+
+
+def test_graph_plugin_plan_disable_dependency_override() -> None:
+    """Planner can skip deps when explicitly allowed."""
+    plan = plan_graph_plugins(
+        plugin_names=("goid_builder",),
+        disabled=("scip_ingest",),
+        allow_missing_dependencies=True,
+    )
+    expect_is_not_none(plan)
+    expect_true("goid_builder" in plan.ordered_names)

@@ -17,7 +17,9 @@ def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> Non
     """Flag resolution and backend config selection behave as expected."""
     expect_true(common.resolve_flag(value=None) is False)
     expect_true(common.resolve_flag(value=True) is True)
-    backend = common.build_graph_backend_config(nx_gpu=True, nx_backend="cpu", nx_gpu_strict=True)
+    backend = common.build_graph_backend_config(
+        common.BackendFlags(use_gpu=True, backend="cpu", strict=True)
+    )
     expect_true(backend.use_gpu is True)
     expect_equal(backend.backend, "cpu")
     expect_true(backend.strict is True)
@@ -37,12 +39,17 @@ def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
     db_path = tmp_path / "build" / "db" / "codeintel.duckdb"
     build_dir = tmp_path / "build"
     repo_root.mkdir()
+    paths_cfg = common.CliPathsInput(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        db_path=db_path,
+        document_output_dir=None,
+    )
     cfg = common.build_config_from_options(
         repo="demo/repo",
         commit="deadbeef",
-        repo_root=repo_root,
-        db_path=db_path,
-        build_dir=build_dir,
+        paths_cfg=paths_cfg,
+        backend=common.BackendFlags(),
     )
     expect_equal(cfg.repo.repo, "demo/repo")
     expect_equal(cfg.repo.commit, "deadbeef")
@@ -59,17 +66,19 @@ def test_build_runtime_or_exit_fallback_and_missing(tmp_path: Path) -> None:
     repo_root.mkdir(parents=True, exist_ok=True)
 
     runtime = common.build_runtime_or_exit(
-        project_root=None,
-        repo="demo/repo",
-        commit="deadbeef",
-        db_path=db_path,
-        build_dir=build_dir,
-        repo_root=repo_root,
+        common.RuntimeCliOptions(
+            project_root=None,
+            repo="demo/repo",
+            commit="deadbeef",
+            db_path=db_path,
+            build_dir=build_dir,
+            repo_root=repo_root,
+        )
     )
     expect_equal(runtime.snapshot.repo, "demo/repo")
     expect_equal(runtime.snapshot.commit, "deadbeef")
     runtime.gateway.close()
 
     with pytest.raises(typer.Exit) as excinfo:
-        common.build_runtime_or_exit(project_root=tmp_path)
+        common.build_runtime_or_exit(common.RuntimeCliOptions(project_root=tmp_path))
     expect_equal(excinfo.value.exit_code, 1)

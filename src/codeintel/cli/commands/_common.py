@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
@@ -105,6 +105,37 @@ class OutputFormat(Enum):
     JSON = "json"
 
 
+@dataclass(frozen=True)
+class BackendFlags:
+    """Backend preferences provided via CLI."""
+
+    use_gpu: bool = False
+    backend: str = "auto"
+    strict: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeCliOptions:
+    """Bundle runtime discovery and backend options."""
+
+    project_root: Path | None = None
+    repo: str | None = None
+    commit: str | None = None
+    db_path: Path | None = None
+    build_dir: Path | None = None
+    repo_root: Path | None = None
+    document_output_dir: Path | None = None
+    backend: BackendFlags = field(default_factory=BackendFlags)
+
+
+@dataclass(frozen=True)
+class GatewayOptions:
+    """Gateway usage preferences."""
+
+    read_only: bool = True
+    use_cache: bool = True
+
+
 JsonOutputOpt = typer.Option(
     OutputFormat.TEXT,
     "--output-format",
@@ -112,6 +143,17 @@ JsonOutputOpt = typer.Option(
     case_sensitive=False,
     show_choices=True,
 )
+
+JsonFlagOpt = Annotated[
+    OutputFormat,
+    typer.Option(
+        OutputFormat.TEXT,
+        "--json",
+        flag_value=OutputFormat.JSON,
+        help="Output as JSON (alias for --output-format json).",
+        case_sensitive=False,
+    ),
+]
 
 # Repository configuration options (fallback when no project file)
 RepoOpt = Annotated[
@@ -261,21 +303,13 @@ def resolve_flag(value: object) -> bool:
 # -----------------------------------------------------------------------------
 
 
-def build_graph_backend_config(
-    nx_gpu: bool = False,
-    nx_backend: str = "auto",
-    nx_gpu_strict: bool = False,
-) -> GraphBackendConfig:
+def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:
     """Build graph backend configuration from CLI options.
 
     Parameters
     ----------
-    nx_gpu
-        Whether to prefer GPU backend.
-    nx_backend
-        Backend selection string.
-    nx_gpu_strict
-        Whether to fail if GPU is unavailable.
+    flags
+        Backend preferences collected from CLI flags.
 
     Returns
     -------
@@ -283,14 +317,14 @@ def build_graph_backend_config(
         Configured graph backend settings.
     """
     backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
-    if nx_backend == "cpu":
+    if flags.backend == "cpu":
         backend = "cpu"
-    elif nx_backend == "nx-cugraph":
+    elif flags.backend == "nx-cugraph":
         backend = "nx-cugraph"
     return GraphBackendConfig(
-        use_gpu=nx_gpu,
+        use_gpu=flags.use_gpu,
         backend=backend,
-        strict=nx_gpu_strict,
+        strict=flags.strict,
     )
 
 
@@ -352,13 +386,8 @@ def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
 def build_config_from_options(
     repo: str,
     commit: str,
-    repo_root: Path,
-    db_path: Path,
-    build_dir: Path,
-    document_output_dir: Path | None = None,
-    nx_gpu: bool = False,
-    nx_backend: str = "auto",
-    nx_gpu_strict: bool = False,
+    paths_cfg: CliPathsInput,
+    backend: BackendFlags,
 ) -> CodeIntelConfig:
     """Build CodeIntelConfig from explicit CLI options.
 
@@ -368,27 +397,17 @@ def build_config_from_options(
         Repository slug.
     commit
         Commit SHA.
-    repo_root
-        Repository root path.
-    db_path
-        Database path.
-    build_dir
-        Build directory path.
-    document_output_dir
-        Optional document output directory.
-    nx_gpu
-        Whether to prefer GPU backend.
-    nx_backend
-        NetworkX backend selection.
-    nx_gpu_strict
-        Whether to fail if GPU unavailable.
+    paths_cfg
+        CLI paths input describing repo root, build directory, and storage.
+    backend
+        Graph backend flags captured from CLI.
 
     Returns
     -------
     CodeIntelConfig
         Configured CodeIntel settings.
     """
-    graph_backend = build_graph_backend_config(nx_gpu, nx_backend, nx_gpu_strict)
+    graph_backend = build_graph_backend_config(backend)
     graph_features = build_graph_feature_flags_from_env()
     LOG.info(
         "cli.runtime.config repo=%s commit=%s backend=%s use_gpu=%s features=%s",
@@ -397,12 +416,6 @@ def build_config_from_options(
         graph_backend.backend,
         graph_backend.use_gpu,
         graph_features,
-    )
-    paths_cfg = CliPathsInput(
-        repo_root=repo_root,
-        build_dir=build_dir,
-        db_path=db_path,
-        document_output_dir=document_output_dir,
     )
     repo_cfg = RepoConfig(repo=repo, commit=commit)
     return CodeIntelConfig.from_cli_args(
@@ -473,16 +486,7 @@ def parse_scope_args(
 
 
 def build_runtime_or_exit(
-    project_root: Path | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    db_path: Path | None = None,
-    build_dir: Path | None = None,
-    repo_root: Path | None = None,
-    document_output_dir: Path | None = None,
-    nx_gpu: bool = False,
-    nx_backend: str = "auto",
-    nx_gpu_strict: bool = False,
+    options: RuntimeCliOptions,
 ) -> ProjectRuntime:
     """Build project runtime with fallback to explicit options.
 
@@ -491,26 +495,8 @@ def build_runtime_or_exit(
 
     Parameters
     ----------
-    project_root
-        Explicit project root for project file discovery.
-    repo
-        Fallback repository slug.
-    commit
-        Fallback commit SHA.
-    db_path
-        Fallback database path.
-    build_dir
-        Fallback build directory.
-    repo_root
-        Fallback repository root.
-    document_output_dir
-        Fallback document output directory.
-    nx_gpu
-        Whether to prefer GPU backend.
-    nx_backend
-        NetworkX backend selection.
-    nx_gpu_strict
-        Whether to fail if GPU unavailable.
+    options
+        Runtime discovery inputs and backend flags.
 
     Returns
     -------
@@ -524,12 +510,12 @@ def build_runtime_or_exit(
     """
     # Try project file discovery first
     try:
-        return build_project_runtime(project_root)
+        return build_project_runtime(options.project_root)
     except ProjectNotFoundError:
         pass
 
     # Check if we have explicit fallback options
-    if repo is None or commit is None:
+    if options.repo is None or options.commit is None:
         typer.secho(
             "Error: No codeintel.yaml found. Provide --repo and --commit explicitly.",
             fg=typer.colors.RED,
@@ -538,20 +524,21 @@ def build_runtime_or_exit(
         raise typer.Exit(code=1)
 
     # Build from explicit options
-    resolved_repo_root = repo_root or Path.cwd()
-    resolved_db_path = db_path or Path("build/db/codeintel.duckdb")
-    resolved_build_dir = build_dir or Path("build")
+    resolved_repo_root = options.repo_root or Path.cwd()
+    resolved_db_path = options.db_path or Path("build/db/codeintel.duckdb")
+    resolved_build_dir = options.build_dir or Path("build")
+    paths_cfg = CliPathsInput(
+        repo_root=resolved_repo_root,
+        build_dir=resolved_build_dir,
+        db_path=resolved_db_path,
+        document_output_dir=options.document_output_dir,
+    )
 
     cfg = build_config_from_options(
-        repo=repo,
-        commit=commit,
-        repo_root=resolved_repo_root,
-        db_path=resolved_db_path,
-        build_dir=resolved_build_dir,
-        document_output_dir=document_output_dir,
-        nx_gpu=nx_gpu,
-        nx_backend=nx_backend,
-        nx_gpu_strict=nx_gpu_strict,
+        repo=options.repo,
+        commit=options.commit,
+        paths_cfg=paths_cfg,
+        backend=options.backend,
     )
 
     snapshot = SnapshotRef(
@@ -705,19 +692,8 @@ class ProjectContext:
 
 
 def build_project_context(
-    project_root: Path | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    db_path: Path | None = None,
-    build_dir: Path | None = None,
-    repo_root: Path | None = None,
-    document_output_dir: Path | None = None,
-    nx_gpu: bool = False,
-    nx_backend: str = "auto",
-    nx_gpu_strict: bool = False,
-    *,
-    read_only: bool = True,
-    use_cache: bool = True,
+    runtime_options: RuntimeCliOptions,
+    gateway_options: GatewayOptions = GatewayOptions(),
 ) -> ProjectContext:
     """Build a unified project context for CLI commands.
 
@@ -726,30 +702,10 @@ def build_project_context(
 
     Parameters
     ----------
-    project_root
-        Explicit project root for project file discovery.
-    repo
-        Fallback repository slug.
-    commit
-        Fallback commit SHA.
-    db_path
-        Fallback database path.
-    build_dir
-        Fallback build directory.
-    repo_root
-        Fallback repository root.
-    document_output_dir
-        Fallback document output directory.
-    nx_gpu
-        Whether to prefer GPU backend.
-    nx_backend
-        NetworkX backend selection.
-    nx_gpu_strict
-        Whether to fail if GPU unavailable.
-    read_only
-        Whether to open gateway in read-only mode.
-    use_cache
-        Whether to use the gateway cache.
+    runtime_options
+        Runtime discovery inputs and backend flags.
+    gateway_options
+        Gateway usage preferences.
 
     Returns
     -------
@@ -761,24 +717,13 @@ def build_project_context(
     This function may exit via ``typer.Exit`` (raised by ``build_runtime_or_exit``)
     if configuration cannot be resolved.
     """
-    runtime = build_runtime_or_exit(
-        project_root=project_root,
-        repo=repo,
-        commit=commit,
-        db_path=db_path,
-        build_dir=build_dir,
-        repo_root=repo_root,
-        document_output_dir=document_output_dir,
-        nx_gpu=nx_gpu,
-        nx_backend=nx_backend,
-        nx_gpu_strict=nx_gpu_strict,
-    )
+    runtime = build_runtime_or_exit(runtime_options)
 
     # Use the cached or non-cached gateway based on preference
-    if use_cache:
+    if gateway_options.use_cache:
         storage_cfg = (
             StorageConfig.for_readonly(runtime.paths.db_path)
-            if read_only
+            if gateway_options.read_only
             else StorageConfig.for_ingest(runtime.paths.db_path)
         )
         gateway = get_gateway(storage_cfg)
@@ -795,9 +740,7 @@ def build_project_context(
 
 def resolve_gateway_for_command(
     cfg: CodeIntelConfig,
-    *,
-    read_only: bool = True,
-    use_cache: bool = True,
+    gateway_options: GatewayOptions = GatewayOptions(),
 ) -> StorageGateway:
     """Resolve a StorageGateway for a CLI command.
 
@@ -805,10 +748,8 @@ def resolve_gateway_for_command(
     ----------
     cfg
         CodeIntel configuration.
-    read_only
-        Whether to open read-only.
-    use_cache
-        Whether to use the gateway cache for connection reuse.
+    gateway_options
+        Gateway usage preferences.
 
     Returns
     -------
@@ -817,14 +758,14 @@ def resolve_gateway_for_command(
     """
     cfg.paths.db_dir.mkdir(parents=True, exist_ok=True)
 
-    if use_cache:
+    if gateway_options.use_cache:
         storage_cfg = (
             StorageConfig.for_readonly(cfg.paths.db_path)
-            if read_only
+            if gateway_options.read_only
             else StorageConfig.for_ingest(cfg.paths.db_path)
         )
         return get_gateway(storage_cfg)
-    return open_gateway_from_config(cfg, read_only=read_only)
+    return open_gateway_from_config(cfg, read_only=gateway_options.read_only)
 
 
 def cleanup_command_resources() -> None:
@@ -838,10 +779,13 @@ def cleanup_command_resources() -> None:
 
 __all__ = [
     "LOG",
+    "BackendFlags",
     "BuildDirOpt",
     "CommitOpt",
     "DbPathOpt",
     "DocumentOutputDirOpt",
+    "GatewayOptions",
+    "JsonFlagOpt",
     "JsonOutputOpt",
     "LimitOpt",
     "NxBackendOpt",
@@ -851,6 +795,7 @@ __all__ = [
     "ProjectRootOpt",
     "RepoOpt",
     "RepoRootOpt",
+    "RuntimeCliOptions",
     "ScopeModuleOpt",
     "ScopePathOpt",
     "ScopeTimeWindowEndOpt",

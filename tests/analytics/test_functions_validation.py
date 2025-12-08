@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, insert_rows
 
@@ -41,6 +42,15 @@ def _insert_goid(
     )
 
 
+def _function_analytics_cfg(
+    repo_root: Path, *, fail_on_missing_spans: bool = False
+) -> FunctionAnalyticsStepConfig:
+    snapshot = SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
+    return ConfigBuilder.from_snapshot(
+        snapshot=snapshot,
+    ).analytics.function_analytics(fail_on_missing_spans=fail_on_missing_spans)
+
+
 def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Parse errors are persisted to analytics.function_validation."""
     gateway = fresh_gateway
@@ -52,10 +62,7 @@ def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_
     file_path.write_text("def broken(:\n    return 1\n", encoding="utf-8")
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.broken")
 
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=tmp_path),
-    )
-    cfg = builder.function_analytics(fail_on_missing_spans=False)
+    cfg = _function_analytics_cfg(tmp_path, fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)
 
     metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
@@ -87,10 +94,7 @@ def test_span_not_found_is_recorded(fresh_gateway: StorageGateway, tmp_path: Pat
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=tmp_path),
-    )
-    cfg = builder.function_analytics(fail_on_missing_spans=False)
+    cfg = _function_analytics_cfg(tmp_path, fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)
 
     validation_rows = con.execute(
