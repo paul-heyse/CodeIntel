@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mcp.server.fastmcp import FastMCP
-
 from codeintel.serving.mcp.backend import QueryBackend
+from codeintel.serving.mcp.tools_base import as_registrar
 from codeintel.serving.mcp.tools_base import register_tools as _register_tools
 from codeintel.serving.services.query_service import QueryService
 
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def register_tools(
-    mcp: FastMCP,
+    mcp: object,
     backend: QueryBackend | QueryService,
     config: ServingConfig | None = None,
 ) -> None:
@@ -30,7 +29,8 @@ def register_tools(
     config
         Optional serving config for auto-pipeline support.
     """
-    _register_tools(mcp, backend, config)
+    registrar = as_registrar(mcp)
+    _register_tools(registrar, backend, config)
 
 
 __all__ = ["register_tools"]

@@ -69,9 +69,7 @@ def test_cli_dependency_skip_records_missing_dependency(
     main_name = "cli_missing_dep_main"
     missing_dep = "cli_missing_dep_missing"
 
-    with plugin_registrar(
-        [GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()]
-    ):
+    with plugin_registrar([GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()]):
         options = GraphPluginsOptions(
             mode=PlanMode.PLAN,
             names=(main_name,),

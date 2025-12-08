@@ -154,7 +154,7 @@ def build_tool_from_operation(
     Returns
     -------
     Callable
-        Tool function suitable for FastMCP registration.
+        Tool function suitable for MCP registration.
 
     Raises
     ------
@@ -228,7 +228,7 @@ def register_tools_for_category(
     Parameters
     ----------
     mcp
-        FastMCP instance to register tools against.
+        MCP registrar used to register tools.
     backend
         Backend or service providing implementations.
     categories
@@ -271,7 +271,7 @@ def register_all_tools(
     Parameters
     ----------
     mcp
-        FastMCP instance to register tools against.
+        MCP registrar used to register tools.
     backend
         Backend or service providing implementations.
     config

@@ -18,11 +18,11 @@ See Also
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.dataset_tools import register_dataset_tools
@@ -30,6 +30,7 @@ from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_builder import (
+    McpToolRegistrar,
     build_tool_from_operation,
     register_all_tools,
     register_tools_for_category,
@@ -41,8 +42,83 @@ if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig
 
 
+class _ToolMethod(Protocol):
+    def __call__(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]: ...
+
+
+class _RegistrarWrapper:
+    """Adapt objects exposing a compatible tool() method to McpToolRegistrar."""
+
+    def __init__(self, tool_method: _ToolMethod) -> None:
+        self._tool_method = tool_method
+
+    def tool(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]:
+        return self._tool_method(name=name, **options)
+
+
+def as_registrar(mcp: McpToolRegistrar | object) -> McpToolRegistrar:
+    """Coerce an object with a tool() method into a McpToolRegistrar.
+
+    Returns
+    -------
+    McpToolRegistrar
+        Adapter that forwards tool registrations.
+
+    Raises
+    ------
+    TypeError
+        If the provided object lacks a callable tool method.
+    """
+    tool_method = getattr(mcp, "tool", None)
+    if callable(tool_method):
+        return _RegistrarWrapper(cast("_ToolMethod", tool_method))
+    message = f"Provided MCP object {mcp!r} does not expose a tool registration method"
+    raise TypeError(message)
+
+
+def _expose_tools(mcp: object) -> None:
+    """Populate mcp.tools from list_tools() (supports sync or async), with fallback."""
+    tools = None
+    mcp_any = cast("Any", mcp)
+    list_tools_fn = getattr(mcp_any, "list_tools", None)
+    if callable(list_tools_fn):
+        try:
+            result = list_tools_fn()
+            if inspect.iscoroutine(result):
+                try:
+                    tools = asyncio.run(result)
+                except RuntimeError:
+                    tools = None
+            elif inspect.isawaitable(result):
+                tools = None
+            else:
+                tools = result
+        except (AttributeError, TypeError):
+            tools = None
+    if tools is not None and not inspect.iscoroutine(tools):
+        mcp_any.tools = tools
+        return
+    fallback_tools = [
+        SimpleNamespace(name=op.tool_name) for op in iter_registry_operations() if op.tool_name
+    ]
+    mcp_any.tools = fallback_tools
+
+
+def expose_tools(mcp: object) -> None:
+    """Public wrapper to expose tools on an MCP object."""
+    _expose_tools(mcp)
+
+
 def register_tools(
-    mcp: FastMCP,
+    mcp: McpToolRegistrar | object,
     backend: QueryBackendOrService,
     config: ServingConfig | None = None,
 ) -> None:
@@ -61,30 +137,21 @@ def register_tools(
     config
         Optional serving config for auto-pipeline support.
     """
-    register_function_tools(mcp, backend, config)
-    register_profile_tools(mcp, backend, config)
-    register_architecture_tools(mcp, backend, config)
-    register_dataset_tools(mcp, backend, config)
-    register_meta_tools(mcp, backend)
+    registrar = as_registrar(mcp)
+    register_function_tools(registrar, backend, config)
+    register_profile_tools(registrar, backend, config)
+    register_architecture_tools(registrar, backend, config)
+    register_dataset_tools(registrar, backend, config)
+    register_meta_tools(registrar, backend)
     # Expose registered tools for callers that inspect `mcp.tools` in tests/utilities.
-    tools = None
-    if not inspect.iscoroutinefunction(getattr(mcp, "list_tools", None)):
-        try:
-            tools = mcp.list_tools()
-        except (AttributeError, TypeError):
-            tools = None
-    if tools is not None and not inspect.iscoroutine(tools):
-        cast("Any", mcp).tools = tools
-        return
-    fallback_tools = [
-        SimpleNamespace(name=op.tool_name) for op in iter_registry_operations() if op.tool_name
-    ]
-    cast("Any", mcp).tools = fallback_tools
+    _expose_tools(mcp)
 
 
 __all__ = [
     "QueryBackendOrService",
+    "as_registrar",
     "build_tool_from_operation",
+    "expose_tools",
     "register_all_tools",
     "register_tools",
     "register_tools_for_category",

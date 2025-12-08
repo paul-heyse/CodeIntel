@@ -15,6 +15,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from typer.models import ArgumentInfo, OptionInfo
+
 
 @dataclass(frozen=True)
 class OptionSpec:
@@ -58,6 +60,25 @@ def wrap_command(
         A wrapper function with a custom signature Typer can inspect.
     """
 
+    def _normalized_annotation(annotation: Any, default: Any) -> Any:
+        if isinstance(annotation, (OptionInfo, ArgumentInfo)):
+            if isinstance(default, (OptionInfo, ArgumentInfo)):
+                if default.default not in (
+                    inspect._empty,
+                    ...,
+                    None,  # type: ignore[comparison-overlap]
+                ):
+                    return type(default.default)
+                return str
+            if default not in (
+                inspect._empty,
+                ...,
+                None,  # type: ignore[comparison-overlap]
+            ):
+                return type(default)
+            return str
+        return annotation
+
     def command_wrapper(**cli_kwargs: object) -> object:
         handler_kwargs = bundle(cli_kwargs) if bundle is not None else cli_kwargs
         return handler(**handler_kwargs)
@@ -67,7 +88,7 @@ def wrap_command(
             spec.name,
             inspect.Parameter.KEYWORD_ONLY,
             default=spec.default,
-            annotation=spec.annotation,
+            annotation=_normalized_annotation(spec.annotation, spec.default),
         )
         for spec in option_specs
     ]

@@ -28,7 +28,9 @@ def test_mcp_wiring_smoke(fresh_gateway: StorageGateway) -> None:
         ],
     )
 
-    def _register_tools(_server: object, backend_arg: object) -> None:
+    def _register_tools(
+        _server: object, backend_arg: object, _cfg: ServingConfig | None = None
+    ) -> None:
         nonlocal called
         called = True
         if resource is not None and backend_arg is not resource.service:

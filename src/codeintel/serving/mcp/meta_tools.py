@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
@@ -21,7 +21,6 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.mcp.tool_builder import McpToolRegistrar
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations.catalog import (
-    Operation,
     build_dataset_meta,
     build_serving_dataflow_graph,
     iter_registry_operations,
@@ -88,6 +87,80 @@ class _MetaToolsContext:
         )
 
 
+class DatasetMetaLike(Protocol):
+    """Structural type for dataset metadata consumed by meta tools."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def table_key(self) -> str: ...
+
+    @property
+    def description(self) -> str: ...
+
+    @property
+    def schema_version(self) -> str | None: ...
+
+    @property
+    def family(self) -> str | None: ...
+
+    @property
+    def is_docs_view(self) -> bool: ...
+
+    @property
+    def is_read_only(self) -> bool: ...
+
+    @property
+    def default_limit(self) -> int: ...
+
+    @property
+    def max_limit(self) -> int: ...
+
+
+class OperationLike(Protocol):
+    """Structural type for operation metadata consumed by meta tools."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def category(self) -> str: ...
+
+    @property
+    def summary(self) -> str: ...
+
+    @property
+    def description(self) -> str | None: ...
+
+    @property
+    def http_method(self) -> str | None: ...
+
+    @property
+    def http_path(self) -> str | None: ...
+
+    @property
+    def tool_name(self) -> str | None: ...
+
+    @property
+    def output_model_name(self) -> str: ...
+
+    @property
+    def required_datasets(self) -> Iterable[str]: ...
+
+    @property
+    def required_graphs(self) -> Iterable[str]: ...
+
+    @property
+    def default_limit(self) -> int | None: ...
+
+    @property
+    def max_limit(self) -> int | None: ...
+
+
 def _node_payload(node: DataflowNode) -> DataflowNodePayload:
     return DataflowNodePayload(
         id=node.id,
@@ -148,9 +221,49 @@ def _reconstruct_path(
     return edges
 
 
-def _build_list_datasets_tool(
-    context: _MetaToolsContext, dataset_meta: Iterable[object]
-) -> Callable[[], object]:
+def _dataset_meta_payload(meta: DatasetMetaLike) -> DatasetMetaResponse:
+    try:
+        return DatasetMetaResponse(
+            id=meta.id,
+            name=meta.name,
+            table_key=meta.table_key,
+            description=meta.description,
+            schema_version=meta.schema_version,
+            family=meta.family,
+            is_docs_view=meta.is_docs_view,
+            is_read_only=meta.is_read_only,
+            default_limit=meta.default_limit,
+            max_limit=meta.max_limit,
+        )
+    except AttributeError as exc:
+        message = f"Dataset meta missing expected attribute: {exc}"
+        raise errors.invalid_argument(message) from exc
+
+
+def _operation_payload(spec: OperationLike, limits: BackendLimits) -> OperationMetaResponse:
+    try:
+        default_limit = spec.default_limit or limits.default_limit
+        max_limit = spec.max_limit or limits.max_rows_per_call
+        return OperationMetaResponse(
+            id=spec.id,
+            category=spec.category,
+            summary=spec.summary,
+            description=spec.description,
+            http_method=spec.http_method,
+            http_path=spec.http_path,
+            tool_name=spec.tool_name,
+            output_model=spec.output_model_name,
+            required_datasets=list(spec.required_datasets),
+            required_graphs=list(spec.required_graphs),
+            default_limit=default_limit,
+            max_limit=max_limit,
+        )
+    except AttributeError as exc:
+        message = f"Operation meta missing expected attribute: {exc}"
+        raise errors.invalid_argument(message) from exc
+
+
+def _build_list_datasets_tool(dataset_meta: Iterable[DatasetMetaLike]) -> Callable[[], object]:
     @_wrap
     def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
         """List dataset metadata and serving limits via MCP.
@@ -160,27 +273,13 @@ def _build_list_datasets_tool(
         list[dict[str, object]] | dict[str, ProblemDetail]
             Serialized DatasetMetaResponse payloads or a ProblemDetail on error.
         """
-        return [
-            DatasetMetaResponse(
-                id=meta.id,
-                name=meta.name,
-                table_key=meta.table_key,
-                description=meta.description,
-                schema_version=meta.schema_version,
-                family=meta.family,
-                is_docs_view=meta.is_docs_view,
-                is_read_only=meta.is_read_only,
-                default_limit=meta.default_limit,
-                max_limit=meta.max_limit,
-            ).model_dump()
-            for meta in dataset_meta
-        ]
+        return [_dataset_meta_payload(meta).model_dump() for meta in dataset_meta]
 
     return _tool
 
 
 def _build_list_operations_tool(
-    context: _MetaToolsContext, operations: Iterable[Operation]
+    context: _MetaToolsContext, operations: Iterable[OperationLike]
 ) -> Callable[[], object]:
     @_wrap
     def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
@@ -191,26 +290,7 @@ def _build_list_operations_tool(
         list[dict[str, object]] | dict[str, ProblemDetail]
             Serialized OperationMetaResponse payloads or a ProblemDetail on error.
         """
-        payloads: list[OperationMetaResponse] = []
-        for spec in operations:
-            default_limit = spec.default_limit or context.limits.default_limit
-            max_limit = spec.max_limit or context.limits.max_rows_per_call
-            payloads.append(
-                OperationMetaResponse(
-                    id=spec.id,
-                    category=spec.category,
-                    summary=spec.summary,
-                    description=spec.description,
-                    http_method=spec.http_method,
-                    http_path=spec.http_path,
-                    tool_name=spec.tool_name,
-                    output_model=spec.output_model_name,
-                    required_datasets=list(spec.required_datasets),
-                    required_graphs=list(spec.required_graphs),
-                    default_limit=default_limit,
-                    max_limit=max_limit,
-                )
-            )
+        payloads = [_operation_payload(spec, context.limits) for spec in operations]
         return [payload.model_dump() for payload in payloads]
 
     return _tool
@@ -376,11 +456,11 @@ def _build_explain_path_tool(context: _MetaToolsContext) -> Callable[[str, str, 
 class MetaToolOptions:
     """Optional overrides for meta tool registration."""
 
-    operations: Iterable[Operation] | None = None
+    operations: Iterable[OperationLike] | None = None
     dataflow_builder: Callable[[], tuple[list[DataflowNode], list[DataflowEdge]]] = (
         build_serving_dataflow_graph
     )
-    dataset_meta_builder: Callable[[QueryService, BackendLimits], Iterable[object]] = (
+    dataset_meta_builder: Callable[[QueryService, BackendLimits], Iterable[DatasetMetaLike]] = (
         build_dataset_meta
     )
 
@@ -399,7 +479,7 @@ def register_meta_tools(
     )
     dataset_meta = list(opts.dataset_meta_builder(context.service, context.limits))
     operations = list(opts.operations or iter_registry_operations())
-    mcp.tool()(_build_list_datasets_tool(context, dataset_meta))
+    mcp.tool()(_build_list_datasets_tool(dataset_meta))
     mcp.tool()(_build_list_operations_tool(context, operations))
     mcp.tool()(_build_list_dataflow_graph_tool(context))
     mcp.tool()(_build_explain_dataset_tool(context))

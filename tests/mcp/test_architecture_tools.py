@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
 import pytest
 
+from codeintel.graphs.core.registry import (
+    DependencyPolicy,
+    SelectionPolicy,
+    reset_graph_registry,
+)
 from codeintel.serving import domain_models as dm
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp import architecture_tools, errors
@@ -15,6 +20,7 @@ from codeintel.serving.mcp.serialization import ResponseFactory
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.mcp import RecordingMcp
 
 
@@ -134,6 +140,72 @@ def _make_operation(
         default_limit=None,
         max_limit=None,
     )
+
+
+def _make_default_operations() -> list[Operation]:
+    """Build a complete set of operations for architecture tool registration.
+
+    Returns
+    -------
+    list[Operation]
+        Operations covering graph planning and architecture retrieval tools.
+    """
+    return [
+        _make_operation(
+            "graph.plugins.plan",
+            "graph_plugin_plan",
+            "graph_plugin_plan",
+            "GraphPlanResponse",
+        ),
+        _make_operation(
+            "architecture.function",
+            "get_function_architecture",
+            "get_function_architecture",
+            "FunctionArchitectureResponse",
+        ),
+        _make_operation(
+            "architecture.module",
+            "get_module_architecture",
+            "get_module_architecture",
+            "ModuleArchitectureResponse",
+        ),
+        _make_operation(
+            "subsystems.list",
+            "list_subsystems",
+            "list_subsystems",
+            "SubsystemSummaryResponse",
+        ),
+        _make_operation(
+            "subsystems.module_memberships",
+            "get_module_subsystems",
+            "get_module_subsystems",
+            "ModuleSubsystemResponse",
+        ),
+        _make_operation(
+            "ide.hints",
+            "get_file_hints",
+            "get_file_hints",
+            "FileHintsResponse",
+        ),
+        _make_operation(
+            "subsystems.detail",
+            "get_subsystem_modules",
+            "get_subsystem_modules",
+            "SubsystemModulesResponse",
+        ),
+        _make_operation(
+            "subsystems.search",
+            "search_subsystems",
+            "search_subsystems",
+            "SubsystemSearchResponse",
+        ),
+        _make_operation(
+            "subsystems.summarize",
+            "summarize_subsystem",
+            "summarize_subsystem",
+            "SubsystemModulesResponse",
+        ),
+    ]
 
 
 class _Backend:
@@ -502,3 +574,215 @@ def test_architecture_tools_type_error_matches_backend_signature() -> None:
             module="pkg.mod"
         )
     expect_true(get_current_request_context() is None)
+
+
+def test_graph_plugin_plan_lenient_selection_skips_unknown() -> None:
+    """Lenient selection should skip unknown plugins in MCP planning."""
+    reset_graph_registry()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    architecture_tools.register_architecture_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=options,
+    )
+    plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+    result = cast("Mapping[str, object]", plan_tool(names=["mcp_missing_plugin"]))
+    skipped_entries = cast("tuple[_GraphPlanSkipped, ...]", result["skipped_plugins"])
+    skipped = {entry.name: entry.reason for entry in skipped_entries}
+    expect_equal(skipped["mcp_missing_plugin"], "missing_graph")
+
+
+@pytest.mark.parametrize(
+    ("selection_policy", "expected_action", "expected_reason"),
+    [
+        (SelectionPolicy.LENIENT, "skip", "missing_graph"),
+        (SelectionPolicy.STRICT, "raise", "is not registered"),
+    ],
+)
+def test_graph_plugin_plan_selection_policy_behavior(
+    selection_policy: SelectionPolicy, expected_action: str, expected_reason: str
+) -> None:
+    """Selection policy controls unknown plugin handling."""
+    reset_graph_registry()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    architecture_tools.register_architecture_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=options,
+    )
+    plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+    if expected_action == "raise":
+        with pytest.raises(ValueError, match=expected_reason):
+            plan_tool(
+                names=["mcp_missing_plugin"],
+                planning={"selection_policy": selection_policy.value},
+            )
+        return
+
+    result = cast(
+        "Mapping[str, object]",
+        plan_tool(
+            names=["mcp_missing_plugin"],
+            planning={"selection_policy": selection_policy.value},
+        ),
+    )
+    skipped_entries = cast("tuple[_GraphPlanSkipped, ...]", result["skipped_plugins"])
+    skipped = {entry.name: entry.reason for entry in skipped_entries}
+    expect_equal(skipped["mcp_missing_plugin"], expected_reason)
+
+
+def test_graph_plugin_plan_dependency_skip_records_missing() -> None:
+    """Dependency skip policy should record missing dependencies in MCP planning."""
+    reset_graph_registry()
+    main_name = "mcp_main_missing_dep"
+    missing_dep = "mcp_missing_dep"
+    plugin = GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    with plugin_registrar([plugin]):
+        architecture_tools.register_architecture_tools(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            config=None,
+            options=options,
+        )
+        plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+        result = cast(
+            "Mapping[str, object]",
+            plan_tool(
+                names=[main_name],
+                planning={"dependency_policy": DependencyPolicy.SKIP.value},
+            ),
+        )
+
+    expect_true(isinstance(result, dict))
+    skipped_entries = cast("tuple[_GraphPlanSkipped, ...]", result["skipped_plugins"])
+    skipped = {entry.name: entry.reason for entry in skipped_entries}
+    dep_graph = cast("Mapping[str, tuple[str, ...]]", result["dep_graph"])
+    expect_equal(skipped[missing_dep], "missing_dependency")
+    expect_true(missing_dep in dep_graph)
+
+
+def test_graph_plugin_plan_dependency_strict_raises_missing() -> None:
+    """Strict dependency policy should raise when a dependency is missing."""
+    reset_graph_registry()
+    main_name = "mcp_main_strict_missing_dep"
+    missing_dep = "mcp_strict_missing_dep"
+    plugin = GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    with plugin_registrar([plugin]):
+        architecture_tools.register_architecture_tools(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            config=None,
+            options=options,
+        )
+        plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+        with pytest.raises(ValueError, match=missing_dep):
+            plan_tool(
+                names=[main_name],
+                planning={
+                    "dependency_policy": DependencyPolicy.STRICT.value,
+                    "allow_missing_dependencies": False,
+                },
+            )
+
+
+def test_graph_plugin_plan_validation_style_strict_failure() -> None:
+    """Strict selection/dependency should surface unknown plugin errors (no stub masking)."""
+    reset_graph_registry()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    architecture_tools.register_architecture_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=options,
+    )
+    plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+    with pytest.raises(ValueError, match="not registered"):
+        plan_tool(
+            names=["mcp_unknown_validation"],
+            planning={
+                "selection_policy": SelectionPolicy.STRICT.value,
+                "dependency_policy": DependencyPolicy.STRICT.value,
+                "allow_missing_dependencies": False,
+            },
+        )
+
+
+def test_graph_plugin_plan_parsing_defaults_lenient_skip() -> None:
+    """Default planning options (lenient) should skip unknown plugins."""
+    reset_graph_registry()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    architecture_tools.register_architecture_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=options,
+    )
+    plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+    result = cast("Mapping[str, object]", plan_tool(names=["mcp_policy_default_missing"]))
+    skipped_entries = cast("tuple[_GraphPlanSkipped, ...]", result["skipped_plugins"])
+    skipped = {entry.name: entry.reason for entry in skipped_entries}
+    expect_equal(skipped["mcp_policy_default_missing"], "missing_graph")
+
+
+def test_graph_plugin_plan_parsing_strict_selection_raises() -> None:
+    """Strict selection override should raise for unknown plugins."""
+    reset_graph_registry()
+    options = architecture_tools.ArchitectureToolOptions(
+        operations=_make_default_operations(),
+        model_resolver=_model_resolver,
+    )
+    backend = _Backend()
+    mcp = RecordingMcp()
+
+    architecture_tools.register_architecture_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        config=None,
+        options=options,
+    )
+    plan_tool = cast("Callable[..., dict[str, object]]", mcp.registry["graph_plugin_plan"])
+    with pytest.raises(ValueError, match="is not registered"):
+        plan_tool(
+            names=["mcp_policy_strict_missing"],
+            planning={"selection_policy": SelectionPolicy.STRICT.value},
+        )
