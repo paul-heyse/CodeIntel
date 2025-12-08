@@ -11,7 +11,7 @@ import pytest
 
 from codeintel.analytics.compute.data_models import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import GatewayFactory
@@ -52,7 +52,7 @@ def gateway() -> Iterator[StorageGateway]:
 def test_compute_data_model_usage_records_multiple_kinds(gateway: StorageGateway) -> None:
     """Classify model interactions across create/update/serialize/delete operations."""
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=Path.cwd()
+        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path.cwd()),
     ).data_model_usage(max_examples_per_usage=2)
 
     con = gateway.con

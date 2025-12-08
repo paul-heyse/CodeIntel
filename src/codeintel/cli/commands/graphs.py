@@ -47,7 +47,7 @@ class PlanMode(Enum):
 PlanOpt = Annotated[
     PlanMode,
     typer.Option(
-        PlanMode.LIST,
+        ...,
         "--plan",
         flag_value=PlanMode.PLAN,
         help="Show planned execution order plus dependency graph and metadata.",

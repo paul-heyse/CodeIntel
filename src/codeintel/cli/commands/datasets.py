@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,6 +41,7 @@ from codeintel.cli.commands._common import (
     open_gateway_from_config,
     setup_logging,
 )
+from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
 from codeintel.export.validate_exports import (
     DEFAULT_SCHEMA_ROOT,
     validate_files,
@@ -345,7 +347,7 @@ SchemaDirOpt = Annotated[
 SampleRowsFlag = Annotated[
     SamplingMode,
     typer.Option(
-        SamplingMode.DISABLED,
+        ...,
         "--sample-rows",
         flag_value=SamplingMode.ENABLED,
         help="Validate a sample of rows against JSON Schemas.",
@@ -356,7 +358,7 @@ SampleRowsFlag = Annotated[
 SampleSizeOpt = Annotated[
     int,
     typer.Option(
-        50,
+        ...,
         "--sample-size",
         help="Number of rows to sample per dataset.",
     ),
@@ -365,7 +367,7 @@ SampleSizeOpt = Annotated[
 DocsViewFilterOpt = Annotated[
     str,
     typer.Option(
-        "include",
+        ...,
         "--docs-view",
         help="Filter docs.* views: include, exclude, or only.",
     ),
@@ -374,7 +376,7 @@ DocsViewFilterOpt = Annotated[
 ReadOnlyFilterOpt = Annotated[
     str,
     typer.Option(
-        "include",
+        ...,
         "--read-only",
         help="Filter read-only datasets: include, exclude, or only.",
     ),
@@ -383,7 +385,7 @@ ReadOnlyFilterOpt = Annotated[
 MaxDescriptionOpt = Annotated[
     int,
     typer.Option(
-        80,
+        ...,
         "--max-description",
         help="Maximum description length before truncation.",
     ),
@@ -392,7 +394,7 @@ MaxDescriptionOpt = Annotated[
 BaselineOpt = Annotated[
     Path | None,
     typer.Option(
-        None,
+        ...,
         "--baseline",
         help="Path to JSON baseline from `codeintel datasets snapshot`.",
     ),
@@ -410,7 +412,7 @@ OutputOpt = Annotated[
 OutputOptional = Annotated[
     Path | None,
     typer.Option(
-        None,
+        ...,
         "--output",
         help="Optional output file path.",
     ),
@@ -419,7 +421,7 @@ OutputOptional = Annotated[
 AgainstRefOpt = Annotated[
     str | None,
     typer.Option(
-        None,
+        ...,
         "--against-ref",
         help="Git ref to load baseline snapshot from.",
     ),
@@ -428,7 +430,7 @@ AgainstRefOpt = Annotated[
 BaselinePathOpt = Annotated[
     Path,
     typer.Option(
-        Path("build/dataset_specs.json"),
+        ...,
         "--baseline-path",
         help="Path of snapshot inside the git ref.",
     ),
@@ -437,7 +439,7 @@ BaselinePathOpt = Annotated[
 OutputDirOpt = Annotated[
     Path,
     typer.Option(
-        Path("build/catalog"),
+        ...,
         "--output-dir",
         help="Directory to write output artifacts.",
     ),
@@ -446,7 +448,7 @@ OutputDirOpt = Annotated[
 DatasetsFilterOpt = Annotated[
     list[str] | None,
     typer.Option(
-        None,
+        ...,
         "--datasets",
         help="Dataset names to include (defaults to all).",
     ),
@@ -455,7 +457,7 @@ DatasetsFilterOpt = Annotated[
 SampleRowsCountOpt = Annotated[
     int,
     typer.Option(
-        3,
+        ...,
         "--sample-rows",
         help="Number of sample rows per dataset (0 to skip).",
     ),
@@ -464,7 +466,7 @@ SampleRowsCountOpt = Annotated[
 SampleRowsStrictFlag = Annotated[
     SamplingStrictness,
     typer.Option(
-        SamplingStrictness.LENIENT,
+        ...,
         "--sample-rows-strict",
         flag_value=SamplingStrictness.STRICT,
         help="Fail if sampling cannot be performed.",
@@ -475,7 +477,7 @@ SampleRowsStrictFlag = Annotated[
 ValidationModeOpt = Annotated[
     ExportValidationMode,
     typer.Option(
-        ExportValidationMode.REQUIRED,
+        ...,
         "--validation",
         help="Validation strategy for exports.",
         case_sensitive=False,
@@ -485,7 +487,7 @@ ValidationModeOpt = Annotated[
 MacroRequirementOpt = Annotated[
     MacroRequirement,
     typer.Option(
-        MacroRequirement.REQUIRE_NORMALIZED,
+        ...,
         "--macro-requirement",
         help="Requirement policy for normalized macros.",
         case_sensitive=False,
@@ -495,7 +497,7 @@ MacroRequirementOpt = Annotated[
 SchemasFilterOpt = Annotated[
     list[str] | None,
     typer.Option(
-        None,
+        ...,
         "--schemas",
         help="Schema names to include (repeat for multiple).",
     ),
@@ -614,7 +616,7 @@ SpecsSnapshotOpt = Annotated[
 DryRunModeOpt = Annotated[
     DryRunMode,
     typer.Option(
-        DryRunMode.EXECUTE,
+        ...,
         "--dry-run",
         flag_value=DryRunMode.DRY_RUN,
         help="Plan without writing files.",
@@ -625,7 +627,7 @@ DryRunModeOpt = Annotated[
 OverwritePolicyOpt = Annotated[
     OverwritePolicy,
     typer.Option(
-        OverwritePolicy.ERROR,
+        ...,
         "--overwrite-policy",
         help="Behavior when scaffold outputs already exist.",
         case_sensitive=False,
@@ -635,7 +637,7 @@ OverwritePolicyOpt = Annotated[
 BootstrapSnippetOpt = Annotated[
     BootstrapSnippet,
     typer.Option(
-        BootstrapSnippet.SKIP,
+        ...,
         "--emit-bootstrap-snippet",
         flag_value=BootstrapSnippet.EMIT,
         help="Write combined bootstrap snippet.",
@@ -646,7 +648,7 @@ BootstrapSnippetOpt = Annotated[
 RegistryCheckOpt = Annotated[
     RegistryCheck,
     typer.Option(
-        RegistryCheck.DISABLED,
+        ...,
         "--check-registry",
         flag_value=RegistryCheck.ENABLED,
         help="Validate against live registry for clashes.",
@@ -1136,44 +1138,55 @@ def _open_gateway(
 
 
 # -----------------------------------------------------------------------------
-# Commands
-# -----------------------------------------------------------------------------
+# Commands and wrappers
+
+_RUNTIME_SPECS = [
+    OptionSpec("project_root", Path | None, ProjectRootOpt),
+    OptionSpec("repo", RepoOpt, None),
+    OptionSpec("commit", CommitOpt, None),
+    OptionSpec("repo_root", RepoRootOpt, None),
+    OptionSpec("db_path", DbPathOpt, None),
+    OptionSpec("build_dir", BuildDirOpt, None),
+]
 
 
-@datasets_ext_app.command("lint")
-def datasets_lint(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    schema_dir: SchemaDirOpt = Path("src/codeintel/config/schemas/export"),
-    sample_rows: SampleRowsFlag = SamplingMode.DISABLED,
-    verbose: int = VerboseOpt,
-) -> None:
+def _runtime_from_kwargs(cli_kwargs: Mapping[str, object]) -> RuntimeOptions:
+    project_root = cast("Path | None", cli_kwargs.get("project_root"))
+    repo = cast("str | None", cli_kwargs.get("repo"))
+    commit = cast("str | None", cli_kwargs.get("commit"))
+    repo_root = cast("Path | None", cli_kwargs.get("repo_root"))
+    db_path = cast("Path | None", cli_kwargs.get("db_path"))
+    build_dir = cast("Path | None", cli_kwargs.get("build_dir"))
+    project = _project_selection(
+        project_root,
+        repo,
+        commit,
+        repo_root,
+    )
+    build = _build_selection(
+        db_path,
+        build_dir,
+    )
+    return _runtime_options(project, build)
+
+
+def _verbose_from_kwargs(cli_kwargs: Mapping[str, object]) -> int:
+    return int(cast("int | str | None", cli_kwargs.get("verbose", 0)) or 0)
+
+
+def datasets_lint_handler(runtime: RuntimeOptions, lint: LintOptions, verbose: int) -> None:
     """Validate dataset contract health.
-
-    Checks dataset contracts for schema consistency and integrity issues.
 
     Raises
     ------
     Exit
-        When validation fails or row sampling is requested in this command.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Validate contracts
-        codeintel datasets lint
-
-        # Validate with row sampling
-        codeintel datasets lint --sample-rows
+        When validation fails or sampling is requested here.
     """
     setup_logging(verbose)
-
-    lint_options = LintOptions(schema_dir=schema_dir, sampling=sample_rows)
-
     _, gateway = _open_gateway(runtime, read_only=True)
-    issues = collect_contract_issues(gateway.con, schema_base_dir=lint_options.schema_dir)
+    issues = collect_contract_issues(gateway.con, schema_base_dir=lint.schema_dir)
 
-    if lint_options.sampling == SamplingMode.ENABLED:
+    if lint.sampling == SamplingMode.ENABLED:
         sys.stderr.write("Row sampling requested; run `codeintel datasets conformance` instead.\n")
         raise typer.Exit(code=2)
 
@@ -1185,29 +1198,41 @@ def datasets_lint(
     typer.secho("Dataset contract validation passed.", fg=typer.colors.GREEN)
 
 
-@datasets_ext_app.command("list")
-def datasets_list(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    filters: Annotated[ListFilters, typer.Depends(_list_filters_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_lint(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    lint = LintOptions(
+        schema_dir=cast(
+            "Path", cli_kwargs.get("schema_dir", Path("src/codeintel/config/schemas/export"))
+        ),
+        sampling=cast("SamplingMode", cli_kwargs.get("sample_rows", SamplingMode.DISABLED)),
+    )
+    return {"runtime": runtime, "lint": lint, "verbose": _verbose_from_kwargs(cli_kwargs)}
+
+
+_LINT_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("schema_dir", SchemaDirOpt, Path("src/codeintel/config/schemas/export")),
+    OptionSpec("sample_rows", SampleRowsFlag, SamplingMode.DISABLED),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+
+datasets_lint = datasets_ext_app.command("lint")(
+    wrap_command(
+        datasets_lint_handler,
+        _LINT_SPECS,
+        bundle=_bundle_lint,
+        name="datasets_lint",
+    )
+)
+
+
+def datasets_list_handler(
+    runtime: RuntimeOptions,
+    filters: ListFilters,
+    verbose: int,
 ) -> None:
-    """List datasets with capabilities and optional filters.
-
-    Shows datasets with their capabilities, families, and descriptions.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # List all datasets
-        codeintel datasets list
-
-        # Exclude docs views
-        codeintel datasets list --docs-view exclude
-
-        # Only show read-only datasets
-        codeintel datasets list --read-only only
-    """
+    """List datasets with capabilities and optional filters."""
     setup_logging(verbose)
 
     _, gateway = _open_gateway(runtime, read_only=True)
@@ -1256,24 +1281,40 @@ def datasets_list(
         sys.stdout.write(_fmt(row) + "\n")
 
 
-@datasets_ext_app.command("snapshot")
-def datasets_snapshot(
-    output: OutputOpt,
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_list(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    filters = ListFilters(
+        docs_view=cast("str", cli_kwargs.get("docs_view", "include")),
+        read_only=cast("str", cli_kwargs.get("read_only", "include")),
+        max_description=int(cast("int | str | None", cli_kwargs.get("max_description", 80)) or 80),
+    )
+    return {"runtime": runtime, "filters": filters, "verbose": _verbose_from_kwargs(cli_kwargs)}
+
+
+_LIST_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("docs_view", DocsViewFilterOpt, "include"),
+    OptionSpec("read_only", ReadOnlyFilterOpt, "include"),
+    OptionSpec("max_description", MaxDescriptionOpt, 80),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_list = datasets_ext_app.command("list")(
+    wrap_command(
+        datasets_list_handler,
+        _LIST_SPECS,
+        bundle=_bundle_list,
+        name="datasets_list",
+    )
+)
+
+
+def datasets_snapshot_handler(
+    runtime: RuntimeOptions,
+    output: Path,
+    verbose: int,
 ) -> None:
-    """Write current dataset specs to a JSON snapshot file.
-
-    Creates a JSON file with all current dataset specifications for
-    use with the diff command.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Create snapshot
-        codeintel datasets snapshot --output build/dataset_specs.json
-    """
+    """Write current dataset specs to a JSON snapshot file."""
     setup_logging(verbose)
 
     _, gateway = _open_gateway(runtime, read_only=True)
@@ -1283,31 +1324,42 @@ def datasets_snapshot(
     typer.secho(f"Wrote dataset specs to {output}", fg=typer.colors.GREEN)
 
 
-@datasets_ext_app.command("diff")
-def datasets_diff(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    options: Annotated[DiffOptions, typer.Depends(_diff_options_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_snapshot(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    return {
+        "runtime": runtime,
+        "output": cast("Path", cli_kwargs["output"]),
+        "verbose": _verbose_from_kwargs(cli_kwargs),
+    }
+
+
+_SNAPSHOT_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("output", OutputOpt, OutputOpt),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_snapshot = datasets_ext_app.command("snapshot")(
+    wrap_command(
+        datasets_snapshot_handler,
+        _SNAPSHOT_SPECS,
+        bundle=_bundle_snapshot,
+        name="datasets_snapshot",
+    )
+)
+
+
+def datasets_diff_handler(
+    runtime: RuntimeOptions,
+    options: DiffOptions,
+    verbose: int,
 ) -> None:
     """Diff current dataset specs against a baseline.
-
-    Compares current dataset specifications with a baseline snapshot
-    to identify added, removed, or changed datasets.
 
     Raises
     ------
     Exit
-        When inputs are invalid or differences are detected.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Diff against file
-        codeintel datasets diff --baseline build/baseline.json
-
-        # Diff against git ref
-        codeintel datasets diff --against-ref main
+        When inputs are invalid or differences are found.
     """
     setup_logging(verbose)
 
@@ -1351,31 +1403,49 @@ def datasets_diff(
     raise typer.Exit(code=1)
 
 
-@datasets_ext_app.command("conformance")
-def datasets_conformance(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    options: Annotated[ConformanceOptions, typer.Depends(_conformance_options_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_diff(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    options = DiffOptions(
+        baseline=cast("Path | None", cli_kwargs.get("baseline")),
+        output=cast("Path | None", cli_kwargs.get("output")),
+        against_ref=cast("str | None", cli_kwargs.get("against_ref")),
+        baseline_path=cast(
+            "Path", cli_kwargs.get("baseline_path", Path("build/dataset_specs.json"))
+        ),
+    )
+    return {"runtime": runtime, "options": options, "verbose": _verbose_from_kwargs(cli_kwargs)}
+
+
+_DIFF_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("baseline", BaselineOpt, None),
+    OptionSpec("output", OutputOptional, None),
+    OptionSpec("against_ref", AgainstRefOpt, None),
+    OptionSpec("baseline_path", BaselinePathOpt, Path("build/dataset_specs.json")),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_diff = datasets_ext_app.command("diff")(
+    wrap_command(
+        datasets_diff_handler,
+        _DIFF_SPECS,
+        bundle=_bundle_diff,
+        name="datasets_diff",
+    )
+)
+
+
+def datasets_conformance_handler(
+    runtime: RuntimeOptions,
+    options: ConformanceOptions,
+    verbose: int,
 ) -> None:
     """Run full dataset conformance checks.
-
-    Includes contract validation and optional row sampling against
-    JSON schemas.
 
     Raises
     ------
     Exit
         When conformance fails or cannot be executed.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Run conformance checks
-        codeintel datasets conformance
-
-        # Include row sampling
-        codeintel datasets conformance --sample-rows --sample-size 100
     """
     setup_logging(verbose)
 
@@ -1401,77 +1471,129 @@ def datasets_conformance(
     typer.secho("Dataset conformance passed.", fg=typer.colors.GREEN)
 
 
-@datasets_ext_app.command("generate-schemas")
-def datasets_generate_schemas(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    export_options: Annotated[DatasetExportOptions, typer.Depends(_dataset_export_options_dep)],
-    schema_options: Annotated[GenerateSchemasOptions, typer.Depends(_generate_schemas_options_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_conformance(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    options = ConformanceOptions(
+        schema_dir=cast(
+            "Path", cli_kwargs.get("schema_dir", Path("src/codeintel/config/schemas/export"))
+        ),
+        sampling=cast("SamplingMode", cli_kwargs.get("sample_rows", SamplingMode.DISABLED)),
+        sample_size=int(cast("int | str | None", cli_kwargs.get("sample_size", 50)) or 50),
+    )
+    return {"runtime": runtime, "options": options, "verbose": _verbose_from_kwargs(cli_kwargs)}
+
+
+_CONFORMANCE_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("schema_dir", SchemaDirOpt, Path("src/codeintel/config/schemas/export")),
+    OptionSpec("sample_rows", SampleRowsFlag, SamplingMode.DISABLED),
+    OptionSpec("sample_size", SampleSizeOpt, 50),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_conformance = datasets_ext_app.command("conformance")(
+    wrap_command(
+        datasets_conformance_handler,
+        _CONFORMANCE_SPECS,
+        bundle=_bundle_conformance,
+        name="datasets_conformance",
+    )
+)
+
+
+def datasets_generate_schemas_handler(
+    runtime: RuntimeOptions,
+    export: DatasetExportOptions,
+    schema_opts: GenerateSchemasOptions,
+    verbose: int,
 ) -> None:
-    """Generate export JSON Schemas from TypedDict row models.
-
-    Creates JSON Schema files for datasets that have row bindings.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Generate all schemas
-        codeintel datasets generate-schemas
-
-        # Generate specific datasets
-        codeintel datasets generate-schemas --datasets functions --datasets modules
-    """
+    """Generate export JSON Schemas from TypedDict row models."""
     setup_logging(verbose)
 
     _, gateway = _open_gateway(runtime, read_only=True)
     registry = load_dataset_registry(gateway.con)
-    include = set(export_options.datasets) if export_options.datasets else None
+    include = set(export.datasets) if export.datasets else None
     written = generate_export_schemas(
         registry,
-        output_dir=schema_options.output_dir,
+        output_dir=schema_opts.output_dir,
         include_datasets=include,
     )
     if not written:
         sys.stdout.write("No schemas generated (no matching datasets with row bindings).\n")
         return
-    if export_options.output_format is OutputFormat.JSON:
+    if export.output_format is OutputFormat.JSON:
         payload = {
             "written": [str(path) for path in written],
             "count": len(written),
-            "output_dir": str(schema_options.output_dir),
+            "output_dir": str(schema_opts.output_dir),
         }
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return
-    typer.secho(
-        f"Wrote {len(written)} schemas to {schema_options.output_dir}", fg=typer.colors.GREEN
+    typer.secho(f"Wrote {len(written)} schemas to {schema_opts.output_dir}", fg=typer.colors.GREEN)
+
+
+def _bundle_generate_schemas(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    export = DatasetExportOptions(
+        validation=cast(
+            "ExportValidationMode",
+            cli_kwargs.get("validation", ExportValidationMode.REQUIRED),
+        ),
+        macro_requirement=cast(
+            "MacroRequirement",
+            cli_kwargs.get("macro_requirement", MacroRequirement.REQUIRE_NORMALIZED),
+        ),
+        schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
+        datasets=cast("list[str] | None", cli_kwargs.get("datasets")),
+        output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
+        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
     )
+    schema_opts = GenerateSchemasOptions(
+        output_dir=cast(
+            "Path", cli_kwargs.get("output_dir", Path("src/codeintel/config/schemas/export"))
+        ),
+    )
+    return {
+        "runtime": runtime,
+        "export": export,
+        "schema_opts": schema_opts,
+        "verbose": _verbose_from_kwargs(cli_kwargs),
+    }
 
 
-@datasets_ext_app.command("catalog")
-def datasets_catalog(
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    options: Annotated[CatalogOptions, typer.Depends(_catalog_options_dep)],
-    verbose: int = VerboseOpt,
+_GENERATE_SCHEMAS_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("output_dir", OutputDirOpt, Path("src/codeintel/config/schemas/export")),
+    OptionSpec("validation", ValidationModeOpt, ExportValidationMode.REQUIRED),
+    OptionSpec("macro_requirement", MacroRequirementOpt, MacroRequirement.REQUIRE_NORMALIZED),
+    OptionSpec("schemas", SchemasFilterOpt, None),
+    OptionSpec("datasets", DatasetsFilterOpt, None),
+    OptionSpec("output_format", OutputFormat, OutputFormatOpt),
+    OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_generate_schemas = datasets_ext_app.command("generate-schemas")(
+    wrap_command(
+        datasets_generate_schemas_handler,
+        _GENERATE_SCHEMAS_SPECS,
+        bundle=_bundle_generate_schemas,
+        name="datasets_generate_schemas",
+    )
+)
+
+
+def datasets_catalog_handler(
+    runtime: RuntimeOptions,
+    options: CatalogOptions,
+    verbose: int,
 ) -> None:
     """Generate Markdown/HTML dataset catalog.
-
-    Creates documentation artifacts from the dataset registry.
 
     Raises
     ------
     Exit
-        When required assets are missing in strict mode or catalog generation fails.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Generate catalog
-        codeintel datasets catalog
-
-        # Skip row sampling
-        codeintel datasets catalog --sample-rows 0
+        When required assets are missing or generation fails.
     """
     setup_logging(verbose)
 
@@ -1522,34 +1644,51 @@ def datasets_catalog(
     typer.secho(f"Wrote catalog: {md}, {html}", fg=typer.colors.GREEN)
 
 
-@datasets_ext_app.command("scaffold")
-def datasets_scaffold(
-    name: ScaffoldNameArg,
-    runtime: Annotated[RuntimeOptions, typer.Depends(_runtime_options_dep)],
-    options: Annotated[ScaffoldCliOptions, typer.Depends(_scaffold_options_dep)],
-    verbose: int = VerboseOpt,
+def _bundle_catalog(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    options = CatalogOptions(
+        output_dir=cast("Path", cli_kwargs.get("output_dir", Path("build/catalog"))),
+        sample_rows_count=int(
+            cast("int | str | None", cli_kwargs.get("sample_rows_count", 3)) or 3
+        ),
+        sample_rows_strict=cast(
+            "SamplingStrictness",
+            cli_kwargs.get("sample_rows_strict", SamplingStrictness.LENIENT),
+        ),
+    )
+    return {"runtime": runtime, "options": options, "verbose": _verbose_from_kwargs(cli_kwargs)}
+
+
+_CATALOG_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("output_dir", OutputDirOpt, Path("build/catalog")),
+    OptionSpec("sample_rows_count", SampleRowsCountOpt, 3),
+    OptionSpec("sample_rows_strict", SampleRowsStrictFlag, SamplingStrictness.LENIENT),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_catalog = datasets_ext_app.command("catalog")(
+    wrap_command(
+        datasets_catalog_handler,
+        _CATALOG_SPECS,
+        bundle=_bundle_catalog,
+        name="datasets_catalog",
+    )
+)
+
+
+def datasets_scaffold_handler(
+    name: str,
+    runtime: RuntimeOptions,
+    options: ScaffoldCliOptions,
+    verbose: int,
 ) -> None:
     """Create a new dataset scaffold.
-
-    Generates TypedDict, schema, bindings, and metadata files for a new dataset.
 
     Raises
     ------
     Exit
-        When validation fails or conflicts are detected (exit code 0 when skipped).
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Create basic scaffold
-        codeintel datasets scaffold my_dataset
-
-        # Create view scaffold
-        codeintel datasets scaffold my_view --kind view
-
-        # Dry run
-        codeintel datasets scaffold my_dataset --dry-run
+        When conflicts are detected or validation fails.
     """
     setup_logging(verbose)
 
@@ -1584,9 +1723,91 @@ def datasets_scaffold(
         typer.secho("Scaffold created successfully.", fg=typer.colors.GREEN)
 
 
-# -----------------------------------------------------------------------------
-# validate-files command
-# -----------------------------------------------------------------------------
+def _bundle_scaffold(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    runtime = _runtime_from_kwargs(cli_kwargs)
+    metadata = _scaffold_metadata_options(
+        kind=cast("str", cli_kwargs.get("kind", "table")),
+        table_key=cast("str | None", cli_kwargs.get("table_key")),
+        owner=cast("str | None", cli_kwargs.get("owner")),
+        freshness_sla=cast("str | None", cli_kwargs.get("freshness_sla")),
+        retention_policy=cast("str | None", cli_kwargs.get("retention_policy")),
+    )
+    schema = _scaffold_schema_options(
+        schema_version=cast("str", cli_kwargs.get("schema_version", "1")),
+        validation_profile=cast("str", cli_kwargs.get("validation_profile", "strict")),
+        schema_id=cast("str | None", cli_kwargs.get("schema_id")),
+    )
+    files = _scaffold_file_options(
+        jsonl_filename=cast("str | None", cli_kwargs.get("jsonl_filename")),
+        parquet_filename=cast("str | None", cli_kwargs.get("parquet_filename")),
+        stable_id=cast("str | None", cli_kwargs.get("stable_id")),
+    )
+    scaffold = _build_dataset_scaffold_options(
+        output_dir=cast("Path", cli_kwargs.get("output_dir", Path("build/dataset_scaffolds"))),
+        overwrite_policy=cast(
+            "OverwritePolicy", cli_kwargs.get("overwrite_policy", OverwritePolicy.ERROR)
+        ),
+    )
+    io_opts = _scaffold_io_options(
+        scaffold=scaffold,
+        specs_snapshot=cast(
+            "Path", cli_kwargs.get("specs_snapshot", Path("build/catalog/dataset_specs.json"))
+        ),
+    )
+    behavior = _scaffold_behavior_options(
+        dry_run=cast("DryRunMode", cli_kwargs.get("dry_run", DryRunMode.EXECUTE)),
+        bootstrap=cast("BootstrapSnippet", cli_kwargs.get("bootstrap", BootstrapSnippet.SKIP)),
+        registry_check=cast(
+            "RegistryCheck", cli_kwargs.get("registry_check", RegistryCheck.DISABLED)
+        ),
+    )
+    options = _scaffold_options(
+        metadata=metadata,
+        schema=schema,
+        files=files,
+        io_opts=io_opts,
+        behavior=behavior,
+    )
+    return {
+        "name": cast("str", cli_kwargs["name"]),
+        "runtime": runtime,
+        "options": options,
+        "verbose": _verbose_from_kwargs(cli_kwargs),
+    }
+
+
+_SCAFFOLD_SPECS = [
+    *_RUNTIME_SPECS,
+    OptionSpec("name", ScaffoldNameArg, ScaffoldNameArg),
+    OptionSpec("kind", ScaffoldKindOpt, "table"),
+    OptionSpec("table_key", TableKeyOpt, None),
+    OptionSpec("owner", OwnerOpt, None),
+    OptionSpec("freshness_sla", FreshnessSlaOpt, None),
+    OptionSpec("retention_policy", RetentionPolicyOpt, None),
+    OptionSpec("schema_version", SchemaVersionOpt, "1"),
+    OptionSpec("validation_profile", ValidationProfileOpt, "strict"),
+    OptionSpec("schema_id", SchemaIdOpt, None),
+    OptionSpec("jsonl_filename", JsonlFilenameOpt, None),
+    OptionSpec("parquet_filename", ParquetFilenameOpt, None),
+    OptionSpec("stable_id", StableIdOpt, None),
+    OptionSpec("output_dir", OutputDirOpt, Path("build/dataset_scaffolds")),
+    OptionSpec("overwrite_policy", OverwritePolicyOpt, OverwritePolicy.ERROR),
+    OptionSpec("specs_snapshot", SpecsSnapshotOpt, Path("build/catalog/dataset_specs.json")),
+    OptionSpec("dry_run", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("bootstrap", BootstrapSnippetOpt, BootstrapSnippet.SKIP),
+    OptionSpec("registry_check", RegistryCheckOpt, RegistryCheck.DISABLED),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_scaffold = datasets_ext_app.command("scaffold")(
+    wrap_command(
+        datasets_scaffold_handler,
+        _SCAFFOLD_SPECS,
+        bundle=_bundle_scaffold,
+        name="datasets_scaffold",
+    )
+)
+
 
 SchemaNameOpt = Annotated[
     str,
@@ -1605,44 +1826,33 @@ SchemaRootOpt = Annotated[
 ]
 
 
-@datasets_ext_app.command("validate-files")
-def datasets_validate_files(
-    schema: SchemaNameOpt,
-    files: Annotated[list[Path], typer.Argument(help="JSONL or Parquet files to validate.")],
-    export_options: Annotated[DatasetExportOptions, typer.Depends(_dataset_export_options_dep)],
-    schema_root: SchemaRootOpt = None,
-    verbose: int = VerboseOpt,
+def datasets_validate_files_handler(
+    schema: str,
+    files: list[Path],
+    export: DatasetExportOptions,
+    schema_root: Path | None,
+    verbose: int,
 ) -> None:
     """Validate exported JSONL/Parquet files against JSON Schemas.
-
-    Validates one or more export files against a named JSON Schema definition.
-    Supports both JSONL and Parquet file formats.
 
     Raises
     ------
     Exit
-        With the validation exit code from the underlying validator.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        codeintel datasets validate-files --schema call_graph_edges exports/*.jsonl
-        codeintel datasets validate-files --schema function_profile data.parquet
+        With the validator exit code or planned/skip exits.
     """
     setup_logging(verbose)
 
     root = schema_root if schema_root is not None else DEFAULT_SCHEMA_ROOT
 
-    if export_options.run_mode == DryRunMode.DRY_RUN:
+    if export.run_mode == DryRunMode.DRY_RUN:
         payload = {
             "schema": schema,
             "files": [str(path) for path in files],
             "schema_root": str(root),
             "status": "planned",
-            "validation": export_options.validation.value,
+            "validation": export.validation.value,
         }
-        if export_options.output_format is OutputFormat.JSON:
+        if export.output_format is OutputFormat.JSON:
             sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         else:
             sys.stdout.write(
@@ -1651,33 +1861,84 @@ def datasets_validate_files(
             )
         raise typer.Exit(code=0)
 
-    if export_options.validation == ExportValidationMode.SKIP:
+    if export.validation == ExportValidationMode.SKIP:
         payload = {
             "schema": schema,
             "files": [str(path) for path in files],
             "schema_root": str(root),
             "status": "skipped",
         }
-        if export_options.output_format is OutputFormat.JSON:
+        if export.output_format is OutputFormat.JSON:
             sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         else:
             sys.stdout.write("Validation skipped by configuration.\n")
         raise typer.Exit(code=0)
 
     exit_code = validate_files(schema, files, schema_root=root)
-    if export_options.output_format is OutputFormat.JSON:
+    if export.output_format is OutputFormat.JSON:
         payload = {
             "schema": schema,
             "files": [str(path) for path in files],
             "schema_root": str(root),
-            "validation": export_options.validation.value,
-            "macro_requirement": export_options.macro_requirement.value,
-            "run_mode": export_options.run_mode.value,
+            "validation": export.validation.value,
+            "macro_requirement": export.macro_requirement.value,
+            "run_mode": export.run_mode.value,
             "status": "ok" if exit_code == 0 else "failed",
             "exit_code": exit_code,
         }
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     raise typer.Exit(code=exit_code)
+
+
+def _bundle_validate_files(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    export = DatasetExportOptions(
+        validation=cast(
+            "ExportValidationMode",
+            cli_kwargs.get("validation", ExportValidationMode.REQUIRED),
+        ),
+        macro_requirement=cast(
+            "MacroRequirement",
+            cli_kwargs.get("macro_requirement", MacroRequirement.REQUIRE_NORMALIZED),
+        ),
+        schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
+        datasets=cast("list[str] | None", cli_kwargs.get("datasets")),
+        output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
+        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
+    )
+    return {
+        "schema": cast("str", cli_kwargs["schema"]),
+        "files": cast("list[Path]", cli_kwargs["files"]),
+        "export": export,
+        "schema_root": cast("Path | None", cli_kwargs.get("schema_root")),
+        "verbose": _verbose_from_kwargs(cli_kwargs),
+    }
+
+
+_VALIDATE_FILES_SPECS = [
+    OptionSpec("schema", SchemaNameOpt, SchemaNameOpt),
+    OptionSpec(
+        "files",
+        Annotated[list[Path], typer.Argument(help="JSONL or Parquet files to validate.")],
+        None,
+    ),
+    OptionSpec("validation", ValidationModeOpt, ExportValidationMode.REQUIRED),
+    OptionSpec("macro_requirement", MacroRequirementOpt, MacroRequirement.REQUIRE_NORMALIZED),
+    OptionSpec("schemas", SchemasFilterOpt, None),
+    OptionSpec("datasets", DatasetsFilterOpt, None),
+    OptionSpec("output_format", OutputFormat, OutputFormatOpt),
+    OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("schema_root", SchemaRootOpt, None),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+datasets_validate_files = datasets_ext_app.command("validate-files")(
+    wrap_command(
+        datasets_validate_files_handler,
+        _VALIDATE_FILES_SPECS,
+        bundle=_bundle_validate_files,
+        name="datasets_validate_files",
+    )
+)
 
 
 __all__ = [

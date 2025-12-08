@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.storage.gateway import (
     StorageConfig,
     build_snapshot_gateway_resolver,
@@ -62,9 +62,7 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
     )
 
     builder = ConfigBuilder.from_snapshot(
-        repo=repo,
-        commit=commit_new,
-        repo_root=git_ctx.repo_root,
+        snapshot=SnapshotInit(repo=repo, commit=commit_new, repo_root=git_ctx.repo_root),
     )
     cfg = builder.history_timeseries(
         commits=(commit_new, commit_old),

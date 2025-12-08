@@ -1,6 +1,6 @@
 """Comprehensive tests for MkDocs documentation generation scripts.
 
-This module tests all functionality in the mkdocs-gen/ scripts:
+This module tests all functionality in the mkdocs_gen/ scripts:
 - build_single_markdown.py: Combined architecture overview generator
 - gen_ref_pages.py: API reference page generator
 - gen_arch_diagrams.py: Architecture diagram generator
@@ -32,7 +32,7 @@ from tests._helpers.assertions import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-MKDOCS_GEN_DIR = REPO_ROOT / "mkdocs-gen"
+MKDOCS_GEN_DIR = REPO_ROOT / "mkdocs_gen"
 
 
 def _load_build_single_markdown() -> ModuleType:

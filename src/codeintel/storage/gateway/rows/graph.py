@@ -12,6 +12,7 @@ __all__ = [
     "GraphDfgEdgesRow",
     "GraphImportGraphEdgesRow",
     "GraphImportModulesRow",
+    "GraphSymbolUseEdgesRow",
 ]
 
 
@@ -104,3 +105,15 @@ class GraphImportModulesRow(TypedDict):
     component_size: int
     layer: int | None
     cycle_group: int
+
+
+class GraphSymbolUseEdgesRow(TypedDict):
+    """Row model for graph.symbol_use_edges."""
+
+    symbol: str
+    def_path: str
+    use_path: str
+    same_file: bool
+    same_module: bool
+    def_goid_h128: float | None
+    use_goid_h128: float | None

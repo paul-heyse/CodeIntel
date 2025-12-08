@@ -25,6 +25,7 @@ from codeintel.storage.gateway.rows.analytics import (
 from codeintel.storage.gateway.rows.core import (
     CoreFileStateRow,
     CoreGoidsRow,
+    CoreModulesRow,
     CoreRepoMapRow,
     CoreScipOccurrencesRow,
 )
@@ -32,6 +33,7 @@ from codeintel.storage.gateway.rows.graph import (
     GraphCallGraphEdgesRow,
     GraphCallGraphNodesRow,
     GraphImportGraphEdgesRow,
+    GraphSymbolUseEdgesRow,
 )
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
@@ -103,9 +105,25 @@ def test_core_tables_repo_map_returns_relation(fresh_gateway: StorageGateway) ->
 def test_core_tables_insert_modules_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_modules inserts rows into core.modules."""
     core = CoreTables(fresh_gateway.con)
-    rows = [
-        ("test_mod1", "test1.py", "test/repo", "abc123"),
-        ("test_mod2", "test2.py", "test/repo", "abc123"),
+    rows: list[CoreModulesRow] = [
+        {
+            "module": "test_mod1",
+            "path": "test1.py",
+            "repo": "test/repo",
+            "commit": "abc123",
+            "language": "python",
+            "tags": "[]",
+            "owners": "[]",
+        },
+        {
+            "module": "test_mod2",
+            "path": "test2.py",
+            "repo": "test/repo",
+            "commit": "abc123",
+            "language": "python",
+            "tags": "[]",
+            "owners": "[]",
+        },
     ]
     core.insert_modules(rows)
 
@@ -124,7 +142,17 @@ def test_core_tables_insert_modules_inserts_rows(fresh_gateway: StorageGateway) 
 def test_core_tables_insert_modules_adds_defaults(fresh_gateway: StorageGateway) -> None:
     """Verify insert_modules adds default values for language and lists."""
     core = CoreTables(fresh_gateway.con)
-    rows = [("mod", "mod.py", "repo", "commit")]
+    rows: list[CoreModulesRow] = [
+        {
+            "module": "mod",
+            "path": "mod.py",
+            "repo": "repo",
+            "commit": "commit",
+            "language": "python",
+            "tags": "[]",
+            "owners": "[]",
+        }
+    ]
     core.insert_modules(rows)
 
     row = _require_row(
@@ -380,8 +408,16 @@ def test_graph_tables_insert_symbol_use_edges_with_5_fields(
 ) -> None:
     """Verify insert_symbol_use_edges handles 5-field rows."""
     graph = GraphTables(fresh_gateway.con)
-    edges = [
-        ("symbol1", "def.py", "use.py", False, False),
+    edges: list[GraphSymbolUseEdgesRow] = [
+        {
+            "symbol": "symbol1",
+            "def_path": "def.py",
+            "use_path": "use.py",
+            "same_file": False,
+            "same_module": False,
+            "def_goid_h128": None,
+            "use_goid_h128": None,
+        },
     ]
     graph.insert_symbol_use_edges(edges)
 
@@ -398,8 +434,16 @@ def test_graph_tables_insert_symbol_use_edges_with_7_fields(
 ) -> None:
     """Verify insert_symbol_use_edges handles 7-field rows."""
     graph = GraphTables(fresh_gateway.con)
-    edges = [
-        ("symbol2", "def.py", "use.py", False, False, 1001, 1002),
+    edges: list[GraphSymbolUseEdgesRow] = [
+        {
+            "symbol": "symbol2",
+            "def_path": "def.py",
+            "use_path": "use.py",
+            "same_file": False,
+            "same_module": False,
+            "def_goid_h128": 1001,
+            "use_goid_h128": 1002,
+        }
     ]
     graph.insert_symbol_use_edges(edges)
 
@@ -858,8 +902,24 @@ def test_insert_and_query_full_flow(fresh_gateway: StorageGateway) -> None:
     # Insert modules
     fresh_gateway.core.insert_modules(
         [
-            ("mod_a", "mod_a.py", "test/repo", "abc123"),
-            ("mod_b", "mod_b.py", "test/repo", "abc123"),
+            {
+                "module": "mod_a",
+                "path": "mod_a.py",
+                "repo": "test/repo",
+                "commit": "abc123",
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
+            {
+                "module": "mod_b",
+                "path": "mod_b.py",
+                "repo": "test/repo",
+                "commit": "abc123",
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
         ]
     )
 
@@ -926,8 +986,24 @@ def test_relations_support_filtering(fresh_gateway: StorageGateway) -> None:
     """Verify relations support DuckDB filtering."""
     fresh_gateway.core.insert_modules(
         [
-            ("mod_a", "mod_a.py", "repo_a", "commit1"),
-            ("mod_b", "mod_b.py", "repo_b", "commit2"),
+            {
+                "module": "mod_a",
+                "path": "mod_a.py",
+                "repo": "repo_a",
+                "commit": "commit1",
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
+            {
+                "module": "mod_b",
+                "path": "mod_b.py",
+                "repo": "repo_b",
+                "commit": "commit2",
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
         ]
     )
 

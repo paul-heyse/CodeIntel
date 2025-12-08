@@ -79,9 +79,9 @@ def compute_coverage_functions(
     ...     " ('demo', 'abc', 'foo.py', 2, TRUE, FALSE),"
     ...     " ('demo', 'abc', 'foo.py', 3, FALSE, FALSE)"
     ... )
-    >>> from codeintel.config import ConfigBuilder
+    >>> from codeintel.config import ConfigBuilder, SnapshotInit
     >>> cfg = ConfigBuilder.from_snapshot(
-    ...     repo="demo", commit="abc", repo_root=Path(".")
+    ...     snapshot=SnapshotInit(repo="demo", commit="abc", repo_root=Path(".")),
     ... ).coverage_analytics()
     >>> compute_coverage_functions(gateway, cfg)
     >>> con.execute(

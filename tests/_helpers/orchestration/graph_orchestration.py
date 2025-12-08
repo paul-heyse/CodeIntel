@@ -10,7 +10,7 @@ from pathlib import Path
 import duckdb
 
 from codeintel.build.context import ContextResources
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
@@ -75,7 +75,9 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
     expected_goid = _seed_modules_and_goids(gateway, caller_start, caller_end)
     _seed_test_catalog(gateway)
     _seed_symbol_use_edges(gateway)
-    builder = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=repo_root)
+    builder = ConfigBuilder.from_snapshot(
+        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=repo_root),
+    )
     return SpanTestEnv(
         repo_root=repo_root,
         builder=builder,

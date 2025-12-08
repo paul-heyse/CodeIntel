@@ -1,6 +1,6 @@
 Love this—this is exactly the kind of “one artifact to feed the beast” that’s useful.
 
-Below is a self-contained Python script you can drop into `mkdocs-gen/` (e.g. `mkdocs-gen/build_single_markdown.py`) that:
+Below is a self-contained Python script you can drop into `mkdocs_gen/` (e.g. `mkdocs_gen/build_single_markdown.py`) that:
 
 * Takes a fixed set of “summary/architecture” Markdown files from `mkdocs-build/docs/`
 * Concatenates them into one big Markdown document
@@ -16,7 +16,7 @@ You can customize which files are included by editing the `INPUT_FILES` list nea
 
 ---
 
-## Script: `mkdocs-gen/build_single_markdown.py`
+## Script: `mkdocs_gen/build_single_markdown.py`
 
 ````python
 #!/usr/bin/env python
@@ -33,7 +33,7 @@ Build a single combined Markdown overview document for CodeIntel.
 - Writes the result to `CodeIntel_architecture_overview.md` at repo root.
 
 Intended usage:
-    python mkdocs-gen/build_single_markdown.py
+    python mkdocs_gen/build_single_markdown.py
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from typing import List
 
 # --- Configuration ---------------------------------------------------------
 
-# Repo root: mkdocs-gen/ lives at top-level of the repo
+# Repo root: mkdocs_gen/ lives at top-level of the repo
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Where your MkDocs source docs live
@@ -236,13 +236,13 @@ if __name__ == "__main__":
 1. Save that file as:
 
 ```text
-mkdocs-gen/build_single_markdown.py
+mkdocs_gen/build_single_markdown.py
 ```
 
 2. From repo root, run:
 
 ```bash
-python mkdocs-gen/build_single_markdown.py
+python mkdocs_gen/build_single_markdown.py
 ```
 
 3. You’ll get:

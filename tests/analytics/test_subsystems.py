@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
@@ -272,9 +272,9 @@ def test_subsystems_cluster_and_risk_aggregation(test_ctx: TestContext) -> None:
     _seed_clustering_data(test_ctx)
 
     cfg = ConfigBuilder.from_snapshot(
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        repo_root=test_ctx.repo_root,
+        snapshot=SnapshotInit(
+            repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+        ),
     ).subsystems(
         max_subsystems=2,
         min_modules=1,
