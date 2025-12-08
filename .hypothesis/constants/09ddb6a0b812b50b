@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/rows/graph.py
+# hypothesis_version: 6.148.7
+
+['GraphCfgBlocksRow', 'GraphCfgEdgesRow', 'GraphDfgEdgesRow']

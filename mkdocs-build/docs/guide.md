@@ -285,7 +285,7 @@ mkdocs-build/
         ├── layering.md
         └── ...
 
-mkdocs-gen/
+mkdocs_gen/
 ├── gen_ref_pages.py       # API reference generator
 ├── gen_arch_diagrams.py   # Diagram generator
 └── build_single_markdown.py  # Combined overview generator
@@ -333,13 +333,13 @@ The `make docs` command uses an orchestrator script with several options:
 
 ```bash
 # Full build with parallel diagram generation (default)
-python mkdocs-gen/build_docs.py
+python mkdocs_gen/build_docs.py
 
 # Skip diagram generation for faster iteration
-python mkdocs-gen/build_docs.py --skip-diagrams
+python mkdocs_gen/build_docs.py --skip-diagrams
 
 # Disable parallel execution (useful for debugging)
-python mkdocs-gen/build_docs.py --no-parallel
+python mkdocs_gen/build_docs.py --no-parallel
 ```
 
 ### Build Output
@@ -419,4 +419,3 @@ The dev server watches for changes automatically. If changes don't appear:
 - [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)
 - [mkdocstrings](https://mkdocstrings.github.io/)
 - [Mermaid Diagrams](https://mermaid.js.org/)
-

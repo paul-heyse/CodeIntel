@@ -18,7 +18,7 @@ import typer
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.commands._common import VerboseOpt, setup_logging
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
     DuckDBError,
@@ -149,9 +149,7 @@ def history_timeseries(
 
     runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
     builder = ConfigBuilder.from_snapshot(
-        repo=repo,
-        commit=commit_list[0],
-        repo_root=repo_root,
+        snapshot=SnapshotInit(repo=repo, commit=commit_list[0], repo_root=repo_root),
     )
     cfg = builder.history_timeseries(
         commits=tuple(commit_list),

@@ -11,11 +11,11 @@ Commands
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -40,6 +40,7 @@ from codeintel.cli.commands._common import (
     open_gateway_from_config,
     setup_logging,
 )
+from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
 from codeintel.cli.project import (
     ProjectNotFoundError,
     detect_commit,
@@ -190,7 +191,7 @@ docs_app = typer.Typer(
 ValidationOpt = Annotated[
     ExportValidationMode,
     typer.Option(
-        ExportValidationMode.SKIP,
+        ...,
         "--validation",
         "--validate",
         flag_value=ExportValidationMode.REQUIRED,
@@ -202,7 +203,7 @@ ValidationOpt = Annotated[
 MacroRequirementOpt = Annotated[
     MacroRequirement,
     typer.Option(
-        MacroRequirement.ALLOW_PARTIAL,
+        ...,
         "--macro-requirement",
         "--require-normalized-macros",
         flag_value=MacroRequirement.REQUIRE_NORMALIZED,
@@ -230,7 +231,7 @@ DatasetsOpt = Annotated[
 PrereqModeOpt = Annotated[
     PrereqMode,
     typer.Option(
-        PrereqMode.RUN,
+        ...,
         "--skip-prereqs",
         flag_value=PrereqMode.SKIP,
         help="Skip prerequisite computation (assume analytics already complete).",
@@ -241,7 +242,7 @@ PrereqModeOpt = Annotated[
 NxGpuModeOpt = Annotated[
     NxGpuMode,
     typer.Option(
-        NxGpuMode.DISABLED,
+        ...,
         "--nx-gpu-mode",
         help="GPU backend mode: disabled, enabled, or strict.",
         case_sensitive=False,
@@ -259,7 +260,7 @@ OutputFormatOpt = typer.Option(
 DryRunModeOpt = Annotated[
     DryRunMode,
     typer.Option(
-        DryRunMode.EXECUTE,
+        ...,
         "--dry-run",
         flag_value=DryRunMode.DRY_RUN,
         help="Plan without executing exports.",
@@ -344,80 +345,6 @@ def _docs_export_options(
 
 
 # -----------------------------------------------------------------------------
-# Dependency Builders
-# -----------------------------------------------------------------------------
-
-
-def _repo_selection_dep(
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    repo_root: RepoRootOpt = None,
-) -> RepoSelection:
-    return RepoSelection(
-        project_root=project_root,
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-    )
-
-
-def _storage_selection_dep(
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    document_output_dir: DocumentOutputDirOpt = None,
-) -> StorageSelection:
-    return StorageSelection(
-        db_path=db_path,
-        build_dir=build_dir,
-        document_output_dir=document_output_dir,
-    )
-
-
-def _project_options_dep(
-    repo_selection: Annotated[RepoSelection, typer.Depends(_repo_selection_dep)],
-    storage_selection: Annotated[StorageSelection, typer.Depends(_storage_selection_dep)],
-) -> ProjectOptions:
-    return _project_options(repo_selection, storage_selection)
-
-
-def _backend_options_dep(
-    nx_backend: NxBackendOpt = "auto",
-    nx_gpu_mode: NxGpuModeOpt = NxGpuMode.DISABLED,
-) -> BackendOptions:
-    return _backend_options(nx_backend, nx_gpu_mode)
-
-
-def _docs_validation_options_dep(
-    validation: ValidationOpt = ExportValidationMode.SKIP,
-    macro_requirement: MacroRequirementOpt = MacroRequirement.ALLOW_PARTIAL,
-) -> DocsValidationOptions:
-    return _docs_validation_options(validation, macro_requirement)
-
-
-def _docs_selection_options_dep(
-    schemas: SchemasOpt = None,
-    datasets: DatasetsOpt = None,
-) -> DocsSelectionOptions:
-    return _docs_selection_options(schemas, datasets)
-
-
-def _docs_execution_options_dep(
-    output_format: OutputFormat = OutputFormatOpt,
-    run_mode: DryRunModeOpt = DryRunMode.EXECUTE,
-    prereq_mode: PrereqModeOpt = PrereqMode.RUN,
-) -> DocsExecutionOptions:
-    return _docs_execution_options(output_format, run_mode, prereq_mode)
-
-
-def _docs_export_options_dep(
-    validation: Annotated[DocsValidationOptions, typer.Depends(_docs_validation_options_dep)],
-    selection: Annotated[DocsSelectionOptions, typer.Depends(_docs_selection_options_dep)],
-    execution: Annotated[DocsExecutionOptions, typer.Depends(_docs_execution_options_dep)],
-) -> DocsExportOptions:
-    return _docs_export_options(validation, selection, execution)
-
-
 def _resolve_export_config(
     project: ProjectOptions,
     backend: BackendOptions,
@@ -541,6 +468,7 @@ def run_docs_export_via_build_system(
             db_path=cfg.paths.db_path,
             document_output_dir=cfg.paths.document_output_dir,
         ),
+        check_collisions=True,
     )
 
     graph = get_target_graph()
@@ -701,12 +629,11 @@ def run_docs_export(
         typer.secho("Export complete.", fg=typer.colors.GREEN)
 
 
-@docs_app.command("export")
-def docs_export(
-    project: Annotated[ProjectOptions, typer.Depends(_project_options_dep)],
-    backend: Annotated[BackendOptions, typer.Depends(_backend_options_dep)],
-    export_options: Annotated[DocsExportOptions, typer.Depends(_docs_export_options_dep)],
-    verbose: int = VerboseOpt,
+def docs_export_handler(
+    project: ProjectOptions,
+    backend: BackendOptions,
+    export_options: DocsExportOptions,
+    verbose: int,
 ) -> None:
     """Export Parquet + JSONL datasets from DuckDB into Document Output/.
 
@@ -771,6 +698,83 @@ def docs_export(
             cfg,
             options=export_opts,
         )
+
+
+def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+    project = _project_options(
+        RepoSelection(
+            project_root=cast("Path | None", cli_kwargs.get("project_root")),
+            repo=cast("str | None", cli_kwargs.get("repo")),
+            commit=cast("str | None", cli_kwargs.get("commit")),
+            repo_root=cast("Path | None", cli_kwargs.get("repo_root")),
+        ),
+        StorageSelection(
+            db_path=cast("Path | None", cli_kwargs.get("db_path")),
+            build_dir=cast("Path | None", cli_kwargs.get("build_dir")),
+            document_output_dir=cast("Path | None", cli_kwargs.get("document_output_dir")),
+        ),
+    )
+    backend = _backend_options(
+        nx_backend=cast("str", cli_kwargs.get("nx_backend", "auto")),
+        nx_gpu_mode=cast("NxGpuMode", cli_kwargs.get("nx_gpu_mode", NxGpuMode.DISABLED)),
+    )
+    validation = _docs_validation_options(
+        validation=cast(
+            "ExportValidationMode",
+            cli_kwargs.get("validation", ExportValidationMode.SKIP),
+        ),
+        macro_requirement=cast(
+            "MacroRequirement",
+            cli_kwargs.get("macro_requirement", MacroRequirement.ALLOW_PARTIAL),
+        ),
+    )
+    selection = _docs_selection_options(
+        schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
+        datasets=cast("list[str] | None", cli_kwargs.get("datasets")),
+    )
+    execution = _docs_execution_options(
+        output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
+        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
+        prereq_mode=cast("PrereqMode", cli_kwargs.get("prereq_mode", PrereqMode.RUN)),
+    )
+    export_options = _docs_export_options(validation, selection, execution)
+    return {
+        "project": project,
+        "backend": backend,
+        "export_options": export_options,
+        "verbose": int(cast("int | str | None", cli_kwargs.get("verbose", 0)) or 0),
+    }
+
+
+_DOCS_EXPORT_SPECS = [
+    OptionSpec("project_root", Path | None, ProjectRootOpt),
+    OptionSpec("repo", RepoOpt, None),
+    OptionSpec("commit", CommitOpt, None),
+    OptionSpec("repo_root", RepoRootOpt, None),
+    OptionSpec("db_path", DbPathOpt, None),
+    OptionSpec("build_dir", BuildDirOpt, None),
+    OptionSpec("document_output_dir", DocumentOutputDirOpt, None),
+    OptionSpec("nx_backend", NxBackendOpt, "auto"),
+    OptionSpec("nx_gpu_mode", NxGpuModeOpt, NxGpuMode.DISABLED),
+    OptionSpec("validation", ValidationOpt, ExportValidationMode.SKIP),
+    OptionSpec("macro_requirement", MacroRequirementOpt, MacroRequirement.ALLOW_PARTIAL),
+    OptionSpec("schemas", SchemasOpt, None),
+    OptionSpec("datasets", DatasetsOpt, None),
+    OptionSpec("output_format", OutputFormat, OutputFormatOpt),
+    OptionSpec("run_mode", DryRunModeOpt, DryRunMode.EXECUTE),
+    OptionSpec("prereq_mode", PrereqModeOpt, PrereqMode.RUN),
+    OptionSpec("verbose", int, VerboseOpt),
+]
+
+
+docs_export = docs_app.command("export")(
+    wrap_command(
+        docs_export_handler,
+        _DOCS_EXPORT_SPECS,
+        bundle=_bundle_docs_export,
+        name="docs_export",
+    )
+)
 
 
 __all__ = [

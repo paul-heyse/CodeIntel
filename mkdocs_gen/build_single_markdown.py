@@ -21,7 +21,7 @@ Usage
 -----
 From repo root::
 
-    python mkdocs-gen/build_single_markdown.py
+    python mkdocs_gen/build_single_markdown.py
 
 Or via Makefile::
 

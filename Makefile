@@ -10,16 +10,16 @@ contract-docs:
 	@scripts/ci/contract_docs.sh
 
 docs-diagrams:
-	@uv run python mkdocs-gen/gen_arch_diagrams.py
+	@uv run python mkdocs_gen/gen_arch_diagrams.py
 
 docs:
-	@uv run python mkdocs-gen/build_docs.py
+	@uv run python mkdocs_gen/build_docs.py
 
 docs-fast:
-	@uv run python mkdocs-gen/build_docs.py --skip-diagrams
+	@uv run python mkdocs_gen/build_docs.py --skip-diagrams
 
 docs-serve:
 	@uv run mkdocs serve -f mkdocs-build/mkdocs.yml -a localhost:8000
 
 docs-summary:
-	@uv run python mkdocs-gen/build_single_markdown.py
+	@uv run python mkdocs_gen/build_single_markdown.py

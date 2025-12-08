@@ -31,7 +31,7 @@ from codeintel.analytics.testing.profiles.builder import (
     infer_behavior_tags,
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from tests._helpers import TestContext, assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -418,9 +418,9 @@ class TestBuildTestProfile:
         """Verify build_test_profile returns early with no test catalog."""
         # Don't seed COVERAGE_PACK - no test catalog
         cfg = ConfigBuilder.from_snapshot(
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-            repo_root=test_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+            ),
         ).test_profile()
 
         # Should not raise - just logs and returns
@@ -437,9 +437,11 @@ class TestBuildTestProfile:
     def test_builds_profiles_with_seeded_tests(coverage_ctx: TestContext) -> None:
         """Verify build_test_profile creates rows when test catalog exists."""
         cfg = ConfigBuilder.from_snapshot(
-            repo=coverage_ctx.repo,
-            commit=coverage_ctx.commit,
-            repo_root=coverage_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=coverage_ctx.repo,
+                commit=coverage_ctx.commit,
+                repo_root=coverage_ctx.repo_root,
+            ),
         ).test_profile()
 
         build_test_profile(coverage_ctx.gateway, cfg)

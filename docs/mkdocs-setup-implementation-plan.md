@@ -1,6 +1,6 @@
 Nice, you’ve already done the hard work (strict typing + NumPy docstrings + linting). Let’s wire up the “best in class” MkDocs stack in a way that’s super friendly for LLM programmer agents and keeps everything cleanly separated into:
 
-* `mkdocs-gen/` – generator scripts (Python)
+* `mkdocs_gen/` – generator scripts (Python)
 * `mkdocs-build/` – config + Markdown sources
 * `mkdocs-output/` – built static site
 
@@ -9,8 +9,8 @@ I’ll give you:
 1. Target layout and assumptions
 2. Exact `mkdocs-build/mkdocs.yml`
 3. Docs skeleton under `mkdocs-build/docs/`
-4. `mkdocs-gen/gen_ref_pages.py` (auto API docs + nav)
-5. Optional `mkdocs-gen/gen_arch_diagrams.py` (pydeps + pyreverse)
+4. `mkdocs_gen/gen_ref_pages.py` (auto API docs + nav)
+5. Optional `mkdocs_gen/gen_arch_diagrams.py` (pydeps + pyreverse)
 6. How to build / serve
 
 You can hand this straight to a coding agent as a to-do list.
@@ -23,7 +23,7 @@ You can hand this straight to a coding agent as a to-do list.
 
 ```text
 repo-root/
-  mkdocs-gen/              # new – Python helper scripts for docs
+  mkdocs_gen/              # new – Python helper scripts for docs
     gen_ref_pages.py
     gen_arch_diagrams.py   # (optional, for diagrams)
   mkdocs-build/            # new – mkdocs config + markdown docs
@@ -180,7 +180,7 @@ plugins:
   - gen-files:
       scripts:
         # path is relative to this mkdocs.yml file
-        - ../mkdocs-gen/gen_ref_pages.py
+        - ../mkdocs_gen/gen_ref_pages.py
 
   # Use SUMMARY.md files for nav in subtrees (e.g. docs/reference/) :contentReference[oaicite:10]{index=10}
   - literate-nav:
@@ -406,9 +406,9 @@ You don’t need to write all the prose now; these can be “TODO” stubs that 
 
 ---
 
-## 4. Add `mkdocs-gen/gen_ref_pages.py`
+## 4. Add `mkdocs_gen/gen_ref_pages.py`
 
-> **Task for agent:** create file `mkdocs-gen/gen_ref_pages.py` with this content.
+> **Task for agent:** create file `mkdocs_gen/gen_ref_pages.py` with this content.
 
 This is adapted from the official mkdocstrings recipe for “Automatic code reference pages” with literate-nav and section-index. ([mkdocstrings][8])
 
@@ -432,7 +432,7 @@ import mkdocs_gen_files
 
 
 def main() -> None:
-    # repo root: mkdocs-gen/ is at repo root, so parent.parent is root
+    # repo root: mkdocs_gen/ is at repo root, so parent.parent is root
     root = Path(__file__).resolve().parent.parent
 
     # All source packages live under src/ (codeintel, etc.)
@@ -513,7 +513,7 @@ and adjust the relative path logic accordingly (e.g. prepend `"codeintel"` to `p
 
 You can integrate `pydeps` and `pyreverse` via a small helper script. This doesn’t need to be a MkDocs plugin; just run it occasionally to refresh diagrams.
 
-> **Task for agent:** create `mkdocs-gen/gen_arch_diagrams.py`:
+> **Task for agent:** create `mkdocs_gen/gen_arch_diagrams.py`:
 
 ```python
 """Generate architecture diagrams (pydeps + pyreverse) for CodeIntel docs.
@@ -616,7 +616,7 @@ if __name__ == "__main__":
 To regenerate diagrams:
 
 ```bash
-python mkdocs-gen/gen_arch_diagrams.py
+python mkdocs_gen/gen_arch_diagrams.py
 ```
 
 (pydeps and pyreverse will use Graphviz’s `dot` binary under the hood. ([pythonhosted.org][9]))
@@ -645,7 +645,7 @@ If you want a checklist to hand to an agent:
 
 1. **Create directories**
 
-   * `mkdocs-gen/`
+   * `mkdocs_gen/`
    * `mkdocs-build/`
    * `mkdocs-build/docs/`
    * `mkdocs-build/docs/architecture/`
@@ -665,14 +665,14 @@ If you want a checklist to hand to an agent:
 
 4. **Implement auto API generation**
 
-   * Create `mkdocs-gen/gen_ref_pages.py` with the provided script.
-   * Ensure `mkdocs-build/mkdocs.yml` plugin config references `../mkdocs-gen/gen_ref_pages.py` in `gen-files.scripts`.
+   * Create `mkdocs_gen/gen_ref_pages.py` with the provided script.
+   * Ensure `mkdocs-build/mkdocs.yml` plugin config references `../mkdocs_gen/gen_ref_pages.py` in `gen-files.scripts`.
 
 5. **(Optional) Implement architecture diagrams**
 
-   * Create `mkdocs-gen/gen_arch_diagrams.py` with the provided script.
+   * Create `mkdocs_gen/gen_arch_diagrams.py` with the provided script.
    * Add image links into `architecture/overview.md`.
-   * Run `python mkdocs-gen/gen_arch_diagrams.py` to generate SVGs.
+   * Run `python mkdocs_gen/gen_arch_diagrams.py` to generate SVGs.
 
 6. **Verify build**
 
@@ -687,7 +687,7 @@ Once this is in place, you’ll have:
 
 * A fully auto-generated, per-module API reference (with NumPy-parsed docstrings and types). ([mkdocstrings][8])
 * Architecture docs and diagrams that LLMs (and humans) can use to reason about CodeIntel’s structure.
-* A clean separation of *generation code* (`mkdocs-gen`), *build config and content* (`mkdocs-build`), and *output* (`mkdocs-output`), which makes it easy to automate and reason about in your tooling.
+* A clean separation of *generation code* (`mkdocs_gen`), *build config and content* (`mkdocs-build`), and *output* (`mkdocs-output`), which makes it easy to automate and reason about in your tooling.
 
 [1]: https://pypi.org/project/mkdocs-gen-files/?utm_source=chatgpt.com "mkdocs-gen-files"
 [2]: https://pypi.org/project/pydeps/1.2.8/?utm_source=chatgpt.com "pydeps 1.2.8"

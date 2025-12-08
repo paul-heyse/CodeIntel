@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 
 EXPECTED_MIN_MODULES = 5
 EXPECTED_MAX_SUBSYSTEMS = 10
@@ -19,7 +19,7 @@ EXPECTED_CONFIG_WEIGHT = 0.75
 def test_overrides_are_applied_and_typed() -> None:
     """Overrides should populate config with validated numeric values."""
     builder = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=Path().resolve()
+        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
     )
     cfg = builder.subsystems(
         min_modules=EXPECTED_MIN_MODULES,
@@ -52,7 +52,7 @@ def test_overrides_are_applied_and_typed() -> None:
 def test_invalid_overrides_raise(overrides: dict[str, object], message: str) -> None:
     """Invalid override types should raise a TypeError."""
     builder = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=Path().resolve()
+        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path().resolve()),
     )
     kwargs = cast("dict[str, Any]", overrides)
     with pytest.raises(TypeError) as excinfo:

@@ -13,6 +13,7 @@ __all__ = [
     "CoreGoidCrosswalkRow",
     "CoreGoidsRow",
     "CoreIngestRunsRow",
+    "CoreModulesRow",
     "CoreRepoMapRow",
     "CoreScipOccurrencesRow",
     "CoreScipSymbolsRow",
@@ -157,6 +158,18 @@ class CoreIngestRunsRow(TypedDict):
     modules_changed_ratio: float | None
     modules_deleted_ratio: float | None
     use_full_rebuild: bool | None
+
+
+class CoreModulesRow(TypedDict):
+    """Row model for core.modules."""
+
+    module: str
+    path: str
+    repo: str | None
+    commit: str | None
+    language: str | None
+    tags: str | None
+    owners: str | None
 
 
 class CoreRepoMapRow(TypedDict):

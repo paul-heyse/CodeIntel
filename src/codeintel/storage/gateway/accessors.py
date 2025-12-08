@@ -10,8 +10,9 @@ from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
 from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 from codeintel.storage.gateway.rows.analytics import (
-    AnalyticsCoverageLinesRow,
+    AnalyticsConfigValuesRow,
     AnalyticsCoverageFunctionsRow,
+    AnalyticsCoverageLinesRow,
     AnalyticsFunctionMetricsRow,
     AnalyticsGoidRiskFactorsRow,
     AnalyticsStaticDiagnosticsRow,
@@ -20,21 +21,22 @@ from codeintel.storage.gateway.rows.analytics import (
     AnalyticsTestCatalogRow,
     AnalyticsTestCoverageEdgesRow,
     AnalyticsTypednessRow,
-    AnalyticsConfigValuesRow,
 )
 from codeintel.storage.gateway.rows.core import (
     CoreFileStateRow,
     CoreGoidsRow,
+    CoreModulesRow,
     CoreRepoMapRow,
     CoreScipOccurrencesRow,
 )
 from codeintel.storage.gateway.rows.graph import (
     GraphCallGraphEdgesRow,
     GraphCallGraphNodesRow,
-    GraphImportGraphEdgesRow,
     GraphCfgBlocksRow,
     GraphCfgEdgesRow,
     GraphDfgEdgesRow,
+    GraphImportGraphEdgesRow,
+    GraphSymbolUseEdgesRow,
 )
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
@@ -59,6 +61,15 @@ class CoreTables(BaseTableAccessor):
     """Accessors for core schema tables."""
 
     _repo_map_columns: Sequence[str] = ("repo", "commit", "modules", "overlays", "generated_at")
+    _modules_columns: Sequence[str] = (
+        "module",
+        "path",
+        "repo",
+        "commit",
+        "language",
+        "tags",
+        "owners",
+    )
     _file_state_columns: Sequence[str] = (
         "repo",
         "commit",
@@ -166,23 +177,54 @@ class CoreTables(BaseTableAccessor):
 
     def insert_modules(
         self,
-        rows: Iterable[tuple[str, str, str, str]],
+        rows: Iterable[CoreModulesRow | Sequence[object]],
     ) -> None:
         """Insert rows into core.modules.
 
-        Normalizes 4-column rows by adding default values for language,
-        imports_json, and exports_json columns.
+        Normalizes 4-field inputs by applying defaults for language, tags, and owners.
 
-        Parameters
-        ----------
-        rows
-            Iterable of (module, path, repo, commit).
+        Raises
+        ------
+        ValueError
+            If a row has an unexpected number of fields.
         """
-        normalized = [
-            (module, path, repo, commit, "python", "[]", "[]")
-            for module, path, repo, commit in rows
-        ]
-        self._insert_rows("core.modules", normalized)
+        minimal_len = 4
+        full_len = len(self._modules_columns)
+        normalized_rows: list[Mapping[str, object]] = []
+        for row_candidate in rows:
+            if isinstance(row_candidate, Mapping):
+                normalized = dict(row_candidate)
+                normalized.setdefault("language", "python")
+                normalized.setdefault("tags", "[]")
+                normalized.setdefault("owners", "[]")
+                normalized_rows.append(normalized)
+                continue
+            sequence = tuple(row_candidate)
+            if len(sequence) == minimal_len:
+                module, path, repo, commit = sequence
+                normalized_rows.append(
+                    {
+                        "module": module,
+                        "path": path,
+                        "repo": repo,
+                        "commit": commit,
+                        "language": "python",
+                        "tags": "[]",
+                        "owners": "[]",
+                    }
+                )
+                continue
+            if len(sequence) == full_len:
+                normalized_rows.append(
+                    _normalize_to_mapping(sequence, self._modules_columns, "core.modules")
+                )
+                continue
+            message = (
+                f"modules rows must have {minimal_len} fields "
+                f"or {full_len} fields, got {len(sequence)}: {sequence}"
+            )
+            raise ValueError(message)
+        insert_rows(self.con, "core.modules", normalized_rows)
 
     def insert_file_state(
         self,
@@ -281,6 +323,15 @@ class GraphTables(BaseTableAccessor):
         "dst_fan_in",
         "cycle_group",
         "module_layer",
+    )
+    _symbol_use_edges_columns: Sequence[str] = (
+        "symbol",
+        "def_path",
+        "use_path",
+        "same_file",
+        "same_module",
+        "def_goid_h128",
+        "use_goid_h128",
     )
     _cfg_blocks_columns: Sequence[str] = (
         "function_goid_h128",
@@ -404,39 +455,54 @@ class GraphTables(BaseTableAccessor):
 
     def insert_symbol_use_edges(
         self,
-        rows: Iterable[Sequence[object]],
+        rows: Iterable[GraphSymbolUseEdgesRow | Sequence[object]],
     ) -> None:
         """Insert rows into graph.symbol_use_edges.
-
-        Normalizes 5-column rows by adding NULL values for def_goid_h128
-        and use_goid_h128 columns.
-
-        Parameters
-        ----------
-        rows
-            Iterable of (symbol, def_path, use_path, same_file, same_module,
-            def_goid_h128, use_goid_h128).
 
         Raises
         ------
         ValueError
-            If a row is not length 5 or 7.
+            If a row has an unexpected number of fields.
         """
-        expected_basic_len = 5
-        expected_full_len = 7
-        normalized_rows = []
-        for row in rows:
-            if len(row) == expected_basic_len:
-                symbol, def_path, use_path, same_file, same_module = row
+        basic_len = 5
+        full_len = len(self._symbol_use_edges_columns)
+        normalized_rows: list[Mapping[str, object]] = []
+        for row_candidate in rows:
+            if isinstance(row_candidate, Mapping):
+                normalized = dict(row_candidate)
+                normalized.setdefault("def_goid_h128", None)
+                normalized.setdefault("use_goid_h128", None)
+                normalized_rows.append(normalized)
+                continue
+            sequence = tuple(row_candidate)
+            if len(sequence) == basic_len:
+                symbol, def_path, use_path, same_file, same_module = sequence
                 normalized_rows.append(
-                    (symbol, def_path, use_path, same_file, same_module, None, None)
+                    {
+                        "symbol": symbol,
+                        "def_path": def_path,
+                        "use_path": use_path,
+                        "same_file": same_file,
+                        "same_module": same_module,
+                        "def_goid_h128": None,
+                        "use_goid_h128": None,
+                    }
                 )
-            elif len(row) == expected_full_len:
-                normalized_rows.append(tuple(row))
-            else:
-                message = f"symbol_use_edges rows must have 5 or 7 fields, got {len(row)}: {row}"
-                raise ValueError(message)
-        self._insert_rows("graph.symbol_use_edges", normalized_rows)
+                continue
+            if len(sequence) == full_len:
+                normalized_rows.append(
+                    _normalize_to_mapping(
+                        sequence, self._symbol_use_edges_columns, "graph.symbol_use_edges"
+                    )
+                )
+                continue
+            message = (
+                "symbol_use_edges rows must have 5 or "
+                f"{full_len} fields, "
+                f"got {len(sequence)}: {sequence}"
+            )
+            raise ValueError(message)
+        insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
 
     def insert_cfg_blocks(
         self,

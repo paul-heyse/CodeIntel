@@ -32,11 +32,12 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import NamedTuple
+
+from mkdocs_gen.command_runner import CommandError, run_command_sync
 
 log = logging.getLogger(__name__)
 
@@ -73,43 +74,40 @@ def check_graphviz() -> bool:
     return shutil.which("dot") is not None
 
 
-def run_command(
+def run_checked(
     cmd: list[str],
     *,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     capture_stderr: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    """Execute a subprocess command with logging.
-
-    Parameters
-    ----------
-    cmd
-        Command and arguments to execute.
-    cwd
-        Working directory for the command.
-    env
-        Environment variables for the command.
-    capture_stderr
-        If True, capture stderr to suppress noisy warnings.
+) -> str:
+    """Execute a command with logging and error propagation.
 
     Returns
     -------
-    subprocess.CompletedProcess
-        The completed process result.
+    str
+        Combined output from the command.
+
+    Raises
+    ------
+    CommandError
+        If the command exits with a non-zero status.
+    FileNotFoundError
+        If the command executable cannot be resolved.
     """
     cwd_str = str(cwd) if cwd is not None else None
     log.debug("Running: %s (cwd=%s)", " ".join(cmd), cwd_str)
-
-    stderr_target = subprocess.PIPE if capture_stderr else None
-    return subprocess.run(
-        cmd,
-        check=True,
-        cwd=cwd_str,
-        env=env,
-        text=True,
-        stderr=stderr_target,
-    )
+    try:
+        return run_command_sync(
+            cmd,
+            cwd=cwd,
+            env=env,
+            merge_stderr=capture_stderr,
+        )
+    except CommandError as exc:
+        raise CommandError(exc.cmd, exc.returncode, exc.output) from exc
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(exc.filename or cmd[0]) from exc
 
 
 # Top-level packages to include in overview diagrams
@@ -174,12 +172,12 @@ def generate_pydeps_diagram(
             str(output_path),
         ]
 
-        run_command(cmd, cwd=src_root, env=env)
+        run_checked(cmd, cwd=src_root, env=env)
         log.info("[1/3] %s complete: %s", name, output_path.name)
         return DiagramResult(name=name, success=True, output_path=output_path)
-    except subprocess.CalledProcessError as e:
+    except CommandError as exc:
         log.exception("[1/3] %s failed", name)
-        return DiagramResult(name=name, success=False, error=str(e))
+        return DiagramResult(name=name, success=False, error=str(exc))
     except FileNotFoundError:
         msg = "pydeps not found - install with: pip install pydeps"
         log.exception("[1/3] %s failed: %s", name, msg)
@@ -221,7 +219,7 @@ def generate_pyreverse_diagrams(
         # -s 0: Don't show associated classes
         # -m y: Include module name in class name for clarity
         # -f PUB_ONLY: Only show public members (when not using -k)
-        run_command(
+        run_checked(
             [
                 "pyreverse",
                 "-o",
@@ -284,13 +282,13 @@ def generate_pyreverse_diagrams(
                 )
             )
 
-    except subprocess.CalledProcessError as e:
+    except CommandError as exc:
         log.exception("[2/3] pyreverse failed")
         results.append(
-            DiagramResult(name="pyreverse packages (overview)", success=False, error=str(e))
+            DiagramResult(name="pyreverse packages (overview)", success=False, error=str(exc))
         )
         results.append(
-            DiagramResult(name="pyreverse classes (overview)", success=False, error=str(e))
+            DiagramResult(name="pyreverse classes (overview)", success=False, error=str(exc))
         )
     except FileNotFoundError:
         msg = "pyreverse not found - install with: pip install pylint"
@@ -342,6 +340,9 @@ def generate_diagrams(*, parallel: bool = True) -> list[DiagramResult]:
 
     pydeps_output = docs_arch / "codeintel-imports.svg"
 
+    def generate_pydeps_batch() -> list[DiagramResult]:
+        return [generate_pydeps_diagram(src_root, pydeps_output, env)]
+
     log.info("=" * 60)
     log.info("Architecture Diagram Generation")
     log.info("=" * 60)
@@ -354,20 +355,16 @@ def generate_diagrams(*, parallel: bool = True) -> list[DiagramResult]:
     if parallel:
         # Run pydeps and pyreverse in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {
-                executor.submit(generate_pydeps_diagram, src_root, pydeps_output, env): "pydeps",
-                executor.submit(generate_pyreverse_diagrams, src_root, docs_arch, env): "pyreverse",
-            }
+            futures = [
+                executor.submit(generate_pydeps_batch),
+                executor.submit(generate_pyreverse_diagrams, src_root, docs_arch, env),
+            ]
 
             for future in as_completed(futures):
-                result = future.result()
-                if isinstance(result, list):
-                    results.extend(result)
-                else:
-                    results.append(result)
+                results.extend(future.result())
     else:
         # Sequential execution
-        results.append(generate_pydeps_diagram(src_root, pydeps_output, env))
+        results.extend(generate_pydeps_batch())
         results.extend(generate_pyreverse_diagrams(src_root, docs_arch, env))
 
     # Summary

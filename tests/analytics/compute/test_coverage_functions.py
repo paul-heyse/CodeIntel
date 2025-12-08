@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.compute.coverage import compute_coverage_functions
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
@@ -47,7 +47,7 @@ def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -
     """Aggregate executable and covered lines into coverage_functions."""
     repo_root = Path.cwd()
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=repo_root
+        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root),
     ).coverage_analytics()
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con
@@ -119,7 +119,7 @@ def test_compute_coverage_functions_idempotent_for_snapshot(gateway: StorageGate
     """Re-running coverage aggregation replaces prior rows for the snapshot."""
     repo_root = Path.cwd()
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=repo_root
+        snapshot=SnapshotInit(repo="demo/repo", commit="abc123", repo_root=repo_root),
     ).coverage_analytics()
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con

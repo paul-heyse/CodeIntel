@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.build.context import ContextResources
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
 from codeintel.ingestion import (
@@ -817,7 +817,7 @@ def graph_metrics_ready_gateway(
         cfg = (
             opts.graph_cfg
             or ConfigBuilder.from_snapshot(
-                repo=opts.repo, commit=opts.commit, repo_root=repo_root
+                snapshot=SnapshotInit(repo=opts.repo, commit=opts.commit, repo_root=repo_root),
             ).graph_metrics()
         )
         compute_graph_metrics(gateway, cfg)

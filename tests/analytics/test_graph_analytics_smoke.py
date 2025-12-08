@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.analytics.graphs import compute_graph_metrics, compute_graph_stats
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from tests._helpers import TestContext
 from tests._helpers.assertions import expect_equal
 from tests._helpers.seeds import GRAPH_PACK
@@ -40,9 +40,9 @@ def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
     The compute_graph_metrics function should produce metrics for each.
     """
     cfg = ConfigBuilder.from_snapshot(
-        repo=graph_ctx.repo,
-        commit=graph_ctx.commit,
-        repo_root=graph_ctx.repo_root,
+        snapshot=SnapshotInit(
+            repo=graph_ctx.repo, commit=graph_ctx.commit, repo_root=graph_ctx.repo_root
+        ),
     ).graph_metrics()
 
     compute_graph_metrics(graph_ctx.gateway, cfg)

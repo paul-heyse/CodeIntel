@@ -70,7 +70,7 @@ plugins:
   # Generate API reference pages + literate nav from src/ at build time
   - gen-files:
       scripts:
-        - ../mkdocs-gen/gen_ref_pages.py
+        - ../mkdocs_gen/gen_ref_pages.py
 
   # Use SUMMARY.md files for nav in subtrees (e.g. docs/reference/)
   - literate-nav:
@@ -131,4 +131,3 @@ plugins:
 
   # Optional: run small scripts in code blocks
   - markdown-exec
-

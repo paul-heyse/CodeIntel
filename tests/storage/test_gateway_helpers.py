@@ -41,7 +41,19 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
             }
         ]
     )
-    gateway.core.insert_modules([("m", "m.py", "r", "c")])
+    gateway.core.insert_modules(
+        [
+            {
+                "module": "m",
+                "path": "m.py",
+                "repo": "r",
+                "commit": "c",
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            }
+        ]
+    )
     gateway.core.insert_goids(
         [
             (
@@ -104,7 +116,19 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
             }
         ]
     )
-    gateway.graph.insert_symbol_use_edges([("sym", "m.py", "m.py", False, True)])
+    gateway.graph.insert_symbol_use_edges(
+        [
+            {
+                "symbol": "sym",
+                "def_path": "m.py",
+                "use_path": "m.py",
+                "same_file": False,
+                "same_module": True,
+                "def_goid_h128": None,
+                "use_goid_h128": None,
+            }
+        ]
+    )
     gateway.graph.insert_cfg_blocks([(1, 0, "b0", "entry", "m.py", 1, 2, "entry", "[]", 0, 1)])
     gateway.graph.insert_cfg_edges([(1, "b0", "b0", "fallthrough")])
     gateway.graph.insert_dfg_edges([(1, "b0", "b0", "x", "y", "assign", False, "read")])

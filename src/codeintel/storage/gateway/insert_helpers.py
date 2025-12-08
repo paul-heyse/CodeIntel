@@ -91,7 +91,9 @@ def insert_rows(
     """
     metadata = _lookup_metadata(table_key)
     columns = metadata["columns"]
-    normalized_rows = (_normalize_row(row, columns, table_key) for row in rows)
+    normalized_rows = [_normalize_row(row, columns, table_key) for row in rows]
+    if not normalized_rows:
+        return
     macro_insert_rows(con, metadata["table"], normalized_rows)
 
 

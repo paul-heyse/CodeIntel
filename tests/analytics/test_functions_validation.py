@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.functions import compute_function_metrics_and_types
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, insert_rows
 
@@ -53,9 +53,7 @@ def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.broken")
 
     builder = ConfigBuilder.from_snapshot(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=tmp_path,
+        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=tmp_path),
     )
     cfg = builder.function_analytics(fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)
@@ -90,9 +88,7 @@ def test_span_not_found_is_recorded(fresh_gateway: StorageGateway, tmp_path: Pat
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
     builder = ConfigBuilder.from_snapshot(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=tmp_path,
+        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=tmp_path),
     )
     cfg = builder.function_analytics(fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)

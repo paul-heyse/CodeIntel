@@ -16,7 +16,7 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
 from tests._helpers import (
     COVERAGE_PACK,
     GRAPH_PACK,
@@ -52,9 +52,9 @@ def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
     but uses the seeded data from GRAPH_PACK instead of manual insertion.
     """
     cfg = ConfigBuilder.from_snapshot(
-        repo=graph_ctx.repo,
-        commit=graph_ctx.commit,
-        repo_root=graph_ctx.repo_root,
+        snapshot=SnapshotInit(
+            repo=graph_ctx.repo, commit=graph_ctx.commit, repo_root=graph_ctx.repo_root
+        ),
     ).graph_metrics()
 
     compute_graph_metrics(graph_ctx.gateway, cfg)

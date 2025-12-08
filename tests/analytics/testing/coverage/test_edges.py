@@ -22,7 +22,7 @@ from codeintel.analytics.testing.coverage.edges import (
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import ConfigBuilder, SnapshotInit, TestCoverageStepConfig
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK, TestContext
 from tests._helpers.assertions import (
@@ -309,9 +309,9 @@ class TestBackfillTestGoids:
         """Verify returns empty dicts when no test catalog entries."""
         # No COVERAGE_PACK applied - empty test catalog
         cfg = ConfigBuilder.from_snapshot(
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-            repo_root=test_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+            ),
         ).test_coverage()
 
         goid_by_id, urn_by_id = backfill_test_goids_for_catalog(test_ctx.gateway, cfg)
@@ -345,9 +345,9 @@ class TestComputeTestCoverageEdges:
         test_ctx.require(CORE_PACK, COVERAGE_PACK)
 
         cfg = ConfigBuilder.from_snapshot(
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-            repo_root=test_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+            ),
         ).test_coverage()
         # Coverage file path doesn't exist by default in test context
 
@@ -367,9 +367,9 @@ class TestComputeTestCoverageEdges:
         test_ctx.require(CORE_PACK, COVERAGE_PACK)
 
         cfg = ConfigBuilder.from_snapshot(
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-            repo_root=test_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+            ),
         ).test_coverage()
 
         # Custom loader that returns None (no coverage data)
@@ -386,9 +386,9 @@ class TestComputeTestCoverageEdges:
         test_ctx.require(CORE_PACK)
 
         cfg = ConfigBuilder.from_snapshot(
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-            repo_root=test_ctx.repo_root,
+            snapshot=SnapshotInit(
+                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+            ),
         ).test_coverage()
 
         # Custom loader that returns None

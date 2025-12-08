@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import BuildLayoutOptions
 from tests._helpers import (
     GraphMetricsGatewayOptions,
     graph_metrics_ready_gateway,
@@ -39,10 +40,8 @@ def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> Non
     seed_function_graph_cycle(ctx.gateway, repo=REPO, commit=COMMIT, rel_path=REL_PATH)
 
     builder = ConfigBuilder.from_snapshot(
-        repo=REPO,
-        commit=COMMIT,
-        repo_root=ctx.repo_root,
-        build_dir=ctx.build_dir,
+        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
+        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
     )
     cfg = builder.graph_metrics()
     compute_graph_metrics(ctx.gateway, cfg)
@@ -82,10 +81,8 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
     )
 
     builder = ConfigBuilder.from_snapshot(
-        repo=REPO,
-        commit=COMMIT,
-        repo_root=ctx.repo_root,
-        build_dir=ctx.build_dir,
+        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
+        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
     )
     cfg = builder.graph_metrics()
     compute_graph_metrics(ctx.gateway, cfg)

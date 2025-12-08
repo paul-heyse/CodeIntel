@@ -15,7 +15,7 @@ Usage
 -----
 From repo root::
 
-    python mkdocs-gen/build_docs.py
+    python mkdocs_gen/build_docs.py
 
 Or via Makefile::
 
@@ -25,16 +25,17 @@ Or via Makefile::
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Protocol, cast
 
 from tqdm import tqdm
+
+from mkdocs_gen.command_runner import CommandError, run_command_sync, stream_command_sync
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,22 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MKDOCS_CONFIG = REPO_ROOT / "mkdocs-build" / "mkdocs.yml"
 OUTPUT_DIR = REPO_ROOT / "mkdocs-output"
+
+
+class ProgressBar(Protocol):
+    """Minimal progress bar contract used by the build pipeline."""
+
+    def set_description(self, desc: str) -> None:
+        """Set the progress bar description."""
+
+    def refresh(self) -> None:
+        """Refresh the progress bar display."""
+
+    def update(self, n: float | None = 1) -> bool | None:
+        """Advance the progress bar by ``n`` units."""
+
+    def close(self) -> None:
+        """Close and clean up the progress bar."""
 
 
 @dataclass
@@ -88,7 +105,7 @@ class BuildContext:
 def run_phase(
     phase: BuildPhase,
     func: Callable[[], None],
-    pbar: tqdm[Any],
+    pbar: ProgressBar,
 ) -> None:
     """Execute a build phase with timing and status tracking.
 
@@ -109,10 +126,6 @@ def run_phase(
     try:
         func()
         phase.status = "success"
-    except subprocess.CalledProcessError as e:
-        phase.status = "failed"
-        phase.error = f"Command failed with exit code {e.returncode}"
-        log.exception("%s failed", phase.name)
     except FileNotFoundError as e:
         phase.status = "failed"
         phase.error = f"Command not found: {e.filename}"
@@ -133,7 +146,7 @@ def generate_pydeps_diagram() -> None:
     output = REPO_ROOT / "mkdocs-build" / "docs" / "architecture" / "codeintel-imports.svg"
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
+    run_command_sync(
         [
             "pydeps",
             "codeintel",
@@ -147,9 +160,6 @@ def generate_pydeps_diagram() -> None:
             str(output),
         ],
         cwd=src_root,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     log.info("  -> %s", output.name)
 
@@ -162,7 +172,7 @@ def generate_pyreverse_diagrams() -> None:
     docs_arch.mkdir(parents=True, exist_ok=True)
 
     # Run pyreverse (capture stderr to suppress "Format svg not supported natively" message)
-    subprocess.run(
+    run_command_sync(
         [
             "pyreverse",
             "-o",
@@ -172,9 +182,6 @@ def generate_pyreverse_diagrams() -> None:
             "codeintel",
         ],
         cwd=src_root,
-        check=True,
-        capture_output=True,
-        text=True,
     )
 
     # Move generated files
@@ -194,47 +201,33 @@ def run_mkdocs_build() -> None:
 
     Raises
     ------
-    subprocess.CalledProcessError
+    CommandError
         If mkdocs build fails.
     """
     log.info("Running MkDocs build...")
     log.info("  Config: %s", MKDOCS_CONFIG.relative_to(REPO_ROOT))
     log.info("  Output: %s", OUTPUT_DIR.relative_to(REPO_ROOT))
 
-    # Run mkdocs with progress output
-    process = subprocess.Popen(
-        ["mkdocs", "build", "-f", str(MKDOCS_CONFIG)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        cwd=REPO_ROOT,
-    )
-
-    # Stream output, filtering for key messages
     module_count = 0
-    for raw_line in iter(process.stdout.readline, ""):  # type: ignore[union-attr]
-        line = raw_line.rstrip()
-        if not line:
-            continue
+    try:
+        lines = stream_command_sync(
+            ["mkdocs", "build", "-f", str(MKDOCS_CONFIG)],
+            cwd=REPO_ROOT,
+        )
+    except CommandError as exc:
+        raise CommandError(exc.cmd, exc.returncode, exc.output) from exc
 
-        # Count module processing (rough progress indicator)
-        if "reference/" in line.lower():
+    for line in lines:
+        lowered = line.lower()
+        if "reference/" in lowered:
             module_count += 1
             if module_count % 50 == 0:
                 log.info("  Processed %d modules...", module_count)
-        elif line.startswith("INFO"):
-            # Show key info messages
-            if "Documentation built" in line or "building" in line.lower():
+        elif lowered.startswith("info"):
+            if "documentation built" in lowered or "building" in lowered:
                 log.info("  %s", line.split(" - ", 1)[-1])
-        elif line.startswith("WARNING"):
-            # Suppress most warnings during build for cleaner output
-            pass
-        elif line.startswith("ERROR"):
+        elif lowered.startswith("error"):
             log.error("  %s", line)
-
-    process.wait()
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, "mkdocs build")
 
     # Count output files
     html_files = list(OUTPUT_DIR.rglob("*.html"))
@@ -272,6 +265,8 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
     ctx.start_time = time.perf_counter()
 
     # Define phases
+    pydeps_phase: BuildPhase | None = None
+    pyreverse_phase: BuildPhase | None = None
     if not skip_diagrams:
         pydeps_phase = BuildPhase("Pydeps import graph")
         pyreverse_phase = BuildPhase("Pyreverse UML diagrams")
@@ -282,24 +277,28 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
 
     # Header
     module_count = count_source_modules()
-    print()
-    print("=" * 70)
-    print("CodeIntel Documentation Build")
-    print("=" * 70)
-    print(f"  Source modules: {module_count}")
-    print(f"  Parallel mode:  {'enabled' if parallel else 'disabled'}")
-    print(f"  Output:         {OUTPUT_DIR.relative_to(REPO_ROOT)}/")
-    print("-" * 70)
-    print()
+    log.info("")
+    log.info("=" * 70)
+    log.info("CodeIntel Documentation Build")
+    log.info("=" * 70)
+    log.info("  Source modules: %d", module_count)
+    log.info("  Parallel mode:  %s", "enabled" if parallel else "disabled")
+    log.info("  Output:         %s/", OUTPUT_DIR.relative_to(REPO_ROOT))
+    log.info("-" * 70)
+    log.info("")
 
     # Progress bar for all phases
-    with tqdm(
-        total=len(ctx.phases),
-        desc="Building docs",
-        unit="phase",
-        bar_format="{desc}: {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {bar}",
-    ) as pbar:
-        if not skip_diagrams and parallel:
+    pbar = cast(
+        "ProgressBar",
+        tqdm(
+            total=len(ctx.phases),
+            desc="Building docs",
+            unit="phase",
+            bar_format="{desc}: {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {bar}",
+        ),
+    )
+    try:
+        if not skip_diagrams and parallel and pydeps_phase and pyreverse_phase:
             # Run diagram generation in parallel
             pbar.set_description("Generating diagrams (parallel)")
 
@@ -312,7 +311,7 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
                 try:
                     task_func()
                     phase.status = "success"
-                except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+                except (FileNotFoundError, OSError, RuntimeError) as e:
                     phase.status = "failed"
                     phase.error = str(e)
                 phase.duration = time.perf_counter() - start
@@ -327,13 +326,15 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
                     future.result()  # Re-raises any exception
                     pbar.update(1)
 
-        elif not skip_diagrams:
+        elif not skip_diagrams and pydeps_phase and pyreverse_phase:
             # Sequential diagram generation
             run_phase(pydeps_phase, generate_pydeps_diagram, pbar)
             run_phase(pyreverse_phase, generate_pyreverse_diagrams, pbar)
 
         # MkDocs build (always sequential)
         run_phase(mkdocs_phase, run_mkdocs_build, pbar)
+    finally:
+        pbar.close()
 
     return ctx
 
@@ -348,35 +349,35 @@ def print_summary(ctx: BuildContext) -> None:
     """
     total_time = time.perf_counter() - ctx.start_time
 
-    print()
-    print("-" * 70)
-    print("Build Summary")
-    print("-" * 70)
+    log.info("")
+    log.info("-" * 70)
+    log.info("Build Summary")
+    log.info("-" * 70)
 
     # Phase results
     for phase in ctx.phases:
         status_icon = "OK" if phase.status == "success" else "FAIL"
-        print(f"  [{status_icon:4}] {phase.name:<30} ({phase.duration:.1f}s)")
+        log.info("  [%s] %-30s (%.1fs)", status_icon.ljust(4), phase.name, phase.duration)
         if phase.error:
-            print(f"         Error: {phase.error}")
+            log.error("         Error: %s", phase.error)
 
-    print("-" * 70)
+    log.info("-" * 70)
 
     succeeded = sum(1 for p in ctx.phases if p.status == "success")
     failed = len(ctx.phases) - succeeded
 
     if failed == 0:
-        print(f"Build completed successfully in {total_time:.1f}s")
-        print(f"  Output: {OUTPUT_DIR}/")
-        print()
-        print("To view locally:")
-        print("  make docs-serve")
-        print("  open http://localhost:8000")
+        log.info("Build completed successfully in %.1fs", total_time)
+        log.info("  Output: %s/", OUTPUT_DIR)
+        log.info("")
+        log.info("To view locally:")
+        log.info("  make docs-serve")
+        log.info("  open http://localhost:8000")
     else:
-        print(f"Build completed with {failed} failure(s) in {total_time:.1f}s")
+        log.error("Build completed with %d failure(s) in %.1fs", failed, total_time)
 
-    print("=" * 70)
-    print()
+    log.info("=" * 70)
+    log.info("")
 
 
 def main() -> int:
@@ -398,17 +399,18 @@ def main() -> int:
     skip_diagrams = "--skip-diagrams" in args
 
     if "--help" in args or "-h" in args:
-        print(__doc__)
-        print("\nOptions:")
-        print("  --no-parallel    Disable parallel diagram generation")
-        print("  --skip-diagrams  Skip diagram generation entirely")
-        print("  --help, -h       Show this help message")
+        log.info(__doc__)
+        log.info("")
+        log.info("Options:")
+        log.info("  --no-parallel    Disable parallel diagram generation")
+        log.info("  --skip-diagrams  Skip diagram generation entirely")
+        log.info("  --help, -h       Show this help message")
         return 0
 
     try:
         ctx = build_docs(parallel=parallel, skip_diagrams=skip_diagrams)
     except KeyboardInterrupt:
-        print("\n\nBuild interrupted by user")
+        log.warning("Build interrupted by user")
         return 130
 
     print_summary(ctx)

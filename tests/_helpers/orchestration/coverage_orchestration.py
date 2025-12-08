@@ -9,7 +9,7 @@ from pathlib import Path
 from coverage import Coverage
 
 from codeintel.analytics.testing import compute_test_coverage_edges
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import ConfigBuilder, SnapshotInit, TestCoverageStepConfig
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
@@ -54,9 +54,7 @@ def create_coverage_edge_env(
         )
     )
     builder = ConfigBuilder.from_snapshot(
-        repo=seed_cfg.repo,
-        commit=seed_cfg.commit,
-        repo_root=repo_root,
+        snapshot=SnapshotInit(repo=seed_cfg.repo, commit=seed_cfg.commit, repo_root=repo_root),
     )
     seed_coverage_rows(gateway=gateway, rel_path=rel_path.as_posix(), seed=seed_cfg)
     return CoverageEdgeEnv(

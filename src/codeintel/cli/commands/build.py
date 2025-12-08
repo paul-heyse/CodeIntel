@@ -40,10 +40,11 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 import typer
 
@@ -743,18 +744,18 @@ def build_run_handler(
     typer.secho("Build completed successfully", fg=typer.colors.GREEN)
 
 
-def _bundle_build_run(cli_kwargs: dict[str, object]) -> dict[str, object]:
+def _bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
     options = BuildRunOptions(
-        targets=cli_kwargs.get("targets"),
-        module=cli_kwargs.get("module"),
-        target_scope=cli_kwargs.get("target_scope", TargetScope.REQUESTED),
-        run_mode=cli_kwargs.get("run_mode", RunMode.EXECUTE),
-        force=cli_kwargs.get("force"),
+        targets=cast("list[str] | None", cli_kwargs.get("targets")),
+        module=cast("str | None", cli_kwargs.get("module")),
+        target_scope=cast("TargetScope", cli_kwargs.get("target_scope", TargetScope.REQUESTED)),
+        run_mode=cast("RunMode", cli_kwargs.get("run_mode", RunMode.EXECUTE)),
+        force=cast("list[str] | None", cli_kwargs.get("force")),
     )
     ctx_opts = BuildRunContext(
-        project_root=cli_kwargs.get("project_root"),
-        verbose=int(cli_kwargs.get("verbose", 0)),
-        output_format=cli_kwargs.get("output_format", OutputFormat.JSON),
+        project_root=cast("Path | None", cli_kwargs.get("project_root")),
+        verbose=int(cast("int", cli_kwargs.get("verbose", 0))),
+        output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.JSON)),
     )
     return {"options": options, "ctx_opts": ctx_opts}
 
@@ -765,9 +766,9 @@ build_run_option_specs = [
     OptionSpec("target_scope", AllOpt, TargetScope.REQUESTED),
     OptionSpec("run_mode", DryRunOpt, RunMode.EXECUTE),
     OptionSpec("force", ForceOpt, None),
-    OptionSpec("project_root", ProjectRootOpt, None),
-    OptionSpec("verbose", VerboseOpt, VerboseOpt),
-    OptionSpec("output_format", JsonOutputOpt, JsonOutputOpt),
+    OptionSpec("project_root", Path | None, ProjectRootOpt),
+    OptionSpec("verbose", int, VerboseOpt),
+    OptionSpec("output_format", OutputFormat, JsonOutputOpt),
 ]
 
 build_run = build_app.command("run")(

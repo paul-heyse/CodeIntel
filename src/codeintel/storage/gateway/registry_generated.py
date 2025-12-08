@@ -1447,6 +1447,10 @@ TABLE_REGISTRY: Final[dict[str, TableMeta]] = {
             "use_full_rebuild",
         ],
     },
+    "core.modules": {
+        "table": "core.modules",
+        "columns": ["module", "path", "repo", "commit", "language", "tags", "owners"],
+    },
     "core.repo_map": {
         "table": "core.repo_map",
         "columns": ["repo", "commit", "modules", "overlays", "generated_at"],
@@ -1570,5 +1574,17 @@ TABLE_REGISTRY: Final[dict[str, TableMeta]] = {
     "graph.import_modules": {
         "table": "graph.import_modules",
         "columns": ["repo", "commit", "module", "scc_id", "component_size", "layer", "cycle_group"],
+    },
+    "graph.symbol_use_edges": {
+        "table": "graph.symbol_use_edges",
+        "columns": [
+            "symbol",
+            "def_path",
+            "use_path",
+            "same_file",
+            "same_module",
+            "def_goid_h128",
+            "use_goid_h128",
+        ],
     },
 }
