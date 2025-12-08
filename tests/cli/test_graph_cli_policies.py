@@ -1,54 +1,101 @@
-"""Tests for graph CLI planning policy options."""
+"""Graph CLI planning policy behavior via command handler."""
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from codeintel.cli.commands import graphs as graphs_cmd
-from codeintel.graphs.core.protocol import GraphPluginPlan
-from codeintel.graphs.core.registry import DependencyPolicy, PlanningOptions, SelectionPolicy
-from tests._helpers.assertions import expect_equal, expect_true
+from codeintel.cli.commands.graphs import GraphPluginsOptions, PlanMode
+from codeintel.graphs.core.registry import (
+    DependencyPolicy,
+    SelectionPolicy,
+    reset_graph_registry,
+)
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 
-def test_plan_plugins_respects_selection_and_dependency(monkeypatch: object) -> None:
-    """CLI passes selection/dependency policy into planning."""
-    captured: dict[str, object] = {}
+@pytest.fixture(autouse=True)
+def _reset_registry() -> None:
+    reset_graph_registry()
 
-    def _fake_plan_graph_plugins(**kwargs: object) -> GraphPluginPlan:
-        captured["kwargs"] = kwargs
-        return GraphPluginPlan(plugins=(), plan_id="stub", skipped_plugins=(), dep_graph={})
 
-    monkeypatch.setattr(graphs_cmd, "plan_graph_plugins", _fake_plan_graph_plugins)
-    options = graphs_cmd.GraphPluginsOptions(
-        mode=graphs_cmd.PlanMode.PLAN,
-        names=None,
+def test_cli_lenient_selection_skips_unknown_plugin(capsys: pytest.CaptureFixture[str]) -> None:
+    """Default lenient selection should mark unknown plugins as skipped."""
+    options = GraphPluginsOptions(
+        mode=PlanMode.PLAN,
+        names=("nonexistent_plugin",),
+        enable=None,
+        disable=(),
+        selection_policy=SelectionPolicy.LENIENT,
+        dependency_policy=DependencyPolicy.STRICT,
+        validation_mode=False,
+        output_format=graphs_cmd.OutputFormat.JSON,
+    )
+
+    graphs_cmd.graph_plugins_handler(options)
+    captured = capsys.readouterr().out
+    payload = json.loads(captured)
+    skipped = {entry["name"]: entry["reason"] for entry in payload["skipped_plugins"]}
+    expect_equal(skipped["nonexistent_plugin"], "missing_graph")
+
+
+def test_cli_strict_selection_falls_back_on_unknown_plugin(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Strict selection should fail planning and trigger fallback output."""
+    options = GraphPluginsOptions(
+        mode=PlanMode.PLAN,
+        names=("nonexistent_plugin",),
         enable=None,
         disable=(),
         selection_policy=SelectionPolicy.STRICT,
-        dependency_policy=DependencyPolicy.SKIP,
+        dependency_policy=DependencyPolicy.STRICT,
         validation_mode=False,
         output_format=graphs_cmd.OutputFormat.TEXT,
     )
 
     graphs_cmd.graph_plugins_handler(options)
-
-    plan_opts = captured["kwargs"]["plan_options"]
-    expect_true(isinstance(plan_opts, PlanningOptions))
-    expect_equal(plan_opts.selection_policy, SelectionPolicy.STRICT)
-    expect_equal(plan_opts.dependency_policy, DependencyPolicy.SKIP)
-    expect_true(plan_opts.use_stubs)
+    captured = capsys.readouterr().out
+    expect_in("Failed to compute plan; showing available plugins", captured)
 
 
-def test_plan_plugins_validation_mode_forces_strict(monkeypatch: object) -> None:
-    """Validation mode enforces strict policies and disables stubs."""
-    captured: dict[str, object] = {}
+def test_cli_dependency_skip_records_missing_dependency(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Dependency skip policy should record missing dependencies instead of raising."""
+    main_name = "cli_missing_dep_main"
+    missing_dep = "cli_missing_dep_missing"
 
-    def _fake_plan_graph_plugins(**kwargs: object) -> GraphPluginPlan:
-        captured["kwargs"] = kwargs
-        return GraphPluginPlan(plugins=(), plan_id="stub", skipped_plugins=(), dep_graph={})
+    with plugin_registrar(
+        [GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()]
+    ):
+        options = GraphPluginsOptions(
+            mode=PlanMode.PLAN,
+            names=(main_name,),
+            enable=None,
+            disable=(),
+            selection_policy=SelectionPolicy.LENIENT,
+            dependency_policy=DependencyPolicy.SKIP,
+            validation_mode=False,
+            output_format=graphs_cmd.OutputFormat.JSON,
+        )
+        graphs_cmd.graph_plugins_handler(options)
 
-    monkeypatch.setattr(graphs_cmd, "plan_graph_plugins", _fake_plan_graph_plugins)
-    options = graphs_cmd.GraphPluginsOptions(
-        mode=graphs_cmd.PlanMode.PLAN,
-        names=None,
+    captured = capsys.readouterr().out
+    payload = json.loads(captured)
+    skipped = {entry["name"]: entry["reason"] for entry in payload["skipped_plugins"]}
+    expect_equal(skipped[missing_dep], "missing_dependency")
+    expect_true(missing_dep in payload["dep_graph"])
+
+
+def test_cli_validation_mode_enforces_strict_policy(capsys: pytest.CaptureFixture[str]) -> None:
+    """Validation mode should enforce strict selection/dependency and avoid stubs."""
+    options = GraphPluginsOptions(
+        mode=PlanMode.PLAN,
+        names=("nonexistent_plugin",),
         enable=None,
         disable=(),
         selection_policy=SelectionPolicy.LENIENT,
@@ -58,10 +105,5 @@ def test_plan_plugins_validation_mode_forces_strict(monkeypatch: object) -> None
     )
 
     graphs_cmd.graph_plugins_handler(options)
-
-    plan_opts = captured["kwargs"]["plan_options"]
-    expect_true(isinstance(plan_opts, PlanningOptions))
-    expect_equal(plan_opts.selection_policy, SelectionPolicy.STRICT)
-    expect_equal(plan_opts.dependency_policy, DependencyPolicy.STRICT)
-    expect_true(not plan_opts.use_stubs)
-    expect_true(not plan_opts.allow_missing_dependencies)
+    captured = capsys.readouterr().out
+    expect_in("Failed to compute plan; showing available plugins", captured)

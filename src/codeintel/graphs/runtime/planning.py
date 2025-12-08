@@ -394,8 +394,7 @@ def _prepare_execution_inputs(
         enabled=cfg.enabled_plugins if cfg is not None else None,
         disabled=cfg.disabled_plugins if cfg is not None else None,
         defaults=list(DEFAULT_GRAPH_PLUGINS),
-        plan_options=plan_options
-        or PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
+        plan_options=plan_options or PlanningOptions(selection_policy=SelectionPolicy.LENIENT),
     )
 
     options_by_plugin = _resolve_plugin_options_map(

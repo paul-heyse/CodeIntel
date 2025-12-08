@@ -25,6 +25,8 @@ def wrap_tool_with_prereqs[T](
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
+    *,
+    prereq_runner: Callable[..., object] | None = None,
 ) -> Callable[..., T]:
     """Wrap a tool function to run prerequisites first.
 
@@ -41,6 +43,8 @@ def wrap_tool_with_prereqs[T](
         Serving configuration with repo/commit info.
     backend
         Query backend with gateway access.
+    prereq_runner
+        Optional override for prerequisite execution (defaults to ensure_prereqs_for_mcp).
 
     Returns
     -------
@@ -51,7 +55,8 @@ def wrap_tool_with_prereqs[T](
     @functools.wraps(tool_fn)
     def _wrapped(**kwargs: object) -> T:
         LOG.debug("auto_pipeline check for op=%s", op_id)
-        ensure_prereqs_for_mcp(op_id=op_id, config=config, backend=backend)
+        runner = prereq_runner or ensure_prereqs_for_mcp
+        runner(op_id=op_id, config=config, backend=backend)
         return tool_fn(**kwargs)
 
     return _wrapped
