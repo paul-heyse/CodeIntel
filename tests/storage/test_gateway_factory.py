@@ -18,6 +18,12 @@ from codeintel.storage.gateway.factory import (
     open_memory_gateway,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 
 # =============================================================================
 # StorageConfig Tests
@@ -27,15 +33,15 @@ from tests._helpers import assert_frozen
 def test_storage_config_creates_with_defaults() -> None:
     """Verify StorageConfig default values."""
     cfg = StorageConfig(db_path=Path(":memory:"))
-    assert cfg.db_path == Path(":memory:")
-    assert cfg.read_only is False
-    assert cfg.apply_schema is False
-    assert cfg.ensure_views is False
-    assert cfg.validate_schema is False
-    assert cfg.attach_history is False
-    assert cfg.history_db_path is None
-    assert cfg.repo is None
-    assert cfg.commit is None
+    expect_equal(cfg.db_path, Path(":memory:"), label="db_path")
+    expect_true(cfg.read_only is False, message="read_only default")
+    expect_true(cfg.apply_schema is False, message="apply_schema default")
+    expect_true(cfg.ensure_views is False, message="ensure_views default")
+    expect_true(cfg.validate_schema is False, message="validate_schema default")
+    expect_true(cfg.attach_history is False, message="attach_history default")
+    expect_true(cfg.history_db_path is None, message="history_db_path default")
+    expect_true(cfg.repo is None, message="repo default")
+    expect_true(cfg.commit is None, message="commit default")
 
 
 def test_storage_config_creates_with_all_options(tmp_path: Path) -> None:
@@ -53,27 +59,27 @@ def test_storage_config_creates_with_all_options(tmp_path: Path) -> None:
         repo="test/repo",
         commit="abc123",
     )
-    assert cfg.db_path == db_path
-    assert cfg.read_only is True
-    assert cfg.apply_schema is True
-    assert cfg.ensure_views is True
-    assert cfg.validate_schema is True
-    assert cfg.attach_history is True
-    assert cfg.history_db_path == history_path
-    assert cfg.repo == "test/repo"
-    assert cfg.commit == "abc123"
+    expect_equal(cfg.db_path, db_path, label="db_path")
+    expect_true(cfg.read_only is True, message="read_only")
+    expect_true(cfg.apply_schema is True, message="apply_schema")
+    expect_true(cfg.ensure_views is True, message="ensure_views")
+    expect_true(cfg.validate_schema is True, message="validate_schema")
+    expect_true(cfg.attach_history is True, message="attach_history")
+    expect_equal(cfg.history_db_path, history_path, label="history_db_path")
+    expect_equal(cfg.repo, "test/repo", label="repo")
+    expect_equal(cfg.commit, "abc123", label="commit")
 
 
 def test_storage_config_for_ingest(tmp_path: Path) -> None:
     """Verify for_ingest factory method returns correct configuration."""
     db_path = tmp_path / "test.duckdb"
     cfg = StorageConfig.for_ingest(db_path)
-    assert cfg.db_path == db_path
-    assert cfg.read_only is False
-    assert cfg.apply_schema is True
-    assert cfg.ensure_views is True
-    assert cfg.validate_schema is True
-    assert cfg.attach_history is False
+    expect_equal(cfg.db_path, db_path, label="db_path")
+    expect_true(cfg.read_only is False, message="read_only")
+    expect_true(cfg.apply_schema is True, message="apply_schema")
+    expect_true(cfg.ensure_views is True, message="ensure_views")
+    expect_true(cfg.validate_schema is True, message="validate_schema")
+    expect_true(cfg.attach_history is False, message="attach_history")
 
 
 def test_storage_config_for_ingest_with_history(tmp_path: Path) -> None:
@@ -84,19 +90,19 @@ def test_storage_config_for_ingest_with_history(tmp_path: Path) -> None:
         db_path,
         history_db_path=history_path,
     )
-    assert cfg.attach_history is True
-    assert cfg.history_db_path == history_path
+    expect_true(cfg.attach_history is True, message="attach_history")
+    expect_equal(cfg.history_db_path, history_path, label="history_db_path")
 
 
 def test_storage_config_for_readonly(tmp_path: Path) -> None:
     """Verify for_readonly factory method returns correct configuration."""
     db_path = tmp_path / "test.duckdb"
     cfg = StorageConfig.for_readonly(db_path)
-    assert cfg.db_path == db_path
-    assert cfg.read_only is True
-    assert cfg.apply_schema is False
-    assert cfg.ensure_views is True
-    assert cfg.validate_schema is True
+    expect_equal(cfg.db_path, db_path, label="db_path")
+    expect_true(cfg.read_only is True, message="read_only")
+    expect_true(cfg.apply_schema is False, message="apply_schema")
+    expect_true(cfg.ensure_views is True, message="ensure_views")
+    expect_true(cfg.validate_schema is True, message="validate_schema")
 
 
 def test_storage_config_is_frozen() -> None:
@@ -115,9 +121,9 @@ def test_open_memory_gateway_returns_gateway() -> None:
     gateway = open_memory_gateway(validate_schema=False)
     try:
         # DuckDBGateway implements StorageGateway protocol
-        assert isinstance(gateway, DuckDBGateway)
-        assert gateway.config is not None
-        assert gateway.datasets is not None
+        expect_is_instance(gateway, DuckDBGateway, label="gateway type")
+        expect_is_not_none(gateway.config, label="gateway config")
+        expect_is_not_none(gateway.datasets, label="gateway datasets")
     finally:
         gateway.close()
 
@@ -128,8 +134,10 @@ def test_open_memory_gateway_with_defaults() -> None:
     try:
         # Should be able to query core.modules if schema applied
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
-        assert result is not None
-        assert result[0] == 0  # Empty but table exists
+        if result is None:
+            pytest.fail("Expected modules count row")
+        row_count = result[0]
+        expect_equal(row_count, 0, label="modules row count")
     finally:
         gateway.close()
 
@@ -142,8 +150,10 @@ def test_open_memory_gateway_without_views() -> None:
         result = gateway.con.execute(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'modules'"
         ).fetchone()
-        assert result is not None
-        assert result[0] >= 1  # Table exists
+        if result is None:
+            pytest.fail("Expected information_schema count row")
+        table_count = result[0]
+        expect_true(table_count >= 1, message="modules table exists")
     finally:
         gateway.close()
 
@@ -157,8 +167,7 @@ def test_open_memory_gateway_with_views() -> None:
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'docs' AND table_type = 'VIEW'"
         ).fetchone()
-        assert result is not None
-        # At least some views should exist
+        expect_is_not_none(result, label="docs views count")
     finally:
         gateway.close()
 
@@ -167,8 +176,8 @@ def test_open_memory_gateway_with_repo_and_commit() -> None:
     """Verify open_memory_gateway stores repo and commit in config."""
     gateway = open_memory_gateway(repo="test/repo", commit="abc123", validate_schema=False)
     try:
-        assert gateway.config.repo == "test/repo"
-        assert gateway.config.commit == "abc123"
+        expect_equal(gateway.config.repo, "test/repo", label="repo")
+        expect_equal(gateway.config.commit, "abc123", label="commit")
     finally:
         gateway.close()
 
@@ -177,10 +186,10 @@ def test_open_memory_gateway_creates_accessors() -> None:
     """Verify gateway has all accessor properties."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        assert hasattr(gateway, "core")
-        assert hasattr(gateway, "graph")
-        assert hasattr(gateway, "docs")
-        assert hasattr(gateway, "analytics")
+        expect_true(hasattr(gateway, "core"), message="core accessor present")
+        expect_true(hasattr(gateway, "graph"), message="graph accessor present")
+        expect_true(hasattr(gateway, "docs"), message="docs accessor present")
+        expect_true(hasattr(gateway, "analytics"), message="analytics accessor present")
     finally:
         gateway.close()
 
@@ -197,8 +206,10 @@ def test_open_memory_gateway_supports_insert_and_query() -> None:
         result = gateway.con.execute(
             "SELECT module FROM core.modules WHERE repo = ?", ["test/repo"]
         ).fetchone()
-        assert result is not None
-        assert result[0] == "test_mod"
+        if result is None:
+            pytest.fail("Expected module fetch result")
+        module_name = result[0]
+        expect_equal(module_name, "test_mod", label="module value")
     finally:
         gateway.close()
 
@@ -207,9 +218,9 @@ def test_open_memory_gateway_has_dataset_registry() -> None:
     """Verify gateway has loaded dataset registry."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        assert gateway.datasets is not None
+        expect_is_not_none(gateway.datasets, label="datasets registry")
         # Registry should have some datasets accessible by name
-        assert len(gateway.datasets.by_name) > 0
+        expect_true(len(gateway.datasets.by_name) > 0, message="dataset registry populated")
     finally:
         gateway.close()
 
@@ -231,9 +242,8 @@ def test_open_gateway_creates_file_database(tmp_path: Path) -> None:
     )
     gateway = open_gateway(cfg)
     try:
-        assert db_path.exists()
-        # DuckDBGateway implements StorageGateway protocol
-        assert isinstance(gateway, DuckDBGateway)
+        expect_true(db_path.exists(), message="db_path created")
+        expect_is_instance(gateway, DuckDBGateway, label="gateway type")
     finally:
         gateway.close()
 
@@ -252,7 +262,7 @@ def test_open_gateway_creates_tables(tmp_path: Path) -> None:
     try:
         # core.modules should exist
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
-        assert result is not None
+        expect_is_not_none(result, label="modules count")
     finally:
         gateway.close()
 
@@ -288,8 +298,10 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
         result = gateway2.con.execute(
             "SELECT module FROM core.modules WHERE repo = ?", ["repo"]
         ).fetchone()
-        assert result is not None
-        assert result[0] == "mod"
+        if result is None:
+            pytest.fail("Expected persisted module row")
+        module_value = result[0]
+        expect_equal(module_value, "mod", label="module value")
     finally:
         gateway2.close()
 
@@ -321,7 +333,7 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
     try:
         # Should be able to read
         result = gateway_read.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
-        assert result is not None
+        expect_is_not_none(result, label="read count")
     finally:
         gateway_read.close()
 
@@ -334,7 +346,7 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
 def test_snapshot_resolver_returns_callable(tmp_path: Path) -> None:
     """Verify build_snapshot_gateway_resolver returns callable."""
     resolver = build_snapshot_gateway_resolver(db_dir=tmp_path)
-    assert callable(resolver)
+    expect_true(callable(resolver), message="resolver callable")
 
 
 def test_snapshot_resolver_raises_for_missing_file(tmp_path: Path) -> None:
@@ -365,10 +377,10 @@ def test_snapshot_resolver_opens_existing_snapshot(tmp_path: Path) -> None:
     gateway = resolver(commit)
     try:
         # DuckDBGateway implements StorageGateway protocol
-        assert isinstance(gateway, DuckDBGateway)
-        assert gateway.config.read_only is True
-        assert gateway.config.repo == "test/repo"
-        assert gateway.config.commit == commit
+        expect_is_instance(gateway, DuckDBGateway, label="gateway type")
+        expect_true(gateway.config.read_only is True, message="read_only")
+        expect_equal(gateway.config.repo, "test/repo", label="repo")
+        expect_equal(gateway.config.commit, commit, label="commit")
     finally:
         gateway.close()
 
@@ -397,7 +409,7 @@ def test_snapshot_resolver_reuses_primary_gateway(tmp_path: Path) -> None:
 
         # Should return same instance
         resolved = resolver(commit)
-        assert resolved is primary
+        expect_true(resolved is primary, message="resolver reused primary gateway")
     finally:
         primary.close()
 
@@ -431,10 +443,10 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
         # Verify different data
         r1 = gw1.con.execute("SELECT module FROM core.modules").fetchone()
         r2 = gw2.con.execute("SELECT module FROM core.modules").fetchone()
-        assert r1 is not None
-        assert r2 is not None
-        assert r1[0] == "mod_commit1"
-        assert r2[0] == "mod_commit2"
+        if r1 is None or r2 is None:
+            pytest.fail("Expected rows for both commits")
+        expect_equal(r1[0], "mod_commit1", label="commit1 module")
+        expect_equal(r2[0], "mod_commit2", label="commit2 module")
     finally:
         gw1.close()
         gw2.close()
@@ -448,7 +460,7 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
 def test_gateway_close_releases_connection() -> None:
     """Verify close() releases the database connection."""
     gateway = open_memory_gateway(validate_schema=False)
-    assert gateway.con is not None
+    expect_is_not_none(gateway.con, label="connection before close")
     gateway.close()
     # After close, connection should be closed
     # (attempting to use it would raise an error)
@@ -459,7 +471,7 @@ def test_gateway_supports_context_manager() -> None:
     gateway = open_memory_gateway(validate_schema=False)
     # Manually close since DuckDBGateway might not implement __enter__/__exit__
     try:
-        assert gateway.con is not None
+        expect_is_not_none(gateway.con, label="connection available")
     finally:
         gateway.close()
 
@@ -498,9 +510,10 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM core.modules WHERE repo = ?",
             ["test/repo"],
         ).fetchone()
-        assert count is not None
+        if count is None:
+            pytest.fail("Expected module count row")
         expected_count = 2
-        assert count[0] == expected_count
+        expect_equal(count[0], expected_count, label="module count value")
     finally:
         gw_read.close()
 
@@ -516,13 +529,15 @@ def test_multiple_memory_gateways_are_independent() -> None:
 
         # gw2 should be empty
         r2 = gw2.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
-        assert r2 is not None
-        assert r2[0] == 0
+        if r2 is None:
+            pytest.fail("Expected gateway2 modules count")
+        expect_equal(r2[0], 0, label="gateway2 modules")
 
         # gw1 should have data
         r1 = gw1.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
-        assert r1 is not None
-        assert r1[0] == 1
+        if r1 is None:
+            pytest.fail("Expected gateway1 modules count")
+        expect_equal(r1[0], 1, label="gateway1 modules")
     finally:
         gw1.close()
         gw2.close()

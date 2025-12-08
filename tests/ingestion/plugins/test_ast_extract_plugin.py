@@ -14,6 +14,7 @@ from codeintel.ingestion.plugins import ast_extract
 from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
+from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_context import RecordingGateway
 
 
@@ -42,8 +43,8 @@ async def test_execute_invokes_step_and_returns_row_counts(
             captured.gateway = storage
             captured.repo_root = cast("Path", discovery)
 
+        @staticmethod
         def execute(
-            self,
             modules: list[ModuleRecord],
             *,
             repo: str,
@@ -68,15 +69,15 @@ async def test_execute_invokes_step_and_returns_row_counts(
 
     result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert result.row_counts == {"core.ast_nodes": 1}
-    assert captured.gateway is ctx.gateway
-    assert captured.repo_root == repo_root
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {"core.ast_nodes": 1})
+    expect_true(captured.gateway is ctx.gateway)
+    expect_equal(captured.repo_root, repo_root)
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)
     module_record = captured.modules[0]
-    assert module_record.rel_path == "pkg/mod.py"
-    assert module_record.file_path == repo_root / "pkg/mod.py"
+    expect_equal(module_record.rel_path, "pkg/mod.py")
+    expect_equal(module_record.file_path, repo_root / "pkg/mod.py")
 
 
 @pytest.mark.anyio
@@ -93,8 +94,8 @@ async def test_execute_queries_gateway_when_modules_missing(
         def __init__(self, *_: object, **__: object) -> None:
             return
 
+        @staticmethod
         def execute(
-            self,
             modules: list[ModuleRecord],
             *,
             repo: str,
@@ -111,15 +112,15 @@ async def test_execute_queries_gateway_when_modules_missing(
 
     result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.row_counts == {"core.ast_nodes": 1}
+    expect_equal(result.row_counts, {"core.ast_nodes": 1})
     sql, params = gateway.executions[0]
-    assert "core.modules" in sql
-    assert params == [DEFAULT_REPO, DEFAULT_COMMIT]
+    expect_true("core.modules" in sql)
+    expect_equal(params, [DEFAULT_REPO, DEFAULT_COMMIT])
     module_record = captured.modules[0]
-    assert module_record.rel_path == "pkg/db_mod.py"
-    assert module_record.file_path == repo_root / "pkg/db_mod.py"
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_equal(module_record.rel_path, "pkg/db_mod.py")
+    expect_equal(module_record.file_path, repo_root / "pkg/db_mod.py")
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)
 
 
 @pytest.mark.anyio
@@ -140,8 +141,8 @@ async def test_execute_recovers_from_gateway_errors(
         def __init__(self, *_: object, **__: object) -> None:
             return
 
+        @staticmethod
         def execute(
-            self,
             modules: list[ModuleRecord],
             *,
             repo: str,
@@ -159,7 +160,7 @@ async def test_execute_recovers_from_gateway_errors(
 
     result = await AstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert captured.modules == []
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_true(result.success is True)
+    expect_equal(captured.modules, [])
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)

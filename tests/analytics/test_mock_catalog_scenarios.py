@@ -13,7 +13,16 @@ Testing Charter Compliance:
 
 from __future__ import annotations
 
+import pytest
+
 from codeintel.analytics.resources.catalog import CatalogProvider
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionMeta,
@@ -27,17 +36,19 @@ from tests._helpers.rows import function_meta
 class TestMockFunctionCatalogBasics:
     """Basic MockFunctionCatalog usage patterns."""
 
-    def test_empty_catalog_returns_none_for_lookups(self) -> None:
+    @staticmethod
+    def test_empty_catalog_returns_none_for_lookups() -> None:
         """Empty catalog returns None for all lookups."""
         catalog = MockFunctionCatalog()
 
-        assert catalog.urn_for_goid(1000) is None
-        assert catalog.goid_for_urn("urn:test:module.py#func") is None
-        assert catalog.lookup_goid("module.py", 1, 10, "func") is None
-        assert catalog.get_all_goids() == []
-        assert catalog.get_functions_by_path("module.py") == []
+        expect_true(catalog.urn_for_goid(1000) is None)
+        expect_true(catalog.goid_for_urn("urn:test:module.py#func") is None)
+        expect_true(catalog.lookup_goid("module.py", 1, 10, "func") is None)
+        expect_equal(catalog.get_all_goids(), [])
+        expect_equal(catalog.get_functions_by_path("module.py"), [])
 
-    def test_catalog_with_custom_functions(self) -> None:
+    @staticmethod
+    def test_catalog_with_custom_functions() -> None:
         """Custom functions are accessible via all lookup methods."""
         catalog = MockFunctionCatalog(
             functions=[
@@ -59,24 +70,25 @@ class TestMockFunctionCatalogBasics:
         )
 
         # URN lookups
-        assert catalog.urn_for_goid(1001) == "urn:test:test:main.py#main"
-        assert catalog.urn_for_goid(1002) == "urn:test:test:utils.py#helper"
+        expect_equal(catalog.urn_for_goid(1001), "urn:test:test:main.py#main")
+        expect_equal(catalog.urn_for_goid(1002), "urn:test:test:utils.py#helper")
 
         # Reverse lookups
-        assert catalog.goid_for_urn("urn:test:test:main.py#main") == 1001
+        expect_equal(catalog.goid_for_urn("urn:test:test:main.py#main"), 1001)
 
         # Span lookups
-        assert catalog.lookup_goid("main.py", 10, 25, "main") == 1001
+        expect_equal(catalog.lookup_goid("main.py", 10, 25, "main"), 1001)
 
         # All GOIDs
-        assert set(catalog.get_all_goids()) == {1001, 1002}
+        expect_equal(set(catalog.get_all_goids()), {1001, 1002})
 
         # Functions by path
         main_funcs = catalog.get_functions_by_path("main.py")
-        assert len(main_funcs) == 1
-        assert main_funcs[0].qualname == "main"
+        expect_length(main_funcs, 1)
+        expect_equal(main_funcs[0].qualname, "main")
 
-    def test_catalog_auto_generates_urn_if_not_provided(self) -> None:
+    @staticmethod
+    def test_catalog_auto_generates_urn_if_not_provided() -> None:
         """URN is auto-generated from rel_path and qualname."""
         catalog = MockFunctionCatalog(
             functions=[
@@ -90,11 +102,14 @@ class TestMockFunctionCatalogBasics:
         )
 
         urn = catalog.urn_for_goid(1001)
-        assert urn is not None
-        assert "mod.py" in urn
-        assert "process" in urn
+        expect_is_not_none(urn)
+        if urn is None:
+            pytest.fail("URN should be generated")
+        expect_in("mod.py", urn)
+        expect_in("process", urn)
 
-    def test_catalog_builds_spans_from_functions(self) -> None:
+    @staticmethod
+    def test_catalog_builds_spans_from_functions() -> None:
         """Function spans are automatically derived from function metadata."""
         catalog = MockFunctionCatalog(
             functions=[
@@ -108,29 +123,31 @@ class TestMockFunctionCatalogBasics:
             ]
         )
 
-        assert len(catalog.function_spans) == 1
+        expect_length(catalog.function_spans, 1)
         span = catalog.function_spans[0]
-        assert span.goid == 1001
-        assert span.rel_path == "main.py"
-        assert span.start_line == 10
-        assert span.end_line == 25
+        expect_equal(span.goid, 1001)
+        expect_equal(span.rel_path, "main.py")
+        expect_equal(span.start_line, 10)
+        expect_equal(span.end_line, 25)
 
 
 class TestMockCatalogFactoryFunctions:
     """Tests for factory function usage patterns."""
 
-    def test_create_with_functions_basic(self) -> None:
+    @staticmethod
+    def test_create_with_functions_basic() -> None:
         """create_mock_catalog_with_functions creates populated catalog."""
         catalog = create_mock_catalog_with_functions(5)
 
-        assert len(catalog.functions) == 5
-        assert len(catalog.get_all_goids()) == 5
+        expect_length(catalog.functions, 5)
+        expect_length(catalog.get_all_goids(), 5)
 
         # All functions are in the same module
         funcs_in_module = catalog.get_functions_by_path("module.py")
-        assert len(funcs_in_module) == 5
+        expect_length(funcs_in_module, 5)
 
-    def test_create_with_functions_custom_path(self) -> None:
+    @staticmethod
+    def test_create_with_functions_custom_path() -> None:
         """create_mock_catalog_with_functions accepts custom path."""
         catalog = create_mock_catalog_with_functions(
             3,
@@ -138,26 +155,28 @@ class TestMockCatalogFactoryFunctions:
             module_name="src.utils",
         )
 
-        assert len(catalog.functions) == 3
-        assert "src/utils.py" in catalog.module_by_path
-        assert catalog.module_by_path["src/utils.py"] == "src.utils"
+        expect_length(catalog.functions, 3)
+        expect_in("src/utils.py", catalog.module_by_path)
+        expect_equal(catalog.module_by_path["src/utils.py"], "src.utils")
 
-    def test_create_multi_file_default(self) -> None:
+    @staticmethod
+    def test_create_multi_file_default() -> None:
         """create_mock_catalog_multi_file creates multi-file catalog."""
         catalog = create_mock_catalog_multi_file()
 
         # Default: 2 in main.py, 3 in utils.py
         expected_total = 5
-        assert len(catalog.functions) == expected_total
+        expect_length(catalog.functions, expected_total)
 
         main_funcs = catalog.get_functions_by_path("src/main.py")
         utils_funcs = catalog.get_functions_by_path("src/utils.py")
         expected_main = 2
         expected_utils = 3
-        assert len(main_funcs) == expected_main
-        assert len(utils_funcs) == expected_utils
+        expect_length(main_funcs, expected_main)
+        expect_length(utils_funcs, expected_utils)
 
-    def test_create_multi_file_custom(self) -> None:
+    @staticmethod
+    def test_create_multi_file_custom() -> None:
         """create_mock_catalog_multi_file accepts custom file layout."""
         catalog = create_mock_catalog_multi_file(
             {
@@ -167,46 +186,48 @@ class TestMockCatalogFactoryFunctions:
             }
         )
 
-        assert len(catalog.functions) == 9
+        expect_length(catalog.functions, 9)
 
         routes = catalog.get_functions_by_path("api/routes.py")
-        assert len(routes) == 4
+        expect_length(routes, 4)
 
         # Module names are derived from paths
-        assert catalog.module_by_path["api/routes.py"] == "api.routes"
+        expect_equal(catalog.module_by_path["api/routes.py"], "api.routes")
 
-    def test_create_realistic_patterns(self) -> None:
+    @staticmethod
+    def test_create_realistic_patterns() -> None:
         """create_mock_catalog_realistic provides varied function types."""
         catalog = create_mock_catalog_realistic()
 
         # Has functions across multiple files
         expected_file_count = 4
-        assert len(catalog.module_by_path) == expected_file_count
+        expect_length(catalog.module_by_path, expected_file_count)
 
         # Has varied function patterns
         all_qualnames = [fn.qualname for fn in catalog.functions]
 
         # Public entry point
-        assert "main" in all_qualnames
+        expect_in("main", all_qualnames)
 
         # Public function
-        assert "process_data" in all_qualnames
+        expect_in("process_data", all_qualnames)
 
         # Private helper
-        assert "_validate" in all_qualnames
+        expect_in("_validate", all_qualnames)
 
         # Class methods
-        assert "User.save" in all_qualnames
-        assert "User.from_dict" in all_qualnames
+        expect_in("User.save", all_qualnames)
+        expect_in("User.from_dict", all_qualnames)
 
         # Async function
-        assert "fetch_data" in all_qualnames
+        expect_in("fetch_data", all_qualnames)
 
 
 class TestMockCatalogWithCatalogProvider:
     """Tests for MockFunctionCatalog integration with CatalogProvider."""
 
-    def test_catalog_provider_accepts_mock(self) -> None:
+    @staticmethod
+    def test_catalog_provider_accepts_mock() -> None:
         """CatalogProvider can wrap MockFunctionCatalog."""
         mock = create_mock_catalog_with_functions(3)
 
@@ -215,9 +236,10 @@ class TestMockCatalogWithCatalogProvider:
 
         # Provider returns the mock
         result = provider.get()
-        assert result is mock
+        expect_true(result is mock)
 
-    def test_catalog_provider_caches_result(self) -> None:
+    @staticmethod
+    def test_catalog_provider_caches_result() -> None:
         """CatalogProvider caches the mock on subsequent calls."""
         mock = create_mock_catalog_with_functions(3)
 
@@ -227,57 +249,62 @@ class TestMockCatalogWithCatalogProvider:
         result1 = provider.get()
         result2 = provider.get()
 
-        assert result1 is result2
+        expect_true(result1 is result2)
 
 
 class TestMockCatalogWithFixtures:
     """Tests demonstrating fixture usage patterns."""
 
-    def test_fixture_empty_catalog(self, mock_function_catalog: MockFunctionCatalog) -> None:
+    @staticmethod
+    def test_fixture_empty_catalog(mock_function_catalog: MockFunctionCatalog) -> None:
         """mock_function_catalog fixture provides empty catalog."""
-        assert len(mock_function_catalog.functions) == 0
-        assert mock_function_catalog.urn_for_goid(1000) is None
+        expect_length(mock_function_catalog.functions, 0)
+        expect_true(mock_function_catalog.urn_for_goid(1000) is None)
 
-    def test_fixture_with_functions(self, mock_catalog_with_functions: MockFunctionCatalog) -> None:
+    @staticmethod
+    def test_fixture_with_functions(mock_catalog_with_functions: MockFunctionCatalog) -> None:
         """mock_catalog_with_functions fixture provides populated catalog."""
-        assert len(mock_catalog_with_functions.functions) == 3
-        assert len(mock_catalog_with_functions.get_all_goids()) == 3
+        expect_length(mock_catalog_with_functions.functions, 3)
+        expect_length(mock_catalog_with_functions.get_all_goids(), 3)
 
-    def test_fixture_multi_file(self, mock_catalog_multi_file: MockFunctionCatalog) -> None:
+    @staticmethod
+    def test_fixture_multi_file(mock_catalog_multi_file: MockFunctionCatalog) -> None:
         """mock_catalog_multi_file fixture provides multi-file catalog."""
         expected_total = 5
-        assert len(mock_catalog_multi_file.functions) == expected_total
-        assert len(mock_catalog_multi_file.module_by_path) > 1
+        expect_length(mock_catalog_multi_file.functions, expected_total)
+        expect_true(len(mock_catalog_multi_file.module_by_path) > 1)
 
-    def test_fixture_realistic(self, mock_catalog_realistic: MockFunctionCatalog) -> None:
+    @staticmethod
+    def test_fixture_realistic(mock_catalog_realistic: MockFunctionCatalog) -> None:
         """mock_catalog_realistic fixture provides varied function patterns."""
         # Has public, private, class methods, async
         qualnames = [fn.qualname for fn in mock_catalog_realistic.functions]
 
-        assert any(q.startswith("_") for q in qualnames)  # Private
-        assert any("." in q for q in qualnames)  # Methods
+        expect_true(any(q.startswith("_") for q in qualnames))  # Private
+        expect_true(any("." in q for q in qualnames))  # Methods
 
 
 class TestMockCatalogWithMockRuntime:
     """Tests combining MockFunctionCatalog with MockGraphRuntime."""
 
+    @staticmethod
     def test_combined_mocks_for_analytics_context(
-        self,
         mock_catalog_realistic: MockFunctionCatalog,
         mock_runtime_all_graphs: object,  # MockGraphRuntime from conftest
     ) -> None:
         """Both mocks can be used together for comprehensive testing."""
         # Catalog provides function metadata
-        assert len(mock_catalog_realistic.functions) > 0
+        expect_true(len(mock_catalog_realistic.functions) > 0)
 
         # Runtime provides graph data
-        assert mock_runtime_all_graphs is not None
+        expect_true(mock_runtime_all_graphs is not None)
 
 
 class TestMockCatalogEdgeCases:
     """Edge case tests for MockFunctionCatalog."""
 
-    def test_lookup_goid_partial_match(self) -> None:
+    @staticmethod
+    def test_lookup_goid_partial_match() -> None:
         """lookup_goid matches on rel_path and start_line."""
         catalog = MockFunctionCatalog(
             functions=[
@@ -293,17 +320,18 @@ class TestMockCatalogEdgeCases:
 
         # Match without qualname
         result = catalog.lookup_goid("main.py", 10, 25, None)
-        assert result == 1001
+        expect_equal(result, 1001)
 
         # Match with qualname
         result = catalog.lookup_goid("main.py", 10, 25, "main")
-        assert result == 1001
+        expect_equal(result, 1001)
 
         # No match on wrong line
         result = catalog.lookup_goid("main.py", 11, 25, "main")
-        assert result is None
+        expect_true(result is None)
 
-    def test_multiple_functions_same_file(self) -> None:
+    @staticmethod
+    def test_multiple_functions_same_file() -> None:
         """Multiple functions in same file are all accessible."""
         catalog = MockFunctionCatalog(
             functions=[
@@ -315,26 +343,28 @@ class TestMockCatalogEdgeCases:
 
         funcs = catalog.get_functions_by_path("mod.py")
         expected_count = 3
-        assert len(funcs) == expected_count
+        expect_length(funcs, expected_count)
 
         goids = catalog.get_all_goids()
-        assert set(goids) == {1001, 1002, 1003}
+        expect_equal(set(goids), {1001, 1002, 1003})
 
-    def test_empty_module_by_path(self) -> None:
+    @staticmethod
+    def test_empty_module_by_path() -> None:
         """Catalog works without module_by_path."""
         catalog = MockFunctionCatalog(
             functions=[MockFunctionMeta(goid=1001)],
             module_by_path={},
         )
 
-        assert catalog.urn_for_goid(1001) is not None
-        assert len(catalog.module_by_path) == 0
+        expect_true(catalog.urn_for_goid(1001) is not None)
+        expect_length(catalog.module_by_path, 0)
 
 
 class TestMockCatalogDocumentation:
     """Tests that serve as documentation for common patterns."""
 
-    def test_pattern_testing_catalog_access(self) -> None:
+    @staticmethod
+    def test_pattern_testing_catalog_access() -> None:
         """Pattern: Testing code that accesses catalog metadata.
 
         When your code needs to look up function URNs or GOIDs,
@@ -356,9 +386,10 @@ class TestMockCatalogDocumentation:
         urn = catalog.urn_for_goid(12345)
 
         # Assert: Known result
-        assert urn == "urn:test:app.py#main"
+        expect_equal(urn, "urn:test:app.py#main")
 
-    def test_pattern_testing_function_discovery(self) -> None:
+    @staticmethod
+    def test_pattern_testing_function_discovery() -> None:
         """Pattern: Testing code that discovers functions in a file.
 
         When your code needs to find all functions in a file,
@@ -377,10 +408,11 @@ class TestMockCatalogDocumentation:
         utils_funcs = catalog.get_functions_by_path("src/utils.py")
 
         # Assert: Expected counts
-        assert len(core_funcs) == 5
-        assert len(utils_funcs) == 3
+        expect_length(core_funcs, 5)
+        expect_length(utils_funcs, 3)
 
-    def test_pattern_testing_with_realistic_data(self) -> None:
+    @staticmethod
+    def test_pattern_testing_with_realistic_data() -> None:
         """Pattern: Integration tests with varied function types.
 
         When testing analytics that handles different function types,
@@ -395,6 +427,6 @@ class TestMockCatalogDocumentation:
         methods = [fn for fn in catalog.functions if "." in fn.qualname]
 
         # Assert: Realistic distribution
-        assert len(public_funcs) > 0
-        assert len(private_funcs) > 0
-        assert len(methods) > 0
+        expect_true(len(public_funcs) > 0)
+        expect_true(len(private_funcs) > 0)
+        expect_true(len(methods) > 0)

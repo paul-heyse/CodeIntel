@@ -9,6 +9,7 @@ from click.testing import Result
 
 from codeintel.build.executor import BuildErrorCollection, BuildExecutor, BuildResult
 from codeintel.build.plan import BuildPlan
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.cli import assert_exit, assert_success
 
 
@@ -37,9 +38,9 @@ def test_build_run_success(
 
     result = cli_project_runner(["build", "run", "ast"])
     assert_success(result)
-    assert "Build completed successfully" in result.stdout
-    assert captured_plan
-    assert captured_plan[0].requested_targets == ("ast",)
+    expect_in("Build completed successfully", result.stdout)
+    expect_true(bool(captured_plan))
+    expect_equal(captured_plan[0].requested_targets, ("ast",))
 
 
 @pytest.mark.usefixtures("cli_project_ctx")
@@ -49,7 +50,7 @@ def test_build_run_dry_run(
     """Dry-run should output plan summary without executing targets."""
     result = cli_project_runner(["build", "run", "ast", "--dry-run"])
     assert_success(result)
-    assert "Build Plan for: ast" in result.stdout
+    expect_in("Build Plan for: ast", result.stdout)
 
 
 @pytest.mark.usefixtures("cli_project_ctx")

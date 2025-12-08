@@ -40,7 +40,15 @@ from codeintel.graphs.runtime.planning import (
     PlanCoordinates,
     plan_graph_plugin_run,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
@@ -180,7 +188,7 @@ def test_resolve_plugin_options_map_uses_default() -> None:
         runtime_options=None,
     )
 
-    assert resolved[plugin.metadata.name] == {"default_key": "value"}
+    expect_equal(resolved[plugin.metadata.name], {"default_key": "value"})
 
 
 def test_resolve_plugin_options_map_config_overrides_default() -> None:
@@ -193,7 +201,7 @@ def test_resolve_plugin_options_map_config_overrides_default() -> None:
         runtime_options=None,
     )
 
-    assert resolved["opt_cfg"] == {"key": "from_config"}
+    expect_equal(resolved["opt_cfg"], {"key": "from_config"})
 
 
 def test_resolve_plugin_options_map_runtime_overrides_config() -> None:
@@ -206,7 +214,7 @@ def test_resolve_plugin_options_map_runtime_overrides_config() -> None:
         runtime_options={"opt_runtime": {"key": "from_runtime"}},
     )
 
-    assert resolved["opt_runtime"] == {"key": "from_runtime"}
+    expect_equal(resolved["opt_runtime"], {"key": "from_runtime"})
 
 
 def test_resolve_plugin_options_map_merges_multiple_plugins() -> None:
@@ -220,8 +228,8 @@ def test_resolve_plugin_options_map_merges_multiple_plugins() -> None:
         runtime_options=None,
     )
 
-    assert resolved["opt_a"] == {"a": 1}
-    assert resolved["opt_b"] == {"b": 2}
+    expect_equal(resolved["opt_a"], {"a": 1})
+    expect_equal(resolved["opt_b"], {"b": 2})
 
 
 def test_resolve_plugin_options_map_unknown_plugin_raises() -> None:
@@ -255,7 +263,7 @@ def test_effective_severity_uses_policy_default() -> None:
 
     severity = EFFECTIVE_SEVERITY(plugin, policy)
 
-    assert severity == "soft_fail"
+    expect_equal(severity, "soft_fail")
 
 
 def test_effective_severity_uses_override() -> None:
@@ -268,7 +276,7 @@ def test_effective_severity_uses_override() -> None:
 
     severity = EFFECTIVE_SEVERITY(plugin, policy)
 
-    assert severity == "skip_on_error"
+    expect_equal(severity, "skip_on_error")
 
 
 def test_effective_timeout_uses_policy_override() -> None:
@@ -280,7 +288,7 @@ def test_effective_timeout_uses_policy_override() -> None:
 
     timeout = EFFECTIVE_TIMEOUT(plugin, policy)
 
-    assert timeout == TIMEOUT_OVERRIDE_MS
+    expect_equal(timeout, TIMEOUT_OVERRIDE_MS)
 
 
 def test_effective_timeout_uses_resource_hints() -> None:
@@ -291,7 +299,7 @@ def test_effective_timeout_uses_resource_hints() -> None:
 
     timeout = EFFECTIVE_TIMEOUT(plugin, policy)
 
-    assert timeout == TIMEOUT_DEFAULT_MS
+    expect_equal(timeout, TIMEOUT_DEFAULT_MS)
 
 
 def test_effective_timeout_none_when_no_hints_or_override() -> None:
@@ -301,7 +309,7 @@ def test_effective_timeout_none_when_no_hints_or_override() -> None:
 
     timeout = EFFECTIVE_TIMEOUT(plugin, policy)
 
-    assert timeout is None
+    expect_true(timeout is None)
 
 
 def test_resolve_target_from_cfg() -> None:
@@ -314,8 +322,8 @@ def test_resolve_target_from_cfg() -> None:
         target=None,
     )
 
-    assert repo == "cfg/repo"
-    assert commit == "cfg_commit"
+    expect_equal(repo, "cfg/repo")
+    expect_equal(commit, "cfg_commit")
 
 
 def test_resolve_target_from_explicit_tuple() -> None:
@@ -326,8 +334,8 @@ def test_resolve_target_from_explicit_tuple() -> None:
         target=("explicit/repo", "explicit_commit"),
     )
 
-    assert repo == "explicit/repo"
-    assert commit == "explicit_commit"
+    expect_equal(repo, "explicit/repo")
+    expect_equal(commit, "explicit_commit")
 
 
 def test_resolve_target_from_runtime_snapshot() -> None:
@@ -340,8 +348,8 @@ def test_resolve_target_from_runtime_snapshot() -> None:
         target=None,
     )
 
-    assert repo == "snapshot/repo"
-    assert commit == "snap_commit"
+    expect_equal(repo, "snapshot/repo")
+    expect_equal(commit, "snap_commit")
 
 
 def test_resolve_target_missing_raises() -> None:
@@ -367,11 +375,13 @@ def test_build_plugin_settings_computes_hashes() -> None:
 
     settings = BUILD_PLUGIN_SETTINGS(plugin, policy, coords, options)
 
-    assert settings.name == "hash_settings"
-    assert settings.input_hash is not None
-    assert len(settings.input_hash) == EXPECTED_HASH_LENGTH
-    assert settings.options_hash is not None
-    assert len(settings.options_hash) == EXPECTED_HASH_LENGTH
+    expect_equal(settings.name, "hash_settings")
+    expect_is_not_none(settings.input_hash)
+    if settings.input_hash is not None:
+        expect_length(settings.input_hash, EXPECTED_HASH_LENGTH)
+    expect_is_not_none(settings.options_hash)
+    if settings.options_hash is not None:
+        expect_length(settings.options_hash, EXPECTED_HASH_LENGTH)
 
 
 def test_build_plugin_settings_includes_policy_values() -> None:
@@ -391,10 +401,10 @@ def test_build_plugin_settings_includes_policy_values() -> None:
 
     settings = BUILD_PLUGIN_SETTINGS(plugin, policy, coords, None)
 
-    assert settings.severity == "skip_on_error"
-    assert settings.timeout_ms == TIMEOUT_OVERRIDE_MS
-    assert settings.fail_fast is False
-    assert settings.retry_policy.max_attempts == RETRY_MAX_ATTEMPTS
+    expect_equal(settings.severity, "skip_on_error")
+    expect_equal(settings.timeout_ms, TIMEOUT_OVERRIDE_MS)
+    expect_false(settings.fail_fast)
+    expect_equal(settings.retry_policy.max_attempts, RETRY_MAX_ATTEMPTS)
 
 
 def test_build_plugin_settings_includes_version_hash() -> None:
@@ -409,7 +419,7 @@ def test_build_plugin_settings_includes_version_hash() -> None:
 
     settings = BUILD_PLUGIN_SETTINGS(plugin, policy, coords, None)
 
-    assert settings.version_hash == plugin.metadata.version_hash
+    expect_equal(settings.version_hash, plugin.metadata.version_hash)
 
 
 def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
@@ -428,12 +438,12 @@ def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
             context=context,
         )
 
-        assert plan.plan_id
-        assert plan.run_id
-        assert plan.repo == "plan/repo"
-        assert plan.commit == "plan_commit"
-        assert len(plan.plugins) == 1
-        assert plan.plugins[0].metadata.name == "basic_plan"
+        expect_true(bool(plan.plan_id))
+        expect_true(bool(plan.run_id))
+        expect_equal(plan.repo, "plan/repo")
+        expect_equal(plan.commit, "plan_commit")
+        expect_equal(len(plan.plugins), 1)
+        expect_equal(plan.plugins[0].metadata.name, "basic_plan")
 
 
 def test_plan_graph_plugin_run_with_scope_override() -> None:
@@ -456,8 +466,8 @@ def test_plan_graph_plugin_run_with_scope_override() -> None:
             context=context,
         )
 
-        assert plan.scope.paths == ("custom/path/",)
-        assert plan.scope.modules == ("custom.module",)
+        expect_equal(plan.scope.paths, ("custom/path/",))
+        expect_equal(plan.scope.modules, ("custom.module",))
 
 
 def test_plan_graph_plugin_run_with_plugin_options() -> None:
@@ -480,7 +490,7 @@ def test_plan_graph_plugin_run_with_plugin_options() -> None:
             context=context,
         )
 
-        assert plan.options_by_plugin["options_plan"] == {"override": True}
+        expect_equal(plan.options_by_plugin["options_plan"], {"override": True})
 
 
 def test_plan_graph_plugin_run_with_prior_manifest() -> None:
@@ -501,8 +511,9 @@ def test_plan_graph_plugin_run_with_prior_manifest() -> None:
             context=context,
         )
 
-        assert plan.prior_manifest is not None
-        assert "manifest_plan" in plan.prior_manifest
+        expect_is_not_none(plan.prior_manifest)
+        if plan.prior_manifest is not None:
+            expect_in("manifest_plan", plan.prior_manifest)
 
 
 def test_plan_graph_plugin_run_includes_settings() -> None:
@@ -521,9 +532,9 @@ def test_plan_graph_plugin_run_includes_settings() -> None:
             context=context,
         )
 
-        assert "settings_plan" in plan.settings_by_plugin
+        expect_in("settings_plan", plan.settings_by_plugin)
         settings = plan.settings_by_plugin["settings_plan"]
-        assert settings.severity == "soft_fail"
+        expect_equal(settings.severity, "soft_fail")
 
 
 def test_plan_graph_plugin_run_with_dependencies() -> None:
@@ -545,7 +556,7 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
 
         # dep_a should come before dep_b
         names = plan.ordered_names
-        assert names.index("dep_a") < names.index("dep_b")
+        expect_true(names.index("dep_a") < names.index("dep_b"))
 
 
 def test_graph_plugin_execution_plan_dep_graph() -> None:
@@ -565,8 +576,8 @@ def test_graph_plugin_execution_plan_dep_graph() -> None:
             context=context,
         )
 
-        assert "graph_b" in plan.dep_graph
-        assert "graph_a" in plan.dep_graph["graph_b"]
+        expect_in("graph_b", plan.dep_graph)
+        expect_in("graph_a", plan.dep_graph["graph_b"])
 
 
 def test_graph_plugin_execution_plan_skipped_plugins() -> None:
@@ -587,7 +598,7 @@ def test_graph_plugin_execution_plan_skipped_plugins() -> None:
         )
 
         skipped_names = [s.name for s in plan.skipped_plugins]
-        assert "nonexistent_plugin" in skipped_names
+        expect_in("nonexistent_plugin", skipped_names)
 
 
 def test_plan_coordinates_frozen() -> None:
@@ -615,4 +626,4 @@ def test_plan_coordinates_equality() -> None:
         scope=GraphRunScope(paths=("src/",)),
     )
 
-    assert coords1 == coords2
+    expect_equal(coords1, coords2)

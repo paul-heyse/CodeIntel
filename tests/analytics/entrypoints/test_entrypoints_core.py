@@ -13,7 +13,13 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import EntryPointsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
-from tests._helpers.assertions import assert_mapping_value
+from tests._helpers.assertions import (
+    assert_mapping_value,
+    expect_equal,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.builders import (
     CoverageFunctionRow,
     TestCatalogRow,
@@ -223,20 +229,20 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
             """,
             [snapshot.repo, snapshot.commit],
         ).fetchone()
-        assert entry_row is not None
-        assert entry_row[0] == 2
-        assert entry_row[1] == 1
-        assert entry_row[2] == 1
-        assert entry_row[3] == 1
-        assert entry_row[4] == 0.6
-        assert entry_row[5] == "some_failing"
+        row = expect_is_not_none(entry_row)
+        expect_equal(row[0], 2)
+        expect_equal(row[1], 1)
+        expect_equal(row[2], 1)
+        expect_equal(row[3], 1)
+        expect_equal(row[4], 0.6)
+        expect_equal(row[5], "some_failing")
 
-        extra = entry_row[6]
+        extra = row[6]
         if isinstance(extra, str):
             extra = json.loads(extra)
         extra_payload = assert_mapping_value(extra, "ast_features", dict)
-        assert extra_payload["uses_network"] is True
-        assert extra_payload["http_server_libs"] == ["fastapi"]
+        expect_true(extra_payload["uses_network"])
+        expect_equal(extra_payload["http_server_libs"], ["fastapi"])
 
         test_rows = gateway.con.execute(
             """
@@ -247,9 +253,9 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
             """,
             [snapshot.repo, snapshot.commit],
         ).fetchall()
-        assert len(test_rows) == 2
-        assert test_rows[0][2] == "failed"
-        assert test_rows[1][3] == 1500
+        expect_length(test_rows, 2)
+        expect_equal(test_rows[0][2], "failed")
+        expect_equal(test_rows[1][3], 1500)
     finally:
         gateway.close()
 
@@ -277,7 +283,7 @@ def test_entrypoints_no_modules_skip_detection(tmp_path: Path) -> None:
             """,
             [snapshot.repo, snapshot.commit],
         ).fetchone()
-        assert count is not None
-        assert count[0] == 0
+        row = expect_is_not_none(count)
+        expect_equal(row[0], 0)
     finally:
         gateway.close()

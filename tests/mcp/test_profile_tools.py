@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.serving.mcp import errors, profile_tools
+from tests._helpers.assertions import expect_equal, expect_in
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
@@ -54,6 +55,15 @@ class _Backend:
         return f"mod-{module}"
 
 
+class _ExplodingBackend(_Backend):
+    """Backend variant that raises backend failure for function profile."""
+
+    def get_function_profile(self, *, goid_h128: int) -> str:
+        _ = (self, goid_h128)
+        message = "fail"
+        raise errors.backend_failure(message)
+
+
 def _patch_models(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(profile_tools, "FunctionProfileResponse", _ProfileModel, raising=False)
     monkeypatch.setattr(profile_tools, "FileProfileResponse", _ProfileModel, raising=False)
@@ -94,27 +104,24 @@ def test_register_profile_tools_registers_and_serializes(monkeypatch: pytest.Mon
         module="pkg.mod"
     )
 
-    assert result_fn == {"value": "fn-1"}
-    assert result_file == {"value": "file-a.py"}
-    assert result_mod == {"value": "mod-pkg.mod"}
-    assert set(calls) == {
-        "profiles.function",
-        "profiles.file",
-        "profiles.module",
-    }
+    expect_equal(result_fn, {"value": "fn-1"})
+    expect_equal(result_file, {"value": "file-a.py"})
+    expect_equal(result_mod, {"value": "mod-pkg.mod"})
+    expect_equal(
+        set(calls),
+        {
+            "profiles.function",
+            "profiles.file",
+            "profiles.module",
+        },
+    )
     monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)
 
 
 def test_profile_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Backend McpError should serialize to error payload."""
     _patch_models(monkeypatch)
-    backend = _Backend()
-
-    def _boom(**_: object) -> object:
-        message = "fail"
-        raise errors.backend_failure(message)
-
-    backend.get_function_profile = _boom  # type: ignore[assignment]
+    backend = _ExplodingBackend()
     mcp = RecordingMcp()
     profile_tools.register_profile_tools(
         cast("FastMCP", mcp),
@@ -124,7 +131,7 @@ def test_profile_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> None:
     result = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_profile"])(
         goid_h128=1
     )
-    assert "error" in result
+    expect_in("error", result)
 
 
 def test_profile_tools_skip_auto_pipeline_without_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,5 +158,5 @@ def test_profile_tools_skip_auto_pipeline_without_gateway(monkeypatch: pytest.Mo
         config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
     )
     cast("Callable[..., dict[str, object]]", mcp.registry["get_file_profile"])(rel_path="a.py")
-    assert calls == []
+    expect_equal(calls, [])
     monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

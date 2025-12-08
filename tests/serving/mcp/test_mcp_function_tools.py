@@ -19,6 +19,12 @@ from codeintel.serving.mcp.function_tools import (
 )
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -93,7 +99,7 @@ def test_register_function_tools_success(
     register_function_tools(mcp, backend)
 
     # Server should be configured
-    assert mcp.name == "Test Function Tools"
+    expect_equal(mcp.name, "Test Function Tools")
 
 
 def test_register_function_tools_with_service(
@@ -121,7 +127,7 @@ def test_register_function_tools_with_service(
 
     register_function_tools(mcp, service)
 
-    assert mcp.name == "Test Service"
+    expect_equal(mcp.name, "Test Service")
 
 
 def test_register_function_tools_with_config(
@@ -140,7 +146,7 @@ def test_register_function_tools_with_config(
 
     register_function_tools(mcp, backend, config=config)
 
-    assert mcp.name == "Test With Config"
+    expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_function_tools_on_multiple_servers(
@@ -157,11 +163,11 @@ def test_register_function_tools_on_multiple_servers(
 
     mcp1 = FastMCP("Server 1", json_response=True)
     register_function_tools(mcp1, backend)
-    assert mcp1.name == "Server 1"
+    expect_equal(mcp1.name, "Server 1")
 
     mcp2 = FastMCP("Server 2", json_response=True)
     register_function_tools(mcp2, backend)
-    assert mcp2.name == "Server 2"
+    expect_equal(mcp2.name, "Server 2")
 
 
 # =============================================================================
@@ -171,22 +177,22 @@ def test_register_function_tools_on_multiple_servers(
 
 def test_function_tool_categories_contains_functions() -> None:
     """Verify FUNCTION_TOOL_CATEGORIES contains functions category."""
-    assert "functions" in FUNCTION_TOOL_CATEGORIES
+    expect_in("functions", FUNCTION_TOOL_CATEGORIES)
 
 
 def test_function_tool_categories_contains_graph() -> None:
     """Verify FUNCTION_TOOL_CATEGORIES contains graph category."""
-    assert "graph" in FUNCTION_TOOL_CATEGORIES
+    expect_in("graph", FUNCTION_TOOL_CATEGORIES)
 
 
 def test_function_tool_categories_contains_files() -> None:
     """Verify FUNCTION_TOOL_CATEGORIES contains files category."""
-    assert "files" in FUNCTION_TOOL_CATEGORIES
+    expect_in("files", FUNCTION_TOOL_CATEGORIES)
 
 
 def test_function_tool_categories_contains_function() -> None:
     """Verify FUNCTION_TOOL_CATEGORIES contains function category."""
-    assert "function" in FUNCTION_TOOL_CATEGORIES
+    expect_in("function", FUNCTION_TOOL_CATEGORIES)
 
 
 # =============================================================================
@@ -198,7 +204,7 @@ def test_iter_operations_yields_function_operations() -> None:
     """Verify iter_operations yields function category operations."""
     function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
-    assert len(function_ops) > 0
+    expect_true(len(function_ops) > 0)
 
 
 def test_function_operations_have_tool_name() -> None:
@@ -210,7 +216,7 @@ def test_function_operations_have_tool_name() -> None:
     ]
 
     # Should have at least some operations with tools
-    assert len(function_ops) > 0
+    expect_true(len(function_ops) > 0)
 
 
 def test_function_operations_have_backend_method() -> None:
@@ -218,7 +224,7 @@ def test_function_operations_have_backend_method() -> None:
     function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
     for spec in function_ops:
-        assert spec.backend_method is not None
+        expect_is_not_none(spec.backend_method)
 
 
 def test_function_operations_have_output_model() -> None:
@@ -226,7 +232,7 @@ def test_function_operations_have_output_model() -> None:
     function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
     for spec in function_ops:
-        assert spec.output_model_name is not None
+        expect_is_not_none(spec.output_model_name)
 
 
 # =============================================================================
@@ -247,8 +253,8 @@ def test_backend_list_high_risk_functions(
     backend = _build_backend(provisioned_repo)
 
     result = backend.list_high_risk_functions(limit=DEFAULT_LIMIT)
-    assert result is not None
-    assert hasattr(result, "functions")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "functions"))
 
 
 def test_backend_get_function_summary(
@@ -275,7 +281,7 @@ def test_backend_get_function_summary(
         pytest.skip("No goid_h128 in function")
 
     result = backend.get_function_summary(goid_h128=int(goid))
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighbors(
@@ -304,7 +310,7 @@ def test_backend_get_callgraph_neighbors(
     result = backend.get_callgraph_neighbors(
         goid_h128=int(goid), direction="both", limit=DEFAULT_LIMIT
     )
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighborhood(
@@ -333,7 +339,7 @@ def test_backend_get_callgraph_neighborhood(
     result = backend.get_callgraph_neighborhood(
         goid_h128=int(goid), radius=1, max_nodes=DEFAULT_LIMIT
     )
-    assert result is not None
+    expect_is_not_none(result)
 
 
 # =============================================================================
@@ -357,7 +363,7 @@ def test_backend_get_function_summary_not_found(
 
     result = backend.get_function_summary(goid_h128=nonexistent_goid)
     # Should return a result (may have not_found message)
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighbors_not_found(
@@ -378,7 +384,7 @@ def test_backend_get_callgraph_neighbors_not_found(
         goid_h128=nonexistent_goid, direction="both", limit=DEFAULT_LIMIT
     )
     # Should return a result (may be empty)
-    assert result is not None
+    expect_is_not_none(result)
 
 
 # =============================================================================
@@ -418,8 +424,8 @@ def test_backend_with_custom_limits(
         service=service,
     )
 
-    assert backend.limits.default_limit == custom_limit
-    assert backend.limits.max_rows_per_call == custom_max
+    expect_equal(backend.limits.default_limit, custom_limit)
+    expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
 # =============================================================================
@@ -446,9 +452,9 @@ def test_register_function_tools_preserves_backend_state(
 
     register_function_tools(mcp, backend)
 
-    assert backend.repo == original_repo
-    assert backend.commit == original_commit
-    assert backend.limits == original_limits
+    expect_equal(backend.repo, original_repo)
+    expect_equal(backend.commit, original_commit)
+    expect_equal(backend.limits, original_limits)
 
 
 # =============================================================================
@@ -481,7 +487,7 @@ def test_local_query_service_as_backend(
     mcp = FastMCP("Test Local Service", json_response=True)
     register_function_tools(mcp, service)
 
-    assert mcp.name == "Test Local Service"
+    expect_equal(mcp.name, "Test Local Service")
 
 
 # =============================================================================
@@ -515,7 +521,7 @@ def test_backend_get_callgraph_neighbors_incoming(
     result = backend.get_callgraph_neighbors(
         goid_h128=int(goid), direction="incoming", limit=DEFAULT_LIMIT
     )
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighbors_outgoing(
@@ -544,7 +550,7 @@ def test_backend_get_callgraph_neighbors_outgoing(
     result = backend.get_callgraph_neighbors(
         goid_h128=int(goid), direction="outgoing", limit=DEFAULT_LIMIT
     )
-    assert result is not None
+    expect_is_not_none(result)
 
 
 # =============================================================================
@@ -566,10 +572,10 @@ def test_high_risk_functions_response_structure(
 
     result = backend.list_high_risk_functions(limit=DEFAULT_LIMIT)
 
-    assert result is not None
-    assert hasattr(result, "functions")
-    assert hasattr(result, "truncated")
-    assert hasattr(result, "meta")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "functions"))
+    expect_true(hasattr(result, "truncated"))
+    expect_true(hasattr(result, "meta"))
 
 
 def test_function_summary_response_structure(
@@ -597,6 +603,6 @@ def test_function_summary_response_structure(
 
     result = backend.get_function_summary(goid_h128=int(goid))
 
-    assert result is not None
+    expect_is_not_none(result)
     # Should have goid_h128 or a message
-    assert hasattr(result, "goid_h128") or hasattr(result, "message")
+    expect_true(hasattr(result, "goid_h128") or hasattr(result, "message"))

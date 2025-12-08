@@ -20,6 +20,12 @@ from codeintel.core.execution.errors import (
     PluginTimeoutError,
 )
 from codeintel.core.plugins.types.result import PluginExecutionRecord
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 # =============================================================================
 # PLUGIN_CATCHABLE_ERRORS Tests
@@ -28,13 +34,13 @@ from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 def test_plugin_catchable_errors_is_tuple() -> None:
     """Verify PLUGIN_CATCHABLE_ERRORS is a tuple of exception types."""
-    assert isinstance(PLUGIN_CATCHABLE_ERRORS, tuple)
+    expect_is_instance(PLUGIN_CATCHABLE_ERRORS, tuple)
 
 
 def test_plugin_catchable_errors_contains_exception_types() -> None:
     """Verify PLUGIN_CATCHABLE_ERRORS contains only exception classes."""
     for exc_type in PLUGIN_CATCHABLE_ERRORS:
-        assert issubclass(exc_type, Exception)
+        expect_true(issubclass(exc_type, Exception))
 
 
 def test_plugin_catchable_errors_includes_common_exceptions() -> None:
@@ -49,7 +55,7 @@ def test_plugin_catchable_errors_includes_common_exceptions() -> None:
         OSError,
     }
     actual = set(PLUGIN_CATCHABLE_ERRORS)
-    assert expected.issubset(actual)
+    expect_true(expected.issubset(actual))
 
 
 def test_plugin_catchable_errors_can_catch() -> None:
@@ -67,7 +73,7 @@ def test_plugin_catchable_errors_can_catch() -> None:
     except PLUGIN_CATCHABLE_ERRORS:
         caught = True
 
-    assert caught
+    expect_true(caught)
 
 
 # =============================================================================
@@ -100,8 +106,8 @@ def test_plugin_fatal_error_construction(sample_record: PluginExecutionRecord) -
     original = ValueError("Something went wrong")
     error = PluginFatalError(sample_record, original)
 
-    assert error.record is sample_record
-    assert error.original is original
+    expect_true(error.record is sample_record)
+    expect_true(error.original is original)
 
 
 def test_plugin_fatal_error_message(sample_record: PluginExecutionRecord) -> None:
@@ -109,7 +115,7 @@ def test_plugin_fatal_error_message(sample_record: PluginExecutionRecord) -> Non
     original = ValueError("Detailed error message")
     error = PluginFatalError(sample_record, original)
 
-    assert str(error) == "Detailed error message"
+    expect_equal(str(error), "Detailed error message")
 
 
 def test_plugin_fatal_error_inherits_from_exception(
@@ -117,7 +123,7 @@ def test_plugin_fatal_error_inherits_from_exception(
 ) -> None:
     """Verify PluginFatalError is an Exception subclass."""
     error = PluginFatalError(sample_record, ValueError("test"))
-    assert isinstance(error, Exception)
+    expect_is_instance(error, Exception)
 
 
 def test_plugin_fatal_error_can_be_raised(sample_record: PluginExecutionRecord) -> None:
@@ -128,8 +134,8 @@ def test_plugin_fatal_error_can_be_raised(sample_record: PluginExecutionRecord) 
     with pytest.raises(PluginFatalError) as exc_info:
         raise error
 
-    assert exc_info.value.record is sample_record
-    assert exc_info.value.original is original
+    expect_true(exc_info.value.record is sample_record)
+    expect_true(exc_info.value.original is original)
 
 
 def test_plugin_fatal_error_with_chained_exception(
@@ -147,7 +153,7 @@ def test_plugin_fatal_error_with_chained_exception(
     with pytest.raises(PluginFatalError) as exc_info:
         raise_chained()
 
-    assert exc_info.value.__cause__ is original
+    expect_true(exc_info.value.__cause__ is original)
 
 
 def test_plugin_fatal_error_preserves_record(
@@ -156,9 +162,9 @@ def test_plugin_fatal_error_preserves_record(
     """Verify PluginFatalError preserves execution record details."""
     error = PluginFatalError(sample_record, ValueError("test"))
 
-    assert error.record.plugin_name == "test.plugin"
-    assert error.record.status == "failed"
-    assert error.record.duration_ms == 100.0
+    expect_equal(error.record.plugin_name, "test.plugin")
+    expect_equal(error.record.status, "failed")
+    expect_equal(error.record.duration_ms, 100.0)
 
 
 # =============================================================================
@@ -170,23 +176,23 @@ def test_plugin_timeout_error_basic() -> None:
     """Verify PluginTimeoutError basic construction."""
     error = PluginTimeoutError("my.plugin", 5000)
 
-    assert error.plugin_name == "my.plugin"
-    assert error.timeout_ms == 5000
-    assert error.elapsed_ms is None
+    expect_equal(error.plugin_name, "my.plugin")
+    expect_equal(error.timeout_ms, 5000)
+    expect_true(error.elapsed_ms is None)
 
 
 def test_plugin_timeout_error_message_basic() -> None:
     """Verify PluginTimeoutError message without elapsed time."""
     error = PluginTimeoutError("my.plugin", 5000)
 
-    assert str(error) == "Plugin 'my.plugin' exceeded timeout of 5000ms"
+    expect_equal(str(error), "Plugin 'my.plugin' exceeded timeout of 5000ms")
 
 
 def test_plugin_timeout_error_with_elapsed() -> None:
     """Verify PluginTimeoutError with elapsed time."""
     error = PluginTimeoutError("my.plugin", 5000, elapsed_ms=5123.45)
 
-    assert error.elapsed_ms == 5123.45
+    expect_equal(error.elapsed_ms, 5123.45)
 
 
 def test_plugin_timeout_error_message_with_elapsed() -> None:
@@ -194,14 +200,14 @@ def test_plugin_timeout_error_message_with_elapsed() -> None:
     error = PluginTimeoutError("my.plugin", 5000, elapsed_ms=5123.45)
 
     message = str(error)
-    assert "Plugin 'my.plugin' exceeded timeout of 5000ms" in message
-    assert "(elapsed: 5123.45ms)" in message
+    expect_in("Plugin 'my.plugin' exceeded timeout of 5000ms", message)
+    expect_in("(elapsed: 5123.45ms)", message)
 
 
 def test_plugin_timeout_error_inherits_from_exception() -> None:
     """Verify PluginTimeoutError is an Exception subclass."""
     error = PluginTimeoutError("test", 1000)
-    assert isinstance(error, Exception)
+    expect_is_instance(error, Exception)
 
 
 def test_plugin_timeout_error_can_be_raised() -> None:
@@ -211,8 +217,8 @@ def test_plugin_timeout_error_can_be_raised() -> None:
     with pytest.raises(PluginTimeoutError) as exc_info:
         raise error
 
-    assert exc_info.value.plugin_name == "slow.plugin"
-    assert exc_info.value.timeout_ms == 10000
+    expect_equal(exc_info.value.plugin_name, "slow.plugin")
+    expect_equal(exc_info.value.timeout_ms, 10000)
 
 
 # =============================================================================
@@ -224,21 +230,21 @@ def test_plugin_skipped_error_basic() -> None:
     """Verify PluginSkippedError basic construction."""
     error = PluginSkippedError("my.plugin", "missing dependency")
 
-    assert error.plugin_name == "my.plugin"
-    assert error.reason == "missing dependency"
+    expect_equal(error.plugin_name, "my.plugin")
+    expect_equal(error.reason, "missing dependency")
 
 
 def test_plugin_skipped_error_message() -> None:
     """Verify PluginSkippedError message format."""
     error = PluginSkippedError("my.plugin", "feature disabled")
 
-    assert str(error) == "Plugin 'my.plugin' skipped: feature disabled"
+    expect_equal(str(error), "Plugin 'my.plugin' skipped: feature disabled")
 
 
 def test_plugin_skipped_error_inherits_from_exception() -> None:
     """Verify PluginSkippedError is an Exception subclass."""
     error = PluginSkippedError("test", "reason")
-    assert isinstance(error, Exception)
+    expect_is_instance(error, Exception)
 
 
 def test_plugin_skipped_error_can_be_raised() -> None:
@@ -248,8 +254,8 @@ def test_plugin_skipped_error_can_be_raised() -> None:
     with pytest.raises(PluginSkippedError) as exc_info:
         raise error
 
-    assert exc_info.value.plugin_name == "disabled.plugin"
-    assert exc_info.value.reason == "explicitly disabled"
+    expect_equal(exc_info.value.plugin_name, "disabled.plugin")
+    expect_equal(exc_info.value.reason, "explicitly disabled")
 
 
 def test_plugin_skipped_error_various_reasons() -> None:
@@ -264,5 +270,5 @@ def test_plugin_skipped_error_various_reasons() -> None:
 
     for reason in reasons:
         error = PluginSkippedError("test.plugin", reason)
-        assert reason in str(error)
-        assert error.reason == reason
+        expect_in(reason, str(error))
+        expect_equal(error.reason, reason)

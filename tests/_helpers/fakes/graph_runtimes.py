@@ -33,6 +33,8 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from tests._helpers.graphs import GraphFixtures, standard_graph_fixtures
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import GraphBackendConfig
 
@@ -258,9 +260,31 @@ def create_mock_runtime_all_graphs() -> MockGraphRuntime:
     )
 
 
+def create_mock_runtime_with_standard_graphs(
+    fixtures: GraphFixtures | None = None,
+) -> MockGraphRuntime:
+    """Create a MockGraphRuntime seeded with standard graph shapes.
+
+    Returns
+    -------
+    MockGraphRuntime
+        Runtime with chain call graph, cycle import graph, and star symbol graphs.
+    """
+    graphs = fixtures or standard_graph_fixtures()
+    return MockGraphRuntime(
+        call_graph=graphs.call_graph,
+        import_graph=graphs.import_graph,
+        symbol_module_graph=graphs.symbol_module_graph,
+        symbol_function_graph=graphs.symbol_function_graph,
+        config_module_bipartite=graphs.config_graph,
+        cfg_graph=graphs.cfg_graph,
+    )
+
+
 __all__ = [
     "MockGraphRuntime",
     "create_mock_runtime_all_graphs",
     "create_mock_runtime_with_call_graph",
     "create_mock_runtime_with_import_graph",
+    "create_mock_runtime_with_standard_graphs",
 ]

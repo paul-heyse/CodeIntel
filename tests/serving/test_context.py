@@ -19,6 +19,11 @@ from codeintel.serving.context import (
     reset_current_request_context,
     set_current_request_context,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 
 # =============================================================================
 # Basic Context Operations
@@ -32,7 +37,7 @@ def test_request_context_default_is_none() -> None:
     reset_current_request_context(token)
 
     result = get_current_request_context()
-    assert result is None
+    expect_true(result is None)
 
 
 def test_set_and_get_request_context() -> None:
@@ -51,15 +56,15 @@ def test_set_and_get_request_context() -> None:
     token = set_current_request_context(ctx)
     try:
         retrieved = get_current_request_context()
-        assert retrieved is not None
-        assert retrieved.correlation_id == "test-123"
-        assert retrieved.transport == "http"
-        assert retrieved.operation == "get_function_summary"
-        assert retrieved.dataset == "analytics.goid_risk_factors"
-        assert retrieved.repo == "demo/repo"
-        assert retrieved.commit == "deadbeef"
-        assert retrieved.client_id == "test-client"
-        assert retrieved.user_agent == "pytest/1.0"
+        retrieved = expect_is_not_none(retrieved)
+        expect_equal(retrieved.correlation_id, "test-123")
+        expect_equal(retrieved.transport, "http")
+        expect_equal(retrieved.operation, "get_function_summary")
+        expect_equal(retrieved.dataset, "analytics.goid_risk_factors")
+        expect_equal(retrieved.repo, "demo/repo")
+        expect_equal(retrieved.commit, "deadbeef")
+        expect_equal(retrieved.client_id, "test-client")
+        expect_equal(retrieved.user_agent, "pytest/1.0")
     finally:
         reset_current_request_context(token)
 
@@ -76,16 +81,16 @@ def test_reset_request_context_restores_previous() -> None:
 
     # Verify nested context is active
     current = get_current_request_context()
-    assert current is not None
-    assert current.correlation_id == "ctx-2"
+    current = expect_is_not_none(current)
+    expect_equal(current.correlation_id, "ctx-2")
 
     # Reset nested context
     reset_current_request_context(token2)
 
     # Verify original context is restored
     current = get_current_request_context()
-    assert current is not None
-    assert current.correlation_id == "ctx-1"
+    current = expect_is_not_none(current)
+    expect_equal(current.correlation_id, "ctx-1")
 
     # Clean up
     reset_current_request_context(token1)
@@ -98,14 +103,14 @@ def test_request_context_with_optional_fields() -> None:
         transport="cli",
     )
 
-    assert ctx.operation is None
-    assert ctx.dataset is None
-    assert ctx.repo is None
-    assert ctx.commit is None
-    assert ctx.snapshot is None
-    assert ctx.graph_scope is None
-    assert ctx.client_id is None
-    assert ctx.user_agent is None
+    expect_true(ctx.operation is None)
+    expect_true(ctx.dataset is None)
+    expect_true(ctx.repo is None)
+    expect_true(ctx.commit is None)
+    expect_true(ctx.snapshot is None)
+    expect_true(ctx.graph_scope is None)
+    expect_true(ctx.client_id is None)
+    expect_true(ctx.user_agent is None)
 
 
 def test_request_context_with_snapshot_and_graph_scope() -> None:
@@ -121,8 +126,8 @@ def test_request_context_with_snapshot_and_graph_scope() -> None:
         graph_scope=mock_graph_scope,
     )
 
-    assert ctx.snapshot == mock_snapshot
-    assert ctx.graph_scope == mock_graph_scope
+    expect_equal(ctx.snapshot, mock_snapshot)
+    expect_equal(ctx.graph_scope, mock_graph_scope)
 
 
 # =============================================================================
@@ -155,9 +160,9 @@ def test_context_isolation_across_threads() -> None:
             f.result()
 
     # Each thread should have seen its own context
-    assert results["thread-1"] == "corr-1"
-    assert results["thread-2"] == "corr-2"
-    assert results["thread-3"] == "corr-3"
+    expect_equal(results["thread-1"], "corr-1")
+    expect_equal(results["thread-2"], "corr-2")
+    expect_equal(results["thread-3"], "corr-3")
 
 
 def test_context_not_visible_in_other_thread() -> None:
@@ -177,8 +182,8 @@ def test_context_not_visible_in_other_thread() -> None:
         thread.join()
 
         # Other thread should not see main thread's context
-        assert len(other_thread_result) == 1
-        assert other_thread_result[0] is None
+        expect_equal(len(other_thread_result), 1)
+        expect_true(other_thread_result[0] is None)
     finally:
         reset_current_request_context(token)
 
@@ -204,8 +209,8 @@ def test_context_propagation_in_async_task() -> None:
             reset_current_request_context(token)
 
     result = asyncio.run(main())
-    assert result is not None
-    assert result.correlation_id == "async-main"
+    result = expect_is_not_none(result)
+    expect_equal(result.correlation_id, "async-main")
 
 
 def test_context_isolation_across_async_tasks() -> None:
@@ -232,9 +237,9 @@ def test_context_isolation_across_async_tasks() -> None:
     asyncio.run(main())
 
     # Each task should have seen its own context
-    assert results["task-1"] == "corr-1"
-    assert results["task-2"] == "corr-2"
-    assert results["task-3"] == "corr-3"
+    expect_equal(results["task-1"], "corr-1")
+    expect_equal(results["task-2"], "corr-2")
+    expect_equal(results["task-3"], "corr-3")
 
 
 # =============================================================================
@@ -253,23 +258,23 @@ def test_nested_context_stacking() -> None:
 
     # Verify topmost is active
     current = get_current_request_context()
-    assert current is not None
-    assert current.correlation_id == "level-2"
+    current = expect_is_not_none(current)
+    expect_equal(current.correlation_id, "level-2")
 
     # Unwind and verify each level
     reset_current_request_context(tokens[2])
     current = get_current_request_context()
-    assert current is not None
-    assert current.correlation_id == "level-1"
+    current = expect_is_not_none(current)
+    expect_equal(current.correlation_id, "level-1")
 
     reset_current_request_context(tokens[1])
     current = get_current_request_context()
-    assert current is not None
-    assert current.correlation_id == "level-0"
+    current = expect_is_not_none(current)
+    expect_equal(current.correlation_id, "level-0")
 
     reset_current_request_context(tokens[0])
     current = get_current_request_context()
-    assert current is None
+    expect_true(current is None)
 
 
 def test_context_manager_pattern() -> None:
@@ -301,16 +306,16 @@ def test_context_manager_pattern() -> None:
                 reset_current_request_context(self.token)
 
     # Verify clean state
-    assert get_current_request_context() is None
+    expect_true(get_current_request_context() is None)
 
     with ContextScope("scoped-ctx", "http") as ctx:
         current = get_current_request_context()
-        assert current is not None
-        assert current is ctx
-        assert ctx.correlation_id == "scoped-ctx"
+        current = expect_is_not_none(current)
+        expect_true(current is ctx)
+        expect_equal(ctx.correlation_id, "scoped-ctx")
 
     # Verify cleanup
-    assert get_current_request_context() is None
+    expect_true(get_current_request_context() is None)
 
 
 # =============================================================================
@@ -326,7 +331,7 @@ def test_all_transport_types() -> None:
         token = set_current_request_context(ctx)
         try:
             current = get_current_request_context()
-            assert current is not None
-            assert current.transport == transport
+            current = expect_is_not_none(current)
+            expect_equal(current.transport, transport)
         finally:
             reset_current_request_context(token)

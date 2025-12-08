@@ -8,7 +8,7 @@ Example
 >>> from tests._helpers.factories import make_step_config
 >>> from codeintel.config.steps_analytics import FunctionContractsStepConfig
 >>> config = make_step_config(FunctionContractsStepConfig, tmp_path)
->>> assert config.snapshot.repo == "demo/repo"
+>>> config.snapshot.repo == "demo/repo"
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ def make_step_config[T](
     -------
     >>> from codeintel.config.steps_analytics import FunctionContractsStepConfig
     >>> config = make_step_config(FunctionContractsStepConfig, tmp_path)
-    >>> assert config.snapshot.repo == "demo/repo"
+    >>> config.snapshot.repo == "demo/repo"
     """
     snapshot = make_snapshot(repo_root, repo=repo, commit=commit)
     # All step configs accept snapshot as their first/required parameter.

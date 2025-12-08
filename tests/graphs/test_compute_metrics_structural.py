@@ -21,7 +21,12 @@ from codeintel.graphs.compute.metrics.structural import (
     compute_effective_size,
     compute_triangles,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     diamond_graph,
@@ -56,7 +61,7 @@ def test_clustering_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_clustering_coefficient(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_clustering_single_node() -> None:
@@ -65,8 +70,8 @@ def test_clustering_single_node() -> None:
     graph.add_node("A")
     result = compute_clustering_coefficient(graph)
 
-    assert len(result) == 1
-    assert result["A"] == CLUSTERING_ZERO
+    expect_length(result, 1)
+    expect_equal(result["A"], CLUSTERING_ZERO)
 
 
 def test_clustering_chain_graph() -> None:
@@ -75,7 +80,7 @@ def test_clustering_chain_graph() -> None:
     result = compute_clustering_coefficient(graph)
 
     for clustering in result.values():
-        assert clustering == CLUSTERING_ZERO
+        expect_equal(clustering, CLUSTERING_ZERO)
 
 
 def test_clustering_complete_graph() -> None:
@@ -84,7 +89,7 @@ def test_clustering_complete_graph() -> None:
     result = compute_clustering_coefficient(graph)
 
     for clustering in result.values():
-        assert abs(clustering - CLUSTERING_ONE) < TOLERANCE
+        expect_true(abs(clustering - CLUSTERING_ONE) < TOLERANCE)
 
 
 def test_clustering_triangle() -> None:
@@ -93,7 +98,7 @@ def test_clustering_triangle() -> None:
     result = compute_clustering_coefficient(graph)
 
     for clustering in result.values():
-        assert abs(clustering - CLUSTERING_ONE) < TOLERANCE
+        expect_true(abs(clustering - CLUSTERING_ONE) < TOLERANCE)
 
 
 def test_clustering_star_graph() -> None:
@@ -102,10 +107,10 @@ def test_clustering_star_graph() -> None:
     result = compute_clustering_coefficient(graph)
 
     # Hub has no triangles (spokes not connected to each other)
-    assert result["hub"] == CLUSTERING_ZERO
+    expect_equal(result["hub"], CLUSTERING_ZERO)
     # Spokes also have clustering 0 (only connected to hub)
     for i in range(1, 5):
-        assert result[f"spoke{i}"] == CLUSTERING_ZERO
+        expect_equal(result[f"spoke{i}"], CLUSTERING_ZERO)
 
 
 def test_clustering_directed_graph_converted() -> None:
@@ -114,7 +119,7 @@ def test_clustering_directed_graph_converted() -> None:
     result = compute_clustering_coefficient(graph)
 
     # Should return results (converted to undirected)
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 def test_clustering_diamond_graph() -> None:
@@ -122,7 +127,7 @@ def test_clustering_diamond_graph() -> None:
     graph = diamond_graph().to_undirected()
     result = compute_clustering_coefficient(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 # ===========================================================================
@@ -134,7 +139,7 @@ def test_triangles_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_triangles(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_triangles_single_node() -> None:
@@ -143,7 +148,7 @@ def test_triangles_single_node() -> None:
     graph.add_node("A")
     result = compute_triangles(graph)
 
-    assert result["A"] == TRIANGLES_ZERO
+    expect_equal(result["A"], TRIANGLES_ZERO)
 
 
 def test_triangles_chain_graph() -> None:
@@ -152,7 +157,7 @@ def test_triangles_chain_graph() -> None:
     result = compute_triangles(graph)
 
     for count in result.values():
-        assert count == TRIANGLES_ZERO
+        expect_equal(count, TRIANGLES_ZERO)
 
 
 def test_triangles_single_triangle() -> None:
@@ -161,7 +166,7 @@ def test_triangles_single_triangle() -> None:
     result = compute_triangles(graph)
 
     for count in result.values():
-        assert count == TRIANGLES_ONE
+        expect_equal(count, TRIANGLES_ONE)
 
 
 def test_triangles_complete_graph() -> None:
@@ -171,7 +176,7 @@ def test_triangles_complete_graph() -> None:
 
     # In K4, each node participates in C(3,2) = 3 triangles
     for count in result.values():
-        assert count == TRIANGLES_K4
+        expect_equal(count, TRIANGLES_K4)
 
 
 def test_triangles_star_graph() -> None:
@@ -180,7 +185,7 @@ def test_triangles_star_graph() -> None:
     result = compute_triangles(graph)
 
     for count in result.values():
-        assert count == TRIANGLES_ZERO
+        expect_equal(count, TRIANGLES_ZERO)
 
 
 def test_triangles_directed_converted() -> None:
@@ -188,7 +193,7 @@ def test_triangles_directed_converted() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
     result = compute_triangles(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
 
 
 # ===========================================================================
@@ -200,7 +205,7 @@ def test_core_number_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_core_number(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_core_number_single_node() -> None:
@@ -209,7 +214,7 @@ def test_core_number_single_node() -> None:
     graph.add_node("A")
     result = compute_core_number(graph)
 
-    assert result["A"] == CORE_NUMBER_ZERO
+    expect_equal(result["A"], CORE_NUMBER_ZERO)
 
 
 def test_core_number_chain_graph() -> None:
@@ -219,7 +224,7 @@ def test_core_number_chain_graph() -> None:
 
     # All nodes in chain have core number 1 (each has at least 1 neighbor)
     for core in result.values():
-        assert core == CORE_NUMBER_ONE
+        expect_equal(core, CORE_NUMBER_ONE)
 
 
 def test_core_number_complete_graph() -> None:
@@ -229,7 +234,7 @@ def test_core_number_complete_graph() -> None:
 
     # K4 is a 3-core (each node has 3 neighbors)
     for core in result.values():
-        assert core == CORE_NUMBER_K4
+        expect_equal(core, CORE_NUMBER_K4)
 
 
 def test_core_number_star_graph() -> None:
@@ -239,7 +244,7 @@ def test_core_number_star_graph() -> None:
 
     # Star graph is 1-core
     for core in result.values():
-        assert core == CORE_NUMBER_ONE
+        expect_equal(core, CORE_NUMBER_ONE)
 
 
 def test_core_number_triangle() -> None:
@@ -248,7 +253,7 @@ def test_core_number_triangle() -> None:
     result = compute_core_number(graph)
 
     for core in result.values():
-        assert core == CORE_NUMBER_TWO
+        expect_equal(core, CORE_NUMBER_TWO)
 
 
 def test_core_number_directed_converted() -> None:
@@ -256,7 +261,7 @@ def test_core_number_directed_converted() -> None:
     graph = nx.complete_graph(4, create_using=nx.DiGraph())
     result = compute_core_number(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 # ===========================================================================
@@ -268,7 +273,7 @@ def test_constraint_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_constraint(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_constraint_single_node() -> None:
@@ -277,7 +282,7 @@ def test_constraint_single_node() -> None:
     graph.add_node("A")
     result = compute_constraint(graph)
 
-    assert result["A"] == CONSTRAINT_ZERO
+    expect_equal(result["A"], CONSTRAINT_ZERO)
 
 
 def test_constraint_chain_graph() -> None:
@@ -286,7 +291,7 @@ def test_constraint_chain_graph() -> None:
     result = compute_constraint(graph)
 
     # All nodes should have some constraint value
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 def test_constraint_star_graph() -> None:
@@ -296,7 +301,7 @@ def test_constraint_star_graph() -> None:
 
     # Hub connects to disconnected spokes - spans structural holes
     # Spokes have high constraint (only connected to hub)
-    assert len(result) == EXPECTED_NODE_COUNT_FIVE
+    expect_length(result, EXPECTED_NODE_COUNT_FIVE)
 
 
 def test_constraint_complete_graph() -> None:
@@ -307,7 +312,7 @@ def test_constraint_complete_graph() -> None:
     # All nodes have same constraint in complete graph
     constraints = list(result.values())
     for c in constraints:
-        assert abs(c - constraints[0]) < TOLERANCE
+        expect_true(abs(c - constraints[0]) < TOLERANCE)
 
 
 def test_constraint_directed_converted() -> None:
@@ -315,7 +320,7 @@ def test_constraint_directed_converted() -> None:
     graph = chain_graph(3)
     result = compute_constraint(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
 
 
 # ===========================================================================
@@ -327,7 +332,7 @@ def test_effective_size_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_effective_size(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_effective_size_single_node() -> None:
@@ -340,7 +345,7 @@ def test_effective_size_single_node() -> None:
     graph.add_node("A")
     result = compute_effective_size(graph)
 
-    assert math.isnan(result["A"])
+    expect_true(math.isnan(result["A"]))
 
 
 def test_effective_size_star_graph() -> None:
@@ -350,7 +355,7 @@ def test_effective_size_star_graph() -> None:
 
     # Hub's ego network is non-redundant (spokes not connected)
     # Effective size ≈ degree
-    assert result["hub"] > 0
+    expect_true(result["hub"] > 0)
 
 
 def test_effective_size_complete_graph() -> None:
@@ -359,7 +364,7 @@ def test_effective_size_complete_graph() -> None:
     result = compute_effective_size(graph)
 
     # All neighbors are connected, so redundancy is high
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 def test_effective_size_chain_graph() -> None:
@@ -367,7 +372,7 @@ def test_effective_size_chain_graph() -> None:
     graph = chain_graph(4).to_undirected()
     result = compute_effective_size(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 def test_effective_size_directed_converted() -> None:
@@ -375,7 +380,7 @@ def test_effective_size_directed_converted() -> None:
     graph = chain_graph(3)
     result = compute_effective_size(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
 
 
 # ===========================================================================
@@ -387,7 +392,7 @@ def test_all_structural_empty_graph() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_all_structural(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_all_structural_returns_dataclass() -> None:
@@ -395,14 +400,14 @@ def test_all_structural_returns_dataclass() -> None:
     graph = nx.complete_graph(4)
     result = compute_all_structural(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
     for metrics in result.values():
-        assert isinstance(metrics, StructuralMetrics)
-        assert hasattr(metrics, "clustering")
-        assert hasattr(metrics, "triangles")
-        assert hasattr(metrics, "core_number")
-        assert hasattr(metrics, "constraint")
-        assert hasattr(metrics, "effective_size")
+        expect_true(isinstance(metrics, StructuralMetrics))
+        expect_true(hasattr(metrics, "clustering"))
+        expect_true(hasattr(metrics, "triangles"))
+        expect_true(hasattr(metrics, "core_number"))
+        expect_true(hasattr(metrics, "constraint"))
+        expect_true(hasattr(metrics, "effective_size"))
 
 
 def test_all_structural_chain_graph() -> None:
@@ -411,9 +416,9 @@ def test_all_structural_chain_graph() -> None:
     result = compute_all_structural(graph)
 
     for metrics in result.values():
-        assert metrics.clustering == CLUSTERING_ZERO
-        assert metrics.triangles == TRIANGLES_ZERO
-        assert metrics.core_number == CORE_NUMBER_ONE
+        expect_equal(metrics.clustering, CLUSTERING_ZERO)
+        expect_equal(metrics.triangles, TRIANGLES_ZERO)
+        expect_equal(metrics.core_number, CORE_NUMBER_ONE)
 
 
 def test_all_structural_complete_graph() -> None:
@@ -422,9 +427,9 @@ def test_all_structural_complete_graph() -> None:
     result = compute_all_structural(graph)
 
     for metrics in result.values():
-        assert abs(metrics.clustering - CLUSTERING_ONE) < TOLERANCE
-        assert metrics.triangles == TRIANGLES_K4  # C(3,2)
-        assert metrics.core_number == CORE_NUMBER_K4  # K4 is 3-core
+        expect_true(abs(metrics.clustering - CLUSTERING_ONE) < TOLERANCE)
+        expect_equal(metrics.triangles, TRIANGLES_K4)  # C(3,2)
+        expect_equal(metrics.core_number, CORE_NUMBER_K4)  # K4 is 3-core
 
 
 def test_all_structural_star_graph() -> None:
@@ -433,14 +438,14 @@ def test_all_structural_star_graph() -> None:
     result = compute_all_structural(graph)
 
     # Hub
-    assert result["hub"].clustering == CLUSTERING_ZERO
-    assert result["hub"].triangles == TRIANGLES_ZERO
-    assert result["hub"].core_number == CORE_NUMBER_ONE
+    expect_equal(result["hub"].clustering, CLUSTERING_ZERO)
+    expect_equal(result["hub"].triangles, TRIANGLES_ZERO)
+    expect_equal(result["hub"].core_number, CORE_NUMBER_ONE)
 
     # Spokes
     for i in range(1, 5):
-        assert result[f"spoke{i}"].clustering == CLUSTERING_ZERO
-        assert result[f"spoke{i}"].triangles == TRIANGLES_ZERO
+        expect_equal(result[f"spoke{i}"].clustering, CLUSTERING_ZERO)
+        expect_equal(result[f"spoke{i}"].triangles, TRIANGLES_ZERO)
 
 
 def test_all_structural_triangle() -> None:
@@ -449,9 +454,9 @@ def test_all_structural_triangle() -> None:
     result = compute_all_structural(graph)
 
     for metrics in result.values():
-        assert abs(metrics.clustering - CLUSTERING_ONE) < TOLERANCE
-        assert metrics.triangles == TRIANGLES_ONE
-        assert metrics.core_number == CORE_NUMBER_TWO
+        expect_true(abs(metrics.clustering - CLUSTERING_ONE) < TOLERANCE)
+        expect_equal(metrics.triangles, TRIANGLES_ONE)
+        expect_equal(metrics.core_number, CORE_NUMBER_TWO)
 
 
 def test_all_structural_directed_converted() -> None:
@@ -459,7 +464,7 @@ def test_all_structural_directed_converted() -> None:
     graph = nx.complete_graph(4, create_using=nx.DiGraph())
     result = compute_all_structural(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 # ===========================================================================
@@ -498,7 +503,7 @@ def test_complete_graph_core_numbers(n: int, expected_core: int) -> None:
     result = compute_core_number(graph)
 
     for core in result.values():
-        assert core == expected_core
+        expect_equal(core, expected_core)
 
 
 @pytest.mark.parametrize(
@@ -515,7 +520,7 @@ def test_complete_graph_triangles(n: int, expected_triangles_per_node: int) -> N
     result = compute_triangles(graph)
 
     for count in result.values():
-        assert count == expected_triangles_per_node
+        expect_equal(count, expected_triangles_per_node)
 
 
 @pytest.mark.parametrize(
@@ -528,7 +533,7 @@ def test_star_graph_clustering_zero(spoke_count: int) -> None:
     result = compute_clustering_coefficient(graph)
 
     for clustering in result.values():
-        assert clustering == CLUSTERING_ZERO
+        expect_equal(clustering, CLUSTERING_ZERO)
 
 
 @pytest.mark.parametrize(
@@ -545,4 +550,4 @@ def test_chain_core_numbers(chain_length: int, expected_core: int) -> None:
     result = compute_core_number(graph)
 
     for core in result.values():
-        assert core == expected_core
+        expect_equal(core, expected_core)

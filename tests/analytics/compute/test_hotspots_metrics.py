@@ -8,6 +8,11 @@ from pathlib import Path
 from codeintel.analytics.compute.hotspots.metrics import build_hotspots
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import HotspotsStepConfig
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -31,7 +36,7 @@ def test_build_hotspots_inserts_scores() -> None:
     rows = con.execute(
         "SELECT rel_path, commit_count, author_count, complexity, score FROM analytics.hotspots"
     ).fetchall()
-    assert len(rows) == 1
+    expect_length(rows, 1)
     rel_path, commit_count, author_count, complexity, score = rows[0]
-    assert (rel_path, commit_count, author_count, complexity) == ("src/main.py", 0, 0, 3.0)
-    assert score > 0.0
+    expect_equal((rel_path, commit_count, author_count, complexity), ("src/main.py", 0, 0, 3.0))
+    expect_true(score > 0.0)

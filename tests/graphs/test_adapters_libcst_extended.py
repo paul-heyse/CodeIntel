@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Final
 
+import pytest
+
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.ports.parsing import (
     ParsedFunction,
@@ -23,6 +25,34 @@ from codeintel.graphs.ports.parsing import (
     ParseResult,
     ParsingPort,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _require_module(result: ParseResult) -> ParsedModule:
+    """Ensure ParseResult contains a module for type-safe access.
+
+    Returns
+    -------
+    ParsedModule
+        Parsed module extracted from the result.
+    """
+    if result.module is None:
+        pytest.fail("Expected parsed module")
+    module = result.module
+    expect_is_not_none(module)
+    return module
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -196,78 +226,78 @@ def test_parse_module_simple_success() -> None:
     """Parse a simple module successfully."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    assert result.error is None
-    assert isinstance(result.module, ParsedModule)
+    expect_true(result.success)
+    expect_true(result.error is None)
+    module = _require_module(result)
+    expect_is_instance(module, ParsedModule)
 
 
 def test_parse_module_extracts_functions() -> None:
     """Parse module extracts all function definitions."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    func_names = {f.name for f in result.module.functions}
-    assert "process_data" in func_names
-    assert "validate_path" in func_names
+    func_names = {f.name for f in module.functions}
+    expect_in("process_data", func_names)
+    expect_in("validate_path", func_names)
 
 
 def test_parse_module_extracts_imports() -> None:
     """Parse module extracts all import statements."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    assert len(result.module.imports) >= MIN_IMPORT_COUNT
+    expect_true(result.success)
+    module = _require_module(result)
+    expect_true(len(module.imports) >= MIN_IMPORT_COUNT)
 
 
 def test_parse_module_preserves_source() -> None:
     """Parse module preserves original source."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    assert result.module.source == SIMPLE_MODULE_SOURCE
+    expect_true(result.success)
+    module = _require_module(result)
+    expect_equal(module.source, SIMPLE_MODULE_SOURCE)
 
 
 def test_parse_module_with_syntax_error() -> None:
     """Parse module returns error for syntax errors."""
     result = LibCSTParsingAdapter.parse_module(SYNTAX_ERROR_SOURCE)
 
-    assert not result.success
-    assert result.module is None
-    assert result.error is not None
-    assert result.error.message  # Has error message
+    expect_true(not result.success)
+    expect_true(result.module is None)
+    expect_true(result.error is not None)
+    expect_true(result.error is not None and bool(result.error.message))  # Has error message
 
 
 def test_parse_module_empty_source() -> None:
     """Parse module handles empty source."""
     result = LibCSTParsingAdapter.parse_module("")
 
-    assert result.success
-    assert result.module is not None
-    assert len(result.module.functions) == 0
-    assert len(result.module.imports) == 0
+    expect_true(result.success)
+    module = _require_module(result)
+    expect_length(module.functions, 0)
+    expect_length(module.imports, 0)
 
 
 def test_parse_module_with_cst_module() -> None:
     """Parse module includes CST module for further analysis."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    assert result.module.cst_module is not None
+    expect_true(result.success)
+    module = _require_module(result)
+    expect_true(module.cst_module is not None)
 
 
 def test_parse_module_with_ast_module() -> None:
     """Parse module includes AST module for call site analysis."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    assert result.module.ast_module is not None
+    expect_true(result.success)
+    module = _require_module(result)
+    expect_true(module.ast_module is not None)
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +309,14 @@ def test_parse_async_functions_detected() -> None:
     """Async functions are properly detected."""
     result = LibCSTParsingAdapter.parse_module(ASYNC_FUNCTIONS_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    funcs_by_name = {f.name: f for f in result.module.functions}
+    funcs_by_name = {f.name: f for f in module.functions}
 
-    assert funcs_by_name["fetch_url"].is_async
-    assert funcs_by_name["process_urls"].is_async
-    assert not funcs_by_name["sync_function"].is_async
+    expect_true(funcs_by_name["fetch_url"].is_async)
+    expect_true(funcs_by_name["process_urls"].is_async)
+    expect_true(not funcs_by_name["sync_function"].is_async)
 
 
 # ---------------------------------------------------------------------------
@@ -298,14 +328,14 @@ def test_parse_decorated_functions() -> None:
     """Decorated functions capture decorator names."""
     result = LibCSTParsingAdapter.parse_module(DECORATED_FUNCTIONS_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    funcs_by_name = {f.name: f for f in result.module.functions}
+    funcs_by_name = {f.name: f for f in module.functions}
 
-    assert "lru_cache" in funcs_by_name["cached_compute"].decorator_names
-    assert "my_decorator" in funcs_by_name["decorated_func"].decorator_names
-    assert "property" in funcs_by_name["my_property"].decorator_names
+    expect_in("lru_cache", funcs_by_name["cached_compute"].decorator_names)
+    expect_in("my_decorator", funcs_by_name["decorated_func"].decorator_names)
+    expect_in("property", funcs_by_name["my_property"].decorator_names)
 
 
 # ---------------------------------------------------------------------------
@@ -317,30 +347,30 @@ def test_parse_class_methods() -> None:
     """Class methods are extracted with qualified names."""
     result = LibCSTParsingAdapter.parse_module(CLASS_WITH_METHODS_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
     # Find methods by qualname
-    qualnames = {f.qualname for f in result.module.functions}
+    qualnames = {f.qualname for f in module.functions}
 
-    assert "DataProcessor.__init__" in qualnames
-    assert "DataProcessor.process" in qualnames
-    assert "DataProcessor.async_process" in qualnames
-    assert "DataProcessor.validate" in qualnames
-    assert "DataProcessor.from_range" in qualnames
+    expect_in("DataProcessor.__init__", qualnames)
+    expect_in("DataProcessor.process", qualnames)
+    expect_in("DataProcessor.async_process", qualnames)
+    expect_in("DataProcessor.validate", qualnames)
+    expect_in("DataProcessor.from_range", qualnames)
 
 
 def test_parse_nested_class_methods() -> None:
     """Nested class methods have correct qualified names."""
     result = LibCSTParsingAdapter.parse_module(NESTED_CLASSES_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    qualnames = {f.qualname for f in result.module.functions}
+    qualnames = {f.qualname for f in module.functions}
 
-    assert "Outer.outer_method" in qualnames
-    assert "Outer.Inner.inner_method" in qualnames
+    expect_in("Outer.outer_method", qualnames)
+    expect_in("Outer.Inner.inner_method", qualnames)
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +384,8 @@ def test_extract_imports_simple() -> None:
 
     # Check for standard imports
     import_modules = [i[0] for i in imports]
-    assert "os" in import_modules
-    assert "sys" in import_modules
+    expect_in("os", import_modules)
+    expect_in("sys", import_modules)
 
 
 def test_extract_imports_from() -> None:
@@ -364,22 +394,22 @@ def test_extract_imports_from() -> None:
 
     # Find pathlib import
     pathlib_imports = [i for i in imports if i[0] == "pathlib"]
-    assert len(pathlib_imports) > 0
-    assert "Path" in pathlib_imports[0][1]
+    expect_true(len(pathlib_imports) > 0)
+    expect_in("Path", pathlib_imports[0][1])
 
 
 def test_extract_imports_aliased() -> None:
     """Extract aliased imports."""
     result = LibCSTParsingAdapter.parse_module(IMPORT_VARIATIONS_SOURCE)
 
-    assert result.success
-    assert result.module is not None
-    aliases = result.module.import_aliases
+    expect_true(result.success)
+    module = _require_module(result)
+    aliases = module.import_aliases
 
-    assert "np" in aliases
-    assert aliases["np"] == "numpy"
-    assert "system" in aliases
-    assert aliases["system"] == "sys"
+    expect_in("np", aliases)
+    expect_equal(aliases["np"], "numpy")
+    expect_in("system", aliases)
+    expect_equal(aliases["system"], "sys")
 
 
 def test_extract_imports_star() -> None:
@@ -388,7 +418,7 @@ def test_extract_imports_star() -> None:
 
     # Find star import
     star_imports = [i for i in imports if "*" in i[1]]
-    assert len(star_imports) > 0
+    expect_true(len(star_imports) > 0)
 
 
 def test_extract_imports_nested_modules() -> None:
@@ -396,14 +426,14 @@ def test_extract_imports_nested_modules() -> None:
     imports = LibCSTParsingAdapter.extract_imports(IMPORT_VARIATIONS_SOURCE)
 
     import_modules = [i[0] for i in imports]
-    assert "os.path" in import_modules or "os" in import_modules
+    expect_true("os.path" in import_modules or "os" in import_modules)
 
 
 def test_extract_imports_syntax_error_returns_empty() -> None:
     """Extract imports returns empty for syntax errors."""
     imports = LibCSTParsingAdapter.extract_imports(SYNTAX_ERROR_SOURCE)
 
-    assert imports == []
+    expect_equal(imports, [])
 
 
 # ---------------------------------------------------------------------------
@@ -415,68 +445,68 @@ def test_extract_call_sites_basic() -> None:
     """Extract call sites from a function."""
     result = LibCSTParsingAdapter.parse_module(CALL_SITES_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
     # Extract call sites from the main function (lines 1-7 approximately)
     # Note: line numbers depend on exact source formatting
     call_sites = LibCSTParsingAdapter.extract_call_sites(
-        result.module,
+        module,
         function_span=(2, 8),
     )
 
     call_names = [name for name, _line in call_sites]
-    assert "process_data" in call_names
-    assert "validate" in call_names
-    assert "helper_func" in call_names
+    expect_in("process_data", call_names)
+    expect_in("validate", call_names)
+    expect_in("helper_func", call_names)
 
 
 def test_extract_call_sites_method_calls() -> None:
     """Extract method call sites."""
     result = LibCSTParsingAdapter.parse_module(CALL_SITES_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
     call_sites = LibCSTParsingAdapter.extract_call_sites(
-        result.module,
+        module,
         function_span=(2, 8),
     )
 
     call_names = [name for name, _line in call_sites]
     # Method calls should extract the method name
-    assert "method" in call_names
+    expect_in("method", call_names)
 
 
 def test_extract_call_sites_empty_span() -> None:
     """Extract call sites returns empty for non-function span."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
     # Use a span with no calls
     call_sites = LibCSTParsingAdapter.extract_call_sites(
-        result.module,
+        module,
         function_span=(1, 1),
     )
 
-    assert len(call_sites) == 0
+    expect_length(call_sites, 0)
 
 
 def test_extract_call_sites_no_ast_returns_empty() -> None:
     """Extract call sites returns empty when no AST module."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
     # Create a module without AST
     module_no_ast = ParsedModule(
-        source=result.module.source,
-        functions=result.module.functions,
-        imports=result.module.imports,
-        cst_module=result.module.cst_module,
+        source=module.source,
+        functions=module.functions,
+        imports=module.imports,
+        cst_module=module.cst_module,
         ast_module=None,
         _import_aliases={},
     )
@@ -486,7 +516,7 @@ def test_extract_call_sites_no_ast_returns_empty() -> None:
         function_span=(1, 100),
     )
 
-    assert call_sites == []
+    expect_equal(call_sites, [])
 
 
 # ---------------------------------------------------------------------------
@@ -503,8 +533,8 @@ def test_parse_function_finds_function_in_range() -> None:
     func = adapter.parse_function(SIMPLE_MODULE_SOURCE, start_line=1, end_line=100)
 
     # Should find at least one function
-    assert func is not None
-    assert isinstance(func, ParsedFunction)
+    expect_true(func is not None)
+    expect_is_instance(func, ParsedFunction)
 
 
 def test_parse_function_returns_none_for_invalid_source() -> None:
@@ -513,7 +543,7 @@ def test_parse_function_returns_none_for_invalid_source() -> None:
 
     func = adapter.parse_function(SYNTAX_ERROR_SOURCE, start_line=1, end_line=10)
 
-    assert func is None
+    expect_true(func is None)
 
 
 def test_parse_function_returns_none_for_empty_range() -> None:
@@ -523,7 +553,7 @@ def test_parse_function_returns_none_for_empty_range() -> None:
     # Use range before any function definitions
     func = adapter.parse_function("# Just a comment\n", start_line=1, end_line=10)
 
-    assert func is None
+    expect_true(func is None)
 
 
 # ---------------------------------------------------------------------------
@@ -544,9 +574,9 @@ def test_parse_result_ok_creates_success() -> None:
 
     result = ParseResult.ok(module)
 
-    assert result.success
-    assert result.module is module
-    assert result.error is None
+    expect_true(result.success)
+    expect_true(result.module is module)
+    expect_true(result.error is None)
 
 
 def test_parse_result_fail_creates_failure() -> None:
@@ -555,11 +585,12 @@ def test_parse_result_fail_creates_failure() -> None:
 
     result = ParseResult.fail(error)
 
-    assert not result.success
-    assert result.module is None
-    assert result.error is not None
-    assert result.error is error
-    assert result.error.line == PARSE_ERROR_LINE
+    expect_true(not result.success)
+    expect_true(result.module is None)
+    if result.error is None:
+        pytest.fail("Expected parse error")
+    expect_true(result.error is error)
+    expect_equal(result.error.line, PARSE_ERROR_LINE)
 
 
 # ---------------------------------------------------------------------------
@@ -571,24 +602,24 @@ def test_parsed_function_has_parameters() -> None:
     """Parsed functions include parameter names."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    process_func = next(f for f in result.module.functions if f.name == "process_data")
+    process_func = next(f for f in module.functions if f.name == "process_data")
 
-    assert "items" in process_func.parameters
+    expect_in("items", process_func.parameters)
 
 
 def test_parsed_function_qualname_top_level() -> None:
     """Top-level function qualname equals name."""
     result = LibCSTParsingAdapter.parse_module(SIMPLE_MODULE_SOURCE)
 
-    assert result.success
-    assert result.module is not None
+    expect_true(result.success)
+    module = _require_module(result)
 
-    process_func = next(f for f in result.module.functions if f.name == "process_data")
+    process_func = next(f for f in module.functions if f.name == "process_data")
 
-    assert process_func.qualname == "process_data"
+    expect_equal(process_func.qualname, "process_data")
 
 
 # ---------------------------------------------------------------------------
@@ -601,10 +632,10 @@ def test_libcst_adapter_implements_parsing_port() -> None:
     adapter = LibCSTParsingAdapter()
 
     # Check it satisfies the protocol
-    assert hasattr(adapter, "parse_module")
-    assert hasattr(adapter, "parse_function")
-    assert hasattr(adapter, "extract_imports")
-    assert hasattr(adapter, "extract_call_sites")
+    expect_true(hasattr(adapter, "parse_module"))
+    expect_true(hasattr(adapter, "parse_function"))
+    expect_true(hasattr(adapter, "extract_imports"))
+    expect_true(hasattr(adapter, "extract_call_sites"))
 
     # Verify it can be assigned to the protocol type
     _: ParsingPort = adapter

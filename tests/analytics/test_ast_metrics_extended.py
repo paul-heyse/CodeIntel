@@ -10,7 +10,14 @@ behavior that may change with implementation details.
 from __future__ import annotations
 
 # We test git log parsing behavior via the public wrapper.
-from codeintel.analytics.compute.hotspots.metrics import FileChurn, parse_git_log_lines
+from codeintel.analytics.compute.hotspots.metrics import parse_git_log_lines
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_length,
+    expect_not_in,
+)
 
 # =============================================================================
 # Test Constants
@@ -20,55 +27,12 @@ EXPECTED_COMMITS_1 = 1
 EXPECTED_COMMITS_2 = 2
 EXPECTED_AUTHORS_1 = 1
 EXPECTED_AUTHORS_2 = 2
-EXPECTED_AUTHORS_3 = 3
 EXPECTED_LINES_ADDED_10 = 10
 EXPECTED_LINES_ADDED_15 = 15
-EXPECTED_LINES_ADDED_100 = 100
 EXPECTED_LINES_DELETED_0 = 0
 EXPECTED_LINES_DELETED_3 = 3
 EXPECTED_LINES_DELETED_5 = 5
-EXPECTED_LINES_DELETED_50 = 50
 EXPECTED_FILES_2 = 2
-
-
-# =============================================================================
-# FileChurn Tests
-# =============================================================================
-
-
-def test_file_churn_default_values() -> None:
-    """Verify FileChurn has sensible defaults."""
-    churn = FileChurn()
-    assert not churn.commits
-    assert not churn.authors
-    assert churn.lines_added == EXPECTED_LINES_DELETED_0
-    assert churn.lines_deleted == EXPECTED_LINES_DELETED_0
-
-
-def test_file_churn_to_summary() -> None:
-    """Convert FileChurn to summary dict."""
-    churn = FileChurn()
-    churn.commits.add("abc123")
-    churn.commits.add("def456")
-    churn.authors.add("alice")
-    churn.lines_added = EXPECTED_LINES_ADDED_100
-    churn.lines_deleted = EXPECTED_LINES_DELETED_50
-
-    summary = churn.to_summary()
-    assert summary["commit_count"] == EXPECTED_COMMITS_2
-    assert summary["author_count"] == EXPECTED_AUTHORS_1
-    assert summary["lines_added"] == EXPECTED_LINES_ADDED_100
-    assert summary["lines_deleted"] == EXPECTED_LINES_DELETED_50
-
-
-def test_file_churn_multiple_authors() -> None:
-    """Track multiple distinct authors."""
-    churn = FileChurn()
-    churn.authors.add("alice")
-    churn.authors.add("bob")
-    churn.authors.add("charlie")
-    summary = churn.to_summary()
-    assert summary["author_count"] == EXPECTED_AUTHORS_3
 
 
 # =============================================================================
@@ -79,7 +43,7 @@ def test_file_churn_multiple_authors() -> None:
 def test_parse_git_log_empty_lines() -> None:
     """Empty input returns empty dict."""
     result = parse_git_log_lines([])
-    assert not result
+    expect_false(result)
 
 
 def test_parse_git_log_simple_commit() -> None:
@@ -89,12 +53,12 @@ def test_parse_git_log_simple_commit() -> None:
         "10\t5\tsrc/module.py",
     ]
     result = parse_git_log_lines(lines)
-    assert "src/module.py" in result
+    expect_in("src/module.py", result)
     stats = result["src/module.py"]
-    assert stats["commit_count"] == EXPECTED_COMMITS_1
-    assert stats["author_count"] == EXPECTED_AUTHORS_1
-    assert stats["lines_added"] == EXPECTED_LINES_ADDED_10
-    assert stats["lines_deleted"] == EXPECTED_LINES_DELETED_5
+    expect_equal(stats["commit_count"], EXPECTED_COMMITS_1)
+    expect_equal(stats["author_count"], EXPECTED_AUTHORS_1)
+    expect_equal(stats["lines_added"], EXPECTED_LINES_ADDED_10)
+    expect_equal(stats["lines_deleted"], EXPECTED_LINES_DELETED_5)
 
 
 def test_parse_git_log_multiple_commits_same_file() -> None:
@@ -107,10 +71,10 @@ def test_parse_git_log_multiple_commits_same_file() -> None:
     ]
     result = parse_git_log_lines(lines)
     stats = result["src/module.py"]
-    assert stats["commit_count"] == EXPECTED_COMMITS_2
-    assert stats["author_count"] == EXPECTED_AUTHORS_2
-    assert stats["lines_added"] == EXPECTED_LINES_ADDED_15
-    assert stats["lines_deleted"] == EXPECTED_LINES_DELETED_3
+    expect_equal(stats["commit_count"], EXPECTED_COMMITS_2)
+    expect_equal(stats["author_count"], EXPECTED_AUTHORS_2)
+    expect_equal(stats["lines_added"], EXPECTED_LINES_ADDED_15)
+    expect_equal(stats["lines_deleted"], EXPECTED_LINES_DELETED_3)
 
 
 def test_parse_git_log_multiple_files() -> None:
@@ -121,9 +85,9 @@ def test_parse_git_log_multiple_files() -> None:
         "20\t5\tsrc/b.py",
     ]
     result = parse_git_log_lines(lines)
-    assert len(result) == EXPECTED_FILES_2
-    assert "src/a.py" in result
-    assert "src/b.py" in result
+    expect_length(result, EXPECTED_FILES_2)
+    expect_in("src/a.py", result)
+    expect_in("src/b.py", result)
 
 
 def test_parse_git_log_empty_line_handling() -> None:
@@ -135,7 +99,7 @@ def test_parse_git_log_empty_line_handling() -> None:
         "",
     ]
     result = parse_git_log_lines(lines)
-    assert "src/module.py" in result
+    expect_in("src/module.py", result)
 
 
 def test_parse_git_log_binary_file_numstat() -> None:
@@ -147,9 +111,9 @@ def test_parse_git_log_binary_file_numstat() -> None:
     ]
     result = parse_git_log_lines(lines)
     # Binary file should have 0 lines (- is not a digit)
-    assert "image.png" in result
+    expect_in("image.png", result)
     stats = result["image.png"]
-    assert stats["lines_added"] == EXPECTED_LINES_DELETED_0
+    expect_equal(stats["lines_added"], EXPECTED_LINES_DELETED_0)
 
 
 def test_parse_git_log_normalize_path_separators() -> None:
@@ -159,7 +123,7 @@ def test_parse_git_log_normalize_path_separators() -> None:
         "10\t0\tsrc\\windows\\module.py",
     ]
     result = parse_git_log_lines(lines)
-    assert "src/windows/module.py" in result
+    expect_in("src/windows/module.py", result)
 
 
 def test_parse_git_log_skip_lines_before_commit() -> None:
@@ -170,8 +134,8 @@ def test_parse_git_log_skip_lines_before_commit() -> None:
         "5\t0\tsrc/module.py",
     ]
     result = parse_git_log_lines(lines)
-    assert "orphan.py" not in result
-    assert "src/module.py" in result
+    expect_not_in("orphan.py", result)
+    expect_in("src/module.py", result)
 
 
 def test_parse_git_log_malformed_numstat_line() -> None:
@@ -182,7 +146,7 @@ def test_parse_git_log_malformed_numstat_line() -> None:
         "10\t0\tsrc/module.py",
     ]
     result = parse_git_log_lines(lines)
-    assert len(result) == EXPECTED_COMMITS_1
+    expect_length(result, EXPECTED_COMMITS_1)
 
 
 def test_parse_git_log_same_author_multiple_commits() -> None:
@@ -195,5 +159,5 @@ def test_parse_git_log_same_author_multiple_commits() -> None:
     ]
     result = parse_git_log_lines(lines)
     stats = result["src/module.py"]
-    assert stats["commit_count"] == EXPECTED_COMMITS_2
-    assert stats["author_count"] == EXPECTED_AUTHORS_1
+    expect_equal(stats["commit_count"], EXPECTED_COMMITS_2)
+    expect_equal(stats["author_count"], EXPECTED_AUTHORS_1)

@@ -17,6 +17,7 @@ from codeintel.analytics.compute.functions.complexity import (
     compute_complexity,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
 # Test constants
 SIMPLE_FUNC_COMPLEXITY = 1
@@ -69,7 +70,7 @@ class TestComplexityMetrics:
             is_generator=False,
             complexity_bucket="low",
         )
-        assert metrics.cyclomatic == 1
+        expect_equal(metrics.cyclomatic, 1)
 
     @staticmethod
     def test_metrics_is_frozen() -> None:
@@ -102,7 +103,7 @@ def simple():
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic == SIMPLE_FUNC_COMPLEXITY
+        expect_equal(metrics.cyclomatic, SIMPLE_FUNC_COMPLEXITY)
 
     @staticmethod
     def test_function_with_if() -> None:
@@ -115,7 +116,7 @@ def with_if(x):
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic == IF_ELSE_COMPLEXITY
+        expect_equal(metrics.cyclomatic, IF_ELSE_COMPLEXITY)
 
     @staticmethod
     def test_function_with_nested_if() -> None:
@@ -129,7 +130,7 @@ def nested_if(x, y):
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic == NESTED_IF_COMPLEXITY
+        expect_equal(metrics.cyclomatic, NESTED_IF_COMPLEXITY)
 
 
 class TestComputeComplexityControlFlow:
@@ -144,10 +145,10 @@ def with_for(items):
     for item in items:
         total += item
     return total
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic >= IF_ELSE_COMPLEXITY
+        expect_true(metrics.cyclomatic >= IF_ELSE_COMPLEXITY)
 
     @staticmethod
     def test_while_loop_adds_complexity() -> None:
@@ -157,10 +158,10 @@ def with_while(x):
     while x > 0:
         x -= 1
     return x
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic >= IF_ELSE_COMPLEXITY
+        expect_true(metrics.cyclomatic >= IF_ELSE_COMPLEXITY)
 
     @staticmethod
     def test_try_except_adds_complexity() -> None:
@@ -171,10 +172,10 @@ def with_try():
         return 1
     except Exception:
         return 0
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.cyclomatic >= IF_ELSE_COMPLEXITY
+        expect_true(metrics.cyclomatic >= IF_ELSE_COMPLEXITY)
 
     @staticmethod
     def test_and_or_add_complexity() -> None:
@@ -184,11 +185,11 @@ def with_and_or(x, y, z):
     if x and y or z:
         return 1
     return 0
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
         # and and or each add +1
-        assert metrics.cyclomatic >= NESTED_IF_COMPLEXITY
+        expect_true(metrics.cyclomatic >= NESTED_IF_COMPLEXITY)
 
 
 class TestComputeComplexityNesting:
@@ -200,10 +201,10 @@ class TestComputeComplexityNesting:
         source = """
 def flat():
     return 1
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.max_nesting_depth == 0
+        expect_equal(metrics.max_nesting_depth, 0)
 
     @staticmethod
     def test_single_if_depth_one() -> None:
@@ -213,10 +214,10 @@ def with_if(x):
     if x > 0:
         return x
     return 0
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.max_nesting_depth == 1
+        expect_equal(metrics.max_nesting_depth, 1)
 
     @staticmethod
     def test_nested_depth() -> None:
@@ -228,11 +229,11 @@ def deeply_nested(x, y, z):
             if z:
                 return 1
     return 0
-"""
+        """
         func = _parse_function(source)
         metrics = compute_complexity(func)
         expected_depth = 3
-        assert metrics.max_nesting_depth == expected_depth
+        expect_equal(metrics.max_nesting_depth, expected_depth)
 
 
 class TestComputeComplexityCounts:
@@ -252,7 +253,7 @@ def multi_return(x):
         func = _parse_function(source)
         metrics = compute_complexity(func)
         expected_returns = 3
-        assert metrics.return_count == expected_returns
+        expect_equal(metrics.return_count, expected_returns)
 
     @staticmethod
     def test_yield_count() -> None:
@@ -266,8 +267,8 @@ def generator(items):
         func = _parse_function(source)
         metrics = compute_complexity(func)
         expected_yields = 2
-        assert metrics.yield_count == expected_yields
-        assert metrics.is_generator is True
+        expect_equal(metrics.yield_count, expected_yields)
+        expect_true(metrics.is_generator)
 
     @staticmethod
     def test_raise_count() -> None:
@@ -283,7 +284,7 @@ def raiser(x):
         func = _parse_function(source)
         metrics = compute_complexity(func)
         expected_raises = 2
-        assert metrics.raise_count == expected_raises
+        expect_equal(metrics.raise_count, expected_raises)
 
 
 class TestComputeComplexityAttributes:
@@ -299,7 +300,7 @@ def documented():
 '''
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.has_docstring is True
+        expect_true(metrics.has_docstring)
 
     @staticmethod
     def test_no_docstring() -> None:
@@ -310,7 +311,7 @@ def undocumented():
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.has_docstring is False
+        expect_false(metrics.has_docstring)
 
     @staticmethod
     def test_async_function() -> None:
@@ -321,7 +322,7 @@ async def async_func():
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.is_async is True
+        expect_true(metrics.is_async)
 
     @staticmethod
     def test_decorator_count() -> None:
@@ -335,7 +336,7 @@ def decorated():
         func = _parse_function(source)
         metrics = compute_complexity(func)
         expected_decorators = 2
-        assert metrics.decorator_count == expected_decorators
+        expect_equal(metrics.decorator_count, expected_decorators)
 
 
 class TestComplexityBuckets:
@@ -350,7 +351,7 @@ def simple():
 """
         func = _parse_function(source)
         metrics = compute_complexity(func)
-        assert metrics.complexity_bucket == "low"
+        expect_equal(metrics.complexity_bucket, "low")
 
     @staticmethod
     def test_medium_complexity_bucket() -> None:
@@ -373,14 +374,14 @@ def medium(a, b, c, d, e, f):
         func = _parse_function(source)
         metrics = compute_complexity(func)
         # Should be around 6
-        assert metrics.cyclomatic > COMPLEXITY_LOW
+        expect_true(metrics.cyclomatic > COMPLEXITY_LOW)
         if metrics.cyclomatic <= COMPLEXITY_MEDIUM:
-            assert metrics.complexity_bucket == "medium"
+            expect_equal(metrics.complexity_bucket, "medium")
 
     @staticmethod
     def test_complexity_thresholds_defined() -> None:
         """Verify complexity thresholds are properly defined."""
         expected_low = 5
         expected_medium = 10
-        assert expected_low == COMPLEXITY_LOW
-        assert expected_medium == COMPLEXITY_MEDIUM
+        expect_equal(expected_low, COMPLEXITY_LOW)
+        expect_equal(expected_medium, COMPLEXITY_MEDIUM)

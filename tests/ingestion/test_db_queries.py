@@ -38,6 +38,14 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_table_exists,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_true,
+)
 from tests._helpers.factories import make_snapshot
 
 # Test constants (non-repo/commit)
@@ -267,33 +275,33 @@ def test_query_error_attributes() -> None:
     """QueryError should store table and message."""
     error = QueryError("core.test", "Something went wrong")
 
-    assert error.table == "core.test"
-    assert "core.test" in str(error)
-    assert "Something went wrong" in str(error)
+    expect_equal(error.table, "core.test")
+    expect_in("core.test", str(error))
+    expect_in("Something went wrong", str(error))
 
 
 def test_table_not_found_error() -> None:
     """TableNotFoundError should indicate missing table."""
     error = TableNotFoundError("core.missing", "not found")
 
-    assert error.table == "core.missing"
-    assert isinstance(error, QueryError)
+    expect_equal(error.table, "core.missing")
+    expect_is_instance(error, QueryError)
 
 
 def test_column_not_found_error() -> None:
     """ColumnNotFoundError should store column name."""
     error = ColumnNotFoundError("core.test", "missing_col")
 
-    assert error.table == "core.test"
-    assert error.column == "missing_col"
-    assert "missing_col" in str(error)
-    assert isinstance(error, QueryError)
+    expect_equal(error.table, "core.test")
+    expect_equal(error.column, "missing_col")
+    expect_in("missing_col", str(error))
+    expect_is_instance(error, QueryError)
 
 
 def test_duckdb_query_errors_is_tuple() -> None:
     """DUCKDB_QUERY_ERRORS should be a tuple of exception types."""
-    assert isinstance(DUCKDB_QUERY_ERRORS, tuple)
-    assert len(DUCKDB_QUERY_ERRORS) > 0
+    expect_is_instance(DUCKDB_QUERY_ERRORS, tuple)
+    expect_true(len(DUCKDB_QUERY_ERRORS) > 0)
 
 
 # =============================================================================
@@ -307,8 +315,9 @@ def test_safe_count_existing_table(fresh_gateway: StorageGateway) -> None:
     result = safe_count(fresh_gateway, "core.modules")
 
     # Empty table should return 0
-    assert result is not None
-    assert result >= 0
+    if result is None:
+        pytest.fail("safe_count returned None for existing table")
+    expect_true(result >= 0)
 
 
 @pytest.mark.parametrize(
@@ -323,7 +332,7 @@ def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, tabl
     """safe_count should return None for invalid or missing tables."""
     result = safe_count(fresh_gateway, table_key)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway) -> None:
@@ -338,7 +347,7 @@ def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway) -> None
 
     result = safe_count(fresh_gateway, "core.modules")
 
-    assert result == EXPECTED_COUNT_2
+    expect_equal(result, EXPECTED_COUNT_2)
 
 
 # =============================================================================
@@ -363,7 +372,7 @@ def test_safe_count_with_scope_filters_by_snapshot(
     snapshot = make_snapshot(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
     result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
 
-    assert result == EXPECTED_COUNT_2
+    expect_equal(result, EXPECTED_COUNT_2)
 
 
 def test_safe_count_with_scope_nonexistent_table(
@@ -373,7 +382,7 @@ def test_safe_count_with_scope_nonexistent_table(
     snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
     result = safe_count_with_scope(fresh_gateway, "nonexistent.table", snapshot)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_count_with_scope_no_matches(fresh_gateway: StorageGateway) -> None:
@@ -383,7 +392,7 @@ def test_safe_count_with_scope_no_matches(fresh_gateway: StorageGateway) -> None
     )
     result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 # =============================================================================
@@ -395,7 +404,7 @@ def test_safe_table_exists_for_existing_table(fresh_gateway: StorageGateway) -> 
     """safe_table_exists should return True for existing tables."""
     result = safe_table_exists(fresh_gateway, "core.modules")
 
-    assert result is True
+    expect_true(result)
 
 
 @pytest.mark.parametrize(
@@ -411,17 +420,17 @@ def test_safe_table_exists_invalid_or_missing(
     """safe_table_exists should return False for invalid or missing tables."""
     result = safe_table_exists(fresh_gateway, table_key)
 
-    assert result is False
+    expect_false(result)
 
 
 def test_safe_table_exists_different_schemas(fresh_gateway: StorageGateway) -> None:
     """safe_table_exists should work across different schemas."""
     # Test tables in different schemas
-    assert safe_table_exists(fresh_gateway, "core.modules") is True
-    assert safe_table_exists(fresh_gateway, "core.goids") is True
+    expect_true(safe_table_exists(fresh_gateway, "core.modules"))
+    expect_true(safe_table_exists(fresh_gateway, "core.goids"))
 
     # Nonexistent in any schema
-    assert safe_table_exists(fresh_gateway, "core.nonexistent") is False
+    expect_false(safe_table_exists(fresh_gateway, "core.nonexistent"))
 
 
 # =============================================================================
@@ -433,10 +442,10 @@ def test_safe_count_sql_injection_protection(fresh_gateway: StorageGateway) -> N
     """safe_count should handle potential SQL injection attempts safely."""
     # These should return None due to invalid identifiers, not execute malicious SQL
     result = safe_count(fresh_gateway, "core.modules; DROP TABLE core.modules;--")
-    assert result is None
+    expect_is_none(result)
 
     result = safe_count(fresh_gateway, "'; DROP TABLE core.modules;--")
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_table_exists_sql_injection_protection(
@@ -444,26 +453,26 @@ def test_safe_table_exists_sql_injection_protection(
 ) -> None:
     """safe_table_exists should handle potential SQL injection attempts safely."""
     result = safe_table_exists(fresh_gateway, "core.modules; DROP TABLE core.modules;--")
-    assert result is False
+    expect_false(result)
 
     # Original table should still exist
-    assert safe_table_exists(fresh_gateway, "core.modules") is True
+    expect_true(safe_table_exists(fresh_gateway, "core.modules"))
 
 
 def test_safe_count_with_special_characters(fresh_gateway: StorageGateway) -> None:
     """safe_count should handle special characters in table keys."""
     # These should all return None since they're invalid
     result = safe_count(fresh_gateway, "core.table-with-dash")
-    assert result is None
+    expect_is_none(result)
 
     result = safe_count(fresh_gateway, "core.table with space")
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_count_with_unicode(fresh_gateway: StorageGateway) -> None:
     """safe_count should handle unicode in table keys."""
     result = safe_count(fresh_gateway, "core.tableé")
-    assert result is None
+    expect_is_none(result)
 
 
 # =============================================================================
@@ -475,10 +484,10 @@ def test_safe_get_columns_existing_table(fresh_gateway: StorageGateway) -> None:
     """safe_get_columns should return column names for existing tables."""
     result = safe_get_columns(fresh_gateway, "core.modules")
 
-    assert isinstance(result, set)
-    assert len(result) > 0
-    assert "module" in result
-    assert "path" in result
+    expect_is_instance(result, set)
+    expect_true(len(result) > 0)
+    expect_in("module", result)
+    expect_in("path", result)
 
 
 @pytest.mark.parametrize(
@@ -494,7 +503,7 @@ def test_safe_get_columns_nonexistent_or_invalid(
     """safe_get_columns should return empty set for nonexistent or invalid tables."""
     result = safe_get_columns(fresh_gateway, table_key)
 
-    assert result == set()
+    expect_equal(result, set())
 
 
 # =============================================================================
@@ -515,7 +524,7 @@ def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway) -> None:
 
     result = safe_count_nulls(fresh_gateway, "core.modules", "module")
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway) -> None:
@@ -533,7 +542,7 @@ def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway) -> None:
 
     result = safe_count_nulls(fresh_gateway, "core.test_nulls", "value")
 
-    assert result == EXPECTED_COUNT_2
+    expect_equal(result, EXPECTED_COUNT_2)
 
 
 @pytest.mark.parametrize(
@@ -549,7 +558,7 @@ def test_safe_count_nulls_invalid_inputs(
     """safe_count_nulls should return 0 for invalid table or column."""
     result = safe_count_nulls(fresh_gateway, table_key, column)
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 # =============================================================================
@@ -563,7 +572,7 @@ def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
 
     result = safe_min_value(fresh_gateway, "core.test_numeric", "value")
 
-    assert result == EXPECTED_MIN_VALUE
+    expect_equal(result, EXPECTED_MIN_VALUE)
 
 
 def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
@@ -572,7 +581,7 @@ def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
 
     result = safe_max_value(fresh_gateway, "core.test_numeric2", "value")
 
-    assert result == EXPECTED_MAX_VALUE
+    expect_equal(result, EXPECTED_MAX_VALUE)
 
 
 def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
@@ -581,7 +590,7 @@ def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
 
     result = safe_min_value(fresh_gateway, "core.test_empty_num", "value")
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_max_value_empty_table(fresh_gateway: StorageGateway) -> None:
@@ -590,21 +599,21 @@ def test_safe_max_value_empty_table(fresh_gateway: StorageGateway) -> None:
 
     result = safe_max_value(fresh_gateway, "core.test_empty_num2", "value")
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_min_value_invalid_table(fresh_gateway: StorageGateway) -> None:
     """safe_min_value should return None for invalid table."""
     result = safe_min_value(fresh_gateway, "invalid.table", "column")
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_max_value_invalid_column(fresh_gateway: StorageGateway) -> None:
     """safe_max_value should return None for invalid column."""
     result = safe_max_value(fresh_gateway, "core.modules", "nonexistent")
 
-    assert result is None
+    expect_is_none(result)
 
 
 # =============================================================================
@@ -618,7 +627,7 @@ def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -
 
     result = safe_count_non_positive(fresh_gateway, "core.test_pos", "value")
 
-    assert result == EXPECTED_COUNT_3  # -5.0, 0.0, -2.0
+    expect_equal(result, EXPECTED_COUNT_3)  # -5.0, 0.0, -2.0
 
 
 def test_safe_count_non_positive_all_positive(fresh_gateway: StorageGateway) -> None:
@@ -627,14 +636,14 @@ def test_safe_count_non_positive_all_positive(fresh_gateway: StorageGateway) -> 
 
     result = safe_count_non_positive(fresh_gateway, "core.test_all_pos", "value")
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) -> None:
     """safe_count_non_positive should return 0 for invalid table."""
     result = safe_count_non_positive(fresh_gateway, "invalid.table", "column")
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 # =============================================================================
@@ -659,7 +668,7 @@ def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None
     result = safe_count_duplicates(fresh_gateway, "core.test_dupes", "name")
 
     # 5 total - 3 distinct = 2 duplicates
-    assert result == EXPECTED_COUNT_2
+    expect_equal(result, EXPECTED_COUNT_2)
 
 
 def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway) -> None:
@@ -676,14 +685,14 @@ def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway) -> None:
 
     result = safe_count_duplicates(fresh_gateway, "core.test_unique", "name")
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> None:
     """safe_count_duplicates should return 0 for invalid table."""
     result = safe_count_duplicates(fresh_gateway, "invalid.table", "column")
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 # =============================================================================
@@ -704,7 +713,7 @@ def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> N
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac1", "value")
 
-    assert result == EXPECTED_FRACTION_1_0
+    expect_equal(result, EXPECTED_FRACTION_1_0)
 
 
 def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None:
@@ -722,7 +731,7 @@ def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac2", "value")
 
-    assert result == EXPECTED_FRACTION_0_5
+    expect_equal(result, EXPECTED_FRACTION_0_5)
 
 
 def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
@@ -738,7 +747,7 @@ def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac3", "value")
 
-    assert result == 0.0
+    expect_equal(result, 0.0)
 
 
 def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway) -> None:
@@ -747,14 +756,14 @@ def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway) -> No
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac_empty", "value")
 
-    assert result == 0.0
+    expect_equal(result, 0.0)
 
 
 def test_safe_not_null_fraction_invalid_table(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 0.0 for invalid table."""
     result = safe_not_null_fraction(fresh_gateway, "invalid.table", "column")
 
-    assert result == 0.0
+    expect_equal(result, 0.0)
 
 
 # =============================================================================
@@ -793,7 +802,7 @@ def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway) -> Non
 
     result = safe_count_orphan_refs(fresh_gateway, fk)
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> None:
@@ -829,7 +838,7 @@ def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> N
 
     result = safe_count_orphan_refs(fresh_gateway, fk)
 
-    assert result == EXPECTED_COUNT_2
+    expect_equal(result, EXPECTED_COUNT_2)
 
 
 def test_safe_count_orphan_refs_with_nulls_allowed(fresh_gateway: StorageGateway) -> None:
@@ -869,7 +878,7 @@ def test_safe_count_orphan_refs_with_nulls_allowed(fresh_gateway: StorageGateway
     # NULL values are included in the count when allow_null=True
     # The LEFT JOIN will match NULL → NULL, which doesn't exist in parent
     # So NULL is counted as orphan too
-    assert result >= 1
+    expect_true(result >= 1)
 
 
 def test_safe_count_orphan_refs_invalid_table(fresh_gateway: StorageGateway) -> None:
@@ -883,7 +892,7 @@ def test_safe_count_orphan_refs_invalid_table(fresh_gateway: StorageGateway) -> 
 
     result = safe_count_orphan_refs(fresh_gateway, fk)
 
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_foreign_key_ref_dataclass() -> None:
@@ -896,11 +905,11 @@ def test_foreign_key_ref_dataclass() -> None:
         allow_null=False,
     )
 
-    assert fk.source_table == "core.child"
-    assert fk.source_column == "parent_id"
-    assert fk.ref_table == "core.parent"
-    assert fk.ref_column == "id"
-    assert fk.allow_null is False
+    expect_equal(fk.source_table, "core.child")
+    expect_equal(fk.source_column, "parent_id")
+    expect_equal(fk.ref_table, "core.parent")
+    expect_equal(fk.ref_column, "id")
+    expect_false(fk.allow_null)
 
 
 def test_foreign_key_ref_default_allow_null() -> None:
@@ -912,7 +921,7 @@ def test_foreign_key_ref_default_allow_null() -> None:
         ref_column="id",
     )
 
-    assert fk.allow_null is True
+    expect_true(fk.allow_null)
 
 
 # =============================================================================
@@ -929,14 +938,14 @@ def test_safe_macro_exists_existing_macro(fresh_gateway: StorageGateway) -> None
 
     result = safe_macro_exists(fresh_gateway, "test_macro_exists")
 
-    assert result is True
+    expect_true(result)
 
 
 def test_safe_macro_exists_nonexistent_macro(fresh_gateway: StorageGateway) -> None:
     """safe_macro_exists should return False for nonexistent macros."""
     result = safe_macro_exists(fresh_gateway, "nonexistent_macro_xyz")
 
-    assert result is False
+    expect_false(result)
 
 
 def test_safe_macro_exists_builtin_function(fresh_gateway: StorageGateway) -> None:
@@ -944,4 +953,4 @@ def test_safe_macro_exists_builtin_function(fresh_gateway: StorageGateway) -> No
     # COUNT is a built-in function
     result = safe_macro_exists(fresh_gateway, "count")
 
-    assert result is True
+    expect_true(result)

@@ -49,7 +49,12 @@ from codeintel.graphs.compute.metrics.coupling import (
     find_boundary_nodes,
     find_hub_nodes,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 
 # ---------------------------------------------------------------------------
 # Constants for magic value compliance
@@ -91,7 +96,7 @@ def test_pagerank_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_pagerank(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_pagerank_simple_cycle() -> None:
@@ -99,12 +104,12 @@ def test_pagerank_simple_cycle() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
     result = compute_pagerank(graph)
 
-    assert len(result) == EXPECTED_CYCLE_NODES
+    expect_true(len(result) == EXPECTED_CYCLE_NODES)
     # In a cycle, all nodes should have similar PageRank
     values = list(result.values())
     expected_uniform = 1.0 / EXPECTED_CYCLE_NODES
     for val in values:
-        assert abs(val - expected_uniform) < PAGERANK_TOLERANCE
+        expect_true(abs(val - expected_uniform) < PAGERANK_TOLERANCE)
 
 
 def test_pagerank_star_graph_center_has_highest() -> None:
@@ -114,8 +119,8 @@ def test_pagerank_star_graph_center_has_highest() -> None:
     result = compute_pagerank(graph)
 
     # Center should have highest PageRank
-    assert result[0] > result[1]
-    assert result[0] > result[2]
+    expect_true(result[0] > result[1])
+    expect_true(result[0] > result[2])
 
 
 def test_pagerank_custom_alpha() -> None:
@@ -125,14 +130,14 @@ def test_pagerank_custom_alpha() -> None:
     result_low_alpha = compute_pagerank(graph, alpha=0.5)
 
     # Results should differ with different alpha
-    assert result_default != result_low_alpha
+    expect_true(result_default != result_low_alpha)
 
 
 def test_betweenness_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_betweenness(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_betweenness_path_graph_middle_node_highest() -> None:
@@ -141,7 +146,7 @@ def test_betweenness_path_graph_middle_node_highest() -> None:
     result = compute_betweenness(graph, normalized=True)
 
     # Nodes 2, 3, 4 are on paths between others
-    assert result[3] >= result[1]
+    expect_true(result[3] >= result[1])
 
 
 def test_betweenness_sampling_parameter() -> None:
@@ -149,14 +154,14 @@ def test_betweenness_sampling_parameter() -> None:
     graph = nx.DiGraph([(i, i + 1) for i in range(10)])
     result = compute_betweenness(graph, k=3)
 
-    assert len(result) == graph.number_of_nodes()
+    expect_true(len(result) == graph.number_of_nodes())
 
 
 def test_closeness_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_closeness(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_closeness_complete_graph_uniform() -> None:
@@ -166,7 +171,7 @@ def test_closeness_complete_graph_uniform() -> None:
 
     values = list(result.values())
     # All nodes should have same closeness in complete graph
-    assert all(abs(v - values[0]) < PAGERANK_TOLERANCE for v in values)
+    expect_true(all(abs(v - values[0]) < PAGERANK_TOLERANCE for v in values))
 
 
 def test_closeness_wf_improved_parameter() -> None:
@@ -176,14 +181,14 @@ def test_closeness_wf_improved_parameter() -> None:
     result_basic = compute_closeness(graph, wf_improved=False)
 
     # Both should return valid results
-    assert len(result_improved) == len(result_basic)
+    expect_true(len(result_improved) == len(result_basic))
 
 
 def test_degree_centrality_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_degree_centrality(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_in_degree_centrality() -> None:
@@ -192,7 +197,7 @@ def test_in_degree_centrality() -> None:
     result = compute_in_degree_centrality(graph)
 
     # Node 0 has highest in-degree
-    assert result[0] > result[1]
+    expect_true(result[0] > result[1])
 
 
 def test_out_degree_centrality() -> None:
@@ -201,14 +206,14 @@ def test_out_degree_centrality() -> None:
     result = compute_out_degree_centrality(graph)
 
     # Node 0 has highest out-degree
-    assert result[0] > result[1]
+    expect_true(result[0] > result[1])
 
 
 def test_all_centralities_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_all_centralities(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_all_centralities_returns_dataclass() -> None:
@@ -216,15 +221,15 @@ def test_all_centralities_returns_dataclass() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3)])
     result = compute_all_centralities(graph)
 
-    assert len(result) == EXPECTED_CYCLE_NODES
+    expect_true(len(result) == EXPECTED_CYCLE_NODES)
     for metrics in result.values():
-        assert isinstance(metrics, CentralityMetrics)
-        assert hasattr(metrics, "pagerank")
-        assert hasattr(metrics, "betweenness")
-        assert hasattr(metrics, "closeness")
-        assert hasattr(metrics, "in_degree")
-        assert hasattr(metrics, "out_degree")
-        assert hasattr(metrics, "degree")
+        expect_true(isinstance(metrics, CentralityMetrics))
+        expect_true(hasattr(metrics, "pagerank"))
+        expect_true(hasattr(metrics, "betweenness"))
+        expect_true(hasattr(metrics, "closeness"))
+        expect_true(hasattr(metrics, "in_degree"))
+        expect_true(hasattr(metrics, "out_degree"))
+        expect_true(hasattr(metrics, "degree"))
 
 
 def test_all_centralities_degree_calculation() -> None:
@@ -234,7 +239,7 @@ def test_all_centralities_degree_calculation() -> None:
 
     for metrics in result.values():
         expected_degree = metrics.in_degree + metrics.out_degree
-        assert metrics.degree == expected_degree
+        expect_true(metrics.degree == expected_degree)
 
 
 def test_centrality_to_rows_converts_metrics() -> None:
@@ -253,13 +258,13 @@ def test_centrality_to_rows_converts_metrics() -> None:
     }
     rows = centrality_to_rows(metrics, repo="test-repo", commit="abc123")
 
-    assert len(rows) == 1
+    expect_true(len(rows) == 1)
     row = rows[0]
-    assert row["goid_h128"] == 1
-    assert row["repo"] == "test-repo"
-    assert row["commit"] == "abc123"
-    assert row["pagerank"] == PAGERANK_POINT_FIVE
-    assert row["betweenness"] == BETWEENNESS_POINT_THREE
+    expect_true(row["goid_h128"] == 1)
+    expect_true(row["repo"] == "test-repo")
+    expect_true(row["commit"] == "abc123")
+    expect_true(row["pagerank"] == PAGERANK_POINT_FIVE)
+    expect_true(row["betweenness"] == BETWEENNESS_POINT_THREE)
 
 
 # ===========================================================================
@@ -272,9 +277,9 @@ def test_scc_empty_graph_returns_empty() -> None:
     graph = nx.DiGraph()
     result = find_strongly_connected(graph)
 
-    assert result.components == ()
-    assert result.node_to_component == {}
-    assert result.condensation is None
+    expect_true(result.components == ())
+    expect_true(result.node_to_component == {})
+    expect_true(result.condensation is None)
 
 
 def test_scc_simple_cycle_is_one_scc() -> None:
@@ -282,8 +287,8 @@ def test_scc_simple_cycle_is_one_scc() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
     result = find_strongly_connected(graph)
 
-    assert len(result.components) == EXPECTED_SINGLE_COMPONENT
-    assert result.components[0].size == EXPECTED_CYCLE_NODES
+    expect_true(len(result.components) == EXPECTED_SINGLE_COMPONENT)
+    expect_true(result.components[0].size == EXPECTED_CYCLE_NODES)
 
 
 def test_scc_disconnected_nodes_are_separate() -> None:
@@ -291,7 +296,7 @@ def test_scc_disconnected_nodes_are_separate() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1), (4, 5)])
     result = find_strongly_connected(graph)
 
-    assert len(result.components) >= EXPECTED_MIN_COMPONENTS
+    expect_true(len(result.components) >= EXPECTED_MIN_COMPONENTS)
 
 
 def test_scc_node_to_component_mapping() -> None:
@@ -301,8 +306,8 @@ def test_scc_node_to_component_mapping() -> None:
 
     # All nodes in same component should have same ID
     comp_id = result.node_to_component[1]
-    assert result.node_to_component[2] == comp_id
-    assert result.node_to_component[3] == comp_id
+    expect_true(result.node_to_component[2] == comp_id)
+    expect_true(result.node_to_component[3] == comp_id)
 
 
 def test_scc_condensation_graph_computed() -> None:
@@ -310,15 +315,15 @@ def test_scc_condensation_graph_computed() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1), (1, 4)])
     result = find_strongly_connected(graph, compute_condensation=True)
 
-    assert result.condensation is not None
-    assert isinstance(result.condensation, nx.DiGraph)
+    expect_true(result.condensation is not None)
+    expect_true(isinstance(result.condensation, nx.DiGraph))
 
 
 def test_wcc_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = find_weakly_connected(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_wcc_connected_graph_is_one_wcc() -> None:
@@ -326,7 +331,7 @@ def test_wcc_connected_graph_is_one_wcc() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (4, 3)])
     result = find_weakly_connected(graph)
 
-    assert len(result) == EXPECTED_SINGLE_COMPONENT
+    expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
 
 
 def test_wcc_component_info_structure() -> None:
@@ -334,20 +339,20 @@ def test_wcc_component_info_structure() -> None:
     graph = nx.DiGraph([(1, 2)])
     result = find_weakly_connected(graph)
 
-    assert len(result) == EXPECTED_SINGLE_COMPONENT
+    expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
     comp = result[0]
-    assert isinstance(comp, ComponentInfo)
-    assert comp.component_id == 0
-    assert comp.size == EXPECTED_NODE_COUNT_TWO
-    assert 1 in comp.nodes
-    assert EXPECTED_NODE_COUNT_TWO in comp.nodes
+    expect_true(isinstance(comp, ComponentInfo))
+    expect_true(comp.component_id == 0)
+    expect_true(comp.size == EXPECTED_NODE_COUNT_TWO)
+    expect_true(1 in comp.nodes)
+    expect_true(EXPECTED_NODE_COUNT_TWO in comp.nodes)
 
 
 def test_connected_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = find_connected(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_connected_graph_is_one_component() -> None:
@@ -355,14 +360,14 @@ def test_connected_graph_is_one_component() -> None:
     graph = nx.Graph([(1, 2), (2, 3)])
     result = find_connected(graph)
 
-    assert len(result) == EXPECTED_SINGLE_COMPONENT
+    expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
 
 
 def test_bridges_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = find_bridges(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_bridges_path_graph_all_edges_are_bridges() -> None:
@@ -371,7 +376,7 @@ def test_bridges_path_graph_all_edges_are_bridges() -> None:
     result = find_bridges(graph)
 
     # All edges in a path are bridges
-    assert len(result) == EXPECTED_CYCLE_NODES  # 3 edges for 4 nodes
+    expect_equal(len(result), EXPECTED_CYCLE_NODES)  # 3 edges for 4 nodes
 
 
 def test_bridges_cycle_has_no_bridges() -> None:
@@ -379,14 +384,14 @@ def test_bridges_cycle_has_no_bridges() -> None:
     graph = nx.cycle_graph(4)
     result = find_bridges(graph)
 
-    assert len(result) == 0
+    expect_true(len(result) == 0)
 
 
 def test_articulation_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = find_articulation_points(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_articulation_path_graph_middle_nodes() -> None:
@@ -395,7 +400,7 @@ def test_articulation_path_graph_middle_nodes() -> None:
     result = find_articulation_points(graph)
 
     # Nodes 1, 2, 3 are articulation points
-    assert len(result) == EXPECTED_CYCLE_NODES
+    expect_true(len(result) == EXPECTED_CYCLE_NODES)
 
 
 def test_articulation_complete_graph_no_articulation() -> None:
@@ -403,18 +408,18 @@ def test_articulation_complete_graph_no_articulation() -> None:
     graph = nx.complete_graph(5)
     result = find_articulation_points(graph)
 
-    assert len(result) == 0
+    expect_true(len(result) == 0)
 
 
 def test_component_stats_empty_returns_zeros() -> None:
     """Empty components returns zero stats."""
     result = compute_component_stats([])
 
-    assert result["count"] == 0
-    assert result["largest_size"] == 0
-    assert result["smallest_size"] == 0
-    assert result["mean_size"] == 0.0
-    assert result["singleton_count"] == 0
+    expect_true(result["count"] == 0)
+    expect_true(result["largest_size"] == 0)
+    expect_true(result["smallest_size"] == 0)
+    expect_true(result["mean_size"] == 0.0)
+    expect_true(result["singleton_count"] == 0)
 
 
 def test_component_stats_computes_correct() -> None:
@@ -426,18 +431,18 @@ def test_component_stats_computes_correct() -> None:
     ]
     result = compute_component_stats(components)
 
-    assert result["count"] == EXPECTED_CYCLE_NODES
-    assert result["largest_size"] == LARGEST_SIZE_FIVE
-    assert result["smallest_size"] == 1
-    assert result["mean_size"] == MEAN_SIZE_THREE
-    assert result["singleton_count"] == 1
+    expect_true(result["count"] == EXPECTED_CYCLE_NODES)
+    expect_true(result["largest_size"] == LARGEST_SIZE_FIVE)
+    expect_true(result["smallest_size"] == 1)
+    expect_true(result["mean_size"] == MEAN_SIZE_THREE)
+    expect_true(result["singleton_count"] == 1)
 
 
 def test_cycles_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = find_cycles(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_cycles_simple_cycle_detected() -> None:
@@ -445,10 +450,10 @@ def test_cycles_simple_cycle_detected() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
     result = find_cycles(graph)
 
-    assert len(result) >= 1
+    expect_true(len(result) >= 1)
     # The cycle contains nodes 1, 2, 3
     cycle_nodes = set(result[0])
-    assert (
+    expect_true(
         1 in cycle_nodes
         or EXPECTED_NODE_COUNT_TWO in cycle_nodes
         or EXPECTED_CYCLE_NODES in cycle_nodes
@@ -461,7 +466,7 @@ def test_cycles_limit_parameter_respected() -> None:
     graph = nx.DiGraph([(1, 2), (2, 1), (3, 4), (4, 3)])
     result = find_cycles(graph, limit=1)
 
-    assert len(result) <= 1
+    expect_true(len(result) <= 1)
 
 
 def test_cycles_dag_has_no_cycles() -> None:
@@ -469,14 +474,14 @@ def test_cycles_dag_has_no_cycles() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (1, 3)])
     result = find_cycles(graph)
 
-    assert len(result) == 0
+    expect_true(len(result) == 0)
 
 
 def test_topological_layers_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = topological_layers(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_topological_layers_chain_graph() -> None:
@@ -484,10 +489,10 @@ def test_topological_layers_chain_graph() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 4)])
     result = topological_layers(graph)
 
-    assert result[1] == 0
-    assert result[2] == 1
-    assert result[3] == EXPECTED_LAYER_TWO
-    assert result[4] == EXPECTED_CYCLE_NODES
+    expect_true(result[1] == 0)
+    expect_true(result[2] == 1)
+    expect_true(result[3] == EXPECTED_LAYER_TWO)
+    expect_true(result[4] == EXPECTED_CYCLE_NODES)
 
 
 def test_topological_layers_root_nodes_layer_zero() -> None:
@@ -495,9 +500,9 @@ def test_topological_layers_root_nodes_layer_zero() -> None:
     graph = nx.DiGraph([(1, 3), (2, 3)])
     result = topological_layers(graph)
 
-    assert result[1] == 0
-    assert result[2] == 0
-    assert result[3] == 1
+    expect_true(result[1] == 0)
+    expect_true(result[2] == 0)
+    expect_true(result[3] == 1)
 
 
 def test_condensation_layers_no_condensation_returns_empty() -> None:
@@ -506,7 +511,7 @@ def test_condensation_layers_no_condensation_returns_empty() -> None:
     graph = nx.DiGraph()
     result = condensation_layers(graph, scc_result)
 
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_condensation_layers_with_condensation() -> None:
@@ -516,7 +521,7 @@ def test_condensation_layers_with_condensation() -> None:
     result = condensation_layers(graph, scc_result)
 
     # All nodes should have layers assigned
-    assert len(result) == graph.number_of_nodes()
+    expect_true(len(result) == graph.number_of_nodes())
 
 
 # ===========================================================================
@@ -528,7 +533,7 @@ def test_coupling_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_coupling(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_coupling_computes_afferent_efferent() -> None:
@@ -537,8 +542,8 @@ def test_coupling_computes_afferent_efferent() -> None:
     graph = nx.DiGraph([(1, 2), (1, 3), (4, 1)])
     result = compute_coupling(graph)
 
-    assert result[1].efferent == EXPECTED_EFFERENT_TWO
-    assert result[1].afferent == 1
+    expect_true(result[1].efferent == EXPECTED_EFFERENT_TWO)
+    expect_true(result[1].afferent == 1)
 
 
 def test_coupling_instability_calculation() -> None:
@@ -547,7 +552,7 @@ def test_coupling_instability_calculation() -> None:
     result = compute_coupling(graph)
 
     # Node 1: efferent=2, afferent=1, instability = 2/3
-    assert abs(result[1].instability - EXPECTED_INSTABILITY_TWO_THIRDS) < PAGERANK_TOLERANCE
+    expect_true(abs(result[1].instability - EXPECTED_INSTABILITY_TWO_THIRDS) < PAGERANK_TOLERANCE)
 
 
 def test_coupling_isolated_node_zero_instability() -> None:
@@ -556,7 +561,7 @@ def test_coupling_isolated_node_zero_instability() -> None:
     graph.add_node(1)
     result = compute_coupling(graph)
 
-    assert result[1].instability == INSTABILITY_ZERO
+    expect_true(result[1].instability == INSTABILITY_ZERO)
 
 
 def test_coupling_sink_node_zero_instability() -> None:
@@ -564,7 +569,7 @@ def test_coupling_sink_node_zero_instability() -> None:
     graph = nx.DiGraph([(1, 2), (3, 2)])
     result = compute_coupling(graph)
 
-    assert result[2].instability == INSTABILITY_ZERO
+    expect_true(result[2].instability == INSTABILITY_ZERO)
 
 
 def test_coupling_source_node_full_instability() -> None:
@@ -572,25 +577,25 @@ def test_coupling_source_node_full_instability() -> None:
     graph = nx.DiGraph([(1, 2), (1, 3)])
     result = compute_coupling(graph)
 
-    assert result[1].instability == INSTABILITY_FULL
+    expect_true(result[1].instability == INSTABILITY_FULL)
 
 
 def test_abstractness_zero_total_returns_zero() -> None:
     """Zero total classes returns zero abstractness."""
     result = compute_abstractness("module", abstract_count=0, total_count=0)
-    assert result == 0.0
+    expect_true(result == 0.0)
 
 
 def test_abstractness_computes_ratio() -> None:
     """Computes abstract/total ratio."""
     result = compute_abstractness("module", abstract_count=2, total_count=4)
-    assert result == INSTABILITY_HALF
+    expect_true(result == INSTABILITY_HALF)
 
 
 def test_abstractness_all_abstract_returns_one() -> None:
     """All abstract returns 1.0."""
     result = compute_abstractness("module", abstract_count=5, total_count=5)
-    assert result == INSTABILITY_FULL
+    expect_true(result == INSTABILITY_FULL)
 
 
 def test_distance_main_sequence_on_main_returns_zero() -> None:
@@ -598,7 +603,7 @@ def test_distance_main_sequence_on_main_returns_zero() -> None:
     coupling = CouplingMetrics(afferent=1, efferent=1, instability=INSTABILITY_HALF)
     result = compute_distance_from_main_sequence(coupling, abstractness=INSTABILITY_HALF)
 
-    assert result == INSTABILITY_ZERO
+    expect_true(result == INSTABILITY_ZERO)
 
 
 def test_distance_main_sequence_off_main_returns_distance() -> None:
@@ -607,14 +612,14 @@ def test_distance_main_sequence_off_main_returns_distance() -> None:
     result = compute_distance_from_main_sequence(coupling, abstractness=INSTABILITY_HALF)
 
     # abs(0.5 + 1.0 - 1.0) = 0.5
-    assert result == INSTABILITY_HALF
+    expect_true(result == INSTABILITY_HALF)
 
 
 def test_louvain_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = detect_communities_louvain(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_louvain_disconnected_separate_communities() -> None:
@@ -624,7 +629,7 @@ def test_louvain_disconnected_separate_communities() -> None:
     graph.add_edges_from([(10, 11), (11, 12)])
     result = detect_communities_louvain(graph)
 
-    assert len(result) >= EXPECTED_MIN_COMPONENTS
+    expect_true(len(result) >= EXPECTED_MIN_COMPONENTS)
 
 
 def test_louvain_returns_community_dataclass() -> None:
@@ -632,19 +637,19 @@ def test_louvain_returns_community_dataclass() -> None:
     graph = nx.complete_graph(5)
     result = detect_communities_louvain(graph)
 
-    assert len(result) >= 1
+    expect_true(len(result) >= 1)
     comm = result[0]
-    assert isinstance(comm, Community)
-    assert hasattr(comm, "community_id")
-    assert hasattr(comm, "nodes")
-    assert hasattr(comm, "size")
+    expect_true(isinstance(comm, Community))
+    expect_true(hasattr(comm, "community_id"))
+    expect_true(hasattr(comm, "nodes"))
+    expect_true(hasattr(comm, "size"))
 
 
 def test_label_propagation_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = detect_communities_label_propagation(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_label_propagation_returns_communities() -> None:
@@ -652,23 +657,23 @@ def test_label_propagation_returns_communities() -> None:
     graph = nx.complete_graph(5)
     result = detect_communities_label_propagation(graph)
 
-    assert len(result) >= 1
+    expect_true(len(result) >= 1)
     total_nodes = sum(c.size for c in result)
-    assert total_nodes == EXPECTED_NODE_COUNT_FIVE
+    expect_true(total_nodes == EXPECTED_NODE_COUNT_FIVE)
 
 
 def test_modularity_empty_graph_returns_zero() -> None:
     """Empty graph returns zero modularity."""
     graph = nx.Graph()
     result = compute_modularity(graph, [])
-    assert result == 0.0
+    expect_true(result == 0.0)
 
 
 def test_modularity_empty_communities_returns_zero() -> None:
     """Empty communities returns zero modularity."""
     graph = nx.complete_graph(5)
     result = compute_modularity(graph, [])
-    assert result == 0.0
+    expect_true(result == 0.0)
 
 
 def test_modularity_in_valid_range() -> None:
@@ -681,14 +686,14 @@ def test_modularity_in_valid_range() -> None:
     ]
     result = compute_modularity(graph, communities)
 
-    assert MODULARITY_MIN <= result <= MODULARITY_MAX
+    expect_true(MODULARITY_MIN <= result <= MODULARITY_MAX)
 
 
 def test_clustering_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.Graph()
     result = compute_clustering_coefficient(graph)
-    assert result == {}
+    expect_true(result == {})
 
 
 def test_clustering_complete_graph_full() -> None:
@@ -697,7 +702,7 @@ def test_clustering_complete_graph_full() -> None:
     result = compute_clustering_coefficient(graph)
 
     for coeff in result.values():
-        assert abs(coeff - 1.0) < PAGERANK_TOLERANCE
+        expect_true(abs(coeff - 1.0) < PAGERANK_TOLERANCE)
 
 
 def test_average_clustering() -> None:
@@ -705,21 +710,21 @@ def test_average_clustering() -> None:
     graph = nx.complete_graph(5)
     result = compute_average_clustering(graph)
 
-    assert abs(result - 1.0) < PAGERANK_TOLERANCE
+    expect_true(abs(result - 1.0) < PAGERANK_TOLERANCE)
 
 
 def test_average_clustering_empty_graph() -> None:
     """Empty graph returns zero average clustering."""
     graph = nx.Graph()
     result = compute_average_clustering(graph)
-    assert result == 0.0
+    expect_true(result == 0.0)
 
 
 def test_hub_nodes_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = find_hub_nodes(graph)
-    assert result == []
+    expect_true(result == [])
 
 
 def test_hub_nodes_star_graph_center_is_hub() -> None:
@@ -728,7 +733,7 @@ def test_hub_nodes_star_graph_center_is_hub() -> None:
     graph = nx.star_graph(STAR_GRAPH_SIZE_TEN)
     result = find_hub_nodes(graph, min_degree=MIN_HUB_DEGREE)
 
-    assert 0 in result  # Center node
+    expect_true(0 in result)  # Center node
 
 
 def test_hub_nodes_threshold_ratio_parameter() -> None:
@@ -738,14 +743,14 @@ def test_hub_nodes_threshold_ratio_parameter() -> None:
     result_loose = find_hub_nodes(graph, threshold_ratio=HUB_THRESHOLD_RATIO, min_degree=1)
 
     # Stricter threshold should find fewer hubs
-    assert len(result_strict) <= len(result_loose)
+    expect_true(len(result_strict) <= len(result_loose))
 
 
 def test_boundary_nodes_empty_communities_returns_empty() -> None:
     """Empty communities returns empty list."""
     graph = nx.Graph()
     result = find_boundary_nodes(graph, [])
-    assert result == []
+    expect_true(result == [])
 
 
 def test_boundary_nodes_finds_boundary() -> None:
@@ -760,7 +765,7 @@ def test_boundary_nodes_finds_boundary() -> None:
     result = find_boundary_nodes(graph, communities)
 
     # Nodes 3 and 10 are at the boundary
-    assert EXPECTED_CYCLE_NODES in result or STAR_GRAPH_SIZE_TEN in result
+    expect_true(EXPECTED_CYCLE_NODES in result or STAR_GRAPH_SIZE_TEN in result)
 
 
 def test_coupling_to_rows_converts_metrics() -> None:
@@ -772,14 +777,14 @@ def test_coupling_to_rows_converts_metrics() -> None:
     }
     rows = coupling_to_rows(metrics, repo="test-repo", commit="abc123")
 
-    assert len(rows) == 1
+    expect_true(len(rows) == 1)
     row = rows[0]
-    assert row["module"] == "module_a"
-    assert row["repo"] == "test-repo"
-    assert row["commit"] == "abc123"
-    assert row["afferent_coupling"] == AFFERENT_THREE
-    assert row["efferent_coupling"] == EFFERENT_TWO
-    assert row["instability"] == INSTABILITY_POINT_FOUR
+    expect_true(row["module"] == "module_a")
+    expect_true(row["repo"] == "test-repo")
+    expect_true(row["commit"] == "abc123")
+    expect_true(row["afferent_coupling"] == AFFERENT_THREE)
+    expect_true(row["efferent_coupling"] == EFFERENT_TWO)
+    expect_true(row["instability"] == INSTABILITY_POINT_FOUR)
 
 
 # ===========================================================================
@@ -948,9 +953,9 @@ def test_realistic_pagerank_identifies_hub_functions() -> None:
     hub_rank = result.get("log_info", 0)
 
     # Hub should have meaningful PageRank
-    assert hub_rank > 0
+    expect_true(hub_rank > 0)
     # Ensure we got results for multiple nodes
-    assert len(result) >= GOLDEN_MIN_NODES
+    expect_true(len(result) >= GOLDEN_MIN_NODES)
 
 
 def test_realistic_scc_finds_cycles() -> None:
@@ -962,7 +967,7 @@ def test_realistic_scc_finds_cycles() -> None:
     # Should have at least one SCC (the auth-cache cycle)
     # Most SCCs will be single nodes (trivial), but at least one should have >1 node
     non_trivial_sccs = [comp for comp in result.components if comp.size > 1]
-    assert len(non_trivial_sccs) >= GOLDEN_EXPECTED_SCC
+    expect_true(len(non_trivial_sccs) >= GOLDEN_EXPECTED_SCC)
 
 
 def test_realistic_import_layers_computed() -> None:
@@ -976,7 +981,7 @@ def test_realistic_import_layers_computed() -> None:
     layers = condensation_layers(graph, scc_result)
 
     # Should have multiple layers due to the layered architecture
-    assert len(layers) >= EXPECTED_NODE_COUNT_TWO
+    expect_true(len(layers) >= EXPECTED_NODE_COUNT_TWO)
 
 
 def test_realistic_centrality_metrics() -> None:
@@ -986,14 +991,14 @@ def test_realistic_centrality_metrics() -> None:
     metrics = compute_all_centralities(graph)
 
     # Should have metrics for all nodes
-    assert len(metrics) >= GOLDEN_MIN_NODES
+    expect_true(len(metrics) >= GOLDEN_MIN_NODES)
 
     # All metric values should be in valid ranges
     for metric in metrics.values():
-        assert metric.pagerank >= 0
-        assert metric.betweenness >= 0
-        assert metric.in_degree >= 0
-        assert metric.out_degree >= 0
+        expect_true(metric.pagerank >= 0)
+        expect_true(metric.betweenness >= 0)
+        expect_true(metric.in_degree >= 0)
+        expect_true(metric.out_degree >= 0)
 
 
 def test_realistic_component_stats() -> None:
@@ -1004,9 +1009,9 @@ def test_realistic_component_stats() -> None:
     stats = compute_component_stats(sccs.components)
 
     # Should have valid statistics
-    assert stats["count"] >= GOLDEN_EXPECTED_SCC
-    assert stats["mean_size"] > 0
-    assert stats["largest_size"] >= 1
+    expect_true(stats["count"] >= GOLDEN_EXPECTED_SCC)
+    expect_true(stats["mean_size"] > 0)
+    expect_true(stats["largest_size"] >= 1)
 
 
 def test_realistic_community_detection() -> None:
@@ -1016,14 +1021,14 @@ def test_realistic_community_detection() -> None:
     communities = detect_communities_louvain(graph)
 
     # Should find at least 2 communities (core/services vs handlers/api)
-    assert len(communities) >= GOLDEN_EXPECTED_COMMUNITIES
+    expect_true(len(communities) >= GOLDEN_EXPECTED_COMMUNITIES)
 
     # All nodes should be assigned to a community
     all_nodes = set(graph.nodes())
     community_nodes = set()
     for comm in communities:
         community_nodes.update(comm.nodes)
-    assert all_nodes == community_nodes
+    expect_true(all_nodes == community_nodes)
 
 
 def test_realistic_hub_detection() -> None:
@@ -1033,10 +1038,10 @@ def test_realistic_hub_detection() -> None:
     hubs = find_hub_nodes(graph, min_degree=3, threshold_ratio=0.05)
 
     # Should find some hubs (modules imported by many)
-    assert len(hubs) >= 1
+    expect_true(len(hubs) >= 1)
 
     # Check that we have actual hub node names
-    assert all(isinstance(h, str) for h in hubs)
+    expect_true(all(isinstance(h, str) for h in hubs))
 
 
 def test_realistic_coupling_metrics() -> None:
@@ -1047,14 +1052,16 @@ def test_realistic_coupling_metrics() -> None:
     all_metrics = compute_coupling(graph)
 
     # Should have metrics for all nodes
-    assert len(all_metrics) >= GOLDEN_MIN_NODES
+    expect_true(len(all_metrics) >= GOLDEN_MIN_NODES)
 
     # Test specific module
     metrics = all_metrics.get("handlers.user")
-    assert metrics is not None
+    expect_is_not_none(metrics)
+    if metrics is None:
+        return
 
     # Handler modules have both afferent (api imports them) and efferent (import services)
-    assert metrics.afferent >= 1  # At least api imports it
-    assert metrics.efferent >= 1  # At least imports services.auth
-    assert metrics.instability >= 0
-    assert metrics.instability <= 1
+    expect_true(metrics.afferent >= 1)  # At least api imports it
+    expect_true(metrics.efferent >= 1)  # At least imports services.auth
+    expect_true(metrics.instability >= 0)
+    expect_true(metrics.instability <= 1)

@@ -23,6 +23,11 @@ from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -138,9 +143,9 @@ def test_list_datasets_returns_list(
     with TestClient(app) as client:
         response = client.get("/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
 
 
 def test_list_datasets_contains_expected_fields(
@@ -157,12 +162,12 @@ def test_list_datasets_contains_expected_fields(
     with TestClient(app) as client:
         response = client.get("/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     if data:  # If there are datasets
         first_dataset = data[0]
         # Check for expected fields
-        assert "name" in first_dataset or "id" in first_dataset
+        expect_true("name" in first_dataset or "id" in first_dataset)
 
 
 def test_list_datasets_not_empty(
@@ -179,10 +184,10 @@ def test_list_datasets_not_empty(
     with TestClient(app) as client:
         response = client.get("/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     # Provisioned repo should have some datasets
-    assert len(data) > 0
+    expect_true(len(data) > 0)
 
 
 # =============================================================================
@@ -221,7 +226,7 @@ def test_read_dataset_rows_with_valid_dataset(
         response = client.get(f"/datasets/{dataset_name}")
 
     # Should return 200 or 404 depending on data availability
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_read_dataset_rows_with_limit(
@@ -253,7 +258,7 @@ def test_read_dataset_rows_with_limit(
         response = client.get(f"/datasets/{dataset_name}?limit={SAMPLE_LIMIT}")
 
     # Should return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_read_dataset_rows_with_offset(
@@ -285,7 +290,7 @@ def test_read_dataset_rows_with_offset(
         response = client.get(f"/datasets/{dataset_name}?offset={OFFSET_ONE}")
 
     # Should return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_read_dataset_rows_with_limit_and_offset(
@@ -317,7 +322,7 @@ def test_read_dataset_rows_with_limit_and_offset(
         response = client.get(f"/datasets/{dataset_name}?limit={SAMPLE_LIMIT}&offset={OFFSET_ONE}")
 
     # Should return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_read_dataset_rows_nonexistent_dataset(
@@ -335,10 +340,13 @@ def test_read_dataset_rows_nonexistent_dataset(
         response = client.get("/datasets/nonexistent_dataset_name_xyz")
 
     # Should return 400 or 404 for unknown dataset
-    assert response.status_code in {
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 # =============================================================================
@@ -375,7 +383,7 @@ def test_dataset_schema_with_valid_dataset(
         response = client.get(f"/datasets/{dataset_name}/schema")
 
     # Should return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_dataset_schema_with_sample_limit(
@@ -407,7 +415,7 @@ def test_dataset_schema_with_sample_limit(
         response = client.get(f"/datasets/{dataset_name}/schema?limit={SAMPLE_LIMIT}")
 
     # Should return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_dataset_schema_nonexistent_dataset(
@@ -425,10 +433,13 @@ def test_dataset_schema_nonexistent_dataset(
         response = client.get("/datasets/nonexistent_dataset_name_xyz/schema")
 
     # Should return 400 or 404 for unknown dataset
-    assert response.status_code in {
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 # =============================================================================
@@ -450,9 +461,9 @@ def test_dataset_specs_returns_list(
     with TestClient(app) as client:
         response = client.get("/datasets/specs")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
 
 
 # =============================================================================
@@ -473,8 +484,8 @@ def test_local_query_service_list_datasets(
     service = _build_local_query_service(provisioned_repo)
 
     datasets = service.list_datasets()
-    assert datasets is not None
-    assert isinstance(datasets, list)
+    expect_true(datasets is not None)
+    expect_is_instance(datasets, list)
 
 
 def test_local_query_service_dataset_specs(
@@ -490,8 +501,8 @@ def test_local_query_service_dataset_specs(
     service = _build_local_query_service(provisioned_repo)
 
     specs = service.dataset_specs()
-    assert specs is not None
-    assert isinstance(specs, list)
+    expect_true(specs is not None)
+    expect_is_instance(specs, list)
 
 
 def test_local_query_service_read_dataset_rows(
@@ -517,7 +528,7 @@ def test_local_query_service_read_dataset_rows(
         rows = service.read_dataset_rows(
             dataset_name=dataset_name, limit=SAMPLE_LIMIT, offset=OFFSET_ZERO
         )
-        assert rows is not None
+        expect_true(rows is not None)
     except McpError:
         # Expected when dataset is not readable
         pass
@@ -544,7 +555,7 @@ def test_local_query_service_dataset_schema(
 
     try:
         schema = service.dataset_schema(dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT)
-        assert schema is not None
+        expect_true(schema is not None)
     except McpError:
         # Expected when dataset schema is not available
         pass
@@ -620,9 +631,9 @@ def test_dataset_rows_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict with expected fields
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
         # Should contain rows or similar field
-        assert "rows" in data or "data" in data or isinstance(data.get("results"), list)
+        expect_true("rows" in data or "data" in data or isinstance(data.get("results"), list))
 
 
 def test_dataset_schema_response_structure(
@@ -656,7 +667,7 @@ def test_dataset_schema_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (schema structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
 
 
 # =============================================================================
@@ -693,11 +704,14 @@ def test_read_dataset_rows_with_zero_limit(
         response = client.get(f"/datasets/{dataset_name}?limit=0")
 
     # Should handle zero limit gracefully
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 def test_read_dataset_rows_with_large_offset(
@@ -731,11 +745,14 @@ def test_read_dataset_rows_with_large_offset(
         response = client.get(f"/datasets/{dataset_name}?offset={large_offset}")
 
     # Should handle large offset - likely returns empty or error
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 # =============================================================================
@@ -774,12 +791,15 @@ def test_read_dataset_rows_with_negative_limit(
         response = client.get(f"/datasets/{dataset_name}?limit={negative_limit}")
 
     # Should handle negative limit - either clamp to 0 or return error
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        }
+    )
 
 
 def test_read_dataset_rows_with_negative_offset(
@@ -813,12 +833,15 @@ def test_read_dataset_rows_with_negative_offset(
         response = client.get(f"/datasets/{dataset_name}?offset={negative_offset}")
 
     # Should handle negative offset - either clamp to 0 or return error
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        }
+    )
 
 
 # =============================================================================
@@ -850,7 +873,7 @@ def test_local_dataset_mixin_uses_query_gateway(
     )
 
     datasets = service.list_datasets()
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 def test_local_dataset_mixin_with_explicit_tables(
@@ -877,7 +900,7 @@ def test_local_dataset_mixin_with_explicit_tables(
     )
 
     datasets = service.list_datasets()
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 # =============================================================================
@@ -899,8 +922,8 @@ def test_dataset_descriptors_have_name(
 
     datasets = service.list_datasets()
     for dataset in datasets:
-        assert hasattr(dataset, "name")
-        assert dataset.name is not None
+        expect_true(hasattr(dataset, "name"))
+        expect_true(dataset.name is not None)
 
 
 def test_dataset_descriptors_have_table(
@@ -917,7 +940,7 @@ def test_dataset_descriptors_have_table(
 
     datasets = service.list_datasets()
     for dataset in datasets:
-        assert hasattr(dataset, "table")
+        expect_true(hasattr(dataset, "table"))
 
 
 def test_dataset_descriptors_have_docs_view_flag(
@@ -934,8 +957,8 @@ def test_dataset_descriptors_have_docs_view_flag(
 
     datasets = service.list_datasets()
     for dataset in datasets:
-        assert hasattr(dataset, "is_docs_view")
-        assert isinstance(dataset.is_docs_view, bool)
+        expect_true(hasattr(dataset, "is_docs_view"))
+        expect_is_instance(dataset.is_docs_view, bool)
 
 
 def test_dataset_descriptors_have_read_only_flag(
@@ -952,8 +975,8 @@ def test_dataset_descriptors_have_read_only_flag(
 
     datasets = service.list_datasets()
     for dataset in datasets:
-        assert hasattr(dataset, "is_read_only")
-        assert isinstance(dataset.is_read_only, bool)
+        expect_true(hasattr(dataset, "is_read_only"))
+        expect_is_instance(dataset.is_read_only, bool)
 
 
 # =============================================================================
@@ -975,7 +998,7 @@ def test_dataset_specs_structure(
 
     specs = service.dataset_specs()
     for spec in specs:
-        assert isinstance(spec, DatasetSpecDescriptor)
+        expect_is_instance(spec, DatasetSpecDescriptor)
 
 
 # =============================================================================
@@ -1005,10 +1028,10 @@ def test_read_dataset_rows_returns_domain_model(
         result = service.read_dataset_rows(
             dataset_name=dataset_name, limit=SAMPLE_LIMIT, offset=OFFSET_ZERO
         )
-        assert isinstance(result, DatasetRows)
-        assert hasattr(result, "dataset_name")
-        assert hasattr(result, "rows")
-        assert hasattr(result, "offset")
+        expect_is_instance(result, DatasetRows)
+        expect_true(hasattr(result, "dataset_name"))
+        expect_true(hasattr(result, "rows"))
+        expect_true(hasattr(result, "offset"))
     except McpError:
         # Expected when dataset is not readable
         pass
@@ -1039,7 +1062,7 @@ def test_dataset_schema_returns_domain_model(
 
     try:
         result = service.dataset_schema(dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT)
-        assert isinstance(result, DatasetSchema)
+        expect_is_instance(result, DatasetSchema)
     except McpError:
         # Expected when dataset schema is not available
         pass

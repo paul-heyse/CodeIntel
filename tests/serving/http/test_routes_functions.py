@@ -19,6 +19,7 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -76,9 +77,9 @@ def test_high_risk_functions_endpoint(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_high_risk_functions_with_min_risk(
@@ -127,7 +128,7 @@ def test_high_risk_functions_with_min_risk(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?min_risk=0.5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_high_risk_functions_with_limit(
@@ -176,7 +177,7 @@ def test_high_risk_functions_with_limit(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?limit=5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_high_risk_functions_with_tested_only(
@@ -225,7 +226,7 @@ def test_high_risk_functions_with_tested_only(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?tested_only=true")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 # =============================================================================
@@ -280,7 +281,7 @@ def test_function_summary_missing_params(
         response = client.get("/function/summary")
 
     # Should return 400 because no identifier was provided
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -291,13 +292,13 @@ def test_function_summary_missing_params(
 def test_router_options_default() -> None:
     """Verify RouterOptions defaults to auto_pipeline=False."""
     options = RouterOptions()
-    assert options.auto_pipeline is False
+    expect_false(options.auto_pipeline)
 
 
 def test_router_options_with_auto_pipeline() -> None:
     """Verify RouterOptions accepts auto_pipeline=True."""
     options = RouterOptions(auto_pipeline=True)
-    assert options.auto_pipeline is True
+    expect_true(options.auto_pipeline)
 
 
 def test_app_with_auto_pipeline_options(
@@ -347,4 +348,4 @@ def test_app_with_auto_pipeline_options(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)

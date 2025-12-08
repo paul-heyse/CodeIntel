@@ -17,6 +17,7 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 # =============================================================================
@@ -70,9 +71,9 @@ def test_list_subsystems_returns_data(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "subsystems" in data or isinstance(data, list)
+    expect_true("subsystems" in data or isinstance(data, list))
 
 
 def test_list_subsystems_with_limit(
@@ -121,7 +122,7 @@ def test_list_subsystems_with_limit(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems?limit=5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_subsystem_modules(
@@ -172,11 +173,14 @@ def test_get_subsystem_modules(
         response = client.get("/architecture/subsystem?subsystem_id=test_subsystem")
 
     # May be 200 with empty data or 400/404 if no such subsystem - both are valid
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 def test_get_module_subsystems(
@@ -226,11 +230,14 @@ def test_get_module_subsystems(
         response = client.get("/architecture/module-subsystems?module=test.module")
 
     # May be 200 with data or 400/404 if not found
-    assert response.status_code in {
-        status.HTTP_200_OK,
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-    }
+    expect_true(
+        response.status_code
+        in {
+            status.HTTP_200_OK,
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_404_NOT_FOUND,
+        }
+    )
 
 
 def test_subsystem_coverage_endpoint(
@@ -279,7 +286,7 @@ def test_subsystem_coverage_endpoint(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystem-coverage")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_subsystem_profiles_endpoint(
@@ -328,4 +335,4 @@ def test_subsystem_profiles_endpoint(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystem-profiles")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)

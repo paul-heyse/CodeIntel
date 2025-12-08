@@ -29,6 +29,14 @@ from codeintel.serving.types import (
     StorageGatewayProtocol,
     SubsystemRepositoryProtocol,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # Constants for test values
 LIMIT_TEN = 10
@@ -54,11 +62,11 @@ def test_has_model_dump_protocol_with_response_meta() -> None:
     # Verify it has model_dump method
     result = meta.model_dump()
 
-    assert isinstance(result, dict)
-    assert result["applied_limit"] == LIMIT_TEN
-    assert result["truncated"] is False
-    assert len(result["messages"]) == 1
-    assert result["messages"][0]["code"] == "INFO"
+    expect_is_instance(result, dict)
+    expect_equal(result["applied_limit"], LIMIT_TEN)
+    expect_true(result["truncated"] is False)
+    expect_length(result["messages"], 1)
+    expect_equal(result["messages"][0]["code"], "INFO")
 
 
 def test_has_model_dump_protocol_with_dataset_rows() -> None:
@@ -74,12 +82,12 @@ def test_has_model_dump_protocol_with_dataset_rows() -> None:
 
     result = rows.model_dump()
 
-    assert isinstance(result, dict)
-    assert result["dataset"] == "test_dataset"
-    assert result["limit"] == LIMIT_TEN
-    assert result["offset"] == 0
-    assert len(result["rows"]) == 1
-    assert "meta" in result
+    expect_is_instance(result, dict)
+    expect_equal(result["dataset"], "test_dataset")
+    expect_equal(result["limit"], LIMIT_TEN)
+    expect_equal(result["offset"], 0)
+    expect_length(result["rows"], 1)
+    expect_in("meta", result)
 
 
 def test_has_model_dump_protocol_structural_check() -> None:
@@ -106,14 +114,14 @@ def test_has_model_dump_protocol_structural_check() -> None:
     # Structural subtyping - no explicit inheritance needed
     dumped: dict[str, object] = model.model_dump()
 
-    assert dumped == {"value": VALUE_FORTY_TWO}
+    expect_equal(dumped, {"value": VALUE_FORTY_TWO})
 
     # Verify it can be used where HasModelDump is expected
     def accepts_model_dump(obj: HasModelDump) -> dict[str, object]:
         return obj.model_dump()
 
     result = accepts_model_dump(model)
-    assert result == {"value": VALUE_FORTY_TWO}
+    expect_equal(result, {"value": VALUE_FORTY_TWO})
 
 
 # =============================================================================
@@ -131,12 +139,12 @@ def test_has_model_validate_protocol_with_pydantic() -> None:
         value: int
 
     # Runtime check should pass for Pydantic models
-    assert isinstance(SampleModel, type)
+    expect_is_instance(SampleModel, type)
 
     # Verify model_validate works (cast to Any for pyrefly compatibility)
     validated = cast("Any", SampleModel).model_validate({"name": "test", "value": VALUE_FORTY_TWO})
-    assert validated.name == "test"
-    assert validated.value == VALUE_FORTY_TWO
+    expect_equal(validated.name, "test")
+    expect_equal(validated.value, VALUE_FORTY_TWO)
 
 
 def test_has_model_validate_runtime_checkable() -> None:
@@ -163,9 +171,9 @@ def test_has_model_validate_runtime_checkable() -> None:
             return cls()
 
     # Since HasModelValidate is runtime_checkable, isinstance should work
-    assert isinstance(ValidatableClass, type)
+    expect_is_instance(ValidatableClass, type)
     instance = cast("Any", ValidatableClass).model_validate({})
-    assert isinstance(instance, ValidatableClass)
+    expect_is_instance(instance, ValidatableClass)
 
 
 # =============================================================================
@@ -190,11 +198,11 @@ def test_has_close_protocol_runtime_checkable() -> None:
     resource = CloseableResource()
 
     # HasClose is runtime_checkable
-    assert isinstance(resource, HasClose)
-    assert not resource.closed
+    expect_is_instance(resource, HasClose)
+    expect_true(not resource.closed)
 
     resource.close()
-    assert resource.closed
+    expect_true(resource.closed)
 
 
 def test_has_close_protocol_with_context_manager() -> None:
@@ -232,10 +240,10 @@ def test_has_close_protocol_with_context_manager() -> None:
             self.close()
 
     with ManagedResource() as res:
-        assert isinstance(res, HasClose)
-        assert not res.closed
+        expect_is_instance(res, HasClose)
+        expect_true(not res.closed)
 
-    assert res.closed
+    expect_true(res.closed)
 
 
 # =============================================================================
@@ -252,14 +260,14 @@ def test_response_meta_like_protocol() -> None:
     )
 
     # Verify ResponseMeta has the required attributes
-    assert hasattr(meta, "applied_limit")
-    assert hasattr(meta, "truncated")
-    assert hasattr(meta, "messages")
+    expect_true(hasattr(meta, "applied_limit"))
+    expect_true(hasattr(meta, "truncated"))
+    expect_true(hasattr(meta, "messages"))
 
     # Verify values
-    assert meta.applied_limit == LIMIT_FIFTY
-    assert meta.truncated is True
-    assert len(meta.messages) == 1
+    expect_equal(meta.applied_limit, LIMIT_FIFTY)
+    expect_true(meta.truncated is True)
+    expect_length(meta.messages, 1)
 
 
 # =============================================================================
@@ -281,12 +289,12 @@ def test_service_result_protocol() -> None:
     result = SampleResult(found=True, meta=meta)
 
     # Verify SampleResult has the required attributes
-    assert hasattr(result, "found")
-    assert hasattr(result, "meta")
+    expect_true(hasattr(result, "found"))
+    expect_true(hasattr(result, "meta"))
 
     # Verify values
-    assert result.found is True
-    assert result.meta.applied_limit == LIMIT_TEN
+    expect_true(result.found is True)
+    expect_equal(result.meta.applied_limit, LIMIT_TEN)
 
 
 # =============================================================================
@@ -322,8 +330,8 @@ def test_repository_protocol_structural() -> None:
 
     repo_id, commit_id = accepts_repository(repo_impl)
 
-    assert repo_id == "test/repo"
-    assert commit_id == "abc123"
+    expect_equal(repo_id, "test/repo")
+    expect_equal(commit_id, "abc123")
 
 
 def test_function_repository_protocol_structural() -> None:
@@ -394,10 +402,10 @@ def test_function_repository_protocol_structural() -> None:
             Returns
             -------
             RowDict | None
-                Always None in this stub.
+                Minimal row dictionary.
             """
-            _ = goid_h128, self.commit  # Use self to satisfy PLR6301
-            return None
+            _ = self.commit  # Use self to satisfy PLR6301
+            return {"goid_h128": goid_h128}
 
     repo = FunctionRepo()
 
@@ -406,8 +414,8 @@ def test_function_repository_protocol_structural() -> None:
 
     result = accepts_function_repo(repo)
 
-    assert result is not None
-    assert result["goid_h128"] == 1
+    result = expect_is_not_none(result)
+    expect_equal(result["goid_h128"], 1)
 
 
 def test_module_repository_protocol_structural() -> None:
@@ -489,8 +497,8 @@ def test_module_repository_protocol_structural() -> None:
 
     hints = accepts_module_repo(repo)
 
-    assert len(hints) == 1
-    assert hints[0]["hint"] == "unused_import"
+    expect_length(hints, 1)
+    expect_equal(hints[0]["hint"], "unused_import")
 
 
 def test_subsystem_repository_protocol_structural() -> None:
@@ -566,8 +574,8 @@ def test_subsystem_repository_protocol_structural() -> None:
 
     result = accepts_subsystem_repo(repo)
 
-    assert len(result) == 1
-    assert result[0]["role"] == "server"
+    expect_length(result, 1)
+    expect_equal(result[0]["role"], "server")
 
 
 # =============================================================================
@@ -598,7 +606,7 @@ def test_query_backend_protocol_structural() -> None:
 
     result = accepts_backend(backend)
 
-    assert result == "test/repo@abc123"
+    expect_equal(result, "test/repo@abc123")
 
 
 def test_query_service_protocol_structural() -> None:
@@ -624,7 +632,7 @@ def test_query_service_protocol_structural() -> None:
 
     result = accepts_service(service)
 
-    assert result == "demo/repo@deadbeef"
+    expect_equal(result, "demo/repo@deadbeef")
 
 
 # =============================================================================
@@ -659,8 +667,8 @@ def test_storage_gateway_protocol_structural() -> None:
 
     result = accepts_gateway(gateway)
 
-    assert result is True
-    assert gateway.is_closed is True
+    expect_true(result is True)
+    expect_true(gateway.is_closed is True)
 
 
 # =============================================================================
@@ -708,8 +716,8 @@ def test_graph_engine_protocol_structural() -> None:
 
     call_g, import_g = accepts_engine(engine)
 
-    assert call_g == {"nodes": [], "edges": []}
-    assert import_g == {"nodes": [], "edges": []}
+    expect_equal(call_g, {"nodes": [], "edges": []})
+    expect_equal(import_g, {"nodes": [], "edges": []})
 
 
 # =============================================================================
@@ -721,26 +729,27 @@ def test_row_dict_type_alias() -> None:
     """Verify RowDict type alias works correctly."""
     row: RowDict = {"id": 1, "name": "test", "active": True, "count": None}
 
-    assert row["id"] == 1
-    assert row["name"] == "test"
-    assert row["active"] is True
-    assert row["count"] is None
+    expect_equal(row["id"], 1)
+    expect_equal(row["name"], "test")
+    expect_true(row["active"] is True)
+    expect_true(row["count"] is None)
 
 
 def test_json_payload_type_alias_dict() -> None:
     """Verify JsonPayload type alias works with dict."""
     payload: JsonPayload = {"key": "value", "nested": {"inner": 1}}
 
-    assert isinstance(payload, dict)
-    assert payload["key"] == "value"
+    expect_is_instance(payload, dict)
+    payload_dict = cast("dict[str, object]", payload)
+    expect_equal(payload_dict["key"], "value")
 
 
 def test_json_payload_type_alias_list() -> None:
     """Verify JsonPayload type alias works with list."""
     payload: JsonPayload = [{"id": 1}, {"id": LIST_LENGTH_TWO}]
 
-    assert isinstance(payload, list)
-    assert len(payload) == LIST_LENGTH_TWO
+    expect_is_instance(payload, list)
+    expect_length(payload, LIST_LENGTH_TWO)
 
 
 # =============================================================================
@@ -786,7 +795,7 @@ def test_service_factory_type_alias() -> None:
     factory: ServiceFactory = _create_service
     service = factory("test", "abc")
 
-    assert service.repo == "test"
+    expect_equal(service.repo, "test")
 
 
 def test_backend_factory_type_alias() -> None:
@@ -827,4 +836,4 @@ def test_backend_factory_type_alias() -> None:
     factory: BackendFactory = _create_backend
     backend = factory("test", "abc")
 
-    assert backend.repo == "test"
+    expect_equal(backend.repo, "test")

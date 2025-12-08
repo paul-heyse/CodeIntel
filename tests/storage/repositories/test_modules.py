@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.modules import ModuleRepository
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_none,
+)
 
 
 def test_list_modules_returns_sorted_list(fresh_gateway: StorageGateway) -> None:
@@ -28,7 +32,7 @@ def test_list_modules_returns_sorted_list(fresh_gateway: StorageGateway) -> None
     modules = repo.list_modules()
 
     expected_modules = ["amod", "mmod", "zmod"]
-    assert modules == expected_modules
+    expect_equal(modules, expected_modules, label="sorted modules")
 
 
 def test_list_modules_returns_empty_for_no_data(
@@ -43,7 +47,7 @@ def test_list_modules_returns_empty_for_no_data(
 
     modules = repo.list_modules()
 
-    assert modules == []
+    expect_equal(modules, [], label="no modules")
 
 
 def test_get_file_summary_returns_none_when_not_found(
@@ -58,7 +62,7 @@ def test_get_file_summary_returns_none_when_not_found(
 
     result = repo.get_file_summary("nonexistent.py")
 
-    assert result is None
+    expect_is_none(result, label="missing file summary")
 
 
 def test_get_module_architecture_returns_none_when_not_found(
@@ -73,7 +77,7 @@ def test_get_module_architecture_returns_none_when_not_found(
 
     result = repo.get_module_architecture("nonexistent_module")
 
-    assert result is None
+    expect_is_none(result, label="missing module architecture")
 
 
 def test_get_module_profile_returns_none_when_not_found(
@@ -88,7 +92,7 @@ def test_get_module_profile_returns_none_when_not_found(
 
     result = repo.get_module_profile("nonexistent_module")
 
-    assert result is None
+    expect_is_none(result, label="missing module profile")
 
 
 def test_get_file_profile_returns_none_when_not_found(
@@ -103,7 +107,7 @@ def test_get_file_profile_returns_none_when_not_found(
 
     result = repo.get_file_profile("nonexistent.py")
 
-    assert result is None
+    expect_is_none(result, label="missing file profile")
 
 
 def test_get_file_hints_returns_empty_when_not_found(
@@ -118,4 +122,4 @@ def test_get_file_hints_returns_empty_when_not_found(
 
     result = repo.get_file_hints("nonexistent.py")
 
-    assert result == []
+    expect_equal(result, [], label="missing file hints")

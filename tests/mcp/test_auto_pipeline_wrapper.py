@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.serving.mcp import auto_pipeline_wrapper
+from tests._helpers.assertions import expect_equal
 
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig
@@ -35,5 +36,5 @@ def test_wrap_tool_with_prereqs_invokes_prereq_then_tool(monkeypatch: pytest.Mon
 
     result = wrapped(x=1)
 
-    assert calls == ["prereq:op.one:cfg:backend", "tool:1"]
-    assert result == {"ok": 1}
+    expect_equal(calls, ["prereq:op.one:cfg:backend", "tool:1"])
+    expect_equal(result, {"ok": 1})

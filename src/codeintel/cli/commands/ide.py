@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -59,13 +60,13 @@ RelPathArg = Annotated[
 @ide_app.command("hints")
 def ide_hints(
     rel_path: RelPathArg,
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Emit IDE hints (module + subsystem context) for a relative file path.
 

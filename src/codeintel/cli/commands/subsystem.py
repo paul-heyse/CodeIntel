@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -84,13 +85,13 @@ ModuleArg = Annotated[
 
 
 def _build_backend(
-    project_root: ProjectRootOpt,
+    project_root: Path | None,
     repo: RepoOpt,
     commit: CommitOpt,
     db_path: DbPathOpt,
     build_dir: BuildDirOpt,
     repo_root: RepoRootOpt,
-    verbose: VerboseOpt,
+    verbose: int = VerboseOpt,
 ) -> DuckDBBackend:
     """Build a DuckDBBackend from CLI options.
 
@@ -151,7 +152,7 @@ def _build_backend(
 
 @subsystem_app.command("list")
 def subsystem_list(
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
@@ -160,7 +161,7 @@ def subsystem_list(
     role: RoleOpt = None,
     q: QueryOpt = None,
     limit: LimitOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """List inferred subsystems with role/risk metadata.
 
@@ -197,13 +198,13 @@ def subsystem_list(
 @subsystem_app.command("show")
 def subsystem_show(
     subsystem_id: SubsystemIdArg,
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Show subsystem detail and modules.
 
@@ -236,14 +237,14 @@ def subsystem_show(
 
 @subsystem_app.command("profiles")
 def subsystem_profiles(
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
     limit: LimitOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """List subsystem profiles from docs.v_subsystem_profile.
 
@@ -280,14 +281,14 @@ def subsystem_profiles(
 
 @subsystem_app.command("coverage")
 def subsystem_coverage(
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
     limit: LimitOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """List subsystem coverage rollups from docs.v_subsystem_coverage.
 
@@ -325,13 +326,13 @@ def subsystem_coverage(
 @subsystem_app.command("module-memberships")
 def subsystem_module_memberships(
     module: ModuleArg,
-    project_root: ProjectRootOpt = None,
+    project_root: Path | None = ProjectRootOpt,
     repo: RepoOpt = None,
     commit: CommitOpt = None,
     db_path: DbPathOpt = None,
     build_dir: BuildDirOpt = None,
     repo_root: RepoRootOpt = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """List subsystem memberships for a module.
 

@@ -8,6 +8,13 @@ from codeintel.storage.schema import (
     create_schemas,
     ensure_schemas_preserve,
 )
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_not_empty,
+    expect_true,
+)
 
 
 def test_apply_and_validate_schema_alignment(fresh_gateway: StorageGateway) -> None:
@@ -66,9 +73,10 @@ def test_ensure_schemas_preserve_creates_tables_idempotently(
         """
     ).fetchone()
 
-    assert first_count is not None
-    assert second_count is not None
-    assert first_count[0] == second_count[0]
+    expect_is_not_none(first_count)
+    expect_is_not_none(second_count)
+    if first_count is not None and second_count is not None:
+        expect_equal(first_count[0], second_count[0])
 
 
 def test_ensure_schemas_preserve_with_extra_ddl(
@@ -91,8 +99,9 @@ def test_ensure_schemas_preserve_with_extra_ddl(
         """
     ).fetchone()
 
-    assert row is not None
-    assert row[0] == 1
+    expect_is_not_none(row)
+    if row is not None:
+        expect_equal(row[0], 1)
 
 
 def test_assert_schema_alignment_detects_drift_nonstrict(
@@ -105,8 +114,8 @@ def test_assert_schema_alignment_detects_drift_nonstrict(
 
     issues = assert_schema_alignment(con, strict=False)
 
-    assert len(issues) > 0
-    assert any("core.goids" in issue for issue in issues)
+    expect_not_empty(issues)
+    expect_true(any("core.goids" in issue for issue in issues))
 
 
 def test_create_schemas_creates_all_namespaces(
@@ -132,7 +141,7 @@ def test_create_schemas_creates_all_namespaces(
     ).fetchall()
 
     schema_names = [row[0] for row in rows]
-    assert "core" in schema_names
-    assert "graph" in schema_names
-    assert "analytics" in schema_names
-    assert "docs" in schema_names
+    expect_in("core", schema_names)
+    expect_in("graph", schema_names)
+    expect_in("analytics", schema_names)
+    expect_in("docs", schema_names)

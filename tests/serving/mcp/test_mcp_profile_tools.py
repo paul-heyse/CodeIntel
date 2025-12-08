@@ -17,6 +17,11 @@ from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -91,7 +96,7 @@ def test_register_profile_tools_success(
     register_profile_tools(mcp, backend)
 
     # Server should be configured
-    assert mcp.name == "Test Profile Tools"
+    expect_equal(mcp.name, "Test Profile Tools")
 
 
 def test_register_profile_tools_with_service(
@@ -119,7 +124,7 @@ def test_register_profile_tools_with_service(
 
     register_profile_tools(mcp, service)
 
-    assert mcp.name == "Test Service"
+    expect_equal(mcp.name, "Test Service")
 
 
 def test_register_profile_tools_with_config(
@@ -138,7 +143,7 @@ def test_register_profile_tools_with_config(
 
     register_profile_tools(mcp, backend, config=config)
 
-    assert mcp.name == "Test With Config"
+    expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_profile_tools_on_multiple_servers(
@@ -155,11 +160,11 @@ def test_register_profile_tools_on_multiple_servers(
 
     mcp1 = FastMCP("Server 1", json_response=True)
     register_profile_tools(mcp1, backend)
-    assert mcp1.name == "Server 1"
+    expect_equal(mcp1.name, "Server 1")
 
     mcp2 = FastMCP("Server 2", json_response=True)
     register_profile_tools(mcp2, backend)
-    assert mcp2.name == "Server 2"
+    expect_equal(mcp2.name, "Server 2")
 
 
 # =============================================================================
@@ -169,32 +174,28 @@ def test_register_profile_tools_on_multiple_servers(
 
 def test_get_operation_profiles_function() -> None:
     """Verify get_operation returns profiles.function operation."""
-    spec = get_operation("profiles.function")
-    assert spec is not None
-    assert spec.tool_name == "get_function_profile"
+    spec = expect_is_not_none(get_operation("profiles.function"))
+    expect_equal(spec.tool_name, "get_function_profile")
 
 
 def test_get_operation_profiles_file() -> None:
     """Verify get_operation returns profiles.file operation."""
-    spec = get_operation("profiles.file")
-    assert spec is not None
-    assert spec.tool_name == "get_file_profile"
+    spec = expect_is_not_none(get_operation("profiles.file"))
+    expect_equal(spec.tool_name, "get_file_profile")
 
 
 def test_get_operation_profiles_module() -> None:
     """Verify get_operation returns profiles.module operation."""
-    spec = get_operation("profiles.module")
-    assert spec is not None
-    assert spec.tool_name == "get_module_profile"
+    spec = expect_is_not_none(get_operation("profiles.module"))
+    expect_equal(spec.tool_name, "get_module_profile")
 
 
 def test_profile_operations_have_backend_method() -> None:
     """Verify profile operations have backend_method defined."""
     op_ids = ["profiles.function", "profiles.file", "profiles.module"]
     for op_id in op_ids:
-        spec = get_operation(op_id)
-        assert spec is not None
-        assert spec.backend_method is not None
+        spec = expect_is_not_none(get_operation(op_id))
+        expect_is_not_none(spec.backend_method)
 
 
 # =============================================================================
@@ -226,7 +227,7 @@ def test_backend_get_function_profile(
         pytest.skip("No goid_h128 in function")
 
     result = backend.get_function_profile(goid_h128=int(goid))
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_file_profile(
@@ -253,7 +254,7 @@ def test_backend_get_file_profile(
         pytest.skip("No rel_path in function")
 
     result = backend.get_file_profile(rel_path=str(rel_path))
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_module_profile(
@@ -280,7 +281,7 @@ def test_backend_get_module_profile(
         pytest.skip("No module in function")
 
     result = backend.get_module_profile(module=str(module))
-    assert result is not None
+    expect_is_not_none(result)
 
 
 # =============================================================================
@@ -321,7 +322,7 @@ def test_backend_get_file_profile_not_found(
     # File profile not found returns a result, not an exception
     result = backend.get_file_profile(rel_path="nonexistent/path/to/file.py")
     # Should return result with found=False or empty
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_module_profile_not_found(
@@ -377,8 +378,8 @@ def test_backend_with_custom_limits(
         service=service,
     )
 
-    assert backend.limits.default_limit == custom_limit
-    assert backend.limits.max_rows_per_call == custom_max
+    expect_equal(backend.limits.default_limit, custom_limit)
+    expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
 # =============================================================================
@@ -405,9 +406,9 @@ def test_register_profile_tools_preserves_backend_state(
 
     register_profile_tools(mcp, backend)
 
-    assert backend.repo == original_repo
-    assert backend.commit == original_commit
-    assert backend.limits == original_limits
+    expect_equal(backend.repo, original_repo)
+    expect_equal(backend.commit, original_commit)
+    expect_equal(backend.limits, original_limits)
 
 
 # =============================================================================
@@ -440,7 +441,7 @@ def test_local_query_service_as_backend(
     mcp = FastMCP("Test Local Service", json_response=True)
     register_profile_tools(mcp, service)
 
-    assert mcp.name == "Test Local Service"
+    expect_equal(mcp.name, "Test Local Service")
 
 
 # =============================================================================
@@ -474,8 +475,8 @@ def test_function_profile_response_structure(
     result = backend.get_function_profile(goid_h128=int(goid))
 
     # Should have profile-related fields
-    assert result is not None
-    assert hasattr(result, "goid_h128") or hasattr(result, "message")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "goid_h128") or hasattr(result, "message"))
 
 
 def test_file_profile_response_structure(
@@ -504,8 +505,8 @@ def test_file_profile_response_structure(
     result = backend.get_file_profile(rel_path=str(rel_path))
 
     # Should have profile-related fields
-    assert result is not None
-    assert hasattr(result, "rel_path") or hasattr(result, "message")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "rel_path") or hasattr(result, "message"))
 
 
 def test_module_profile_response_structure(
@@ -534,5 +535,5 @@ def test_module_profile_response_structure(
     result = backend.get_module_profile(module=str(module))
 
     # Should have profile-related fields
-    assert result is not None
-    assert hasattr(result, "module") or hasattr(result, "message")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "module") or hasattr(result, "message"))

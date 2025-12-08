@@ -19,6 +19,11 @@ from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -127,7 +132,7 @@ def test_register_architecture_tools_success(
     register_architecture_tools(mcp, backend)
 
     # Server should be configured
-    assert mcp.name == "Test Architecture"
+    expect_equal(mcp.name, "Test Architecture")
 
 
 def test_register_architecture_tools_with_config(
@@ -153,7 +158,7 @@ def test_register_architecture_tools_with_config(
     register_architecture_tools(mcp, backend, config=config)
 
     # Server should be configured
-    assert mcp.name == "Test Architecture Config"
+    expect_equal(mcp.name, "Test Architecture Config")
 
 
 def test_register_architecture_tools_with_architecture_gateway(
@@ -172,7 +177,7 @@ def test_register_architecture_tools_with_architecture_gateway(
     # Should not raise
     register_architecture_tools(mcp, backend)
 
-    assert mcp.name == "Test Architecture Gateway"
+    expect_equal(mcp.name, "Test Architecture Gateway")
 
 
 def test_register_architecture_tools_without_config(
@@ -191,7 +196,7 @@ def test_register_architecture_tools_without_config(
     # Should work with config=None (default)
     register_architecture_tools(mcp, backend, config=None)
 
-    assert mcp.name == "Test No Config"
+    expect_equal(mcp.name, "Test No Config")
 
 
 def test_register_architecture_tools_with_local_query_service(
@@ -220,7 +225,7 @@ def test_register_architecture_tools_with_local_query_service(
     # Should work with service directly
     register_architecture_tools(mcp, service)
 
-    assert mcp.name == "Test Local Service"
+    expect_equal(mcp.name, "Test Local Service")
 
 
 # =============================================================================
@@ -243,12 +248,12 @@ def test_register_architecture_tools_different_servers(
     # Register on first server
     mcp1 = FastMCP("Server One", json_response=True)
     register_architecture_tools(mcp1, backend)
-    assert mcp1.name == "Server One"
+    expect_equal(mcp1.name, "Server One")
 
     # Register on second server
     mcp2 = FastMCP("Server Two", json_response=True)
     register_architecture_tools(mcp2, backend)
-    assert mcp2.name == "Server Two"
+    expect_equal(mcp2.name, "Server Two")
 
 
 def test_register_architecture_tools_different_backends(
@@ -268,13 +273,13 @@ def test_register_architecture_tools_different_backends(
     mcp1 = FastMCP("Test Backend 1", json_response=True)
     backend1 = _build_backend(provisioned_repo)
     register_architecture_tools(mcp1, backend1)
-    assert mcp1.name == "Test Backend 1"
+    expect_equal(mcp1.name, "Test Backend 1")
 
     # Register with architecture gateway backend
     mcp2 = FastMCP("Test Backend 2", json_response=True)
     backend2 = _build_architecture_backend(architecture_gateway)
     register_architecture_tools(mcp2, backend2)
-    assert mcp2.name == "Test Backend 2"
+    expect_equal(mcp2.name, "Test Backend 2")
 
 
 # =============================================================================
@@ -296,10 +301,10 @@ def test_register_architecture_tools_duckdb_backend(
     backend = _build_backend(provisioned_repo)
 
     # Verify backend is DuckDBBackend
-    assert isinstance(backend, DuckDBBackend)
+    expect_is_instance(backend, DuckDBBackend)
 
     register_architecture_tools(mcp, backend)
-    assert mcp.name == "Test DuckDB Backend"
+    expect_equal(mcp.name, "Test DuckDB Backend")
 
 
 def test_register_architecture_tools_service_with_repo_info(
@@ -322,8 +327,8 @@ def test_register_architecture_tools_service_with_repo_info(
     )
 
     # Query context should have repo/commit
-    assert query.context.repo == provisioned_repo.repo
-    assert query.context.commit == provisioned_repo.commit
+    expect_equal(query.context.repo, provisioned_repo.repo)
+    expect_equal(query.context.commit, provisioned_repo.commit)
 
     service = LocalQueryService(
         query=query,
@@ -331,7 +336,7 @@ def test_register_architecture_tools_service_with_repo_info(
     )
 
     register_architecture_tools(mcp, service)
-    assert mcp.name == "Test Service Repo"
+    expect_equal(mcp.name, "Test Service Repo")
 
 
 # =============================================================================
@@ -360,7 +365,7 @@ def test_register_architecture_tools_local_db_config(
     )
 
     register_architecture_tools(mcp, backend, config=config)
-    assert mcp.name == "Test Local DB Config"
+    expect_equal(mcp.name, "Test Local DB Config")
 
 
 def test_register_architecture_tools_remote_api_config(
@@ -383,7 +388,7 @@ def test_register_architecture_tools_remote_api_config(
     )
 
     register_architecture_tools(mcp, backend, config=config)
-    assert mcp.name == "Test Remote API Config"
+    expect_equal(mcp.name, "Test Remote API Config")
 
 
 # =============================================================================
@@ -426,9 +431,9 @@ def test_register_architecture_tools_custom_limits(
     mcp = FastMCP("Test Custom Limits", json_response=True)
     register_architecture_tools(mcp, backend)
 
-    assert mcp.name == "Test Custom Limits"
-    assert backend.limits.default_limit == custom_limit
-    assert backend.limits.max_rows_per_call == custom_max
+    expect_equal(mcp.name, "Test Custom Limits")
+    expect_equal(backend.limits.default_limit, custom_limit)
+    expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
 # =============================================================================
@@ -450,7 +455,7 @@ def test_backend_list_subsystems_via_tools(
 
     # Direct backend call should work
     result = backend.list_subsystems()
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_list_subsystems_with_limit(
@@ -466,7 +471,7 @@ def test_backend_list_subsystems_with_limit(
     backend = _build_backend(provisioned_repo)
 
     result = backend.list_subsystems(limit=5)
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_list_subsystems_with_role(
@@ -482,7 +487,7 @@ def test_backend_list_subsystems_with_role(
     backend = _build_backend(provisioned_repo)
 
     result = backend.list_subsystems(role="api")
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_via_tools(
@@ -498,7 +503,7 @@ def test_backend_search_subsystems_via_tools(
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(q="test")
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_with_limit(
@@ -514,7 +519,7 @@ def test_backend_search_subsystems_with_limit(
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(limit=5)
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_with_role(
@@ -530,7 +535,7 @@ def test_backend_search_subsystems_with_role(
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(role="api")
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_file_hints_via_tools(
@@ -546,7 +551,7 @@ def test_backend_get_file_hints_via_tools(
     backend = _build_backend(provisioned_repo)
 
     result = backend.get_file_hints(rel_path="test/file.py")
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_module_subsystems_via_tools(
@@ -562,7 +567,7 @@ def test_backend_get_module_subsystems_via_tools(
     backend = _build_backend(provisioned_repo)
 
     result = backend.get_module_subsystems(module="test.module")
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_backend_get_function_architecture_via_tools(
@@ -586,7 +591,7 @@ def test_backend_get_function_architecture_via_tools(
 
     goid_h128 = result[0]
     response = backend.get_function_architecture(goid_h128=goid_h128)
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_backend_get_function_architecture_not_found(
@@ -627,7 +632,7 @@ def test_backend_get_module_architecture_via_tools(
 
     module = result[0]
     response = backend.get_module_architecture(module=module)
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_backend_get_module_architecture_not_found(
@@ -668,7 +673,7 @@ def test_backend_get_subsystem_modules_via_tools(
     subsystem_id = result[0]
     with contextlib.suppress(McpError):
         response = backend.get_subsystem_modules(subsystem_id=subsystem_id)
-        assert response is not None
+        expect_is_not_none(response)
 
 
 def test_backend_summarize_subsystem_via_tools(
@@ -693,7 +698,7 @@ def test_backend_summarize_subsystem_via_tools(
     subsystem_id = result[0]
     with contextlib.suppress(McpError):
         response = backend.summarize_subsystem(subsystem_id=subsystem_id)
-        assert response is not None
+        expect_is_not_none(response)
 
 
 # =============================================================================
@@ -705,26 +710,26 @@ def test_graph_plugin_plan_basic() -> None:
     """Verify graph plugin plan can be computed."""
     # Test the underlying planning function directly
     plan = plan_graph_plugins()
-    assert plan is not None
-    assert plan.plan_id is not None
+    expect_is_not_none(plan)
+    expect_is_not_none(plan.plan_id)
 
 
 def test_graph_plugin_plan_with_enable() -> None:
     """Verify graph plugin plan with enable parameter."""
     # Test with enable parameter
     plan = plan_graph_plugins(enabled=("pagerank",))
-    assert plan is not None
+    expect_is_not_none(plan)
 
 
 def test_graph_plugin_plan_with_disable() -> None:
     """Verify graph plugin plan with disable parameter."""
     # Test with disable parameter
     plan = plan_graph_plugins(disabled=("pagerank",))
-    assert plan is not None
+    expect_is_not_none(plan)
 
 
 def test_graph_plugin_plan_with_names() -> None:
     """Verify graph plugin plan with explicit names."""
     # Test with explicit plugin names
     plan = plan_graph_plugins(plugin_names=("pagerank",))
-    assert plan is not None
+    expect_is_not_none(plan)

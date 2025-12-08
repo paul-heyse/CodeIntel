@@ -7,6 +7,11 @@ from codeintel.analytics.compute.entrypoints.detection import (
     detect_entrypoints,
 )
 from tests._helpers.assertions import assert_mapping_list
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 
 
 def test_detects_fastapi_and_flask_routes() -> None:
@@ -33,17 +38,17 @@ def say_hello() -> str:
         settings=DetectorSettings(),
     )
     frameworks = {candidate.framework for candidate in candidates}
-    assert {"fastapi", "flask"} <= frameworks
+    expect_true({"fastapi", "flask"} <= frameworks)
 
     fastapi = next(candidate for candidate in candidates if candidate.framework == "fastapi")
-    assert fastapi.http_method == "GET"
-    assert fastapi.route_path == "/items"
-    assert fastapi.status_codes == [201]
+    expect_equal(fastapi.http_method, "GET")
+    expect_equal(fastapi.route_path, "/items")
+    expect_equal(fastapi.status_codes, [201])
 
     flask = next(candidate for candidate in candidates if candidate.framework == "flask")
-    assert flask.http_method == "POST"
-    assert flask.route_path == "/hello"
-    assert flask.auth_required is None
+    expect_equal(flask.http_method, "POST")
+    expect_equal(flask.route_path, "/hello")
+    expect_equal(flask.auth_required, None)
 
 
 def test_detects_click_typer_and_generic_routes() -> None:
@@ -75,20 +80,20 @@ def generic() -> None:
         settings=DetectorSettings(),
     )
     click_entry = next(candidate for candidate in candidates if candidate.framework == "click")
-    assert click_entry.kind == "cli"
-    assert click_entry.command_name == "main"
-    assert click_entry.arguments_schema is not None
+    expect_equal(click_entry.kind, "cli")
+    expect_equal(click_entry.command_name, "main")
+    expect_is_not_none(click_entry.arguments_schema)
     options = assert_mapping_list(click_entry.arguments_schema, "options")
-    assert options[0]["flags"] == ["--count"]
+    expect_equal(options[0]["flags"], ["--count"])
 
     typer_entry = next(candidate for candidate in candidates if candidate.framework == "typer")
-    assert typer_entry.arguments_schema is not None
+    expect_is_not_none(typer_entry.arguments_schema)
     params = assert_mapping_list(typer_entry.arguments_schema, "params")
     param_names = [str(param["name"]) for param in params]
-    assert param_names == ["name", "excited"]
+    expect_equal(param_names, ["name", "excited"])
 
     generic_route = next(candidate for candidate in candidates if candidate.framework == "generic")
-    assert generic_route.route_path == "/generic"
+    expect_equal(generic_route.route_path, "/generic")
 
 
 def test_detects_celery_airflow_cron_and_django() -> None:
@@ -134,25 +139,25 @@ urlpatterns = [
     )
 
     celery_entry = next(candidate for candidate in candidates if candidate.framework == "celery")
-    assert celery_entry.command_name == "demo.task"
-    assert celery_entry.extra == {"queue": "high"}
+    expect_equal(celery_entry.command_name, "demo.task")
+    expect_equal(celery_entry.extra, {"queue": "high"})
 
     airflow_task_entry = next(
         candidate
         for candidate in candidates
         if candidate.framework == "airflow" and candidate.kind == "task"
     )
-    assert airflow_task_entry.command_name == "air_task"
+    expect_equal(airflow_task_entry.command_name, "air_task")
     airflow_dag_entry = next(
         candidate
         for candidate in candidates
         if candidate.framework == "airflow" and candidate.kind == "dag"
     )
-    assert airflow_dag_entry.command_name == "demo_dag"
+    expect_equal(airflow_dag_entry.command_name, "demo_dag")
 
     cron_entry = next(candidate for candidate in candidates if candidate.kind == "cron")
-    assert cron_entry.schedule == "0 0 * * *"
+    expect_equal(cron_entry.schedule, "0 0 * * *")
 
     django_entry = next(candidate for candidate in candidates if candidate.framework == "django")
-    assert django_entry.route_path == "home/"
-    assert django_entry.qualname.endswith("airflow_task")
+    expect_equal(django_entry.route_path, "home/")
+    expect_true(django_entry.qualname.endswith("airflow_task"))

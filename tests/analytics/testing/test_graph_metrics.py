@@ -26,6 +26,12 @@ from codeintel.analytics.testing.graph_metrics import (
     compute_test_graph_metrics,
 )
 from tests._helpers import COVERAGE_PACK, METRICS_PACK, TestContext, assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 
 # =============================================================================
 # Test Constants
@@ -77,9 +83,9 @@ class TestTestMetricsContext:
             risk_by_goid={1: 0.5, 2: 0.8},
             graph_ctx=graph_ctx,
         )
-        assert ctx.repo == "test_repo"
-        assert ctx.commit == "abc123"
-        assert ctx.risk_by_goid == {1: 0.5, 2: 0.8}
+        expect_equal(ctx.repo, "test_repo")
+        expect_equal(ctx.commit, "abc123")
+        expect_equal(ctx.risk_by_goid, {1: 0.5, 2: 0.8})
         # Verify frozen - should raise AttributeError on mutation
         assert_frozen(ctx, "repo", "modified")
 
@@ -112,10 +118,10 @@ class TestTestMetricsContext:
             risk_by_goid={GOID_VALUE: RISK_SCORE},
             graph_ctx=graph_ctx,
         )
-        assert ctx.degrees.degree[test_node] == TEST_DEGREE_VALUE
-        assert ctx.degrees.degree[func_node] == FUNC_DEGREE_VALUE
-        assert ctx.degrees.weighted_degree[test_node] == TEST_WEIGHTED_DEGREE
-        assert ctx.risk_by_goid[GOID_VALUE] == RISK_SCORE
+        expect_equal(ctx.degrees.degree[test_node], TEST_DEGREE_VALUE)
+        expect_equal(ctx.degrees.degree[func_node], FUNC_DEGREE_VALUE)
+        expect_equal(ctx.degrees.weighted_degree[test_node], TEST_WEIGHTED_DEGREE)
+        expect_equal(ctx.risk_by_goid[GOID_VALUE], RISK_SCORE)
 
     @staticmethod
     def test_stores_datetime_correctly() -> None:
@@ -145,8 +151,8 @@ class TestTestMetricsContext:
             risk_by_goid={},
             graph_ctx=graph_ctx,
         )
-        assert ctx.now == now
-        assert ctx.now.tzinfo is not None  # Timezone aware
+        expect_equal(ctx.now, now)
+        expect_is_not_none(ctx.now.tzinfo)  # Timezone aware
 
 
 class TestComputeTestGraphMetrics:
@@ -175,8 +181,8 @@ class TestComputeTestGraphMetrics:
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
         # May be 0 if no coverage data is seeded
-        assert test_count >= EXPECTED_ROW_COUNT_MINIMUM
-        assert func_count >= EXPECTED_ROW_COUNT_MINIMUM
+        expect_true(test_count >= EXPECTED_ROW_COUNT_MINIMUM)
+        expect_true(func_count >= EXPECTED_ROW_COUNT_MINIMUM)
 
     @staticmethod
     def test_computes_metrics_with_seeded_coverage(coverage_ctx: TestContext) -> None:
@@ -200,8 +206,8 @@ class TestComputeTestGraphMetrics:
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
         )
         # At least some metrics should be computed if coverage data exists
-        assert test_count >= EXPECTED_ROW_COUNT_MINIMUM
-        assert func_count >= EXPECTED_ROW_COUNT_MINIMUM
+        expect_true(test_count >= EXPECTED_ROW_COUNT_MINIMUM)
+        expect_true(func_count >= EXPECTED_ROW_COUNT_MINIMUM)
 
     @staticmethod
     def test_clears_previous_metrics_on_recompute(test_ctx: TestContext) -> None:
@@ -230,7 +236,7 @@ class TestComputeTestGraphMetrics:
         )
 
         # Counts should be equal (not doubled)
-        assert first_test_count == second_test_count
+        expect_equal(first_test_count, second_test_count)
 
     @staticmethod
     def test_handles_different_repo_commit_combinations(test_ctx: TestContext) -> None:
@@ -249,14 +255,14 @@ class TestComputeTestGraphMetrics:
             "analytics.test_graph_metrics_tests",
             f"repo = '{test_ctx.repo}' AND commit = 'nonexistent_commit'",
         )
-        assert other_commit_count == EXPECTED_ROW_COUNT_MINIMUM
+        expect_equal(other_commit_count, EXPECTED_ROW_COUNT_MINIMUM)
 
         # Query for a different repo should return 0
         other_repo_count = test_ctx.query_count(
             "analytics.test_graph_metrics_tests",
             f"repo = 'nonexistent_repo' AND commit = '{test_ctx.commit}'",
         )
-        assert other_repo_count == EXPECTED_ROW_COUNT_MINIMUM
+        expect_equal(other_repo_count, EXPECTED_ROW_COUNT_MINIMUM)
 
     @staticmethod
     def test_integrates_with_graph_runtime_options(test_ctx: TestContext) -> None:
@@ -276,7 +282,7 @@ class TestComputeTestGraphMetrics:
             "analytics.test_graph_metrics_tests",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
-        assert test_count >= EXPECTED_ROW_COUNT_MINIMUM
+        expect_true(test_count >= EXPECTED_ROW_COUNT_MINIMUM)
 
 
 class TestDecimalConversion:
@@ -300,5 +306,5 @@ class TestDecimalConversion:
         This tests the conversion behavior.
         """
         result = Decimal(input_val)
-        assert result == expected
-        assert isinstance(result, Decimal)
+        expect_equal(result, expected)
+        expect_is_instance(result, Decimal)

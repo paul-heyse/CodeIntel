@@ -17,6 +17,13 @@ from codeintel.build.state import (
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Test Fixtures
@@ -298,16 +305,18 @@ def all_computed_state(resolver_graph: TargetGraph) -> DatabaseState:
 class TestResolutionReason:
     """Tests for ResolutionReason dataclass."""
 
-    def test_create_resolution_reason(self) -> None:
+    @staticmethod
+    def test_create_resolution_reason() -> None:
         """Create a resolution reason with all fields."""
         reason = ResolutionReason(
             kind="cascade",
             details="Dependency 'ast' is being recomputed",
         )
-        assert reason.kind == "cascade"
-        assert "ast" in reason.details
+        expect_equal(reason.kind, "cascade")
+        expect_in("ast", reason.details)
 
-    def test_resolution_reason_is_frozen(self) -> None:
+    @staticmethod
+    def test_resolution_reason_is_frozen() -> None:
         """Verify resolution reason is immutable."""
         reason = ResolutionReason(kind="missing", details="No manifest")
         assert_frozen(reason, "kind", "stale")
@@ -316,7 +325,8 @@ class TestResolutionReason:
 class TestResolutionResult:
     """Tests for ResolutionResult dataclass."""
 
-    def test_create_result(self) -> None:
+    @staticmethod
+    def test_create_result() -> None:
         """Create a resolution result with all fields."""
         result = ResolutionResult(
             requested=("function_metrics",),
@@ -327,10 +337,11 @@ class TestResolutionResult:
                 "modules": ResolutionReason(kind="missing", details="No manifest"),
             },
         )
-        assert result.requested == ("function_metrics",)
-        assert len(result.to_compute) == 4
+        expect_equal(result.requested, ("function_metrics",))
+        expect_length(result.to_compute, 4)
 
-    def test_total_work(self) -> None:
+    @staticmethod
+    def test_total_work() -> None:
         """Test total_work property."""
         result = ResolutionResult(
             requested=("x",),
@@ -339,9 +350,10 @@ class TestResolutionResult:
             blocked=(),
             reasons={},
         )
-        assert result.total_work == 3
+        expect_equal(result.total_work, 3)
 
-    def test_total_skipped(self) -> None:
+    @staticmethod
+    def test_total_skipped() -> None:
         """Test total_skipped property."""
         result = ResolutionResult(
             requested=("x",),
@@ -350,9 +362,10 @@ class TestResolutionResult:
             blocked=(),
             reasons={},
         )
-        assert result.total_skipped == 3
+        expect_equal(result.total_skipped, 3)
 
-    def test_is_empty_true(self) -> None:
+    @staticmethod
+    def test_is_empty_true() -> None:
         """Test is_empty returns True when no work."""
         result = ResolutionResult(
             requested=("x",),
@@ -361,9 +374,10 @@ class TestResolutionResult:
             blocked=(),
             reasons={},
         )
-        assert result.is_empty() is True
+        expect_true(result.is_empty())
 
-    def test_is_empty_false(self) -> None:
+    @staticmethod
+    def test_is_empty_false() -> None:
         """Test is_empty returns False when work exists."""
         result = ResolutionResult(
             requested=("x",),
@@ -372,9 +386,10 @@ class TestResolutionResult:
             blocked=(),
             reasons={},
         )
-        assert result.is_empty() is False
+        expect_false(result.is_empty())
 
-    def test_get_reason(self) -> None:
+    @staticmethod
+    def test_get_reason() -> None:
         """Test get_reason retrieves correct reason."""
         reason = ResolutionReason(kind="missing", details="No manifest")
         result = ResolutionResult(
@@ -384,9 +399,10 @@ class TestResolutionResult:
             blocked=(),
             reasons={"x": reason},
         )
-        assert result.get_reason("x") is reason
+        expect_equal(result.get_reason("x"), reason)
 
-    def test_get_reason_raises_key_error(self) -> None:
+    @staticmethod
+    def test_get_reason_raises_key_error() -> None:
         """Test get_reason raises KeyError for unknown target."""
         result = ResolutionResult(
             requested=("x",),
@@ -407,8 +423,8 @@ class TestResolutionResult:
 class TestBasicResolution:
     """Tests for basic resolution scenarios."""
 
+    @staticmethod
     def test_resolve_empty_goals(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -416,14 +432,14 @@ class TestBasicResolution:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve([])
 
-        assert result.requested == ()
-        assert result.to_compute == ()
-        assert result.to_skip == ()
-        assert result.blocked == ()
-        assert result.is_empty() is True
+        expect_equal(result.requested, ())
+        expect_equal(result.to_compute, ())
+        expect_equal(result.to_skip, ())
+        expect_equal(result.blocked, ())
+        expect_true(result.is_empty())
 
+    @staticmethod
     def test_resolve_single_root_missing(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -431,13 +447,13 @@ class TestBasicResolution:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve(["modules"])
 
-        assert result.requested == ("modules",)
-        assert result.to_compute == ("modules",)
-        assert result.total_work == 1
-        assert result.get_reason("modules").kind == "missing"
+        expect_equal(result.requested, ("modules",))
+        expect_equal(result.to_compute, ("modules",))
+        expect_equal(result.total_work, 1)
+        expect_equal(result.get_reason("modules").kind, "missing")
 
+    @staticmethod
     def test_resolve_single_with_deps_all_missing(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -446,21 +462,23 @@ class TestBasicResolution:
         result = resolver.resolve(["function_metrics"])
 
         # Should compute modules -> ast -> goids -> function_metrics
-        assert result.requested == ("function_metrics",)
-        assert len(result.to_compute) == 4
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_equal(result.requested, ("function_metrics",))
+        expect_length(result.to_compute, 4)
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
         # Should be in topological order
         compute_list = list(result.to_compute)
-        assert compute_list.index("modules") < compute_list.index("ast")
-        assert compute_list.index("ast") < compute_list.index("goids")
-        assert compute_list.index("goids") < compute_list.index("function_metrics")
+        expect_true(compute_list.index("modules") < compute_list.index("ast"))
+        expect_true(compute_list.index("ast") < compute_list.index("goids"))
+        expect_true(
+            compute_list.index("goids") < compute_list.index("function_metrics"),
+        )
 
+    @staticmethod
     def test_resolve_all_computed(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -468,13 +486,13 @@ class TestBasicResolution:
         resolver = BuildResolver(resolver_graph, all_computed_state)
         result = resolver.resolve(["function_metrics"])
 
-        assert result.is_empty() is True
-        assert result.total_work == 0
-        assert result.total_skipped == 4  # modules, ast, goids, function_metrics
-        assert result.get_reason("function_metrics").kind == "current"
+        expect_true(result.is_empty())
+        expect_equal(result.total_work, 0)
+        expect_equal(result.total_skipped, 4)  # modules, ast, goids, function_metrics
+        expect_equal(result.get_reason("function_metrics").kind, "current")
 
+    @staticmethod
     def test_resolve_invalid_goal_raises(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -484,8 +502,8 @@ class TestBasicResolution:
         with pytest.raises(KeyError, match="nonexistent"):
             resolver.resolve(["nonexistent"])
 
+    @staticmethod
     def test_resolve_multiple_invalid_goals(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -504,8 +522,8 @@ class TestBasicResolution:
 class TestCascadeInvalidation:
     """Tests for cascade invalidation behavior."""
 
+    @staticmethod
     def test_cascade_from_stale_root(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Stale root causes cascade to all dependents."""
@@ -515,19 +533,19 @@ class TestCascadeInvalidation:
         result = resolver.resolve(["function_metrics"])
 
         # All should be computed due to cascade
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
         # Root is stale, others are cascade
-        assert result.get_reason("modules").kind == "stale"
-        assert result.get_reason("ast").kind == "cascade"
-        assert result.get_reason("goids").kind == "cascade"
-        assert result.get_reason("function_metrics").kind == "cascade"
+        expect_equal(result.get_reason("modules").kind, "stale")
+        expect_equal(result.get_reason("ast").kind, "cascade")
+        expect_equal(result.get_reason("goids").kind, "cascade")
+        expect_equal(result.get_reason("function_metrics").kind, "cascade")
 
+    @staticmethod
     def test_cascade_from_stale_middle(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Stale middle target cascades only downstream."""
@@ -537,18 +555,18 @@ class TestCascadeInvalidation:
         result = resolver.resolve(["function_metrics"])
 
         # modules should be skipped (upstream of stale)
-        assert "modules" in result.to_skip
+        expect_in("modules", result.to_skip)
         # ast and downstream should compute
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
-        assert result.get_reason("modules").kind == "current"
-        assert result.get_reason("ast").kind == "stale"
-        assert result.get_reason("goids").kind == "cascade"
+        expect_equal(result.get_reason("modules").kind, "current")
+        expect_equal(result.get_reason("ast").kind, "stale")
+        expect_equal(result.get_reason("goids").kind, "cascade")
 
+    @staticmethod
     def test_no_cascade_when_root_current(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -556,11 +574,11 @@ class TestCascadeInvalidation:
         resolver = BuildResolver(resolver_graph, all_computed_state)
         result = resolver.resolve(["function_metrics"])
 
-        assert result.is_empty() is True
-        assert result.total_skipped == 4
+        expect_true(result.is_empty())
+        expect_equal(result.total_skipped, 4)
 
+    @staticmethod
     def test_partial_cascade_only_affected_subtree(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Only affected subtree cascades, parallel branches unaffected."""
@@ -572,16 +590,16 @@ class TestCascadeInvalidation:
         result = resolver.resolve(["function_metrics"])
 
         # Only goids and function_metrics should compute
-        assert "modules" in result.to_skip
-        assert "ast" in result.to_skip
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("modules", result.to_skip)
+        expect_in("ast", result.to_skip)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
-        assert result.get_reason("goids").kind == "stale"
-        assert result.get_reason("function_metrics").kind == "cascade"
+        expect_equal(result.get_reason("goids").kind, "stale")
+        expect_equal(result.get_reason("function_metrics").kind, "cascade")
 
+    @staticmethod
     def test_cascade_with_multiple_goals(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Cascade affects all goals sharing the stale dependency."""
@@ -593,13 +611,13 @@ class TestCascadeInvalidation:
         result = resolver.resolve(["typing", "function_metrics"])
 
         # Both branches should cascade from stale ast
-        assert "ast" in result.to_compute
-        assert "typing" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("ast", result.to_compute)
+        expect_in("typing", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
-        assert result.get_reason("typing").kind == "cascade"
-        assert result.get_reason("goids").kind == "cascade"
+        expect_equal(result.get_reason("typing").kind, "cascade")
+        expect_equal(result.get_reason("goids").kind, "cascade")
 
 
 # =============================================================================
@@ -610,8 +628,8 @@ class TestCascadeInvalidation:
 class TestForceRecompute:
     """Tests for force_recompute behavior."""
 
+    @staticmethod
     def test_force_single_target(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -619,11 +637,11 @@ class TestForceRecompute:
         resolver = BuildResolver(resolver_graph, all_computed_state)
         result = resolver.resolve(["modules"], force_recompute=["modules"])
 
-        assert "modules" in result.to_compute
-        assert result.get_reason("modules").kind == "forced"
+        expect_in("modules", result.to_compute)
+        expect_equal(result.get_reason("modules").kind, "forced")
 
+    @staticmethod
     def test_force_causes_cascade(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -632,18 +650,18 @@ class TestForceRecompute:
         result = resolver.resolve(["function_metrics"], force_recompute=["ast"])
 
         # ast forced, should cascade downstream
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
         # modules unaffected
-        assert "modules" in result.to_skip
+        expect_in("modules", result.to_skip)
 
-        assert result.get_reason("ast").kind == "forced"
-        assert result.get_reason("goids").kind == "cascade"
+        expect_equal(result.get_reason("ast").kind, "forced")
+        expect_equal(result.get_reason("goids").kind, "cascade")
 
+    @staticmethod
     def test_force_unknown_target_ignored(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
         caplog: pytest.LogCaptureFixture,
@@ -656,10 +674,10 @@ class TestForceRecompute:
 
         # Should still work, just ignoring the unknown force target
         # modules is current (not forced because nonexistent isn't a valid target)
-        assert "nonexistent" in caplog.text or len(caplog.records) > 0
+        expect_true("nonexistent" in caplog.text or len(caplog.records) > 0)
 
+    @staticmethod
     def test_force_irrelevant_target_ignored(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
         caplog: pytest.LogCaptureFixture,
@@ -672,7 +690,7 @@ class TestForceRecompute:
             result = resolver.resolve(["modules"], force_recompute=["typing"])
 
         # typing should not be forced because it's not needed for modules
-        assert "typing" not in result.to_compute
+        expect_false("typing" in result.to_compute)
 
 
 # =============================================================================
@@ -683,8 +701,8 @@ class TestForceRecompute:
 class TestBlockedTargets:
     """Tests for blocked target handling."""
 
+    @staticmethod
     def test_blocked_becomes_computable(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Blocked target resolves when blocking deps will compute."""
@@ -710,11 +728,12 @@ class TestBlockedTargets:
         result = resolver.resolve(["ast"])
 
         # Both should be computable now
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert len(result.blocked) == 0
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_length(result.blocked, 0)
 
-    def test_truly_blocked_external(self) -> None:
+    @staticmethod
+    def test_truly_blocked_external() -> None:
         """External block prevents computation."""
         # Create a scenario where ast is blocked by something that won't be computed
         # This is a bit artificial - in real usage, blocking deps should be in the graph
@@ -765,8 +784,8 @@ class TestBlockedTargets:
         result = resolver.resolve(["external_data"])
 
         # external_data should be blocked
-        assert "external_data" in result.blocked
-        assert result.get_reason("external_data").kind == "blocked_external"
+        expect_in("external_data", result.blocked)
+        expect_equal(result.get_reason("external_data").kind, "blocked_external")
 
 
 # =============================================================================
@@ -777,8 +796,8 @@ class TestBlockedTargets:
 class TestResolveAll:
     """Tests for resolve_all method."""
 
+    @staticmethod
     def test_resolve_all_no_filter(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -787,15 +806,15 @@ class TestResolveAll:
         result = resolver.resolve_all()
 
         # All 5 targets should be in to_compute
-        assert len(result.to_compute) == 5
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "typing" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_length(result.to_compute, 5)
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("typing", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
+    @staticmethod
     def test_resolve_all_ingestion_filter(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -804,17 +823,17 @@ class TestResolveAll:
         result = resolver.resolve_all(module="ingestion")
 
         # Only ingestion targets requested (modules, ast, typing)
-        assert "modules" in result.requested
-        assert "ast" in result.requested
-        assert "typing" in result.requested
+        expect_in("modules", result.requested)
+        expect_in("ast", result.requested)
+        expect_in("typing", result.requested)
 
         # But dependencies still computed
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert "typing" in result.to_compute
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_in("typing", result.to_compute)
 
+    @staticmethod
     def test_resolve_all_analytics_filter(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -823,13 +842,13 @@ class TestResolveAll:
         result = resolver.resolve_all(module="analytics")
 
         # Only function_metrics is analytics
-        assert result.requested == ("function_metrics",)
+        expect_equal(result.requested, ("function_metrics",))
 
         # But should include all deps
-        assert "modules" in result.to_compute
-        assert "ast" in result.to_compute
-        assert "goids" in result.to_compute
-        assert "function_metrics" in result.to_compute
+        expect_in("modules", result.to_compute)
+        expect_in("ast", result.to_compute)
+        expect_in("goids", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
 
 
 # =============================================================================
@@ -840,8 +859,8 @@ class TestResolveAll:
 class TestReasonTracking:
     """Tests for reason tracking accuracy."""
 
+    @staticmethod
     def test_reasons_for_missing(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -850,11 +869,13 @@ class TestReasonTracking:
         result = resolver.resolve(["modules"])
 
         reason = result.get_reason("modules")
-        assert reason.kind == "missing"
-        assert "manifest" in reason.details.lower() or "compute" in reason.details.lower()
+        expect_equal(reason.kind, "missing")
+        expect_true(
+            "manifest" in reason.details.lower() or "compute" in reason.details.lower(),
+        )
 
+    @staticmethod
     def test_reasons_for_stale(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Stale targets have 'stale' reason."""
@@ -863,10 +884,10 @@ class TestReasonTracking:
         result = resolver.resolve(["modules"])
 
         reason = result.get_reason("modules")
-        assert reason.kind == "stale"
+        expect_equal(reason.kind, "stale")
 
+    @staticmethod
     def test_reasons_for_cascade(
-        self,
         resolver_graph: TargetGraph,
     ) -> None:
         """Cascade targets have 'cascade' reason."""
@@ -875,11 +896,11 @@ class TestReasonTracking:
         result = resolver.resolve(["ast"])
 
         reason = result.get_reason("ast")
-        assert reason.kind == "cascade"
-        assert "modules" in reason.details
+        expect_equal(reason.kind, "cascade")
+        expect_in("modules", reason.details)
 
+    @staticmethod
     def test_reasons_for_current(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -888,11 +909,11 @@ class TestReasonTracking:
         result = resolver.resolve(["modules"])
 
         reason = result.get_reason("modules")
-        assert reason.kind == "current"
-        assert "up-to-date" in reason.details.lower()
+        expect_equal(reason.kind, "current")
+        expect_in("up-to-date", reason.details.lower())
 
+    @staticmethod
     def test_reasons_for_forced(
-        self,
         resolver_graph: TargetGraph,
         all_computed_state: DatabaseState,
     ) -> None:
@@ -901,10 +922,10 @@ class TestReasonTracking:
         result = resolver.resolve(["modules"], force_recompute=["modules"])
 
         reason = result.get_reason("modules")
-        assert reason.kind == "forced"
+        expect_equal(reason.kind, "forced")
 
+    @staticmethod
     def test_reasons_include_goal_annotation(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -914,7 +935,7 @@ class TestReasonTracking:
 
         # function_metrics is a goal, should be noted
         reason = result.get_reason("function_metrics")
-        assert "goal" in reason.details.lower()
+        expect_in("goal", reason.details.lower())
 
 
 # =============================================================================
@@ -925,8 +946,8 @@ class TestReasonTracking:
 class TestTopologicalOrder:
     """Tests for correct topological ordering."""
 
+    @staticmethod
     def test_to_compute_in_topological_order(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -937,14 +958,14 @@ class TestTopologicalOrder:
         compute_list = list(result.to_compute)
 
         # modules must come before ast
-        assert compute_list.index("modules") < compute_list.index("ast")
+        expect_true(compute_list.index("modules") < compute_list.index("ast"))
         # ast must come before goids
-        assert compute_list.index("ast") < compute_list.index("goids")
+        expect_true(compute_list.index("ast") < compute_list.index("goids"))
         # goids must come before function_metrics
-        assert compute_list.index("goids") < compute_list.index("function_metrics")
+        expect_true(compute_list.index("goids") < compute_list.index("function_metrics"))
 
+    @staticmethod
     def test_parallel_branches_both_included(
-        self,
         resolver_graph: TargetGraph,
         all_missing_state: DatabaseState,
     ) -> None:
@@ -953,14 +974,14 @@ class TestTopologicalOrder:
         result = resolver.resolve(["typing", "goids"])
 
         # Both typing and goids depend on ast
-        assert "ast" in result.to_compute
-        assert "typing" in result.to_compute
-        assert "goids" in result.to_compute
+        expect_in("ast", result.to_compute)
+        expect_in("typing", result.to_compute)
+        expect_in("goids", result.to_compute)
 
         # ast must come before both
         compute_list = list(result.to_compute)
-        assert compute_list.index("ast") < compute_list.index("typing")
-        assert compute_list.index("ast") < compute_list.index("goids")
+        expect_true(compute_list.index("ast") < compute_list.index("typing"))
+        expect_true(compute_list.index("ast") < compute_list.index("goids"))
 
 
 # =============================================================================
@@ -971,7 +992,8 @@ class TestTopologicalOrder:
 class TestWithRealRegistry:
     """Integration tests using the full target registry."""
 
-    def test_resolve_with_real_registry(self) -> None:
+    @staticmethod
+    def test_resolve_with_real_registry() -> None:
         """Resolve using the full target registry."""
         graph = get_target_graph()
 
@@ -994,11 +1016,12 @@ class TestWithRealRegistry:
         result = resolver.resolve(["function_metrics"])
 
         # Should include all its dependencies
-        assert "modules" in result.to_compute
-        assert "function_metrics" in result.to_compute
-        assert len(result.to_compute) > 1  # Has dependencies
+        expect_in("modules", result.to_compute)
+        expect_in("function_metrics", result.to_compute)
+        expect_true(len(result.to_compute) > 1)  # Has dependencies
 
-    def test_real_registry_all_targets_resolvable(self) -> None:
+    @staticmethod
+    def test_real_registry_all_targets_resolvable() -> None:
         """All targets in real registry can be resolved."""
         graph = get_target_graph()
 
@@ -1021,4 +1044,4 @@ class TestWithRealRegistry:
         result = resolver.resolve_all()
 
         # All targets should be in to_compute (since all are missing)
-        assert result.total_work == len(list(graph))
+        expect_equal(result.total_work, len(list(graph)))

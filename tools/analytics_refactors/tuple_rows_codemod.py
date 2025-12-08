@@ -114,7 +114,9 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
                     ],
                 )
                 self.row_constructor_used = True
-                node_out = cast("CSTNodeT", updated_node.with_changes(args=[cst.Arg(value=row_call)]))
+                node_out = cast(
+                    "CSTNodeT", updated_node.with_changes(args=[cst.Arg(value=row_call)])
+                )
         return node_out
 
     def _is_target_append(self, call: cst.Call) -> bool:

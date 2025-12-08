@@ -22,9 +22,12 @@ from __future__ import annotations
 
 from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
+    DefaultRegistryHooks,
     PluginPlan,
     PluginSkip,
     RegistrablePlugin,
+    RegistryEntry,
+    RegistryHooks,
 )
 from codeintel.core.plugins.registry.sorting import (
     build_provider_index,
@@ -34,9 +37,12 @@ from codeintel.core.plugins.registry.sorting import (
 
 __all__ = [
     "BasePluginRegistry",
+    "DefaultRegistryHooks",
     "PluginPlan",
     "PluginSkip",
     "RegistrablePlugin",
+    "RegistryEntry",
+    "RegistryHooks",
     "build_provider_index",
     "build_provider_index_from_metadata",
     "topological_sort",

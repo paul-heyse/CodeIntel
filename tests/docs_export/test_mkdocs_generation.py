@@ -21,7 +21,15 @@ from types import ModuleType
 
 import pytest
 
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_length,
+    expect_not_equal,
+    expect_true,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MKDOCS_GEN_DIR = REPO_ROOT / "mkdocs-gen"
@@ -78,7 +86,7 @@ MIN_REAL_DOCS_LENGTH = 1000
 )
 def test_slugify_basic(input_text: str, expected: str) -> None:
     """Test basic text conversion to slugs."""
-    assert slugify(input_text) == expected
+    expect_equal(slugify(input_text), expected)
 
 
 @pytest.mark.parametrize(
@@ -93,25 +101,25 @@ def test_slugify_basic(input_text: str, expected: str) -> None:
 )
 def test_slugify_special_chars(input_text: str, expected: str) -> None:
     """Test that special characters are properly removed or handled."""
-    assert slugify(input_text) == expected
+    expect_equal(slugify(input_text), expected)
 
 
 def test_slugify_empty() -> None:
     """Test empty string input."""
     result = slugify("")
-    assert not result
+    expect_true(not result)
 
 
 def test_slugify_whitespace_only() -> None:
     """Test whitespace-only input."""
     result = slugify("   ")
-    assert not result
+    expect_true(not result)
 
 
 def test_slugify_leading_trailing_hyphens() -> None:
     """Test that leading/trailing hyphens are stripped."""
-    assert slugify("- test -") == "test"
-    assert slugify("---heading---") == "heading"
+    expect_equal(slugify("- test -"), "test")
+    expect_equal(slugify("---heading---"), "heading")
 
 
 # =============================================================================
@@ -131,10 +139,10 @@ def test_extract_headings_all_levels() -> None:
     ]
     headings = extract_headings(lines)
 
-    assert len(headings) == EXPECTED_HEADING_LEVELS
+    expect_length(headings, EXPECTED_HEADING_LEVELS)
     for i, heading in enumerate(headings, start=1):
-        assert heading.level == i
-        assert heading.title == f"Level {i}"
+        expect_equal(heading.level, i)
+        expect_equal(heading.title, f"Level {i}")
 
 
 def test_extract_headings_code_fence_skip() -> None:
@@ -150,9 +158,9 @@ def test_extract_headings_code_fence_skip() -> None:
     ]
     headings = extract_headings(lines)
 
-    assert len(headings) == EXPECTED_TWO_HEADINGS
-    assert headings[0].title == "Real Heading"
-    assert headings[1].title == "Another Real Heading"
+    expect_length(headings, EXPECTED_TWO_HEADINGS)
+    expect_equal(headings[0].title, "Real Heading")
+    expect_equal(headings[1].title, "Another Real Heading")
 
 
 def test_extract_headings_tilde_fence() -> None:
@@ -166,9 +174,9 @@ def test_extract_headings_tilde_fence() -> None:
     ]
     headings = extract_headings(lines)
 
-    assert len(headings) == EXPECTED_TWO_HEADINGS
-    assert headings[0].title == "Before"
-    assert headings[1].title == "After"
+    expect_length(headings, EXPECTED_TWO_HEADINGS)
+    expect_equal(headings[0].title, "Before")
+    expect_equal(headings[1].title, "After")
 
 
 def test_extract_headings_trailing_hashes() -> None:
@@ -179,9 +187,9 @@ def test_extract_headings_trailing_hashes() -> None:
     ]
     headings = extract_headings(lines)
 
-    assert len(headings) == EXPECTED_TWO_HEADINGS
-    assert headings[0].title == "Heading"
-    assert headings[1].title == "Another Heading"
+    expect_length(headings, EXPECTED_TWO_HEADINGS)
+    expect_equal(headings[0].title, "Heading")
+    expect_equal(headings[1].title, "Another Heading")
 
 
 def test_extract_headings_line_indices() -> None:
@@ -198,22 +206,22 @@ def test_extract_headings_line_indices() -> None:
     expected_first_index = 1
     expected_second_index = 4
 
-    assert len(headings) == EXPECTED_TWO_HEADINGS
-    assert headings[0].body_line_index == expected_first_index
-    assert headings[1].body_line_index == expected_second_index
+    expect_length(headings, EXPECTED_TWO_HEADINGS)
+    expect_equal(headings[0].body_line_index, expected_first_index)
+    expect_equal(headings[1].body_line_index, expected_second_index)
 
 
 def test_extract_headings_empty_lines() -> None:
     """Test extraction with empty input."""
     headings = extract_headings([])
-    assert headings == []
+    expect_equal(headings, [])
 
 
 def test_extract_headings_no_headings() -> None:
     """Test extraction when there are no headings."""
     lines = ["Just some text", "More text", "No headings here"]
     headings = extract_headings(lines)
-    assert headings == []
+    expect_equal(headings, [])
 
 
 # =============================================================================
@@ -225,8 +233,8 @@ def test_read_combined_body_single_file(sample_docs_root: Path) -> None:
     """Test reading a single file."""
     lines = read_combined_body(sample_docs_root, ["index.md"])
 
-    assert len(lines) > 0
-    assert "# Welcome" in lines[0]
+    expect_true(len(lines) > 0)
+    expect_in("# Welcome", lines[0])
 
 
 def test_read_combined_body_multiple_files(sample_docs_root: Path) -> None:
@@ -235,11 +243,11 @@ def test_read_combined_body_multiple_files(sample_docs_root: Path) -> None:
     lines = read_combined_body(sample_docs_root, input_files)
 
     # Check for separator
-    assert "---" in lines
+    expect_true("---" in lines)
     # Check content from both files
     content = "\n".join(lines)
-    assert "Welcome" in content
-    assert "Architecture Overview" in content
+    expect_in("Welcome", content)
+    expect_in("Architecture Overview", content)
 
 
 def test_read_combined_body_missing_file(
@@ -254,14 +262,14 @@ def test_read_combined_body_missing_file(
         )
 
     # Should still have content from existing file
-    assert len(lines) > 0
-    assert "missing" in caplog.text.lower()
+    expect_true(len(lines) > 0)
+    expect_in("missing", caplog.text.lower())
 
 
 def test_read_combined_body_all_missing(sample_docs_root: Path) -> None:
     """Test that empty list is returned when all files missing."""
     lines = read_combined_body(sample_docs_root, ["nonexistent.md"])
-    assert lines == []
+    expect_equal(lines, [])
 
 
 def test_read_combined_body_preserves_content(sample_docs_root: Path) -> None:
@@ -271,7 +279,7 @@ def test_read_combined_body_preserves_content(sample_docs_root: Path) -> None:
     combined = "\n".join(lines)
 
     # Content should match (minus trailing newline differences)
-    assert combined.strip() == original.strip()
+    expect_equal(combined.strip(), original.strip())
 
 
 # =============================================================================
@@ -285,14 +293,14 @@ def test_build_combined_markdown_structure(sample_docs_root: Path) -> None:
     result = build_combined_markdown(sample_docs_root, input_files)
 
     # Should start with the title
-    assert result.startswith("# CodeIntel - Combined architecture overview")
+    expect_true(result.startswith("# CodeIntel - Combined architecture overview"))
 
     # Should have TOC section
-    assert "## Table of contents" in result
+    expect_in("## Table of contents", result)
 
     # Should have content from input files
-    assert "Welcome" in result
-    assert "Architecture Overview" in result
+    expect_in("Welcome", result)
+    expect_in("Architecture Overview", result)
 
 
 def test_build_combined_markdown_toc_nesting(sample_docs_root: Path) -> None:
@@ -301,13 +309,13 @@ def test_build_combined_markdown_toc_nesting(sample_docs_root: Path) -> None:
     result = build_combined_markdown(sample_docs_root, input_files)
 
     # Level 1 heading should have no indent
-    assert "- [Architecture Overview](#architecture-overview)" in result
+    expect_in("- [Architecture Overview](#architecture-overview)", result)
 
     # Level 2 heading should have 2-space indent
-    assert "  - [Subsystems](#subsystems)" in result
+    expect_in("  - [Subsystems](#subsystems)", result)
 
     # Level 3 heading should have 4-space indent
-    assert "    - [Analytics](#analytics)" in result
+    expect_in("    - [Analytics](#analytics)", result)
 
 
 def test_build_combined_markdown_line_numbers(sample_docs_root: Path) -> None:
@@ -323,15 +331,17 @@ def test_build_combined_markdown_line_numbers(sample_docs_root: Path) -> None:
             toc_entry = line
             break
 
-    assert toc_entry is not None
+    if toc_entry is None:
+        pytest.fail("Expected TOC entry for Welcome heading")
 
     # Extract the line number from TOC
     match = re.search(r"\(line (\d+)\)", toc_entry)
-    assert match is not None
+    if match is None:
+        pytest.fail("Expected line number in TOC entry")
     toc_line_num = int(match.group(1))
 
     # Verify the heading is actually at that line
-    assert lines[toc_line_num - 1].startswith("# Welcome")
+    expect_true(lines[toc_line_num - 1].startswith("# Welcome"))
 
 
 def test_build_combined_markdown_anchors_valid(sample_docs_root: Path) -> None:
@@ -345,7 +355,7 @@ def test_build_combined_markdown_anchors_valid(sample_docs_root: Path) -> None:
     # Each anchor should correspond to a heading that would slugify to it
     for anchor in anchors:
         # The anchor should appear in the document body as a heading
-        assert anchor in result.lower()
+        expect_in(anchor, result.lower())
 
 
 def test_build_combined_markdown_empty_raises(tmp_path: Path) -> None:
@@ -364,8 +374,8 @@ def test_build_combined_markdown_code_fences_preserved(
     result = build_combined_markdown(sample_docs_with_code_fence, ["test.md"])
 
     # Code fence content should be preserved
-    assert "```python" in result
-    assert "def example():" in result
+    expect_in("```python", result)
+    expect_in("def example():", result)
 
     # But the comment inside shouldn't be in TOC
     # TOC ends after the last "(line N)" entry before blank line + body
@@ -375,7 +385,7 @@ def test_build_combined_markdown_code_fences_preserved(
         if "(line " in line:
             toc_end_idx = i
     toc_section = "\n".join(lines[: toc_end_idx + 1])
-    assert "This is a comment" not in toc_section
+    expect_false("This is a comment" in toc_section)
 
 
 # =============================================================================
@@ -396,8 +406,8 @@ def test_heading_equality() -> None:
     h2 = Heading(level=1, title="Test", anchor="test", body_line_index=0)
     h3 = Heading(level=2, title="Test", anchor="test", body_line_index=0)
 
-    assert h1 == h2
-    assert h1 != h3
+    expect_equal(h1, h2)
+    expect_not_equal(h1, h3)
 
 
 # =============================================================================
@@ -424,9 +434,9 @@ def test_build_with_real_docs() -> None:
     result = build_combined_markdown(real_docs_root, existing_files)
 
     # Basic structure checks
-    assert "# CodeIntel - Combined architecture overview" in result
-    assert "## Table of contents" in result
-    assert len(result) > MIN_REAL_DOCS_LENGTH
+    expect_in("# CodeIntel - Combined architecture overview", result)
+    expect_in("## Table of contents", result)
+    expect_true(len(result) > MIN_REAL_DOCS_LENGTH)
 
 
 def test_main_function_creates_file(tmp_path: Path) -> None:
@@ -443,7 +453,7 @@ def test_main_function_creates_file(tmp_path: Path) -> None:
         input_files=["test.md"],
     )
 
-    assert output_path.exists()
+    expect_true(output_path.exists())
     content = output_path.read_text(encoding="utf-8")
-    assert "# CodeIntel - Combined architecture overview" in content
-    assert "Test" in content
+    expect_in("# CodeIntel - Combined architecture overview", content)
+    expect_in("Test", content)

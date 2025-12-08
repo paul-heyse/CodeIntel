@@ -22,6 +22,13 @@ from codeintel.analytics.adapters.functions import (
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Constants
@@ -213,10 +220,10 @@ def test_function_goid_from_row() -> None:
         )
     )
     goid = FunctionGoid.from_row(row)
-    assert goid.goid == TEST_GOID_123
-    assert goid.qualname == "module.func"
-    assert goid.start_line == TEST_START_LINE_5
-    assert goid.end_line == TEST_END_LINE_10
+    expect_equal(goid.goid, TEST_GOID_123)
+    expect_equal(goid.qualname, "module.func")
+    expect_equal(goid.start_line, TEST_START_LINE_5)
+    expect_equal(goid.end_line, TEST_END_LINE_10)
 
 
 def test_function_goid_from_row_null_end_line() -> None:
@@ -225,7 +232,7 @@ def test_function_goid_from_row_null_end_line() -> None:
         GoidSeedParams(TEST_GOID_123, "module.func", start_line=TEST_START_LINE_7, end_line=None)
     )
     goid = FunctionGoid.from_row(row)
-    assert goid.end_line == TEST_START_LINE_7
+    expect_equal(goid.end_line, TEST_START_LINE_7)
 
 
 def test_function_goid_from_row_normalizes_path() -> None:
@@ -233,8 +240,8 @@ def test_function_goid_from_row_normalizes_path() -> None:
     row = _make_goid_row(GoidSeedParams(TEST_GOID_123, "module.func"))
     row["rel_path"] = "src\\windows\\module.py"
     goid = FunctionGoid.from_row(row)
-    assert "\\" not in goid.rel_path
-    assert goid.rel_path == "src/windows/module.py"
+    expect_true("\\" not in goid.rel_path)
+    expect_equal(goid.rel_path, "src/windows/module.py")
 
 
 def test_function_goid_is_frozen() -> None:
@@ -257,7 +264,7 @@ def test_loader_load_all(
     loader = FunctionGoidLoader(gateway_with_goids, snapshot)
     goids = loader.load_all()
     # Should exclude class (9001), include functions and methods
-    assert len(goids) == EXPECTED_GOID_COUNT_4
+    expect_length(goids, EXPECTED_GOID_COUNT_4)
 
 
 def test_loader_load_all_empty(
@@ -267,7 +274,7 @@ def test_loader_load_all_empty(
     """Load from empty table returns empty list."""
     loader = FunctionGoidLoader(empty_gateway, snapshot)
     goids = loader.load_all()
-    assert not goids
+    expect_true(not goids)
 
 
 def test_loader_iter_goids(
@@ -277,7 +284,7 @@ def test_loader_iter_goids(
     """Iterate over GOIDs."""
     loader = FunctionGoidLoader(gateway_with_goids, snapshot)
     goids = list(loader.iter_goids())
-    assert len(goids) == EXPECTED_GOID_COUNT_4
+    expect_length(goids, EXPECTED_GOID_COUNT_4)
 
 
 def test_loader_group_by_file(
@@ -287,13 +294,13 @@ def test_loader_group_by_file(
     """Group GOIDs by file path."""
     loader = FunctionGoidLoader(gateway_with_goids, snapshot)
     by_file = loader.group_by_file()
-    assert len(by_file) == EXPECTED_FILE_COUNT_2
+    expect_length(by_file, EXPECTED_FILE_COUNT_2)
     # module.py has 3 functions/methods
-    assert "src/module.py" in by_file
-    assert len(by_file["src/module.py"]) == EXPECTED_MODULE_FUNCS_3
+    expect_in("src/module.py", by_file)
+    expect_length(by_file["src/module.py"], EXPECTED_MODULE_FUNCS_3)
     # other.py has 1 function
-    assert "src/other.py" in by_file
-    assert len(by_file["src/other.py"]) == EXPECTED_OTHER_FUNCS_1
+    expect_in("src/other.py", by_file)
+    expect_length(by_file["src/other.py"], EXPECTED_OTHER_FUNCS_1)
 
 
 def test_loader_resolve_abs_path(
@@ -303,12 +310,12 @@ def test_loader_resolve_abs_path(
     """Resolve absolute path for a GOID."""
     loader = FunctionGoidLoader(gateway_with_goids, snapshot)
     goids = loader.load_all()
-    assert goids
+    expect_true(bool(goids))
     abs_path = loader.resolve_abs_path(goids[0])
-    assert abs_path.is_absolute()
+    expect_true(abs_path.is_absolute())
     # Path should include repo_root
     path_str = str(abs_path)
-    assert "workspace/demo" in path_str
+    expect_in("workspace/demo", path_str)
 
 
 def test_loader_filters_by_snapshot(
@@ -323,7 +330,7 @@ def test_loader_filters_by_snapshot(
     )
     loader = FunctionGoidLoader(gateway_with_goids, other_snapshot)
     goids = loader.load_all()
-    assert not goids
+    expect_true(not goids)
 
 
 # =============================================================================
@@ -337,7 +344,7 @@ def test_metrics_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = FunctionMetricsAdapter(gateway_with_goids, snapshot)
-    assert adapter.table_name == "analytics.function_metrics"
+    expect_equal(adapter.table_name, "analytics.function_metrics")
 
 
 def test_metrics_adapter_goid_loader_property(
@@ -347,7 +354,7 @@ def test_metrics_adapter_goid_loader_property(
     """Adapter exposes goid_loader property."""
     adapter = FunctionMetricsAdapter(gateway_with_goids, snapshot)
     loader = adapter.goid_loader
-    assert isinstance(loader, FunctionGoidLoader)
+    expect_is_instance(loader, FunctionGoidLoader)
 
 
 def test_metrics_adapter_load_inputs(
@@ -357,15 +364,15 @@ def test_metrics_adapter_load_inputs(
     """Load inputs returns function GOIDs."""
     adapter = FunctionMetricsAdapter(gateway_with_goids, snapshot)
     inputs = list(adapter.load_inputs())
-    assert len(inputs) == EXPECTED_INPUTS_4
+    expect_length(inputs, EXPECTED_INPUTS_4)
     for inp in inputs:
-        assert isinstance(inp, FunctionGoid)
+        expect_is_instance(inp, FunctionGoid)
 
 
 def test_metrics_adapter_load_outputs_empty() -> None:
     """Load outputs returns empty (metrics are computed)."""
     outputs = list(FunctionMetricsAdapter.load_outputs())
-    assert not outputs
+    expect_true(not outputs)
 
 
 def test_metrics_adapter_load_empty(
@@ -375,7 +382,7 @@ def test_metrics_adapter_load_empty(
     """Load returns empty (delegates to load_outputs)."""
     adapter = FunctionMetricsAdapter(gateway_with_goids, snapshot)
     rows = list(adapter.load())
-    assert not rows
+    expect_true(not rows)
 
 
 def test_metrics_adapter_persist_empty(
@@ -385,7 +392,7 @@ def test_metrics_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = FunctionMetricsAdapter(gateway_with_goids, snapshot)
     count = adapter.persist([])
-    assert count == 0
+    expect_equal(count, 0)
 
 
 # =============================================================================
@@ -399,7 +406,7 @@ def test_types_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = FunctionTypesAdapter(gateway_with_goids, snapshot)
-    assert adapter.table_name == "analytics.function_types"
+    expect_equal(adapter.table_name, "analytics.function_types")
 
 
 def test_types_adapter_load_raises_not_implemented(
@@ -419,4 +426,4 @@ def test_types_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = FunctionTypesAdapter(gateway_with_goids, snapshot)
     count = adapter.persist([])
-    assert count == 0
+    expect_equal(count, 0)

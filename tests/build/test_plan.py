@@ -17,6 +17,14 @@ from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import ResolutionReason, ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Test Fixtures
@@ -182,21 +190,24 @@ def _make_resolution(
 class TestFormatDuration:
     """Tests for format_duration helper."""
 
-    def test_format_none(self) -> None:
+    @staticmethod
+    def test_format_none() -> None:
         """None returns empty string."""
         result = format_duration(None)
-        assert not result  # Empty string is falsey
+        expect_false(bool(result))  # Empty string is falsey
 
-    def test_format_milliseconds(self) -> None:
+    @staticmethod
+    def test_format_milliseconds() -> None:
         """Small values show milliseconds."""
-        assert format_duration(500) == ", ~500ms"
-        assert format_duration(999) == ", ~999ms"
+        expect_equal(format_duration(500), ", ~500ms")
+        expect_equal(format_duration(999), ", ~999ms")
 
-    def test_format_seconds(self) -> None:
+    @staticmethod
+    def test_format_seconds() -> None:
         """Large values show seconds."""
-        assert format_duration(1000) == ", ~1s"
-        assert format_duration(5000) == ", ~5s"
-        assert format_duration(90000) == ", ~90s"
+        expect_equal(format_duration(1000), ", ~1s")
+        expect_equal(format_duration(5000), ", ~5s")
+        expect_equal(format_duration(90000), ", ~90s")
 
 
 # =============================================================================
@@ -207,7 +218,8 @@ class TestFormatDuration:
 class TestPlanStep:
     """Tests for PlanStep dataclass."""
 
-    def test_create_step(self) -> None:
+    @staticmethod
+    def test_create_step() -> None:
         """Create a plan step with all fields."""
         step = PlanStep(
             target="ast",
@@ -217,14 +229,15 @@ class TestPlanStep:
             dependencies=("modules",),
             reason="Target is stale",
         )
-        assert step.target == "ast"
-        assert step.module == "ingestion"
-        assert step.plugin == "ast_extract"
-        assert step.estimated_duration_ms == 5000
-        assert step.dependencies == ("modules",)
-        assert step.reason == "Target is stale"
+        expect_equal(step.target, "ast")
+        expect_equal(step.module, "ingestion")
+        expect_equal(step.plugin, "ast_extract")
+        expect_equal(step.estimated_duration_ms, 5000)
+        expect_equal(step.dependencies, ("modules",))
+        expect_equal(step.reason, "Target is stale")
 
-    def test_step_is_frozen(self) -> None:
+    @staticmethod
+    def test_step_is_frozen() -> None:
         """Verify step is immutable."""
         step = PlanStep(
             target="ast",
@@ -236,7 +249,8 @@ class TestPlanStep:
         )
         assert_frozen(step, "target", "other")
 
-    def test_step_to_dict(self) -> None:
+    @staticmethod
+    def test_step_to_dict() -> None:
         """Step serializes correctly."""
         step = PlanStep(
             target="ast",
@@ -248,14 +262,15 @@ class TestPlanStep:
         )
         result = step.to_dict()
 
-        assert result["target"] == "ast"
-        assert result["module"] == "ingestion"
-        assert result["plugin"] == "ast_extract"
-        assert result["estimated_duration_ms"] == 5000
-        assert result["dependencies"] == ["modules"]
-        assert result["reason"] == "Target is stale"
+        expect_equal(result["target"], "ast")
+        expect_equal(result["module"], "ingestion")
+        expect_equal(result["plugin"], "ast_extract")
+        expect_equal(result["estimated_duration_ms"], 5000)
+        expect_equal(result["dependencies"], ["modules"])
+        expect_equal(result["reason"], "Target is stale")
 
-    def test_step_to_dict_none_duration(self) -> None:
+    @staticmethod
+    def test_step_to_dict_none_duration() -> None:
         """Step with None duration serializes correctly."""
         step = PlanStep(
             target="ast",
@@ -266,7 +281,7 @@ class TestPlanStep:
             reason="",
         )
         result = step.to_dict()
-        assert result["estimated_duration_ms"] is None
+        expect_is_none(result["estimated_duration_ms"])
 
 
 # =============================================================================
@@ -277,45 +292,51 @@ class TestPlanStep:
 class TestPlanStage:
     """Tests for PlanStage dataclass."""
 
-    def test_create_stage(self) -> None:
+    @staticmethod
+    def test_create_stage() -> None:
         """Create a plan stage with steps."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "missing")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, ("modules",), "cascade")
         stage = PlanStage(module="ingestion", steps=(step1, step2))
 
-        assert stage.module == "ingestion"
-        assert len(stage.steps) == 2
+        expect_equal(stage.module, "ingestion")
+        expect_length(stage.steps, 2)
 
-    def test_step_count(self) -> None:
+    @staticmethod
+    def test_step_count() -> None:
         """Step count returns correct value."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "")
         stage = PlanStage(module="ingestion", steps=(step1, step2))
 
-        assert stage.step_count == 2
+        expect_equal(stage.step_count, 2)
 
-    def test_stage_duration_sums_steps(self) -> None:
+    @staticmethod
+    def test_stage_duration_sums_steps() -> None:
         """Stage duration is sum of step durations."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "")
         stage = PlanStage(module="ingestion", steps=(step1, step2))
 
-        assert stage.estimated_duration_ms == 6000
+        expect_equal(stage.estimated_duration_ms, 6000)
 
-    def test_stage_duration_none_if_any_unknown(self) -> None:
+    @staticmethod
+    def test_stage_duration_none_if_any_unknown() -> None:
         """Stage duration is None if any step is None."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         step2 = PlanStep("ast", "ingestion", "ast_extract", None, (), "")
         stage = PlanStage(module="ingestion", steps=(step1, step2))
 
-        assert stage.estimated_duration_ms is None
+        expect_is_none(stage.estimated_duration_ms)
 
-    def test_empty_stage_duration(self) -> None:
+    @staticmethod
+    def test_empty_stage_duration() -> None:
         """Empty stage has zero duration."""
         stage = PlanStage(module="ingestion", steps=())
-        assert stage.estimated_duration_ms == 0
+        expect_equal(stage.estimated_duration_ms, 0)
 
-    def test_stage_to_dict(self) -> None:
+    @staticmethod
+    def test_stage_to_dict() -> None:
         """Stage serializes correctly."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "missing")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, ("modules",), "cascade")
@@ -323,10 +344,10 @@ class TestPlanStage:
 
         result = stage.to_dict()
 
-        assert result["module"] == "ingestion"
-        assert result["step_count"] == 2
-        assert result["estimated_duration_ms"] == 6000
-        assert len(result["steps"]) == 2
+        expect_equal(result["module"], "ingestion")
+        expect_equal(result["step_count"], 2)
+        expect_equal(result["estimated_duration_ms"], 6000)
+        expect_length(result["steps"], 2)
 
 
 # =============================================================================
@@ -337,7 +358,8 @@ class TestPlanStage:
 class TestBuildPlan:
     """Tests for BuildPlan dataclass."""
 
-    def test_create_plan(self) -> None:
+    @staticmethod
+    def test_create_plan() -> None:
         """Create a build plan with stages."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -352,12 +374,13 @@ class TestBuildPlan:
             blocked_targets=(),
         )
 
-        assert plan.requested_targets == ("function_metrics",)
-        assert len(plan.stages) == 2
-        assert plan.skipped_targets == ("coverage",)
-        assert plan.blocked_targets == ()
+        expect_equal(plan.requested_targets, ("function_metrics",))
+        expect_length(plan.stages, 2)
+        expect_equal(plan.skipped_targets, ("coverage",))
+        expect_equal(plan.blocked_targets, ())
 
-    def test_total_steps(self) -> None:
+    @staticmethod
+    def test_total_steps() -> None:
         """Total steps sums across stages."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "")
@@ -373,9 +396,10 @@ class TestBuildPlan:
             blocked_targets=(),
         )
 
-        assert plan.total_steps == 3
+        expect_equal(plan.total_steps, 3)
 
-    def test_plan_duration_sums_stages(self) -> None:
+    @staticmethod
+    def test_plan_duration_sums_stages() -> None:
         """Plan duration is sum of stage durations."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -390,9 +414,10 @@ class TestBuildPlan:
             blocked_targets=(),
         )
 
-        assert plan.estimated_duration_ms == 11000
+        expect_equal(plan.estimated_duration_ms, 11000)
 
-    def test_plan_duration_none_if_any_unknown(self) -> None:
+    @staticmethod
+    def test_plan_duration_none_if_any_unknown() -> None:
         """Plan duration is None if any stage is None."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -407,9 +432,10 @@ class TestBuildPlan:
             blocked_targets=(),
         )
 
-        assert plan.estimated_duration_ms is None
+        expect_is_none(plan.estimated_duration_ms)
 
-    def test_is_empty_true(self) -> None:
+    @staticmethod
+    def test_is_empty_true() -> None:
         """Empty plan returns True."""
         plan = BuildPlan(
             requested_targets=("x",),
@@ -417,9 +443,10 @@ class TestBuildPlan:
             skipped_targets=("x",),
             blocked_targets=(),
         )
-        assert plan.is_empty() is True
+        expect_true(plan.is_empty())
 
-    def test_is_empty_false(self) -> None:
+    @staticmethod
+    def test_is_empty_false() -> None:
         """Non-empty plan returns False."""
         step = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         stage = PlanStage(module="ingestion", steps=(step,))
@@ -429,9 +456,10 @@ class TestBuildPlan:
             skipped_targets=(),
             blocked_targets=(),
         )
-        assert plan.is_empty() is False
+        expect_false(plan.is_empty())
 
-    def test_plan_to_dict(self) -> None:
+    @staticmethod
+    def test_plan_to_dict() -> None:
         """Plan serializes correctly."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "missing")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -445,14 +473,15 @@ class TestBuildPlan:
 
         result = plan.to_dict()
 
-        assert result["requested_targets"] == ["function_metrics"]
-        assert result["total_steps"] == 1
-        assert result["estimated_duration_ms"] == 1000
-        assert len(result["stages"]) == 1
-        assert result["skipped_targets"] == ["coverage", "typing"]
-        assert result["blocked_targets"] == ["external"]
+        expect_equal(result["requested_targets"], ["function_metrics"])
+        expect_equal(result["total_steps"], 1)
+        expect_equal(result["estimated_duration_ms"], 1000)
+        expect_length(result["stages"], 1)
+        expect_equal(result["skipped_targets"], ["coverage", "typing"])
+        expect_equal(result["blocked_targets"], ["external"])
 
-    def test_plan_to_dict_round_trip(self) -> None:
+    @staticmethod
+    def test_plan_to_dict_round_trip() -> None:
         """Plan serializes to valid JSON."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "missing")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -468,7 +497,7 @@ class TestBuildPlan:
         json_str = json.dumps(plan.to_dict())
         parsed = json.loads(json_str)
 
-        assert parsed["total_steps"] == 1
+        expect_equal(parsed["total_steps"], 1)
 
 
 # =============================================================================
@@ -479,7 +508,8 @@ class TestBuildPlan:
 class TestFormatSummary:
     """Tests for BuildPlan.format_summary method."""
 
-    def test_format_summary_basic(self) -> None:
+    @staticmethod
+    def test_format_summary_basic() -> None:
         """Summary includes expected sections."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "missing")
         step2 = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "cascade")
@@ -494,13 +524,14 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "Build Plan for: function_metrics" in summary
-        assert "Stage 1: Ingestion" in summary
-        assert "modules" in summary
-        assert "ast" in summary
-        assert "Total: 2 steps" in summary
+        expect_in("Build Plan for: function_metrics", summary)
+        expect_in("Stage 1: Ingestion", summary)
+        expect_in("modules", summary)
+        expect_in("ast", summary)
+        expect_in("Total: 2 steps", summary)
 
-    def test_format_summary_with_skipped(self) -> None:
+    @staticmethod
+    def test_format_summary_with_skipped() -> None:
         """Summary shows skipped count."""
         step = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "stale")
         stage = PlanStage(module="ingestion", steps=(step,))
@@ -514,9 +545,10 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "Skipped: 3 targets" in summary
+        expect_in("Skipped: 3 targets", summary)
 
-    def test_format_summary_with_blocked(self) -> None:
+    @staticmethod
+    def test_format_summary_with_blocked() -> None:
         """Summary shows blocked count."""
         step = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "stale")
         stage = PlanStage(module="ingestion", steps=(step,))
@@ -530,9 +562,10 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "Blocked: 1 targets" in summary
+        expect_in("Blocked: 1 targets", summary)
 
-    def test_format_summary_multi_stage(self) -> None:
+    @staticmethod
+    def test_format_summary_multi_stage() -> None:
         """Summary shows multiple stages."""
         step1 = PlanStep("modules", "ingestion", "repo_scan", 1000, (), "")
         stage1 = PlanStage(module="ingestion", steps=(step1,))
@@ -552,11 +585,12 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "Stage 1: Ingestion" in summary
-        assert "Stage 2: Graphs" in summary
-        assert "Stage 3: Analytics" in summary
+        expect_in("Stage 1: Ingestion", summary)
+        expect_in("Stage 2: Graphs", summary)
+        expect_in("Stage 3: Analytics", summary)
 
-    def test_format_summary_empty_plan(self) -> None:
+    @staticmethod
+    def test_format_summary_empty_plan() -> None:
         """Summary handles empty plan."""
         plan = BuildPlan(
             requested_targets=("function_metrics",),
@@ -567,10 +601,11 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "Total: 0 steps" in summary
-        assert "Skipped: 1 targets" in summary
+        expect_in("Total: 0 steps", summary)
+        expect_in("Skipped: 1 targets", summary)
 
-    def test_format_summary_with_duration(self) -> None:
+    @staticmethod
+    def test_format_summary_with_duration() -> None:
         """Summary includes duration estimate."""
         step = PlanStep("ast", "ingestion", "ast_extract", 5000, (), "stale")
         stage = PlanStage(module="ingestion", steps=(step,))
@@ -584,7 +619,7 @@ class TestFormatSummary:
 
         summary = plan.format_summary()
 
-        assert "~5s" in summary
+        expect_in("~5s", summary)
 
 
 # =============================================================================
@@ -595,10 +630,8 @@ class TestFormatSummary:
 class TestPlanGenerator:
     """Tests for PlanGenerator class."""
 
-    def test_generate_empty_resolution(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_generate_empty_resolution(generator: PlanGenerator) -> None:
         """Empty to_compute produces empty plan."""
         resolution = _make_resolution(
             requested=("function_metrics",),
@@ -608,15 +641,13 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        assert plan.is_empty()
-        assert plan.total_steps == 0
-        assert plan.stages == ()
-        assert plan.skipped_targets == ("function_metrics",)
+        expect_true(plan.is_empty())
+        expect_equal(plan.total_steps, 0)
+        expect_equal(plan.stages, ())
+        expect_equal(plan.skipped_targets, ("function_metrics",))
 
-    def test_generate_single_target(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_generate_single_target(generator: PlanGenerator) -> None:
         """Single target produces one-step plan."""
         resolution = _make_resolution(
             requested=("modules",),
@@ -625,15 +656,13 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        assert plan.total_steps == 1
-        assert len(plan.stages) == 1
-        assert plan.stages[0].module == "ingestion"
-        assert plan.stages[0].steps[0].target == "modules"
+        expect_equal(plan.total_steps, 1)
+        expect_length(plan.stages, 1)
+        expect_equal(plan.stages[0].module, "ingestion")
+        expect_equal(plan.stages[0].steps[0].target, "modules")
 
-    def test_generate_multi_module(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_generate_multi_module(generator: PlanGenerator) -> None:
         """Targets across modules create multiple stages."""
         resolution = _make_resolution(
             requested=("function_metrics",),
@@ -643,15 +672,13 @@ class TestPlanGenerator:
         plan = generator.generate(resolution)
 
         # Should have 3 stages: ingestion, graphs, analytics
-        assert len(plan.stages) == 3
-        assert plan.stages[0].module == "ingestion"
-        assert plan.stages[1].module == "graphs"
-        assert plan.stages[2].module == "analytics"
+        expect_length(plan.stages, 3)
+        expect_equal(plan.stages[0].module, "ingestion")
+        expect_equal(plan.stages[1].module, "graphs")
+        expect_equal(plan.stages[2].module, "analytics")
 
-    def test_stages_in_module_order(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_stages_in_module_order(generator: PlanGenerator) -> None:
         """Stages are ordered: ingestion -> graphs -> analytics."""
         # Create resolution with targets in reverse order
         resolution = _make_resolution(
@@ -662,12 +689,10 @@ class TestPlanGenerator:
         plan = generator.generate(resolution)
 
         modules = [stage.module for stage in plan.stages]
-        assert modules == ["ingestion", "graphs", "analytics"]
+        expect_equal(modules, ["ingestion", "graphs", "analytics"])
 
-    def test_empty_modules_skipped(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_empty_modules_skipped(generator: PlanGenerator) -> None:
         """Modules with no targets don't create stages."""
         # Only ingestion targets
         resolution = _make_resolution(
@@ -677,13 +702,11 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        assert len(plan.stages) == 1
-        assert plan.stages[0].module == "ingestion"
+        expect_length(plan.stages, 1)
+        expect_equal(plan.stages[0].module, "ingestion")
 
-    def test_step_gets_target_metadata(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_step_gets_target_metadata(generator: PlanGenerator) -> None:
         """Step gets duration and plugin from OutputTarget."""
         resolution = _make_resolution(
             requested=("ast",),
@@ -693,14 +716,12 @@ class TestPlanGenerator:
         plan = generator.generate(resolution)
         step = plan.stages[0].steps[0]
 
-        assert step.plugin == "ast_extract"
-        assert step.estimated_duration_ms == 5000
-        assert step.dependencies == ("modules",)
+        expect_equal(step.plugin, "ast_extract")
+        expect_equal(step.estimated_duration_ms, 5000)
+        expect_equal(step.dependencies, ("modules",))
 
-    def test_step_gets_reason_from_resolution(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_step_gets_reason_from_resolution(generator: PlanGenerator) -> None:
         """Step gets reason details from resolution."""
         reasons = {
             "ast": ResolutionReason(kind="stale", details="Target is stale: hash changed"),
@@ -714,12 +735,10 @@ class TestPlanGenerator:
         plan = generator.generate(resolution)
         step = plan.stages[0].steps[0]
 
-        assert step.reason == "Target is stale: hash changed"
+        expect_equal(step.reason, "Target is stale: hash changed")
 
-    def test_preserves_skipped_and_blocked(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_preserves_skipped_and_blocked(generator: PlanGenerator) -> None:
         """Plan preserves skipped and blocked from resolution."""
         resolution = ResolutionResult(
             requested=("function_metrics",),
@@ -731,13 +750,11 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        assert plan.skipped_targets == ("ast", "goids")
-        assert plan.blocked_targets == ("external_data",)
+        expect_equal(plan.skipped_targets, ("ast", "goids"))
+        expect_equal(plan.blocked_targets, ("external_data",))
 
-    def test_preserves_requested_targets(
-        self,
-        generator: PlanGenerator,
-    ) -> None:
+    @staticmethod
+    def test_preserves_requested_targets(generator: PlanGenerator) -> None:
         """Plan preserves requested targets from resolution."""
         resolution = _make_resolution(
             requested=("function_metrics", "typing"),
@@ -746,7 +763,7 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        assert plan.requested_targets == ("function_metrics", "typing")
+        expect_equal(plan.requested_targets, ("function_metrics", "typing"))
 
 
 # =============================================================================
@@ -757,8 +774,8 @@ class TestPlanGenerator:
 class TestPlanGeneratorIntegration:
     """Integration tests for plan generation."""
 
+    @staticmethod
     def test_full_chain_plan(
-        self,
         generator: PlanGenerator,
     ) -> None:
         """Generate plan for full dependency chain."""
@@ -770,20 +787,21 @@ class TestPlanGeneratorIntegration:
         plan = generator.generate(resolution)
 
         # Verify structure
-        assert plan.total_steps == 4
-        assert len(plan.stages) == 3
+        expect_equal(plan.total_steps, 4)
+        expect_length(plan.stages, 3)
 
         # Verify stage contents
         ingestion_targets = [s.target for s in plan.stages[0].steps]
         graphs_targets = [s.target for s in plan.stages[1].steps]
         analytics_targets = [s.target for s in plan.stages[2].steps]
 
-        assert "modules" in ingestion_targets
-        assert "ast" in ingestion_targets
-        assert "goids" in graphs_targets
-        assert "function_metrics" in analytics_targets
+        expect_in("modules", ingestion_targets)
+        expect_in("ast", ingestion_targets)
+        expect_in("goids", graphs_targets)
+        expect_in("function_metrics", analytics_targets)
 
-    def test_with_real_registry(self) -> None:
+    @staticmethod
+    def test_with_real_registry() -> None:
         """Plan generation with full target registry."""
         graph = get_target_graph()
         generator = PlanGenerator(graph)
@@ -797,15 +815,15 @@ class TestPlanGeneratorIntegration:
         plan = generator.generate(resolution)
 
         # Should produce valid plan
-        assert plan.total_steps == 4
-        assert not plan.is_empty()
+        expect_equal(plan.total_steps, 4)
+        expect_false(plan.is_empty())
 
         # Should serialize without error
         plan_dict = plan.to_dict()
-        assert "stages" in plan_dict
+        expect_in("stages", plan_dict)
 
+    @staticmethod
     def test_summary_format_integration(
-        self,
         generator: PlanGenerator,
     ) -> None:
         """Summary format works with generated plan."""
@@ -827,9 +845,9 @@ class TestPlanGeneratorIntegration:
         summary = plan.format_summary()
 
         # Verify all expected content
-        assert "function_metrics" in summary
-        assert "modules" in summary
-        assert "Ingestion" in summary
-        assert "Graphs" in summary
-        assert "Analytics" in summary
-        assert "Skipped: 1 targets" in summary
+        expect_in("function_metrics", summary)
+        expect_in("modules", summary)
+        expect_in("Ingestion", summary)
+        expect_in("Graphs", summary)
+        expect_in("Analytics", summary)
+        expect_in("Skipped: 1 targets", summary)

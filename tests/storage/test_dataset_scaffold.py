@@ -8,7 +8,21 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.datasets import ScaffoldConfigError, build_scaffold_options
+from codeintel.cli.commands.datasets import (
+    BootstrapSnippet,
+    DatasetScaffoldOptions,
+    DryRunMode,
+    OverwritePolicy,
+    RegistryCheck,
+    ScaffoldBehaviorOptions,
+    ScaffoldCliOptions,
+    ScaffoldConfigError,
+    ScaffoldFileOptions,
+    ScaffoldIOOptions,
+    ScaffoldMetadataOptions,
+    ScaffoldSchemaOptions,
+    build_scaffold_options,
+)
 from codeintel.config.datasets import DatasetContract
 from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
@@ -28,6 +42,55 @@ def _base_opts(tmp_path: Path) -> ScaffoldOptions:
         parquet_filename="demo_dataset.parquet",
         schema_id="demo_dataset",
         output_dir=tmp_path,
+    )
+
+
+def _cli_options_from_scaffold_opts(
+    opts: ScaffoldOptions, specs_snapshot: Path
+) -> ScaffoldCliOptions:
+    """Translate storage ScaffoldOptions into CLI ScaffoldCliOptions for validation.
+
+    Returns
+    -------
+    ScaffoldCliOptions
+        CLI options bundle compatible with build_scaffold_options.
+    """
+    metadata = ScaffoldMetadataOptions(
+        kind="view" if opts.is_view else "table",
+        table_key=opts.table_key,
+        owner=opts.owner,
+        freshness_sla=opts.freshness_sla,
+        retention_policy=opts.retention_policy,
+    )
+    schema = ScaffoldSchemaOptions(
+        schema_version=opts.schema_version,
+        validation_profile=opts.validation_profile,
+        schema_id=opts.schema_id,
+    )
+    files = ScaffoldFileOptions(
+        jsonl_filename=opts.jsonl_filename,
+        parquet_filename=opts.parquet_filename,
+        stable_id=opts.stable_id,
+    )
+    scaffold_opts = DatasetScaffoldOptions(
+        output_dir=opts.output_dir,
+        overwrite_policy=OverwritePolicy.OVERWRITE if opts.overwrite else OverwritePolicy.ERROR,
+    )
+    io_opts = ScaffoldIOOptions(
+        specs_snapshot=specs_snapshot,
+        scaffold=scaffold_opts,
+    )
+    behavior = ScaffoldBehaviorOptions(
+        run_mode=DryRunMode.EXECUTE if not opts.dry_run else DryRunMode.DRY_RUN,
+        bootstrap=BootstrapSnippet.EMIT if opts.emit_bootstrap_snippet else BootstrapSnippet.SKIP,
+        registry_check=RegistryCheck.ENABLED,
+    )
+    return ScaffoldCliOptions(
+        metadata=metadata,
+        schema=schema,
+        files=files,
+        io=io_opts,
+        behavior=behavior,
     )
 
 
@@ -109,21 +172,6 @@ def test_scaffold_registry_conflict_blocks_creation(tmp_path: Path) -> None:
     with pytest.raises(ScaffoldConfigError):
         build_scaffold_options(
             name=opts.name,
-            kind="table",
-            table_key=opts.table_key,
-            owner=None,
-            freshness_sla=None,
-            retention_policy=None,
-            schema_version=opts.schema_version,
-            validation_profile=opts.validation_profile,
-            schema_id=opts.schema_id,
-            jsonl_filename=opts.jsonl_filename,
-            parquet_filename=opts.parquet_filename,
-            stable_id=opts.stable_id,
-            specs_snapshot=tmp_path / "missing.json",
-            output_dir=opts.output_dir,
-            overwrite=False,
-            dry_run=False,
-            emit_bootstrap_snippet=False,
+            options=_cli_options_from_scaffold_opts(opts, tmp_path / "missing.json"),
             registry=registry,
         )

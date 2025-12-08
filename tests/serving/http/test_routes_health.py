@@ -19,6 +19,11 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -40,7 +45,7 @@ def test_build_health_router_returns_router() -> None:
             path_value = getattr(route, "path", None)
             if isinstance(path_value, str):
                 routes.append(path_value)
-    assert "/health" in routes
+    expect_in("/health", routes)
 
 
 # =============================================================================
@@ -95,12 +100,12 @@ def test_health_endpoint_returns_status_ok(
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["repo"] == provisioned_repo.repo
-    assert payload["commit"] == provisioned_repo.commit
-    assert payload["read_only"] is True
+    expect_equal(payload["status"], "ok")
+    expect_equal(payload["repo"], provisioned_repo.repo)
+    expect_equal(payload["commit"], provisioned_repo.commit)
+    expect_true(payload["read_only"])
 
 
 def test_health_endpoint_includes_limits(
@@ -151,11 +156,11 @@ def test_health_endpoint_includes_limits(
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     payload = response.json()
-    assert "limits" in payload
-    assert payload["limits"]["default_limit"] == default_limit
-    assert payload["limits"]["max_rows_per_call"] == max_rows
+    expect_in("limits", payload)
+    expect_equal(payload["limits"]["default_limit"], default_limit)
+    expect_equal(payload["limits"]["max_rows_per_call"], max_rows)
 
 
 def test_health_endpoint_read_only_false(
@@ -205,9 +210,9 @@ def test_health_endpoint_read_only_false(
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     payload = response.json()
-    assert payload["read_only"] is False
+    expect_true(payload["read_only"] is False)
 
 
 def test_health_endpoint_database_connectivity_verified(
@@ -257,6 +262,6 @@ def test_health_endpoint_database_connectivity_verified(
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     # This confirms the DuckDB SELECT 1 query succeeded
-    assert response.json()["status"] == "ok"
+    expect_equal(response.json()["status"], "ok")

@@ -81,40 +81,83 @@ class GraphPluginMetadata(PluginMetadata):
         super().__post_init__()
 
 
+@dataclass(frozen=True)
+class GraphPluginMetadataConfig:
+    """Bundle optional fields used when constructing graph plugin metadata."""
+
+    severity: PluginSeverity = "fatal"
+    enabled_by_default: bool = True
+    depends_on: tuple[str, ...] = ()
+    provides: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    produces_tables: tuple[str, ...] = ()
+    produces_graph_kinds: tuple[GraphKind, ...] = ()
+    requires_graph_kinds: tuple[GraphKind, ...] = ()
+    resource_hints: PluginResourceHints | None = None
+    supports_incremental: bool = False
+    isolation_kind: PluginIsolation = "none"
+    options_model: type[BaseModel] | None = None
+    options_default: object | None = None
+    version_hash: str | None = None
+    config_schema_ref: str | None = None
+    row_count_tables: tuple[str, ...] = ()
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
+    requires_isolation: bool = False
+    scope_aware: bool = False
+    supported_scopes: tuple[str, ...] = ()
+    contract_checkers: tuple[str, ...] = ()
+
+
+def _validate_metadata_config(
+    kind: GraphPluginKind,
+    stage: GraphPluginStage,
+    config: GraphPluginMetadataConfig,
+) -> tuple[tuple[str, ...], str | None]:
+    """Validate and normalize metadata configuration.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], str | None]
+        Supported scopes if scope awareness is enabled and no errors, along
+        with an optional validation error message.
+    """
+    errors: list[str] = []
+
+    if config.scope_aware and not config.supported_scopes:
+        errors.append("Scope-aware plugins must declare supported_scopes.")
+
+    if kind == "builder" and stage != "goid" and not config.produces_graph_kinds:
+        errors.append("Builder plugins must declare produces_graph_kinds.")
+
+    if kind == "metric" and not config.requires_graph_kinds:
+        errors.append("Metric plugins must declare requires_graph_kinds.")
+
+    if kind == "validation" and config.produces_graph_kinds:
+        errors.append("Validation plugins must not declare produces_graph_kinds.")
+
+    if errors:
+        return (), "; ".join(errors)
+
+    if not config.scope_aware:
+        return (), None
+    return config.supported_scopes, None
+
+
 def create_graph_metadata(
     *,
     name: str,
     description: str,
     kind: GraphPluginKind,
     stage: GraphPluginStage,
-    severity: PluginSeverity = "fatal",
-    enabled_by_default: bool = True,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    requires: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-    produces_graph_kinds: tuple[GraphKind, ...] = (),
-    requires_graph_kinds: tuple[GraphKind, ...] = (),
-    resource_hints: PluginResourceHints | None = None,
-    supports_incremental: bool = False,
-    isolation_kind: PluginIsolation = "none",
-    options_model: type[BaseModel] | None = None,
-    options_default: object | None = None,
-    version_hash: str | None = None,
-    config_schema_ref: str | None = None,
-    row_count_tables: tuple[str, ...] = (),
-    cache_populates: tuple[str, ...] = (),
-    cache_consumes: tuple[str, ...] = (),
-    requires_isolation: bool = False,
-    scope_aware: bool = False,
-    supported_scopes: tuple[str, ...] = (),
-    contract_checkers: tuple[str, ...] = (),
+    config: GraphPluginMetadataConfig | None = None,
 ) -> GraphPluginMetadata:
     """Create graph plugin metadata with sensible defaults.
 
     This factory function provides a convenient way to create metadata
     with typed GraphKind values that automatically populate the string
-    produces_graphs and requires_graphs fields.
+    produces_graphs and requires_graphs fields while keeping the
+    function signature compact via GraphPluginMetadataConfig.
 
     Parameters
     ----------
@@ -126,85 +169,59 @@ def create_graph_metadata(
         Plugin kind: builder, metric, or validation.
     stage
         Processing stage in the graph pipeline.
-    severity
-        How failures should be handled.
-    enabled_by_default
-        Whether enabled when no explicit list is provided.
-    depends_on
-        Explicit plugin dependencies that must run first.
-    provides
-        Capabilities or artifacts this plugin produces.
-    requires
-        Capabilities required from other plugins.
-    produces_tables
-        DuckDB table keys populated by this plugin.
-    produces_graph_kinds
-        GraphKind values this plugin builds (for builders).
-    requires_graph_kinds
-        GraphKind values this plugin needs (for metrics).
-    resource_hints
-        Runtime resource hints for planning.
-    supports_incremental
-        Whether incremental execution is supported.
-    isolation_kind
-        Type of isolation needed for execution.
-    options_model
-        Optional Pydantic model for plugin options validation.
-    options_default
-        Default options value.
-    version_hash
-        Version hash for cache invalidation.
-    config_schema_ref
-        Reference to configuration schema.
-    row_count_tables
-        Tables to report row counts from.
-    cache_populates
-        Cache keys this plugin populates.
-    cache_consumes
-        Cache keys this plugin consumes.
-    requires_isolation
-        Whether the plugin needs process/thread isolation.
-    scope_aware
-        Whether the plugin is scope-aware.
-    supported_scopes
-        Scopes supported when scope-aware.
-    contract_checkers
-        Contract checker identifiers used by the plugin.
+    config
+        Optional configuration bundle for advanced metadata fields such
+        as cache hints, resource hints, and graph kind declarations.
+
+    Raises
+    ------
+    ValueError
+        If the configuration is inconsistent with the plugin kind or
+        scope settings.
 
     Returns
     -------
     GraphPluginMetadata
         Graph plugin metadata with all fields populated.
     """
+    metadata_config = config or GraphPluginMetadataConfig()
+    supported_scopes, validation_error = _validate_metadata_config(
+        kind,
+        stage,
+        metadata_config,
+    )
+    if validation_error is not None:
+        raise ValueError(validation_error)
+
     return GraphPluginMetadata(
         name=name,
         description=description,
         kind=kind,
         stage=stage,
-        severity=severity,
-        enabled_by_default=enabled_by_default,
-        depends_on=depends_on,
-        provides=provides,
-        requires=requires,
-        produces_tables=produces_tables,
-        produces_graphs=tuple(str(g) for g in produces_graph_kinds),
-        requires_graphs=tuple(str(g) for g in requires_graph_kinds),
-        resource_hints=resource_hints,
-        supports_incremental=supports_incremental,
-        isolation_kind=isolation_kind,
-        requires_isolation=requires_isolation,
-        scope_aware=scope_aware,
+        severity=metadata_config.severity,
+        enabled_by_default=metadata_config.enabled_by_default,
+        depends_on=metadata_config.depends_on,
+        provides=metadata_config.provides,
+        requires=metadata_config.requires,
+        produces_tables=metadata_config.produces_tables,
+        produces_graphs=tuple(str(graph) for graph in metadata_config.produces_graph_kinds),
+        requires_graphs=tuple(str(graph) for graph in metadata_config.requires_graph_kinds),
+        resource_hints=metadata_config.resource_hints,
+        supports_incremental=metadata_config.supports_incremental,
+        isolation_kind=metadata_config.isolation_kind,
+        requires_isolation=metadata_config.requires_isolation,
+        scope_aware=metadata_config.scope_aware,
         supported_scopes=supported_scopes,
-        version_hash=version_hash,
-        config_schema_ref=config_schema_ref,
-        row_count_tables=row_count_tables,
-        cache_populates=cache_populates,
-        cache_consumes=cache_consumes,
-        contract_checkers=contract_checkers,
-        produces_graph_kinds=produces_graph_kinds,
-        requires_graph_kinds=requires_graph_kinds,
-        options_model=options_model,
-        options_default=options_default,
+        version_hash=metadata_config.version_hash,
+        config_schema_ref=metadata_config.config_schema_ref,
+        row_count_tables=metadata_config.row_count_tables,
+        cache_populates=metadata_config.cache_populates,
+        cache_consumes=metadata_config.cache_consumes,
+        contract_checkers=metadata_config.contract_checkers,
+        produces_graph_kinds=metadata_config.produces_graph_kinds,
+        requires_graph_kinds=metadata_config.requires_graph_kinds,
+        options_model=metadata_config.options_model,
+        options_default=metadata_config.options_default,
     )
 
 
@@ -334,6 +351,7 @@ __all__ = [
     "DEFAULT_VALIDATION_PLUGINS",
     "GraphPluginKind",
     "GraphPluginMetadata",
+    "GraphPluginMetadataConfig",
     "GraphPluginPlan",
     "GraphPluginProtocol",
     "GraphPluginSkip",

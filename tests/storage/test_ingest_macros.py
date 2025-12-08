@@ -27,6 +27,12 @@ from codeintel.storage.macros import (
     list_ingest_macros,
 )
 from codeintel.storage.metadata import INGEST_MACROS, METADATA_SCHEMA_DDL, NORMALIZED_MACROS
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 
 def test_ensure_ingest_macros_registers_all_macros() -> None:
@@ -39,7 +45,7 @@ def test_ensure_ingest_macros_registers_all_macros() -> None:
         macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
 
         # All required macros should be registered
-        assert macro_set.issubset(macros)
+        expect_true(macro_set.issubset(macros))
     finally:
         con.close()
 
@@ -57,7 +63,7 @@ def test_ensure_ingest_macros_is_idempotent() -> None:
         macros_second = list_ingest_macros(con)
 
         # Results should be the same
-        assert macros_first == macros_second
+        expect_equal(macros_first, macros_second)
     finally:
         con.close()
 
@@ -69,8 +75,8 @@ def test_list_ingest_macros_returns_set() -> None:
         ensure_ingest_macros(con)
         macros = list_ingest_macros(con)
 
-        assert isinstance(macros, set)
-        assert len(macros) > 0
+        expect_is_instance(macros, set)
+        expect_true(len(macros) > 0)
     finally:
         con.close()
 
@@ -88,7 +94,7 @@ def test_clear_macro_cache_for_connection_with_connection() -> None:
         ensure_ingest_macros(con)
         macros = list_ingest_macros(con)
         macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
-        assert macro_set.issubset(macros)
+        expect_true(macro_set.issubset(macros))
     finally:
         con.close()
 
@@ -105,7 +111,7 @@ def test_clear_macro_cache_for_connection_with_int_key() -> None:
 
         # Should still work
         macros = list_ingest_macros(con)
-        assert len(macros) > 0
+        expect_true(len(macros) > 0)
     finally:
         con.close()
 
@@ -135,7 +141,7 @@ def test_assert_ingest_macros_present_registers_missing_macros() -> None:
         # Verify macros are now present
         macros = list_ingest_macros(con)
         macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
-        assert macro_set.issubset(macros)
+        expect_true(macro_set.issubset(macros))
     finally:
         con.close()
 
@@ -155,8 +161,8 @@ def test_registered_macros_handles_prefixed_function_names() -> None:
         macros = list_ingest_macros(con)
 
         # Should have both qualified and unqualified versions
-        assert "test_schema.prefixed_macro" in macros
-        assert "prefixed_macro" in macros
+        expect_in("test_schema.prefixed_macro", macros)
+        expect_in("prefixed_macro", macros)
     finally:
         con.close()
 
@@ -164,8 +170,9 @@ def test_registered_macros_handles_prefixed_function_names() -> None:
 def test_macros_contain_ingest_prefix() -> None:
     """Verify all ingest macros follow the metadata.ingest_ naming convention."""
     for table_key, macro_name in INGEST_MACROS.items():
-        assert macro_name.startswith("metadata.ingest_"), (
-            f"Macro {macro_name} for {table_key} doesn't follow naming convention"
+        expect_true(
+            macro_name.startswith("metadata.ingest_"),
+            message=f"Macro {macro_name} for {table_key} doesn't follow naming convention",
         )
 
 

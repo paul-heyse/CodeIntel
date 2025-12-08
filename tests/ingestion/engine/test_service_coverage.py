@@ -24,6 +24,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.results import CoverageReport
 from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
 
 # =============================================================================
@@ -213,16 +214,18 @@ class NotFoundRunner(ToolRunner):
 class TestToolServiceRunPyright:
     """Tests for ToolService.run_pyright error paths."""
 
-    def test_pyright_not_found_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pyright_not_found_returns_empty(tmp_path: Path) -> None:
         """run_pyright returns empty dict when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
         result = asyncio.run(service.run_pyright(tmp_path))
 
-        assert result == {}
+        expect_equal(result, {})
 
-    def test_pyright_execution_failure_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pyright_execution_failure_raises(tmp_path: Path) -> None:
         """run_pyright raises ToolExecutionError on failure."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=2, raise_exception=True)
         service = ToolService(runner)
@@ -239,16 +242,18 @@ class TestToolServiceRunPyright:
 class TestToolServiceRunPyrefly:
     """Tests for ToolService.run_pyrefly error paths."""
 
-    def test_pyrefly_not_found_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pyrefly_not_found_returns_empty(tmp_path: Path) -> None:
         """run_pyrefly returns empty dict when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
         result = asyncio.run(service.run_pyrefly(tmp_path))
 
-        assert result == {}
+        expect_equal(result, {})
 
-    def test_pyrefly_failure_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
         """run_pyrefly returns empty dict on failure (graceful degradation)."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=1)
         service = ToolService(runner)
@@ -256,7 +261,7 @@ class TestToolServiceRunPyrefly:
         result = asyncio.run(service.run_pyrefly(tmp_path))
 
         # Pyrefly failures are handled gracefully, returning empty dict
-        assert result == {}
+        expect_equal(result, {})
 
 
 # =============================================================================
@@ -267,16 +272,18 @@ class TestToolServiceRunPyrefly:
 class TestToolServiceRunRuff:
     """Tests for ToolService.run_ruff error paths."""
 
-    def test_ruff_not_found_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_ruff_not_found_returns_empty(tmp_path: Path) -> None:
         """run_ruff returns empty dict when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
         result = asyncio.run(service.run_ruff(tmp_path))
 
-        assert result == {}
+        expect_equal(result, {})
 
-    def test_ruff_failure_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_ruff_failure_raises(tmp_path: Path) -> None:
         """run_ruff raises ToolExecutionError on failure."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=2, raise_exception=True)
         service = ToolService(runner)
@@ -293,7 +300,8 @@ class TestToolServiceRunRuff:
 class TestToolServiceRunCoverageReport:
     """Tests for ToolService.run_coverage_report error paths."""
 
-    def test_coverage_not_found_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_coverage_not_found_returns_empty(tmp_path: Path) -> None:
         """run_coverage_report returns empty report when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -303,9 +311,10 @@ class TestToolServiceRunCoverageReport:
         )
 
         # Coverage not found returns empty report (graceful degradation)
-        assert result == CoverageReport.empty()
+        expect_equal(result, CoverageReport.empty())
 
-    def test_coverage_failure_returns_empty(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_coverage_failure_returns_empty(tmp_path: Path) -> None:
         """run_coverage_report returns empty report on failure (graceful degradation)."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=1)
         service = ToolService(runner)
@@ -315,7 +324,7 @@ class TestToolServiceRunCoverageReport:
         )
 
         # Coverage failures are handled gracefully
-        assert result == CoverageReport.empty()
+        expect_equal(result, CoverageReport.empty())
 
 
 # =============================================================================
@@ -326,7 +335,8 @@ class TestToolServiceRunCoverageReport:
 class TestToolServiceRunScipFull:
     """Tests for ToolService.run_scip_full error paths."""
 
-    def test_scip_not_found_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_scip_not_found_raises(tmp_path: Path) -> None:
         """run_scip_full raises when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -340,7 +350,8 @@ class TestToolServiceRunScipFull:
                 )
             )
 
-    def test_scip_execution_error_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_scip_execution_error_raises(tmp_path: Path) -> None:
         """run_scip_full raises ToolExecutionError on failure."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=1, raise_exception=True)
         service = ToolService(runner)
@@ -363,7 +374,8 @@ class TestToolServiceRunScipFull:
 class TestToolServiceRunPytestReport:
     """Tests for ToolService.run_pytest_report error paths."""
 
-    def test_pytest_not_found_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pytest_not_found_raises(tmp_path: Path) -> None:
         """run_pytest_report raises when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -377,7 +389,8 @@ class TestToolServiceRunPytestReport:
                 )
             )
 
-    def test_pytest_execution_error_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_pytest_execution_error_raises(tmp_path: Path) -> None:
         """run_pytest_report raises ToolExecutionError on failure."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=2, raise_exception=True)
         service = ToolService(runner)
@@ -400,7 +413,8 @@ class TestToolServiceRunPytestReport:
 class TestToolServiceRunScipShard:
     """Tests for ToolService.run_scip_shard error paths."""
 
-    def test_scip_shard_not_found_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_scip_shard_not_found_raises(tmp_path: Path) -> None:
         """run_scip_shard raises when binary not found."""
         runner = NotFoundRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -415,7 +429,8 @@ class TestToolServiceRunScipShard:
                 )
             )
 
-    def test_scip_shard_execution_error_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_scip_shard_execution_error_raises(tmp_path: Path) -> None:
         """run_scip_shard raises ToolExecutionError on failure."""
         runner = FailingRunner(cache_dir=tmp_path, return_code=1, raise_exception=True)
         service = ToolService(runner)
@@ -439,16 +454,18 @@ class TestToolServiceRunScipShard:
 class TestToolServiceGetPlugin:
     """Tests for ToolService.get_plugin."""
 
-    def test_get_plugin_returns_registered(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_get_plugin_returns_registered(tmp_path: Path) -> None:
         """get_plugin returns a registered plugin."""
         runner = SuccessRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
         # "pyright" should be a registered plugin
         plugin = service.get_plugin("pyright")
-        assert plugin is not None
+        expect_true(plugin is not None)
 
-    def test_get_plugin_unknown_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_get_plugin_unknown_raises(tmp_path: Path) -> None:
         """get_plugin raises KeyError for unknown plugin."""
         runner = SuccessRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -465,7 +482,8 @@ class TestToolServiceGetPlugin:
 class TestToolServiceRunPlugin:
     """Tests for ToolService.run_plugin."""
 
-    def test_run_plugin_unknown_raises(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_run_plugin_unknown_raises(tmp_path: Path) -> None:
         """run_plugin raises KeyError for unknown plugin name."""
         runner = SuccessRunner(cache_dir=tmp_path)
         service = ToolService(runner)
@@ -473,11 +491,12 @@ class TestToolServiceRunPlugin:
         with pytest.raises(KeyError, match="unknown_plugin"):
             asyncio.run(service.run_plugin("unknown_plugin", repo_root=tmp_path))
 
-    def test_run_plugin_success_returns_result(self, tmp_path: Path) -> None:
+    @staticmethod
+    def test_run_plugin_success_returns_result(tmp_path: Path) -> None:
         """run_plugin returns ToolPluginResult on success."""
         runner = SuccessRunner(cache_dir=tmp_path)
         service = ToolService(runner)
 
         result = asyncio.run(service.run_plugin("pyright", repo_root=tmp_path))
 
-        assert isinstance(result, ToolPluginResult)
+        expect_is_instance(result, ToolPluginResult)

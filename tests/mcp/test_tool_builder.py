@@ -18,6 +18,7 @@ from codeintel.serving.mcp.tool_builder import (
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.mcp import RecordingMcp
 
 
@@ -88,10 +89,10 @@ def test_build_tool_from_operation_model_serialization(monkeypatch: pytest.Monke
 
     tool = build_tool_from_operation(spec, typed_backend, config=None)
     response = tool(payload="hello", extra=1)
-    assert response == {"value": "hello"}
+    expect_equal(response, {"value": "hello"})
     # Request context set/reset around call
     ctx = get_current_request_context()
-    assert ctx is None
+    expect_true(ctx is None)
 
 
 def test_build_tool_from_operation_missing_backend_method() -> None:
@@ -119,12 +120,12 @@ def test_register_tools_for_category_registers_expected_tools(
     typed_mcp = cast("FastMCP", mcp)
     register_tools_for_category(typed_mcp, backend, categories={"functions"})
     names = {reg.name for reg in mcp.registrations.calls}
-    assert names == {"tool_fn.one"}
-    assert "tool_datasets.list" not in mcp.registry
+    expect_equal(names, {"tool_fn.one"})
+    expect_true("tool_datasets.list" not in mcp.registry)
     # Tool executes and serializes dict payloads
     registered_callable = mcp.registry["tool_fn.one"]
     result = registered_callable(message="hi")
-    assert isinstance(result, dict)
+    expect_is_instance(result, dict)
 
 
 def test_build_tool_auto_pipeline_invokes_prereqs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,6 +148,6 @@ def test_build_tool_auto_pipeline_invokes_prereqs(monkeypatch: pytest.MonkeyPatc
     config = cast("ServingConfig", SimpleNamespace(repo="demo", commit="c"))
     tool = build_tool_from_operation(spec, typed_backend, config=config)
     _ = tool()
-    assert ("echo", "demo/repo") in calls
+    expect_in(("echo", "demo/repo"), calls)
     # Reset env
     monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

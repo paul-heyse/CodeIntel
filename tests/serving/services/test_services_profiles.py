@@ -21,6 +21,12 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -144,7 +150,7 @@ def test_get_function_profile_with_goid_h128(
         response = client.get(f"/profiles/function?goid_h128={goid_h128}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_function_profile_missing_goid_h128(
@@ -162,7 +168,7 @@ def test_get_function_profile_missing_goid_h128(
         response = client.get("/profiles/function")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_get_function_profile_invalid_goid_h128(
@@ -181,7 +187,7 @@ def test_get_function_profile_invalid_goid_h128(
         response = client.get("/profiles/function?goid_h128=999999999999")
 
     # Should return 404 or empty result
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -213,7 +219,7 @@ def test_get_file_profile_with_rel_path(
         response = client.get(f"/profiles/file?rel_path={rel_path}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_file_profile_missing_rel_path(
@@ -231,7 +237,7 @@ def test_get_file_profile_missing_rel_path(
         response = client.get("/profiles/file")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_get_file_profile_nonexistent_file(
@@ -249,7 +255,7 @@ def test_get_file_profile_nonexistent_file(
         response = client.get("/profiles/file?rel_path=nonexistent/path/file.py")
 
     # Should return 404 or empty result
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -281,7 +287,7 @@ def test_get_module_profile_with_module(
         response = client.get(f"/profiles/module?module={module}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_module_profile_missing_module(
@@ -299,7 +305,7 @@ def test_get_module_profile_missing_module(
         response = client.get("/profiles/module")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_get_module_profile_nonexistent_module(
@@ -317,7 +323,7 @@ def test_get_module_profile_nonexistent_module(
         response = client.get("/profiles/module?module=nonexistent.module.name")
 
     # Should return 404 or empty result
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -349,7 +355,7 @@ def test_get_function_architecture_with_goid_h128(
         response = client.get(f"/architecture/function?goid_h128={goid_h128}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_function_architecture_missing_goid_h128(
@@ -367,7 +373,7 @@ def test_get_function_architecture_missing_goid_h128(
         response = client.get("/architecture/function")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_get_function_architecture_invalid_goid_h128(
@@ -385,7 +391,7 @@ def test_get_function_architecture_invalid_goid_h128(
         response = client.get("/architecture/function?goid_h128=999999999999")
 
     # Should return 404 or empty result
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -417,7 +423,7 @@ def test_get_module_architecture_with_module(
         response = client.get(f"/architecture/module?module={module}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_module_architecture_missing_module(
@@ -435,7 +441,7 @@ def test_get_module_architecture_missing_module(
         response = client.get("/architecture/module")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_get_module_architecture_nonexistent_module(
@@ -453,7 +459,7 @@ def test_get_module_architecture_nonexistent_module(
         response = client.get("/architecture/module?module=nonexistent.module.name")
 
     # Should return 404 or empty result
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -483,7 +489,7 @@ def test_local_query_service_get_function_profile(
     goid_h128 = result[0]
 
     profile = service.get_function_profile(goid_h128=goid_h128)
-    assert profile is not None
+    expect_is_not_none(profile)
 
 
 def test_local_query_service_get_file_profile(
@@ -508,7 +514,7 @@ def test_local_query_service_get_file_profile(
     rel_path = result[0]
 
     profile = service.get_file_profile(rel_path=rel_path)
-    assert profile is not None
+    expect_is_not_none(profile)
 
 
 def test_local_query_service_get_module_profile(
@@ -535,7 +541,7 @@ def test_local_query_service_get_module_profile(
     # Module profile may not exist for all modules - handle gracefully
     try:
         profile = service.get_module_profile(module=module)
-        assert profile is not None
+        expect_is_not_none(profile)
     except McpError:
         # Expected when module profile doesn't exist in test data
         pass
@@ -563,7 +569,7 @@ def test_local_query_service_get_function_architecture(
     goid_h128 = result[0]
 
     architecture = service.get_function_architecture(goid_h128=goid_h128)
-    assert architecture is not None
+    expect_is_not_none(architecture)
 
 
 def test_local_query_service_get_module_architecture(
@@ -590,7 +596,7 @@ def test_local_query_service_get_module_architecture(
     # Module architecture may not exist for all modules - handle gracefully
     try:
         architecture = service.get_module_architecture(module=module)
-        assert architecture is not None
+        expect_is_not_none(architecture)
     except McpError:
         # Expected when module architecture doesn't exist in test data
         pass
@@ -627,7 +633,7 @@ def test_function_profile_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (profile structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
 
 
 def test_file_profile_response_structure(
@@ -656,7 +662,7 @@ def test_file_profile_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (profile structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
 
 
 def test_module_profile_response_structure(
@@ -685,7 +691,7 @@ def test_module_profile_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (profile structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
 
 
 def test_function_architecture_response_structure(
@@ -714,7 +720,7 @@ def test_function_architecture_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (architecture structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)
 
 
 def test_module_architecture_response_structure(
@@ -743,4 +749,4 @@ def test_module_architecture_response_structure(
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
         # Check that response is a dict (architecture structure)
-        assert isinstance(data, dict)
+        expect_is_instance(data, dict)

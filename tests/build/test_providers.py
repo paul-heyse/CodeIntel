@@ -22,6 +22,7 @@ from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.engine.infrastructure.runner import (
     ToolRunResult as IngestionToolRunResult,
 )
+from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
 
 
@@ -121,6 +122,7 @@ class _TimeoutProcess(_FakeProcess):
         TimeoutError
             Always raised to simulate a timeout.
         """
+        self.returncode = -1
         raise TimeoutError
 
 
@@ -138,9 +140,9 @@ async def test_subprocess_runner_success(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     result = await runner.run("pyright", ["--version"], tmp_path)
 
-    assert result.success is True
-    assert result.stdout == "ok"
-    assert not result.stderr
+    expect_true(result.success)
+    expect_equal(result.stdout, "ok")
+    expect_false(bool(result.stderr))
 
 
 @pytest.mark.asyncio
@@ -157,8 +159,8 @@ async def test_subprocess_runner_timeout(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     result = await runner.run("pyright", [], tmp_path)
 
-    assert result.returncode == -1
-    assert "Timeout after" in result.stderr
+    expect_equal(result.returncode, -1)
+    expect_in("Timeout after", result.stderr)
 
 
 @pytest.mark.asyncio
@@ -178,8 +180,8 @@ async def test_subprocess_runner_missing_binary(
 
     result = await runner.run("pyright", [], tmp_path)
 
-    assert result.returncode == -1
-    assert "Tool not found" in result.stderr
+    expect_equal(result.returncode, -1)
+    expect_in("Tool not found", result.stderr)
 
 
 @pytest.mark.asyncio
@@ -199,17 +201,17 @@ async def test_subprocess_runner_unexpected_error(
 
     result = await runner.run("pyright", [], tmp_path)
 
-    assert result.returncode == -1
-    assert result.stderr == "boom"
+    expect_equal(result.returncode, -1)
+    expect_equal(result.stderr, "boom")
 
 
 def test_subprocess_runner_is_available(monkeypatch: pytest.MonkeyPatch) -> None:
     """is_available reflects shutil.which."""
     runner = SubprocessToolRunner(ToolsConfig.default())
     monkeypatch.setattr("codeintel.build.providers.shutil.which", lambda _path: "/bin/tool")
-    assert runner.is_available("git") is True
+    expect_true(runner.is_available("git"))
     monkeypatch.setattr("codeintel.build.providers.shutil.which", lambda _path: None)
-    assert runner.is_available("git") is False
+    expect_false(runner.is_available("git"))
 
 
 @pytest.mark.asyncio
@@ -230,12 +232,12 @@ async def test_scip_indexer_index_success(tmp_path: Path) -> None:
         exclude_patterns=("*.txt",),
     )
 
-    assert result.success is True
+    expect_true(result.success)
     tool, args, call_cwd = runner.calls[0]
-    assert tool == "scip-python"
-    assert "--include" in args
-    assert "--exclude" in args
-    assert call_cwd == tmp_path
+    expect_equal(tool, "scip-python")
+    expect_in("--include", args)
+    expect_in("--exclude", args)
+    expect_equal(call_cwd, tmp_path)
 
 
 @pytest.mark.asyncio
@@ -252,8 +254,8 @@ async def test_scip_indexer_index_failure(tmp_path: Path) -> None:
 
     result = await indexer.index(tmp_path, output_path)
 
-    assert result.success is False
-    assert "index failed" in (result.error_message or "")
+    expect_false(result.success)
+    expect_in("index failed", (result.error_message or ""))
 
 
 @pytest.mark.asyncio
@@ -293,10 +295,10 @@ async def test_scip_parse_success(tmp_path: Path) -> None:
 
     result = await indexer.parse(scip_path, json_path)
 
-    assert result.success is True
-    assert result.json_path == json_path
-    assert result.symbols[0].symbol == "sym1"
-    assert result.occurrences[0].path == "file.py"
+    expect_true(result.success)
+    expect_equal(result.json_path, json_path)
+    expect_equal(result.symbols[0].symbol, "sym1")
+    expect_equal(result.occurrences[0].path, "file.py")
 
 
 @pytest.mark.asyncio
@@ -314,8 +316,8 @@ async def test_scip_parse_handles_invalid_json(tmp_path: Path) -> None:
 
     result = await indexer.parse(scip_path, json_path)
 
-    assert result.success is False
-    assert "Failed to process" in (result.error_message or "")
+    expect_false(result.success)
+    expect_in("Failed to process", (result.error_message or ""))
 
 
 @pytest.mark.asyncio
@@ -332,8 +334,8 @@ async def test_scip_parse_handles_failure(tmp_path: Path) -> None:
 
     result = await indexer.parse(scip_path, json_path)
 
-    assert result.success is False
-    assert (result.error_message or "").startswith("parse failed")
+    expect_false(result.success)
+    expect_true((result.error_message or "").startswith("parse failed"))
 
 
 @pytest.mark.asyncio
@@ -360,9 +362,9 @@ async def test_type_checker_parses_diagnostics(tmp_path: Path) -> None:
 
     result = await checker.check(tmp_path, paths=[tmp_path / "module.py"])
 
-    assert result.success is True
-    assert result.warning_count == 1
-    assert result.error_count == 0
+    expect_true(result.success)
+    expect_equal(result.warning_count, 1)
+    expect_equal(result.error_count, 0)
 
 
 @pytest.mark.asyncio
@@ -378,9 +380,9 @@ async def test_type_checker_handles_parse_failure(tmp_path: Path) -> None:
 
     result = await checker.check(tmp_path)
 
-    assert result.success is False
-    assert result.error_count == 1
-    assert result.diagnostics[0].code == "parse_error"
+    expect_false(result.success)
+    expect_equal(result.error_count, 1)
+    expect_equal(result.diagnostics[0].code, "parse_error")
 
 
 @pytest.mark.asyncio
@@ -413,10 +415,10 @@ async def test_coverage_collector_parses_json(tmp_path: Path) -> None:
 
     result = await collector.collect(coverage_file)
 
-    assert "module.py" in result
+    expect_in("module.py", result)
     coverage = result["module.py"]
-    assert coverage.covered_lines == frozenset({1, 2})
-    assert coverage.missing_lines == frozenset({3})
+    expect_equal(coverage.covered_lines, frozenset({1, 2}))
+    expect_equal(coverage.missing_lines, frozenset({3}))
 
 
 @pytest.mark.asyncio
@@ -429,7 +431,7 @@ async def test_coverage_collector_missing_file(tmp_path: Path) -> None:
 
     result = await collector.collect(coverage_file)
 
-    assert result == {}
+    expect_equal(result, {})
 
 
 @pytest.mark.asyncio
@@ -451,11 +453,11 @@ async def test_test_reporter_collects_results(tmp_path: Path) -> None:
 
     results = await reporter.collect(report_path)
 
-    assert len(results) == 1
+    expect_equal(len(results), 1)
     test = results[0]
-    assert test.node_id == "tests/test_sample.py::test_case"
-    assert test.outcome == "passed"
-    assert test.duration_ms == 20
+    expect_equal(test.node_id, "tests/test_sample.py::test_case")
+    expect_equal(test.outcome, "passed")
+    expect_equal(test.duration_ms, 20)
 
 
 @pytest.mark.asyncio
@@ -466,7 +468,7 @@ async def test_test_reporter_missing_file(tmp_path: Path) -> None:
 
     results = await reporter.collect(report_path)
 
-    assert results == ()
+    expect_equal(results, ())
 
 
 @pytest.mark.asyncio
@@ -484,11 +486,11 @@ async def test_git_history_log_parses_output(tmp_path: Path) -> None:
 
     entries = await provider.log(tmp_path)
 
-    assert len(entries) == 1
+    expect_equal(len(entries), 1)
     entry = entries[0]
-    assert entry.files_changed == 1
-    assert entry.insertions == 2
-    assert entry.deletions == 3
+    expect_equal(entry.files_changed, 1)
+    expect_equal(entry.insertions, 2)
+    expect_equal(entry.deletions, 3)
 
 
 @pytest.mark.asyncio
@@ -501,7 +503,7 @@ async def test_git_history_log_failure(tmp_path: Path) -> None:
 
     entries = await provider.log(tmp_path)
 
-    assert entries == ()
+    expect_equal(entries, ())
 
 
 @pytest.mark.asyncio
@@ -523,5 +525,5 @@ async def test_git_history_blame_parses_output(tmp_path: Path) -> None:
 
     mapping = await provider.blame(tmp_path, Path("file.py"))
 
-    assert 1 in mapping
-    assert mapping[1].author == "Bob"
+    expect_in(1, mapping)
+    expect_equal(mapping[1].author, "Bob")

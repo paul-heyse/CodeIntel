@@ -20,6 +20,7 @@ from codeintel.serving.http.fastapi import (
 )
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import expect_equal, expect_in, expect_is_not_none, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -150,7 +151,7 @@ def test_get_function_summary_with_goid_h128(
         response = client.get(f"/function/summary?goid_h128={goid_h128}")
 
     # May return 404 if function doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_function_summary_with_rel_path_and_qualname(
@@ -178,7 +179,7 @@ def test_get_function_summary_with_rel_path_and_qualname(
         response = client.get(f"/function/summary?rel_path={rel_path}&qualname=test_function")
 
     # May return 404 if function doesn't exist, or 200 if found
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_function_summary_no_params_returns_error(
@@ -195,7 +196,7 @@ def test_get_function_summary_no_params_returns_error(
     with TestClient(app) as client:
         response = client.get("/function/summary")
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -217,9 +218,9 @@ def test_list_high_risk_functions_default(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_list_high_risk_functions_with_low_min_risk(
@@ -236,9 +237,9 @@ def test_list_high_risk_functions_with_low_min_risk(
     with TestClient(app) as client:
         response = client.get(f"/functions/high-risk?min_risk={LOW_RISK_THRESHOLD}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_list_high_risk_functions_with_high_min_risk(
@@ -255,9 +256,9 @@ def test_list_high_risk_functions_with_high_min_risk(
     with TestClient(app) as client:
         response = client.get(f"/functions/high-risk?min_risk={HIGH_RISK_THRESHOLD}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_list_high_risk_functions_tested_only_true(
@@ -274,9 +275,9 @@ def test_list_high_risk_functions_tested_only_true(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?tested_only=true")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_list_high_risk_functions_with_limit(
@@ -293,10 +294,10 @@ def test_list_high_risk_functions_with_limit(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?limit=5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
-    assert len(data["functions"]) <= MAX_NODES_SMALL
+    expect_in("functions", data)
+    expect_true(len(data["functions"]) <= MAX_NODES_SMALL)
 
 
 # =============================================================================
@@ -328,9 +329,9 @@ def test_get_callgraph_neighbors_direction_both(
     with TestClient(app) as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=both")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "incoming" in data or "outgoing" in data
+    expect_true("incoming" in data or "outgoing" in data)
 
 
 def test_get_callgraph_neighbors_direction_in(
@@ -356,7 +357,7 @@ def test_get_callgraph_neighbors_direction_in(
     with TestClient(app) as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=in")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_direction_out(
@@ -382,7 +383,7 @@ def test_get_callgraph_neighbors_direction_out(
     with TestClient(app) as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=out")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_with_limit(
@@ -408,7 +409,7 @@ def test_get_callgraph_neighbors_with_limit(
     with TestClient(app) as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&limit=3")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 # =============================================================================
@@ -439,10 +440,10 @@ def test_get_callgraph_neighborhood_radius_one(
     with TestClient(app) as client:
         response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_ONE}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "nodes" in data
-    assert "edges" in data
+    expect_in("nodes", data)
+    expect_in("edges", data)
 
 
 def test_get_callgraph_neighborhood_radius_two(
@@ -468,7 +469,7 @@ def test_get_callgraph_neighborhood_radius_two(
     with TestClient(app) as client:
         response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_TWO}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighborhood_with_max_nodes(
@@ -496,9 +497,9 @@ def test_get_callgraph_neighborhood_with_max_nodes(
             f"/graph/call/neighborhood?goid_h128={goid_h128}&max_nodes={MAX_NODES_SMALL}"
         )
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert len(data.get("nodes", [])) <= MAX_NODES_SMALL
+    expect_true(len(data.get("nodes", [])) <= MAX_NODES_SMALL)
 
 
 # =============================================================================
@@ -530,10 +531,10 @@ def test_get_import_boundary_with_subsystem_id(
     with TestClient(app) as client:
         response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "nodes" in data
-    assert "edges" in data
+    expect_in("nodes", data)
+    expect_in("edges", data)
 
 
 def test_get_import_boundary_with_max_edges(
@@ -559,7 +560,7 @@ def test_get_import_boundary_with_max_edges(
     with TestClient(app) as client:
         response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}&max_edges=10")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_import_boundary_nonexistent_subsystem(
@@ -577,7 +578,7 @@ def test_get_import_boundary_nonexistent_subsystem(
         response = client.get("/graph/import/boundary?subsystem_id=nonexistent_subsystem")
 
     # Should return empty result or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -608,9 +609,9 @@ def test_get_tests_for_function_with_goid_h128(
     with TestClient(app) as client:
         response = client.get(f"/function/tests?goid_h128={goid_h128}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "tests" in data
+    expect_in("tests", data)
 
 
 def test_get_tests_for_function_with_limit(
@@ -636,7 +637,7 @@ def test_get_tests_for_function_with_limit(
     with TestClient(app) as client:
         response = client.get(f"/function/tests?goid_h128={goid_h128}&limit=5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_tests_for_function_no_params_returns_error(
@@ -654,7 +655,7 @@ def test_get_tests_for_function_no_params_returns_error(
         response = client.get("/function/tests")
 
     # Should return 400 because no identifier was provided
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -685,9 +686,9 @@ def test_get_file_summary_with_rel_path(
     with TestClient(app) as client:
         response = client.get(f"/file/summary?rel_path={rel_path}")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "rel_path" in data or "file" in data or "functions" in data
+    expect_true("rel_path" in data or "file" in data or "functions" in data)
 
 
 def test_get_file_summary_nonexistent_file(
@@ -705,7 +706,7 @@ def test_get_file_summary_nonexistent_file(
         response = client.get("/file/summary?rel_path=nonexistent/path/file.py")
 
     # Should return empty result or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_get_file_summary_missing_param(
@@ -723,7 +724,7 @@ def test_get_file_summary_missing_param(
         response = client.get("/file/summary")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 # =============================================================================
@@ -754,7 +755,7 @@ def test_local_query_service_get_function_summary(
     goid_h128 = result[0]
 
     summary = service.get_function_summary(goid_h128=goid_h128)
-    assert summary is not None
+    expect_is_not_none(summary)
 
 
 def test_local_query_service_list_high_risk_functions(
@@ -770,8 +771,8 @@ def test_local_query_service_list_high_risk_functions(
     service = _build_local_query_service(provisioned_repo)
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK_THRESHOLD, limit=5)
-    assert result is not None
-    assert hasattr(result, "functions")
+    expect_is_not_none(result)
+    expect_true(hasattr(result, "functions"))
 
 
 def test_local_query_service_get_callgraph_neighbors(
@@ -796,7 +797,7 @@ def test_local_query_service_get_callgraph_neighbors(
     goid_h128 = result[0]
 
     neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128, direction="both")
-    assert neighbors is not None
+    expect_is_not_none(neighbors)
 
 
 def test_local_query_service_get_callgraph_neighborhood(
@@ -823,9 +824,9 @@ def test_local_query_service_get_callgraph_neighborhood(
     neighborhood = service.get_callgraph_neighborhood(
         goid_h128=goid_h128, radius=RADIUS_ONE, max_nodes=MAX_NODES_LARGE
     )
-    assert neighborhood is not None
-    assert hasattr(neighborhood, "nodes")
-    assert hasattr(neighborhood, "edges")
+    expect_is_not_none(neighborhood)
+    expect_true(hasattr(neighborhood, "nodes"))
+    expect_true(hasattr(neighborhood, "edges"))
 
 
 def test_local_query_service_get_file_summary(
@@ -850,7 +851,7 @@ def test_local_query_service_get_file_summary(
     rel_path = result[0]
 
     summary = service.get_file_summary(rel_path=rel_path)
-    assert summary is not None
+    expect_is_not_none(summary)
 
 
 def test_local_query_service_get_tests_for_function(
@@ -875,8 +876,8 @@ def test_local_query_service_get_tests_for_function(
     goid_h128 = result[0]
 
     tests = service.get_tests_for_function(goid_h128=goid_h128, limit=DEFAULT_LIMIT)
-    assert tests is not None
-    assert hasattr(tests, "tests")
+    expect_is_not_none(tests)
+    expect_true(hasattr(tests, "tests"))
 
 
 # =============================================================================
@@ -900,9 +901,9 @@ def test_high_risk_functions_with_all_params(
             f"/functions/high-risk?min_risk={LOW_RISK_THRESHOLD}&limit=3&tested_only=true"
         )
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "functions" in data
+    expect_in("functions", data)
 
 
 def test_callgraph_neighbors_missing_goid_h128(
@@ -920,7 +921,7 @@ def test_callgraph_neighbors_missing_goid_h128(
         response = client.get("/function/callgraph")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_callgraph_neighborhood_missing_goid_h128(
@@ -938,7 +939,7 @@ def test_callgraph_neighborhood_missing_goid_h128(
         response = client.get("/graph/call/neighborhood")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 def test_import_boundary_missing_subsystem_id(
@@ -956,4 +957,4 @@ def test_import_boundary_missing_subsystem_id(
         response = client.get("/graph/import/boundary")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)

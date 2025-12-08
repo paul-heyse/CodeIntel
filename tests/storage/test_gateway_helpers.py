@@ -15,6 +15,10 @@ from codeintel.config.datasets import (
     GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway.rows.analytics import (
+    AnalyticsTestCatalogRow,
+    AnalyticsTestCoverageEdgesRow,
+)
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
 
@@ -26,7 +30,17 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
     now = datetime.now(tz=UTC)
     now_str = now.isoformat()
 
-    gateway.core.insert_repo_map([("r", "c", "{}", "{}", now_str)])
+    gateway.core.insert_repo_map(
+        [
+            {
+                "repo": "r",
+                "commit": "c",
+                "modules": "{}",
+                "overlays": "{}",
+                "generated_at": now_str,
+            }
+        ]
+    )
     gateway.core.insert_modules([("m", "m.py", "r", "c")])
     gateway.core.insert_goids(
         [
@@ -46,26 +60,50 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
         ]
     )
 
-    gateway.graph.insert_call_graph_nodes([(1, "python", "function", 0, True, "m.py")])
-    gateway.graph.insert_call_graph_edges(
+    gateway.graph.insert_call_graph_nodes(
         [
-            (
-                "r",
-                "c",
-                1,
-                None,
-                "m.py",
-                1,
-                0,
-                "python",
-                "direct",
-                "local_name",
-                1.0,
-                "{}",
-            )
+            {
+                "goid_h128": 1.0,
+                "language": "python",
+                "kind": "function",
+                "arity": 0,
+                "is_public": True,
+                "rel_path": "m.py",
+            }
         ]
     )
-    gateway.graph.insert_import_graph_edges([("r", "c", "m", "m", 1, 1, 1)])
+    gateway.graph.insert_call_graph_edges(
+        [
+            {
+                "repo": "r",
+                "commit": "c",
+                "caller_goid_h128": 1.0,
+                "callee_goid_h128": None,
+                "callsite_path": "m.py",
+                "callsite_line": 1,
+                "callsite_col": 0,
+                "language": "python",
+                "kind": "direct",
+                "resolved_via": "local_name",
+                "confidence": 1.0,
+                "evidence_json": "{}",
+            }
+        ]
+    )
+    gateway.graph.insert_import_graph_edges(
+        [
+            {
+                "repo": "r",
+                "commit": "c",
+                "src_module": "m",
+                "dst_module": "m",
+                "src_fan_out": 1,
+                "dst_fan_in": 1,
+                "cycle_group": 1,
+                "module_layer": None,
+            }
+        ]
+    )
     gateway.graph.insert_symbol_use_edges([("sym", "m.py", "m.py", False, True)])
     gateway.graph.insert_cfg_blocks([(1, 0, "b0", "entry", "m.py", 1, 2, "entry", "[]", 0, 1)])
     gateway.graph.insert_cfg_edges([(1, "b0", "b0", "fallthrough")])
@@ -130,46 +168,55 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
             )
         ]
     )
-    gateway.analytics.insert_coverage_lines([("r", "c", "m.py", 1, True, True, 1, 1, now_str)])
-    gateway.analytics.insert_test_catalog(
+    gateway.analytics.insert_coverage_lines(
         [
-            (
-                "t::id",
-                2,
-                "urn:test",
-                "r",
-                "c",
-                "m.py",
-                "pkg.m.fn",
-                "function",
-                "passed",
-                5,
-                "[]",
-                False,
-                False,
-                now_str,
-            )
+            {
+                "repo": "r",
+                "commit": "c",
+                "rel_path": "m.py",
+                "line": 1,
+                "is_executable": True,
+                "is_covered": True,
+                "hits": 1,
+                "context_count": 1,
+                "created_at": now_str,
+            }
         ]
     )
-    gateway.analytics.insert_test_coverage_edges(
-        [
-            (
-                "t::id",
-                2,
-                1,
-                "urn:fn",
-                "r",
-                "c",
-                "m.py",
-                "pkg.m.fn",
-                2,
-                2,
-                1.0,
-                "passed",
-                now_str,
-            )
-        ]
-    )
+    catalog_row: AnalyticsTestCatalogRow = {
+        "test_id": "t::id",
+        "test_goid_h128": 2,
+        "urn": "urn:test",
+        "repo": "r",
+        "commit": "c",
+        "rel_path": "m.py",
+        "qualname": "pkg.m.fn",
+        "kind": "function",
+        "status": "passed",
+        "duration_ms": 5,
+        "markers": "[]",
+        "parametrized": False,
+        "flaky": False,
+        "created_at": now_str,
+    }
+    gateway.analytics.insert_test_catalog([catalog_row])
+
+    coverage_edge_row: AnalyticsTestCoverageEdgesRow = {
+        "test_id": "t::id",
+        "test_goid_h128": 2,
+        "function_goid_h128": 1,
+        "urn": "urn:fn",
+        "repo": "r",
+        "commit": "c",
+        "rel_path": "m.py",
+        "qualname": "pkg.m.fn",
+        "covered_lines": 2,
+        "executable_lines": 2,
+        "coverage_ratio": 1.0,
+        "last_status": "passed",
+        "created_at": now_str,
+    }
+    gateway.analytics.insert_test_coverage_edges([coverage_edge_row])
     gateway.analytics.insert_goid_risk_factors(
         [
             (
@@ -209,7 +256,19 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
     gateway.analytics.insert_config_values(
         [("r", "c", "cfg.yaml", "yaml", "feature.flag", "[]", '["pkg.m"]', 1)]
     )
-    gateway.analytics.insert_typedness([("r", "c", "m.py", 0, '{"params":1}', 0, False)])
+    gateway.analytics.insert_typedness(
+        [
+            {
+                "repo": "r",
+                "commit": "c",
+                "path": "m.py",
+                "type_error_count": 0,
+                "annotation_ratio": '{"params":1}',
+                "untyped_defs": 0,
+                "overlay_needed": False,
+            }
+        ]
+    )
     gateway.analytics.insert_static_diagnostics([("r", "c", "m.py", 0, 0, 0, 0, False)])
     function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
     module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")

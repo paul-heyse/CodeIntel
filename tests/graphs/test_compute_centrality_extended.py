@@ -27,6 +27,7 @@ from codeintel.graphs.compute.metrics.centrality import (
     compute_out_degree_centrality,
     compute_pagerank,
 )
+from tests._helpers.assertions import expect_equal, expect_is_instance, expect_length, expect_true
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     cyclic_graph,
@@ -59,10 +60,10 @@ def test_compute_pagerank_simple_chain() -> None:
 
     pagerank = compute_pagerank(g)
 
-    assert len(pagerank) == SIMPLE_CHAIN_NODE_COUNT
-    assert all(v > 0 for v in pagerank.values())
+    expect_length(pagerank, SIMPLE_CHAIN_NODE_COUNT)
+    expect_true(all(v > 0 for v in pagerank.values()))
     # Sum should be approximately 1
-    assert abs(sum(pagerank.values()) - 1.0) < PAGERANK_TOLERANCE
+    expect_true(abs(sum(pagerank.values()) - 1.0) < PAGERANK_TOLERANCE)
 
 
 def test_compute_pagerank_star_graph() -> None:
@@ -72,7 +73,7 @@ def test_compute_pagerank_star_graph() -> None:
     pagerank = compute_pagerank(g)
 
     # Hub should have lower pagerank since it doesn't receive links
-    assert pagerank["hub"] < pagerank["spoke1"]
+    expect_true(pagerank["hub"] < pagerank["spoke1"])
 
 
 def test_compute_pagerank_reverse_star() -> None:
@@ -82,7 +83,7 @@ def test_compute_pagerank_reverse_star() -> None:
     pagerank = compute_pagerank(g)
 
     # Hub should have highest pagerank since it receives all links
-    assert pagerank["hub"] > pagerank["spoke1"]
+    expect_true(pagerank["hub"] > pagerank["spoke1"])
 
 
 def test_compute_pagerank_cyclic() -> None:
@@ -93,7 +94,7 @@ def test_compute_pagerank_cyclic() -> None:
 
     # In a cycle, all nodes should have similar PageRank
     values = list(pagerank.values())
-    assert max(values) - min(values) < PAGERANK_TOLERANCE
+    expect_true(max(values) - min(values) < PAGERANK_TOLERANCE)
 
 
 def test_compute_pagerank_empty_graph() -> None:
@@ -102,7 +103,7 @@ def test_compute_pagerank_empty_graph() -> None:
 
     pagerank = compute_pagerank(g)
 
-    assert pagerank == {}
+    expect_equal(pagerank, {})
 
 
 def test_compute_pagerank_single_node() -> None:
@@ -112,8 +113,8 @@ def test_compute_pagerank_single_node() -> None:
 
     pagerank = compute_pagerank(g)
 
-    assert len(pagerank) == SINGLE_NODE_COUNT
-    assert abs(pagerank["A"] - 1.0) < PAGERANK_TOLERANCE
+    expect_length(pagerank, SINGLE_NODE_COUNT)
+    expect_true(abs(pagerank["A"] - 1.0) < PAGERANK_TOLERANCE)
 
 
 def test_compute_betweenness_chain() -> None:
@@ -123,8 +124,8 @@ def test_compute_betweenness_chain() -> None:
     betweenness = compute_betweenness(g)
 
     # Middle nodes (B, C) should have higher betweenness
-    assert betweenness["B"] > betweenness["A"]
-    assert betweenness["C"] > betweenness["D"]
+    expect_true(betweenness["B"] > betweenness["A"])
+    expect_true(betweenness["C"] > betweenness["D"])
 
 
 def test_compute_betweenness_star() -> None:
@@ -135,7 +136,7 @@ def test_compute_betweenness_star() -> None:
 
     # Hub is on paths to all spokes from each other
     # But with directed edges from hub only, there are no paths through hub
-    assert all(v >= 0 for v in betweenness.values())
+    expect_true(all(v >= 0 for v in betweenness.values()))
 
 
 def test_compute_betweenness_diamond() -> None:
@@ -145,8 +146,8 @@ def test_compute_betweenness_diamond() -> None:
     betweenness = compute_betweenness(g)
 
     # B and C are on paths from A to D
-    assert betweenness["B"] >= betweenness["A"]
-    assert betweenness["C"] >= betweenness["A"]
+    expect_true(betweenness["B"] >= betweenness["A"])
+    expect_true(betweenness["C"] >= betweenness["A"])
 
 
 def test_compute_betweenness_empty_graph() -> None:
@@ -155,7 +156,7 @@ def test_compute_betweenness_empty_graph() -> None:
 
     betweenness = compute_betweenness(g)
 
-    assert betweenness == {}
+    expect_equal(betweenness, {})
 
 
 def test_compute_betweenness_disconnected() -> None:
@@ -165,7 +166,7 @@ def test_compute_betweenness_disconnected() -> None:
     betweenness = compute_betweenness(g)
 
     # All nodes should have defined betweenness
-    assert len(betweenness) == DISCONNECTED_NODE_COUNT
+    expect_length(betweenness, DISCONNECTED_NODE_COUNT)
 
 
 def test_compute_closeness_chain() -> None:
@@ -175,8 +176,8 @@ def test_compute_closeness_chain() -> None:
     closeness = compute_closeness(g)
 
     # All nodes should have closeness values defined
-    assert len(closeness) == SIMPLE_CHAIN_NODE_COUNT
-    assert all(v >= 0 for v in closeness.values())
+    expect_length(closeness, SIMPLE_CHAIN_NODE_COUNT)
+    expect_true(all(v >= 0 for v in closeness.values()))
 
 
 def test_compute_closeness_star() -> None:
@@ -186,9 +187,9 @@ def test_compute_closeness_star() -> None:
     closeness = compute_closeness(g)
 
     # All nodes should have closeness values defined
-    assert len(closeness) == SIMPLE_CHAIN_NODE_COUNT
+    expect_length(closeness, SIMPLE_CHAIN_NODE_COUNT)
     # Spokes have no outgoing edges so closeness might be 0 or special case
-    assert all(v >= 0 for v in closeness.values())
+    expect_true(all(v >= 0 for v in closeness.values()))
 
 
 def test_compute_closeness_empty_graph() -> None:
@@ -197,7 +198,7 @@ def test_compute_closeness_empty_graph() -> None:
 
     closeness = compute_closeness(g)
 
-    assert closeness == {}
+    expect_equal(closeness, {})
 
 
 def test_compute_closeness_disconnected() -> None:
@@ -207,7 +208,7 @@ def test_compute_closeness_disconnected() -> None:
     closeness = compute_closeness(g)
 
     # All nodes should have closeness values
-    assert len(closeness) == DISCONNECTED_NODE_COUNT
+    expect_length(closeness, DISCONNECTED_NODE_COUNT)
 
 
 def test_compute_degree_centrality_star() -> None:
@@ -217,7 +218,7 @@ def test_compute_degree_centrality_star() -> None:
     degree = compute_degree_centrality(g)
 
     # Hub has highest degree (3 out-edges)
-    assert degree["hub"] > degree["spoke1"]
+    expect_true(degree["hub"] > degree["spoke1"])
 
 
 def test_compute_in_degree_centrality_reverse_star() -> None:
@@ -227,7 +228,7 @@ def test_compute_in_degree_centrality_reverse_star() -> None:
     in_degree = compute_in_degree_centrality(g)
 
     # Hub receives all edges
-    assert in_degree["hub"] > in_degree["spoke1"]
+    expect_true(in_degree["hub"] > in_degree["spoke1"])
 
 
 def test_compute_out_degree_centrality_star() -> None:
@@ -237,7 +238,7 @@ def test_compute_out_degree_centrality_star() -> None:
     out_degree = compute_out_degree_centrality(g)
 
     # Hub has all out-edges
-    assert out_degree["hub"] > out_degree["spoke1"]
+    expect_true(out_degree["hub"] > out_degree["spoke1"])
 
 
 def test_compute_degree_empty_graph() -> None:
@@ -246,7 +247,7 @@ def test_compute_degree_empty_graph() -> None:
 
     degree = compute_degree_centrality(g)
 
-    assert degree == {}
+    expect_equal(degree, {})
 
 
 def test_compute_in_degree_empty_graph() -> None:
@@ -255,7 +256,7 @@ def test_compute_in_degree_empty_graph() -> None:
 
     in_degree = compute_in_degree_centrality(g)
 
-    assert in_degree == {}
+    expect_equal(in_degree, {})
 
 
 def test_compute_out_degree_empty_graph() -> None:
@@ -264,7 +265,7 @@ def test_compute_out_degree_empty_graph() -> None:
 
     out_degree = compute_out_degree_centrality(g)
 
-    assert out_degree == {}
+    expect_equal(out_degree, {})
 
 
 def test_compute_all_centralities_simple_chain() -> None:
@@ -273,9 +274,9 @@ def test_compute_all_centralities_simple_chain() -> None:
 
     all_metrics = compute_all_centralities(g)
 
-    assert len(all_metrics) == SIMPLE_CHAIN_NODE_COUNT
-    assert "A" in all_metrics
-    assert "B" in all_metrics
+    expect_length(all_metrics, SIMPLE_CHAIN_NODE_COUNT)
+    expect_true("A" in all_metrics)
+    expect_true("B" in all_metrics)
 
 
 def test_compute_all_centralities_returns_centrality_metrics() -> None:
@@ -285,12 +286,12 @@ def test_compute_all_centralities_returns_centrality_metrics() -> None:
     all_metrics = compute_all_centralities(g)
 
     for metrics in all_metrics.values():
-        assert isinstance(metrics, CentralityMetrics)
-        assert hasattr(metrics, "pagerank")
-        assert hasattr(metrics, "betweenness")
-        assert hasattr(metrics, "closeness")
-        assert hasattr(metrics, "in_degree")
-        assert hasattr(metrics, "out_degree")
+        expect_is_instance(metrics, CentralityMetrics)
+        expect_true(hasattr(metrics, "pagerank"))
+        expect_true(hasattr(metrics, "betweenness"))
+        expect_true(hasattr(metrics, "closeness"))
+        expect_true(hasattr(metrics, "in_degree"))
+        expect_true(hasattr(metrics, "out_degree"))
 
 
 def test_compute_all_centralities_empty_graph() -> None:
@@ -299,7 +300,7 @@ def test_compute_all_centralities_empty_graph() -> None:
 
     all_metrics = compute_all_centralities(g)
 
-    assert all_metrics == {}
+    expect_equal(all_metrics, {})
 
 
 def test_compute_all_centralities_single_node() -> None:
@@ -309,11 +310,11 @@ def test_compute_all_centralities_single_node() -> None:
 
     all_metrics = compute_all_centralities(g)
 
-    assert len(all_metrics) == SINGLE_NODE_COUNT
-    assert "A" in all_metrics
+    expect_length(all_metrics, SINGLE_NODE_COUNT)
+    expect_true("A" in all_metrics)
     metrics = all_metrics["A"]
-    assert metrics.in_degree == 0
-    assert metrics.out_degree == 0
+    expect_equal(metrics.in_degree, 0)
+    expect_equal(metrics.out_degree, 0)
 
 
 def test_compute_all_centralities_diamond() -> None:
@@ -322,15 +323,15 @@ def test_compute_all_centralities_diamond() -> None:
 
     all_metrics = compute_all_centralities(g)
 
-    assert len(all_metrics) == SIMPLE_CHAIN_NODE_COUNT
+    expect_length(all_metrics, SIMPLE_CHAIN_NODE_COUNT)
 
     # A has 2 outgoing edges
-    assert all_metrics["A"].out_degree == DIAMOND_OUT_EDGES
-    assert all_metrics["A"].in_degree == 0
+    expect_equal(all_metrics["A"].out_degree, DIAMOND_OUT_EDGES)
+    expect_equal(all_metrics["A"].in_degree, 0)
 
     # D has 2 incoming edges
-    assert all_metrics["D"].in_degree == DIAMOND_IN_EDGES
-    assert all_metrics["D"].out_degree == 0
+    expect_equal(all_metrics["D"].in_degree, DIAMOND_IN_EDGES)
+    expect_equal(all_metrics["D"].out_degree, 0)
 
 
 def test_compute_all_centralities_disconnected() -> None:
@@ -339,10 +340,10 @@ def test_compute_all_centralities_disconnected() -> None:
 
     all_metrics = compute_all_centralities(g)
 
-    assert len(all_metrics) == DISCONNECTED_NODE_COUNT
+    expect_length(all_metrics, DISCONNECTED_NODE_COUNT)
     # All nodes should have metrics
-    assert "A" in all_metrics
-    assert "X" in all_metrics
+    expect_true("A" in all_metrics)
+    expect_true("X" in all_metrics)
 
 
 def test_centrality_metrics_all_fields() -> None:
@@ -358,14 +359,14 @@ def test_centrality_metrics_all_fields() -> None:
         degree=METRIC_DEGREE_TOTAL,
     )
 
-    assert metrics.pagerank == METRIC_PAGERANK
-    assert metrics.betweenness == METRIC_BETWEENNESS
-    assert metrics.closeness == METRIC_CLOSENESS
-    assert metrics.harmonic == METRIC_CLOSENESS
-    assert metrics.eigenvector == METRIC_PAGERANK
-    assert metrics.in_degree == METRIC_IN_DEGREE
-    assert metrics.out_degree == METRIC_OUT_DEGREE
-    assert metrics.degree == METRIC_DEGREE_TOTAL
+    expect_equal(metrics.pagerank, METRIC_PAGERANK)
+    expect_equal(metrics.betweenness, METRIC_BETWEENNESS)
+    expect_equal(metrics.closeness, METRIC_CLOSENESS)
+    expect_equal(metrics.harmonic, METRIC_CLOSENESS)
+    expect_equal(metrics.eigenvector, METRIC_PAGERANK)
+    expect_equal(metrics.in_degree, METRIC_IN_DEGREE)
+    expect_equal(metrics.out_degree, METRIC_OUT_DEGREE)
+    expect_equal(metrics.degree, METRIC_DEGREE_TOTAL)
 
 
 def test_centrality_metrics_equality() -> None:
@@ -391,7 +392,7 @@ def test_centrality_metrics_equality() -> None:
         degree=EQUALITY_DEGREE_TOTAL,
     )
 
-    assert m1 == m2
+    expect_equal(m1, m2)
 
 
 def test_centrality_metrics_default_values() -> None:
@@ -408,5 +409,5 @@ def test_centrality_metrics_default_values() -> None:
         degree=3,
     )
 
-    assert metrics is not None
-    assert metrics.degree == DEFAULT_DEGREE_TOTAL
+    expect_true(metrics is not None)
+    expect_equal(metrics.degree, DEFAULT_DEGREE_TOTAL)

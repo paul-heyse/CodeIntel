@@ -14,12 +14,18 @@ from __future__ import annotations
 from typing import Final
 
 import networkx as nx
+import pytest
 
 from codeintel.graphs.compute.metrics.components import (
     ComponentInfo,
     SCCResult,
     condensation_layers,
     find_strongly_connected,
+)
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_length,
+    expect_true,
 )
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
@@ -90,10 +96,10 @@ def test_find_strongly_connected_dag() -> None:
 
     result = find_strongly_connected(g)
 
-    assert len(result.components) == SIMPLE_DAG_NODE_COUNT
+    expect_length(result.components, SIMPLE_DAG_NODE_COUNT)
     # Each node is its own SCC
     for comp in result.components:
-        assert comp.size == SINGLE_NODE_SIZE
+        expect_equal(comp.size, SINGLE_NODE_SIZE)
 
 
 def test_find_strongly_connected_single_cycle() -> None:
@@ -102,10 +108,10 @@ def test_find_strongly_connected_single_cycle() -> None:
 
     result = find_strongly_connected(g)
 
-    assert len(result.components) == SINGLE_COMPONENT_COUNT
+    expect_length(result.components, SINGLE_COMPONENT_COUNT)
     comp = result.components[0]
-    assert comp.size == SINGLE_CYCLE_SIZE
-    assert set(comp.nodes) == {"A", "B", "C"}
+    expect_equal(comp.size, SINGLE_CYCLE_SIZE)
+    expect_equal(set(comp.nodes), {"A", "B", "C"})
 
 
 def test_find_strongly_connected_two_sccs() -> None:
@@ -114,11 +120,11 @@ def test_find_strongly_connected_two_sccs() -> None:
 
     result = find_strongly_connected(g)
 
-    assert len(result.components) == TWO_SCC_COUNT
+    expect_length(result.components, TWO_SCC_COUNT)
 
     # Find sizes
     sizes = sorted(c.size for c in result.components)
-    assert sizes == [DOUBLE_NODE_SIZE, DOUBLE_NODE_SIZE]
+    expect_equal(sizes, [DOUBLE_NODE_SIZE, DOUBLE_NODE_SIZE])
 
 
 def test_find_strongly_connected_complex() -> None:
@@ -128,10 +134,10 @@ def test_find_strongly_connected_complex() -> None:
     result = find_strongly_connected(g)
 
     # Should have 3 SCCs: A (1), B-C-D (3), E-F (2)
-    assert len(result.components) == COMPLEX_SCC_COUNT
+    expect_length(result.components, COMPLEX_SCC_COUNT)
 
     sizes = sorted(c.size for c in result.components)
-    assert sizes == [SINGLE_NODE_SIZE, DOUBLE_NODE_SIZE, TRIPLE_NODE_SIZE]
+    expect_equal(sizes, [SINGLE_NODE_SIZE, DOUBLE_NODE_SIZE, TRIPLE_NODE_SIZE])
 
 
 def test_find_strongly_connected_empty_graph() -> None:
@@ -140,8 +146,8 @@ def test_find_strongly_connected_empty_graph() -> None:
 
     result = find_strongly_connected(g)
 
-    assert len(result.components) == 0
-    assert result.node_to_component == {}
+    expect_length(result.components, 0)
+    expect_equal(result.node_to_component, {})
 
 
 def test_find_strongly_connected_single_node() -> None:
@@ -151,9 +157,9 @@ def test_find_strongly_connected_single_node() -> None:
 
     result = find_strongly_connected(g)
 
-    assert len(result.components) == SINGLE_COMPONENT_COUNT
-    assert result.components[0].size == SINGLE_NODE_SIZE
-    assert "A" in result.components[0].nodes
+    expect_length(result.components, SINGLE_COMPONENT_COUNT)
+    expect_equal(result.components[0].size, SINGLE_NODE_SIZE)
+    expect_true("A" in result.components[0].nodes)
 
 
 def test_find_strongly_connected_node_to_component_mapping() -> None:
@@ -163,12 +169,12 @@ def test_find_strongly_connected_node_to_component_mapping() -> None:
     result = find_strongly_connected(g)
 
     # All nodes should map to component 0 (the only SCC)
-    assert "A" in result.node_to_component
-    assert "B" in result.node_to_component
-    assert "C" in result.node_to_component
+    expect_true("A" in result.node_to_component)
+    expect_true("B" in result.node_to_component)
+    expect_true("C" in result.node_to_component)
     # All should be in same component
-    assert result.node_to_component["A"] == result.node_to_component["B"]
-    assert result.node_to_component["B"] == result.node_to_component["C"]
+    expect_equal(result.node_to_component["A"], result.node_to_component["B"])
+    expect_equal(result.node_to_component["B"], result.node_to_component["C"])
 
 
 def test_find_strongly_connected_with_condensation() -> None:
@@ -177,9 +183,11 @@ def test_find_strongly_connected_with_condensation() -> None:
 
     result = find_strongly_connected(g, compute_condensation=True)
 
-    assert result.condensation is not None
+    expect_true(result.condensation is not None)
+    if result.condensation is None:
+        pytest.fail("Expected condensation graph")
     # Condensation should have 2 nodes (one per SCC)
-    assert result.condensation.number_of_nodes() == CONDENSATION_NODE_COUNT
+    expect_equal(result.condensation.number_of_nodes(), CONDENSATION_NODE_COUNT)
 
 
 def test_find_strongly_connected_condensation_is_dag() -> None:
@@ -188,8 +196,10 @@ def test_find_strongly_connected_condensation_is_dag() -> None:
 
     result = find_strongly_connected(g, compute_condensation=True)
 
-    assert result.condensation is not None
-    assert nx.is_directed_acyclic_graph(result.condensation)
+    expect_true(result.condensation is not None)
+    if result.condensation is None:
+        pytest.fail("Expected condensation graph")
+    expect_true(nx.is_directed_acyclic_graph(result.condensation))
 
 
 def test_condensation_layers_dag() -> None:
@@ -200,11 +210,11 @@ def test_condensation_layers_dag() -> None:
     layers = condensation_layers(g, scc_result)
 
     # Each node should have a layer
-    assert len(layers) == SIMPLE_DAG_NODE_COUNT
+    expect_length(layers, SIMPLE_DAG_NODE_COUNT)
     # A should be earliest (layer 0)
-    assert layers["A"] == SINGLE_NODE_LAYER
+    expect_equal(layers["A"], SINGLE_NODE_LAYER)
     # D should be latest
-    assert layers["D"] == SIMPLE_DAG_LAST_LAYER
+    expect_equal(layers["D"], SIMPLE_DAG_LAST_LAYER)
 
 
 def test_condensation_layers_diamond_dag() -> None:
@@ -215,12 +225,12 @@ def test_condensation_layers_diamond_dag() -> None:
     layers = condensation_layers(g, scc_result)
 
     # A at layer 0
-    assert layers["A"] == SINGLE_NODE_LAYER
+    expect_equal(layers["A"], SINGLE_NODE_LAYER)
     # B and C at same layer
-    assert layers["B"] == layers["C"]
-    assert layers["B"] == DIAMOND_SHARED_LAYER
+    expect_equal(layers["B"], layers["C"])
+    expect_equal(layers["B"], DIAMOND_SHARED_LAYER)
     # D at layer 2
-    assert layers["D"] == DIAMOND_LAST_LAYER
+    expect_equal(layers["D"], DIAMOND_LAST_LAYER)
 
 
 def test_condensation_layers_two_sccs() -> None:
@@ -231,11 +241,11 @@ def test_condensation_layers_two_sccs() -> None:
     layers = condensation_layers(g, scc_result)
 
     # All nodes in first SCC have same layer
-    assert layers["A"] == layers["B"]
+    expect_equal(layers["A"], layers["B"])
     # All nodes in second SCC have same layer
-    assert layers["C"] == layers["D"]
+    expect_equal(layers["C"], layers["D"])
     # Second SCC is after first due to B -> C edge
-    assert layers["C"] > layers["A"]
+    expect_true(layers["C"] > layers["A"])
 
 
 def test_condensation_layers_empty_graph() -> None:
@@ -245,7 +255,7 @@ def test_condensation_layers_empty_graph() -> None:
 
     layers = condensation_layers(g, scc_result)
 
-    assert layers == {}
+    expect_equal(layers, {})
 
 
 def test_condensation_layers_single_node() -> None:
@@ -256,7 +266,7 @@ def test_condensation_layers_single_node() -> None:
 
     layers = condensation_layers(g, scc_result)
 
-    assert layers["A"] == SINGLE_NODE_LAYER
+    expect_equal(layers["A"], SINGLE_NODE_LAYER)
 
 
 def test_condensation_layers_cycle() -> None:
@@ -267,7 +277,7 @@ def test_condensation_layers_cycle() -> None:
     layers = condensation_layers(g, scc_result)
 
     # All nodes in cycle should be at same layer
-    assert layers["A"] == layers["B"] == layers["C"]
+    expect_true(layers["A"] == layers["B"] == layers["C"])
 
 
 def test_component_info_attributes() -> None:
@@ -278,9 +288,9 @@ def test_component_info_attributes() -> None:
         size=TRIPLE_NODE_SIZE,
     )
 
-    assert comp.component_id == ROOT_COMPONENT_ID
-    assert comp.nodes == frozenset(["A", "B", "C"])
-    assert comp.size == TRIPLE_NODE_SIZE
+    expect_equal(comp.component_id, ROOT_COMPONENT_ID)
+    expect_equal(comp.nodes, frozenset(["A", "B", "C"]))
+    expect_equal(comp.size, TRIPLE_NODE_SIZE)
 
 
 def test_scc_result_attributes() -> None:
@@ -297,9 +307,9 @@ def test_scc_result_attributes() -> None:
         condensation=None,
     )
 
-    assert len(result.components) == SINGLE_COMPONENT_COUNT
-    assert result.node_to_component["A"] == ROOT_COMPONENT_ID
-    assert result.condensation is None
+    expect_length(result.components, SINGLE_COMPONENT_COUNT)
+    expect_equal(result.node_to_component["A"], ROOT_COMPONENT_ID)
+    expect_true(result.condensation is None)
 
 
 def test_scc_result_with_condensation() -> None:
@@ -307,5 +317,5 @@ def test_scc_result_with_condensation() -> None:
     g = _make_two_sccs()
     result = find_strongly_connected(g, compute_condensation=True)
 
-    assert result.condensation is not None
-    assert isinstance(result.condensation, nx.DiGraph)
+    expect_true(result.condensation is not None)
+    expect_true(isinstance(result.condensation, nx.DiGraph))

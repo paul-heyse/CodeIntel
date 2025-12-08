@@ -18,6 +18,15 @@ from codeintel.analytics.compute.entrypoints.detection import (
     detect_entrypoints,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 
 TEST_REL_PATH = "app/routes.py"
 TEST_MODULE = "app.routes"
@@ -29,15 +38,15 @@ def test_detector_settings_defaults() -> None:
     """DetectorSettings has all frameworks enabled by default."""
     settings = DetectorSettings()
 
-    assert settings.detect_fastapi is True
-    assert settings.detect_flask is True
-    assert settings.detect_click is True
-    assert settings.detect_typer is True
-    assert settings.detect_cron is True
-    assert settings.detect_django is True
-    assert settings.detect_celery is True
-    assert settings.detect_airflow is True
-    assert settings.detect_generic_routes is True
+    expect_true(settings.detect_fastapi)
+    expect_true(settings.detect_flask)
+    expect_true(settings.detect_click)
+    expect_true(settings.detect_typer)
+    expect_true(settings.detect_cron)
+    expect_true(settings.detect_django)
+    expect_true(settings.detect_celery)
+    expect_true(settings.detect_airflow)
+    expect_true(settings.detect_generic_routes)
 
 
 def test_detector_settings_disabled() -> None:
@@ -47,8 +56,8 @@ def test_detector_settings_disabled() -> None:
         detect_flask=False,
     )
 
-    assert settings.detect_fastapi is False
-    assert settings.detect_flask is False
+    expect_false(settings.detect_fastapi)
+    expect_false(settings.detect_flask)
 
 
 def test_detector_settings_immutable() -> None:
@@ -69,13 +78,13 @@ def test_entrypoint_candidate_creation() -> None:
         end_lineno=TEST_END_LINENO,
     )
 
-    assert candidate.kind == "http_handler"
-    assert candidate.framework == "fastapi"
-    assert candidate.rel_path == TEST_REL_PATH
-    assert candidate.module == TEST_MODULE
-    assert candidate.qualname == "get_users"
-    assert candidate.lineno == TEST_LINENO
-    assert candidate.end_lineno == TEST_END_LINENO
+    expect_equal(candidate.kind, "http_handler")
+    expect_equal(candidate.framework, "fastapi")
+    expect_equal(candidate.rel_path, TEST_REL_PATH)
+    expect_equal(candidate.module, TEST_MODULE)
+    expect_equal(candidate.qualname, "get_users")
+    expect_equal(candidate.lineno, TEST_LINENO)
+    expect_equal(candidate.end_lineno, TEST_END_LINENO)
 
 
 def test_entrypoint_candidate_http_metadata() -> None:
@@ -93,9 +102,9 @@ def test_entrypoint_candidate_http_metadata() -> None:
         status_codes=[201, 400],
     )
 
-    assert candidate.http_method == "POST"
-    assert candidate.route_path == "/users"
-    assert candidate.status_codes == [201, 400]
+    expect_equal(candidate.http_method, "POST")
+    expect_equal(candidate.route_path, "/users")
+    expect_equal(candidate.status_codes, [201, 400])
 
 
 def test_entrypoint_candidate_cli_metadata() -> None:
@@ -111,8 +120,8 @@ def test_entrypoint_candidate_cli_metadata() -> None:
         command_name="main",
     )
 
-    assert candidate.command_name == "main"
-    assert candidate.kind == "cli_command"
+    expect_equal(candidate.command_name, "main")
+    expect_equal(candidate.kind, "cli_command")
 
 
 def test_entrypoint_candidate_job_metadata() -> None:
@@ -129,8 +138,8 @@ def test_entrypoint_candidate_job_metadata() -> None:
         trigger="cron",
     )
 
-    assert candidate.schedule == "0 * * * *"
-    assert candidate.trigger == "cron"
+    expect_equal(candidate.schedule, "0 * * * *")
+    expect_equal(candidate.trigger, "cron")
 
 
 def test_entrypoint_candidate_extra_metadata() -> None:
@@ -147,8 +156,11 @@ def test_entrypoint_candidate_extra_metadata() -> None:
         extra=extra,
     )
 
-    assert candidate.extra is not None
-    assert candidate.extra["custom_field"] == "value"
+    expect_is_not_none(candidate.extra)
+    if candidate.extra is None:
+        pytest.fail("extra metadata should be present")
+
+    expect_equal(candidate.extra["custom_field"], "value")
 
 
 def test_entrypoint_candidate_immutable() -> None:
@@ -178,14 +190,14 @@ def test_entrypoint_candidate_optional_fields() -> None:
         end_lineno=5,
     )
 
-    assert candidate.http_method is None
-    assert candidate.route_path is None
-    assert candidate.status_codes is None
-    assert candidate.auth_required is None
-    assert candidate.command_name is None
-    assert candidate.schedule is None
-    assert candidate.trigger is None
-    assert candidate.extra is None
+    expect_is_none(candidate.http_method)
+    expect_is_none(candidate.route_path)
+    expect_is_none(candidate.status_codes)
+    expect_is_none(candidate.auth_required)
+    expect_is_none(candidate.command_name)
+    expect_is_none(candidate.schedule)
+    expect_is_none(candidate.trigger)
+    expect_is_none(candidate.extra)
 
 
 def test_entrypoint_candidate_evidence_list() -> None:
@@ -202,7 +214,7 @@ def test_entrypoint_candidate_evidence_list() -> None:
         evidence=evidence,
     )
 
-    assert candidate.evidence == evidence
+    expect_equal(candidate.evidence, evidence)
 
 
 def test_detect_entrypoints_empty_source() -> None:
@@ -217,7 +229,7 @@ def test_detect_entrypoints_empty_source() -> None:
         settings=settings,
     )
 
-    assert candidates == []
+    expect_equal(candidates, [])
 
 
 def test_detect_entrypoints_syntax_error() -> None:
@@ -232,7 +244,7 @@ def test_detect_entrypoints_syntax_error() -> None:
         settings=settings,
     )
 
-    assert candidates == []
+    expect_equal(candidates, [])
 
 
 def test_detect_entrypoints_no_frameworks() -> None:
@@ -254,7 +266,7 @@ class MyClass:
         settings=settings,
     )
 
-    assert candidates == []
+    expect_equal(candidates, [])
 
 
 def test_detect_entrypoints_returns_list() -> None:
@@ -269,7 +281,7 @@ def test_detect_entrypoints_returns_list() -> None:
         settings=settings,
     )
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_import_context_creation() -> None:
@@ -285,8 +297,8 @@ def test_import_context_creation() -> None:
         celery_apps=set(),
     )
 
-    assert "app" in ctx.fastapi_targets
-    assert ctx.alias_to_lib["app"] == "fastapi.FastAPI"
+    expect_in("app", ctx.fastapi_targets)
+    expect_equal(ctx.alias_to_lib["app"], "fastapi.FastAPI")
 
 
 def test_import_context_immutable() -> None:
@@ -314,10 +326,10 @@ def test_detector_settings_partial_disable() -> None:
         detect_typer=True,
     )
 
-    assert settings.detect_fastapi is False
-    assert settings.detect_flask is True
-    assert settings.detect_click is False
-    assert settings.detect_typer is True
+    expect_false(settings.detect_fastapi)
+    expect_true(settings.detect_flask)
+    expect_false(settings.detect_click)
+    expect_true(settings.detect_typer)
 
 
 def test_entrypoint_candidate_with_arguments_schema() -> None:
@@ -337,8 +349,11 @@ def test_entrypoint_candidate_with_arguments_schema() -> None:
         arguments_schema=schema,
     )
 
-    assert candidate.arguments_schema is not None
-    assert "name" in candidate.arguments_schema
+    expect_is_not_none(candidate.arguments_schema)
+    if candidate.arguments_schema is None:
+        pytest.fail("arguments schema should be present")
+
+    expect_in("name", candidate.arguments_schema)
 
 
 def test_entrypoint_candidate_auth_required() -> None:
@@ -354,7 +369,7 @@ def test_entrypoint_candidate_auth_required() -> None:
         auth_required=True,
     )
 
-    assert candidate.auth_required is True
+    expect_true(candidate.auth_required)
 
 
 @pytest.mark.parametrize(
@@ -373,7 +388,7 @@ def test_entrypoint_candidate_kinds(kind: str) -> None:
         end_lineno=5,
     )
 
-    assert candidate.kind == kind
+    expect_equal(candidate.kind, kind)
 
 
 @pytest.mark.parametrize(
@@ -392,4 +407,4 @@ def test_entrypoint_candidate_frameworks(framework: str | None) -> None:
         end_lineno=5,
     )
 
-    assert candidate.framework == framework
+    expect_equal(candidate.framework, framework)

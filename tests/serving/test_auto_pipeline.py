@@ -40,6 +40,15 @@ from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import PipelineRunTracking, PipelineStatus
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
 
@@ -67,7 +76,7 @@ def clean_auto_pipeline_env() -> Generator[None]:
 def test_auto_pipeline_disabled_by_default(clean_auto_pipeline_env: None) -> None:
     """Verify auto-pipeline is disabled when env var is not set."""
     _ = clean_auto_pipeline_env
-    assert not is_auto_pipeline_enabled()
+    expect_false(is_auto_pipeline_enabled())
 
 
 @pytest.mark.parametrize(
@@ -81,7 +90,7 @@ def test_auto_pipeline_enabled_with_truthy_values(
     """Verify auto-pipeline is enabled with truthy env values."""
     _ = clean_auto_pipeline_env
     os.environ[AUTO_PIPELINE_ENV] = value
-    assert is_auto_pipeline_enabled()
+    expect_true(is_auto_pipeline_enabled())
 
 
 @pytest.mark.parametrize(
@@ -95,7 +104,7 @@ def test_auto_pipeline_disabled_with_falsy_values(
     """Verify auto-pipeline is disabled with falsy env values."""
     _ = clean_auto_pipeline_env
     os.environ[AUTO_PIPELINE_ENV] = value
-    assert not is_auto_pipeline_enabled()
+    expect_false(is_auto_pipeline_enabled())
 
 
 # -----------------------------------------------------------------------------
@@ -115,7 +124,7 @@ def test_build_paths_with_defaults(tmp_path: Path) -> None:
 
     paths = build_paths_for_serving(config)
 
-    assert paths.db_path == tmp_path / "db.duckdb"
+    expect_equal(paths.db_path, tmp_path / "db.duckdb")
 
 
 def test_build_paths_with_default_repo_root() -> None:
@@ -129,7 +138,7 @@ def test_build_paths_with_default_repo_root() -> None:
 
     paths = build_paths_for_serving(config)
     # Should use current working directory
-    assert paths.db_path.is_absolute()
+    expect_true(paths.db_path.is_absolute())
 
 
 @pytest.fixture
@@ -208,7 +217,7 @@ def test_has_successful_prereq_run_returns_true_when_matching_run_exists(
         op_id="function.summary",
     )
 
-    assert result is True
+    expect_true(result)
 
 
 def test_has_successful_prereq_run_returns_false_when_no_runs(
@@ -222,7 +231,7 @@ def test_has_successful_prereq_run_returns_false_when_no_runs(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_has_successful_prereq_run_returns_false_when_commit_mismatch(
@@ -239,7 +248,7 @@ def test_has_successful_prereq_run_returns_false_when_commit_mismatch(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_has_successful_prereq_run_returns_false_when_status_not_succeeded(
@@ -256,7 +265,7 @@ def test_has_successful_prereq_run_returns_false_when_status_not_succeeded(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_has_successful_prereq_run_returns_true_for_op_prereqs_kind(
@@ -273,7 +282,7 @@ def test_has_successful_prereq_run_returns_true_for_op_prereqs_kind(
         op_id="function.summary",
     )
 
-    assert result is True
+    expect_true(result)
 
 
 def test_has_successful_prereq_run_returns_false_for_other_kinds(
@@ -290,7 +299,7 @@ def test_has_successful_prereq_run_returns_false_for_other_kinds(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 # -----------------------------------------------------------------------------
@@ -314,9 +323,9 @@ def test_should_run_auto_pipeline_returns_false_for_remote_mode(
     )
 
     should_run, gateway, reason = should_run_auto_pipeline(config, duckdb_backend)
-    assert should_run is False
-    assert "not local_db" in reason
-    assert gateway is None
+    expect_false(should_run)
+    expect_in("not local_db", reason)
+    expect_true(gateway is None)
 
 
 def test_should_run_auto_pipeline_returns_false_when_disabled(
@@ -336,8 +345,8 @@ def test_should_run_auto_pipeline_returns_false_when_disabled(
     )
 
     should_run, _gateway, reason = should_run_auto_pipeline(config, duckdb_backend)
-    assert should_run is False
-    assert "not enabled" in reason
+    expect_false(should_run)
+    expect_in("not enabled", reason)
 
 
 def test_should_run_auto_pipeline_returns_false_without_gateway(
@@ -358,8 +367,8 @@ def test_should_run_auto_pipeline_returns_false_without_gateway(
 
     backend_without_gateway = cast("QueryBackend", object())
     should_run, _gateway, reason = should_run_auto_pipeline(config, backend_without_gateway)
-    assert should_run is False
-    assert "no gateway" in reason
+    expect_false(should_run)
+    expect_in("no gateway", reason)
 
 
 def test_should_run_auto_pipeline_returns_true_with_valid_config(
@@ -380,9 +389,9 @@ def test_should_run_auto_pipeline_returns_true_with_valid_config(
     )
 
     should_run, gateway, reason = should_run_auto_pipeline(config, duckdb_backend)
-    assert should_run is True
-    assert gateway is duckdb_backend.gateway
-    assert not reason
+    expect_true(should_run)
+    expect_true(gateway is duckdb_backend.gateway)
+    expect_false(bool(reason))
 
 
 # -----------------------------------------------------------------------------
@@ -411,7 +420,7 @@ def test_ensure_prereqs_for_mcp_skips_when_disabled(
         config=config,
         backend=duckdb_backend,
     )
-    assert result is None
+    expect_true(result is None)
 
 
 def test_ensure_prereqs_for_mcp_skips_for_non_local_mode(
@@ -434,7 +443,7 @@ def test_ensure_prereqs_for_mcp_skips_for_non_local_mode(
         config=config,
         backend=duckdb_backend,
     )
-    assert result is None
+    expect_true(result is None)
 
 
 # -----------------------------------------------------------------------------
@@ -463,7 +472,7 @@ def test_ensure_prereqs_for_http_skips_when_disabled(
         config=config,
         backend=duckdb_backend,
     )
-    assert result is None
+    expect_true(result is None)
 
 
 def test_ensure_prereqs_for_http_skips_for_non_local_mode(
@@ -486,7 +495,7 @@ def test_ensure_prereqs_for_http_skips_for_non_local_mode(
         config=config,
         backend=duckdb_backend,
     )
-    assert result is None
+    expect_true(result is None)
 
 
 def test_ensure_prereqs_for_http_skips_without_gateway(
@@ -511,7 +520,7 @@ def test_ensure_prereqs_for_http_skips_without_gateway(
         config=config,
         backend=backend_without_gateway,
     )
-    assert result is None
+    expect_is_none(result)
 
 
 def test_ensure_prereqs_for_mcp_skips_without_gateway(
@@ -536,7 +545,7 @@ def test_ensure_prereqs_for_mcp_skips_without_gateway(
         config=config,
         backend=backend_without_gateway,
     )
-    assert result is None
+    expect_is_none(result)
 
 
 # -----------------------------------------------------------------------------
@@ -557,7 +566,7 @@ def test_build_paths_with_default_repo_root_uses_cwd(tmp_path: Path) -> None:
     paths = build_paths_for_serving(config)
 
     # Should use cwd for repo_root but db_path should be as specified
-    assert paths.db_path == tmp_path / "db.duckdb"
+    expect_equal(paths.db_path, tmp_path / "db.duckdb")
 
 
 def test_build_paths_with_none_db_path(tmp_path: Path) -> None:
@@ -574,8 +583,8 @@ def test_build_paths_with_none_db_path(tmp_path: Path) -> None:
 
     # Should use default path under repo_root (determined by CliPathsInput.to_build_paths)
     # The actual default path structure is build/db/codeintel.duckdb
-    assert paths.db_path.is_absolute()
-    assert "codeintel" in paths.db_path.name.lower()
+    expect_true(paths.db_path.is_absolute())
+    expect_in("codeintel", paths.db_path.name.lower())
 
 
 def test_build_paths_result_has_required_attributes(tmp_path: Path) -> None:
@@ -591,8 +600,8 @@ def test_build_paths_result_has_required_attributes(tmp_path: Path) -> None:
     paths = build_paths_for_serving(config)
 
     # BuildPaths should have these attributes
-    assert hasattr(paths, "db_path")
-    assert hasattr(paths, "build_dir")
+    expect_true(hasattr(paths, "db_path"))
+    expect_true(hasattr(paths, "build_dir"))
 
 
 # -----------------------------------------------------------------------------
@@ -614,7 +623,7 @@ def test_has_successful_prereq_run_returns_false_for_running_status(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_has_successful_prereq_run_returns_false_for_repo_mismatch(
@@ -631,7 +640,7 @@ def test_has_successful_prereq_run_returns_false_for_repo_mismatch(
         op_id="function.summary",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_has_successful_prereq_run_multiple_runs_finds_matching(
@@ -653,7 +662,7 @@ def test_has_successful_prereq_run_multiple_runs_finds_matching(
         op_id="function.summary",
     )
 
-    assert result is True
+    expect_true(result)
 
 
 # -----------------------------------------------------------------------------
@@ -681,7 +690,7 @@ def test_should_run_auto_pipeline_returns_correct_gateway_reference(
     _should_run, gateway, _reason = should_run_auto_pipeline(config, duckdb_backend)
 
     # The gateway should be the same object as the backend's gateway
-    assert gateway is duckdb_backend.gateway
+    expect_true(gateway is duckdb_backend.gateway)
 
 
 def test_should_run_auto_pipeline_empty_reason_when_enabled(
@@ -703,8 +712,8 @@ def test_should_run_auto_pipeline_empty_reason_when_enabled(
 
     should_run, _gateway, reason = should_run_auto_pipeline(config, duckdb_backend)
 
-    assert should_run is True
-    assert not reason
+    expect_true(should_run)
+    expect_true(not reason)
 
 
 # -----------------------------------------------------------------------------
@@ -884,8 +893,8 @@ def test_wrap_tool_preserves_function_metadata(
     )
 
     # Verify metadata is preserved via functools.wraps
-    assert wrapped.__name__ == "my_test_tool"
-    assert wrapped.__doc__ == "My test tool docstring."
+    expect_equal(wrapped.__name__, "my_test_tool")
+    expect_equal(wrapped.__doc__, "My test tool docstring.")
 
 
 def test_wrap_tool_passes_kwargs_to_original(
@@ -917,8 +926,8 @@ def test_wrap_tool_passes_kwargs_to_original(
     wrapped(arg1="value1", arg2=42, nested={"key": "val"})
 
     # Verify kwargs were passed through
-    assert len(captured) == 1
-    assert captured[0] == {"arg1": "value1", "arg2": 42, "nested": {"key": "val"}}
+    expect_length(captured, 1)
+    expect_equal(captured[0], {"arg1": "value1", "arg2": 42, "nested": {"key": "val"}})
 
 
 def test_wrap_tool_returns_original_result(
@@ -952,7 +961,7 @@ def test_wrap_tool_returns_original_result(
 
     result = wrapped()
 
-    assert result == expected_result
+    expect_equal(result, expected_result)
 
 
 def test_wrap_tool_executes_with_auto_pipeline_disabled(
@@ -984,9 +993,9 @@ def test_wrap_tool_executes_with_auto_pipeline_disabled(
     # Should execute without error even though auto-pipeline is disabled
     result = wrapped(test_arg="test_value")
 
-    assert result == {"captured": True}
-    assert len(captured) == 1
-    assert captured[0] == {"test_arg": "test_value"}
+    expect_equal(result, {"captured": True})
+    expect_length(captured, 1)
+    expect_equal(captured[0], {"test_arg": "test_value"})
 
 
 def test_wrap_tool_with_local_db_mode_disabled(
@@ -1018,7 +1027,7 @@ def test_wrap_tool_with_local_db_mode_disabled(
 
     result = wrapped()
 
-    assert result == expected_result
+    expect_equal(result, expected_result)
 
 
 def test_wrap_tool_logs_debug_message(
@@ -1051,7 +1060,9 @@ def test_wrap_tool_logs_debug_message(
         wrapped()
 
     # Check that the debug message was logged
-    assert any("auto_pipeline check for op=function.summary" in r.message for r in caplog.records)
+    expect_true(
+        any("auto_pipeline check for op=function.summary" in r.message for r in caplog.records)
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -1086,7 +1097,7 @@ def test_ensure_prereqs_for_mcp_skips_when_prior_run_exists(
     )
 
     # Should skip because a successful run exists
-    assert result is None
+    expect_is_none(result)
 
 
 @pytest.mark.integration
@@ -1115,7 +1126,7 @@ def test_ensure_prereqs_for_mcp_skips_with_op_prereqs_run(
     )
 
     # Should skip because an op_prereqs run exists
-    assert result is None
+    expect_is_none(result)
 
 
 @pytest.mark.integration
@@ -1140,7 +1151,7 @@ def test_ensure_prereqs_for_mcp_does_not_skip_for_failed_run(
     )
 
     # The failed run should not satisfy prereqs
-    assert has_prereq is False
+    expect_false(has_prereq)
 
 
 @pytest.mark.integration
@@ -1164,7 +1175,7 @@ def test_ensure_prereqs_for_mcp_does_not_skip_for_different_commit(
     )
 
     # The run for different commit should not satisfy prereqs
-    assert has_prereq is False
+    expect_false(has_prereq)
 
 
 # -----------------------------------------------------------------------------
@@ -1198,7 +1209,7 @@ def test_ensure_prereqs_for_http_skips_when_prior_run_exists(
     )
 
     # Should skip because a successful run exists
-    assert result is None
+    expect_is_none(result)
 
 
 @pytest.mark.integration
@@ -1227,7 +1238,7 @@ def test_ensure_prereqs_for_http_skips_with_op_prereqs_run(
     )
 
     # Should skip because an op_prereqs run exists
-    assert result is None
+    expect_is_none(result)
 
 
 @pytest.mark.integration
@@ -1250,7 +1261,7 @@ def test_ensure_prereqs_for_http_does_not_skip_for_failed_run(
     )
 
     # The failed run should not satisfy prereqs
-    assert has_prereq is False
+    expect_false(has_prereq)
 
 
 # -----------------------------------------------------------------------------
@@ -1291,9 +1302,9 @@ def test_wrapped_tool_executes_after_prereq_check_with_existing_run(
 
     # Verify tool was called with correct kwargs
     expected_call_count = 1
-    assert len(captured) == expected_call_count
-    assert captured[0] == {"flow_arg": "test_value"}
-    assert result == {"captured": True}
+    expect_length(captured, expected_call_count)
+    expect_equal(captured[0], {"flow_arg": "test_value"})
+    expect_equal(result, {"captured": True})
 
 
 @pytest.mark.integration
@@ -1326,7 +1337,7 @@ def test_wrapped_tool_with_remote_api_mode_skips_prereqs(
     # Should execute without attempting prereqs
     result = wrapped()
 
-    assert result == expected_result
+    expect_equal(result, expected_result)
 
 
 @pytest.mark.integration
@@ -1364,10 +1375,10 @@ def test_full_flow_with_multiple_tool_calls(
     wrapped(call=3)
 
     # Verify all calls were captured
-    assert len(captured) == expected_call_count
-    assert captured[0] == {"call": 1}
-    assert captured[1] == {"call": 2}
-    assert captured[2] == {"call": 3}
+    expect_length(captured, expected_call_count)
+    expect_equal(captured[0], {"call": 1})
+    expect_equal(captured[1], {"call": 2})
+    expect_equal(captured[2], {"call": 3})
 
 
 @pytest.mark.integration
@@ -1403,7 +1414,7 @@ def test_wrapped_tool_logs_when_prereqs_skipped(
         wrapped()
 
     # Should have debug logs from wrapper and possibly from ensure_prereqs_for_mcp
-    assert any("auto_pipeline" in r.message.lower() for r in caplog.records)
+    expect_true(any("auto_pipeline" in r.message.lower() for r in caplog.records))
 
 
 # -----------------------------------------------------------------------------
@@ -1455,7 +1466,7 @@ def test_dataset_has_rows_for_snapshot_returns_true_when_data_present(
         commit=commit,
     )
 
-    assert result is True
+    expect_true(result)
 
 
 def test_dataset_has_rows_for_snapshot_returns_false_when_empty(
@@ -1482,7 +1493,7 @@ def test_dataset_has_rows_for_snapshot_returns_false_when_empty(
         commit="nonexistent",
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_get_required_table_keys_for_operation_returns_frozenset(
@@ -1499,7 +1510,7 @@ def test_get_required_table_keys_for_operation_returns_frozenset(
 
     result = get_required_table_keys_for_operation("function.summary")
 
-    assert isinstance(result, frozenset)
+    expect_is_instance(result, frozenset)
 
 
 def test_get_required_table_keys_for_unknown_operation_returns_empty(
@@ -1516,7 +1527,7 @@ def test_get_required_table_keys_for_unknown_operation_returns_empty(
 
     result = get_required_table_keys_for_operation("nonexistent.operation")
 
-    assert result == frozenset()
+    expect_equal(result, frozenset())
 
 
 def test_has_required_data_for_operation_returns_false_when_missing(
@@ -1540,7 +1551,7 @@ def test_has_required_data_for_operation_returns_false_when_missing(
     )
 
     # Should be False because data doesn't exist
-    assert result is False
+    expect_false(result)
 
 
 def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
@@ -1571,7 +1582,7 @@ def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
     )
 
     # Data doesn't exist, so should be False
-    assert result is False
+    expect_false(result)
 
 
 def test_operation_prereqs_satisfied_falls_back_to_run_check(
@@ -1611,7 +1622,7 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
             repo=repo,
             commit=commit,
         )
-        assert result is False
+        expect_false(result)
     elif op is not None and op.required_datasets:
         # Fallback: If no required_targets but has required_datasets, data check applies
         result = operation_prereqs_satisfied(
@@ -1620,7 +1631,7 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
             repo=repo,
             commit=commit,
         )
-        assert result is False
+        expect_false(result)
     else:
         # No requirements declared - consider satisfied
         result = operation_prereqs_satisfied(
@@ -1629,7 +1640,7 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
             repo=repo,
             commit=commit,
         )
-        assert result is True
+        expect_true(result)
 
 
 def test_build_prereq_debug_info_returns_complete_info(
@@ -1654,16 +1665,16 @@ def test_build_prereq_debug_info_returns_complete_info(
     )
 
     # Check all expected fields
-    assert debug_info.op_id == "function.summary"
-    assert debug_info.repo == repo
-    assert debug_info.commit == commit
-    assert isinstance(debug_info.required_datasets, tuple)
-    assert isinstance(debug_info.expanded_datasets, tuple)
-    assert isinstance(debug_info.dataset_statuses, tuple)
-    assert isinstance(debug_info.runs_considered, tuple)
-    assert isinstance(debug_info.data_satisfied, bool)
-    assert isinstance(debug_info.run_satisfied, bool)
-    assert isinstance(debug_info.overall_satisfied, bool)
+    expect_equal(debug_info.op_id, "function.summary")
+    expect_equal(debug_info.repo, repo)
+    expect_equal(debug_info.commit, commit)
+    expect_is_instance(debug_info.required_datasets, tuple)
+    expect_is_instance(debug_info.expanded_datasets, tuple)
+    expect_is_instance(debug_info.dataset_statuses, tuple)
+    expect_is_instance(debug_info.runs_considered, tuple)
+    expect_is_instance(debug_info.data_satisfied, bool)
+    expect_is_instance(debug_info.run_satisfied, bool)
+    expect_is_instance(debug_info.overall_satisfied, bool)
 
 
 def test_build_prereq_debug_info_includes_run_summaries(
@@ -1692,9 +1703,9 @@ def test_build_prereq_debug_info_includes_run_summaries(
     )
 
     # Should have at least one run considered
-    assert len(debug_info.runs_considered) >= 1
+    expect_true(len(debug_info.runs_considered) >= 1)
 
     # Run should match our seeded run
     run = debug_info.runs_considered[0]
-    assert run.status == "succeeded"
-    assert run.kind == "full"
+    expect_equal(run.status, "succeeded")
+    expect_equal(run.kind, "full")

@@ -20,7 +20,36 @@ from codeintel.storage.tracking import (
     PipelineStepRecord,
     StepCompletionParams,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import assert_cannot_setattr, expect_equal, expect_true
+
+
+def _require_run(record: PipelineRunRecord | None) -> PipelineRunRecord:
+    """Ensure a run record exists.
+
+    Returns
+    -------
+    PipelineRunRecord
+        The provided record if not None.
+    """
+    if record is None:
+        pytest.fail("Expected run record to be present.")
+    return record
+
+
+def _require_steps(
+    steps: list[PipelineStepRecord],
+    expected_len: int | None = None,
+) -> list[PipelineStepRecord]:
+    """Ensure a steps collection meets expectations.
+
+    Returns
+    -------
+    list[PipelineStepRecord]
+        The provided steps after validation.
+    """
+    if expected_len is not None and len(steps) != expected_len:
+        pytest.fail(f"Expected {expected_len} steps, got {len(steps)}")
+    return steps
 
 
 @pytest.fixture
@@ -95,23 +124,22 @@ class TestStartAndFetchRun:
             pipeline_name="analytics:full",
         )
 
-        rec = test_con.fetch_run("ci-123")
-        assert rec is not None
-        assert rec.run_id == "ci-123"
-        assert rec.repo == "github.com/demo/repo"
-        assert rec.commit == "deadbeef" * 5
-        assert rec.kind == "analytics"
-        assert rec.trigger == "cli"
-        assert rec.status == "running"
-        assert rec.pipeline_name == "analytics:full"
-        assert rec.requested_operation == "functions.summary"
-        assert rec.requested_datasets == ("analytics.function_metrics",)
+        rec = _require_run(test_con.fetch_run("ci-123"))
+        expect_equal(rec.run_id, "ci-123")
+        expect_equal(rec.repo, "github.com/demo/repo")
+        expect_equal(rec.commit, "deadbeef" * 5)
+        expect_equal(rec.kind, "analytics")
+        expect_equal(rec.trigger, "cli")
+        expect_equal(rec.status, "running")
+        expect_equal(rec.pipeline_name, "analytics:full")
+        expect_equal(rec.requested_operation, "functions.summary")
+        expect_equal(rec.requested_datasets, ("analytics.function_metrics",))
 
     @staticmethod
     def test_fetch_nonexistent_run(test_con: PipelineRunTracking) -> None:
         """Fetching a nonexistent run should return None."""
         rec = test_con.fetch_run("nonexistent")
-        assert rec is None
+        expect_true(rec is None, message="Expected no run record for nonexistent run.")
 
     @staticmethod
     def test_start_run_replaces_existing(
@@ -129,9 +157,8 @@ class TestStartAndFetchRun:
             pipeline_name="second",
         )
 
-        rec = test_con.fetch_run("ci-123")
-        assert rec is not None
-        assert rec.pipeline_name == "second"
+        rec = _require_run(test_con.fetch_run("ci-123"))
+        expect_equal(rec.pipeline_name, "second")
 
 
 class TestCompleteRun:
@@ -150,11 +177,10 @@ class TestCompleteRun:
             status="succeeded",
         )
 
-        rec = test_con.fetch_run("ci-123")
-        assert rec is not None
-        assert rec.status == "succeeded"
-        assert rec.completed_at is not None
-        assert rec.error_summary is None
+        rec = _require_run(test_con.fetch_run("ci-123"))
+        expect_equal(rec.status, "succeeded")
+        expect_true(rec.completed_at is not None, message="Expected completed_at to be set.")
+        expect_true(rec.error_summary is None, message="Expected no error summary on success.")
 
     @staticmethod
     def test_complete_run_with_error(
@@ -170,10 +196,9 @@ class TestCompleteRun:
             error_summary="Plugin X failed with error Y",
         )
 
-        rec = test_con.fetch_run("ci-123")
-        assert rec is not None
-        assert rec.status == "failed"
-        assert rec.error_summary == "Plugin X failed with error Y"
+        rec = _require_run(test_con.fetch_run("ci-123"))
+        expect_equal(rec.status, "failed")
+        expect_equal(rec.error_summary, "Plugin X failed with error Y")
 
 
 class TestRecordStep:
@@ -202,15 +227,14 @@ class TestRecordStep:
             ),
         )
 
-        steps = test_con.fetch_steps("ci-123")
-        assert len(steps) == 1
+        steps = _require_steps(test_con.fetch_steps("ci-123"), expected_len=1)
         step = steps[0]
-        assert step.module == "ingestion"
-        assert step.stage == "scan"
-        assert step.name == "repo_scan"
-        assert step.status == "succeeded"
-        assert step.row_counts == {"core.modules": 10}
-        assert step.extra == {"note": "ok"}
+        expect_equal(step.module, "ingestion")
+        expect_equal(step.stage, "scan")
+        expect_equal(step.name, "repo_scan")
+        expect_equal(step.status, "succeeded")
+        expect_equal(step.row_counts, {"core.modules": 10})
+        expect_equal(step.extra, {"note": "ok"})
 
     @staticmethod
     def test_fetch_steps_empty(
@@ -220,7 +244,7 @@ class TestRecordStep:
         """Fetching steps for a run with no steps should return empty list."""
         test_con.start_run(sample_run_context)
         steps = test_con.fetch_steps("ci-123")
-        assert steps == []
+        expect_equal(steps, [])
 
     @staticmethod
     def test_record_step_replaces_existing(
@@ -255,10 +279,9 @@ class TestRecordStep:
             ),
         )
 
-        steps = test_con.fetch_steps("ci-123")
-        assert len(steps) == 1
-        assert steps[0].status == "succeeded"
-        assert steps[0].row_counts == {"core.modules": 10}
+        steps = _require_steps(test_con.fetch_steps("ci-123"), expected_len=1)
+        expect_equal(steps[0].status, "succeeded")
+        expect_equal(steps[0].row_counts, {"core.modules": 10})
 
 
 class TestStartAndCompleteStep:
@@ -279,11 +302,10 @@ class TestStartAndCompleteStep:
             name="call_graph_builder",
         )
 
-        assert started_at is not None
-        steps = test_con.fetch_steps("ci-123")
-        assert len(steps) == 1
-        assert steps[0].status == "running"
-        assert steps[0].completed_at is None
+        expect_true(started_at is not None, message="Expected start time to be set.")
+        steps = _require_steps(test_con.fetch_steps("ci-123"), expected_len=1)
+        expect_equal(steps[0].status, "running")
+        expect_true(steps[0].completed_at is None, message="Expected completed_at to be None.")
 
     @staticmethod
     def test_complete_step_updates_record(
@@ -312,11 +334,10 @@ class TestStartAndCompleteStep:
             )
         )
 
-        steps = test_con.fetch_steps("ci-123")
-        assert len(steps) == 1
-        assert steps[0].status == "succeeded"
-        assert steps[0].completed_at is not None
-        assert steps[0].row_counts == {"analytics.function_metrics": 100}
+        steps = _require_steps(test_con.fetch_steps("ci-123"), expected_len=1)
+        expect_equal(steps[0].status, "succeeded")
+        expect_true(steps[0].completed_at is not None, message="Expected step completion time.")
+        expect_equal(steps[0].row_counts, {"analytics.function_metrics": 100})
 
 
 class TestMultipleSteps:
@@ -372,19 +393,17 @@ class TestMultipleSteps:
             ),
         )
 
-        steps = test_con.fetch_steps("ci-123")
-        expected_step_count = 3
-        assert len(steps) == expected_step_count
+        steps = _require_steps(test_con.fetch_steps("ci-123"), expected_len=3)
 
         # Steps are ordered by module, stage, name
         modules = [s.module for s in steps]
-        assert modules == ["analytics", "graphs", "ingestion"]
+        expect_equal(modules, ["analytics", "graphs", "ingestion"])
 
         # Check status distribution
         statuses = {s.module: s.status for s in steps}
-        assert statuses["ingestion"] == "succeeded"
-        assert statuses["graphs"] == "succeeded"
-        assert statuses["analytics"] == "failed"
+        expect_equal(statuses["ingestion"], "succeeded")
+        expect_equal(statuses["graphs"], "succeeded")
+        expect_equal(statuses["analytics"], "failed")
 
 
 class TestDataclasses:

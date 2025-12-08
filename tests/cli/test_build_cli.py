@@ -32,14 +32,16 @@ runner = CliRunner()
 class TestBuildStatusHelp:
     """Tests for build status --help."""
 
-    def test_status_help_shows_description(self) -> None:
+    @staticmethod
+    def test_status_help_shows_description() -> None:
         """Help text describes the status command."""
         result = runner.invoke(app, ["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("current state", result.stdout.lower(), label="description present")
 
-    def test_status_help_shows_options(self) -> None:
+    @staticmethod
+    def test_status_help_shows_options() -> None:
         """Help text shows available options."""
         result = runner.invoke(app, ["build", "status", "--help"])
 
@@ -51,7 +53,8 @@ class TestBuildStatusHelp:
 class TestBuildStatusCommand:
     """Tests for build status command output."""
 
-    def test_status_json_output_structure(self) -> None:
+    @staticmethod
+    def test_status_json_output_structure() -> None:
         """JSON output has expected structure."""
         result = runner.invoke(app, ["build", "status", "--json"])
 
@@ -65,7 +68,8 @@ class TestBuildStatusCommand:
             expect_in("stale", data, label="stale key")
             expect_in("blocked", data, label="blocked key")
 
-    def test_status_invalid_module(self) -> None:
+    @staticmethod
+    def test_status_invalid_module() -> None:
         """Invalid module name produces error or requires project context."""
         result = runner.invoke(app, ["build", "status", "--module", "invalid_module"])
 
@@ -89,14 +93,16 @@ class TestBuildStatusCommand:
 class TestBuildRunHelp:
     """Tests for build run --help."""
 
-    def test_run_help_shows_description(self) -> None:
+    @staticmethod
+    def test_run_help_shows_description() -> None:
         """Help text describes the run command."""
         result = runner.invoke(app, ["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("dependency resolution", result.stdout.lower(), label="description present")
 
-    def test_run_help_shows_options(self) -> None:
+    @staticmethod
+    def test_run_help_shows_options() -> None:
         """Help text shows available options."""
         result = runner.invoke(app, ["build", "run", "--help"])
 
@@ -110,7 +116,8 @@ class TestBuildRunHelp:
 class TestBuildRunValidation:
     """Tests for build run argument validation."""
 
-    def test_run_no_targets_no_module_error(self) -> None:
+    @staticmethod
+    def test_run_no_targets_no_module_error() -> None:
         """Running without targets or module produces error or requires project context."""
         result = runner.invoke(app, ["build", "run"])
 
@@ -125,7 +132,8 @@ class TestBuildRunValidation:
             message="Expected targets/module or project context error",
         )
 
-    def test_run_invalid_module(self) -> None:
+    @staticmethod
+    def test_run_invalid_module() -> None:
         """Invalid module name produces error or requires project context."""
         result = runner.invoke(app, ["build", "run", "--module", "invalid_module"])
 
@@ -140,7 +148,8 @@ class TestBuildRunValidation:
             message="Expected module validation or project context error",
         )
 
-    def test_run_unknown_target(self) -> None:
+    @staticmethod
+    def test_run_unknown_target() -> None:
         """Unknown target name produces error or requires project context."""
         result = runner.invoke(app, ["build", "run", "nonexistent_target_xyz"])
 
@@ -164,7 +173,8 @@ class TestBuildRunValidation:
 class TestBuildAppStructure:
     """Tests for build app registration and structure."""
 
-    def test_build_help_shows_commands(self) -> None:
+    @staticmethod
+    def test_build_help_shows_commands() -> None:
         """Build help shows available subcommands."""
         result = runner.invoke(app, ["build", "--help"])
 
@@ -172,7 +182,8 @@ class TestBuildAppStructure:
         expect_in("run", result.stdout, label="run command")
         expect_in("status", result.stdout, label="status command")
 
-    def test_build_no_args_shows_help(self) -> None:
+    @staticmethod
+    def test_build_no_args_shows_help() -> None:
         """Build with no args shows help."""
         result = runner.invoke(app, ["build"])
 
@@ -190,7 +201,8 @@ class TestModuleOption:
     """Tests for the --module option."""
 
     @pytest.mark.parametrize("module", ["ingestion", "graphs", "analytics"])
-    def test_valid_module_names(self, module: TargetModule) -> None:
+    @staticmethod
+    def test_valid_module_names(module: TargetModule) -> None:
         """Valid module names are accepted."""
         # Dry-run with valid module should not error on module validation
         result = runner.invoke(app, ["build", "run", "--module", module, "--dry-run"])
@@ -211,7 +223,8 @@ class TestModuleOption:
 class TestDryRun:
     """Tests for --dry-run functionality."""
 
-    def test_dry_run_flag_recognized(self) -> None:
+    @staticmethod
+    def test_dry_run_flag_recognized() -> None:
         """Dry run flag is recognized."""
         result = runner.invoke(app, ["build", "run", "--help"])
 
@@ -228,7 +241,8 @@ class TestDryRun:
 class TestForceOption:
     """Tests for --force option."""
 
-    def test_force_flag_recognized(self) -> None:
+    @staticmethod
+    def test_force_flag_recognized() -> None:
         """Force flag is recognized."""
         result = runner.invoke(app, ["build", "run", "--help"])
 
@@ -245,14 +259,16 @@ class TestForceOption:
 class TestJsonOutput:
     """Tests for --json output option."""
 
-    def test_json_flag_recognized_on_status(self) -> None:
+    @staticmethod
+    def test_json_flag_recognized_on_status() -> None:
         """JSON flag is recognized on status command."""
         result = runner.invoke(app, ["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--json", result.stdout, label="json option recognized")
 
-    def test_json_flag_recognized_on_run(self) -> None:
+    @staticmethod
+    def test_json_flag_recognized_on_run() -> None:
         """JSON flag is recognized on run command."""
         result = runner.invoke(app, ["build", "run", "--help"])
 

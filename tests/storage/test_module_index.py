@@ -9,6 +9,14 @@ import pytest
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.module_index import load_module_map
+from tests._helpers.assertions.expectation_assertions import (
+    expect_empty,
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 
 
 def test_load_module_map_returns_normalized_paths(
@@ -27,11 +35,10 @@ def test_load_module_map_returns_normalized_paths(
 
     result = load_module_map(fresh_gateway, repo, commit)
 
-    assert isinstance(result, dict)
-    expected_count = 2
-    assert len(result) == expected_count
-    assert "src/test/module.py" in result
-    assert result.get("src/test/module.py") == "test.module"
+    expect_is_instance(result, dict)
+    expect_length(result, 2)
+    expect_in("src/test/module.py", result)
+    expect_equal(result.get("src/test/module.py"), "test.module")
 
 
 def test_load_module_map_filters_by_language(
@@ -54,8 +61,8 @@ def test_load_module_map_filters_by_language(
 
     result = load_module_map(fresh_gateway, repo, commit, language="python")
 
-    assert len(result) == 1
-    assert "py.py" in result
+    expect_length(result, 1)
+    expect_in("py.py", result)
 
 
 def test_load_module_map_returns_empty_on_no_match(
@@ -68,11 +75,11 @@ def test_load_module_map_returns_empty_on_no_match(
     with caplog.at_level(logging.WARNING):
         result = load_module_map(fresh_gateway, repo, commit)
 
-    assert isinstance(result, dict)
-    assert len(result) == 0
+    expect_is_instance(result, dict)
+    expect_empty(result)
 
     warning_found = any("No modules found" in record.message for record in caplog.records)
-    assert warning_found
+    expect_true(warning_found)
 
 
 def test_load_module_map_uses_custom_logger(
@@ -90,11 +97,11 @@ def test_load_module_map_uses_custom_logger(
     try:
         result = load_module_map(fresh_gateway, repo, commit, logger=test_logger)
 
-        assert len(result) == 0
+        expect_length(result, 0)
 
         handler.flush()
         warning_found = any("No modules found" in record.message for record in handler.buffer)
-        assert warning_found
+        expect_true(warning_found)
     finally:
         test_logger.removeHandler(handler)
 
@@ -117,10 +124,10 @@ def test_load_module_map_normalizes_path_with_leading_slash(
 
     result = load_module_map(fresh_gateway, repo, commit)
 
-    assert len(result) == 1
+    expect_length(result, 1)
 
     has_key = "src/module.py" in result or "/src/module.py" in result
-    assert has_key
+    expect_true(has_key)
 
 
 def test_load_module_map_handles_multiple_modules_same_path(
@@ -143,6 +150,6 @@ def test_load_module_map_handles_multiple_modules_same_path(
 
     result = load_module_map(fresh_gateway, repo, commit)
 
-    assert "shared.py" in result
+    expect_in("shared.py", result)
     module_value = result.get("shared.py")
-    assert module_value in {"mod1", "mod2"}
+    expect_true(module_value in {"mod1", "mod2"})

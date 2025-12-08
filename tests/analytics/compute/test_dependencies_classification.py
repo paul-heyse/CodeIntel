@@ -10,6 +10,12 @@ from codeintel.analytics.compute.dependencies import (
     risk_score,
     severity_score,
 )
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+)
 
 
 def test_classify_modes_prioritizes_specific_matchers() -> None:
@@ -28,29 +34,30 @@ def test_classify_modes_prioritizes_specific_matchers() -> None:
     )
 
     modes, matched = classify_modes(pattern, "get", "requests.get")
-    assert modes == ["read"]
-    assert matched is not None
-    assert matched.modes == ["read"]
+    expect_equal(modes, ["read"], label="direct mode")
+    expect_is_not_none(matched, label="matcher present")
+    if matched is not None:
+        expect_equal(matched.modes, ["read"], label="matcher modes")
 
     modes_with_prefix, matched_prefix = classify_modes(pattern, "post_json", "requests.post_json")
-    assert "write" in modes_with_prefix
-    assert matched_prefix is not None
+    expect_in("write", modes_with_prefix, label="write mode present")
+    expect_is_not_none(matched_prefix, label="prefix matcher")
 
     modes_unknown, matched_unknown = classify_modes(pattern, "head", "requests.head")
-    assert modes_unknown == ["unknown"]
-    assert matched_unknown is None
+    expect_equal(modes_unknown, ["unknown"], label="unknown modes")
+    expect_is_none(matched_unknown, label="unknown matcher")
 
 
 def test_severity_and_risk_scores() -> None:
     """Map severities to scores and derive risk scores."""
-    assert severity_score("high") == 3.0
-    assert severity_score("unknown") is None
-    assert risk_score("high", 2.0) == 6.0
-    assert risk_score(None, 2.0) is None
+    expect_equal(severity_score("high"), 3.0, label="high severity")
+    expect_is_none(severity_score("unknown"), label="unknown severity")
+    expect_equal(risk_score("high", 2.0), 6.0, label="risk score")
+    expect_is_none(risk_score(None, 2.0), label="risk score none severity")
 
 
 def test_risk_level_balances_modes_and_frequency() -> None:
     """Derive risk level from usage modes and callsite frequency."""
-    assert risk_level({"write"}, 1) == "high"
-    assert risk_level({"read"}, 15) == "medium"
-    assert risk_level({"read"}, 5) == "low"
+    expect_equal(risk_level({"write"}, 1), "high", label="write single call high risk")
+    expect_equal(risk_level({"read"}, 15), "medium", label="read many medium risk")
+    expect_equal(risk_level({"read"}, 5), "low", label="read few low risk")

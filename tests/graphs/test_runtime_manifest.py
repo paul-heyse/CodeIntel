@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Final
 
+import pytest
+
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
@@ -30,7 +32,15 @@ from codeintel.graphs.runtime.manifest import (
     is_unchanged,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_length,
+    expect_not_equal,
+    expect_true,
+)
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
@@ -90,9 +100,9 @@ def test_compute_input_hash_scope_paths_included() -> None:
     hash_no_paths = compute_input_hash(payload_no_paths)
     hash_with_paths = compute_input_hash(payload_with_paths)
 
-    assert hash_no_paths != hash_with_paths
-    assert len(hash_no_paths) == EXPECTED_HASH_LENGTH
-    assert len(hash_with_paths) == EXPECTED_HASH_LENGTH
+    expect_not_equal(hash_no_paths, hash_with_paths)
+    expect_length(hash_no_paths, EXPECTED_HASH_LENGTH)
+    expect_length(hash_with_paths, EXPECTED_HASH_LENGTH)
 
 
 def test_compute_input_hash_scope_modules_included() -> None:
@@ -118,7 +128,7 @@ def test_compute_input_hash_scope_modules_included() -> None:
     hash_no_modules = compute_input_hash(payload_no_modules)
     hash_with_modules = compute_input_hash(payload_with_modules)
 
-    assert hash_no_modules != hash_with_modules
+    expect_not_equal(hash_no_modules, hash_with_modules)
 
 
 def test_compute_input_hash_deterministic() -> None:
@@ -135,7 +145,7 @@ def test_compute_input_hash_deterministic() -> None:
     hash1 = compute_input_hash(payload)
     hash2 = compute_input_hash(payload)
 
-    assert hash1 == hash2
+    expect_equal(hash1, hash2)
 
 
 def test_compute_input_hash_varies_with_commit() -> None:
@@ -158,7 +168,7 @@ def test_compute_input_hash_varies_with_commit() -> None:
         options_hash=None,
     )
 
-    assert compute_input_hash(payload1) != compute_input_hash(payload2)
+    expect_not_equal(compute_input_hash(payload1), compute_input_hash(payload2))
 
 
 def test_compute_options_hash_with_dict_options() -> None:
@@ -168,8 +178,10 @@ def test_compute_options_hash_with_dict_options() -> None:
 
     hash_val = compute_options_hash(plugin, options)
 
-    assert hash_val is not None
-    assert len(hash_val) == EXPECTED_HASH_LENGTH
+    if hash_val is None:
+        pytest.fail("Expected hash value for serializable options")
+
+    expect_length(hash_val, EXPECTED_HASH_LENGTH)
 
 
 def test_compute_options_hash_none_returns_none() -> None:
@@ -178,7 +190,7 @@ def test_compute_options_hash_none_returns_none() -> None:
 
     hash_val = compute_options_hash(plugin, None)
 
-    assert hash_val is None
+    expect_is_none(hash_val)
 
 
 def test_compute_options_hash_deterministic() -> None:
@@ -189,7 +201,7 @@ def test_compute_options_hash_deterministic() -> None:
     hash1 = compute_options_hash(plugin, options)
     hash2 = compute_options_hash(plugin, options)
 
-    assert hash1 == hash2
+    expect_equal(hash1, hash2)
 
 
 def test_compute_options_hash_serialization_failure_returns_none() -> None:
@@ -205,7 +217,7 @@ def test_compute_options_hash_serialization_failure_returns_none() -> None:
 
     hash_val = compute_options_hash(plugin, options)
 
-    assert hash_val is None
+    expect_is_none(hash_val)
 
 
 def test_compute_options_hash_varies_with_options() -> None:
@@ -215,7 +227,7 @@ def test_compute_options_hash_varies_with_options() -> None:
     hash1 = compute_options_hash(plugin, {"value": 1})
     hash2 = compute_options_hash(plugin, {"value": 2})
 
-    assert hash1 != hash2
+    expect_not_equal(hash1, hash2)
 
 
 def test_is_unchanged_when_hashes_match(graph_gateway: StorageGateway) -> None:
@@ -237,7 +249,7 @@ def test_is_unchanged_when_hashes_match(graph_gateway: StorageGateway) -> None:
         options_hash="opt456",
     )
 
-    assert is_unchanged(prior_manifest, state)
+    expect_true(is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_when_input_hash_differs(graph_gateway: StorageGateway) -> None:
@@ -259,7 +271,7 @@ def test_is_unchanged_when_input_hash_differs(graph_gateway: StorageGateway) -> 
         options_hash="opt456",
     )
 
-    assert not is_unchanged(prior_manifest, state)
+    expect_true(not is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_when_options_hash_differs(graph_gateway: StorageGateway) -> None:
@@ -281,7 +293,7 @@ def test_is_unchanged_when_options_hash_differs(graph_gateway: StorageGateway) -
         options_hash="new_opt",
     )
 
-    assert not is_unchanged(prior_manifest, state)
+    expect_true(not is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_missing_input_hash_returns_false(graph_gateway: StorageGateway) -> None:
@@ -303,7 +315,7 @@ def test_is_unchanged_missing_input_hash_returns_false(graph_gateway: StorageGat
         options_hash=None,
     )
 
-    assert not is_unchanged(prior_manifest, state)
+    expect_true(not is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_missing_prior_input_hash_returns_false(
@@ -327,7 +339,7 @@ def test_is_unchanged_missing_prior_input_hash_returns_false(
         options_hash=None,
     )
 
-    assert not is_unchanged(prior_manifest, state)
+    expect_true(not is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_missing_plugin_in_prior_returns_false(
@@ -351,7 +363,7 @@ def test_is_unchanged_missing_plugin_in_prior_returns_false(
         options_hash=None,
     )
 
-    assert not is_unchanged(prior_manifest, state)
+    expect_true(not is_unchanged(prior_manifest, state))
 
 
 def test_is_unchanged_no_prior_manifest(graph_gateway: StorageGateway) -> None:
@@ -366,7 +378,7 @@ def test_is_unchanged_no_prior_manifest(graph_gateway: StorageGateway) -> None:
         options_hash=None,
     )
 
-    assert not is_unchanged(None, state)
+    expect_true(not is_unchanged(None, state))
 
 
 def test_graph_plugin_manifest_record_and_to_dict() -> None:
@@ -391,20 +403,20 @@ def test_graph_plugin_manifest_record_and_to_dict() -> None:
 
     entries = manifest.to_dict()
 
-    assert "plugin_a" in entries
-    assert "plugin_b" in entries
+    expect_in("plugin_a", entries)
+    expect_in("plugin_b", entries)
 
     entry_a = entries["plugin_a"]
-    assert entry_a.get("input_hash") == "inp_a"
-    assert entry_a.get("options_hash") == "opt_a"
-    assert entry_a.get("version_hash") == "v1"
-    assert entry_a.get("row_counts") == {"table1": 100, "table2": 50}
-    assert "recorded_at" in entry_a
+    expect_equal(entry_a.get("input_hash"), "inp_a")
+    expect_equal(entry_a.get("options_hash"), "opt_a")
+    expect_equal(entry_a.get("version_hash"), "v1")
+    expect_equal(entry_a.get("row_counts"), {"table1": 100, "table2": 50})
+    expect_in("recorded_at", entry_a)
 
     entry_b = entries["plugin_b"]
-    assert entry_b.get("input_hash") == "inp_b"
-    assert entry_b.get("options_hash") is None
-    assert entry_b.get("row_counts") is None
+    expect_equal(entry_b.get("input_hash"), "inp_b")
+    expect_is_none(entry_b.get("options_hash"))
+    expect_is_none(entry_b.get("row_counts"))
 
 
 def test_graph_plugin_manifest_overwrite_existing() -> None:
@@ -429,16 +441,16 @@ def test_graph_plugin_manifest_overwrite_existing() -> None:
 
     entries = manifest.to_dict()
 
-    assert len(entries) == 1
-    assert entries["plugin"]["input_hash"] == "new_hash"
-    assert entries["plugin"]["row_counts"] == {"t": 20}
+    expect_length(entries, 1)
+    expect_equal(entries["plugin"]["input_hash"], "new_hash")
+    expect_equal(entries["plugin"]["row_counts"], {"t": 20})
 
 
 def test_graph_plugin_manifest_empty() -> None:
     """Empty manifest returns empty dict."""
     manifest = GraphPluginManifest()
 
-    assert manifest.to_dict() == {}
+    expect_equal(manifest.to_dict(), {})
 
 
 def test_input_hash_payload_frozen() -> None:
@@ -475,7 +487,7 @@ def test_input_hash_payload_equality() -> None:
         options_hash=None,
     )
 
-    assert payload1 == payload2
+    expect_equal(payload1, payload2)
 
 
 def test_manifest_state_frozen(graph_gateway: StorageGateway) -> None:

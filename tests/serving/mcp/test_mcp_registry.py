@@ -13,6 +13,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.registry import register_tools
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import expect_equal
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ def test_register_tools_with_backend(
     register_tools(server, backend)
 
     # Server should be configured
-    assert server.name == "TestServer"
+    expect_equal(server.name, "TestServer")
 
 
 def test_register_tools_with_service(
@@ -84,7 +85,7 @@ def test_register_tools_with_service(
     # Should not raise - accepts QueryService directly
     register_tools(server, service)
 
-    assert server.name == "TestServer"
+    expect_equal(server.name, "TestServer")
 
 
 def test_register_tools_with_config(
@@ -120,4 +121,4 @@ def test_register_tools_with_config(
     # Should not raise
     register_tools(server, service, config)
 
-    assert server.name == "TestServer"
+    expect_equal(server.name, "TestServer")

@@ -37,6 +37,14 @@ from codeintel.serving.bootstrap import (
 from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -58,9 +66,9 @@ def test_dataset_registry_options_defaults() -> None:
     """Verify DatasetRegistryOptions default values."""
     opts = DatasetRegistryOptions()
 
-    assert opts.tables is None
-    assert opts.validate is True
-    assert callable(opts.describe_fn)
+    expect_is_none(opts.tables)
+    expect_true(opts.validate)
+    expect_true(callable(opts.describe_fn))
 
 
 def test_dataset_registry_options_custom() -> None:
@@ -76,9 +84,9 @@ def test_dataset_registry_options_custom() -> None:
         validate=False,
     )
 
-    assert opts.tables == tables
-    assert opts.validate is False
-    assert opts.describe_fn("t", "f") == "Custom: t (f)"
+    expect_equal(opts.tables, tables)
+    expect_false(opts.validate)
+    expect_equal(opts.describe_fn("t", "f"), "Custom: t (f)")
 
 
 # =============================================================================
@@ -90,10 +98,10 @@ def test_service_build_options_defaults() -> None:
     """Verify ServiceBuildOptions default values."""
     opts = ServiceBuildOptions()
 
-    assert opts.registry is None
-    assert opts.observability is None
-    assert opts.graph_runtime is None
-    assert opts.graph_engine is None
+    expect_is_none(opts.registry)
+    expect_is_none(opts.observability)
+    expect_is_none(opts.graph_runtime)
+    expect_is_none(opts.graph_engine)
 
 
 def test_service_build_options_with_observability() -> None:
@@ -101,9 +109,9 @@ def test_service_build_options_with_observability() -> None:
     obs = ServiceObservability(enabled=True)
     opts = ServiceBuildOptions(observability=obs)
 
-    assert opts.observability is not None
-    assert opts.observability is obs
-    assert obs.enabled is True
+    expect_is_not_none(opts.observability)
+    expect_true(opts.observability is obs)
+    expect_true(obs.enabled)
 
 
 # =============================================================================
@@ -115,11 +123,11 @@ def test_bootstrap_options_defaults() -> None:
     """Verify BootstrapOptions default values."""
     opts = BootstrapOptions()
 
-    assert opts.create_views is True
-    assert opts.validate_registry is True
-    assert opts.observability is None
-    assert opts.graph_runtime is None
-    assert opts.graph_engine is None
+    expect_true(opts.create_views)
+    expect_true(opts.validate_registry)
+    expect_is_none(opts.observability)
+    expect_is_none(opts.graph_runtime)
+    expect_is_none(opts.graph_engine)
 
 
 def test_bootstrap_options_custom() -> None:
@@ -129,8 +137,8 @@ def test_bootstrap_options_custom() -> None:
         validate_registry=False,
     )
 
-    assert opts.create_views is False
-    assert opts.validate_registry is False
+    expect_false(opts.create_views)
+    expect_false(opts.validate_registry)
 
 
 # =============================================================================
@@ -142,10 +150,10 @@ def test_backend_resource_options_defaults() -> None:
     """Verify BackendResourceOptions default values."""
     opts = BackendResourceOptions()
 
-    assert opts.registry is None
-    assert opts.observability is None
-    assert opts.graph_runtime is None
-    assert opts.runtime_pool is None
+    expect_is_none(opts.registry)
+    expect_is_none(opts.observability)
+    expect_is_none(opts.graph_runtime)
+    expect_is_none(opts.runtime_pool)
 
 
 # =============================================================================
@@ -165,21 +173,21 @@ def test_get_observability_disabled_by_default(tmp_path: Path) -> None:
 
     result = get_observability_from_config(cfg)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_service_observability_directly() -> None:
     """Verify ServiceObservability can be constructed independently."""
     obs = ServiceObservability(enabled=True)
 
-    assert obs.enabled is True
+    expect_true(obs.enabled)
 
 
 def test_service_observability_disabled() -> None:
     """Verify ServiceObservability defaults to disabled."""
     obs = ServiceObservability(enabled=False)
 
-    assert obs.enabled is False
+    expect_false(obs.enabled)
 
 
 # =============================================================================
@@ -199,10 +207,10 @@ def test_build_backend_context_basic(fresh_gateway: StorageGateway, tmp_path: Pa
 
     context = build_backend_context(fresh_gateway, cfg)
 
-    assert context.gateway is fresh_gateway
-    assert context.repo == "demo/repo"
-    assert context.commit == "deadbeef"
-    assert context.limits is not None
+    expect_true(context.gateway is fresh_gateway)
+    expect_equal(context.repo, "demo/repo")
+    expect_equal(context.commit, "deadbeef")
+    expect_is_not_none(context.limits)
 
 
 def test_build_backend_context_with_custom_limits(
@@ -222,8 +230,8 @@ def test_build_backend_context_with_custom_limits(
 
     context = build_backend_context(fresh_gateway, cfg, limits=custom_limits)
 
-    assert context.limits.default_limit == SMALL_DEFAULT_LIMIT
-    assert context.limits.max_rows_per_call == SMALL_MAX_LIMIT
+    expect_equal(context.limits.default_limit, SMALL_DEFAULT_LIMIT)
+    expect_equal(context.limits.max_rows_per_call, SMALL_MAX_LIMIT)
 
 
 # =============================================================================
@@ -245,8 +253,8 @@ def test_build_repositories_returns_duckdb_repositories(
 
     repos = build_repositories(fresh_gateway, cfg)
 
-    assert repos.repo == "demo/repo"
-    assert repos.commit == "deadbeef"
+    expect_equal(repos.repo, "demo/repo")
+    expect_equal(repos.commit, "deadbeef")
 
 
 # =============================================================================
@@ -267,7 +275,7 @@ def test_build_http_query_service_basic() -> None:
 
     service = build_http_query_service(mock_request, limits=limits)
 
-    assert isinstance(service, HttpQueryService)
+    expect_is_instance(service, HttpQueryService)
 
 
 def test_build_http_query_service_with_observability() -> None:
@@ -281,7 +289,7 @@ def test_build_http_query_service_with_observability() -> None:
 
     service = build_http_query_service(mock_request, limits=limits, observability=obs)
 
-    assert isinstance(service, HttpQueryService)
+    expect_is_instance(service, HttpQueryService)
 
 
 # =============================================================================
@@ -333,7 +341,7 @@ def test_build_service_from_config_local_db_with_observability(
 
     service = build_service_from_config(cfg, gateway=provisioned_repo.gateway, options=opts)
 
-    assert isinstance(service, LocalQueryService)
+    expect_is_instance(service, LocalQueryService)
 
 
 def test_build_service_from_config_remote_api_returns_http_service(tmp_path: Path) -> None:
@@ -352,7 +360,7 @@ def test_build_service_from_config_remote_api_returns_http_service(tmp_path: Pat
 
     service = build_service_from_config(cfg, request_json=mock_request)
 
-    assert isinstance(service, HttpQueryService)
+    expect_is_instance(service, HttpQueryService)
 
 
 def test_build_service_from_config_local_db_returns_local_service(
@@ -369,7 +377,7 @@ def test_build_service_from_config_local_db_returns_local_service(
 
     service = build_service_from_config(cfg, gateway=provisioned_repo.gateway)
 
-    assert isinstance(service, LocalQueryService)
+    expect_is_instance(service, LocalQueryService)
 
 
 # =============================================================================
@@ -389,11 +397,11 @@ def test_build_service_stack_returns_stack(provisioned_repo: ProvisionedGateway)
 
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway)
 
-    assert isinstance(stack, ServiceStack)
-    assert stack.service is not None
-    assert stack.query is not None
-    assert stack.context is not None
-    assert stack.repositories is not None
+    expect_is_instance(stack, ServiceStack)
+    expect_is_not_none(stack.service)
+    expect_is_not_none(stack.query)
+    expect_is_not_none(stack.context)
+    expect_is_not_none(stack.repositories)
 
 
 def test_build_service_stack_with_options(provisioned_repo: ProvisionedGateway) -> None:
@@ -412,7 +420,7 @@ def test_build_service_stack_with_options(provisioned_repo: ProvisionedGateway) 
 
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway, options=options)
 
-    assert isinstance(stack, ServiceStack)
+    expect_is_instance(stack, ServiceStack)
 
 
 def test_build_service_stack_close_calls_cleanup(provisioned_repo: ProvisionedGateway) -> None:
@@ -430,7 +438,7 @@ def test_build_service_stack_close_calls_cleanup(provisioned_repo: ProvisionedGa
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway)
 
     # Just verify close_fn is callable
-    assert callable(stack.close_fn)
+    expect_true(callable(stack.close_fn))
 
 
 # =============================================================================
@@ -451,8 +459,8 @@ def test_service_stack_close_method(provisioned_repo: ProvisionedGateway) -> Non
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway)
 
     # Verify close method exists
-    assert hasattr(stack, "close")
-    assert callable(stack.close)
+    expect_true(hasattr(stack, "close"))
+    expect_true(callable(stack.close))
 
 
 # =============================================================================
@@ -494,7 +502,7 @@ def test_build_local_query_service_with_validation(
         registry=registry_opts,
     )
 
-    assert isinstance(service, LocalQueryService)
+    expect_is_instance(service, LocalQueryService)
 
 
 # =============================================================================
@@ -523,7 +531,7 @@ def test_build_query_service_basic(provisioned_repo: ProvisionedGateway) -> None
 
     query = build_query_service(context, repos, provider)
 
-    assert query is not None
+    expect_is_not_none(query)
     # Access repo/commit through context
-    assert query.context.repo == provisioned_repo.repo
-    assert query.context.commit == provisioned_repo.commit
+    expect_equal(query.context.repo, provisioned_repo.repo)
+    expect_equal(query.context.commit, provisioned_repo.commit)

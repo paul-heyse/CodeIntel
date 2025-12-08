@@ -50,7 +50,7 @@ class TestExecutionContextBuilder:
     -------
     >>> builder = TestExecutionContextBuilder.create(tmp_path)
     >>> ctx = builder.with_config(MyStepConfig, config).build()
-    >>> assert ctx.has_config(MyStepConfig)
+    >>> ctx.has_config(MyStepConfig)
     """
 
     def __init__(
@@ -324,7 +324,7 @@ def create_test_execution_context(
     Example
     -------
     >>> ctx = create_test_execution_context(tmp_path=tmp_path)
-    >>> assert ctx.repo == DEFAULT_REPO
+    >>> ctx.repo == DEFAULT_REPO
     """
     if gateway is None:
         gateway = open_memory_gateway(

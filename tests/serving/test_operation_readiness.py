@@ -23,6 +23,11 @@ from codeintel.serving.auto_pipeline import (
     PrerequisiteError,
     diagnose_prereq_failure,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_true,
+)
 
 # =============================================================================
 # Fixtures
@@ -60,12 +65,12 @@ def test_prerequisite_error_structure() -> None:
         human_message="Missing targets: ast, call_graph",
     )
 
-    assert error.op_id == "function.summary"
-    assert "call_graph" in error.missing_targets
-    assert "ast" in error.missing_targets
-    assert error.bottleneck == "ast"
-    assert "ast" in error.fix_command
-    assert error.human_message
+    expect_equal(error.op_id, "function.summary")
+    expect_in("call_graph", error.missing_targets)
+    expect_in("ast", error.missing_targets)
+    expect_equal(error.bottleneck, "ast")
+    expect_in("ast", error.fix_command)
+    expect_true(error.human_message)
 
 
 def test_prerequisite_error_frozen() -> None:
@@ -96,14 +101,14 @@ def test_prereqs_satisfied_no_requirements() -> None:
     # datasets.list has no requirements
     # We can't fully test without a gateway, but we can verify the structure
     targets = get_targets_for_operation("datasets.list")
-    assert len(targets.required_targets) == 0
+    expect_equal(len(targets.required_targets), 0)
 
 
 def test_prereqs_satisfied_with_requirements() -> None:
     """Verify operations with requirements map to targets."""
     # function.summary requires callgraph
     targets = get_targets_for_operation("function.summary")
-    assert "call_graph" in targets.graph_targets
+    expect_in("call_graph", targets.graph_targets)
 
 
 # =============================================================================
@@ -117,9 +122,9 @@ def test_diagnose_returns_prerequisite_error() -> None:
     sig = inspect.signature(diagnose_prereq_failure)
     params = list(sig.parameters.keys())
 
-    assert "gateway" in params
-    assert "op_id" in params
-    assert "snapshot" in params
+    expect_in("gateway", params)
+    expect_in("op_id", params)
+    expect_in("snapshot", params)
 
 
 def test_diagnose_prereq_failure_command_format() -> None:
@@ -133,7 +138,7 @@ def test_diagnose_prereq_failure_command_format() -> None:
         human_message="Test",
     )
 
-    assert error.fix_command.startswith("codeintel build run")
+    expect_true(error.fix_command.startswith("codeintel build run"))
 
 
 # =============================================================================
@@ -152,7 +157,7 @@ def test_operation_targets_integration() -> None:
     for target_name in targets.required_targets:
         # This should not raise
         target = graph.get(target_name)
-        assert target.name == target_name
+        expect_equal(target.name, target_name)
 
 
 def test_all_operations_have_valid_targets() -> None:
@@ -165,7 +170,7 @@ def test_all_operations_have_valid_targets() -> None:
             # All targets should exist in the graph
             try:
                 target = graph.get(target_name)
-                assert target.name == target_name
+                expect_equal(target.name, target_name)
             except KeyError:
                 pytest.fail(f"Operation {op_id} requires unknown target: {target_name}")
 
@@ -180,8 +185,8 @@ def test_unknown_operation_prereqs() -> None:
     targets = get_targets_for_operation("completely.unknown.operation")
 
     # Should return empty targets, not raise
-    assert len(targets.required_targets) == 0
-    assert targets.operation_id == "completely.unknown.operation"
+    expect_equal(len(targets.required_targets), 0)
+    expect_equal(targets.operation_id, "completely.unknown.operation")
 
 
 def test_multiple_graph_requirements() -> None:
@@ -189,6 +194,6 @@ def test_multiple_graph_requirements() -> None:
     # architecture.function requires both callgraph and importgraph
     targets = get_targets_for_operation("architecture.function")
 
-    assert "call_graph" in targets.graph_targets
-    assert "import_graph" in targets.graph_targets
-    assert len(targets.graph_targets) == 2
+    expect_in("call_graph", targets.graph_targets)
+    expect_in("import_graph", targets.graph_targets)
+    expect_equal(len(targets.graph_targets), 2)

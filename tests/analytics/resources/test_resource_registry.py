@@ -21,6 +21,13 @@ from codeintel.analytics.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_true,
+)
 
 
 @dataclass
@@ -114,7 +121,7 @@ class AnotherResourceType:
 def test_resource_registry_empty() -> None:
     """Empty registry has no providers."""
     registry = ResourceRegistry()
-    assert len(registry.registered_types) == 0
+    expect_equal(len(registry.registered_types), 0)
 
 
 def test_resource_registry_register() -> None:
@@ -124,8 +131,8 @@ def test_resource_registry_register() -> None:
 
     registry.register(MockResourceType, provider)
 
-    assert registry.has(MockResourceType)
-    assert MockResourceType in registry.registered_types
+    expect_true(registry.has(MockResourceType))
+    expect_true(MockResourceType in registry.registered_types)
 
 
 def test_resource_registry_register_duplicate_raises() -> None:
@@ -148,7 +155,7 @@ def test_resource_registry_get() -> None:
 
     result = registry.get(MockResourceType)
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_resource_registry_get_not_found_raises() -> None:
@@ -158,7 +165,7 @@ def test_resource_registry_get_not_found_raises() -> None:
     with pytest.raises(ResourceNotFoundError) as exc_info:
         registry.get(MockResourceType)
 
-    assert exc_info.value.resource_type is MockResourceType
+    expect_true(exc_info.value.resource_type is MockResourceType)
 
 
 def test_resource_registry_get_or_none() -> None:
@@ -169,7 +176,7 @@ def test_resource_registry_get_or_none() -> None:
 
     result = registry.get_or_none(MockResourceType)
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_resource_registry_get_or_none_not_found() -> None:
@@ -178,7 +185,7 @@ def test_resource_registry_get_or_none_not_found() -> None:
 
     result = registry.get_or_none(MockResourceType)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_resource_registry_has() -> None:
@@ -187,8 +194,8 @@ def test_resource_registry_has() -> None:
     provider = MockProvider(_resource="test")
     registry.register(MockResourceType, provider)
 
-    assert registry.has(MockResourceType) is True
-    assert registry.has(AnotherResourceType) is False
+    expect_true(registry.has(MockResourceType))
+    expect_false(registry.has(AnotherResourceType))
 
 
 def test_resource_registry_register_or_replace() -> None:
@@ -200,8 +207,8 @@ def test_resource_registry_register_or_replace() -> None:
     registry.register(MockResourceType, provider1)
     previous = registry.register_or_replace(MockResourceType, provider2)
 
-    assert previous is provider1
-    assert registry.get(MockResourceType) is provider2
+    expect_true(previous is provider1)
+    expect_true(registry.get(MockResourceType) is provider2)
 
 
 def test_resource_registry_register_or_replace_new() -> None:
@@ -211,8 +218,8 @@ def test_resource_registry_register_or_replace_new() -> None:
 
     previous = registry.register_or_replace(MockResourceType, provider)
 
-    assert previous is None
-    assert registry.has(MockResourceType)
+    expect_is_none(previous)
+    expect_true(registry.has(MockResourceType))
 
 
 def test_resource_registry_get_by_name() -> None:
@@ -223,7 +230,7 @@ def test_resource_registry_get_by_name() -> None:
 
     result = registry.get_by_name("MockResourceType")
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_resource_registry_get_by_name_custom() -> None:
@@ -234,7 +241,7 @@ def test_resource_registry_get_by_name_custom() -> None:
 
     result = registry.get_by_name("CustomName")
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_resource_registry_get_by_name_not_found() -> None:
@@ -251,8 +258,8 @@ def test_resource_registry_has_by_name() -> None:
     provider = MockProvider(_resource="test")
     registry.register(MockResourceType, provider)
 
-    assert registry.has_by_name("MockResourceType") is True
-    assert registry.has_by_name("OtherName") is False
+    expect_true(registry.has_by_name("MockResourceType"))
+    expect_false(registry.has_by_name("OtherName"))
 
 
 def test_resource_registry_require() -> None:
@@ -263,8 +270,8 @@ def test_resource_registry_require() -> None:
 
     result = registry.require(MockResourceType)
 
-    assert result == "resource_value"
-    assert provider.is_loaded
+    expect_equal(result, "resource_value")
+    expect_true(provider.is_loaded)
 
 
 def test_resource_registry_require_not_found() -> None:
@@ -283,7 +290,7 @@ def test_resource_registry_require_by_name() -> None:
 
     result = registry.require_by_name("MockResourceType")
 
-    assert result == "named_value"
+    expect_equal(result, "named_value")
 
 
 def test_resource_registry_require_or_none() -> None:
@@ -294,7 +301,7 @@ def test_resource_registry_require_or_none() -> None:
 
     result = registry.require_or_none(MockResourceType)
 
-    assert result == "value"
+    expect_equal(result, "value")
 
 
 def test_resource_registry_require_or_none_not_found() -> None:
@@ -303,7 +310,7 @@ def test_resource_registry_require_or_none_not_found() -> None:
 
     result = registry.require_or_none(MockResourceType)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_resource_registry_require_or_none_not_loaded() -> None:
@@ -314,7 +321,7 @@ def test_resource_registry_require_or_none_not_loaded() -> None:
 
     result = registry.require_or_none(MockResourceType)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_resource_registry_invalidate_specific() -> None:
@@ -325,11 +332,11 @@ def test_resource_registry_invalidate_specific() -> None:
 
     # Load the resource
     registry.require(MockResourceType)
-    assert provider.is_loaded
+    expect_true(provider.is_loaded)
 
     # Invalidate
     registry.invalidate(MockResourceType)
-    assert not provider.is_loaded
+    expect_false(provider.is_loaded)
 
 
 def test_resource_registry_invalidate_all() -> None:
@@ -343,13 +350,13 @@ def test_resource_registry_invalidate_all() -> None:
     # Load both
     registry.require(MockResourceType)
     registry.require(AnotherResourceType)
-    assert provider1.is_loaded
-    assert provider2.is_loaded
+    expect_true(provider1.is_loaded)
+    expect_true(provider2.is_loaded)
 
     # Invalidate all
     registry.invalidate()
-    assert not provider1.is_loaded
-    assert not provider2.is_loaded
+    expect_false(provider1.is_loaded)
+    expect_false(provider2.is_loaded)
 
 
 def test_resource_registry_invalidate_not_registered() -> None:
@@ -368,9 +375,9 @@ def test_resource_registry_clear() -> None:
 
     registry.clear()
 
-    assert len(registry.registered_types) == 0
-    assert not registry.has(MockResourceType)
-    assert not registry.has_by_name("MockResourceType")
+    expect_equal(len(registry.registered_types), 0)
+    expect_false(registry.has(MockResourceType))
+    expect_false(registry.has_by_name("MockResourceType"))
 
 
 def test_resource_registry_registered_types() -> None:
@@ -381,62 +388,62 @@ def test_resource_registry_registered_types() -> None:
 
     types = registry.registered_types
 
-    assert isinstance(types, frozenset)
-    assert MockResourceType in types
-    assert AnotherResourceType in types
+    expect_true(isinstance(types, frozenset))
+    expect_true(MockResourceType in types)
+    expect_true(AnotherResourceType in types)
 
 
 def test_resource_not_found_error() -> None:
     """ResourceNotFoundError stores the resource type."""
     error = ResourceNotFoundError(MockResourceType)
 
-    assert error.resource_type is MockResourceType
-    assert "MockResourceType" in str(error)
+    expect_true(error.resource_type is MockResourceType)
+    expect_in("MockResourceType", str(error))
 
 
 def test_resource_not_loaded_error() -> None:
     """ResourceNotLoadedError stores type and reason."""
     error = ResourceNotLoadedError("TestResource", "connection failed")
 
-    assert error.resource_type == "TestResource"
-    assert error.reason == "connection failed"
-    assert "TestResource" in str(error)
-    assert "connection failed" in str(error)
+    expect_equal(error.resource_type, "TestResource")
+    expect_equal(error.reason, "connection failed")
+    expect_in("TestResource", str(error))
+    expect_in("connection failed", str(error))
 
 
 def test_resource_not_loaded_error_no_reason() -> None:
     """ResourceNotLoadedError without reason."""
     error = ResourceNotLoadedError("TestResource")
 
-    assert error.resource_type == "TestResource"
-    assert error.reason is None
-    assert "TestResource" in str(error)
+    expect_equal(error.resource_type, "TestResource")
+    expect_is_none(error.reason)
+    expect_in("TestResource", str(error))
 
 
 def test_resource_error_hierarchy() -> None:
     """Resource errors inherit from ResourceError."""
-    assert issubclass(ResourceNotLoadedError, ResourceError)
+    expect_true(issubclass(ResourceNotLoadedError, ResourceError))
 
 
 def test_mock_provider_protocol_compliance() -> None:
     """MockProvider implements ResourceProvider protocol."""
     provider = MockProvider(_resource="test", _name="TestProvider")
 
-    assert hasattr(provider, "is_loaded")
-    assert hasattr(provider, "resource_name")
-    assert hasattr(provider, "get")
-    assert hasattr(provider, "get_or_none")
-    assert hasattr(provider, "invalidate")
+    expect_true(hasattr(provider, "is_loaded"))
+    expect_true(hasattr(provider, "resource_name"))
+    expect_true(hasattr(provider, "get"))
+    expect_true(hasattr(provider, "get_or_none"))
+    expect_true(hasattr(provider, "invalidate"))
 
-    assert provider.resource_name == "TestProvider"
-    assert not provider.is_loaded
+    expect_equal(provider.resource_name, "TestProvider")
+    expect_false(provider.is_loaded)
 
     value = provider.get()
-    assert value == "test"
-    assert provider.is_loaded
+    expect_equal(value, "test")
+    expect_true(provider.is_loaded)
 
     provider.invalidate()
-    assert not provider.is_loaded
+    expect_false(provider.is_loaded)
 
 
 def test_resource_registry_multiple_registrations() -> None:
@@ -449,4 +456,4 @@ def test_resource_registry_multiple_registrations() -> None:
         registry.register(resource_type, provider)
 
     expected_count = 5
-    assert len(registry.registered_types) == expected_count
+    expect_equal(len(registry.registered_types), expected_count)

@@ -9,10 +9,11 @@ import networkx as nx
 from codeintel.analytics.plugins.functions.effects import FunctionEffectsPlugin
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
-from tests._helpers.context import create_test_context
+from tests._helpers.assertions import expect_true
 from tests._helpers.fakes.graph_engine import StubGraphEngine
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta
+from tests.analytics.conftest import PluginTestHarness
 
 
 def _seed_effect_sources(repo_root: Path) -> None:
@@ -77,33 +78,29 @@ def _call_graph() -> nx.DiGraph:
     return graph
 
 
-def test_function_effects_plugin_detects_transitive_effects(tmp_path: Path) -> None:
+def test_function_effects_plugin_detects_transitive_effects(
+    plugin_harness: PluginTestHarness,
+) -> None:
     """FunctionEffectsPlugin should mark direct and transitive side effects."""
-    ctx = create_test_context(tmp_path)
-    _seed_effect_sources(ctx.repo_root)
-    catalog_provider = _make_catalog(ctx.repo, ctx.commit)
+    _seed_effect_sources(plugin_harness.ctx.repo_root)
+    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
     engine = StubGraphEngine(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
+        gateway=plugin_harness.ctx.gateway,
+        snapshot=plugin_harness.ctx.snapshot,
         call_graph=_call_graph(),
     )
     runtime = GraphRuntime(
-        options=GraphRuntimeOptions(snapshot=ctx.snapshot),
+        options=GraphRuntimeOptions(snapshot=plugin_harness.ctx.snapshot),
         engine=engine,
     )
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    plugin_ctx.resources.catalog = catalog_provider
-    plugin_ctx.resources.graph_runtime = runtime
+    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
+    plugin_harness.plugin_ctx.resources.graph_runtime = runtime
 
-    result = execute_target_plugin(FunctionEffectsPlugin(), plugin_ctx)
-    assert result.success
+    result = execute_target_plugin(FunctionEffectsPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
 
-    helper_row = ctx.query(
+    helper_row = plugin_harness.ctx.query(
         """
         SELECT is_pure, modifies_globals, has_transitive_effects
         FROM analytics.function_effects
@@ -111,11 +108,11 @@ def test_function_effects_plugin_detects_transitive_effects(tmp_path: Path) -> N
         """,
         [7001],
     )[0]
-    assert helper_row.is_pure is False
-    assert helper_row.modifies_globals is True
-    assert helper_row.has_transitive_effects is False
+    expect_true(helper_row.is_pure is False)
+    expect_true(helper_row.modifies_globals is True)
+    expect_true(helper_row.has_transitive_effects is False)
 
-    main_row = ctx.query(
+    main_row = plugin_harness.ctx.query(
         """
         SELECT is_pure, has_transitive_effects
         FROM analytics.function_effects
@@ -123,7 +120,5 @@ def test_function_effects_plugin_detects_transitive_effects(tmp_path: Path) -> N
         """,
         [7002],
     )[0]
-    assert main_row.is_pure is False
-    assert main_row.has_transitive_effects is True
-
-    ctx.close()
+    expect_true(main_row.is_pure is False)
+    expect_true(main_row.has_transitive_effects is True)

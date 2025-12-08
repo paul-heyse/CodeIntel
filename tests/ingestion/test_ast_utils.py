@@ -19,6 +19,12 @@ from codeintel.ingestion.infrastructure.ast_utils import (
     parse_python_module,
     timed_parse,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_none,
+    expect_true,
+)
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 
@@ -82,10 +88,10 @@ def test_indexes_function_defs() -> None:
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
 
     # Should have indexed foo and baz functions
-    assert len(index.node_map) >= 1
+    expect_true(len(index.node_map) >= 1)
     # Verify at least one function is indexed
     spans = list(index.node_map.keys())
-    assert all(isinstance(s[0], int) and isinstance(s[1], int) for s in spans)
+    expect_true(all(isinstance(s[0], int) and isinstance(s[1], int) for s in spans))
 
 
 def test_indexes_class_defs() -> None:
@@ -94,10 +100,10 @@ def test_indexes_class_defs() -> None:
     index = AstSpanIndex.from_tree(tree, kinds=(ast.ClassDef,))
 
     # Should have indexed Bar class
-    assert len(index.node_map) >= 1
+    expect_true(len(index.node_map) >= 1)
     # Check that we have a ClassDef
     found_class = any(isinstance(n, ast.ClassDef) for n in index.node_map.values())
-    assert found_class
+    expect_true(found_class)
 
 
 def test_indexes_multiple_kinds() -> None:
@@ -107,7 +113,7 @@ def test_indexes_multiple_kinds() -> None:
 
     # Should have function and class nodes
     node_types = {type(n).__name__ for n in index.node_map.values()}
-    assert "FunctionDef" in node_types or "ClassDef" in node_types
+    expect_true("FunctionDef" in node_types or "ClassDef" in node_types)
 
 
 def test_empty_tree_returns_empty_index() -> None:
@@ -115,7 +121,7 @@ def test_empty_tree_returns_empty_index() -> None:
     tree = ast.parse("")
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
 
-    assert len(index.node_map) == 0
+    expect_equal(len(index.node_map), 0)
 
 
 def test_ignores_nodes_without_lineno() -> None:
@@ -125,7 +131,7 @@ def test_ignores_nodes_without_lineno() -> None:
     index = AstSpanIndex.from_tree(tree, kinds=(ast.Module,))
     # Module node may or may not be indexed depending on lineno
     # Main point is that no error is raised
-    assert isinstance(index.node_map, dict)
+    expect_is_instance(index.node_map, dict)
 
 
 # =============================================================================
@@ -142,7 +148,7 @@ def test_exact_span_match() -> None:
     for (start, end), node in index.node_map.items():
         if isinstance(node, ast.FunctionDef) and node.name == "foo":
             result = index.lookup(start, end)
-            assert result is node
+            expect_true(result is node)
             break
 
 
@@ -158,7 +164,7 @@ def test_enclosing_span_match() -> None:
             mid_line = start + 1
             result = index.lookup(mid_line, mid_line)
             # Should return the enclosing function
-            assert result is not None
+            expect_true(result is not None)
             break
 
 
@@ -169,7 +175,7 @@ def test_no_match_returns_none() -> None:
 
     # Lookup a line that doesn't exist
     result = index.lookup(9999, 9999)
-    assert result is None
+    expect_is_none(result)
 
 
 def test_none_end_line_uses_start() -> None:
@@ -182,7 +188,7 @@ def test_none_end_line_uses_start() -> None:
         (start, _end), _ = next(iter(index.node_map.items()))
         # Lookup with None end should work
         result = index.lookup(start, None)
-        assert result is not None
+        expect_true(result is not None)
 
 
 def test_smallest_enclosing_span_preferred() -> None:
@@ -203,7 +209,7 @@ def test_smallest_enclosing_span_preferred() -> None:
             line = node.lineno
             result = index.lookup(line, line)
             # Should find the function, not the class
-            assert result is node or isinstance(result, ast.FunctionDef)
+            expect_true(result is node or isinstance(result, ast.FunctionDef))
             break
 
 
@@ -219,10 +225,11 @@ def test_parses_valid_file(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result for valid file")
     lines, tree = result
-    assert len(lines) > 0
-    assert isinstance(tree, ast.Module)
+    expect_true(len(lines) > 0)
+    expect_is_instance(tree, ast.Module)
 
 
 def test_returns_source_lines(tmp_path: Path) -> None:
@@ -233,12 +240,13 @@ def test_returns_source_lines(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result for test file")
     lines, _ = result
-    assert len(lines) == EXPECTED_SOURCE_LINES
-    assert lines[0] == "x = 1"
-    assert lines[1] == "y = 2"
-    assert lines[2] == "z = 3"
+    expect_equal(len(lines), EXPECTED_SOURCE_LINES)
+    expect_equal(lines[0], "x = 1")
+    expect_equal(lines[1], "y = 2")
+    expect_equal(lines[2], "z = 3")
 
 
 def test_returns_none_for_missing_file(tmp_path: Path) -> None:
@@ -247,7 +255,7 @@ def test_returns_none_for_missing_file(tmp_path: Path) -> None:
 
     result = parse_python_module(missing)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_returns_none_for_syntax_error(tmp_path: Path) -> None:
@@ -257,7 +265,7 @@ def test_returns_none_for_syntax_error(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_handles_unicode_content(tmp_path: Path) -> None:
@@ -267,10 +275,11 @@ def test_handles_unicode_content(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result for unicode file")
     lines, tree = result
-    assert "café" in lines[0] or "naïve" in lines[0]
-    assert isinstance(tree, ast.Module)
+    expect_true("café" in lines[0] or "naïve" in lines[0])
+    expect_is_instance(tree, ast.Module)
 
 
 def test_returns_none_for_binary_file(tmp_path: Path) -> None:
@@ -281,7 +290,7 @@ def test_returns_none_for_binary_file(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_parses_empty_file(tmp_path: Path) -> None:
@@ -291,10 +300,11 @@ def test_parses_empty_file(tmp_path: Path) -> None:
 
     result = parse_python_module(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result for empty file")
     lines, tree = result
-    assert len(lines) == 0 or lines == [""]
-    assert isinstance(tree, ast.Module)
+    expect_true(len(lines) == 0 or lines == [""])
+    expect_is_instance(tree, ast.Module)
 
 
 # =============================================================================
@@ -309,12 +319,13 @@ def test_returns_lines_tree_and_duration(tmp_path: Path) -> None:
 
     result = timed_parse(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected timed_parse result for valid file")
     lines, tree, duration = result
-    assert len(lines) > 0
-    assert isinstance(tree, ast.Module)
-    assert isinstance(duration, float)
-    assert duration >= 0
+    expect_true(len(lines) > 0)
+    expect_is_instance(tree, ast.Module)
+    expect_is_instance(duration, float)
+    expect_true(duration >= 0)
 
 
 def test_duration_is_non_negative(tmp_path: Path) -> None:
@@ -324,9 +335,10 @@ def test_duration_is_non_negative(tmp_path: Path) -> None:
 
     result = timed_parse(test_file)
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected timed_parse result for simple file")
     _, _, duration = result
-    assert duration >= 0
+    expect_true(duration >= 0)
 
 
 def test_timed_parse_returns_none_on_parse_failure(tmp_path: Path) -> None:
@@ -336,7 +348,7 @@ def test_timed_parse_returns_none_on_parse_failure(tmp_path: Path) -> None:
 
     result = timed_parse(test_file)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_timed_parse_returns_none_for_missing_file(tmp_path: Path) -> None:
@@ -345,7 +357,7 @@ def test_timed_parse_returns_none_for_missing_file(tmp_path: Path) -> None:
 
     result = timed_parse(missing)
 
-    assert result is None
+    expect_is_none(result)
 
 
 # =============================================================================
@@ -360,7 +372,8 @@ def test_parse_and_index_workflow(tmp_path: Path) -> None:
 
     # Parse the module
     result = parse_python_module(test_file)
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result in workflow test")
     lines, tree = result
 
     # Build index
@@ -370,7 +383,7 @@ def test_parse_and_index_workflow(tmp_path: Path) -> None:
     for (start, _), node in index.node_map.items():
         if isinstance(node, ast.FunctionDef):
             # Verify we can find the function's source in lines
-            assert start <= len(lines)
+            expect_true(start <= len(lines))
             break
 
 
@@ -380,19 +393,21 @@ def test_multiline_function_span(tmp_path: Path) -> None:
     test_file.write_text(MULTILINE_FUNCTION, encoding="utf-8")
 
     result = parse_python_module(test_file)
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected parse result for multiline function")
     _lines, tree = result
 
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
 
     # Should have one function
-    assert len(index.node_map) == 1
+    expect_equal(len(index.node_map), 1)
 
     # Function should span multiple lines
     (start, end), node = next(iter(index.node_map.items()))
-    assert isinstance(node, ast.FunctionDef)
-    assert node.name == "complex_function"
-    assert end > start  # Multi-line
+    if not isinstance(node, ast.FunctionDef):
+        pytest.fail(f"Expected FunctionDef node, got {type(node).__name__}")
+    expect_equal(node.name, "complex_function")
+    expect_true(end > start)  # Multi-line
 
 
 # =============================================================================

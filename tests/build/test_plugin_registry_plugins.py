@@ -10,6 +10,7 @@ import pytest
 from codeintel.build import plugin_registry
 from codeintel.build.plugin_registry import get_all_plugins, get_plugin_for_target
 from codeintel.build.plugins import TargetPlugin, all_plugins, get_plugin, register_plugin
+from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.build import RecordingPlugin
 
 
@@ -26,8 +27,8 @@ def test_register_and_get_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
 
     plugin = get_plugin_for_target("record")
 
-    assert isinstance(plugin, RecordingPlugin)
-    assert plugin.plugin_name == "recording_plugin"
+    expect_is_instance(plugin, RecordingPlugin)
+    expect_equal(plugin.plugin_name, "recording_plugin")
 
 
 def test_get_all_plugins_returns_copy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,7 +40,7 @@ def test_get_all_plugins_returns_copy(monkeypatch: pytest.MonkeyPatch) -> None:
     plugins_copy = dict(plugins_before)
     plugins_copy["new"] = RecordingPlugin
 
-    assert get_all_plugins() == plugins_before
+    expect_equal(get_all_plugins(), plugins_before)
 
 
 def test_missing_plugin_error_lists_available(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,8 +51,8 @@ def test_missing_plugin_error_lists_available(monkeypatch: pytest.MonkeyPatch) -
     with pytest.raises(KeyError) as excinfo:
         get_plugin_for_target("absent")
 
-    assert "available" in str(excinfo.value).lower()
-    assert "present" in str(excinfo.value)
+    expect_in("available", str(excinfo.value).lower())
+    expect_in("present", str(excinfo.value))
 
 
 def test_duplicate_registration_logs_warning(
@@ -64,7 +65,7 @@ def test_duplicate_registration_logs_warning(
     plugin_registry.register_plugin("record", RecordingPlugin)
     plugin_registry.register_plugin("record", RecordingPlugin)
 
-    assert any("Overwriting plugin" in rec.message for rec in caplog.records)
+    expect_true(any("Overwriting plugin" in rec.message for rec in caplog.records))
 
 
 def test_lazy_registration_handles_import_error(
@@ -88,8 +89,8 @@ def test_lazy_registration_handles_import_error(
 
     plugins = get_all_plugins()
 
-    assert plugins == {}
-    assert any("Failed to register plugin" in rec.message for rec in caplog.records)
+    expect_equal(plugins, {})
+    expect_true(any("Failed to register plugin" in rec.message for rec in caplog.records))
 
 
 def test_lazy_registration_handles_attribute_error(
@@ -110,8 +111,8 @@ def test_lazy_registration_handles_attribute_error(
 
     plugins = get_all_plugins()
 
-    assert plugins == {}
-    assert any("Failed to register plugin" in rec.message for rec in caplog.records)
+    expect_equal(plugins, {})
+    expect_true(any("Failed to register plugin" in rec.message for rec in caplog.records))
 
 
 def test_register_plugin_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,8 +123,8 @@ def test_register_plugin_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
     class DecoratedPlugin(RecordingPlugin, TargetPlugin):
         plugin_name: ClassVar[str] = "decorated"
 
-    assert get_plugin("decorated") is DecoratedPlugin
-    assert "decorated" in all_plugins()
+    expect_true(get_plugin("decorated") is DecoratedPlugin)
+    expect_in("decorated", all_plugins())
 
 
 def test_all_plugins_is_copy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,10 +138,10 @@ def test_all_plugins_is_copy(monkeypatch: pytest.MonkeyPatch) -> None:
     plugins = all_plugins()
     plugins.pop("another")
 
-    assert "another" in all_plugins()
+    expect_in("another", all_plugins())
 
 
 def test_get_plugin_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """get_plugin returns None when plugin is absent."""
     monkeypatch.setattr("codeintel.build.plugins._PLUGIN_REGISTRY", {})
-    assert get_plugin("absent") is None
+    expect_true(get_plugin("absent") is None)

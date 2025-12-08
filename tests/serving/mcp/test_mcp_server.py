@@ -15,6 +15,7 @@ from codeintel.serving.bootstrap import BackendResource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.server import create_mcp_server
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -58,8 +59,8 @@ def test_create_mcp_server_returns_server_and_close(
 
     server, close = create_mcp_server(cfg, gateway=provisioned_repo.gateway)
 
-    assert isinstance(server, FastMCP)
-    assert callable(close)
+    expect_is_instance(server, FastMCP)
+    expect_true(callable(close))
 
 
 def test_create_mcp_server_with_custom_backend_factory(
@@ -111,8 +112,8 @@ def test_create_mcp_server_with_custom_backend_factory(
         gateway=provisioned_repo.gateway,
     )
 
-    assert factory_called
-    assert isinstance(server, FastMCP)
+    expect_true(factory_called)
+    expect_is_instance(server, FastMCP)
 
 
 def test_create_mcp_server_with_custom_tools_registration(
@@ -145,8 +146,8 @@ def test_create_mcp_server_with_custom_tools_registration(
         register_tools_fn=custom_register_tools,
     )
 
-    assert tools_registered
-    assert isinstance(server, FastMCP)
+    expect_true(tools_registered)
+    expect_is_instance(server, FastMCP)
 
 
 def test_create_mcp_server_close_callback_callable(
@@ -204,7 +205,7 @@ def test_create_mcp_server_close_callback_callable(
 
     # Call close to verify it's invoked
     close()
-    assert close_called
+    expect_true(close_called)
 
 
 def test_create_mcp_server_default_tools_registered(
@@ -228,6 +229,6 @@ def test_create_mcp_server_default_tools_registered(
     server, _close = create_mcp_server(cfg, gateway=provisioned_repo.gateway)
 
     # Server should have tools registered
-    assert isinstance(server, FastMCP)
+    expect_is_instance(server, FastMCP)
     # The server name should be set
-    assert server.name == "CodeIntel"
+    expect_equal(server.name, "CodeIntel")

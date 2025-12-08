@@ -14,6 +14,7 @@ from codeintel.cli.project import (
     find_project_root,
     load_project_config,
 )
+from tests._helpers.assertions import expect_equal
 
 
 def test_find_and_load_project_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -23,13 +24,13 @@ def test_find_and_load_project_config(tmp_path: Path, monkeypatch: pytest.Monkey
     (root / PROJECT_FILE).write_text("repo: github.com/demo/repo\n", encoding="utf-8")
 
     discovered = find_project_root(root)
-    assert discovered == root
+    expect_equal(discovered, root)
 
     cfg = load_project_config(root)
-    assert cfg.repo == "github.com/demo/repo"
+    expect_equal(cfg.repo, "github.com/demo/repo")
 
     monkeypatch.setenv("CODEINTEL_COMMIT", "abc123")
-    assert detect_commit(root) == "abc123"
+    expect_equal(detect_commit(root), "abc123")
 
 
 def test_missing_and_invalid_project_file(tmp_path: Path) -> None:

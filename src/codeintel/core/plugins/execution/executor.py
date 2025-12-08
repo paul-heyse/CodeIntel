@@ -12,16 +12,19 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, TypeVar, cast
+from enum import Enum
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from codeintel.core.execution.errors import PLUGIN_CATCHABLE_ERRORS
 from codeintel.core.execution.telemetry import get_runtime_telemetry
 from codeintel.core.execution.timing import utc_now
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
+from codeintel.core.plugins.execution.tracking import FatalHandling
 from codeintel.core.plugins.types.protocol import ValidationResult
-from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult, PluginStatus
 
 if TYPE_CHECKING:
     from codeintel.core.execution.telemetry import RuntimeTelemetry
@@ -39,6 +42,186 @@ P = TypeVar("P", bound="PluginProtocol")
 C = TypeVar("C", bound="PluginExecutionContext")
 EC = TypeVar("EC", bound="BaseExecutorContext")
 R = TypeVar("R", bound="BaseExecutionReport")
+
+
+@dataclass(frozen=True)
+class ExecutionStrategyContext[P, EC]:
+    """Context passed to strategy hooks for plugin execution decisions."""
+
+    plugin: P
+    executor_ctx: EC
+    policy: BaseExecutionPolicy
+    settings: PluginExecutionSettings | None
+    prior_manifest: Mapping[str, Mapping[str, object]] | None
+
+
+class ExecutionStrategy(Enum):
+    """Named execution strategies for plugin runs."""
+
+    STANDARD = "standard"
+
+
+class PluginExecutionStrategy[P, C, EC](Protocol):
+    """Strategy interface for execution hooks and manifest building."""
+
+    def should_skip(self, ctx: ExecutionStrategyContext[P, EC]) -> str | None:
+        """Return a skip reason or None for the given plugin."""
+
+    def on_success(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        plugin_ctx: C,
+        result: PluginResult,
+    ) -> None:
+        """Handle successful execution."""
+
+    def on_failure(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        plugin_ctx: C,
+        error: str | None,
+    ) -> None:
+        """Handle failed execution."""
+
+    def build_manifest_entry(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        record: PluginExecutionRecord,
+    ) -> dict[str, object] | None:
+        """Build a manifest entry for a completed plugin."""
+
+
+class DefaultPluginExecutionStrategy[P, C, EC]:
+    """Default execution hooks with dry-run skipping and no manifest tracking."""
+
+    def __init__(self, strategy: ExecutionStrategy = ExecutionStrategy.STANDARD) -> None:
+        self._strategy = strategy
+
+    @property
+    def strategy(self) -> ExecutionStrategy:
+        """Configured execution strategy name."""
+        return self._strategy
+
+    def should_skip(self, ctx: ExecutionStrategyContext[P, EC]) -> str | None:
+        """Determine whether to skip plugin execution.
+
+        Parameters
+        ----------
+        ctx
+            Strategy context for the plugin run.
+
+        Returns
+        -------
+        str | None
+            Skip reason when skipping, otherwise None.
+        """
+        # Provide an explicit self reference to allow future strategy-specific branching
+        if self._strategy is ExecutionStrategy.STANDARD and ctx.policy.dry_run:
+            return "dry_run"
+        return None
+
+    def on_success(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        plugin_ctx: C,
+        result: PluginResult,
+    ) -> None:
+        """Invoke the success hook (no-op by default)."""
+        _ = (ctx, plugin_ctx, result, self._strategy)
+
+    def on_failure(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        plugin_ctx: C,
+        error: str | None,
+    ) -> None:
+        """Invoke the failure hook (no-op by default)."""
+        _ = (ctx, plugin_ctx, error, self._strategy)
+
+    def build_manifest_entry(
+        self,
+        ctx: ExecutionStrategyContext[P, EC],
+        record: PluginExecutionRecord,
+    ) -> dict[str, object] | None:
+        """Build a manifest entry for tracking if enabled.
+
+        Parameters
+        ----------
+        ctx
+            Strategy context for the plugin run.
+        record
+            Execution record for the plugin.
+
+        Returns
+        -------
+        dict[str, object] | None
+            Manifest payload, or None when manifest tracking is disabled.
+        """
+        _ = (ctx, record, self._strategy)
+        return None
+
+
+@dataclass(frozen=True)
+class ExecutionOptions[P, C, EC]:
+    """Options controlling executor behavior and hook strategy."""
+
+    fatal_handling: FatalHandling = FatalHandling.FAIL_FAST
+    strategy: PluginExecutionStrategy[P, C, EC] | None = None
+    strategy_name: ExecutionStrategy = ExecutionStrategy.STANDARD
+
+    def __post_init__(self) -> None:
+        """Populate missing strategy with the default implementation."""
+        if self.strategy is None:
+            object.__setattr__(
+                self,
+                "strategy",
+                cast(
+                    "PluginExecutionStrategy[P, C, EC]",
+                    DefaultPluginExecutionStrategy(),
+                ),
+            )
+
+    @classmethod
+    def from_policy(
+        cls,
+        policy: BaseExecutionPolicy,
+        *,
+        strategy: PluginExecutionStrategy[P, C, EC] | None = None,
+        strategy_name: ExecutionStrategy = ExecutionStrategy.STANDARD,
+    ) -> ExecutionOptions[P, C, EC]:
+        """Create execution options derived from an execution policy.
+
+        Returns
+        -------
+        ExecutionOptions[P, C, EC]
+            Options aligned to the provided policy defaults.
+        """
+        fatal_handling = FatalHandling.FAIL_FAST if policy.fail_fast else FatalHandling.CONTINUE
+        return cls(
+            fatal_handling=fatal_handling,
+            strategy=strategy,
+            strategy_name=strategy_name,
+        )
+
+
+@dataclass(frozen=True)
+class ExecutionReportContext[EC]:
+    """Context for building execution reports."""
+
+    run_id: str
+    started_at: datetime
+    ended_at: datetime
+    duration_ms: float
+    fatal_error: bool
+    executor_ctx: EC
+
+
+@dataclass(frozen=True)
+class ExecutionTiming:
+    """Captured timing data for an individual plugin run."""
+
+    ended_at: datetime
+    duration_ms: float
 
 
 class BasePluginExecutor[
@@ -77,7 +260,7 @@ class BasePluginExecutor[
     ...     def _build_plugin_context(self, base_ctx, plugin, scratch):
     ...         return MyContext(...)
     ...
-    ...     def _build_report(self, run_id, records, started_at, ended_at, ...):
+    ...     def _build_report(self, records, report_ctx):
     ...         return MyReport(...)
     """
 
@@ -86,6 +269,7 @@ class BasePluginExecutor[
         policy: BaseExecutionPolicy | None = None,
         telemetry: RuntimeTelemetry | None = None,
         prior_manifest: Mapping[str, Mapping[str, object]] | None = None,
+        options: ExecutionOptions[P, C, EC] | None = None,
     ) -> None:
         """Initialize the executor.
 
@@ -97,11 +281,18 @@ class BasePluginExecutor[
             Runtime telemetry. Uses default singleton if not provided.
         prior_manifest
             Prior execution manifest for skip detection.
+        options
+            Execution options such as fatal handling and strategy hooks.
         """
         self._policy = policy or BaseExecutionPolicy()
         self._telemetry = telemetry or get_runtime_telemetry()
         self._prior_manifest = prior_manifest
         self._manifest: dict[str, dict[str, object]] = {}
+        self._options = options or ExecutionOptions.from_policy(self._policy)
+        self._strategy: PluginExecutionStrategy[P, C, EC] = cast(
+            "PluginExecutionStrategy[P, C, EC]",
+            self._options.strategy,
+        )
 
     @property
     def policy(self) -> BaseExecutionPolicy:
@@ -124,6 +315,11 @@ class BasePluginExecutor[
             Current telemetry instance.
         """
         return self._telemetry
+
+    @property
+    def options(self) -> ExecutionOptions[P, C, EC]:
+        """Return execution options."""
+        return self._options
 
     @abstractmethod
     def _build_plugin_context(
@@ -153,32 +349,17 @@ class BasePluginExecutor[
     @abstractmethod
     def _build_report(
         self,
-        run_id: str,
         records: list[PluginExecutionRecord],
-        started_at: datetime,
-        ended_at: datetime,
-        duration_ms: float,
-        fatal_error: bool,
-        executor_ctx: EC,
+        report_ctx: ExecutionReportContext[EC],
     ) -> R:
         """Build domain-specific execution report.
 
         Parameters
         ----------
-        run_id
-            Unique identifier for this run.
         records
             Plugin execution records.
-        started_at
-            When execution started.
-        ended_at
-            When execution ended.
-        duration_ms
-            Total duration in milliseconds.
-        fatal_error
-            Whether execution ended due to fatal error.
-        executor_ctx
-            Executor context for additional report fields.
+        report_ctx
+            Context summarizing run identifiers, timing, and execution status.
 
         Returns
         -------
@@ -187,34 +368,22 @@ class BasePluginExecutor[
         """
         ...
 
-    def _should_skip_plugin(
-        self,
-        plugin: P,
-        executor_ctx: EC,
-    ) -> str | None:
-        """Check if plugin should be skipped.
-
-        Override in subclass to implement domain-specific skip logic.
+    def _should_skip_plugin(self, strategy_ctx: ExecutionStrategyContext[P, EC]) -> str | None:
+        """Check if plugin should be skipped using the configured strategy.
 
         Parameters
         ----------
-        plugin
-            Plugin to check.
-        executor_ctx
-            Executor context.
+        strategy_ctx
+            Strategy context describing the plugin and executor state.
 
         Returns
         -------
         str | None
-            Skip reason if plugin should be skipped, None otherwise.
+            Skip reason if the plugin should be skipped, otherwise None.
         """
-        # Base implementation ignores plugin and executor_ctx; subclasses use them
-        _ = (plugin, executor_ctx)
-        if self._policy.dry_run:
-            return "dry_run"
-        return None
+        return self._strategy.should_skip(strategy_ctx)
 
-    def _validate_plugin_inputs(self, plugin: P, ctx: C) -> tuple[bool, str | None]:
+    def _validate_plugin_inputs(self, plugin: P, ctx: C) -> str | None:
         """Validate plugin inputs before execution.
 
         Override in subclass to implement input validation.
@@ -228,8 +397,8 @@ class BasePluginExecutor[
 
         Returns
         -------
-        tuple[bool, str | None]
-            Tuple of (is_valid, error_message).
+        str | None
+            Error message when invalid, otherwise None.
         """
         # Base uses self._policy (even though trivially) to ensure it's an instance method
         _ = self._policy  # Instance method validation hook
@@ -238,74 +407,11 @@ class BasePluginExecutor[
         if validate_method is not None and callable(validate_method):
             validation = cast("ValidationResult", validate_method(ctx))
             if not validation.valid:
-                return False, f"Validation failed: {', '.join(validation.errors)}"
-        return True, None
-
-    def _on_plugin_success(self, plugin: P, ctx: C, result: PluginResult) -> None:
-        """Process successful plugin execution.
-
-        Override in subclass for post-execution processing.
-
-        Parameters
-        ----------
-        plugin
-            Executed plugin.
-        ctx
-            Plugin execution context.
-        result
-            Plugin result.
-        """
-        # Base hook does nothing; subclasses override
-        _ = (plugin, ctx, result)
-
-    def _on_plugin_failure(self, plugin: P, ctx: C, error: str) -> None:
-        """Handle plugin execution failure.
-
-        Override in subclass for failure handling.
-
-        Parameters
-        ----------
-        plugin
-            Failed plugin.
-        ctx
-            Plugin execution context.
-        error
-            Error message.
-        """
-        # Base hook does nothing; subclasses override
-        _ = (plugin, ctx, error)
-
-    def _build_manifest_entry(
-        self,
-        plugin: P,
-        record: PluginExecutionRecord,
-        settings: PluginExecutionSettings | None,
-    ) -> dict[str, object] | None:
-        """Build manifest entry for a successful plugin execution.
-
-        Override in subclass to enable manifest tracking. Base implementation
-        returns None, which disables manifest tracking.
-
-        Parameters
-        ----------
-        plugin
-            Executed plugin.
-        record
-            Execution record.
-        settings
-            Plugin execution settings (contains hashes).
-
-        Returns
-        -------
-        dict[str, object] | None
-            Manifest entry if tracking enabled, None otherwise.
-        """
-        # Base implementation does nothing; subclasses override to enable
-        _ = (plugin, record, settings)
+                return f"Validation failed: {', '.join(validation.errors)}"
         return None
 
+    @staticmethod
     def _get_plugin_settings(
-        self,
         plugin: P,
         settings_by_plugin: Mapping[str, PluginExecutionSettings] | None,
     ) -> PluginExecutionSettings | None:
@@ -396,53 +502,43 @@ class BasePluginExecutor[
 
         try:
             for plugin in plan.plugins:
-                settings = self._get_plugin_settings(plugin, settings_by_plugin)
+                strategy_ctx = ExecutionStrategyContext(
+                    plugin=plugin,
+                    executor_ctx=executor_ctx,
+                    policy=self._policy,
+                    settings=self._get_plugin_settings(plugin, settings_by_plugin),
+                    prior_manifest=self._prior_manifest,
+                )
 
                 # Check for skip condition
-                skip_reason = self._should_skip_plugin(plugin, executor_ctx)
+                skip_reason = self._should_skip_plugin(strategy_ctx)
                 if skip_reason is not None:
-                    record = self._create_skip_record(plugin, skip_reason)
+                    record = self._create_skip_record(strategy_ctx, skip_reason)
                     records.append(record)
                     continue
 
                 # Build plugin-specific context
-                plugin_ctx = self._build_plugin_context(executor_ctx, plugin, shared_scratch)
-
-                # Execute the plugin
                 record = self._execute_single_plugin(
                     plugin,
-                    plugin_ctx,
+                    self._build_plugin_context(executor_ctx, plugin, shared_scratch),
                     effective_run_id,
-                    settings=settings,
+                    strategy_ctx=strategy_ctx,
                 )
                 records.append(record)
 
-                # Build manifest entry for successful plugins
-                if record.status == "succeeded":
-                    manifest_entry = self._build_manifest_entry(plugin, record, settings)
-                    if manifest_entry is not None:
-                        self._manifest[plugin.metadata.name] = manifest_entry
+                self._maybe_add_manifest_entry(strategy_ctx, record)
 
-                # Check for fail-fast condition
-                if record.status == "failed":
-                    # Use settings severity if available, otherwise plugin metadata
-                    severity = (
-                        settings.severity
-                        if settings is not None
-                        else self._policy.get_severity(plugin.metadata.name)
+                if self._should_stop_on_failure(strategy_ctx, record):
+                    log.error(
+                        "executor.plan.fatal_error plugin=%s",
+                        plugin.metadata.name,
                     )
-                    if severity == "fatal" and self._policy.fail_fast:
-                        log.error(
-                            "executor.plan.fatal_error plugin=%s",
-                            plugin.metadata.name,
-                        )
-                        fatal_error = True
-                        break
+                    fatal_error = True
+                    break
         finally:
             shared_scratch.cleanup()
 
-        ended_at = utc_now()
-        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        run_timing = self._compute_timing(start_time)
 
         # Record run-level telemetry
         self._telemetry.record_run_metrics(
@@ -450,24 +546,40 @@ class BasePluginExecutor[
             success_count=sum(1 for r in records if r.status == "succeeded"),
             failure_count=sum(1 for r in records if r.status == "failed"),
             skip_count=sum(1 for r in records if r.status == "skipped"),
-            duration_s=duration_ms / 1000,
+            duration_s=run_timing.duration_ms / 1000,
         )
 
         log.info(
             "executor.plan.complete run_id=%s duration_ms=%.2f fatal_error=%s",
             effective_run_id,
-            duration_ms,
+            run_timing.duration_ms,
             fatal_error,
         )
 
         return self._build_report(
-            run_id=effective_run_id,
             records=records,
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=duration_ms,
-            fatal_error=fatal_error,
-            executor_ctx=executor_ctx,
+            report_ctx=ExecutionReportContext(
+                run_id=effective_run_id,
+                started_at=started_at,
+                ended_at=run_timing.ended_at,
+                duration_ms=run_timing.duration_ms,
+                fatal_error=fatal_error,
+                executor_ctx=executor_ctx,
+            ),
+        )
+
+    @staticmethod
+    def _compute_timing(start_time: float) -> ExecutionTiming:
+        """Compute timing information from a start timestamp.
+
+        Returns
+        -------
+        ExecutionTiming
+            Timing data including end timestamp and duration.
+        """
+        return ExecutionTiming(
+            ended_at=utc_now(),
+            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
         )
 
     def _execute_single_plugin(
@@ -476,7 +588,7 @@ class BasePluginExecutor[
         ctx: C,
         run_id: str,
         *,
-        settings: PluginExecutionSettings | None = None,
+        strategy_ctx: ExecutionStrategyContext[P, EC],
     ) -> PluginExecutionRecord:
         """Execute one plugin with retry using core.runtime.retry.
 
@@ -488,94 +600,87 @@ class BasePluginExecutor[
             Plugin execution context.
         run_id
             Run identifier for telemetry.
-        settings
-            Optional per-plugin execution settings.
+        strategy_ctx
+            Strategy context for hooks and policy decisions.
 
         Returns
         -------
         PluginExecutionRecord
             Execution record with status, duration, and result.
         """
-        meta = plugin.metadata
         started_at = utc_now()
         start_time = time.perf_counter()
 
-        # Build metadata for the record
-        record_meta: dict[str, object] = {}
-        if settings is not None:
-            record_meta["input_hash"] = settings.input_hash
-            record_meta["options_hash"] = settings.options_hash
-            record_meta["version_hash"] = settings.version_hash
-
         # Start telemetry span
         span = self._telemetry.start_span(
-            meta.name,
+            plugin.metadata.name,
             run_id,
-            attributes={"stage": meta.stage, "kind": meta.kind},
+            attributes={"stage": plugin.metadata.stage, "kind": plugin.metadata.kind},
         )
 
         log.info(
             "executor.plugin.start name=%s stage=%s",
-            meta.name,
-            meta.stage,
+            plugin.metadata.name,
+            plugin.metadata.stage,
         )
 
         # Validate inputs
-        is_valid, validation_error = self._validate_plugin_inputs(plugin, ctx)
-        if not is_valid:
-            ended_at = utc_now()
-            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        validation_error = self._validate_plugin_inputs(plugin, ctx)
+        if validation_error is not None:
+            timing = self._compute_timing(start_time)
             self._telemetry.end_span(span, success=False, error=validation_error)
             return PluginExecutionRecord(
-                plugin_name=meta.name,
+                plugin_name=plugin.metadata.name,
                 status="failed",
                 started_at=started_at,
-                ended_at=ended_at,
-                duration_ms=duration_ms,
+                ended_at=timing.ended_at,
+                duration_ms=timing.duration_ms,
                 error=validation_error,
-                meta=record_meta,
+                meta=self._build_record_meta(strategy_ctx),
             )
 
         # Execute with retry
-        result, attempts, error = self._execute_with_retries(plugin, ctx, settings)
-
-        ended_at = utc_now()
-        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-
-        # Determine status - use settings severity if available
-        severity = (
-            settings.severity if settings is not None else self._policy.get_severity(meta.name)
+        result, attempts, error = self._execute_with_retries(
+            plugin,
+            ctx,
+            strategy_ctx.settings,
         )
+
+        timing = self._compute_timing(start_time)
+
+        status: PluginStatus
 
         if result is not None and result.success:
             status = "skipped" if result.skipped else "succeeded"
-            self._on_plugin_success(plugin, ctx, result)
-            rows_written = sum(result.row_counts.values()) if result.row_counts else 0
-            self._telemetry.end_span(span, success=True, rows_written=rows_written)
+            self._strategy.on_success(strategy_ctx, ctx, result)
+            self._telemetry.end_span(
+                span,
+                success=True,
+                rows_written=sum(result.row_counts.values()) if result.row_counts else 0,
+            )
         else:
-            status = "skipped" if severity == "skip_on_error" else "failed"
-            if error:
-                self._on_plugin_failure(plugin, ctx, error)
+            status = self._failed_status(plugin, strategy_ctx)
+            self._strategy.on_failure(strategy_ctx, ctx, error)
             self._telemetry.end_span(span, success=False, error=error)
 
         log.info(
             "executor.plugin.complete name=%s status=%s duration_ms=%.2f attempts=%d",
-            meta.name,
+            plugin.metadata.name,
             status,
-            duration_ms,
+            timing.duration_ms,
             attempts,
         )
 
         return PluginExecutionRecord(
-            plugin_name=meta.name,
+            plugin_name=plugin.metadata.name,
             status=status,
             started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=duration_ms,
+            ended_at=timing.ended_at,
+            duration_ms=timing.duration_ms,
             attempts=attempts,
             result=result,
             error=error,
-            meta=record_meta,
+            meta=self._build_record_meta(strategy_ctx),
         )
 
     def _execute_with_retries(
@@ -635,13 +740,82 @@ class BasePluginExecutor[
         return result, max(attempts, 1), error
 
     @staticmethod
-    def _create_skip_record(plugin: P, reason: str) -> PluginExecutionRecord:
+    def _build_record_meta(strategy_ctx: ExecutionStrategyContext[P, EC]) -> dict[str, object]:
+        """Build record metadata from strategy context settings.
+
+        Returns
+        -------
+        dict[str, object]
+            Metadata map containing hashes when available.
+        """
+        record_meta: dict[str, object] = {}
+        settings = strategy_ctx.settings
+        if settings is not None:
+            record_meta["input_hash"] = settings.input_hash
+            record_meta["options_hash"] = settings.options_hash
+            record_meta["version_hash"] = settings.version_hash
+        return record_meta
+
+    def _maybe_add_manifest_entry(
+        self,
+        strategy_ctx: ExecutionStrategyContext[P, EC],
+        record: PluginExecutionRecord,
+    ) -> None:
+        """Add a manifest entry when a plugin succeeds."""
+        if record.status != "succeeded":
+            return
+        manifest_entry = self._strategy.build_manifest_entry(strategy_ctx, record)
+        if manifest_entry is not None:
+            self._manifest[strategy_ctx.plugin.metadata.name] = manifest_entry
+
+    def _should_stop_on_failure(
+        self,
+        strategy_ctx: ExecutionStrategyContext[P, EC],
+        record: PluginExecutionRecord,
+    ) -> bool:
+        """Decide whether to halt execution based on severity.
+
+        Returns
+        -------
+        bool
+            True when execution should stop, False otherwise.
+        """
+        if record.status != "failed":
+            return False
+        severity = (
+            strategy_ctx.settings.severity
+            if strategy_ctx.settings is not None
+            else strategy_ctx.policy.get_severity(strategy_ctx.plugin.metadata.name)
+        )
+        return severity == "fatal" and self._options.fatal_handling is FatalHandling.FAIL_FAST
+
+    @staticmethod
+    def _failed_status(plugin: P, strategy_ctx: ExecutionStrategyContext[P, EC]) -> PluginStatus:
+        """Resolve status for a failed plugin based on severity settings.
+
+        Returns
+        -------
+        PluginStatus
+            Status string of either "skipped" or "failed".
+        """
+        severity = (
+            strategy_ctx.settings.severity
+            if strategy_ctx.settings is not None
+            else strategy_ctx.policy.get_severity(plugin.metadata.name)
+        )
+        return "skipped" if severity == "skip_on_error" else "failed"
+
+    @staticmethod
+    def _create_skip_record(
+        strategy_ctx: ExecutionStrategyContext[P, EC],
+        reason: str,
+    ) -> PluginExecutionRecord:
         """Create a skip record for a plugin.
 
         Parameters
         ----------
-        plugin
-            Plugin that was skipped.
+        strategy_ctx
+            Strategy context describing the skipped plugin.
         reason
             Reason for skipping.
 
@@ -651,16 +825,32 @@ class BasePluginExecutor[
             Record with skipped status.
         """
         now = utc_now()
+        plugin = strategy_ctx.plugin
+        settings = strategy_ctx.settings
+        record_meta: dict[str, object] = {"skipped_reason": reason}
+        if settings is not None:
+            record_meta["input_hash"] = settings.input_hash
+            record_meta["options_hash"] = settings.options_hash
+            record_meta["version_hash"] = settings.version_hash
+
         return PluginExecutionRecord(
             plugin_name=plugin.metadata.name,
             status="skipped",
             started_at=now,
             ended_at=now,
             duration_ms=0.0,
+            attempts=0,
             error=reason,
+            meta=record_meta,
         )
 
 
 __all__ = [
     "BasePluginExecutor",
+    "DefaultPluginExecutionStrategy",
+    "ExecutionOptions",
+    "ExecutionReportContext",
+    "ExecutionStrategy",
+    "ExecutionStrategyContext",
+    "PluginExecutionStrategy",
 ]

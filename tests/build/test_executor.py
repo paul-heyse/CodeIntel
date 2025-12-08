@@ -21,6 +21,7 @@ from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal, expect_in, expect_length, expect_true
 
 # =============================================================================
 # Test Fixtures
@@ -332,7 +333,8 @@ def _make_step(
 class TestStageExecutionResult:
     """Tests for StageExecutionResult dataclass."""
 
-    def test_create_result(self) -> None:
+    @staticmethod
+    def test_create_result() -> None:
         """Create a stage execution result."""
         result = StageExecutionResult(
             module="analytics",
@@ -341,29 +343,32 @@ class TestStageExecutionResult:
             durations_ms={"function_metrics": 5000, "hotspots": 2000},
             row_counts={"function_metrics": 1500},
         )
-        assert result.module == "analytics"
-        assert len(result.completed) == 2
-        assert len(result.failed) == 0
+        expect_equal(result.module, "analytics")
+        expect_length(result.completed, 2)
+        expect_length(result.failed, 0)
 
-    def test_success_true(self) -> None:
+    @staticmethod
+    def test_success_true() -> None:
         """Success returns True when no failures."""
         result = StageExecutionResult(
             module="ingestion",
             completed=("modules",),
             failed=(),
         )
-        assert result.success is True
+        expect_true(result.success is True)
 
-    def test_success_false_with_failed(self) -> None:
+    @staticmethod
+    def test_success_false_with_failed() -> None:
         """Success returns False when targets failed."""
         result = StageExecutionResult(
             module="ingestion",
             completed=(),
             failed=("modules",),
         )
-        assert result.success is False
+        expect_true(result.success is False)
 
-    def test_success_false_with_error(self) -> None:
+    @staticmethod
+    def test_success_false_with_error() -> None:
         """Success returns False when error occurred."""
         result = StageExecutionResult(
             module="ingestion",
@@ -371,7 +376,7 @@ class TestStageExecutionResult:
             failed=(),
             error="Something went wrong",
         )
-        assert result.success is False
+        expect_true(result.success is False)
 
 
 # =============================================================================
@@ -382,7 +387,8 @@ class TestStageExecutionResult:
 class TestBuildResult:
     """Tests for BuildResult dataclass."""
 
-    def test_create_result(self) -> None:
+    @staticmethod
+    def test_create_result() -> None:
         """Create a build result."""
         plan = _make_plan(
             requested=("function_metrics",),
@@ -397,11 +403,12 @@ class TestBuildResult:
             skipped_targets=(),
             duration_ms=10000,
         )
-        assert result.run_id == "build-123"
-        assert result.status == "succeeded"
-        assert len(result.completed_targets) == 2
+        expect_equal(result.run_id, "build-123")
+        expect_equal(result.status, "succeeded")
+        expect_length(result.completed_targets, 2)
 
-    def test_success_true(self) -> None:
+    @staticmethod
+    def test_success_true() -> None:
         """Success returns True when status is succeeded."""
         plan = _make_plan(requested=(), stages=())
         result = BuildResult(
@@ -413,9 +420,10 @@ class TestBuildResult:
             skipped_targets=(),
             duration_ms=100,
         )
-        assert result.success is True
+        expect_true(result.success is True)
 
-    def test_success_false(self) -> None:
+    @staticmethod
+    def test_success_false() -> None:
         """Success returns False when status is failed."""
         plan = _make_plan(requested=(), stages=())
         result = BuildResult(
@@ -428,9 +436,10 @@ class TestBuildResult:
             duration_ms=100,
             error_summary="Build failed",
         )
-        assert result.success is False
+        expect_true(result.success is False)
 
-    def test_to_dict(self) -> None:
+    @staticmethod
+    def test_to_dict() -> None:
         """Result serializes correctly."""
         plan = _make_plan(
             requested=("function_metrics",),
@@ -448,12 +457,12 @@ class TestBuildResult:
         )
         data = result.to_dict()
 
-        assert data["run_id"] == "build-123"
-        assert data["status"] == "succeeded"
-        assert data["completed_targets"] == ["modules"]
-        assert data["skipped_targets"] == ["goids"]
-        assert data["duration_ms"] == 5000
-        assert "plan" in data
+        expect_equal(data["run_id"], "build-123")
+        expect_equal(data["status"], "succeeded")
+        expect_equal(data["completed_targets"], ["modules"])
+        expect_equal(data["skipped_targets"], ["goids"])
+        expect_equal(data["duration_ms"], 5000)
+        expect_in("plan", data)
 
 
 # =============================================================================
@@ -484,7 +493,7 @@ class TestBuildExecutorInit:
         # Verify executor was created (access public behavior)
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan, dry_run=True)
-        assert result.success is True
+        expect_true(result.success is True)
 
 
 class TestBuildExecutorRunId:
@@ -511,12 +520,12 @@ class TestBuildExecutorRunId:
         result = executor.execute(plan, dry_run=True)
 
         run_id = result.run_id
-        assert run_id.startswith("build-")
+        expect_true(run_id.startswith("build-"))
         parts = run_id.split("-")
-        assert len(parts) == 4
-        assert len(parts[1]) == 8  # YYYYMMDD
-        assert len(parts[2]) == 6  # HHMMSS
-        assert len(parts[3]) == 8  # hex suffix
+        expect_length(parts, 4)
+        expect_length(parts[1], 8)  # YYYYMMDD
+        expect_length(parts[2], 6)  # HHMMSS
+        expect_length(parts[3], 8)  # hex suffix
 
     @staticmethod
     def test_run_ids_unique(
@@ -538,14 +547,14 @@ class TestBuildExecutorRunId:
         plan = _make_plan(requested=(), stages=())
 
         run_ids = [executor.execute(plan, dry_run=True).run_id for _ in range(10)]
-        assert len(set(run_ids)) == 10
+        expect_length(set(run_ids), 10)
 
 
 class TestBuildExecutorEmptyPlan:
     """Tests for executing empty plans."""
 
+    @staticmethod
     def test_execute_empty_plan(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -570,17 +579,17 @@ class TestBuildExecutorEmptyPlan:
 
         result = executor.execute(plan)
 
-        assert result.success is True
-        assert result.completed_targets == ()
-        assert result.failed_targets == ()
-        assert result.skipped_targets == ("function_metrics",)
+        expect_true(result.success is True)
+        expect_equal(result.completed_targets, ())
+        expect_equal(result.failed_targets, ())
+        expect_equal(result.skipped_targets, ("function_metrics",))
 
 
 class TestBuildExecutorDryRun:
     """Tests for dry run execution."""
 
+    @staticmethod
     def test_execute_dry_run(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -606,12 +615,12 @@ class TestBuildExecutorDryRun:
 
         result = executor.execute(plan, dry_run=True)
 
-        assert result.success is True
-        assert result.completed_targets == ()  # Nothing actually computed
-        assert result.status == "succeeded"
+        expect_true(result.success is True)
+        expect_equal(result.completed_targets, ())  # Nothing actually computed
+        expect_equal(result.status, "succeeded")
 
+    @staticmethod
     def test_dry_run_records_tracking(
-        self,
         executor_graph: TargetGraph,
         fake_gateway: FakeStorageGateway,
         test_snapshot: SnapshotRef,
@@ -632,7 +641,7 @@ class TestBuildExecutorDryRun:
         executor.execute(plan, dry_run=True)
 
         # Should have recorded a run
-        assert len(fake_gateway.build.runs) == 1
+        expect_length(fake_gateway.build.runs, 1)
 
 
 # =============================================================================
@@ -643,7 +652,8 @@ class TestBuildExecutorDryRun:
 class TestBuildExecutorIntegration:
     """Integration tests for BuildExecutor with real registry."""
 
-    def test_with_real_registry(self) -> None:
+    @staticmethod
+    def test_with_real_registry() -> None:
         """BuildExecutor works with real target registry."""
         graph = get_target_graph()
         fake_gw = FakeStorageGateway()
@@ -664,9 +674,10 @@ class TestBuildExecutorIntegration:
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan)
 
-        assert result.success is True
+        expect_true(result.success is True)
 
-    def test_plan_generator_to_executor(self) -> None:
+    @staticmethod
+    def test_plan_generator_to_executor() -> None:
         """Plan from PlanGenerator works with executor."""
         graph = _create_test_graph()
         fake_gw = FakeStorageGateway()
@@ -698,5 +709,5 @@ class TestBuildExecutorIntegration:
         )
         result = executor.execute(plan)
 
-        assert result.success is True
-        assert result.skipped_targets == ("function_metrics",)
+        expect_true(result.success is True)
+        expect_equal(result.skipped_targets, ("function_metrics",))

@@ -7,7 +7,6 @@ This module tests:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,34 +14,25 @@ import pytest
 from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
 from codeintel.config import HotspotsStepConfig
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.rows import AstMetricSeed, ast_metric_row
 
 # Test constants (non-repo/commit)
 EXPECTED_COMMIT_COUNT = 2
 EXPECTED_AUTHOR_COUNT = 2
+EXPECTED_AUTHOR_COUNT_MULTI = 3
 EXPECTED_LINES_ADDED = 30
 EXPECTED_LINES_DELETED = 10
 HOTSPOT_SCORE_THRESHOLD = 0.0
 EXPECTED_FILE_COUNT_MULTI = 3
 EXPECTED_COMPLEXITY = 10.0
 EXPECTED_SUMMARY_KEYS = 4
-
-
-@pytest.fixture
-def memory_gateway() -> Iterator[StorageGateway]:
-    """Provide an in-memory DuckDB gateway for testing.
-
-    Yields
-    ------
-    StorageGateway
-        Configured gateway with schema applied.
-    """
-    gateway = gateway_with_macros()
-    try:
-        yield gateway
-    finally:
-        gateway.con.close()
 
 
 @pytest.fixture
@@ -63,31 +53,24 @@ def hotspots_config(tmp_path: Path) -> HotspotsStepConfig:
     return HotspotsStepConfig(snapshot=snapshot, max_commits=100)
 
 
-def _insert_ast_metric(
-    gateway: StorageGateway,
-    rel_path: str,
-    complexity: float | None = 5.0,
-) -> None:
-    """Insert a test AST metric record.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    rel_path
-        File path.
-    complexity
-        Complexity value.
-    """
-    gateway.con.execute(
+def _insert_ast_metrics(gateway: StorageGateway, seeds: list[AstMetricSeed]) -> None:
+    """Insert AST metric rows using builder tuples."""
+    rows = [ast_metric_row(seed) for seed in seeds]
+    gateway.con.executemany(
         """
         INSERT INTO core.ast_metrics (
-            rel_path, node_count, function_count, class_count,
-            avg_depth, max_depth, complexity, generated_at
+            rel_path,
+            node_count,
+            function_count,
+            class_count,
+            avg_depth,
+            max_depth,
+            complexity,
+            generated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [rel_path, 100, 10, 2, 2.5, 5, complexity],
+        rows,
     )
 
 
@@ -95,10 +78,10 @@ def test_file_churn_creation() -> None:
     """Create a FileChurn with default values."""
     churn = FileChurn()
 
-    assert churn.commits == set()
-    assert churn.authors == set()
-    assert churn.lines_added == 0
-    assert churn.lines_deleted == 0
+    expect_equal(churn.commits, set())
+    expect_equal(churn.authors, set())
+    expect_equal(churn.lines_added, 0)
+    expect_equal(churn.lines_deleted, 0)
 
 
 def test_file_churn_accumulation() -> None:
@@ -113,10 +96,10 @@ def test_file_churn_accumulation() -> None:
 
     summary = churn.to_summary()
 
-    assert summary["commit_count"] == EXPECTED_COMMIT_COUNT
-    assert summary["author_count"] == EXPECTED_AUTHOR_COUNT
-    assert summary["lines_added"] == EXPECTED_LINES_ADDED
-    assert summary["lines_deleted"] == EXPECTED_LINES_DELETED
+    expect_equal(summary["commit_count"], EXPECTED_COMMIT_COUNT)
+    expect_equal(summary["author_count"], EXPECTED_AUTHOR_COUNT)
+    expect_equal(summary["lines_added"], EXPECTED_LINES_ADDED)
+    expect_equal(summary["lines_deleted"], EXPECTED_LINES_DELETED)
 
 
 def test_file_churn_empty_summary() -> None:
@@ -124,10 +107,10 @@ def test_file_churn_empty_summary() -> None:
     churn = FileChurn()
     summary = churn.to_summary()
 
-    assert summary["commit_count"] == 0
-    assert summary["author_count"] == 0
-    assert summary["lines_added"] == 0
-    assert summary["lines_deleted"] == 0
+    expect_equal(summary["commit_count"], 0)
+    expect_equal(summary["author_count"], 0)
+    expect_equal(summary["lines_added"], 0)
+    expect_equal(summary["lines_deleted"], 0)
 
 
 def test_file_churn_duplicate_commits() -> None:
@@ -138,7 +121,17 @@ def test_file_churn_duplicate_commits() -> None:
 
     summary = churn.to_summary()
 
-    assert summary["commit_count"] == 1
+    expect_equal(summary["commit_count"], 1)
+
+
+def test_file_churn_multiple_authors() -> None:
+    """Multiple authors counted uniquely in summary."""
+    churn = FileChurn()
+    churn.authors.update({"alice", "bob", "charlie"})
+
+    summary = churn.to_summary()
+
+    expect_equal(summary["author_count"], EXPECTED_AUTHOR_COUNT_MULTI)
 
 
 def test_file_churn_to_summary_keys() -> None:
@@ -146,11 +139,11 @@ def test_file_churn_to_summary_keys() -> None:
     churn = FileChurn()
     summary = churn.to_summary()
 
-    assert "commit_count" in summary
-    assert "author_count" in summary
-    assert "lines_added" in summary
-    assert "lines_deleted" in summary
-    assert len(summary) == EXPECTED_SUMMARY_KEYS
+    expect_in("commit_count", summary)
+    expect_in("author_count", summary)
+    expect_in("lines_added", summary)
+    expect_in("lines_deleted", summary)
+    expect_equal(len(summary), EXPECTED_SUMMARY_KEYS)
 
 
 def test_build_hotspots_empty_ast_metrics(
@@ -163,8 +156,10 @@ def test_build_hotspots_empty_ast_metrics(
 
     # Should have no hotspot rows
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
-    assert result is not None
-    assert result[0] == 0
+    expect_is_not_none(result)
+    if result is None:
+        pytest.fail("Expected hotspot count row")
+    expect_equal(result[0], 0)
 
 
 def test_build_hotspots_with_ast_data(
@@ -172,7 +167,7 @@ def test_build_hotspots_with_ast_data(
     tmp_path: Path,
 ) -> None:
     """Build hotspots with AST metrics data."""
-    _insert_ast_metric(memory_gateway, "test_file.py", complexity=5.0)
+    _insert_ast_metrics(memory_gateway, [AstMetricSeed(rel_path="test_file.py", complexity=5.0)])
 
     # Create config with max_commits=0 to skip git log
     snapshot = make_snapshot(repo_root=tmp_path)
@@ -186,10 +181,12 @@ def test_build_hotspots_with_ast_data(
         ["test_file.py"],
     ).fetchone()
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected hotspot row for test_file.py")
+
     rel_path, score = result
-    assert rel_path == "test_file.py"
-    assert score > HOTSPOT_SCORE_THRESHOLD  # Score should be positive
+    expect_equal(rel_path, "test_file.py")
+    expect_true(score > HOTSPOT_SCORE_THRESHOLD)  # Score should be positive
 
 
 def test_build_hotspots_multiple_files(
@@ -197,9 +194,14 @@ def test_build_hotspots_multiple_files(
     tmp_path: Path,
 ) -> None:
     """Build hotspots with multiple files."""
-    _insert_ast_metric(memory_gateway, "file1.py", complexity=3.0)
-    _insert_ast_metric(memory_gateway, "file2.py", complexity=7.0)
-    _insert_ast_metric(memory_gateway, "file3.py", complexity=12.0)
+    _insert_ast_metrics(
+        memory_gateway,
+        [
+            AstMetricSeed(rel_path="file1.py", complexity=3.0),
+            AstMetricSeed(rel_path="file2.py", complexity=7.0),
+            AstMetricSeed(rel_path="file3.py", complexity=12.0),
+        ],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -209,8 +211,10 @@ def test_build_hotspots_multiple_files(
     # Should have three hotspot rows
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
 
-    assert result is not None
-    assert result[0] == EXPECTED_FILE_COUNT_MULTI
+    expect_is_not_none(result)
+    if result is None:
+        pytest.fail("Expected hotspot count row")
+    expect_equal(result[0], EXPECTED_FILE_COUNT_MULTI)
 
 
 def test_build_hotspots_score_calculation(
@@ -218,7 +222,10 @@ def test_build_hotspots_score_calculation(
     tmp_path: Path,
 ) -> None:
     """Verify hotspot score calculation components."""
-    _insert_ast_metric(memory_gateway, "scored.py", complexity=EXPECTED_COMPLEXITY)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="scored.py", complexity=EXPECTED_COMPLEXITY)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -233,14 +240,16 @@ def test_build_hotspots_score_calculation(
         ["scored.py"],
     ).fetchone()
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected hotspot row for scored.py")
+
     complexity, score, commit_count, author_count = result
-    assert complexity == EXPECTED_COMPLEXITY
+    expect_equal(complexity, EXPECTED_COMPLEXITY)
     # With no git stats, commit_count and author_count should be 0
-    assert commit_count == 0
-    assert author_count == 0
+    expect_equal(commit_count, 0)
+    expect_equal(author_count, 0)
     # Score should still be positive due to complexity component
-    assert score > HOTSPOT_SCORE_THRESHOLD
+    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
 
 
 def test_build_hotspots_high_complexity(
@@ -249,7 +258,10 @@ def test_build_hotspots_high_complexity(
 ) -> None:
     """Build hotspots handles high complexity values."""
     high_complexity = 100.0
-    _insert_ast_metric(memory_gateway, "high_complexity.py", complexity=high_complexity)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="high_complexity.py", complexity=high_complexity)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -261,11 +273,13 @@ def test_build_hotspots_high_complexity(
         ["high_complexity.py"],
     ).fetchone()
 
-    assert result is not None
+    if result is None:
+        pytest.fail("Expected hotspot row for high_complexity.py")
+
     complexity, score = result
-    assert complexity == high_complexity
+    expect_equal(complexity, high_complexity)
     # Higher complexity should result in higher score
-    assert score > HOTSPOT_SCORE_THRESHOLD
+    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
 
 
 def test_build_hotspots_idempotent(
@@ -273,7 +287,10 @@ def test_build_hotspots_idempotent(
     tmp_path: Path,
 ) -> None:
     """Build hotspots is idempotent (DELETE before INSERT)."""
-    _insert_ast_metric(memory_gateway, "idempotent.py", complexity=5.0)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="idempotent.py", complexity=5.0)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -288,8 +305,10 @@ def test_build_hotspots_idempotent(
         ["idempotent.py"],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == 1
+    expect_is_not_none(result)
+    if result is None:
+        pytest.fail("Expected hotspot count row")
+    expect_equal(result[0], 1)
 
 
 @pytest.mark.parametrize(
@@ -310,8 +329,8 @@ def test_file_churn_line_counts(lines_added: int, lines_deleted: int) -> None:
 
     summary = churn.to_summary()
 
-    assert summary["lines_added"] == lines_added
-    assert summary["lines_deleted"] == lines_deleted
+    expect_equal(summary["lines_added"], lines_added)
+    expect_equal(summary["lines_deleted"], lines_deleted)
 
 
 def test_build_hotspots_windows_path_handling(
@@ -319,7 +338,10 @@ def test_build_hotspots_windows_path_handling(
     tmp_path: Path,
 ) -> None:
     """Build hotspots normalizes Windows-style paths."""
-    _insert_ast_metric(memory_gateway, "path\\to\\file.py", complexity=5.0)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="path\\to\\file.py", complexity=5.0)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -331,7 +353,7 @@ def test_build_hotspots_windows_path_handling(
         "SELECT rel_path FROM analytics.hotspots WHERE rel_path LIKE '%file.py'"
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_build_hotspots_zero_complexity(
@@ -339,7 +361,10 @@ def test_build_hotspots_zero_complexity(
     tmp_path: Path,
 ) -> None:
     """Build hotspots handles zero complexity."""
-    _insert_ast_metric(memory_gateway, "zero_complexity.py", complexity=0.0)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="zero_complexity.py", complexity=0.0)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -351,11 +376,14 @@ def test_build_hotspots_zero_complexity(
         ["zero_complexity.py"],
     ).fetchone()
 
-    assert result is not None
-    complexity, score = result
-    assert complexity == 0.0
+    if result is None:
+        pytest.fail("Expected hotspot row for zero_complexity")
+
+    complexity, score_obj = result
+    score = float(score_obj)
+    expect_equal(complexity, 0.0)
     # Score should still be non-negative
-    assert score >= HOTSPOT_SCORE_THRESHOLD
+    expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
 
 
 def test_build_hotspots_negative_complexity(
@@ -363,7 +391,10 @@ def test_build_hotspots_negative_complexity(
     tmp_path: Path,
 ) -> None:
     """Build hotspots handles negative complexity (clamps to zero)."""
-    _insert_ast_metric(memory_gateway, "negative.py", complexity=-5.0)
+    _insert_ast_metrics(
+        memory_gateway,
+        [AstMetricSeed(rel_path="negative.py", complexity=-5.0)],
+    )
 
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
@@ -375,7 +406,10 @@ def test_build_hotspots_negative_complexity(
         ["negative.py"],
     ).fetchone()
 
-    assert result is not None
-    _, score = result
+    if result is None:
+        pytest.fail("Expected hotspot row for negative complexity")
+
+    _, score_obj = result
+    score = float(score_obj)
     # Score should be non-negative due to max(complexity, 0.0)
-    assert score >= HOTSPOT_SCORE_THRESHOLD
+    expect_true(score >= HOTSPOT_SCORE_THRESHOLD)

@@ -34,6 +34,7 @@ from codeintel.storage.metadata import (
 )
 from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
 from codeintel.storage.sql import safe_macro_call
+from tests._helpers.assertions import expect_in, expect_true
 
 pytestmark = pytest.mark.smoke
 
@@ -63,8 +64,8 @@ def test_render_macro_valid_table_key() -> None:
     """Verify render_macro returns RenderedMacro for valid table key."""
     result = render_macro("core.ast_nodes")
 
-    assert result.macro_name.startswith("metadata.normalized_")
-    assert "CREATE OR REPLACE MACRO" in result.ddl
+    expect_true(result.macro_name.startswith("metadata.normalized_"))
+    expect_in("CREATE OR REPLACE MACRO", result.ddl)
 
 
 def test_render_macro_unknown_table_key_raises() -> None:
@@ -77,7 +78,7 @@ def test_render_macro_with_custom_limit() -> None:
     """Verify render_macro accepts custom default_limit."""
     result = render_macro("core.ast_nodes", default_limit=1000)
 
-    assert ":= 1000" in result.ddl
+    expect_in(":= 1000", result.ddl)
 
 
 def test_render_macro_includes_date_cast() -> None:
@@ -87,7 +88,7 @@ def test_render_macro_includes_date_cast() -> None:
     result = render_macro("analytics.function_history")
 
     # The DDL should contain proper casting for timestamp columns
-    assert "CAST" in result.ddl
+    expect_in("CAST", result.ddl)
 
 
 def test_render_macro_includes_goid_cast() -> None:
@@ -95,8 +96,8 @@ def test_render_macro_includes_goid_cast() -> None:
     result = render_macro("analytics.function_profile")
 
     # Should include BIGINT cast for goid columns
-    assert "AS BIGINT" in result.ddl
-    assert "goid_h128" in result.ddl.lower()
+    expect_in("AS BIGINT", result.ddl)
+    expect_in("goid_h128", result.ddl.lower())
 
 
 def test_render_macro_outputs_ddl_to_buffer() -> None:
@@ -108,8 +109,8 @@ def test_render_macro_outputs_ddl_to_buffer() -> None:
         buffer.write(rendered.ddl)
 
     output = buffer.getvalue()
-    assert "metadata.normalized_ast_nodes" in output
-    assert "metadata.normalized_goids" in output
+    expect_in("metadata.normalized_ast_nodes", output)
+    expect_in("metadata.normalized_goids", output)
 
 
 # =============================================================================

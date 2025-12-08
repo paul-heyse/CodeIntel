@@ -318,7 +318,7 @@ class MockFunctionCatalog:
         list[MockFunctionMeta]
             Functions in the specified file.
         """
-        return [cast("MockFunctionMeta", fn) for fn in self.functions if fn.rel_path == rel_path]
+        return [fn for fn in self.functions if fn.rel_path == rel_path]
 
     def module_for_path(self, rel_path: str) -> str | None:
         """

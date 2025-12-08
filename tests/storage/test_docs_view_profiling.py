@@ -18,18 +18,25 @@ from codeintel.storage.helpers.profiling import (
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views import create_all_views
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 
 def test_docs_views_is_defined() -> None:
     """Verify DOCS_VIEWS constant is defined and non-empty."""
-    assert isinstance(DOCS_VIEWS, tuple)
-    assert len(DOCS_VIEWS) > 0
+    expect_is_instance(DOCS_VIEWS, tuple)
+    expect_true(len(DOCS_VIEWS) > 0)
 
 
 def test_docs_views_contains_expected_views() -> None:
     """Verify DOCS_VIEWS contains expected subsystem views."""
-    assert "docs.v_subsystem_profile" in DOCS_VIEWS
-    assert "docs.v_subsystem_coverage" in DOCS_VIEWS
+    expect_in("docs.v_subsystem_profile", DOCS_VIEWS)
+    expect_in("docs.v_subsystem_coverage", DOCS_VIEWS)
 
 
 def test_write_text_creates_file(tmp_path: Path) -> None:
@@ -38,8 +45,8 @@ def test_write_text_creates_file(tmp_path: Path) -> None:
 
     write_text(file_path, "Hello, World!")
 
-    assert file_path.exists()
-    assert file_path.read_text() == "Hello, World!"
+    expect_true(file_path.exists())
+    expect_equal(file_path.read_text(), "Hello, World!")
 
 
 def test_write_text_creates_nested_directories(tmp_path: Path) -> None:
@@ -48,8 +55,8 @@ def test_write_text_creates_nested_directories(tmp_path: Path) -> None:
 
     write_text(file_path, "Nested content")
 
-    assert file_path.exists()
-    assert file_path.read_text() == "Nested content"
+    expect_true(file_path.exists())
+    expect_equal(file_path.read_text(), "Nested content")
 
 
 def test_explain_returns_plan_text(fresh_gateway: StorageGateway) -> None:
@@ -58,8 +65,8 @@ def test_explain_returns_plan_text(fresh_gateway: StorageGateway) -> None:
 
     result = explain(con=con, view="docs.v_subsystem_profile", analyze=False)
 
-    assert isinstance(result, str)
-    assert len(result) > 0
+    expect_is_instance(result, str)
+    expect_true(len(result) > 0)
 
 
 def test_explain_analyze_returns_plan_text(fresh_gateway: StorageGateway) -> None:
@@ -68,8 +75,8 @@ def test_explain_analyze_returns_plan_text(fresh_gateway: StorageGateway) -> Non
 
     result = explain(con=con, view="docs.v_subsystem_coverage", analyze=True)
 
-    assert isinstance(result, str)
-    assert len(result) > 0
+    expect_is_instance(result, str)
+    expect_true(len(result) > 0)
 
 
 def test_run_profile_raises_on_missing_db(tmp_path: Path) -> None:
@@ -110,18 +117,18 @@ def test_run_profile_creates_artifacts(tmp_path: Path) -> None:
 
     # Check profile_meta.json is created
     meta_file = output_dir / "profile_meta.json"
-    assert meta_file.exists()
+    expect_true(meta_file.exists())
     meta = json.loads(meta_file.read_text())
-    assert meta["analyze"] is False
-    assert "docs.v_subsystem_profile" in meta["views"]
+    expect_false(meta["analyze"])
+    expect_in("docs.v_subsystem_profile", meta["views"])
 
     # Check explain files are created
     profile_explain = output_dir / "docs_v_subsystem_profile.explain.txt"
     coverage_explain = output_dir / "docs_v_subsystem_coverage.explain.txt"
-    assert profile_explain.exists()
-    assert coverage_explain.exists()
-    assert len(profile_explain.read_text()) > 0
-    assert len(coverage_explain.read_text()) > 0
+    expect_true(profile_explain.exists())
+    expect_true(coverage_explain.exists())
+    expect_true(len(profile_explain.read_text()) > 0)
+    expect_true(len(coverage_explain.read_text()) > 0)
 
 
 def test_run_profile_analyze_mode_creates_artifacts(tmp_path: Path) -> None:
@@ -136,13 +143,13 @@ def test_run_profile_analyze_mode_creates_artifacts(tmp_path: Path) -> None:
     # Check meta shows analyze mode
     meta_file = output_dir / "profile_meta.json"
     meta = json.loads(meta_file.read_text())
-    assert meta["analyze"] is True
+    expect_true(meta["analyze"])
 
     # Check analyze files are created (not explain files)
     profile_analyze = output_dir / "docs_v_subsystem_profile.analyze.txt"
     coverage_analyze = output_dir / "docs_v_subsystem_coverage.analyze.txt"
-    assert profile_analyze.exists()
-    assert coverage_analyze.exists()
+    expect_true(profile_analyze.exists())
+    expect_true(coverage_analyze.exists())
 
 
 def test_main_with_missing_db_calls_parser_error(tmp_path: Path) -> None:
@@ -174,4 +181,4 @@ def test_main_with_analyze_flag(tmp_path: Path) -> None:
     run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
 
     # Verify analyze files were created
-    assert (output_dir / "docs_v_subsystem_profile.analyze.txt").exists()
+    expect_true((output_dir / "docs_v_subsystem_profile.analyze.txt").exists())

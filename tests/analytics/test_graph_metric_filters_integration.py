@@ -14,14 +14,9 @@ from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_me
 from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
+from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.factories import make_snapshot
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
-
-
-def _expect(*, condition: bool, detail: str) -> None:
-    if condition:
-        return
-    raise AssertionError(detail)
 
 
 def test_filters_prune_architecture_metrics(tmp_path: Path) -> None:
@@ -89,15 +84,6 @@ def test_filters_prune_architecture_metrics(tmp_path: Path) -> None:
         ).fetchall()
     }
 
-    _expect(
-        condition=modules == {"pkg.alpha"},
-        detail=f"module metrics should honor filter allowlist; saw {modules}",
-    )
-    _expect(
-        condition=modules_ext == {"pkg.alpha"},
-        detail=f"module ext metrics should honor filter allowlist; saw {modules_ext}",
-    )
-    _expect(
-        condition=subsystems == {"sub1"},
-        detail=f"subsystem metrics should honor filter allowlist; saw {subsystems}",
-    )
+    expect_equal(modules, {"pkg.alpha"})
+    expect_equal(modules_ext, {"pkg.alpha"})
+    expect_equal(subsystems, {"sub1"})

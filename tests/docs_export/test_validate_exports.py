@@ -17,6 +17,7 @@ from tests._helpers import (
     provisioned_gateway,
     seed_docs_export_invalid_profile,
 )
+from tests._helpers.assertions import expect_equal, expect_not_equal, expect_true
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -42,7 +43,7 @@ def test_validate_jsonl_happy_path(tmp_path: Path) -> None:
         ],
     )
     exit_code = validate_files("call_graph_edges", [data_path])
-    assert exit_code == 0
+    expect_equal(exit_code, 0)
 
 
 def test_validate_jsonl_failure(tmp_path: Path) -> None:
@@ -59,7 +60,7 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
         ],
     )
     exit_code = validate_files("call_graph_edges", [data_path])
-    assert exit_code != 0
+    expect_not_equal(exit_code, 0)
 
 
 def test_docs_export_views_exist(tmp_path: Path) -> None:
@@ -124,5 +125,4 @@ def test_export_logs_problem_detail_on_validation_failure(
         error_logs = [
             rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()
         ]
-        if not error_logs:
-            pytest.fail("Expected ProblemDetail log entry for validation failure")
+        expect_true(error_logs, message="Expected ProblemDetail log entry for validation failure")

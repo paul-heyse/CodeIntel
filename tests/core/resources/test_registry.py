@@ -24,6 +24,11 @@ from codeintel.core.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_true,
+)
 
 INT_PROVIDER_VALUE = 42
 
@@ -134,18 +139,18 @@ def test_resource_not_found_error_with_type() -> None:
     """Verify ResourceNotFoundError message with type."""
     error = ResourceNotFoundError(StringProvider)
 
-    assert error.resource_type is StringProvider
-    assert error.resource_name == "StringProvider"
-    assert "StringProvider" in str(error)
+    expect_true(error.resource_type is StringProvider)
+    expect_equal(error.resource_name, "StringProvider")
+    expect_in("StringProvider", str(error))
 
 
 def test_resource_not_found_error_with_string() -> None:
     """Verify ResourceNotFoundError message with string name."""
     error = ResourceNotFoundError("custom_resource")
 
-    assert error.resource_type is None
-    assert error.resource_name == "custom_resource"
-    assert "custom_resource" in str(error)
+    expect_true(error.resource_type is None)
+    expect_equal(error.resource_name, "custom_resource")
+    expect_in("custom_resource", str(error))
 
 
 # =============================================================================
@@ -159,7 +164,7 @@ def test_registry_register(resource_registry: ResourceRegistry) -> None:
 
     resource_registry.register(StringProvider, provider)
 
-    assert resource_registry.has(StringProvider)
+    expect_true(resource_registry.has(StringProvider))
 
 
 def test_registry_register_duplicate_raises(resource_registry: ResourceRegistry) -> None:
@@ -177,7 +182,7 @@ def test_registry_register_by_name(resource_registry: ResourceRegistry) -> None:
 
     resource_registry.register_by_name("my_string", provider)
 
-    assert resource_registry.has_by_name("my_string")
+    expect_true(resource_registry.has_by_name("my_string"))
 
 
 def test_registry_register_or_replace(resource_registry: ResourceRegistry) -> None:
@@ -188,8 +193,8 @@ def test_registry_register_or_replace(resource_registry: ResourceRegistry) -> No
     resource_registry.register(StringProvider, provider1)
     previous = resource_registry.register_or_replace(StringProvider, provider2)
 
-    assert previous is provider1
-    assert resource_registry.get(StringProvider) is provider2
+    expect_true(previous is provider1)
+    expect_true(resource_registry.get(StringProvider) is provider2)
 
 
 def test_registry_register_or_replace_returns_none(
@@ -200,7 +205,7 @@ def test_registry_register_or_replace_returns_none(
 
     previous = resource_registry.register_or_replace(StringProvider, provider)
 
-    assert previous is None
+    expect_true(previous is None)
 
 
 def test_registry_register_provider(resource_registry: ResourceRegistry) -> None:
@@ -209,7 +214,7 @@ def test_registry_register_provider(resource_registry: ResourceRegistry) -> None
 
     resource_registry.register_provider(provider)
 
-    assert resource_registry.has_by_name("string_provider")
+    expect_true(resource_registry.has_by_name("string_provider"))
 
 
 def test_registry_register_provider_without_name_raises(
@@ -230,7 +235,7 @@ def test_registry_register_with_custom_name(resource_registry: ResourceRegistry)
 
     resource_registry.register(StringProvider, provider, name="custom_name")
 
-    assert resource_registry.has_by_name("custom_name")
+    expect_true(resource_registry.has_by_name("custom_name"))
 
 
 # =============================================================================
@@ -249,13 +254,13 @@ def test_registry_register_factory(resource_registry: ResourceRegistry) -> None:
     resource_registry.register_factory("lazy_provider", factory)
 
     # Factory not called yet
-    assert call_count[0] == 0
+    expect_equal(call_count[0], 0)
 
     # Access triggers factory
     provider = resource_registry.get_by_name("lazy_provider")
 
-    assert call_count[0] == 1
-    assert isinstance(provider, StringProvider)
+    expect_equal(call_count[0], 1)
+    expect_true(isinstance(provider, StringProvider))
 
 
 def test_registry_factory_called_once(resource_registry: ResourceRegistry) -> None:
@@ -272,7 +277,7 @@ def test_registry_factory_called_once(resource_registry: ResourceRegistry) -> No
     resource_registry.get_by_name("lazy")
     resource_registry.get_by_name("lazy")
 
-    assert call_count[0] == 1
+    expect_equal(call_count[0], 1)
 
 
 def test_registry_has_by_name_includes_factories(
@@ -281,7 +286,7 @@ def test_registry_has_by_name_includes_factories(
     """Verify has_by_name() returns True for registered factories."""
     resource_registry.register_factory("pending", lambda: StringProvider("x"))
 
-    assert resource_registry.has_by_name("pending")
+    expect_true(resource_registry.has_by_name("pending"))
 
 
 # =============================================================================
@@ -296,7 +301,7 @@ def test_registry_get(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.get(StringProvider)
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_registry_get_missing_raises(resource_registry: ResourceRegistry) -> None:
@@ -312,14 +317,14 @@ def test_registry_get_or_none(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.get_or_none(StringProvider)
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_registry_get_or_none_missing(resource_registry: ResourceRegistry) -> None:
     """Verify get_or_none() returns None when missing."""
     result = resource_registry.get_or_none(StringProvider)
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_registry_get_by_name(resource_registry: ResourceRegistry) -> None:
@@ -329,7 +334,7 @@ def test_registry_get_by_name(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.get_by_name("my_provider")
 
-    assert result is provider
+    expect_true(result is provider)
 
 
 def test_registry_get_by_name_missing_raises(resource_registry: ResourceRegistry) -> None:
@@ -350,7 +355,7 @@ def test_registry_require(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.require(StringProvider)
 
-    assert result == "test_value"
+    expect_equal(result, "test_value")
 
 
 def test_registry_require_missing_raises(resource_registry: ResourceRegistry) -> None:
@@ -366,14 +371,14 @@ def test_registry_require_or_none(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.require_or_none(IntProvider)
 
-    assert result == INT_PROVIDER_VALUE
+    expect_equal(result, INT_PROVIDER_VALUE)
 
 
 def test_registry_require_or_none_missing(resource_registry: ResourceRegistry) -> None:
     """Verify require_or_none() returns None when missing."""
     result = resource_registry.require_or_none(StringProvider)
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_registry_require_non_gettable(resource_registry: ResourceRegistry) -> None:
@@ -384,7 +389,7 @@ def test_registry_require_non_gettable(resource_registry: ResourceRegistry) -> N
     result = resource_registry.require(SimpleValue)
 
     # Returns the provider itself since it has no get() method
-    assert isinstance(result, SimpleValue)
+    expect_true(isinstance(result, SimpleValue))
 
 
 def test_registry_require_by_name(resource_registry: ResourceRegistry) -> None:
@@ -394,7 +399,7 @@ def test_registry_require_by_name(resource_registry: ResourceRegistry) -> None:
 
     result = resource_registry.require_by_name("named")
 
-    assert result == "named_value"
+    expect_equal(result, "named_value")
 
 
 # =============================================================================
@@ -406,32 +411,32 @@ def test_registry_has_true(resource_registry: ResourceRegistry) -> None:
     """Verify has() returns True when registered."""
     resource_registry.register(StringProvider, StringProvider("test"))
 
-    assert resource_registry.has(StringProvider)
+    expect_true(resource_registry.has(StringProvider))
 
 
 def test_registry_has_false(resource_registry: ResourceRegistry) -> None:
     """Verify has() returns False when not registered."""
-    assert not resource_registry.has(StringProvider)
+    expect_true(not resource_registry.has(StringProvider))
 
 
 def test_registry_has_by_name_true(resource_registry: ResourceRegistry) -> None:
     """Verify has_by_name() returns True when registered."""
     resource_registry.register_by_name("test", StringProvider("test"))
 
-    assert resource_registry.has_by_name("test")
+    expect_true(resource_registry.has_by_name("test"))
 
 
 def test_registry_has_by_name_false(resource_registry: ResourceRegistry) -> None:
     """Verify has_by_name() returns False when not registered."""
-    assert not resource_registry.has_by_name("nonexistent")
+    expect_true(not resource_registry.has_by_name("nonexistent"))
 
 
 def test_registry_contains(resource_registry: ResourceRegistry) -> None:
     """Verify __contains__ works with 'in' operator."""
     resource_registry.register(StringProvider, StringProvider("test"))
 
-    assert StringProvider in resource_registry
-    assert IntProvider not in resource_registry
+    expect_true(StringProvider in resource_registry)
+    expect_true(IntProvider not in resource_registry)
 
 
 # =============================================================================
@@ -455,7 +460,7 @@ def test_registry_invalidate_single(resource_registry: ResourceRegistry) -> None
     resource_registry.require(CountingProvider)
     second_count = provider.load_count
 
-    assert second_count == first_count + 1
+    expect_equal(second_count, first_count + 1)
 
 
 def test_registry_invalidate_all(resource_registry: ResourceRegistry) -> None:
@@ -476,8 +481,8 @@ def test_registry_invalidate_all(resource_registry: ResourceRegistry) -> None:
     # Reload
     resource_registry.require(CountingProvider)
     refreshed_count = provider1.load_count
-    assert refreshed_count == first_count + 1
-    assert provider2.get() == INT_PROVIDER_VALUE
+    expect_equal(refreshed_count, first_count + 1)
+    expect_equal(provider2.get(), INT_PROVIDER_VALUE)
 
 
 def test_registry_invalidate_missing_no_error(
@@ -501,9 +506,9 @@ def test_registry_clear(resource_registry: ResourceRegistry) -> None:
 
     resource_registry.clear()
 
-    assert len(resource_registry) == 0
-    assert not resource_registry.has(StringProvider)
-    assert not resource_registry.has_by_name("lazy")
+    expect_equal(len(resource_registry), 0)
+    expect_true(not resource_registry.has(StringProvider))
+    expect_true(not resource_registry.has_by_name("lazy"))
 
 
 def test_registry_cleanup(resource_registry: ResourceRegistry) -> None:
@@ -516,8 +521,8 @@ def test_registry_cleanup(resource_registry: ResourceRegistry) -> None:
     resource_registry.cleanup()
 
     reloaded_value = provider.get()
-    assert reloaded_value == first_count + 1
-    assert len(resource_registry) == 0
+    expect_equal(reloaded_value, first_count + 1)
+    expect_equal(len(resource_registry), 0)
 
 
 # =============================================================================
@@ -533,9 +538,9 @@ def test_registry_registered_names(resource_registry: ResourceRegistry) -> None:
 
     names = resource_registry.registered_names
 
-    assert "alpha" in names
-    assert "beta" in names
-    assert "gamma" in names
+    expect_in("alpha", names)
+    expect_in("beta", names)
+    expect_in("gamma", names)
 
 
 def test_registry_registered_types(resource_registry: ResourceRegistry) -> None:
@@ -545,9 +550,9 @@ def test_registry_registered_types(resource_registry: ResourceRegistry) -> None:
 
     types = resource_registry.registered_types
 
-    assert StringProvider in types
-    assert IntProvider in types
-    assert isinstance(types, frozenset)
+    expect_true(StringProvider in types)
+    expect_true(IntProvider in types)
+    expect_true(isinstance(types, frozenset))
 
 
 def test_registry_len(resource_registry: ResourceRegistry) -> None:
@@ -555,10 +560,10 @@ def test_registry_len(resource_registry: ResourceRegistry) -> None:
     initial_count = len(resource_registry)
 
     resource_registry.register(StringProvider, StringProvider("test"))
-    assert len(resource_registry) == initial_count + 1
+    expect_equal(len(resource_registry), initial_count + 1)
 
     resource_registry.register(IntProvider, IntProvider(42))
-    assert len(resource_registry) == initial_count + 2
+    expect_equal(len(resource_registry), initial_count + 2)
 
 
 # =============================================================================
@@ -573,11 +578,11 @@ def test_registry_with_lazy_resource(resource_registry: ResourceRegistry) -> Non
 
     # Get provider
     provider = resource_registry.get(LazyStringResource)
-    assert provider is lazy
+    expect_true(provider is lazy)
 
     # Require value
     value = resource_registry.require(LazyStringResource)
-    assert value == "lazy_value"
+    expect_equal(value, "lazy_value")
 
 
 def test_registry_full_lifecycle(resource_registry: ResourceRegistry) -> None:
@@ -587,25 +592,25 @@ def test_registry_full_lifecycle(resource_registry: ResourceRegistry) -> None:
     resource_registry.register(CountingProvider, provider, name="lifecycle_test")
 
     # Verify present
-    assert resource_registry.has(CountingProvider)
-    assert resource_registry.has_by_name("lifecycle_test")
-    assert CountingProvider in resource_registry
+    expect_true(resource_registry.has(CountingProvider))
+    expect_true(resource_registry.has_by_name("lifecycle_test"))
+    expect_true(CountingProvider in resource_registry)
 
     # Get and require
-    assert resource_registry.get(CountingProvider) is provider
+    expect_true(resource_registry.get(CountingProvider) is provider)
     resource_registry.require(CountingProvider)
     first_count = provider.load_count
 
     # Invalidate
     resource_registry.invalidate(CountingProvider)
     resource_registry.require(CountingProvider)
-    assert provider.load_count == first_count + 1
+    expect_equal(provider.load_count, first_count + 1)
 
     # Replace
     new_provider = StringProvider("replaced")
     resource_registry.register_or_replace(StringProvider, new_provider)
-    assert resource_registry.require(StringProvider) == "replaced"
+    expect_equal(resource_registry.require(StringProvider), "replaced")
 
     # Cleanup
     resource_registry.cleanup()
-    assert len(resource_registry) == 0
+    expect_equal(len(resource_registry), 0)

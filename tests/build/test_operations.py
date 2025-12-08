@@ -18,6 +18,12 @@ from codeintel.build.operations import (
     resolve_targets_for_operation,
 )
 from codeintel.serving.operations.catalog import get_operation
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # OperationTargets Dataclass Tests
@@ -33,10 +39,10 @@ def test_operation_targets_empty() -> None:
         data_targets=frozenset(),
     )
 
-    assert targets.operation_id == "test.op"
-    assert len(targets.required_targets) == 0
-    assert len(targets.graph_targets) == 0
-    assert len(targets.data_targets) == 0
+    expect_equal(targets.operation_id, "test.op")
+    expect_length(targets.required_targets, 0)
+    expect_length(targets.graph_targets, 0)
+    expect_length(targets.data_targets, 0)
 
 
 def test_operation_targets_with_data() -> None:
@@ -48,11 +54,11 @@ def test_operation_targets_with_data() -> None:
         data_targets=frozenset({"ast"}),
     )
 
-    assert targets.operation_id == "test.op"
-    assert "call_graph" in targets.required_targets
-    assert "ast" in targets.required_targets
-    assert "call_graph" in targets.graph_targets
-    assert "ast" in targets.data_targets
+    expect_equal(targets.operation_id, "test.op")
+    expect_true("call_graph" in targets.required_targets)
+    expect_true("ast" in targets.required_targets)
+    expect_true("call_graph" in targets.graph_targets)
+    expect_true("ast" in targets.data_targets)
 
 
 def test_operation_targets_frozen() -> None:
@@ -77,44 +83,44 @@ def test_get_targets_for_unknown_operation() -> None:
     """Verify unknown operation returns empty targets."""
     targets = get_targets_for_operation("nonexistent.operation")
 
-    assert targets.operation_id == "nonexistent.operation"
-    assert len(targets.required_targets) == 0
+    expect_equal(targets.operation_id, "nonexistent.operation")
+    expect_length(targets.required_targets, 0)
 
 
 def test_get_targets_for_function_summary() -> None:
     """Verify function.summary maps to call_graph target."""
     targets = get_targets_for_operation("function.summary")
 
-    assert targets.operation_id == "function.summary"
-    assert "call_graph" in targets.graph_targets
-    assert "call_graph" in targets.required_targets
+    expect_equal(targets.operation_id, "function.summary")
+    expect_true("call_graph" in targets.graph_targets)
+    expect_true("call_graph" in targets.required_targets)
 
 
 def test_get_targets_for_dataset_list() -> None:
     """Verify datasets.list has no required targets."""
     targets = get_targets_for_operation("datasets.list")
 
-    assert targets.operation_id == "datasets.list"
+    expect_equal(targets.operation_id, "datasets.list")
     # datasets.list has no required_datasets or required_graphs
-    assert len(targets.required_targets) == 0
+    expect_length(targets.required_targets, 0)
 
 
 def test_get_targets_for_graph_call_neighborhood() -> None:
     """Verify graph.call_neighborhood maps to call_graph target."""
     targets = get_targets_for_operation("graph.call_neighborhood")
 
-    assert targets.operation_id == "graph.call_neighborhood"
-    assert "call_graph" in targets.graph_targets
+    expect_equal(targets.operation_id, "graph.call_neighborhood")
+    expect_true("call_graph" in targets.graph_targets)
     # Also has call_graph_nodes in required_datasets
-    assert "call_graph" in targets.data_targets or "call_graph" in targets.graph_targets
+    expect_true("call_graph" in targets.data_targets or "call_graph" in targets.graph_targets)
 
 
 def test_get_targets_for_import_boundary() -> None:
     """Verify graph.import_boundary maps to import_graph target."""
     targets = get_targets_for_operation("graph.import_boundary")
 
-    assert targets.operation_id == "graph.import_boundary"
-    assert "import_graph" in targets.graph_targets
+    expect_equal(targets.operation_id, "graph.import_boundary")
+    expect_true("import_graph" in targets.graph_targets)
 
 
 def test_get_targets_caching() -> None:
@@ -122,7 +128,7 @@ def test_get_targets_caching() -> None:
     targets1 = get_targets_for_operation("function.summary")
     targets2 = get_targets_for_operation("function.summary")
 
-    assert targets1 is targets2  # Same object due to lru_cache
+    expect_true(targets1 is targets2)  # Same object due to lru_cache
 
 
 # =============================================================================
@@ -133,13 +139,13 @@ def test_get_targets_caching() -> None:
 def test_callgraph_maps_to_call_graph() -> None:
     """Verify 'callgraph' graph runtime maps to 'call_graph' target."""
     targets = get_targets_for_operation("function.summary")
-    assert "call_graph" in targets.graph_targets
+    expect_true("call_graph" in targets.graph_targets)
 
 
 def test_importgraph_maps_to_import_graph() -> None:
     """Verify 'importgraph' graph runtime maps to 'import_graph' target."""
     targets = get_targets_for_operation("graph.import_boundary")
-    assert "import_graph" in targets.graph_targets
+    expect_true("import_graph" in targets.graph_targets)
 
 
 # =============================================================================
@@ -150,24 +156,24 @@ def test_importgraph_maps_to_import_graph() -> None:
 def test_resolve_targets_for_operation_with_graphs() -> None:
     """Verify resolve_targets_for_operation handles graph requirements."""
     op = get_operation("function.summary")
-    assert op is not None
+    op = expect_is_not_none(op, message="Operation function.summary not found")
 
     targets = resolve_targets_for_operation(op)
 
-    assert targets.operation_id == "function.summary"
-    assert "call_graph" in targets.graph_targets
+    expect_equal(targets.operation_id, "function.summary")
+    expect_true("call_graph" in targets.graph_targets)
 
 
 def test_resolve_targets_for_operation_with_datasets() -> None:
     """Verify resolve_targets_for_operation handles dataset requirements."""
     op = get_operation("graph.call_neighborhood")
-    assert op is not None
+    op = expect_is_not_none(op, message="Operation graph.call_neighborhood not found")
 
     targets = resolve_targets_for_operation(op)
 
-    assert targets.operation_id == "graph.call_neighborhood"
+    expect_equal(targets.operation_id, "graph.call_neighborhood")
     # call_graph_nodes is in required_datasets
-    assert len(targets.data_targets) >= 1 or len(targets.graph_targets) >= 1
+    expect_true(len(targets.data_targets) >= 1 or len(targets.graph_targets) >= 1)
 
 
 # =============================================================================
@@ -179,17 +185,17 @@ def test_get_all_operation_targets_returns_dict() -> None:
     """Verify get_all_operation_targets returns all operations."""
     all_targets = get_all_operation_targets()
 
-    assert isinstance(all_targets, dict)
-    assert len(all_targets) > 0
+    expect_true(isinstance(all_targets, dict))
+    expect_true(len(all_targets) > 0)
 
 
 def test_get_all_operation_targets_includes_known_operations() -> None:
     """Verify all_operation_targets includes known operations."""
     all_targets = get_all_operation_targets()
 
-    assert "function.summary" in all_targets
-    assert "datasets.list" in all_targets
-    assert "graph.call_neighborhood" in all_targets
+    expect_true("function.summary" in all_targets)
+    expect_true("datasets.list" in all_targets)
+    expect_true("graph.call_neighborhood" in all_targets)
 
 
 def test_get_all_operation_targets_values_are_operation_targets() -> None:
@@ -197,8 +203,8 @@ def test_get_all_operation_targets_values_are_operation_targets() -> None:
     all_targets = get_all_operation_targets()
 
     for op_id, targets in all_targets.items():
-        assert isinstance(targets, OperationTargets)
-        assert targets.operation_id == op_id
+        expect_true(isinstance(targets, OperationTargets))
+        expect_equal(targets.operation_id, op_id)
 
 
 # =============================================================================
@@ -213,7 +219,7 @@ def test_table_to_target_mapping_exists() -> None:
 
     # call_graph_nodes table should map to call_graph target
     # This is verified by checking graph.call_neighborhood has data_targets
-    assert "call_graph" in targets.required_targets
+    expect_true("call_graph" in targets.required_targets)
 
 
 def test_required_targets_is_union_of_graph_and_data() -> None:
@@ -221,7 +227,7 @@ def test_required_targets_is_union_of_graph_and_data() -> None:
     targets = get_targets_for_operation("graph.callgraph.edges")
 
     expected_union = targets.graph_targets | targets.data_targets
-    assert targets.required_targets == expected_union
+    expect_equal(targets.required_targets, expected_union)
 
 
 # =============================================================================
@@ -234,8 +240,8 @@ def test_operation_with_multiple_graph_requirements() -> None:
     targets = get_targets_for_operation("architecture.function")
 
     # architecture.function requires both callgraph and importgraph
-    assert "call_graph" in targets.graph_targets
-    assert "import_graph" in targets.graph_targets
+    expect_true("call_graph" in targets.graph_targets)
+    expect_true("import_graph" in targets.graph_targets)
 
 
 def test_operation_id_preserved_on_unknown() -> None:
@@ -243,4 +249,4 @@ def test_operation_id_preserved_on_unknown() -> None:
     op_id = "completely.unknown.operation.id"
     targets = get_targets_for_operation(op_id)
 
-    assert targets.operation_id == op_id
+    expect_equal(targets.operation_id, op_id)

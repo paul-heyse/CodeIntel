@@ -9,7 +9,17 @@ import pytest
 
 from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.config import ConfigBuilder
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+)
+from tests._helpers.coverage import (
+    CoverageLineSeedData,
+    GoidSeedData,
+    seed_coverage_line,
+    seed_goid,
+)
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -35,34 +45,52 @@ def gateway() -> Iterator[StorageGateway]:
 
 def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -> None:
     """Aggregate executable and covered lines into coverage_functions."""
+    repo_root = Path.cwd()
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=Path.cwd()
+        repo="demo/repo", commit="abc123", repo_root=repo_root
     ).coverage_analytics()
+    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind,
-            qualname, start_line, end_line, created_at
-        ) VALUES
-            (1, 'urn:func', ?, ?, 'pkg/mod.py', 'python', 'function',
-             'pkg.mod.fn', 1, 3, NOW()),
-            (2, 'urn:method', ?, ?, 'pkg/mod.py', 'python', 'method',
-             'pkg.mod.method', 10, 12, NOW())
-        """,
-        [cfg.repo, cfg.commit, cfg.repo, cfg.commit],
+    seed_goid(
+        con,
+        snapshot,
+        GoidSeedData(
+            urn="urn:func",
+            rel_path="pkg/mod.py",
+            kind="function",
+            qualname="pkg.mod.fn",
+            goid_h128=1,
+            start_line=1,
+            end_line=3,
+        ),
     )
-    con.execute(
-        """
-        INSERT INTO analytics.coverage_lines (
-            repo, commit, rel_path, line, is_executable, is_covered, hits,
-            context_count, created_at
-        ) VALUES
-            (?, ?, 'pkg/mod.py', 1, TRUE, TRUE, 1, 0, NOW()),
-            (?, ?, 'pkg/mod.py', 2, TRUE, FALSE, 0, 0, NOW()),
-            (?, ?, 'pkg/mod.py', 3, FALSE, FALSE, 0, 0, NOW())
-        """,
-        [cfg.repo, cfg.commit, cfg.repo, cfg.commit, cfg.repo, cfg.commit],
+    seed_goid(
+        con,
+        snapshot,
+        GoidSeedData(
+            urn="urn:method",
+            rel_path="pkg/mod.py",
+            kind="method",
+            qualname="pkg.mod.method",
+            goid_h128=2,
+            start_line=10,
+            end_line=12,
+        ),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 1, is_executable=True, is_covered=True),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 2, is_executable=True, is_covered=False),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 3, is_executable=False, is_covered=False),
     )
 
     compute_coverage_functions(gateway, cfg)
@@ -78,37 +106,40 @@ def test_compute_coverage_functions_populates_metrics(gateway: StorageGateway) -
         [cfg.repo, cfg.commit],
     ).fetchall()
 
-    assert rows == [
-        (1, 2, 1, pytest.approx(0.5), True, ""),
-        (2, 0, 0, None, False, "no_executable_code"),
-    ]
+    expect_equal(
+        rows,
+        [
+            (1, 2, 1, pytest.approx(0.5), True, ""),
+            (2, 0, 0, None, False, "no_executable_code"),
+        ],
+    )
 
 
 def test_compute_coverage_functions_idempotent_for_snapshot(gateway: StorageGateway) -> None:
     """Re-running coverage aggregation replaces prior rows for the snapshot."""
+    repo_root = Path.cwd()
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="abc123", repo_root=Path.cwd()
+        repo="demo/repo", commit="abc123", repo_root=repo_root
     ).coverage_analytics()
+    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     con = gateway.con
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind,
-            qualname, start_line, end_line, created_at
-        ) VALUES
-            (3, 'urn:func', ?, ?, 'pkg/second.py', 'python', 'function',
-             'pkg.second.fn', 1, 1, NOW())
-        """,
-        [cfg.repo, cfg.commit],
+    seed_goid(
+        con,
+        snapshot,
+        GoidSeedData(
+            urn="urn:func",
+            rel_path="pkg/second.py",
+            kind="function",
+            qualname="pkg.second.fn",
+            goid_h128=3,
+            start_line=1,
+            end_line=1,
+        ),
     )
-    con.execute(
-        """
-        INSERT INTO analytics.coverage_lines (
-            repo, commit, rel_path, line, is_executable, is_covered, hits,
-            context_count, created_at
-        ) VALUES (?, ?, 'pkg/second.py', 1, TRUE, FALSE, 0, 0, NOW())
-        """,
-        [cfg.repo, cfg.commit],
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/second.py", 1, is_executable=True, is_covered=False),
     )
 
     compute_coverage_functions(gateway, cfg)
@@ -130,4 +161,4 @@ def test_compute_coverage_functions_idempotent_for_snapshot(gateway: StorageGate
         """
     ).fetchone()
 
-    assert result == (1, 1, True)
+    expect_equal(result, (1, 1, True))

@@ -15,6 +15,14 @@ from codeintel.serving.services.observability import (
     ServiceCallMetrics,
     ServiceObservability,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_none,
+    expect_length,
+    expect_not_in,
+    expect_true,
+)
 from tests._helpers.fakes.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 
 # Constants for test values
@@ -76,9 +84,9 @@ def test_service_call_metrics_required_fields() -> None:
         duration_ms=DURATION_MS,
     )
 
-    assert metrics.name == "get_function_summary"
-    assert metrics.transport == "local"
-    assert metrics.duration_ms == DURATION_MS
+    expect_equal(metrics.name, "get_function_summary")
+    expect_equal(metrics.transport, "local")
+    expect_equal(metrics.duration_ms, DURATION_MS)
 
 
 def test_service_call_metrics_all_fields() -> None:
@@ -103,13 +111,13 @@ def test_service_call_metrics_all_fields() -> None:
         user_agent="CodeIntel/1.0",
     )
 
-    assert metrics.rows == ROW_COUNT
-    assert metrics.dataset == "analytics.functions"
-    assert metrics.messages == MESSAGE_COUNT_TWO
-    assert metrics.truncated is False
-    assert metrics.schema_version == "1.0.0"
-    assert metrics.retries == 1
-    assert metrics.correlation_id == "corr-123"
+    expect_equal(metrics.rows, ROW_COUNT)
+    expect_equal(metrics.dataset, "analytics.functions")
+    expect_equal(metrics.messages, MESSAGE_COUNT_TWO)
+    expect_false(metrics.truncated)
+    expect_equal(metrics.schema_version, "1.0.0")
+    expect_equal(metrics.retries, 1)
+    expect_equal(metrics.correlation_id, "corr-123")
 
 
 def test_service_call_metrics_with_error() -> None:
@@ -121,7 +129,7 @@ def test_service_call_metrics_with_error() -> None:
         error="ValueError",
     )
 
-    assert metrics.error == "ValueError"
+    expect_equal(metrics.error, "ValueError")
 
 
 def test_service_call_metrics_optional_fields_none() -> None:
@@ -132,20 +140,20 @@ def test_service_call_metrics_optional_fields_none() -> None:
         duration_ms=1.0,
     )
 
-    assert metrics.rows is None
-    assert metrics.dataset is None
-    assert metrics.messages is None
-    assert metrics.error is None
-    assert metrics.truncated is None
-    assert metrics.schema_version is None
-    assert metrics.retries is None
-    assert metrics.correlation_id is None
-    assert metrics.external_transport is None
-    assert metrics.operation is None
-    assert metrics.repo is None
-    assert metrics.commit is None
-    assert metrics.client_id is None
-    assert metrics.user_agent is None
+    expect_is_none(metrics.rows)
+    expect_is_none(metrics.dataset)
+    expect_is_none(metrics.messages)
+    expect_is_none(metrics.error)
+    expect_is_none(metrics.truncated)
+    expect_is_none(metrics.schema_version)
+    expect_is_none(metrics.retries)
+    expect_is_none(metrics.correlation_id)
+    expect_is_none(metrics.external_transport)
+    expect_is_none(metrics.operation)
+    expect_is_none(metrics.repo)
+    expect_is_none(metrics.commit)
+    expect_is_none(metrics.client_id)
+    expect_is_none(metrics.user_agent)
 
 
 # =============================================================================
@@ -157,9 +165,9 @@ def test_service_call_context_defaults() -> None:
     """Verify ServiceCallContext default values."""
     ctx = ServiceCallContext()
 
-    assert ctx.dataset is None
-    assert ctx.schema_version is None
-    assert ctx.retries is None
+    expect_is_none(ctx.dataset)
+    expect_is_none(ctx.schema_version)
+    expect_is_none(ctx.retries)
 
 
 def test_service_call_context_with_values() -> None:
@@ -170,9 +178,9 @@ def test_service_call_context_with_values() -> None:
         retries=ROW_COUNT_THREE,
     )
 
-    assert ctx.dataset == "test.dataset"
-    assert ctx.schema_version == "2.0"
-    assert ctx.retries == ROW_COUNT_THREE
+    expect_equal(ctx.dataset, "test.dataset")
+    expect_equal(ctx.schema_version, "2.0")
+    expect_equal(ctx.retries, ROW_COUNT_THREE)
 
 
 # =============================================================================
@@ -184,14 +192,14 @@ def test_service_observability_disabled_by_default() -> None:
     """Verify ServiceObservability is disabled by default."""
     obs = ServiceObservability()
 
-    assert obs.enabled is False
+    expect_false(obs.enabled)
 
 
 def test_service_observability_enabled() -> None:
     """Verify ServiceObservability can be enabled."""
     obs = ServiceObservability(enabled=True)
 
-    assert obs.enabled is True
+    expect_true(obs.enabled)
 
 
 def test_service_observability_custom_logger() -> None:
@@ -199,7 +207,7 @@ def test_service_observability_custom_logger() -> None:
     custom_logger = logging.getLogger("custom.test")
     obs = ServiceObservability(enabled=True, logger=custom_logger)
 
-    assert obs.logger is custom_logger
+    expect_true(obs.logger is custom_logger)
 
 
 def test_service_observability_record_when_disabled() -> None:
@@ -210,7 +218,7 @@ def test_service_observability_record_when_disabled() -> None:
     metrics = ServiceCallMetrics(name="test", transport="local", duration_ms=1.0)
     obs.record(metrics)
 
-    assert not handler.records
+    expect_length(handler.records, 0)
 
 
 def test_service_observability_record_when_enabled() -> None:
@@ -226,12 +234,12 @@ def test_service_observability_record_when_enabled() -> None:
     )
     obs.record(metrics)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     record = handler.records[0]
-    assert record.getMessage().startswith("service_call")
+    expect_true(record.getMessage().startswith("service_call"))
     payload = _get_payload(handler)
-    assert payload["name"] == "test_call"
-    assert payload["rows"] == ROW_COUNT_FIVE
+    expect_equal(payload["name"], "test_call")
+    expect_equal(payload["rows"], ROW_COUNT_FIVE)
 
 
 def test_service_observability_record_with_context() -> None:
@@ -253,12 +261,12 @@ def test_service_observability_record_with_context() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
-    assert payload["correlation_id"] == "ctx-123"
-    assert payload["external_transport"] == "http"
-    assert payload["operation"] == "datasets.rows"
-    assert payload["repo"] == "test/repo"
+    expect_equal(payload["correlation_id"], "ctx-123")
+    expect_equal(payload["external_transport"], "http")
+    expect_equal(payload["operation"], "datasets.rows")
+    expect_equal(payload["repo"], "test/repo")
 
 
 def test_service_observability_record_merges_context_values() -> None:
@@ -278,10 +286,10 @@ def test_service_observability_record_merges_context_values() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
-    assert payload["correlation_id"] == "metric-override"
-    assert payload["external_transport"] == "http"
+    expect_equal(payload["correlation_id"], "metric-override")
+    expect_equal(payload["external_transport"], "http")
 
 
 def test_service_observability_record_all_optional_fields() -> None:
@@ -303,12 +311,12 @@ def test_service_observability_record_all_optional_fields() -> None:
     )
     obs.record(metrics)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
-    assert payload["rows"] == ROW_COUNT
-    assert payload["dataset"] == "test.dataset"
-    assert payload["truncated"] is True
+    expect_equal(payload["rows"], ROW_COUNT)
+    expect_equal(payload["dataset"], "test.dataset")
+    expect_true(payload["truncated"])
 
 
 def test_service_observability_record_with_error() -> None:
@@ -324,9 +332,9 @@ def test_service_observability_record_with_error() -> None:
     )
     obs.record(metrics)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
-    assert payload["error"] == "ValueError"
+    expect_equal(payload["error"], "ValueError")
 
 
 def test_service_observability_record_logger_not_enabled() -> None:
@@ -337,7 +345,7 @@ def test_service_observability_record_logger_not_enabled() -> None:
     metrics = ServiceCallMetrics(name="test", transport="local", duration_ms=1.0)
     obs.record(metrics)
 
-    assert not handler.records
+    expect_length(handler.records, 0)
 
 
 def test_service_observability_record_context_enrichment() -> None:
@@ -361,14 +369,14 @@ def test_service_observability_record_context_enrichment() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
     # Context values should be in payload
-    assert payload["correlation_id"] == "enrichment-test"
-    assert payload["external_transport"] == "mcp"
-    assert payload["operation"] == "get_function_summary"
-    assert payload["repo"] == "demo/repo"
+    expect_equal(payload["correlation_id"], "enrichment-test")
+    expect_equal(payload["external_transport"], "mcp")
+    expect_equal(payload["operation"], "get_function_summary")
+    expect_equal(payload["repo"], "demo/repo")
 
 
 def test_service_observability_record_rounds_duration() -> None:
@@ -383,11 +391,11 @@ def test_service_observability_record_rounds_duration() -> None:
     )
     obs.record(metrics)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
     # Duration should be rounded to 2 decimal places
-    assert payload["duration_ms"] == DURATION_ROUNDED
+    expect_equal(payload["duration_ms"], DURATION_ROUNDED)
 
 
 def test_service_observability_record_excludes_none_values() -> None:
@@ -402,14 +410,14 @@ def test_service_observability_record_excludes_none_values() -> None:
     )
     obs.record(metrics)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
     # None values should not be in payload
-    assert "rows" not in payload
-    assert "dataset" not in payload
-    assert "error" not in payload
-    assert "truncated" not in payload
+    expect_not_in("rows", payload)
+    expect_not_in("dataset", payload)
+    expect_not_in("error", payload)
+    expect_not_in("truncated", payload)
 
 
 def test_service_observability_record_metric_overrides_context() -> None:
@@ -431,20 +439,20 @@ def test_service_observability_record_metric_overrides_context() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    assert len(handler.records) == 1
+    expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
     # Metric values should take precedence
-    assert payload["correlation_id"] == "metric-corr"
-    assert payload["repo"] == "metric-repo"
+    expect_equal(payload["correlation_id"], "metric-corr")
+    expect_equal(payload["repo"], "metric-repo")
 
 
 def test_service_observability_default_logger() -> None:
     """Verify ServiceObservability has default logger."""
     obs = ServiceObservability(enabled=True)
 
-    assert obs.logger is not None
-    assert obs.logger.name == "codeintel.serving.services.query"
+    expect_true(obs.logger is not None)
+    expect_equal(obs.logger.name, "codeintel.serving.services.query")
 
 
 def test_service_call_metrics_repo_commit_fields() -> None:
@@ -457,8 +465,8 @@ def test_service_call_metrics_repo_commit_fields() -> None:
         commit="sha256hash",
     )
 
-    assert metrics.repo == "test/repository"
-    assert metrics.commit == "sha256hash"
+    expect_equal(metrics.repo, "test/repository")
+    expect_equal(metrics.commit, "sha256hash")
 
 
 def test_service_call_metrics_external_transport() -> None:
@@ -470,4 +478,4 @@ def test_service_call_metrics_external_transport() -> None:
         external_transport="cli",
     )
 
-    assert metrics.external_transport == "cli"
+    expect_equal(metrics.external_transport, "cli")

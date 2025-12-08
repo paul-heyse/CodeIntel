@@ -7,9 +7,10 @@ from pathlib import Path
 from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeaturesPlugin
 from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
-from tests._helpers.context import create_test_context
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta
+from tests.analytics.conftest import PluginTestHarness
 
 
 def _seed_function_sources(repo_root: Path) -> None:
@@ -59,41 +60,25 @@ def _make_catalog(ctx_repo: str, ctx_commit: str) -> FunctionCatalogService:
     return FunctionCatalogService(catalog)
 
 
-def test_function_ast_features_plugin(tmp_path: Path) -> None:
+def test_function_ast_features_plugin(plugin_harness: PluginTestHarness) -> None:
     """FunctionAstFeaturesPlugin should persist feature rows for catalog functions."""
-    ctx = create_test_context(tmp_path)
-    _seed_function_sources(ctx.repo_root)
-    catalog_provider = _make_catalog(ctx.repo, ctx.commit)
+    _seed_function_sources(plugin_harness.ctx.repo_root)
+    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    plugin_ctx.resources.catalog = catalog_provider
+    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
 
-    result = execute_target_plugin(FunctionAstFeaturesPlugin(), plugin_ctx)
-    assert result.success
-    assert ctx.query_count("analytics.function_ast_features") == 2
-
-    ctx.close()
+    result = execute_target_plugin(FunctionAstFeaturesPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
+    expect_equal(plugin_harness.ctx.query_count("analytics.function_ast_features"), 2)
 
 
-def test_function_contracts_plugin(tmp_path: Path) -> None:
+def test_function_contracts_plugin(plugin_harness: PluginTestHarness) -> None:
     """FunctionContractsPlugin should derive contracts from AST-loaded functions."""
-    ctx = create_test_context(tmp_path)
-    _seed_function_sources(ctx.repo_root)
-    catalog_provider = _make_catalog(ctx.repo, ctx.commit)
+    _seed_function_sources(plugin_harness.ctx.repo_root)
+    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    plugin_ctx.resources.catalog = catalog_provider
+    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
 
-    result = execute_target_plugin(FunctionContractsPlugin(), plugin_ctx)
-    assert result.success
-    assert ctx.query_count("analytics.function_contracts") >= 1
-
-    ctx.close()
+    result = execute_target_plugin(FunctionContractsPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
+    expect_true(plugin_harness.ctx.query_count("analytics.function_contracts") >= 1)

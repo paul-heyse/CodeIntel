@@ -2,28 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from codeintel.analytics.plugins.data_models.build import DataModelsPlugin
-from tests._helpers.context import create_test_context
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.assertions import expect_true
+from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.seeds.data_models import DATA_MODELS_PACK
+from tests.analytics.conftest import PluginTestHarness
 
 
-def test_data_models_plugin_extracts_models_and_usage(tmp_path: Path) -> None:
+def test_data_models_plugin_extracts_models_and_usage(plugin_harness: PluginTestHarness) -> None:
     """DataModelsPlugin should populate data_models and usage tables."""
-    ctx = create_test_context(tmp_path)
-    ctx.require(DATA_MODELS_PACK)
+    plugin_harness.ctx.require(DATA_MODELS_PACK)
 
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    result = execute_target_plugin(DataModelsPlugin(), plugin_ctx)
-    assert result.success
+    result = execute_target_plugin(DataModelsPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
 
-    assert ctx.query_count("analytics.data_models") >= 1
-    assert ctx.query_count("analytics.data_model_usage") >= 0
-
-    ctx.close()
+    expect_true(plugin_harness.ctx.query_count("analytics.data_models") >= 1)
+    expect_true(plugin_harness.ctx.query_count("analytics.data_model_usage") >= 0)

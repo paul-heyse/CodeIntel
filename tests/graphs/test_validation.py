@@ -24,6 +24,7 @@ from codeintel.graphs.validation.checks import (
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
+from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.factories import make_snapshot
 
 # ---------------------------------------------------------------------------
@@ -38,14 +39,7 @@ EXPECTED_TWO: Final = 2
 def test_run_graph_validations_emits_warnings(
     caplog: LogCaptureFixture, fresh_gateway: StorageGateway
 ) -> None:
-    """
-    Graph validations should warn for common integrity gaps.
-
-    Raises
-    ------
-    AssertionError
-        If expected warning text is absent.
-    """
+    """Graph validations should warn for common integrity gaps."""
     gateway = fresh_gateway
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
@@ -63,9 +57,7 @@ def test_run_graph_validations_emits_warnings(
     messages = " ".join(record.message for record in caplog.records)
     expected = ["outside caller spans", "module(s) have no GOIDs"]
     for needle in expected:
-        if needle not in messages:
-            message = f"Expected warning containing '{needle}' but messages were: {messages}"
-            raise AssertionError(message)
+        expect_in(needle, messages, label="graph_validation_warning")
 
 
 def test_run_graph_validations_snapshot_mismatch_raises(
@@ -117,14 +109,7 @@ def test_run_graph_validations_hard_fail_on_error(
 def test_run_graph_validations_caps_findings(
     fresh_gateway: StorageGateway,
 ) -> None:
-    """
-    Per-rule caps should limit persisted validation rows.
-
-    Raises
-    ------
-    AssertionError
-        When a rule exceeds the configured cap.
-    """
+    """Per-rule caps should limit persisted validation rows."""
     gateway = fresh_gateway
     apply_all_schemas(gateway.con)
     repo = "demo/repo"
@@ -143,9 +128,7 @@ def test_run_graph_validations_caps_findings(
         "SELECT graph_name, COUNT(*) FROM analytics.graph_validation GROUP BY graph_name"
     ).fetchall()
     for _, count in rows:
-        if int(count) > 1:
-            message = f"Expected cap to apply, found {count} rows"
-            raise AssertionError(message)
+        expect_true(int(count) <= 1, message=f"Expected cap to apply, found {count} rows")
 
 
 # ===========================================================================
@@ -168,10 +151,11 @@ def test_call_graph_findings_with_isolated_nodes() -> None:
     findings = call_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
     isolated_findings = [f for f in findings if f["check_name"] == "call_graph_isolated_nodes"]
-    assert len(isolated_findings) == EXPECTED_ONE
+    expect_equal(len(isolated_findings), EXPECTED_ONE)
     detail = isolated_findings[0]["detail"]
-    assert isinstance(detail, str)
-    assert "isolated" in detail.lower()
+    expect_is_instance(detail, str)
+    detail_str = str(detail)
+    expect_in("isolated", detail_str.lower())
 
 
 def test_call_graph_findings_with_scc() -> None:
@@ -190,7 +174,7 @@ def test_call_graph_findings_with_scc() -> None:
     findings = call_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
     scc_findings = [f for f in findings if f["check_name"] == "call_graph_large_scc"]
-    assert len(scc_findings) == EXPECTED_ONE
+    expect_equal(len(scc_findings), EXPECTED_ONE)
 
 
 def test_call_graph_findings_with_hub_nodes() -> None:
@@ -207,7 +191,7 @@ def test_call_graph_findings_with_hub_nodes() -> None:
     findings = call_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
     hub_findings = [f for f in findings if f["check_name"] == "call_graph_degree_hubs"]
-    assert len(hub_findings) == EXPECTED_ONE
+    expect_equal(len(hub_findings), EXPECTED_ONE)
 
 
 def test_call_graph_findings_empty_graph() -> None:
@@ -217,7 +201,7 @@ def test_call_graph_findings_empty_graph() -> None:
 
     findings = call_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert findings == []
+    expect_equal(findings, [])
 
 
 # ===========================================================================
@@ -235,7 +219,7 @@ def test_import_cycle_findings_detects_large_cycles() -> None:
     log = logging.getLogger("test")
     findings = import_cycle_findings(sccs, TEST_REPO, TEST_COMMIT, log)
 
-    assert len(findings) >= EXPECTED_ONE
+    expect_true(len(findings) >= EXPECTED_ONE)
 
 
 def test_import_cycle_findings_detects_cross_package_cycles() -> None:
@@ -251,7 +235,7 @@ def test_import_cycle_findings_detects_cross_package_cycles() -> None:
     cross_pkg_findings = [
         f for f in findings if f["check_name"] == "import_graph_cross_package_cycles"
     ]
-    assert len(cross_pkg_findings) == EXPECTED_ONE
+    expect_equal(len(cross_pkg_findings), EXPECTED_ONE)
 
 
 def test_import_hub_findings_detects_hubs() -> None:
@@ -268,7 +252,7 @@ def test_import_hub_findings_detects_hubs() -> None:
     log = logging.getLogger("test")
     findings = import_hub_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert len(findings) >= EXPECTED_ONE
+    expect_true(len(findings) >= EXPECTED_ONE)
 
 
 def test_import_upward_findings_detects_layer_violations() -> None:
@@ -282,7 +266,7 @@ def test_import_upward_findings_detects_layer_violations() -> None:
     log = logging.getLogger("test")
     findings = import_upward_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert len(findings) == EXPECTED_ONE
+    expect_equal(len(findings), EXPECTED_ONE)
 
 
 def test_import_upward_findings_ignores_downward() -> None:
@@ -296,7 +280,7 @@ def test_import_upward_findings_ignores_downward() -> None:
     log = logging.getLogger("test")
     findings = import_upward_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert findings == []
+    expect_equal(findings, [])
 
 
 def test_import_bridge_findings_detects_bridges() -> None:
@@ -317,7 +301,7 @@ def test_import_bridge_findings_detects_bridges() -> None:
     findings = import_bridge_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
     # Bridge findings depend on betweenness calculation
-    assert isinstance(findings, list)
+    expect_true(isinstance(findings, list))
 
 
 def test_import_graph_findings_combines_checks() -> None:
@@ -330,7 +314,7 @@ def test_import_graph_findings_combines_checks() -> None:
     log = logging.getLogger("test")
     findings = import_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert isinstance(findings, list)
+    expect_true(isinstance(findings, list))
 
 
 # ===========================================================================
@@ -352,7 +336,7 @@ def test_symbol_graph_findings_detects_hubs() -> None:
     log = logging.getLogger("test")
     findings = symbol_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert len(findings) >= EXPECTED_ONE
+    expect_true(len(findings) >= EXPECTED_ONE)
 
 
 def test_symbol_graph_findings_empty_graph() -> None:
@@ -362,7 +346,7 @@ def test_symbol_graph_findings_empty_graph() -> None:
     log = logging.getLogger("test")
     findings = symbol_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert findings == []
+    expect_equal(findings, [])
 
 
 # ===========================================================================
@@ -386,7 +370,7 @@ def test_config_key_findings_detects_broad_usage() -> None:
     log = logging.getLogger("test")
     findings = config_key_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert len(findings) >= EXPECTED_ONE
+    expect_true(len(findings) >= EXPECTED_ONE)
 
 
 def test_config_key_findings_empty_graph() -> None:
@@ -396,4 +380,4 @@ def test_config_key_findings_empty_graph() -> None:
     log = logging.getLogger("test")
     findings = config_key_findings(graph, TEST_REPO, TEST_COMMIT, log)
 
-    assert findings == []
+    expect_equal(findings, [])

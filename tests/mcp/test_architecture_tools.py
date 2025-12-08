@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, ItemsView, Iterator
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -12,6 +12,7 @@ import pytest
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp import architecture_tools, errors
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
@@ -60,10 +61,10 @@ class _GraphPlanPluginMetadata:
     def __init__(self, **kwargs: object) -> None:
         self.payload: dict[str, object] = dict(kwargs)
 
-    def __iter__(self) -> object:  # type: ignore[override]
+    def __iter__(self) -> Iterator[str]:
         return iter(self.payload)
 
-    def items(self) -> object:  # type: ignore[override]
+    def items(self) -> ItemsView[str, object]:
         return self.payload.items()
 
 
@@ -86,6 +87,25 @@ class _Backend:
     def get_module_architecture(self, **_: object) -> _Model:
         self.calls.append("module")
         return _Model.from_domain("mod")
+
+
+class _ExplodingBackend(_Backend):
+    """Backend that raises a backend failure for function architecture."""
+
+    def get_function_architecture(self, **_: object) -> _Model:
+        self.calls.append("function_error")
+        error_message = "bad"
+        raise errors.backend_failure(error_message)
+
+
+class _BadSignatureBackend(_Backend):
+    """Backend that raises TypeError to simulate signature mismatch."""
+
+    def get_module_architecture(self, **kwargs: object) -> _Model:
+        module_name = str(kwargs.get("module", "unknown"))
+        self.calls.append(f"bad_module:{module_name}")
+        error_message = "Invalid module architecture request"
+        raise TypeError(error_message)
 
     def list_subsystems(self, **_: object) -> _Model:
         self.calls.append("list_subsystems")
@@ -189,16 +209,16 @@ def test_register_architecture_tools_registers_and_executes(
         "search_subsystems",
         "summarize_subsystem",
     }
-    assert expected.issubset(set(mcp.registry))
+    expect_true(expected.issubset(set(mcp.registry)))
 
     # Execute a couple of tools to ensure serialization and context reset
     result_fn = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_architecture"])(
         goid_h128="1"
     )
     result_plan = cast("Callable[[], dict[str, object]]", mcp.registry["graph_plugin_plan"])()
-    assert result_fn == {"value": "fn"}
-    assert "plan_id" in result_plan
-    assert get_current_request_context() is None
+    expect_equal(result_fn, {"value": "fn"})
+    expect_in("plan_id", result_plan)
+    expect_true(get_current_request_context() is None)
 
 
 def test_architecture_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,13 +229,7 @@ def test_architecture_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> N
         "plan_graph_plugins",
         lambda **_: _stub_plan_response(),
     )
-    backend = _Backend()
-
-    def _explode(**_: object) -> object:
-        message = "bad"
-        raise errors.backend_failure(message)
-
-    backend.get_function_architecture = _explode  # type: ignore[assignment]
+    backend = _ExplodingBackend()
     mcp = RecordingMcp()
 
     architecture_tools.register_architecture_tools(
@@ -224,8 +238,8 @@ def test_architecture_tools_wrap_mcp_error(monkeypatch: pytest.MonkeyPatch) -> N
     result = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_architecture"])(
         goid_h128="1"
     )
-    assert "error" in result
-    assert get_current_request_context() is None
+    expect_in("error", result)
+    expect_true(get_current_request_context() is None)
 
 
 def test_architecture_tools_type_error_matches_backend_signature(
@@ -233,12 +247,7 @@ def test_architecture_tools_type_error_matches_backend_signature(
 ) -> None:
     """Backend signature mismatches should surface as TypeError without leaking context."""
     _patch_models(monkeypatch)
-    backend = _Backend()
-
-    def _wrong_signature() -> dict[str, object]:
-        return {"value": "bad"}
-
-    backend.get_module_architecture = _wrong_signature  # type: ignore[assignment]
+    backend = _BadSignatureBackend()
     monkeypatch.setattr(
         architecture_tools,
         "plan_graph_plugins",
@@ -252,4 +261,4 @@ def test_architecture_tools_type_error_matches_backend_signature(
         cast("Callable[..., dict[str, object]]", mcp.registry["get_module_architecture"])(
             module="pkg.mod"
         )
-    assert get_current_request_context() is None
+    expect_true(get_current_request_context() is None)

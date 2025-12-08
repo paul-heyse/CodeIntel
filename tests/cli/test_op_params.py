@@ -7,14 +7,15 @@ from codeintel.cli.op_params import (
     coerce_params_from_strings,
     coerce_string_param,
 )
+from tests._helpers.assertions import expect_equal, expect_true
 
 
 def test_coerce_string_param_basic_types() -> None:
     """String tunnel coercion handles primitives."""
-    assert coerce_string_param("42", int) == 42
-    assert coerce_string_param("3.14", float) == 3.14
-    assert coerce_string_param("true", bool) is True
-    assert coerce_string_param("value", None) == "value"
+    expect_equal(coerce_string_param("42", int), 42)
+    expect_equal(coerce_string_param("3.14", float), 3.14)
+    expect_true(coerce_string_param("true", bool))
+    expect_equal(coerce_string_param("value", None), "value")
 
 
 def test_coerce_params_from_strings_skips_none() -> None:
@@ -43,4 +44,4 @@ def test_coerce_params_from_strings_skips_none() -> None:
     )
     raw = {"limit": "5", "q": None}
     result = coerce_params_from_strings(raw, specs)
-    assert result == {"limit": 5}
+    expect_equal(result, {"limit": 5})

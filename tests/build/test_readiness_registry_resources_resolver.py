@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
+import duckdb
 import pytest
 
 from codeintel.build.contracts import OutputContract
@@ -26,7 +27,28 @@ from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.build import ManifestParams, sample_manifest
+
+if TYPE_CHECKING:
+    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.gateway.accessors import (
+        AnalyticsTables,
+        CoreTables,
+        DocsViews,
+        GraphTables,
+    )
+    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking.build_tracking import BuildTracking
+
+_DURATION_THRESHOLD_MS = 5000
 
 
 @dataclass
@@ -58,6 +80,62 @@ class FakeBuildStore:
         return list(self.manifests.values())
 
 
+class FakeGateway(StorageGateway):
+    """Minimal StorageGateway implementation for readiness tests."""
+
+    def __init__(self, build: FakeBuildStore) -> None:
+        self.build = cast("BuildTracking", build)
+        placeholder = SimpleNamespace()
+        self.analytics = cast("AnalyticsTables", placeholder)
+        self.config = cast("StorageConfig", placeholder)
+        self.core = cast("CoreTables", placeholder)
+        self.datasets = cast("DatasetRegistry", placeholder)
+        self.docs = cast("DocsViews", placeholder)
+        self.graph = cast("GraphTables", placeholder)
+        self.runs = cast("PipelineRunTracking", placeholder)
+        self._con = duckdb.connect(":memory:")
+        self.executions: list[tuple[str, tuple[object, ...] | None]] = []
+
+    @property
+    def con(self) -> duckdb.DuckDBPyConnection:
+        """Return the fake connection.
+
+        Returns
+        -------
+        DuckDBPyConnection
+            Connection stub used in tests.
+        """
+        return self._con
+
+    def close(self) -> None:
+        """Close the fake connection."""
+        self._con.close()
+
+    def execute(
+        self, sql: str, params: Sequence[object] | None = None
+    ) -> duckdb.DuckDBPyConnection:
+        """Proxy execution to the fake connection.
+
+        Returns
+        -------
+        DuckDBPyConnection
+            Connection stub used in tests.
+        """
+        normalized_params = tuple(params) if params is not None else None
+        self.executions.append((sql, normalized_params))
+        return self._con.execute(sql, params)
+
+    def table(self, name: str) -> duckdb.DuckDBPyRelation:
+        """Proxy table access to the fake connection.
+
+        Returns
+        -------
+        DuckDBPyRelation
+            Relation stub used in tests.
+        """
+        return self._con.table(name)
+
+
 def _gateway(manifests: Mapping[str, object]) -> StorageGateway:
     """Create a gateway exposing build accessors.
 
@@ -66,7 +144,7 @@ def _gateway(manifests: Mapping[str, object]) -> StorageGateway:
     StorageGateway
         Gateway with build accessor.
     """
-    return cast("StorageGateway", SimpleNamespace(build=FakeBuildStore(manifests)))
+    return FakeGateway(FakeBuildStore(manifests))
 
 
 def _snapshot(tmp_path_factory: pytest.TempPathFactory | None = None) -> SnapshotRef:
@@ -106,7 +184,7 @@ def test_target_readiness_current_is_ready(tmp_path_factory: pytest.TempPathFact
     snapshot = _snapshot(tmp_path_factory)
     target = _target("solo")
     gateway = _gateway({})
-    current_hash = compute_input_hash(target, snapshot, gateway)  # type: ignore[arg-type]
+    current_hash = compute_input_hash(target, snapshot, gateway)
     manifest = replace(
         sample_manifest("solo", ManifestParams(input_hash="x")), input_hash=current_hash
     )
@@ -115,14 +193,14 @@ def test_target_readiness_current_is_ready(tmp_path_factory: pytest.TempPathFact
     view = TargetReadinessView(
         target,
         TargetGraphWithTargets(target),
-        gateway,  # type: ignore[arg-type]
+        gateway,
         snapshot,
     )
 
     readiness = view.readiness
-    assert readiness.is_ready is True
-    assert readiness.self_status == "current"
-    assert readiness.action_needed.kind == "none"
+    expect_true(readiness.is_ready)
+    expect_equal(readiness.self_status, "current")
+    expect_equal(readiness.action_needed.kind, "none")
 
 
 def test_readiness_blocked_dependency_reports_chain(
@@ -139,17 +217,17 @@ def test_readiness_blocked_dependency_reports_chain(
     view = TargetReadinessView(
         leaf,
         graph,
-        gateway,  # type: ignore[arg-type]
+        gateway,
         snapshot,
     )
 
     readiness = view.readiness
-    assert readiness.is_ready is False
-    assert readiness.action_needed.kind == "run_first"
-    assert readiness.action_needed.target == "root"
-    assert readiness.ultimate_bottleneck == "root"
-    assert readiness.blocker_chain[0].blocked_by == "root"
-    assert readiness.estimated_time_to_ready_ms == root.estimated_duration_ms
+    expect_false(readiness.is_ready)
+    expect_equal(readiness.action_needed.kind, "run_first")
+    expect_equal(readiness.action_needed.target, "root")
+    expect_equal(readiness.ultimate_bottleneck, "root")
+    expect_equal(readiness.blocker_chain[0].blocked_by, "root")
+    expect_equal(readiness.estimated_time_to_ready_ms, root.estimated_duration_ms)
 
 
 def test_database_readiness_bottlenecks_and_summary(
@@ -165,14 +243,14 @@ def test_database_readiness_bottlenecks_and_summary(
     graph.register(root)
     graph.register(leaf)
 
-    db_view = DatabaseReadinessView(graph, gateway, snapshot)  # type: ignore[arg-type]
+    db_view = DatabaseReadinessView(graph, gateway, snapshot)
 
-    assert "root" in db_view.bottlenecks()
+    expect_in("root", db_view.bottlenecks())
     summary = db_view.summary()
-    assert summary["blocked"] >= 1
+    expect_true(summary["blocked"] >= 1)
     formatted = db_view.format_summary()
-    assert "Readiness for" in formatted
-    assert "Bottlenecks" in formatted
+    expect_in("Readiness for", formatted)
+    expect_in("Bottlenecks", formatted)
 
 
 def test_readiness_runnable_when_never_computed(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -184,14 +262,14 @@ def test_readiness_runnable_when_never_computed(tmp_path_factory: pytest.TempPat
     view = TargetReadinessView(
         target,
         TargetGraphWithTargets(target),
-        gateway,  # type: ignore[arg-type]
+        gateway,
         snapshot,
     )
 
     readiness = view.readiness
-    assert readiness.action_needed.kind == "run"
-    assert readiness.action_needed.target == "fresh"
-    assert readiness.action_needed.command is not None
+    expect_equal(readiness.action_needed.kind, "run")
+    expect_equal(readiness.action_needed.target, "fresh")
+    expect_is_not_none(readiness.action_needed.command)
 
 
 def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptureFixture) -> None:
@@ -207,8 +285,8 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
 
     schemas = derive_schemas_from_targets((t1, t2))
 
-    assert schemas["core.items"] == table
-    assert any("Duplicate schema" in rec.message for rec in caplog.records)
+    expect_equal(schemas["core.items"], table)
+    expect_true(any("Duplicate schema" in rec.message for rec in caplog.records))
 
 
 def test_registry_build_target_graph_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,7 +304,7 @@ def test_registry_build_target_graph_validation_error(monkeypatch: pytest.Monkey
     with pytest.raises(ValueError, match="missing_dep") as excinfo:
         build_target_graph()
 
-    assert "missing_dep" in str(excinfo.value)
+    expect_in("missing_dep", str(excinfo.value))
     get_target_graph.cache_clear()
 
 
@@ -243,7 +321,7 @@ def test_registry_get_target_by_table(monkeypatch: pytest.MonkeyPatch) -> None:
 
     found = get_target_by_table("core.produced")
 
-    assert found is target
+    expect_true(found is target)
     get_target_graph.cache_clear()
 
 
@@ -297,18 +375,18 @@ def test_resolver_cycle_detection_raises() -> None:
 def test_target_resources_and_execution_helpers() -> None:
     """Resource and execution helpers return expected values."""
     resources = TargetResources(tools=("tool",))
-    assert resources.requires_any_tool() is True
-    assert TargetResources().requires_any_tool() is False
+    expect_true(resources.requires_any_tool())
+    expect_false(TargetResources().requires_any_tool())
 
     execution = TargetExecution(
         cpu_intensive=True, io_intensive=True, memory_intensive=True, max_runtime_ms=10000
     )
-    assert execution.estimated_duration_ms() == 10000
+    expect_equal(execution.estimated_duration_ms(), 10000)
 
     execution_light = TargetExecution(
         cpu_intensive=True, io_intensive=False, memory_intensive=False, max_runtime_ms=60000
     )
-    assert execution_light.estimated_duration_ms() > 5000
+    expect_true(execution_light.estimated_duration_ms() > _DURATION_THRESHOLD_MS)
 
 
 @dataclass

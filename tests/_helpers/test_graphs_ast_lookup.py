@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from tests._helpers.assertions.expectation_assertions import (
+    expect_in,
+    expect_is_instance,
+)
 from tests._helpers.graphs import build_ast_map
 
 
@@ -34,10 +38,10 @@ def test_build_ast_map_handles_functions_and_classes(tmp_path: Path) -> None:
         target_names={"mod": ("foo", "MyClass")},
     )
 
-    assert goids["foo"] in ast_map
-    assert goids["MyClass"] in ast_map
-    assert isinstance(ast_map[goids["MyClass"]].node, ast.ClassDef)
-    assert isinstance(ast_map[goids["foo"]].node, ast.FunctionDef)
+    expect_in(goids["foo"], ast_map, label="foo goid present")
+    expect_in(goids["MyClass"], ast_map, label="class goid present")
+    expect_is_instance(ast_map[goids["MyClass"]].node, ast.ClassDef, label="class node")
+    expect_is_instance(ast_map[goids["foo"]].node, ast.FunctionDef, label="function node")
 
 
 def test_build_ast_map_raises_for_missing_target(tmp_path: Path) -> None:

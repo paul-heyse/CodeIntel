@@ -9,6 +9,18 @@ import pytest
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking.build_tracking import BuildTracking
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
+
+MANIFEST_COUNT = 3
+UPDATED_DURATION_MS = 2000.0
+LIST_RUN_COUNT = 3
+RUN_LIMIT = 3
 
 
 @pytest.fixture
@@ -31,7 +43,8 @@ def tracking(fresh_gateway: StorageGateway) -> BuildTracking:
 class TestOutputManifestOperations:
     """Tests for OutputManifest CRUD operations."""
 
-    def test_save_and_load_manifest(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_save_and_load_manifest(tracking: BuildTracking) -> None:
         """Save and retrieve a manifest."""
         manifest = OutputManifest(
             target="test_target",
@@ -49,23 +62,25 @@ class TestOutputManifestOperations:
         tracking.save_manifest(manifest)
         loaded = tracking.load_manifest("test_target", "test-org/test-repo", "abc123")
 
-        assert loaded is not None
-        assert loaded.target == manifest.target
-        assert loaded.repo == manifest.repo
-        assert loaded.commit == manifest.commit
-        assert loaded.plugin == manifest.plugin
-        assert loaded.duration_ms == manifest.duration_ms
-        assert loaded.input_hash == manifest.input_hash
-        assert loaded.output_hash == manifest.output_hash
-        assert loaded.row_count == manifest.row_count
-        assert loaded.options_hash == manifest.options_hash
+        loaded_manifest = expect_is_not_none(loaded)
+        expect_equal(loaded_manifest.target, manifest.target)
+        expect_equal(loaded_manifest.repo, manifest.repo)
+        expect_equal(loaded_manifest.commit, manifest.commit)
+        expect_equal(loaded_manifest.plugin, manifest.plugin)
+        expect_equal(loaded_manifest.duration_ms, manifest.duration_ms)
+        expect_equal(loaded_manifest.input_hash, manifest.input_hash)
+        expect_equal(loaded_manifest.output_hash, manifest.output_hash)
+        expect_equal(loaded_manifest.row_count, manifest.row_count)
+        expect_equal(loaded_manifest.options_hash, manifest.options_hash)
 
-    def test_load_nonexistent_manifest(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_load_nonexistent_manifest(tracking: BuildTracking) -> None:
         """Loading non-existent manifest returns None."""
         loaded = tracking.load_manifest("nonexistent", "no/repo", "nocommit")
-        assert loaded is None
+        expect_is_none(loaded)
 
-    def test_upsert_manifest(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_upsert_manifest(tracking: BuildTracking) -> None:
         """Saving manifest twice updates the record."""
         manifest1 = OutputManifest(
             target="test_target",
@@ -91,14 +106,15 @@ class TestOutputManifestOperations:
         tracking.save_manifest(manifest2)
 
         loaded = tracking.load_manifest("test_target", "test-org/test-repo", "abc123")
-        assert loaded is not None
-        assert loaded.duration_ms == 2000.0
-        assert loaded.input_hash == "input2"
+        loaded_manifest = expect_is_not_none(loaded)
+        expect_equal(loaded_manifest.duration_ms, UPDATED_DURATION_MS)
+        expect_equal(loaded_manifest.input_hash, "input2")
 
-    def test_list_manifests(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_list_manifests(tracking: BuildTracking) -> None:
         """List all manifests for a repo/commit."""
         now = datetime.now(tz=UTC)
-        for i in range(3):
+        for i in range(MANIFEST_COUNT):
             manifest = OutputManifest(
                 target=f"target_{i}",
                 repo="test-org/test-repo",
@@ -111,16 +127,17 @@ class TestOutputManifestOperations:
             tracking.save_manifest(manifest)
 
         manifests = tracking.list_manifests("test-org/test-repo", "abc123")
-        assert len(manifests) == 3
+        expect_length(manifests, MANIFEST_COUNT)
 
         # Should be ordered by target name
         names = [m.target for m in manifests]
-        assert names == sorted(names)
+        expect_equal(names, sorted(names))
 
-    def test_delete_manifests(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_delete_manifests(tracking: BuildTracking) -> None:
         """Delete all manifests for a repo/commit."""
         now = datetime.now(tz=UTC)
-        for i in range(3):
+        for i in range(MANIFEST_COUNT):
             manifest = OutputManifest(
                 target=f"target_{i}",
                 repo="test-org/test-repo",
@@ -134,20 +151,21 @@ class TestOutputManifestOperations:
 
         # Verify manifests were created
         manifests_before = tracking.list_manifests("test-org/test-repo", "abc123")
-        assert len(manifests_before) > 0
+        expect_true(len(manifests_before) > 0)
 
         # Delete all manifests
         tracking.delete_manifests("test-org/test-repo", "abc123")
 
         # Verify all manifests were deleted
         manifests_after = tracking.list_manifests("test-org/test-repo", "abc123")
-        assert len(manifests_after) == 0
+        expect_length(manifests_after, 0)
 
 
 class TestBuildRunOperations:
     """Tests for BuildRunRecord CRUD operations."""
 
-    def test_start_and_fetch_run(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_start_and_fetch_run(tracking: BuildTracking) -> None:
         """Start a run and fetch it."""
         record = BuildRunRecord(
             run_id="run-123",
@@ -163,19 +181,21 @@ class TestBuildRunOperations:
         tracking.start_run(record)
         loaded = tracking.fetch_run("run-123")
 
-        assert loaded is not None
-        assert loaded.run_id == "run-123"
-        assert loaded.repo == "test-org/test-repo"
-        assert loaded.commit == "abc123"
-        assert loaded.requested_targets == ("target1", "target2")
-        assert loaded.status == "running"
+        loaded_run = expect_is_not_none(loaded)
+        expect_equal(loaded_run.run_id, "run-123")
+        expect_equal(loaded_run.repo, "test-org/test-repo")
+        expect_equal(loaded_run.commit, "abc123")
+        expect_equal(loaded_run.requested_targets, ("target1", "target2"))
+        expect_equal(loaded_run.status, "running")
 
-    def test_fetch_nonexistent_run(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_fetch_nonexistent_run(tracking: BuildTracking) -> None:
         """Fetching non-existent run returns None."""
         loaded = tracking.fetch_run("nonexistent-run")
-        assert loaded is None
+        expect_is_none(loaded)
 
-    def test_complete_run_succeeded(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_complete_run_succeeded(tracking: BuildTracking) -> None:
         """Complete a running run with success status."""
         record = BuildRunRecord(
             run_id="run-456",
@@ -197,14 +217,15 @@ class TestBuildRunOperations:
         )
 
         loaded = tracking.fetch_run("run-456")
-        assert loaded is not None
-        assert loaded.status == "succeeded"
-        assert loaded.computed_targets == ("target1", "target2")
-        assert loaded.skipped_targets == ("target3",)
-        assert loaded.completed_at is not None
-        assert loaded.duration_ms is not None
+        loaded_run = expect_is_not_none(loaded)
+        expect_equal(loaded_run.status, "succeeded")
+        expect_equal(loaded_run.computed_targets, ("target1", "target2"))
+        expect_equal(loaded_run.skipped_targets, ("target3",))
+        expect_is_not_none(loaded_run.completed_at)
+        expect_is_not_none(loaded_run.duration_ms)
 
-    def test_complete_run_failed(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_complete_run_failed(tracking: BuildTracking) -> None:
         """Complete a failed run with error summary."""
         record = BuildRunRecord(
             run_id="run-789",
@@ -227,13 +248,14 @@ class TestBuildRunOperations:
         )
 
         loaded = tracking.fetch_run("run-789")
-        assert loaded is not None
-        assert loaded.status == "failed"
-        assert loaded.error_summary == "Test error occurred"
+        loaded_run = expect_is_not_none(loaded)
+        expect_equal(loaded_run.status, "failed")
+        expect_equal(loaded_run.error_summary, "Test error occurred")
 
-    def test_list_runs(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_list_runs(tracking: BuildTracking) -> None:
         """List recent runs for a repository."""
-        for i in range(3):
+        for i in range(LIST_RUN_COUNT):
             record = BuildRunRecord(
                 run_id=f"run-list-{i}",
                 repo="test-org/test-repo",
@@ -247,13 +269,14 @@ class TestBuildRunOperations:
             tracking.start_run(record)
 
         runs = tracking.list_runs("test-org/test-repo")
-        assert len(runs) == 3
+        expect_length(runs, LIST_RUN_COUNT)
 
         # Should be ordered by started_at descending (newest first)
         for i in range(len(runs) - 1):
-            assert runs[i].started_at >= runs[i + 1].started_at
+            expect_true(runs[i].started_at >= runs[i + 1].started_at)
 
-    def test_list_runs_with_limit(self, tracking: BuildTracking) -> None:
+    @staticmethod
+    def test_list_runs_with_limit(tracking: BuildTracking) -> None:
         """List runs respects limit parameter."""
         for i in range(5):
             record = BuildRunRecord(
@@ -268,5 +291,5 @@ class TestBuildRunOperations:
             )
             tracking.start_run(record)
 
-        runs = tracking.list_runs("test-org/limit-repo", limit=3)
-        assert len(runs) == 3
+        runs = tracking.list_runs("test-org/limit-repo", limit=RUN_LIMIT)
+        expect_length(runs, RUN_LIMIT)

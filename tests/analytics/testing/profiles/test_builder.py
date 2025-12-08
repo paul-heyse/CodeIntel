@@ -33,6 +33,12 @@ from codeintel.analytics.testing.profiles.builder import (
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config import ConfigBuilder
 from tests._helpers import TestContext, assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_true,
+)
 
 # =============================================================================
 # Test Constants
@@ -72,11 +78,11 @@ class TestBehavioralProfile:
             raise_count=RAISE_COUNT_TWO,
             markers=["unit", "slow"],
         )
-        assert profile.functions_covered == [{"goid": 123, "name": "func_a"}]
-        assert profile.subsystems_covered == [{"id": "core"}]
-        assert profile.assert_count == ASSERT_COUNT_FIVE
-        assert profile.raise_count == RAISE_COUNT_TWO
-        assert profile.markers == ["unit", "slow"]
+        expect_equal(profile.functions_covered, [{"goid": 123, "name": "func_a"}])
+        expect_equal(profile.subsystems_covered, [{"id": "core"}])
+        expect_equal(profile.assert_count, ASSERT_COUNT_FIVE)
+        expect_equal(profile.raise_count, RAISE_COUNT_TWO)
+        expect_equal(profile.markers, ["unit", "slow"])
 
     @staticmethod
     def test_behavioral_profile_immutable() -> None:
@@ -98,34 +104,34 @@ class TestEmptySentinels:
     def test_empty_function_coverage_entry() -> None:
         """Verify EMPTY_FUNCTION_COVERAGE_ENTRY has expected structure."""
         entry = EMPTY_FUNCTION_COVERAGE_ENTRY
-        assert entry.functions == []
-        assert entry.count == 0
-        assert entry.primary == []
+        expect_equal(entry.functions, [])
+        expect_equal(entry.count, 0)
+        expect_equal(entry.primary, [])
 
     @staticmethod
     def test_empty_subsystem_entry() -> None:
         """Verify EMPTY_SUBSYSTEM_ENTRY has expected structure."""
         entry = EMPTY_SUBSYSTEM_ENTRY
-        assert entry.subsystems == []
-        assert entry.count == 0
-        assert entry.primary_subsystem_id is None
-        assert entry.max_risk_score == 0.0
+        expect_equal(entry.subsystems, [])
+        expect_equal(entry.count, 0)
+        expect_is_none(entry.primary_subsystem_id)
+        expect_equal(entry.max_risk_score, 0.0)
 
     @staticmethod
     def test_empty_test_metrics() -> None:
         """Verify EMPTY_TEST_METRICS has expected structure."""
         metrics = EMPTY_TEST_METRICS
-        assert metrics.degree is None
-        assert metrics.weighted_degree is None
-        assert metrics.proj_degree is None
-        assert metrics.proj_weight is None
-        assert metrics.proj_clustering is None
-        assert metrics.proj_betweenness is None
+        expect_is_none(metrics.degree)
+        expect_is_none(metrics.weighted_degree)
+        expect_is_none(metrics.proj_degree)
+        expect_is_none(metrics.proj_weight)
+        expect_is_none(metrics.proj_clustering)
+        expect_is_none(metrics.proj_betweenness)
 
     @staticmethod
     def test_primary_coverage_threshold_value() -> None:
         """Verify PRIMARY_COVERAGE_THRESHOLD has expected value."""
-        assert PRIMARY_COVERAGE_THRESHOLD == EXPECTED_THRESHOLD
+        expect_equal(PRIMARY_COVERAGE_THRESHOLD, EXPECTED_THRESHOLD)
 
 
 class TestInferBehaviorTags:
@@ -172,7 +178,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=self._create_empty_ast_info(),
         )
-        assert result == []
+        expect_equal(result, [])
 
     @pytest.mark.parametrize(
         ("name_suffix", "expected_tag"),
@@ -197,7 +203,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=self._create_empty_ast_info(),
         )
-        assert expected_tag in result
+        expect_in(expected_tag, result)
 
     @pytest.mark.parametrize(
         ("markers", "expected_tag"),
@@ -221,7 +227,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=self._create_empty_ast_info(),
         )
-        assert expected_tag in result
+        expect_in(expected_tag, result)
 
     def test_infers_network_interaction_from_io_flags(self) -> None:
         """Verify network_interaction tag from IO flags."""
@@ -237,7 +243,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        assert "network_interaction" in result
+        expect_in("network_interaction", result)
 
     def test_infers_db_interaction_from_io_flags(self) -> None:
         """Verify db_interaction tag from IO flags."""
@@ -253,7 +259,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        assert "db_interaction" in result
+        expect_in("db_interaction", result)
 
     def test_infers_filesystem_interaction_from_io_flags(self) -> None:
         """Verify filesystem_interaction tag from IO flags."""
@@ -269,7 +275,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        assert "filesystem_interaction" in result
+        expect_in("filesystem_interaction", result)
 
     def test_infers_process_interaction_from_io_flags(self) -> None:
         """Verify process_interaction tag from IO flags."""
@@ -285,7 +291,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        assert "process_interaction" in result
+        expect_in("process_interaction", result)
 
     def test_infers_io_heavy_from_io_bound_property(self) -> None:
         """Verify io_heavy tag from io_bound property (derived from any IO flag)."""
@@ -298,7 +304,7 @@ class TestInferBehaviorTags:
             uses_subprocess=False,
         )
         # io_bound is a property, not a constructor arg
-        assert io_flags.io_bound is True
+        expect_true(io_flags.io_bound)
         result = infer_behavior_tags(
             name="test_generic",
             markers=[],
@@ -307,7 +313,7 @@ class TestInferBehaviorTags:
         )
         # Should have io_heavy tag since io_bound is True
         # Note: Also has network_interaction since uses_network=True
-        assert "network_interaction" in result
+        expect_in("network_interaction", result)
 
     def test_infers_error_paths_from_pytest_raises(self) -> None:
         """Verify error_paths tag from pytest.raises usage."""
@@ -324,7 +330,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=ast_info,
         )
-        assert "error_paths" in result
+        expect_in("error_paths", result)
 
     def test_infers_concurrency_from_ast_info(self) -> None:
         """Verify concurrency tag from concurrency lib usage."""
@@ -341,7 +347,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=ast_info,
         )
-        assert "concurrency" in result
+        expect_in("concurrency", result)
 
     def test_infers_edge_cases_from_boundary_asserts(self) -> None:
         """Verify edge_cases tag from boundary assertions."""
@@ -358,7 +364,7 @@ class TestInferBehaviorTags:
             io_flags=self._create_empty_io_flags(),
             ast_info=ast_info,
         )
-        assert "edge_cases" in result
+        expect_in("edge_cases", result)
 
     @staticmethod
     def test_combines_tags_from_multiple_sources() -> None:
@@ -383,9 +389,9 @@ class TestInferBehaviorTags:
             ast_info=ast_info,
         )
         # Should have tags from name, markers, io_flags, and ast_info
-        assert "error_paths" in result
-        assert "integration_scenario" in result
-        assert "network_interaction" in result
+        expect_in("error_paths", result)
+        expect_in("integration_scenario", result)
+        expect_in("network_interaction", result)
 
     def test_returns_sorted_tags(self) -> None:
         """Verify returned tags are sorted alphabetically."""
@@ -401,7 +407,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        assert result == sorted(result)
+        expect_equal(result, sorted(result))
 
 
 class TestBuildTestProfile:
@@ -425,7 +431,7 @@ class TestBuildTestProfile:
             "analytics.test_profile",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
-        assert count == EXPECTED_EMPTY_LIST_LENGTH
+        expect_equal(count, EXPECTED_EMPTY_LIST_LENGTH)
 
     @staticmethod
     def test_builds_profiles_with_seeded_tests(coverage_ctx: TestContext) -> None:
@@ -444,7 +450,7 @@ class TestBuildTestProfile:
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
         )
         # COVERAGE_PACK seeds 4 tests
-        assert count >= 0  # At least 0, possibly more depending on processing
+        expect_true(count >= 0)  # At least 0, possibly more depending on processing
 
 
 class TestBuildBehavioralCoverage:
@@ -455,7 +461,7 @@ class TestBuildBehavioralCoverage:
         """Verify build_behavioral_coverage is importable and callable."""
         # The function requires specific loaders for test records
         # so we just verify it's importable
-        assert callable(build_behavioral_coverage)
+        expect_true(callable(build_behavioral_coverage))
 
 
 class TestCoverageInputTypes:
@@ -469,9 +475,9 @@ class TestCoverageInputTypes:
             count=ENTRY_COUNT_TWO,
             primary=[1],  # primary is list[int] - GOIDs of primary functions
         )
-        assert entry.count == ENTRY_COUNT_TWO
-        assert len(entry.functions) == ENTRY_COUNT_TWO
-        assert len(entry.primary) == PRIMARY_COUNT_ONE
+        expect_equal(entry.count, ENTRY_COUNT_TWO)
+        expect_equal(len(entry.functions), ENTRY_COUNT_TWO)
+        expect_equal(len(entry.primary), PRIMARY_COUNT_ONE)
 
     @staticmethod
     def test_subsystem_coverage_entry_constructor() -> None:
@@ -482,9 +488,9 @@ class TestCoverageInputTypes:
             primary_subsystem_id="core",
             max_risk_score=MAX_RISK_SCORE,
         )
-        assert entry.count == ENTRY_COUNT_TWO
-        assert entry.primary_subsystem_id == "core"
-        assert entry.max_risk_score == MAX_RISK_SCORE
+        expect_equal(entry.count, ENTRY_COUNT_TWO)
+        expect_equal(entry.primary_subsystem_id, "core")
+        expect_equal(entry.max_risk_score, MAX_RISK_SCORE)
 
     @staticmethod
     def test_test_graph_metrics_constructor() -> None:
@@ -497,9 +503,9 @@ class TestCoverageInputTypes:
             proj_clustering=PROJ_CLUSTERING,
             proj_betweenness=PROJ_BETWEENNESS,
         )
-        assert metrics.degree == DEGREE_FIVE
-        assert metrics.weighted_degree == WEIGHTED_DEGREE_2_5
-        assert metrics.proj_degree == PROJ_DEGREE_THREE
-        assert metrics.proj_weight == PROJ_WEIGHT_1_5
-        assert metrics.proj_clustering == PROJ_CLUSTERING
-        assert metrics.proj_betweenness == PROJ_BETWEENNESS
+        expect_equal(metrics.degree, DEGREE_FIVE)
+        expect_equal(metrics.weighted_degree, WEIGHTED_DEGREE_2_5)
+        expect_equal(metrics.proj_degree, PROJ_DEGREE_THREE)
+        expect_equal(metrics.proj_weight, PROJ_WEIGHT_1_5)
+        expect_equal(metrics.proj_clustering, PROJ_CLUSTERING)
+        expect_equal(metrics.proj_betweenness, PROJ_BETWEENNESS)

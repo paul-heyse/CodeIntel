@@ -20,6 +20,13 @@ from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 
 # =============================================================================
 # Test Fixtures
@@ -163,17 +170,19 @@ def validator(
 class TestStalenessReason:
     """Tests for StalenessReason dataclass."""
 
-    def test_create_staleness_reason(self) -> None:
+    @staticmethod
+    def test_create_staleness_reason() -> None:
         """Create a staleness reason with all fields."""
         reason = StalenessReason(
             kind="input_hash_mismatch",
             details="Hash changed from abc to def",
         )
-        assert reason.kind == "input_hash_mismatch"
-        assert "abc" in reason.details
-        assert "def" in reason.details
+        expect_equal(reason.kind, "input_hash_mismatch")
+        expect_in("abc", reason.details)
+        expect_in("def", reason.details)
 
-    def test_staleness_reason_is_frozen(self) -> None:
+    @staticmethod
+    def test_staleness_reason_is_frozen() -> None:
         """Verify staleness reason is immutable."""
         reason = StalenessReason(
             kind="dependency_missing",
@@ -185,7 +194,8 @@ class TestStalenessReason:
 class TestTargetState:
     """Tests for TargetState dataclass."""
 
-    def test_create_missing_state(self) -> None:
+    @staticmethod
+    def test_create_missing_state() -> None:
         """Create a target state for missing target."""
         state = TargetState(
             name="test_target",
@@ -195,13 +205,14 @@ class TestTargetState:
             blocking_deps=(),
             current_input_hash=None,
         )
-        assert state.name == "test_target"
-        assert state.status == "missing"
-        assert state.manifest is None
-        assert state.staleness_reason is None
-        assert state.blocking_deps == ()
+        expect_equal(state.name, "test_target")
+        expect_equal(state.status, "missing")
+        expect_true(state.manifest is None)
+        expect_true(state.staleness_reason is None)
+        expect_equal(state.blocking_deps, ())
 
-    def test_create_computed_state(self) -> None:
+    @staticmethod
+    def test_create_computed_state() -> None:
         """Create a target state for computed target."""
         manifest = OutputManifest(
             target="test_target",
@@ -220,10 +231,11 @@ class TestTargetState:
             blocking_deps=(),
             current_input_hash="hash123",
         )
-        assert state.status == "computed"
-        assert state.manifest is manifest
+        expect_equal(state.status, "computed")
+        expect_true(state.manifest is manifest)
 
-    def test_create_stale_state(self) -> None:
+    @staticmethod
+    def test_create_stale_state() -> None:
         """Create a target state for stale target."""
         manifest = OutputManifest(
             target="test_target",
@@ -246,10 +258,11 @@ class TestTargetState:
             blocking_deps=(),
             current_input_hash="new_hash",
         )
-        assert state.status == "stale"
-        assert state.staleness_reason is reason
+        expect_equal(state.status, "stale")
+        expect_true(state.staleness_reason is reason)
 
-    def test_create_blocked_state(self) -> None:
+    @staticmethod
+    def test_create_blocked_state() -> None:
         """Create a target state for blocked target."""
         reason = StalenessReason(
             kind="dependency_missing",
@@ -263,14 +276,15 @@ class TestTargetState:
             blocking_deps=("ast",),
             current_input_hash=None,
         )
-        assert state.status == "blocked"
-        assert state.blocking_deps == ("ast",)
+        expect_equal(state.status, "blocked")
+        expect_equal(state.blocking_deps, ("ast",))
 
 
 class TestDatabaseState:
     """Tests for DatabaseState dataclass."""
 
-    def test_create_database_state(self) -> None:
+    @staticmethod
+    def test_create_database_state() -> None:
         """Create a database state with targets."""
         states = {
             "modules": TargetState(
@@ -295,11 +309,12 @@ class TestDatabaseState:
             commit="abc123",
             targets=states,
         )
-        assert db_state.repo == "test/repo"
-        assert db_state.commit == "abc123"
-        assert len(db_state.targets) == 2
+        expect_equal(db_state.repo, "test/repo")
+        expect_equal(db_state.commit, "abc123")
+        expect_equal(len(db_state.targets), 2)
 
-    def test_get_existing_target(self) -> None:
+    @staticmethod
+    def test_get_existing_target() -> None:
         """Get state for existing target."""
         target_state = TargetState(
             name="modules",
@@ -315,9 +330,10 @@ class TestDatabaseState:
             targets={"modules": target_state},
         )
         result = db_state.get("modules")
-        assert result is target_state
+        expect_true(result is target_state)
 
-    def test_get_nonexistent_target_raises(self) -> None:
+    @staticmethod
+    def test_get_nonexistent_target_raises() -> None:
         """Getting nonexistent target raises KeyError."""
         db_state = DatabaseState(
             repo="test/repo",
@@ -327,7 +343,8 @@ class TestDatabaseState:
         with pytest.raises(KeyError, match="not found"):
             db_state.get("nonexistent")
 
-    def test_missing_targets_query(self) -> None:
+    @staticmethod
+    def test_missing_targets_query() -> None:
         """Query missing targets from database state."""
         states = {
             "modules": TargetState(
@@ -357,9 +374,10 @@ class TestDatabaseState:
         }
         db_state = DatabaseState(repo="test/repo", commit="abc123", targets=states)
         missing = db_state.missing_targets()
-        assert missing == ("ast", "goids")
+        expect_equal(missing, ("ast", "goids"))
 
-    def test_stale_targets_query(self) -> None:
+    @staticmethod
+    def test_stale_targets_query() -> None:
         """Query stale targets from database state."""
         states = {
             "modules": TargetState(
@@ -381,9 +399,10 @@ class TestDatabaseState:
         }
         db_state = DatabaseState(repo="test/repo", commit="abc123", targets=states)
         stale = db_state.stale_targets()
-        assert stale == ("modules",)
+        expect_equal(stale, ("modules",))
 
-    def test_computed_targets_query(self) -> None:
+    @staticmethod
+    def test_computed_targets_query() -> None:
         """Query computed targets from database state."""
         states = {
             "modules": TargetState(
@@ -413,9 +432,10 @@ class TestDatabaseState:
         }
         db_state = DatabaseState(repo="test/repo", commit="abc123", targets=states)
         computed = db_state.computed_targets()
-        assert computed == ("ast", "modules")
+        expect_equal(computed, ("ast", "modules"))
 
-    def test_blocked_targets_query(self) -> None:
+    @staticmethod
+    def test_blocked_targets_query() -> None:
         """Query blocked targets from database state."""
         states = {
             "modules": TargetState(
@@ -437,9 +457,10 @@ class TestDatabaseState:
         }
         db_state = DatabaseState(repo="test/repo", commit="abc123", targets=states)
         blocked = db_state.blocked_targets()
-        assert blocked == ("goids",)
+        expect_equal(blocked, ("goids",))
 
-    def test_is_target_current(self) -> None:
+    @staticmethod
+    def test_is_target_current() -> None:
         """Check if target is current (computed)."""
         states = {
             "modules": TargetState(
@@ -460,9 +481,9 @@ class TestDatabaseState:
             ),
         }
         db_state = DatabaseState(repo="test/repo", commit="abc123", targets=states)
-        assert db_state.is_target_current("modules") is True
-        assert db_state.is_target_current("ast") is False
-        assert db_state.is_target_current("nonexistent") is False
+        expect_true(db_state.is_target_current("modules"))
+        expect_false(db_state.is_target_current("ast"))
+        expect_false(db_state.is_target_current("nonexistent"))
 
 
 # =============================================================================
@@ -473,18 +494,18 @@ class TestDatabaseState:
 class TestStateValidatorInit:
     """Tests for StateValidator initialization."""
 
+    @staticmethod
     def test_create_validator(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
         """Create a state validator with valid inputs."""
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
-        assert validator is not None
+        expect_is_not_none(validator)
 
+    @staticmethod
     def test_invalid_graph_raises(
-        self,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -507,25 +528,27 @@ class TestStateValidatorInit:
 class TestValidateEmptyDatabase:
     """Tests for validating with no manifests."""
 
+    @staticmethod
     def test_all_targets_missing(
-        self,
         validator: StateValidator,
     ) -> None:
         """All targets should be missing when database is empty."""
         state = validator.validate()
 
         # All targets should be missing
-        assert len(state.missing_targets()) == 5  # modules, ast, goids, typing, function_metrics
-        assert len(state.computed_targets()) == 0
-        assert len(state.stale_targets()) == 0
-        assert len(state.blocked_targets()) == 0
+        expect_equal(
+            len(state.missing_targets()), 5
+        )  # modules, ast, goids, typing, function_metrics
+        expect_equal(len(state.computed_targets()), 0)
+        expect_equal(len(state.stale_targets()), 0)
+        expect_equal(len(state.blocked_targets()), 0)
 
 
 class TestValidateComputedTargets:
     """Tests for targets with valid manifests."""
 
+    @staticmethod
     def test_single_computed_target(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -550,11 +573,11 @@ class TestValidateComputedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        assert state.get("modules").status == "computed"
-        assert state.get("modules").manifest is not None
+        expect_equal(state.get("modules").status, "computed")
+        expect_is_not_none(state.get("modules").manifest)
 
+    @staticmethod
     def test_chain_of_computed_targets(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -593,15 +616,15 @@ class TestValidateComputedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        assert state.get("modules").status == "computed"
-        assert state.get("ast").status == "computed"
+        expect_equal(state.get("modules").status, "computed")
+        expect_equal(state.get("ast").status, "computed")
 
 
 class TestValidateStaleTargets:
     """Tests for targets with mismatched hashes."""
 
+    @staticmethod
     def test_stale_due_to_input_hash_mismatch(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -623,13 +646,15 @@ class TestValidateStaleTargets:
         state = validator.validate()
 
         modules_state = state.get("modules")
-        assert modules_state.status == "stale"
-        assert modules_state.staleness_reason is not None
-        assert modules_state.staleness_reason.kind == "input_hash_mismatch"
-        assert "wrong_hash_value" in modules_state.staleness_reason.details
+        expect_equal(modules_state.status, "stale")
+        reason = modules_state.staleness_reason
+        if reason is None:
+            pytest.fail("Expected staleness_reason for modules")
+        expect_equal(reason.kind, "input_hash_mismatch")
+        expect_in("wrong_hash_value", reason.details)
 
+    @staticmethod
     def test_staleness_reason_includes_both_hashes(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -650,15 +675,16 @@ class TestValidateStaleTargets:
         state = validator.validate()
 
         reason = state.get("modules").staleness_reason
-        assert reason is not None
-        assert "old_hash_abc" in reason.details
+        if reason is None:
+            pytest.fail("Expected staleness_reason for modules")
+        expect_in("old_hash_abc", reason.details)
 
 
 class TestValidateBlockedTargets:
     """Tests for targets blocked by dependencies."""
 
+    @staticmethod
     def test_blocked_by_missing_dependency(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -682,17 +708,19 @@ class TestValidateBlockedTargets:
         state = validator.validate()
 
         # modules is missing
-        assert state.get("modules").status == "missing"
+        expect_equal(state.get("modules").status, "missing")
 
         # ast should be blocked because modules is missing
         ast_state = state.get("ast")
-        assert ast_state.status == "blocked"
-        assert "modules" in ast_state.blocking_deps
-        assert ast_state.staleness_reason is not None
-        assert ast_state.staleness_reason.kind == "dependency_missing"
+        expect_equal(ast_state.status, "blocked")
+        expect_in("modules", ast_state.blocking_deps)
+        reason = ast_state.staleness_reason
+        if reason is None:
+            pytest.fail("Expected staleness_reason for ast")
+        expect_equal(reason.kind, "dependency_missing")
 
+    @staticmethod
     def test_blocked_by_stale_dependency(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -728,17 +756,19 @@ class TestValidateBlockedTargets:
         state = validator.validate()
 
         # modules is stale
-        assert state.get("modules").status == "stale"
+        expect_equal(state.get("modules").status, "stale")
 
         # ast should be blocked because modules is stale
         ast_state = state.get("ast")
-        assert ast_state.status == "blocked"
-        assert "modules" in ast_state.blocking_deps
-        assert ast_state.staleness_reason is not None
-        assert ast_state.staleness_reason.kind == "dependency_stale"
+        expect_equal(ast_state.status, "blocked")
+        expect_in("modules", ast_state.blocking_deps)
+        reason = ast_state.staleness_reason
+        if reason is None:
+            pytest.fail("Expected staleness_reason for ast")
+        expect_equal(reason.kind, "dependency_stale")
 
+    @staticmethod
     def test_cascade_blocking(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -788,20 +818,22 @@ class TestValidateBlockedTargets:
         state = validator.validate()
 
         # modules is stale
-        assert state.get("modules").status == "stale"
+        expect_equal(state.get("modules").status, "stale")
 
         # ast is blocked by stale modules
-        assert state.get("ast").status == "blocked"
+        expect_equal(state.get("ast").status, "blocked")
 
         # goids is blocked because ast is blocked
         goids_state = state.get("goids")
-        assert goids_state.status == "blocked"
-        assert "ast" in goids_state.blocking_deps
-        assert goids_state.staleness_reason is not None
-        assert goids_state.staleness_reason.kind == "dependency_blocked"
+        expect_equal(goids_state.status, "blocked")
+        expect_in("ast", goids_state.blocking_deps)
+        goids_reason = goids_state.staleness_reason
+        if goids_reason is None:
+            pytest.fail("Expected staleness_reason for goids")
+        expect_equal(goids_reason.kind, "dependency_blocked")
 
+    @staticmethod
     def test_multiple_blocking_dependencies(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -850,25 +882,25 @@ class TestValidateBlockedTargets:
 
         # function_metrics should be blocked by both ast (stale) and goids (missing)
         metrics_state = state.get("function_metrics")
-        assert metrics_state.status == "blocked"
+        expect_equal(metrics_state.status, "blocked")
         # Both dependencies should be in blocking_deps
-        assert len(metrics_state.blocking_deps) >= 1
+        expect_true(len(metrics_state.blocking_deps) >= 1)
 
 
 class TestValidateTarget:
     """Tests for single-target validation."""
 
+    @staticmethod
     def test_validate_single_target(
-        self,
         validator: StateValidator,
     ) -> None:
         """Validate a single target by name."""
         state = validator.validate_target("modules")
-        assert state.name == "modules"
-        assert state.status == "missing"  # No manifest saved
+        expect_equal(state.name, "modules")
+        expect_equal(state.status, "missing")  # No manifest saved
 
+    @staticmethod
     def test_validate_nonexistent_target_raises(
-        self,
         validator: StateValidator,
     ) -> None:
         """Validating nonexistent target raises KeyError."""
@@ -879,8 +911,8 @@ class TestValidateTarget:
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
+    @staticmethod
     def test_manifest_for_unknown_target_logged(
-        self,
         test_graph: TargetGraph,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
@@ -905,12 +937,12 @@ class TestEdgeCases:
             state = validator.validate()
 
         # Should not crash
-        assert state is not None
+        expect_is_not_none(state)
         # Should log warning
-        assert "unknown_target" in caplog.text or len(caplog.records) > 0
+        expect_true("unknown_target" in caplog.text or len(caplog.records) > 0)
 
+    @staticmethod
     def test_empty_graph(
-        self,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -920,9 +952,9 @@ class TestEdgeCases:
         validator = StateValidator(empty_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        assert len(state.targets) == 0
-        assert state.missing_targets() == ()
-        assert state.computed_targets() == ()
+        expect_equal(len(state.targets), 0)
+        expect_equal(state.missing_targets(), ())
+        expect_equal(state.computed_targets(), ())
 
 
 # =============================================================================
@@ -933,8 +965,8 @@ class TestEdgeCases:
 class TestWithRealRegistry:
     """Integration tests using the full target registry."""
 
+    @staticmethod
     def test_validate_with_real_registry(
-        self,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -944,11 +976,11 @@ class TestWithRealRegistry:
         state = validator.validate()
 
         # All targets should be missing (no manifests)
-        assert len(state.missing_targets()) == len(graph)
-        assert len(state.computed_targets()) == 0
+        expect_equal(len(state.missing_targets()), len(graph))
+        expect_equal(len(state.computed_targets()), 0)
 
+    @staticmethod
     def test_real_registry_target_count(
-        self,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -957,4 +989,4 @@ class TestWithRealRegistry:
         validator = StateValidator(graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        assert len(state.targets) == len(ALL_TARGETS)
+        expect_equal(len(state.targets), len(ALL_TARGETS))

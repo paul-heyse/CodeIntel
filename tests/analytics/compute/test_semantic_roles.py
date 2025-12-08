@@ -25,6 +25,12 @@ from codeintel.analytics.compute.semantic_roles.classification import (
     classify_modules,
     decorator_names,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Constants
@@ -46,6 +52,7 @@ EXPECTED_DECORATORS_2 = 2
 LARGE_LOC = 200
 CONFIDENCE_CAP = 1.0
 CONFIDENCE_ZERO = 0.0
+PAIR_LENGTH = 2
 
 
 # =============================================================================
@@ -126,7 +133,7 @@ def _coerce_pairs(value: object) -> tuple[tuple[str, object], ...]:
     if isinstance(value, Iterable):
         pairs: list[tuple[str, object]] = []
         for item in value:
-            if not isinstance(item, Sequence) or len(item) != 2:
+            if not isinstance(item, Sequence) or len(item) != PAIR_LENGTH:
                 msg = f"Expected pair sequence, got {type(item)}"
                 raise TypeError(msg)
             key, pair_value = item
@@ -142,7 +149,7 @@ def _coerce_graph(value: object) -> tuple[tuple[str, int], ...]:
     if isinstance(value, Iterable):
         edges: list[tuple[str, int]] = []
         for item in value:
-            if not isinstance(item, Sequence) or len(item) != 2:
+            if not isinstance(item, Sequence) or len(item) != PAIR_LENGTH:
                 msg = f"Expected pair sequence, got {type(item)}"
                 raise TypeError(msg)
             key, edge_value = item
@@ -221,39 +228,39 @@ def _get_now() -> datetime:
 def test_context_name_property() -> None:
     """Extract function name from qualname."""
     context = _make_context(qualname="module.submodule.my_function")
-    assert context.name == "my_function"
+    expect_equal(context.name, "my_function")
 
 
 def test_context_name_simple() -> None:
     """Simple qualname without dots."""
     context = _make_context(qualname="simple_function")
-    assert context.name == "simple_function"
+    expect_equal(context.name, "simple_function")
 
 
 def test_context_rel_path_lower() -> None:
     """Lower-case relative path."""
     context = _make_context(rel_path="Src/API/Routes.py")
-    assert context.rel_path_lower == "src/api/routes.py"
+    expect_equal(context.rel_path_lower, "src/api/routes.py")
 
 
 def test_context_module_lower() -> None:
     """Lower-case module name."""
     context = _make_context(module_name="Module.SubModule")
-    assert context.module_lower == "module.submodule"
+    expect_equal(context.module_lower, "module.submodule")
 
 
 def test_context_module_lower_none() -> None:
     """Handle None module name."""
     context = _make_context(module_name=None)
-    assert not context.module_lower
+    expect_true(not context.module_lower)
 
 
 def test_context_tag_strings() -> None:
     """Normalize tag strings."""
     context = _make_context(module_tags=["API", "Service", None])
     tags = context.tag_strings
-    assert "api" in tags
-    assert "service" in tags
+    expect_in("api", tags)
+    expect_in("service", tags)
 
 
 # =============================================================================
@@ -265,8 +272,8 @@ def test_accumulator_bump_single() -> None:
     """Bump single role score."""
     acc = RoleAccumulator()
     acc.bump("test", BUMP_VALUE_0_5, "unit test")
-    assert acc.scores["test"] == BUMP_VALUE_0_5
-    assert "unit test" in acc.sources["test"]
+    expect_equal(acc.scores["test"], BUMP_VALUE_0_5)
+    expect_in("unit test", acc.sources["test"])
 
 
 def test_accumulator_bump_accumulates() -> None:
@@ -274,15 +281,15 @@ def test_accumulator_bump_accumulates() -> None:
     acc = RoleAccumulator()
     acc.bump("api_handler", BUMP_VALUE_0_3, "reason1")
     acc.bump("api_handler", BUMP_VALUE_0_2, "reason2")
-    assert acc.scores["api_handler"] == BUMP_VALUE_0_5
-    assert len(acc.sources["api_handler"]) == EXPECTED_SOURCES_2
+    expect_equal(acc.scores["api_handler"], BUMP_VALUE_0_5)
+    expect_length(acc.sources["api_handler"], EXPECTED_SOURCES_2)
 
 
 def test_accumulator_bump_with_framework() -> None:
     """Framework hint is stored."""
     acc = RoleAccumulator()
     acc.bump("api_handler", BUMP_VALUE_0_7, "decorator", framework_hint="fastapi")
-    assert acc.frameworks.get("api_handler") == "fastapi"
+    expect_equal(acc.frameworks.get("api_handler"), "fastapi")
 
 
 def test_accumulator_framework_first_wins() -> None:
@@ -290,15 +297,15 @@ def test_accumulator_framework_first_wins() -> None:
     acc = RoleAccumulator()
     acc.bump("cli_command", BUMP_VALUE_0_5, "reason1", framework_hint="click")
     acc.bump("cli_command", BUMP_VALUE_0_3, "reason2", framework_hint="typer")
-    assert acc.frameworks.get("cli_command") == "click"
+    expect_equal(acc.frameworks.get("cli_command"), "click")
 
 
 def test_accumulator_finalize_empty() -> None:
     """Empty accumulator returns 'other'."""
     acc = RoleAccumulator()
     role, confidence, _, _ = acc.finalize()
-    assert role == "other"
-    assert confidence == CONFIDENCE_ZERO
+    expect_equal(role, "other")
+    expect_equal(confidence, CONFIDENCE_ZERO)
 
 
 def test_accumulator_finalize_below_threshold() -> None:
@@ -306,7 +313,7 @@ def test_accumulator_finalize_below_threshold() -> None:
     acc = RoleAccumulator()
     acc.bump("test", ROLE_THRESHOLD - 0.1, "weak signal")
     role, _, _, _ = acc.finalize()
-    assert role == "other"
+    expect_equal(role, "other")
 
 
 def test_accumulator_finalize_above_threshold() -> None:
@@ -314,8 +321,8 @@ def test_accumulator_finalize_above_threshold() -> None:
     acc = RoleAccumulator()
     acc.bump("test", ROLE_THRESHOLD + 0.1, "strong signal")
     role, confidence, _, _ = acc.finalize()
-    assert role == "test"
-    assert confidence >= ROLE_THRESHOLD
+    expect_equal(role, "test")
+    expect_true(confidence >= ROLE_THRESHOLD)
 
 
 def test_accumulator_finalize_picks_highest() -> None:
@@ -324,7 +331,7 @@ def test_accumulator_finalize_picks_highest() -> None:
     acc.bump("test", BUMP_VALUE_0_3, "test signal")
     acc.bump("api_handler", BUMP_VALUE_0_7, "api signal")
     role, _, _, _ = acc.finalize()
-    assert role == "api_handler"
+    expect_equal(role, "api_handler")
 
 
 def test_accumulator_finalize_caps_confidence() -> None:
@@ -332,7 +339,7 @@ def test_accumulator_finalize_caps_confidence() -> None:
     acc = RoleAccumulator()
     acc.bump("test", BUMP_VALUE_1_5, "very strong")
     _, confidence, _, _ = acc.finalize()
-    assert confidence <= CONFIDENCE_CAP
+    expect_true(confidence <= CONFIDENCE_CAP)
 
 
 # =============================================================================
@@ -347,8 +354,8 @@ def test_classify_test_function() -> None:
         qualname="tests.test_module.test_feature",
     )
     role, confidence, _, _ = classify_function_role(context)
-    assert role == "test"
-    assert confidence >= ROLE_THRESHOLD
+    expect_equal(role, "test")
+    expect_true(confidence >= ROLE_THRESHOLD)
 
 
 def test_classify_test_prefix() -> None:
@@ -358,7 +365,7 @@ def test_classify_test_prefix() -> None:
         qualname="module.test_something",
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "test"
+    expect_equal(role, "test")
 
 
 def test_classify_pytest_fixture() -> None:
@@ -369,7 +376,7 @@ def test_classify_pytest_fixture() -> None:
         decorators=["pytest.fixture"],
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "test_helper"
+    expect_equal(role, "test_helper")
 
 
 def test_classify_api_handler() -> None:
@@ -380,8 +387,8 @@ def test_classify_api_handler() -> None:
         decorators=["router.get('/users')"],
     )
     role, _, framework, _ = classify_function_role(context)
-    assert role == "api_handler"
-    assert framework == "fastapi"
+    expect_equal(role, "api_handler")
+    expect_equal(framework, "fastapi")
 
 
 def test_classify_flask_route() -> None:
@@ -392,8 +399,8 @@ def test_classify_flask_route() -> None:
         decorators=["app.route('/')"],
     )
     role, _, framework, _ = classify_function_role(context)
-    assert role == "api_handler"
-    assert framework == "flask"
+    expect_equal(role, "api_handler")
+    expect_equal(framework, "flask")
 
 
 def test_classify_cli_click() -> None:
@@ -404,8 +411,8 @@ def test_classify_cli_click() -> None:
         decorators=["click.command()"],
     )
     role, _, framework, _ = classify_function_role(context)
-    assert role == "cli_command"
-    assert framework == "click"
+    expect_equal(role, "cli_command")
+    expect_equal(framework, "click")
 
 
 def test_classify_cli_typer() -> None:
@@ -416,8 +423,8 @@ def test_classify_cli_typer() -> None:
         decorators=["typer.command()"],
     )
     role, _, framework, _ = classify_function_role(context)
-    assert role == "cli_command"
-    assert framework == "typer"
+    expect_equal(role, "cli_command")
+    expect_equal(framework, "typer")
 
 
 def test_classify_cli_path() -> None:
@@ -427,7 +434,7 @@ def test_classify_cli_path() -> None:
         qualname="commands.deploy.run_deploy",
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "cli_command"
+    expect_equal(role, "cli_command")
 
 
 def test_classify_repository() -> None:
@@ -438,7 +445,7 @@ def test_classify_repository() -> None:
         effects={"touches_db": True},
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "repository"
+    expect_equal(role, "repository")
 
 
 def test_classify_service() -> None:
@@ -452,7 +459,7 @@ def test_classify_service() -> None:
         },
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "service"
+    expect_equal(role, "service")
 
 
 def test_classify_validator() -> None:
@@ -463,7 +470,7 @@ def test_classify_validator() -> None:
         contracts={"raises": [{"exception": "ValueError", "condition": "invalid format"}]},
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "validator"
+    expect_equal(role, "validator")
 
 
 @pytest.mark.parametrize("prefix", ["validate", "check", "ensure", "assert"])
@@ -474,7 +481,7 @@ def test_classify_validator_by_name(prefix: str) -> None:
         qualname=f"validation.{prefix}_input",
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "validator"
+    expect_equal(role, "validator")
 
 
 def test_classify_config_loader() -> None:
@@ -485,7 +492,7 @@ def test_classify_config_loader() -> None:
         effects={"uses_io": True},
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "config_loader"
+    expect_equal(role, "config_loader")
 
 
 def test_classify_helper() -> None:
@@ -497,7 +504,7 @@ def test_classify_helper() -> None:
         effects={},
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "helper"
+    expect_equal(role, "helper")
 
 
 def test_classify_module_tags() -> None:
@@ -509,7 +516,7 @@ def test_classify_module_tags() -> None:
         module_tags=["api"],  # tag:api adds 0.3
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "api_handler"
+    expect_equal(role, "api_handler")
 
 
 def test_classify_returns_signals() -> None:
@@ -520,7 +527,7 @@ def test_classify_returns_signals() -> None:
     )
     _, _, _, source = classify_function_role(context)
     signals = source.get("signals", [])
-    assert signals
+    expect_true(bool(signals))
 
 
 def test_classify_other() -> None:
@@ -531,7 +538,7 @@ def test_classify_other() -> None:
         loc=LARGE_LOC,  # Too large for helper
     )
     role, _, _, _ = classify_function_role(context)
-    assert role == "other"
+    expect_equal(role, "other")
 
 
 # =============================================================================
@@ -548,7 +555,7 @@ def test_modules_classify_empty() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert not rows
+    expect_true(not rows)
 
 
 def test_modules_classify_from_tags() -> None:
@@ -568,9 +575,9 @@ def test_modules_classify_from_tags() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert len(rows) == EXPECTED_ROWS_1
+    expect_length(rows, EXPECTED_ROWS_1)
     # Row format: (repo, commit, module, role, confidence, metadata, timestamp)
-    assert rows[0][3] == "api_handler"
+    expect_equal(rows[0][3], "api_handler")
 
 
 def test_modules_classify_from_functions() -> None:
@@ -592,7 +599,7 @@ def test_modules_classify_from_functions() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert rows[0][3] == "service"
+    expect_equal(rows[0][3], "service")
 
 
 def test_modules_classify_ignores_other() -> None:
@@ -613,7 +620,7 @@ def test_modules_classify_ignores_other() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert rows[0][3] == "other"
+    expect_equal(rows[0][3], "other")
 
 
 def test_modules_classify_below_threshold() -> None:
@@ -633,7 +640,7 @@ def test_modules_classify_below_threshold() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert rows[0][3] == "other"
+    expect_equal(rows[0][3], "other")
 
 
 def test_modules_classify_multiple() -> None:
@@ -656,11 +663,11 @@ def test_modules_classify_multiple() -> None:
         commit="abc123",
         now=_get_now(),
     )
-    assert len(rows) == EXPECTED_ROWS_3
+    expect_length(rows, EXPECTED_ROWS_3)
     roles = {row[2]: row[3] for row in rows}
-    assert roles.get("api.routes") == "api_handler"
-    assert roles.get("services.user") == "service"
-    assert roles.get("cli.main") == "cli_command"
+    expect_equal(roles.get("api.routes"), "api_handler")
+    expect_equal(roles.get("services.user"), "service")
+    expect_equal(roles.get("cli.main"), "cli_command")
 
 
 # =============================================================================
@@ -671,14 +678,14 @@ def test_modules_classify_multiple() -> None:
 def test_decorator_names_empty() -> None:
     """Handle empty decorator list."""
     result = decorator_names([])
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_decorator_names_simple() -> None:
     """Extract simple decorator name."""
     dec = ast.Name(id="property")
     result = decorator_names([dec])
-    assert result == ["property"]
+    expect_equal(result, ["property"])
 
 
 def test_decorator_names_attribute() -> None:
@@ -688,7 +695,7 @@ def test_decorator_names_attribute() -> None:
         attr="fixture",
     )
     result = decorator_names([dec])
-    assert "fixture" in result[0]
+    expect_in("fixture", result[0])
 
 
 def test_decorator_names_call() -> None:
@@ -702,7 +709,7 @@ def test_decorator_names_call() -> None:
         keywords=[],
     )
     result = decorator_names([dec])
-    assert result
+    expect_true(bool(result))
 
 
 def test_decorator_names_multiple() -> None:
@@ -712,7 +719,7 @@ def test_decorator_names_multiple() -> None:
         ast.Name(id="property"),
     ]
     result = decorator_names(decorators)
-    assert len(result) == EXPECTED_DECORATORS_2
+    expect_length(result, EXPECTED_DECORATORS_2)
 
 
 # =============================================================================
@@ -722,15 +729,15 @@ def test_decorator_names_multiple() -> None:
 
 def test_constants_role_threshold_positive() -> None:
     """Role threshold is positive."""
-    assert ROLE_THRESHOLD > 0
+    expect_true(ROLE_THRESHOLD > 0)
 
 
 def test_constants_service_fan_thresholds_positive() -> None:
     """Service fan thresholds are positive."""
-    assert SERVICE_FAN_IN_THRESHOLD > 0
-    assert SERVICE_FAN_OUT_THRESHOLD > 0
+    expect_true(SERVICE_FAN_IN_THRESHOLD > 0)
+    expect_true(SERVICE_FAN_OUT_THRESHOLD > 0)
 
 
 def test_constants_helper_loc_threshold_positive() -> None:
     """Helper LOC threshold is positive."""
-    assert HELPER_LOC_THRESHOLD > 0
+    expect_true(HELPER_LOC_THRESHOLD > 0)

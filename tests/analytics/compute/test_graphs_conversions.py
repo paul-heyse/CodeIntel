@@ -22,6 +22,12 @@ from codeintel.analytics.compute.graphs.conversions import (
     safe_float,
     to_decimal_id,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_not_in,
+)
 
 
 class TestToDecimalId:
@@ -41,7 +47,7 @@ class TestToDecimalId:
     def test_converts_integers(input_val: int | None, expected: Decimal | None) -> None:
         """Verify integer values are converted to Decimal."""
         result = to_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -55,21 +61,21 @@ class TestToDecimalId:
     def test_converts_string_integers(input_val: str, expected: Decimal) -> None:
         """Verify string integers are converted to Decimal."""
         result = to_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     def test_converts_decimal_input() -> None:
         """Verify Decimal input is preserved."""
         input_val = Decimal("999999999999999999999999999999")
         result = to_decimal_id(input_val)
-        assert result == input_val
+        expect_equal(result, input_val)
 
     @staticmethod
     def test_handles_large_integers() -> None:
         """Verify large integers are handled correctly."""
         large_int = 340282366920938463463374607431768211456  # 2^128
         result = to_decimal_id(large_int)
-        assert result == Decimal(large_int)
+        expect_equal(result, Decimal(large_int))
 
 
 class TestNormalizeDecimalId:
@@ -78,7 +84,7 @@ class TestNormalizeDecimalId:
     @staticmethod
     def test_returns_none_for_none() -> None:
         """Verify None input returns None."""
-        assert normalize_decimal_id(None) is None
+        expect_is_none(normalize_decimal_id(None))
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -92,7 +98,7 @@ class TestNormalizeDecimalId:
     def test_passes_through_integers(input_val: int, expected: int) -> None:
         """Verify integer values pass through unchanged."""
         result = normalize_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -107,7 +113,7 @@ class TestNormalizeDecimalId:
     def test_converts_decimal_to_int(input_val: Decimal, expected: int) -> None:
         """Verify Decimal values are converted to integers."""
         result = normalize_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -121,7 +127,7 @@ class TestNormalizeDecimalId:
     def test_decodes_bytes(input_val: bytes, expected: int) -> None:
         """Verify bytes values are decoded and converted."""
         result = normalize_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -134,20 +140,20 @@ class TestNormalizeDecimalId:
     def test_decodes_bytearray(input_val: bytearray, expected: int) -> None:
         """Verify bytearray values are decoded and converted."""
         result = normalize_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     def test_returns_none_for_invalid_bytes() -> None:
         """Verify invalid UTF-8 bytes return None."""
         invalid_bytes = b"\xff\xfe"
         result = normalize_decimal_id(invalid_bytes)
-        assert result is None
+        expect_is_none(result)
 
     @staticmethod
     def test_returns_none_for_non_numeric_bytes() -> None:
         """Verify non-numeric bytes return None."""
         result = normalize_decimal_id(b"not_a_number")
-        assert result is None
+        expect_is_none(result)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -160,7 +166,7 @@ class TestNormalizeDecimalId:
     def test_converts_string(input_val: str, expected: int) -> None:
         """Verify string values are converted."""
         result = normalize_decimal_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     def test_converts_float_via_string() -> None:
@@ -168,13 +174,13 @@ class TestNormalizeDecimalId:
         # Float goes through str() then int(str()), but "123.0" can't be int()
         # so the result is None
         result = normalize_decimal_id(123.0)
-        assert result is None
+        expect_is_none(result)
 
     @staticmethod
     def test_returns_none_for_unconvertible() -> None:
         """Verify unconvertible values return None."""
         result = normalize_decimal_id("not_a_number")
-        assert result is None
+        expect_is_none(result)
 
 
 class TestNormalizeNodeId:
@@ -183,7 +189,7 @@ class TestNormalizeNodeId:
     @staticmethod
     def test_returns_none_for_none() -> None:
         """Verify None input returns None."""
-        assert normalize_node_id(None) is None
+        expect_is_none(normalize_node_id(None))
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -196,7 +202,7 @@ class TestNormalizeNodeId:
     def test_converts_decimal_to_int(input_val: Decimal, expected: int) -> None:
         """Verify Decimal values are converted to integers."""
         result = normalize_node_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -210,7 +216,7 @@ class TestNormalizeNodeId:
     def test_converts_numeric_types(input_val: float, expected: int) -> None:
         """Verify int and float values are converted to int."""
         result = normalize_node_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -224,7 +230,7 @@ class TestNormalizeNodeId:
     def test_converts_digit_strings(input_val: str, expected: int) -> None:
         """Verify digit-only strings are converted to integers."""
         result = normalize_node_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -238,7 +244,7 @@ class TestNormalizeNodeId:
     def test_preserves_non_digit_strings(input_val: str, expected: str) -> None:
         """Verify non-digit strings are preserved as strings."""
         result = normalize_node_id(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     def test_raises_on_float_infinity() -> None:
@@ -255,7 +261,7 @@ class TestSafeFloat:
     @staticmethod
     def test_returns_none_for_none() -> None:
         """Verify None input returns None."""
-        assert safe_float(None) is None
+        expect_is_none(safe_float(None))
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -269,7 +275,7 @@ class TestSafeFloat:
     def test_passes_through_floats(input_val: float, expected: float) -> None:
         """Verify float values pass through unchanged."""
         result = safe_float(input_val)
-        assert result == expected
+        expect_equal(result, expected)
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -283,7 +289,7 @@ class TestSafeFloat:
     def test_converts_decimal(input_val: Decimal, expected: float) -> None:
         """Verify Decimal values are converted to float."""
         result = safe_float(input_val)
-        assert result == pytest.approx(expected)
+        expect_equal(result, pytest.approx(expected))
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -297,13 +303,13 @@ class TestSafeFloat:
     def test_converts_string(input_val: str, expected: float) -> None:
         """Verify string values are converted to float."""
         result = safe_float(input_val)
-        assert result == pytest.approx(expected)
+        expect_equal(result, pytest.approx(expected))
 
     @staticmethod
     def test_returns_none_for_invalid() -> None:
         """Verify invalid values return None."""
         result = safe_float("not_a_float")
-        assert result is None
+        expect_is_none(result)
 
 
 class TestLogEmptyGraph:
@@ -317,7 +323,7 @@ class TestLogEmptyGraph:
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("test_graph", empty_graph)
 
-        assert "test_graph is empty" in caplog.text
+        expect_in("test_graph is empty", caplog.text)
 
     @staticmethod
     def test_no_log_for_nonempty_graph(caplog: pytest.LogCaptureFixture) -> None:
@@ -328,7 +334,7 @@ class TestLogEmptyGraph:
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("test_graph", graph)
 
-        assert "empty" not in caplog.text
+        expect_not_in("empty", caplog.text)
 
     @staticmethod
     def test_works_with_digraph(caplog: pytest.LogCaptureFixture) -> None:
@@ -338,7 +344,7 @@ class TestLogEmptyGraph:
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("call_graph", empty_digraph)
 
-        assert "call_graph is empty" in caplog.text
+        expect_in("call_graph is empty", caplog.text)
 
 
 class TestLogProjectionSkipped:
@@ -355,10 +361,10 @@ class TestLogProjectionSkipped:
                 graph_nodes=10,
             )
 
-        assert "test_projection" in caplog.text
-        assert "insufficient nodes" in caplog.text
-        assert "partition_size=5" in caplog.text
-        assert "graph_nodes=10" in caplog.text
+        expect_in("test_projection", caplog.text)
+        expect_in("insufficient nodes", caplog.text)
+        expect_in("partition_size=5", caplog.text)
+        expect_in("graph_nodes=10", caplog.text)
 
     @staticmethod
     def test_logs_with_different_reasons(caplog: pytest.LogCaptureFixture) -> None:
@@ -372,7 +378,7 @@ class TestLogProjectionSkipped:
         for reason in reasons:
             with caplog.at_level(logging.INFO):
                 log_projection_skipped("proj", reason, nodes=1, graph_nodes=2)
-                assert reason in caplog.text
+                expect_in(reason, caplog.text)
             caplog.clear()
 
 
@@ -385,7 +391,7 @@ class TestIntegrationScenarios:
         original = 123456789012345678901234567890
         decimal_id = to_decimal_id(original)
         normalized = normalize_decimal_id(decimal_id)
-        assert normalized == original
+        expect_equal(normalized, original)
 
     @staticmethod
     def test_graph_node_id_normalization() -> None:
@@ -400,7 +406,7 @@ class TestIntegrationScenarios:
         # Normalize all node IDs
         normalized = {normalize_node_id(n) for n in graph.nodes()}
         expected = {123, 456, 789, "func_name"}
-        assert normalized == expected
+        expect_equal(normalized, expected)
 
     @staticmethod
     def test_safe_float_for_metrics() -> None:
@@ -417,6 +423,6 @@ class TestIntegrationScenarios:
 
         for result, exp in zip(results, expected, strict=True):
             if exp is None:
-                assert result is None
+                expect_is_none(result)
             else:
-                assert result == pytest.approx(exp)
+                expect_equal(result, pytest.approx(exp))

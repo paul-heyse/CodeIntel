@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.docs import run_docs_export
+from codeintel.cli.commands.docs import (
+    DocsExportOptions,
+    DryRunMode,
+    ExportValidationMode,
+    MacroRequirement,
+    run_docs_export,
+)
 from codeintel.config.models import (
     CliConfigOptions,
     CliPathsInput,
@@ -16,6 +22,7 @@ from codeintel.config.models import (
 from codeintel.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import provision_docs_export_ready
+from tests._helpers.assertions import expect_equal
 
 
 def test_docs_export_invokes_validator_before_exports(tmp_path: Path) -> None:
@@ -55,15 +62,15 @@ def test_docs_export_invokes_validator_before_exports(tmp_path: Path) -> None:
         options=CliConfigOptions(),
     )
 
-    run_docs_export(
-        cfg=cfg,
-        validate_exports=False,
-        schemas=None,
+    options = DocsExportOptions(
+        validation=ExportValidationMode.SKIP,
+        macro_requirement=MacroRequirement.ALLOW_PARTIAL,
         datasets=None,
-        require_normalized_macros=False,
-        validator=validator,
-        export_runner=export_runner,
+        schemas=None,
+        run_mode=DryRunMode.EXECUTE,
     )
 
+    run_docs_export(cfg=cfg, options=options, validator=validator, export_runner=export_runner)
+
     expected_events = ["validator", f"export:{out_dir}"]
-    assert events == expected_events, f"Unexpected event order: {events}"
+    expect_equal(events, expected_events, label=f"Unexpected event order: {events}")

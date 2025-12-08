@@ -8,6 +8,8 @@ from domain-specific executors.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from codeintel.storage.tracking import (
@@ -20,6 +22,20 @@ from codeintel.storage.tracking import (
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.result import PluginExecutionRecord
     from codeintel.storage.tracking import PipelineRunTracking
+
+
+class FatalHandling(Enum):
+    """Strategy for handling fatal errors during plugin execution."""
+
+    CONTINUE = "continue"
+    FAIL_FAST = "fail_fast"
+
+
+@dataclass(frozen=True)
+class TrackingOptions:
+    """Options controlling run tracking behavior."""
+
+    fatal_handling: FatalHandling = FatalHandling.CONTINUE
 
 
 def record_plugin_steps(
@@ -86,7 +102,7 @@ def complete_run_from_records(
     runs: PipelineRunTracking,
     run_id: str,
     records: Sequence[PluginExecutionRecord],
-    fatal_error: bool = False,
+    options: TrackingOptions | None = None,
 ) -> None:
     """Complete a pipeline run based on execution records.
 
@@ -101,14 +117,15 @@ def complete_run_from_records(
         Run identifier.
     records
         Plugin execution records.
-    fatal_error
-        Whether execution ended due to fatal error.
+    options
+        Tracking behavior such as fatal error handling.
 
     Examples
     --------
-    >>> # complete_run_from_records(runs, "run-123", records, fatal_error=False)
+    >>> # complete_run_from_records(runs, "run-123", records, options=TrackingOptions())
     """
-    status, error_summary = _compute_run_status(records, fatal_error)
+    effective_options = options or TrackingOptions()
+    status, error_summary = _compute_run_status(records, effective_options.fatal_handling)
 
     runs.complete_run(
         run_id,
@@ -164,7 +181,7 @@ def _build_step_extra(rec: PluginExecutionRecord) -> dict[str, object]:
 
 def _compute_run_status(
     records: Sequence[PluginExecutionRecord],
-    fatal_error: bool,
+    fatal_handling: FatalHandling,
 ) -> tuple[PipelineStatus, str | None]:
     """Compute overall run status from execution records.
 
@@ -172,15 +189,15 @@ def _compute_run_status(
     ----------
     records
         Plugin execution records.
-    fatal_error
-        Whether execution ended due to fatal error.
+    fatal_handling
+        Strategy for fatal errors.
 
     Returns
     -------
     tuple[PipelineStatus, str | None]
         Tuple of (status, error_summary).
     """
-    if fatal_error:
+    if fatal_handling is FatalHandling.FAIL_FAST:
         failed_plugins = [r.plugin_name for r in records if r.status == "failed"]
         error_summary = f"Fatal error. Failed plugins: {', '.join(failed_plugins)}"
         return "failed", error_summary
@@ -201,6 +218,8 @@ def _compute_run_status(
 
 
 __all__ = [
+    "FatalHandling",
+    "TrackingOptions",
     "complete_run_from_records",
     "record_plugin_steps",
 ]

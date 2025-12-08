@@ -25,11 +25,14 @@ from codeintel.config.steps_analytics import (
 )
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 from codeintel.graphs.catalog import FunctionCatalogService
+from tests._helpers.assertions import expect_true
 from tests.analytics.integration.sample_repo import (
     SampleRepo,
     build_runtime,
     count_table_rows,
 )
+
+MIN_ROWS = 2
 
 
 def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
@@ -44,7 +47,7 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
         sample_repo.gateway,
         FunctionAnalyticsStepConfig(snapshot=sample_repo.snapshot),
     )
-    assert summary["metrics_rows"] >= 2
+    expect_true(summary["metrics_rows"] >= MIN_ROWS)
 
     compute_function_contracts(
         sample_repo.gateway,
@@ -52,7 +55,7 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
         function_ast_map=sample_repo.ast_map,
         catalog=catalog,
     )
-    assert count_table_rows(sample_repo, "analytics.function_contracts") >= 2
+    expect_true(count_table_rows(sample_repo, "analytics.function_contracts") >= MIN_ROWS)
 
     runtime = build_runtime(sample_repo)
     compute_function_effects(
@@ -65,7 +68,7 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
             missing_goids=set(),
         ),
     )
-    assert count_table_rows(sample_repo, "analytics.function_effects") >= 2
+    expect_true(count_table_rows(sample_repo, "analytics.function_effects") >= MIN_ROWS)
 
     compute_function_history(
         sample_repo.gateway,
@@ -76,13 +79,13 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
             default_branch="HEAD",
         ),
     )
-    assert count_table_rows(sample_repo, "analytics.function_history") >= 2
+    expect_true(count_table_rows(sample_repo, "analytics.function_history") >= MIN_ROWS)
 
     compute_data_models(
         sample_repo.gateway,
         DataModelsStepConfig(snapshot=sample_repo.snapshot),
     )
-    assert count_table_rows(sample_repo, "analytics.data_models") >= 1
+    expect_true(count_table_rows(sample_repo, "analytics.data_models") >= 1)
 
     build_external_dependency_calls(
         sample_repo.gateway,
@@ -94,7 +97,7 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
             features_map=sample_repo.features,
         ),
     )
-    assert count_table_rows(sample_repo, "analytics.external_dependency_calls") >= 1
+    expect_true(count_table_rows(sample_repo, "analytics.external_dependency_calls") >= 1)
 
     build_entrypoints(
         sample_repo.gateway,
@@ -103,4 +106,4 @@ def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
         module_map=sample_repo.module_map,
         features_map=sample_repo.features,
     )
-    assert count_table_rows(sample_repo, "analytics.entrypoints") >= 1
+    expect_true(count_table_rows(sample_repo, "analytics.entrypoints") >= 1)

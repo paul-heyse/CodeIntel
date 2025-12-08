@@ -23,6 +23,12 @@ from codeintel.core.execution.validation import (
     has_error_findings,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_true,
+)
 
 # =============================================================================
 # Test Fixtures and Helpers
@@ -80,9 +86,9 @@ def test_base_validation_options_defaults() -> None:
     """Verify BaseValidationOptions default values."""
     options = BaseValidationOptions()
 
-    assert options.severity_overrides is None
-    assert options.hard_fail is False
-    assert options.max_findings_per_rule is None
+    expect_true(options.severity_overrides is None)
+    expect_false(options.hard_fail)
+    expect_true(options.max_findings_per_rule is None)
 
 
 def test_base_validation_options_custom() -> None:
@@ -93,9 +99,9 @@ def test_base_validation_options_custom() -> None:
         max_findings_per_rule=10,
     )
 
-    assert options.severity_overrides == {"table_a": "error", "*": "warning"}
-    assert options.hard_fail is True
-    assert options.max_findings_per_rule == 10
+    expect_equal(options.severity_overrides, {"table_a": "error", "*": "warning"})
+    expect_true(options.hard_fail)
+    expect_equal(options.max_findings_per_rule, 10)
 
 
 def test_base_validation_options_is_frozen() -> None:
@@ -124,9 +130,9 @@ def test_apply_severity_overrides_no_overrides() -> None:
         set_severity=set_severity,
     )
 
-    assert len(result) == 2
-    assert result[0].severity == "info"
-    assert result[1].severity == "warning"
+    expect_equal(len(result), 2)
+    expect_equal(result[0].severity, "info")
+    expect_equal(result[1].severity, "warning")
 
 
 def test_apply_severity_overrides_empty_overrides() -> None:
@@ -140,7 +146,7 @@ def test_apply_severity_overrides_empty_overrides() -> None:
         set_severity=set_severity,
     )
 
-    assert result[0].severity == "info"
+    expect_equal(result[0].severity, "info")
 
 
 def test_apply_severity_overrides_specific_rule() -> None:
@@ -157,8 +163,8 @@ def test_apply_severity_overrides_specific_rule() -> None:
         set_severity=set_severity,
     )
 
-    assert result[0].severity == "error"  # A overridden
-    assert result[1].severity == "info"  # B unchanged
+    expect_equal(result[0].severity, "error")  # A overridden
+    expect_equal(result[1].severity, "info")  # B unchanged
 
 
 def test_apply_severity_overrides_wildcard() -> None:
@@ -175,8 +181,8 @@ def test_apply_severity_overrides_wildcard() -> None:
         set_severity=set_severity,
     )
 
-    assert result[0].severity == "warning"
-    assert result[1].severity == "warning"
+    expect_equal(result[0].severity, "warning")
+    expect_equal(result[1].severity, "warning")
 
 
 def test_apply_severity_overrides_specific_over_wildcard() -> None:
@@ -193,8 +199,8 @@ def test_apply_severity_overrides_specific_over_wildcard() -> None:
         set_severity=set_severity,
     )
 
-    assert result[0].severity == "error"  # Specific override
-    assert result[1].severity == "warning"  # Wildcard override
+    expect_equal(result[0].severity, "error")  # Specific override
+    expect_equal(result[1].severity, "warning")  # Wildcard override
 
 
 def test_apply_severity_overrides_preserves_message() -> None:
@@ -208,7 +214,7 @@ def test_apply_severity_overrides_preserves_message() -> None:
         set_severity=set_severity,
     )
 
-    assert result[0].message == "original_message"
+    expect_equal(result[0].message, "original_message")
 
 
 # =============================================================================
@@ -222,7 +228,7 @@ def test_cap_findings_no_limit() -> None:
 
     result = cap_findings(findings, max_per_rule=None, get_key=get_rule)
 
-    assert len(result) == 10
+    expect_equal(len(result), 10)
 
 
 def test_cap_findings_zero_limit() -> None:
@@ -231,7 +237,7 @@ def test_cap_findings_zero_limit() -> None:
 
     result = cap_findings(findings, max_per_rule=0, get_key=get_rule)
 
-    assert len(result) == 5
+    expect_equal(len(result), 5)
 
 
 def test_cap_findings_negative_limit() -> None:
@@ -240,7 +246,7 @@ def test_cap_findings_negative_limit() -> None:
 
     result = cap_findings(findings, max_per_rule=-1, get_key=get_rule)
 
-    assert len(result) == 5
+    expect_equal(len(result), 5)
 
 
 def test_cap_findings_caps_single_rule() -> None:
@@ -249,8 +255,8 @@ def test_cap_findings_caps_single_rule() -> None:
 
     result = cap_findings(findings, max_per_rule=3, get_key=get_rule)
 
-    assert len(result) == 3
-    assert all(f.rule == "A" for f in result)
+    expect_equal(len(result), 3)
+    expect_true(all(f.rule == "A" for f in result))
 
 
 def test_cap_findings_caps_per_rule() -> None:
@@ -269,8 +275,8 @@ def test_cap_findings_caps_per_rule() -> None:
     a_findings = [f for f in result if f.rule == "A"]
     b_findings = [f for f in result if f.rule == "B"]
 
-    assert len(a_findings) == 2
-    assert len(b_findings) == 2
+    expect_equal(len(a_findings), 2)
+    expect_equal(len(b_findings), 2)
 
 
 def test_cap_findings_preserves_order() -> None:
@@ -283,8 +289,8 @@ def test_cap_findings_preserves_order() -> None:
 
     result = cap_findings(findings, max_per_rule=2, get_key=get_rule)
 
-    assert result[0].message == "first"
-    assert result[1].message == "second"
+    expect_equal(result[0].message, "first")
+    expect_equal(result[1].message, "second")
 
 
 # =============================================================================
@@ -295,7 +301,7 @@ def test_cap_findings_preserves_order() -> None:
 def test_has_error_findings_empty() -> None:
     """Verify has_error_findings returns False for empty list."""
     result = has_error_findings([], get_severity)
-    assert result is False
+    expect_false(result)
 
 
 def test_has_error_findings_no_errors() -> None:
@@ -306,7 +312,7 @@ def test_has_error_findings_no_errors() -> None:
     ]
 
     result = has_error_findings(findings, get_severity)
-    assert result is False
+    expect_false(result)
 
 
 def test_has_error_findings_with_error() -> None:
@@ -317,7 +323,7 @@ def test_has_error_findings_with_error() -> None:
     ]
 
     result = has_error_findings(findings, get_severity)
-    assert result is True
+    expect_true(result)
 
 
 def test_has_error_findings_all_errors() -> None:
@@ -328,7 +334,7 @@ def test_has_error_findings_all_errors() -> None:
     ]
 
     result = has_error_findings(findings, get_severity)
-    assert result is True
+    expect_true(result)
 
 
 # =============================================================================
@@ -345,7 +351,7 @@ def test_filter_by_severity_info_threshold() -> None:
     ]
 
     result = filter_by_severity(findings, "info", get_severity)
-    assert len(result) == 3
+    expect_equal(len(result), 3)
 
 
 def test_filter_by_severity_warning_threshold() -> None:
@@ -357,8 +363,8 @@ def test_filter_by_severity_warning_threshold() -> None:
     ]
 
     result = filter_by_severity(findings, "warning", get_severity)
-    assert len(result) == 2
-    assert all(f.severity in {"warning", "error"} for f in result)
+    expect_equal(len(result), 2)
+    expect_true(all(f.severity in {"warning", "error"} for f in result))
 
 
 def test_filter_by_severity_error_threshold() -> None:
@@ -370,14 +376,14 @@ def test_filter_by_severity_error_threshold() -> None:
     ]
 
     result = filter_by_severity(findings, "error", get_severity)
-    assert len(result) == 1
-    assert result[0].severity == "error"
+    expect_equal(len(result), 1)
+    expect_equal(result[0].severity, "error")
 
 
 def test_filter_by_severity_empty_list() -> None:
     """Verify filter_by_severity handles empty list."""
     result = filter_by_severity([], "warning", get_severity)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_filter_by_severity_preserves_order() -> None:
@@ -390,9 +396,9 @@ def test_filter_by_severity_preserves_order() -> None:
 
     result = filter_by_severity(findings, "warning", get_severity)
 
-    assert result[0].message == "first"
-    assert result[1].message == "second"
-    assert result[2].message == "third"
+    expect_equal(result[0].message, "first")
+    expect_equal(result[1].message, "second")
+    expect_equal(result[2].message, "third")
 
 
 # =============================================================================
@@ -403,7 +409,7 @@ def test_filter_by_severity_preserves_order() -> None:
 def test_group_findings_by_key_empty() -> None:
     """Verify group_findings_by_key handles empty list."""
     result = group_findings_by_key([], get_rule)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_group_findings_by_key_single_group() -> None:
@@ -415,9 +421,9 @@ def test_group_findings_by_key_single_group() -> None:
 
     result = group_findings_by_key(findings, get_rule)
 
-    assert len(result) == 1
-    assert "A" in result
-    assert len(result["A"]) == 2
+    expect_equal(len(result), 1)
+    expect_in("A", result)
+    expect_equal(len(result["A"]), 2)
 
 
 def test_group_findings_by_key_multiple_groups() -> None:
@@ -432,10 +438,10 @@ def test_group_findings_by_key_multiple_groups() -> None:
 
     result = group_findings_by_key(findings, get_rule)
 
-    assert len(result) == 3
-    assert len(result["A"]) == 2
-    assert len(result["B"]) == 2
-    assert len(result["C"]) == 1
+    expect_equal(len(result), 3)
+    expect_equal(len(result["A"]), 2)
+    expect_equal(len(result["B"]), 2)
+    expect_equal(len(result["C"]), 1)
 
 
 def test_group_findings_by_key_preserves_order() -> None:
@@ -448,9 +454,9 @@ def test_group_findings_by_key_preserves_order() -> None:
 
     result = group_findings_by_key(findings, get_rule)
 
-    assert result["A"][0].message == "first"
-    assert result["A"][1].message == "second"
-    assert result["A"][2].message == "third"
+    expect_equal(result["A"][0].message, "first")
+    expect_equal(result["A"][1].message, "second")
+    expect_equal(result["A"][2].message, "third")
 
 
 def test_group_findings_by_key_with_severity() -> None:
@@ -463,9 +469,9 @@ def test_group_findings_by_key_with_severity() -> None:
 
     result = group_findings_by_key(findings, get_severity)
 
-    assert len(result) == 2
-    assert len(result["info"]) == 2
-    assert len(result["error"]) == 1
+    expect_equal(len(result), 2)
+    expect_equal(len(result["info"]), 2)
+    expect_equal(len(result["error"]), 1)
 
 
 # =============================================================================
@@ -492,8 +498,8 @@ def test_combined_override_and_filter() -> None:
     # Then filter by severity
     filtered = filter_by_severity(overridden, "warning", get_severity)
 
-    assert len(filtered) == 2  # Both "important" findings (now error level)
-    assert all(f.rule == "important" for f in filtered)
+    expect_equal(len(filtered), 2)  # Both "important" findings (now error level)
+    expect_true(all(f.rule == "important" for f in filtered))
 
 
 def test_combined_cap_and_group() -> None:
@@ -508,8 +514,8 @@ def test_combined_cap_and_group() -> None:
     # Then group by key
     grouped = group_findings_by_key(capped, get_rule)
 
-    assert len(grouped["A"]) == 2
-    assert len(grouped["B"]) == 2
+    expect_equal(len(grouped["A"]), 2)
+    expect_equal(len(grouped["B"]), 2)
 
 
 def test_full_pipeline() -> None:
@@ -540,6 +546,6 @@ def test_full_pipeline() -> None:
     has_errors = has_error_findings(step3, get_severity)
 
     # Verify pipeline results
-    assert len(step3) == 2  # Only critical findings (capped to 2)
-    assert all(f.severity == "error" for f in step3)
-    assert has_errors is True
+    expect_equal(len(step3), 2)  # Only critical findings (capped to 2)
+    expect_true(all(f.severity == "error" for f in step3))
+    expect_true(has_errors)

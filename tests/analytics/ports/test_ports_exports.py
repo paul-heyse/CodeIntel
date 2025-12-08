@@ -33,6 +33,11 @@ from codeintel.analytics.ports.storage import StoragePort as AnalyticsStoragePor
 from codeintel.graphs.ports.storage import BatchResult as GraphsBatchResult
 from codeintel.graphs.ports.storage import QueryResult as GraphsQueryResult
 from codeintel.graphs.ports.storage import StoragePort as GraphsStoragePort
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 
 
 class TestPortsPackageExports:
@@ -42,12 +47,12 @@ class TestPortsPackageExports:
     def test_ports_init_exports_all_symbols() -> None:
         """Verify top-level __init__.py exports all expected symbols."""
         # All symbols should be importable and non-None
-        assert CatalogPort is not None
-        assert FunctionSpanData is not None
-        assert GraphRuntimePort is not None
-        assert BatchResult is not None
-        assert QueryResult is not None
-        assert StoragePort is not None
+        expect_is_not_none(CatalogPort)
+        expect_is_not_none(FunctionSpanData)
+        expect_is_not_none(GraphRuntimePort)
+        expect_is_not_none(BatchResult)
+        expect_is_not_none(QueryResult)
+        expect_is_not_none(StoragePort)
 
     @staticmethod
     def test_ports_init_all_list_is_complete() -> None:
@@ -61,7 +66,7 @@ class TestPortsPackageExports:
             "StoragePort",
         }
         actual = set(ports_pkg.__all__)
-        assert actual == expected, f"Missing: {expected - actual}, Extra: {actual - expected}"
+        expect_equal(actual, expected, label="ports exports mismatch")
 
 
 class TestCatalogPortExports:
@@ -70,15 +75,16 @@ class TestCatalogPortExports:
     @staticmethod
     def test_catalog_port_exports() -> None:
         """Verify CatalogPort and FunctionSpanData are importable from submodule."""
-        assert CatalogPortDirect is not None
-        assert FunctionSpanDataDirect is not None
+        expect_is_not_none(CatalogPortDirect)
+        expect_is_not_none(FunctionSpanDataDirect)
 
     @staticmethod
     def test_catalog_port_is_protocol() -> None:
         """Verify CatalogPort is a runtime-checkable Protocol."""
         # CatalogPort should be a Protocol class
-        assert hasattr(CatalogPortDirect, "__protocol_attrs__") or hasattr(
-            CatalogPortDirect, "_is_protocol"
+        expect_true(
+            hasattr(CatalogPortDirect, "__protocol_attrs__")
+            or hasattr(CatalogPortDirect, "_is_protocol"),
         )
 
     @staticmethod
@@ -86,7 +92,7 @@ class TestCatalogPortExports:
         """Verify __all__ list for catalog module."""
         expected = {"CatalogPort", "FunctionSpanData"}
         actual = set(catalog_mod.__all__)
-        assert actual == expected
+        expect_equal(actual, expected)
 
 
 class TestGraphRuntimePortExports:
@@ -95,14 +101,15 @@ class TestGraphRuntimePortExports:
     @staticmethod
     def test_graph_runtime_port_exports() -> None:
         """Verify GraphRuntimePort is importable from submodule."""
-        assert GraphRuntimePortDirect is not None
+        expect_is_not_none(GraphRuntimePortDirect)
 
     @staticmethod
     def test_graph_runtime_port_is_runtime_checkable() -> None:
         """Verify GraphRuntimePort is a runtime-checkable Protocol."""
         # Should be able to use isinstance checks
-        assert hasattr(GraphRuntimePortDirect, "_is_runtime_protocol") or callable(
-            getattr(GraphRuntimePortDirect, "__subclasshook__", None)
+        expect_true(
+            hasattr(GraphRuntimePortDirect, "_is_runtime_protocol")
+            or callable(getattr(GraphRuntimePortDirect, "__subclasshook__", None)),
         )
 
     @staticmethod
@@ -110,7 +117,7 @@ class TestGraphRuntimePortExports:
         """Verify __all__ list for graphs module."""
         expected = {"GraphRuntimePort"}
         actual = set(graphs_mod.__all__)
-        assert actual == expected
+        expect_equal(actual, expected)
 
 
 class TestStoragePortExports:
@@ -119,24 +126,24 @@ class TestStoragePortExports:
     @staticmethod
     def test_storage_port_exports() -> None:
         """Verify storage port types are importable from submodule."""
-        assert AnalyticsBatchResult is not None
-        assert AnalyticsQueryResult is not None
-        assert AnalyticsStoragePort is not None
+        expect_is_not_none(AnalyticsBatchResult)
+        expect_is_not_none(AnalyticsQueryResult)
+        expect_is_not_none(AnalyticsStoragePort)
 
     @staticmethod
     def test_storage_port_all_list() -> None:
         """Verify __all__ list for storage module."""
         expected = {"BatchResult", "QueryResult", "StoragePort"}
         actual = set(storage_mod.__all__)
-        assert actual == expected
+        expect_equal(actual, expected)
 
     @staticmethod
     def test_storage_port_reexports_from_graphs() -> None:
         """Verify storage port types are same as graphs.ports.storage."""
         # Should be the exact same types (re-exports, not copies)
-        assert AnalyticsBatchResult is GraphsBatchResult
-        assert AnalyticsQueryResult is GraphsQueryResult
-        assert AnalyticsStoragePort is GraphsStoragePort
+        expect_true(AnalyticsBatchResult is GraphsBatchResult)
+        expect_true(AnalyticsQueryResult is GraphsQueryResult)
+        expect_true(AnalyticsStoragePort is GraphsStoragePort)
 
 
 class TestPortsModuleStructure:
@@ -155,5 +162,5 @@ class TestPortsModuleStructure:
     def test_modules_importable(import_path: str) -> None:
         """Verify all port modules are importable without errors."""
         module = importlib.import_module(import_path)
-        assert module is not None
-        assert hasattr(module, "__all__")
+        expect_is_not_none(module)
+        expect_true(hasattr(module, "__all__"))

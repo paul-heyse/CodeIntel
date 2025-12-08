@@ -21,7 +21,7 @@ from codeintel.graphs.compute.metrics.coupling import (
     compute_coupling,
     compute_distance_from_main_sequence,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import assert_cannot_setattr, expect_equal, expect_true
 
 INSTABILITY_TOLERANCE: Final = 0.01
 HUB_DEPENDENT_COUNT: Final = 4
@@ -140,9 +140,9 @@ def test_compute_coupling_independent() -> None:
     coupling = compute_coupling(g)
 
     # No edges for any module
-    assert coupling["module_a"].afferent == 0
-    assert coupling["module_a"].efferent == 0
-    assert coupling["module_a"].instability == 0.0
+    expect_equal(coupling["module_a"].afferent, 0)
+    expect_equal(coupling["module_a"].efferent, 0)
+    expect_equal(coupling["module_a"].instability, 0.0)
 
 
 def test_compute_coupling_linear() -> None:
@@ -152,19 +152,19 @@ def test_compute_coupling_linear() -> None:
     coupling = compute_coupling(g)
 
     # A has one efferent, no afferent
-    assert coupling["module_a"].afferent == 0
-    assert coupling["module_a"].efferent == 1
-    assert coupling["module_a"].instability == 1.0
+    expect_equal(coupling["module_a"].afferent, 0)
+    expect_equal(coupling["module_a"].efferent, 1)
+    expect_equal(coupling["module_a"].instability, 1.0)
 
     # B has one of each
-    assert coupling["module_b"].afferent == 1
-    assert coupling["module_b"].efferent == 1
-    assert abs(coupling["module_b"].instability - 0.5) < INSTABILITY_TOLERANCE
+    expect_equal(coupling["module_b"].afferent, 1)
+    expect_equal(coupling["module_b"].efferent, 1)
+    expect_true(abs(coupling["module_b"].instability - 0.5) < INSTABILITY_TOLERANCE)
 
     # C has one afferent, no efferent
-    assert coupling["module_c"].afferent == 1
-    assert coupling["module_c"].efferent == 0
-    assert coupling["module_c"].instability == 0.0
+    expect_equal(coupling["module_c"].afferent, 1)
+    expect_equal(coupling["module_c"].efferent, 0)
+    expect_equal(coupling["module_c"].instability, 0.0)
 
 
 def test_compute_coupling_hub() -> None:
@@ -174,14 +174,14 @@ def test_compute_coupling_hub() -> None:
     coupling = compute_coupling(g)
 
     # Core has high afferent (4 dependents), no efferent
-    assert coupling["core"].afferent == HUB_DEPENDENT_COUNT
-    assert coupling["core"].efferent == 0
-    assert coupling["core"].instability == 0.0
+    expect_equal(coupling["core"].afferent, HUB_DEPENDENT_COUNT)
+    expect_equal(coupling["core"].efferent, 0)
+    expect_equal(coupling["core"].instability, 0.0)
 
     # Modules have one efferent each, no afferent
-    assert coupling["module_a"].afferent == 0
-    assert coupling["module_a"].efferent == 1
-    assert coupling["module_a"].instability == 1.0
+    expect_equal(coupling["module_a"].afferent, 0)
+    expect_equal(coupling["module_a"].efferent, 1)
+    expect_equal(coupling["module_a"].instability, 1.0)
 
 
 def test_compute_coupling_god() -> None:
@@ -191,14 +191,14 @@ def test_compute_coupling_god() -> None:
     coupling = compute_coupling(g)
 
     # God module has high efferent (4 dependencies)
-    assert coupling["god"].afferent == 0
-    assert coupling["god"].efferent == HUB_DEPENDENT_COUNT
-    assert coupling["god"].instability == 1.0
+    expect_equal(coupling["god"].afferent, 0)
+    expect_equal(coupling["god"].efferent, HUB_DEPENDENT_COUNT)
+    expect_equal(coupling["god"].instability, 1.0)
 
     # Leaf modules have one afferent, no efferent
-    assert coupling["module_a"].afferent == 1
-    assert coupling["module_a"].efferent == 0
-    assert coupling["module_a"].instability == 0.0
+    expect_equal(coupling["module_a"].afferent, 1)
+    expect_equal(coupling["module_a"].efferent, 0)
+    expect_equal(coupling["module_a"].instability, 0.0)
 
 
 def test_compute_coupling_bidirectional() -> None:
@@ -208,13 +208,13 @@ def test_compute_coupling_bidirectional() -> None:
     coupling = compute_coupling(g)
 
     # Both modules have 1 afferent and 1 efferent
-    assert coupling["module_a"].afferent == 1
-    assert coupling["module_a"].efferent == 1
-    assert abs(coupling["module_a"].instability - 0.5) < INSTABILITY_TOLERANCE
+    expect_equal(coupling["module_a"].afferent, 1)
+    expect_equal(coupling["module_a"].efferent, 1)
+    expect_true(abs(coupling["module_a"].instability - 0.5) < INSTABILITY_TOLERANCE)
 
-    assert coupling["module_b"].afferent == 1
-    assert coupling["module_b"].efferent == 1
-    assert abs(coupling["module_b"].instability - HALF_INSTABILITY) < INSTABILITY_TOLERANCE
+    expect_equal(coupling["module_b"].afferent, 1)
+    expect_equal(coupling["module_b"].efferent, 1)
+    expect_true(abs(coupling["module_b"].instability - HALF_INSTABILITY) < INSTABILITY_TOLERANCE)
 
 
 def test_compute_coupling_empty_graph() -> None:
@@ -223,35 +223,35 @@ def test_compute_coupling_empty_graph() -> None:
 
     coupling = compute_coupling(g)
 
-    assert coupling == {}
+    expect_equal(coupling, {})
 
 
 def test_compute_abstractness_no_abstracts() -> None:
     """Compute abstractness with no abstract classes."""
     abstractness = compute_abstractness("module", abstract_count=0, total_count=10)
 
-    assert abstractness == 0.0
+    expect_equal(abstractness, 0.0)
 
 
 def test_compute_abstractness_all_abstract() -> None:
     """Compute abstractness with all abstract classes."""
     abstractness = compute_abstractness("module", abstract_count=5, total_count=5)
 
-    assert abstractness == 1.0
+    expect_equal(abstractness, 1.0)
 
 
 def test_compute_abstractness_partial() -> None:
     """Compute abstractness with some abstract classes."""
     abstractness = compute_abstractness("module", abstract_count=3, total_count=6)
 
-    assert abstractness == HALF_RATIO
+    expect_equal(abstractness, HALF_RATIO)
 
 
 def test_compute_abstractness_empty() -> None:
     """Compute abstractness with no classes."""
     abstractness = compute_abstractness("module", abstract_count=0, total_count=0)
 
-    assert abstractness == 0.0
+    expect_equal(abstractness, 0.0)
 
 
 def test_distance_from_main_ideal_stable() -> None:
@@ -260,7 +260,7 @@ def test_distance_from_main_ideal_stable() -> None:
 
     distance = compute_distance_from_main_sequence(coupling, abstractness=1.0)
 
-    assert distance == 0.0
+    expect_equal(distance, 0.0)
 
 
 def test_distance_from_main_ideal_unstable() -> None:
@@ -269,7 +269,7 @@ def test_distance_from_main_ideal_unstable() -> None:
 
     distance = compute_distance_from_main_sequence(coupling, abstractness=0.0)
 
-    assert distance == 0.0
+    expect_equal(distance, 0.0)
 
 
 def test_distance_from_main_zone_of_pain() -> None:
@@ -278,7 +278,7 @@ def test_distance_from_main_zone_of_pain() -> None:
 
     distance = compute_distance_from_main_sequence(coupling, abstractness=0.0)
 
-    assert distance == 1.0
+    expect_equal(distance, 1.0)
 
 
 def test_distance_from_main_zone_of_uselessness() -> None:
@@ -287,7 +287,7 @@ def test_distance_from_main_zone_of_uselessness() -> None:
 
     distance = compute_distance_from_main_sequence(coupling, abstractness=1.0)
 
-    assert distance == 1.0
+    expect_equal(distance, 1.0)
 
 
 def test_distance_from_main_balanced() -> None:
@@ -298,7 +298,7 @@ def test_distance_from_main_balanced() -> None:
 
     distance = compute_distance_from_main_sequence(coupling, abstractness=0.5)
 
-    assert distance == 0.0
+    expect_equal(distance, 0.0)
 
 
 # Tests: CouplingMetrics dataclass
@@ -312,9 +312,9 @@ def test_coupling_metrics_attributes() -> None:
         instability=MODERATE_INSTABILITY,
     )
 
-    assert m.afferent == HIGH_AFFERENT
-    assert m.efferent == MODERATE_EFFERENT
-    assert m.instability == MODERATE_INSTABILITY
+    expect_equal(m.afferent, HIGH_AFFERENT)
+    expect_equal(m.efferent, MODERATE_EFFERENT)
+    expect_equal(m.instability, MODERATE_INSTABILITY)
 
 
 def test_coupling_metrics_equality() -> None:
@@ -330,7 +330,7 @@ def test_coupling_metrics_equality() -> None:
         instability=HALF_INSTABILITY,
     )
 
-    assert m1 == m2
+    expect_equal(m1, m2)
 
 
 def test_coupling_metrics_frozen() -> None:

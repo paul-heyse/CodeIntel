@@ -20,6 +20,14 @@ from codeintel.core.resources.protocol import (
     ResourceProvider,
     ResourceProviderBase,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_true,
+)
 
 # =============================================================================
 # Test Implementations
@@ -141,8 +149,8 @@ def test_resource_error_is_exception() -> None:
     """Verify ResourceError is an Exception."""
     error = ResourceError("Test error")
 
-    assert isinstance(error, Exception)
-    assert str(error) == "Test error"
+    expect_is_instance(error, Exception)
+    expect_equal(str(error), "Test error")
 
 
 def test_resource_error_can_be_raised() -> None:
@@ -157,7 +165,7 @@ def test_resource_error_can_be_raised() -> None:
     with pytest.raises(ResourceError) as exc_info:
         raise ResourceError(msg)
 
-    assert "Test message" in str(exc_info.value)
+    expect_in("Test message", str(exc_info.value))
 
 
 # =============================================================================
@@ -169,26 +177,26 @@ def test_resource_not_loaded_error_message() -> None:
     """Verify ResourceNotLoadedError message format."""
     error = ResourceNotLoadedError("MyResource")
 
-    assert "MyResource" in str(error)
-    assert "not loaded" in str(error)
-    assert error.resource_type == "MyResource"
-    assert error.reason is None
+    expect_in("MyResource", str(error))
+    expect_in("not loaded", str(error))
+    expect_equal(error.resource_type, "MyResource")
+    expect_true(error.reason is None)
 
 
 def test_resource_not_loaded_error_with_reason() -> None:
     """Verify ResourceNotLoadedError includes reason."""
     error = ResourceNotLoadedError("MyResource", reason="File not found")
 
-    assert "File not found" in str(error)
-    assert error.reason == "File not found"
+    expect_in("File not found", str(error))
+    expect_equal(error.reason, "File not found")
 
 
 def test_resource_not_loaded_error_inheritance() -> None:
     """Verify ResourceNotLoadedError inherits from ResourceError."""
     error = ResourceNotLoadedError("Test")
 
-    assert isinstance(error, ResourceError)
-    assert isinstance(error, Exception)
+    expect_is_instance(error, ResourceError)
+    expect_is_instance(error, Exception)
 
 
 # =============================================================================
@@ -200,7 +208,7 @@ def test_resource_provider_protocol_conformance() -> None:
     """Verify ResourceProviderBase implements ResourceProvider protocol."""
     provider = StringProvider("test")
 
-    assert isinstance(provider, ResourceProvider)
+    expect_is_instance(provider, ResourceProvider)
 
 
 def test_resource_provider_protocol_requires_get() -> None:
@@ -213,7 +221,7 @@ def test_resource_provider_protocol_requires_get() -> None:
             pass
 
     # Missing get() method should not satisfy protocol
-    assert not isinstance(MissingGet(), ResourceProvider)
+    expect_true(not isinstance(MissingGet(), ResourceProvider))
 
 
 def test_resource_provider_protocol_requires_invalidate() -> None:
@@ -228,7 +236,7 @@ def test_resource_provider_protocol_requires_invalidate() -> None:
             return "test"
 
     # Missing invalidate() method should not satisfy protocol
-    assert not isinstance(MissingInvalidate(), ResourceProvider)
+    expect_true(not isinstance(MissingInvalidate(), ResourceProvider))
 
 
 # =============================================================================
@@ -242,7 +250,7 @@ def test_provider_base_get_returns_value() -> None:
 
     result = provider.get()
 
-    assert result == "hello world"
+    expect_equal(result, "hello world")
 
 
 def test_provider_base_get_caches_value() -> None:
@@ -254,8 +262,8 @@ def test_provider_base_get_caches_value() -> None:
     result2 = provider.get()
     result3 = provider.get()
 
-    assert result1 == result2 == result3 == 1
-    assert provider.load_count == 1  # Only loaded once
+    expect_true(result1 == result2 == result3 == 1)
+    expect_equal(provider.load_count, 1)  # Only loaded once
 
 
 def test_provider_base_invalidate_clears_cache() -> None:
@@ -263,13 +271,13 @@ def test_provider_base_invalidate_clears_cache() -> None:
     provider = CountingProvider()
 
     provider.get()
-    assert provider.load_count == 1
+    expect_equal(provider.load_count, 1)
 
     provider.invalidate()
     provider.get()
 
     expected_loads_after_invalidate = 2
-    assert provider.load_count == expected_loads_after_invalidate
+    expect_equal(provider.load_count, expected_loads_after_invalidate)
 
 
 def test_provider_base_not_implemented_load() -> None:
@@ -284,12 +292,12 @@ def test_provider_base_resource_name() -> None:
     """Verify RESOURCE_NAME class attribute."""
     provider = StringProvider("test")
 
-    assert provider.RESOURCE_NAME == "string_resource"
+    expect_equal(provider.RESOURCE_NAME, "string_resource")
 
 
 def test_provider_base_default_resource_name() -> None:
     """Verify default RESOURCE_NAME is empty string."""
-    assert not ResourceProviderBase.RESOURCE_NAME
+    expect_true(not ResourceProviderBase.RESOURCE_NAME)
 
 
 # =============================================================================
@@ -303,14 +311,14 @@ def test_lazy_resource_get() -> None:
 
     result = resource.get()
 
-    assert result == "lazy value"
+    expect_equal(result, "lazy value")
 
 
 def test_lazy_resource_is_loaded_initially_false() -> None:
     """Verify is_loaded is False before first get()."""
     resource = LazyString("test", "value")
 
-    assert resource.is_loaded is False
+    expect_false(resource.is_loaded)
 
 
 def test_lazy_resource_is_loaded_after_get() -> None:
@@ -319,7 +327,7 @@ def test_lazy_resource_is_loaded_after_get() -> None:
 
     resource.get()
 
-    assert resource.is_loaded is True
+    expect_true(resource.is_loaded)
 
 
 def test_lazy_resource_caches_value() -> None:
@@ -339,8 +347,9 @@ def test_lazy_resource_caches_value() -> None:
     result1 = resource.get()
     result2 = resource.get()
 
-    assert result1 == result2 == 1
-    assert resource.load_count == 1
+    expect_equal(result1, 1)
+    expect_equal(result2, 1)
+    expect_equal(resource.load_count, 1)
 
 
 def test_lazy_resource_get_or_none_success() -> None:
@@ -349,7 +358,7 @@ def test_lazy_resource_get_or_none_success() -> None:
 
     result = resource.get_or_none()
 
-    assert result == "value"
+    expect_equal(result, "value")
 
 
 def test_lazy_resource_get_or_none_on_failure() -> None:
@@ -358,7 +367,7 @@ def test_lazy_resource_get_or_none_on_failure() -> None:
 
     result = resource.get_or_none()
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_lazy_resource_get_raises_on_failure() -> None:
@@ -368,8 +377,8 @@ def test_lazy_resource_get_raises_on_failure() -> None:
     with pytest.raises(ResourceNotLoadedError) as exc_info:
         resource.get()
 
-    assert "test" in str(exc_info.value)
-    assert "load error" in str(exc_info.value)
+    expect_in("test", str(exc_info.value))
+    expect_in("load error", str(exc_info.value))
 
 
 def test_lazy_resource_get_raises_on_repeated_failure() -> None:
@@ -388,11 +397,11 @@ def test_lazy_resource_invalidate() -> None:
     """Verify invalidate() clears cached value and error."""
     resource = LazyString("test", "value")
     resource.get()
-    assert resource.is_loaded
+    expect_true(resource.is_loaded)
 
     resource.invalidate()
 
-    assert not resource.is_loaded
+    expect_false(resource.is_loaded)
 
 
 def test_lazy_resource_invalidate_clears_error() -> None:
@@ -415,8 +424,8 @@ def test_lazy_resource_set_preloaded() -> None:
 
     resource.set_preloaded("preloaded_value")
 
-    assert resource.is_loaded is True
-    assert resource.get() == "preloaded_value"
+    expect_true(resource.is_loaded)
+    expect_equal(resource.get(), "preloaded_value")
 
 
 def test_lazy_resource_set_preloaded_clears_error() -> None:
@@ -428,7 +437,7 @@ def test_lazy_resource_set_preloaded_clears_error() -> None:
 
     resource.set_preloaded("recovered")
 
-    assert resource.get() == "recovered"
+    expect_equal(resource.get(), "recovered")
 
 
 def test_lazy_resource_resource_name_property() -> None:
@@ -436,7 +445,7 @@ def test_lazy_resource_resource_name_property() -> None:
     resource = LazyString("instance_name", "value")
 
     # Should prefer RESOURCE_NAME class var if set
-    assert resource.resource_name == "lazy_string"
+    expect_equal(resource.resource_name, "lazy_string")
 
 
 def test_lazy_resource_resource_name_fallback() -> None:
@@ -450,7 +459,7 @@ def test_lazy_resource_resource_name_fallback() -> None:
 
     resource = NoResourceName("fallback_name")
 
-    assert resource.resource_name == "fallback_name"
+    expect_equal(resource.resource_name, "fallback_name")
 
 
 # =============================================================================
@@ -467,12 +476,12 @@ def test_provider_implements_protocol() -> None:
 
     for provider in providers:
         # Check protocol compliance via interface presence (avoids generic protocol runtime check)
-        assert hasattr(provider, "get")
-        assert callable(provider.get)
-        assert hasattr(provider, "invalidate")
-        assert callable(provider.invalidate)
-        assert hasattr(provider, "RESOURCE_NAME")
-        assert isinstance(provider.RESOURCE_NAME, str)
+        expect_true(hasattr(provider, "get"))
+        expect_true(callable(provider.get))
+        expect_true(hasattr(provider, "invalidate"))
+        expect_true(callable(provider.invalidate))
+        expect_true(hasattr(provider, "RESOURCE_NAME"))
+        expect_is_instance(provider.RESOURCE_NAME, str)
 
 
 def test_lazy_resource_as_provider() -> None:
@@ -480,6 +489,6 @@ def test_lazy_resource_as_provider() -> None:
     resource = LazyString("test", "value")
 
     # Should have the required interface
-    assert hasattr(resource, "get")
-    assert hasattr(resource, "invalidate")
-    assert hasattr(resource, "RESOURCE_NAME")
+    expect_true(hasattr(resource, "get"))
+    expect_true(hasattr(resource, "invalidate"))
+    expect_true(hasattr(resource, "RESOURCE_NAME"))

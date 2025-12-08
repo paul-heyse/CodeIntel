@@ -10,7 +10,9 @@ For step configurations, prefer the composition-based system:
 
 Preferred:
     from codeintel.config import ConfigBuilder
-    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path("."))
+    builder = ConfigBuilder.from_snapshot(
+        snapshot=SnapshotInit(repo="r", commit="c", repo_root=Path(".")),
+    )
     cfg = builder.graph_metrics()
 
 See `codeintel.config.builder` for the ConfigBuilder API.

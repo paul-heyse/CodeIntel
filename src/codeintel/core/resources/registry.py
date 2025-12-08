@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
 
 from codeintel.core.resources.protocol import ResourceError
@@ -97,6 +98,21 @@ class ResourceNotFoundError(ResourceError):
         super().__init__(f"Resource not found: {self.resource_name}")
 
 
+@dataclass
+class ResourceEntry:
+    """Typed resource entry with optional lazy factory."""
+
+    name: str
+    provider: object | None
+    resource_type: type[Any] | None = None
+    factory: Callable[[], object] | None = None
+
+    @property
+    def is_factory(self) -> bool:
+        """Return True when this entry uses a lazy factory."""
+        return self.factory is not None and self.provider is None
+
+
 class ResourceRegistry:
     """Registry for typed resource providers.
 
@@ -119,17 +135,16 @@ class ResourceRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty registry."""
-        self._providers: dict[type[Any], object] = {}
-        self._by_name: dict[str, object] = {}
-        self._factories: dict[str, Callable[[], object]] = {}
+        self._entries_by_type: dict[type[Any], ResourceEntry] = {}
+        self._entries_by_name: dict[str, ResourceEntry] = {}
 
-    def register(
+    def register_singleton(
         self,
         resource_type: type[K],
         provider: object,
         *,
         name: str | None = None,
-    ) -> None:
+    ) -> ResourceEntry:
         """Register a resource provider.
 
         The resource_type is used as a lookup key and does not need to match
@@ -149,9 +164,16 @@ class ResourceRegistry:
         ------
         ValueError
             If a provider is already registered for this type.
+
+        Returns
+        -------
+        ResourceEntry
+            Registry entry created for the provider.
         """
-        if resource_type in self._providers:
-            existing = self._providers[resource_type]
+        string_name = name if name is not None else resource_type.__name__
+
+        if resource_type in self._entries_by_type:
+            existing = self._entries_by_type[resource_type].provider
             existing_name = getattr(existing, "RESOURCE_NAME", "") or resource_type.__name__
             message = (
                 f"Resource {resource_type.__name__} already registered "
@@ -159,15 +181,26 @@ class ResourceRegistry:
             )
             raise ValueError(message)
 
-        self._providers[resource_type] = provider
+        if string_name in self._entries_by_name:
+            message = f"Resource name already registered: {string_name}"
+            raise ValueError(message)
 
-        # Also register by string name
-        string_name = name if name is not None else resource_type.__name__
-        self._by_name[string_name] = provider
+        entry = ResourceEntry(
+            name=string_name,
+            provider=provider,
+            resource_type=resource_type,
+        )
+        self._entries_by_type[resource_type] = entry
+        self._entries_by_name[string_name] = entry
 
-        log.debug("Registered resource provider: %s", resource_type.__name__)
+        log.debug("Registered resource provider: %s", string_name)
+        return entry
 
-    def register_by_name(self, name: str, provider: object) -> None:
+    register = register_singleton
+
+    def register_by_name(
+        self, name: str, provider: object, *, allow_overwrite: bool = False
+    ) -> None:
         """Register a resource provider by string name only.
 
         Parameters
@@ -176,8 +209,28 @@ class ResourceRegistry:
             String name for the provider.
         provider
             Resource provider instance.
+        allow_overwrite
+            When True, replace any existing provider registered under the
+            same name (useful for tests or dynamic reloads). When False,
+            raises if the name is already registered.
+
+        Raises
+        ------
+        ValueError
+            If the name is already registered.
         """
-        self._by_name[name] = provider
+        existing_entry = self._entries_by_name.get(name)
+        if existing_entry is not None and not allow_overwrite:
+            message = f"Resource name already registered: {name}"
+            raise ValueError(message)
+        entry = ResourceEntry(
+            name=name,
+            provider=provider,
+            resource_type=existing_entry.resource_type if existing_entry else None,
+        )
+        if entry.resource_type is not None:
+            self._entries_by_type[entry.resource_type] = entry
+        self._entries_by_name[name] = entry
         log.debug("Registered resource provider by name: %s", name)
 
     def register_or_replace(
@@ -205,15 +258,18 @@ class ResourceRegistry:
         object | None
             The previous provider if one was replaced, None otherwise.
         """
-        previous = self._providers.get(resource_type)
-        self._providers[resource_type] = provider
-
-        # Also register by string name
         string_name = name if name is not None else resource_type.__name__
-        self._by_name[string_name] = provider
+        previous_entry = self._entries_by_type.get(resource_type)
+        entry = ResourceEntry(
+            name=string_name,
+            provider=provider,
+            resource_type=resource_type,
+        )
+        self._entries_by_type[resource_type] = entry
+        self._entries_by_name[string_name] = entry
 
-        if previous:
-            prev_name = getattr(previous, "RESOURCE_NAME", "") or resource_type.__name__
+        if previous_entry is not None:
+            prev_name = getattr(previous_entry.provider, "RESOURCE_NAME", "") or previous_entry.name
             new_name = getattr(provider, "RESOURCE_NAME", "") or resource_type.__name__
             log.debug(
                 "Replaced resource provider %s: %s -> %s",
@@ -221,9 +277,10 @@ class ResourceRegistry:
                 prev_name,
                 new_name,
             )
-        else:
-            log.debug("Registered resource provider: %s", resource_type.__name__)
-        return previous
+            return previous_entry.provider
+
+        log.debug("Registered resource provider: %s", resource_type.__name__)
+        return None
 
     def register_provider(self, provider: object) -> None:
         """Register a resource provider using its RESOURCE_NAME attribute.
@@ -247,14 +304,16 @@ class ResourceRegistry:
             raise ValueError(message)
         if self.has_by_name(name):
             log.warning("Overwriting resource provider: %s", name)
-        self.register_by_name(name, provider)
+        self.register_by_name(name, provider, allow_overwrite=True)
         log.debug("Registered resource provider: %s", name)
 
     def register_factory(
         self,
         name: str,
         factory: Callable[[], object],
-    ) -> None:
+        *,
+        resource_type: type[Any] | None = None,
+    ) -> ResourceEntry:
         """Register a factory for lazy provider creation.
 
         Factories are called lazily when the resource is first requested.
@@ -267,9 +326,25 @@ class ResourceRegistry:
             Resource name for lookup.
         factory
             Factory function that creates the provider.
+        resource_type
+            Optional type key to index the factory under.
+
+        Returns
+        -------
+        ResourceEntry
+            Entry created for the factory registration.
         """
-        self._factories[name] = factory
+        entry = ResourceEntry(
+            name=name,
+            provider=None,
+            resource_type=resource_type,
+            factory=factory,
+        )
+        self._entries_by_name[name] = entry
+        if resource_type is not None:
+            self._entries_by_type[resource_type] = entry
         log.debug("Registered resource factory: %s", name)
+        return entry
 
     def _resolve_factory(self, name: str) -> bool:
         """Resolve a factory if the resource is not yet instantiated.
@@ -284,14 +359,15 @@ class ResourceRegistry:
         bool
             True if a factory was resolved, False otherwise.
         """
-        # Check if provider is already instantiated (in _by_name)
-        # If not, but a factory exists, instantiate it
-        if name not in self._by_name and name in self._factories:
-            factory = self._factories[name]
-            provider = factory()
-            self.register_by_name(name, provider)
-            return True
-        return False
+        entry = self._entries_by_name.get(name)
+        if entry is None or entry.provider is not None or entry.factory is None:
+            return False
+        provider = entry.factory()
+        entry.provider = provider
+        if entry.resource_type is not None:
+            self._entries_by_type[entry.resource_type] = entry
+        log.debug("Materialized resource provider from factory: %s", name)
+        return True
 
     def get(self, resource_type: type[K]) -> object:
         """Get a resource provider by type key.
@@ -314,10 +390,14 @@ class ResourceRegistry:
         ResourceNotFoundError
             If no provider is registered for the type.
         """
-        provider = self._providers.get(resource_type)
-        if provider is None:
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None:
             raise ResourceNotFoundError(resource_type)
-        return provider
+        self._resolve_factory(entry.name)
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None or entry.provider is None:
+            raise ResourceNotFoundError(resource_type)
+        return entry.provider
 
     def get_or_none(self, resource_type: type[K]) -> object | None:
         """Get a resource provider or None if not registered.
@@ -334,7 +414,12 @@ class ResourceRegistry:
         object | None
             The registered provider, or None if not registered.
         """
-        return self._providers.get(resource_type)
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None:
+            return None
+        self._resolve_factory(entry.name)
+        refreshed = self._entries_by_type.get(resource_type)
+        return refreshed.provider if refreshed is not None else None
 
     def get_by_name(self, name: str) -> object:
         """Get a resource provider by string name.
@@ -359,7 +444,8 @@ class ResourceRegistry:
             If no provider is registered with that name.
         """
         self._resolve_factory(name)
-        provider = self._by_name.get(name)
+        entry = self._entries_by_name.get(name)
+        provider = entry.provider if entry is not None else None
         if provider is None:
             message = f"Resource not found by name: {name}"
             raise KeyError(message)
@@ -385,9 +471,14 @@ class ResourceRegistry:
         ResourceNotFoundError
             If the resource is not registered.
         """
-        if resource_type not in self._providers:
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None:
             raise ResourceNotFoundError(resource_type)
-        provider = self._providers[resource_type]
+        self._resolve_factory(entry.name)
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None or entry.provider is None:
+            raise ResourceNotFoundError(resource_type)
+        provider = entry.provider
         # Call .get() if the provider has it, otherwise return the provider itself
         if _is_gettable(provider):
             return cast("T", provider.get())
@@ -409,9 +500,14 @@ class ResourceRegistry:
         T | None
             The resource value, or None if unavailable.
         """
-        provider = self._providers.get(resource_type)
-        if provider is None:
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None:
             return None
+        self._resolve_factory(entry.name)
+        entry = self._entries_by_type.get(resource_type)
+        if entry is None or entry.provider is None:
+            return None
+        provider = entry.provider
         # Call .get() if available, with error handling
         if _is_gettable(provider):
             try:
@@ -454,7 +550,7 @@ class ResourceRegistry:
         bool
             True if the resource is available.
         """
-        return resource_type in self._providers
+        return resource_type in self._entries_by_type
 
     def has_by_name(self, name: str) -> bool:
         """Check if a resource is registered or has a factory by string name.
@@ -469,7 +565,8 @@ class ResourceRegistry:
         bool
             True if a resource with that name is available or can be created.
         """
-        return name in self._by_name or name in self._factories
+        entry = self._entries_by_name.get(name)
+        return entry is not None and (entry.provider is not None or entry.factory is not None)
 
     def invalidate(self, resource_type: type | None = None) -> None:
         """Invalidate cached resources.
@@ -483,26 +580,32 @@ class ResourceRegistry:
             If None, invalidate all resources (both type-keyed and name-keyed).
         """
         if resource_type is not None:
-            provider = self._providers.get(resource_type)
-            if provider is not None and _is_invalidatable(provider):
-                provider.invalidate()
+            entry = self._entries_by_type.get(resource_type)
+            if (
+                entry is not None
+                and entry.provider is not None
+                and _is_invalidatable(entry.provider)
+            ):
+                entry.provider.invalidate()
                 log.debug("Invalidated resource: %s", resource_type.__name__)
-        else:
-            # Collect all unique providers from both dicts (using id() for uniqueness)
-            seen_ids: set[int] = set()
-            for provider in list(self._providers.values()) + list(self._by_name.values()):
-                provider_id = id(provider)
-                if provider_id not in seen_ids:
-                    seen_ids.add(provider_id)
-                    if _is_invalidatable(provider):
-                        provider.invalidate()
-            log.debug("Invalidated all resources")
+            return
+
+        seen_ids: set[int] = set()
+        for entry in self._entries_by_name.values():
+            provider = entry.provider
+            if provider is None:
+                continue
+            provider_id = id(provider)
+            if provider_id not in seen_ids:
+                seen_ids.add(provider_id)
+                if _is_invalidatable(provider):
+                    provider.invalidate()
+        log.debug("Invalidated all resources")
 
     def clear(self) -> None:
         """Clear all registered providers and factories."""
-        self._providers.clear()
-        self._by_name.clear()
-        self._factories.clear()
+        self._entries_by_type.clear()
+        self._entries_by_name.clear()
         log.debug("Cleared resource registry")
 
     def cleanup(self) -> None:
@@ -524,7 +627,7 @@ class ResourceRegistry:
         tuple[str, ...]
             All registered names and factory names.
         """
-        return tuple(sorted(set(self._by_name.keys()) | set(self._factories.keys())))
+        return tuple(sorted(self._entries_by_name.keys()))
 
     @property
     def registered_types(self) -> frozenset[type]:
@@ -535,7 +638,7 @@ class ResourceRegistry:
         frozenset[type]
             All registered type keys.
         """
-        return frozenset(self._providers.keys())
+        return frozenset(self._entries_by_type.keys())
 
     def __len__(self) -> int:
         """Return the number of registered providers.
@@ -545,25 +648,13 @@ class ResourceRegistry:
         int
             Count of registered providers.
         """
-        return len(self._providers)
+        return len(self._entries_by_type)
 
-    def __contains__(self, resource_type: type) -> bool:
-        """Check if a resource type is registered.
-
-        Parameters
-        ----------
-        resource_type
-            Type to check.
-
-        Returns
-        -------
-        bool
-            True if the resource is available.
-        """
-        return self.has(resource_type)
+    __contains__ = has
 
 
 __all__ = [
+    "ResourceEntry",
     "ResourceNotFoundError",
     "ResourceRegistry",
 ]

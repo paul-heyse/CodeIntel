@@ -30,6 +30,13 @@ from codeintel.storage.datasets import (
     load_dataset_registry,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_not_in,
+    expect_true,
+)
 from tests._helpers.gateway import gateway_with_macros
 
 
@@ -81,8 +88,8 @@ def test_dataset_registry_all_datasets_returns_tuple() -> None:
 
     all_datasets = registry.all_datasets
 
-    assert isinstance(all_datasets, tuple)
-    assert "ast_nodes" in all_datasets
+    expect_is_instance(all_datasets, tuple)
+    expect_in("ast_nodes", all_datasets)
 
 
 def test_dataset_registry_datasets_with_json_schema() -> None:
@@ -91,9 +98,9 @@ def test_dataset_registry_datasets_with_json_schema() -> None:
 
     with_schema = registry.datasets_with_json_schema()
 
-    assert isinstance(with_schema, tuple)
-    assert "ast_nodes" in with_schema
-    assert "v_function_summary" not in with_schema
+    expect_is_instance(with_schema, tuple)
+    expect_in("ast_nodes", with_schema)
+    expect_not_in("v_function_summary", with_schema)
 
 
 def test_dataset_registry_dataset_dependencies() -> None:
@@ -102,9 +109,9 @@ def test_dataset_registry_dataset_dependencies() -> None:
 
     deps = registry.dataset_dependencies()
 
-    assert isinstance(deps, dict)
-    assert "ast_nodes" in deps
-    assert "core.modules" in deps["ast_nodes"]
+    expect_is_instance(deps, dict)
+    expect_in("ast_nodes", deps)
+    expect_in("core.modules", deps["ast_nodes"])
 
 
 def test_dataset_registry_docs_dataset_names() -> None:
@@ -113,9 +120,9 @@ def test_dataset_registry_docs_dataset_names() -> None:
 
     docs_names = registry.docs_dataset_names()
 
-    assert isinstance(docs_names, tuple)
-    assert "v_function_summary" in docs_names
-    assert "ast_nodes" not in docs_names
+    expect_is_instance(docs_names, tuple)
+    expect_in("v_function_summary", docs_names)
+    expect_not_in("ast_nodes", docs_names)
 
 
 def test_dataset_registry_resolve_table_key_returns_qualified() -> None:
@@ -124,7 +131,7 @@ def test_dataset_registry_resolve_table_key_returns_qualified() -> None:
 
     key = registry.resolve_table_key("ast_nodes")
 
-    assert key == "core.ast_nodes"
+    expect_equal(key, "core.ast_nodes", label="resolved table key")
 
 
 def test_dataset_registry_resolve_table_key_raises_on_unknown() -> None:
@@ -141,7 +148,7 @@ def test_dataset_for_name_returns_contract() -> None:
 
     ds = dataset_for_name(registry, "ast_nodes")
 
-    assert ds.table_key == "core.ast_nodes"
+    expect_equal(ds.table_key, "core.ast_nodes", label="dataset table key")
 
 
 def test_dataset_for_name_raises_on_unknown() -> None:
@@ -158,7 +165,7 @@ def test_dataset_for_table_returns_contract() -> None:
 
     ds = dataset_for_table(registry, "core.ast_nodes")
 
-    assert ds.name == "ast_nodes"
+    expect_equal(ds.name, "ast_nodes", label="dataset name")
 
 
 def test_dataset_for_table_raises_on_unknown() -> None:
@@ -176,12 +183,12 @@ def test_describe_dataset_returns_serializable_dict() -> None:
 
     desc = describe_dataset(ds)
 
-    assert isinstance(desc, dict)
-    assert desc["name"] == "ast_nodes"
-    assert desc["table_key"] == "core.ast_nodes"
-    assert "schema_columns" in desc
-    assert "capabilities" in desc
-    assert isinstance(desc["upstream_dependencies"], list)
+    expect_is_instance(desc, dict)
+    expect_equal(desc["name"], "ast_nodes", label="name")
+    expect_equal(desc["table_key"], "core.ast_nodes", label="table_key")
+    expect_in("schema_columns", desc)
+    expect_in("capabilities", desc)
+    expect_is_instance(desc["upstream_dependencies"], list)
 
 
 def test_list_dataset_specs_returns_list() -> None:
@@ -190,10 +197,10 @@ def test_list_dataset_specs_returns_list() -> None:
 
     specs = list_dataset_specs(registry)
 
-    assert isinstance(specs, list)
+    expect_is_instance(specs, list)
     expected_count = 2
-    assert len(specs) == expected_count
-    assert all(isinstance(s, dict) for s in specs)
+    expect_equal(len(specs), expected_count, label="spec count")
+    expect_true(all(isinstance(s, dict) for s in specs), message="spec entries are dicts")
 
 
 def test_build_dataset_dependency_graph_returns_mapping() -> None:
@@ -202,8 +209,8 @@ def test_build_dataset_dependency_graph_returns_mapping() -> None:
 
     graph = build_dataset_dependency_graph(registry)
 
-    assert isinstance(graph, dict)
-    assert "ast_nodes" in graph
+    expect_is_instance(graph, dict)
+    expect_in("ast_nodes", graph)
 
 
 def test_load_dataset_registry_from_db(fresh_gateway: StorageGateway) -> None:
@@ -212,9 +219,9 @@ def test_load_dataset_registry_from_db(fresh_gateway: StorageGateway) -> None:
 
     registry = load_dataset_registry(con)
 
-    assert isinstance(registry, DatasetRegistry)
-    assert len(registry.by_name) > 0
-    assert len(registry.by_table_key) > 0
+    expect_is_instance(registry, DatasetRegistry)
+    expect_true(len(registry.by_name) > 0, message="by_name populated")
+    expect_true(len(registry.by_table_key) > 0, message="by_table_key populated")
 
 
 # -------------------------------------------------------------------------
@@ -228,8 +235,8 @@ def test_dataset_registry_mapping_property() -> None:
 
     mapping = registry.mapping
 
-    assert isinstance(mapping, dict)
-    assert mapping["ast_nodes"] == "core.ast_nodes"
+    expect_is_instance(mapping, dict)
+    expect_equal(mapping["ast_nodes"], "core.ast_nodes", label="mapping value")
 
 
 def test_dataset_registry_tables_property() -> None:
@@ -238,9 +245,9 @@ def test_dataset_registry_tables_property() -> None:
 
     tables = registry.tables
 
-    assert isinstance(tables, tuple)
-    assert "ast_nodes" in tables
-    assert "v_function_summary" not in tables
+    expect_is_instance(tables, tuple)
+    expect_in("ast_nodes", tables)
+    expect_not_in("v_function_summary", tables)
 
 
 def test_dataset_registry_views_property() -> None:
@@ -249,9 +256,9 @@ def test_dataset_registry_views_property() -> None:
 
     views = registry.views
 
-    assert isinstance(views, tuple)
-    assert "v_function_summary" in views
-    assert "ast_nodes" not in views
+    expect_is_instance(views, tuple)
+    expect_in("v_function_summary", views)
+    expect_not_in("ast_nodes", views)
 
 
 def test_dataset_registry_meta_property() -> None:
@@ -260,8 +267,8 @@ def test_dataset_registry_meta_property() -> None:
 
     meta = registry.meta
 
-    assert meta is registry.by_name
-    assert "ast_nodes" in meta
+    expect_true(meta is registry.by_name, message="meta alias")
+    expect_in("ast_nodes", meta)
 
 
 def test_dataset_registry_jsonl_mapping_property() -> None:
@@ -270,7 +277,7 @@ def test_dataset_registry_jsonl_mapping_property() -> None:
 
     jsonl_mapping = registry.jsonl_mapping
 
-    assert jsonl_mapping is registry.jsonl_datasets
+    expect_true(jsonl_mapping is registry.jsonl_datasets, message="jsonl mapping alias")
 
 
 def test_dataset_registry_parquet_mapping_property() -> None:
@@ -279,7 +286,7 @@ def test_dataset_registry_parquet_mapping_property() -> None:
 
     parquet_mapping = registry.parquet_mapping
 
-    assert parquet_mapping is registry.parquet_datasets
+    expect_true(parquet_mapping is registry.parquet_datasets, message="parquet mapping alias")
 
 
 def test_dataset_registry_table_for_name() -> None:
@@ -288,7 +295,7 @@ def test_dataset_registry_table_for_name() -> None:
 
     table_key = registry.table_for_name("ast_nodes")
 
-    assert table_key == "core.ast_nodes"
+    expect_equal(table_key, "core.ast_nodes", label="table_for_name")
 
 
 def test_dataset_registry_table_for_name_raises_on_unknown() -> None:
@@ -307,13 +314,13 @@ def test_describe_all_datasets_returns_serializable_list(
 
     descriptions = describe_all_datasets(con)
 
-    assert isinstance(descriptions, list)
-    assert len(descriptions) > 0
+    expect_is_instance(descriptions, list)
+    expect_true(len(descriptions) > 0, message="descriptions populated")
 
     first_desc = descriptions[0]
-    assert isinstance(first_desc, dict)
-    assert "name" in first_desc
-    assert "table_key" in first_desc
+    expect_is_instance(first_desc, dict)
+    expect_in("name", first_desc)
+    expect_in("table_key", first_desc)
 
 
 # =============================================================================

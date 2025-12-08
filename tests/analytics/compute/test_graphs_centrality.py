@@ -14,6 +14,14 @@ from codeintel.graphs.compute.metrics.centrality import (
     compute_pagerank,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_not_equal,
+    expect_true,
+)
 
 # =============================================================================
 # Constants
@@ -191,14 +199,14 @@ def test_metrics_create_all_fields() -> None:
         out_degree=TEST_OUT_DEGREE,
         degree=TEST_IN_DEGREE + TEST_OUT_DEGREE,
     )
-    assert metrics.pagerank == TEST_PAGERANK
-    assert metrics.betweenness == TEST_BETWEENNESS
-    assert metrics.closeness == TEST_CLOSENESS
-    assert metrics.harmonic == TEST_HARMONIC
-    assert metrics.eigenvector == TEST_EIGENVECTOR
-    assert metrics.in_degree == TEST_IN_DEGREE
-    assert metrics.out_degree == TEST_OUT_DEGREE
-    assert metrics.degree == TEST_IN_DEGREE + TEST_OUT_DEGREE
+    expect_equal(metrics.pagerank, TEST_PAGERANK)
+    expect_equal(metrics.betweenness, TEST_BETWEENNESS)
+    expect_equal(metrics.closeness, TEST_CLOSENESS)
+    expect_equal(metrics.harmonic, TEST_HARMONIC)
+    expect_equal(metrics.eigenvector, TEST_EIGENVECTOR)
+    expect_equal(metrics.in_degree, TEST_IN_DEGREE)
+    expect_equal(metrics.out_degree, TEST_OUT_DEGREE)
+    expect_equal(metrics.degree, TEST_IN_DEGREE + TEST_OUT_DEGREE)
 
 
 def test_metrics_is_frozen() -> None:
@@ -225,7 +233,7 @@ def test_pagerank_empty_graph() -> None:
     """Empty graph returns empty PageRank dictionary."""
     graph = nx.DiGraph()
     result = compute_pagerank(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_pagerank_single_node() -> None:
@@ -233,8 +241,8 @@ def test_pagerank_single_node() -> None:
     graph = nx.DiGraph()
     graph.add_node("single")
     result = compute_pagerank(graph)
-    assert "single" in result
-    assert abs(result["single"] - PAGERANK_SUM) < TOLERANCE
+    expect_in("single", result)
+    expect_true(abs(result["single"] - PAGERANK_SUM) < TOLERANCE)
 
 
 def test_pagerank_simple_chain() -> None:
@@ -242,9 +250,9 @@ def test_pagerank_simple_chain() -> None:
     graph = _make_simple_chain()
     result = compute_pagerank(graph)
     # All 4 nodes should be present
-    assert len(result) == EXPECTED_NODES_4
+    expect_length(result, EXPECTED_NODES_4)
     # D (end of chain) should have highest PageRank due to receiving flow
-    assert result["D"] > result["A"]
+    expect_true(result["D"] > result["A"])
 
 
 def test_pagerank_cycle_equal() -> None:
@@ -253,7 +261,7 @@ def test_pagerank_cycle_equal() -> None:
     result = compute_pagerank(graph)
     # All nodes in cycle should have similar PageRank
     values = list(result.values())
-    assert max(values) - min(values) < TOLERANCE
+    expect_true(max(values) - min(values) < TOLERANCE)
 
 
 def test_pagerank_star_hub_low() -> None:
@@ -265,7 +273,7 @@ def test_pagerank_star_hub_low() -> None:
     hub_rank = result["Hub"]
     spoke_ranks = [result[s] for s in ["A", "B", "C", "D"]]
     avg_spoke = sum(spoke_ranks) / len(spoke_ranks)
-    assert hub_rank < avg_spoke
+    expect_true(hub_rank < avg_spoke)
 
 
 def test_pagerank_reverse_star_hub_high() -> None:
@@ -274,7 +282,7 @@ def test_pagerank_reverse_star_hub_high() -> None:
     result = compute_pagerank(graph)
     hub_rank = result["Hub"]
     for spoke in ["A", "B", "C", "D"]:
-        assert hub_rank > result[spoke]
+        expect_true(hub_rank > result[spoke])
 
 
 def test_pagerank_realistic_call_graph() -> None:
@@ -282,9 +290,9 @@ def test_pagerank_realistic_call_graph() -> None:
     graph = _make_call_graph_realistic()
     result = compute_pagerank(graph)
     # format_error is called by many functions, should be present
-    assert "format_error" in result
+    expect_in("format_error", result)
     # log_result is called by multiple paths
-    assert "log_result" in result
+    expect_in("log_result", result)
 
 
 def test_pagerank_custom_alpha() -> None:
@@ -293,7 +301,7 @@ def test_pagerank_custom_alpha() -> None:
     result_low = compute_pagerank(graph, alpha=0.5)
     result_high = compute_pagerank(graph, alpha=0.95)
     # Different alpha should give different distributions
-    assert result_low != result_high
+    expect_not_equal(result_low, result_high)
 
 
 def test_pagerank_custom_max_iter() -> None:
@@ -301,7 +309,7 @@ def test_pagerank_custom_max_iter() -> None:
     graph = _make_simple_chain()
     # Should converge quickly for simple graph
     result = compute_pagerank(graph, max_iter=10)
-    assert len(result) == EXPECTED_NODES_4
+    expect_length(result, EXPECTED_NODES_4)
 
 
 def test_pagerank_custom_tolerance() -> None:
@@ -310,8 +318,8 @@ def test_pagerank_custom_tolerance() -> None:
     result_low = compute_pagerank(graph, tol=1e-9)
     result_high = compute_pagerank(graph, tol=1e-3)
     # Both should produce results (may differ slightly in precision)
-    assert len(result_low) == EXPECTED_NODES_4
-    assert len(result_high) == EXPECTED_NODES_4
+    expect_length(result_low, EXPECTED_NODES_4)
+    expect_length(result_high, EXPECTED_NODES_4)
 
 
 def test_pagerank_disconnected_components() -> None:
@@ -319,10 +327,10 @@ def test_pagerank_disconnected_components() -> None:
     graph = _make_disconnected_components()
     result = compute_pagerank(graph)
     # All 7 nodes should be present
-    assert len(result) == EXPECTED_NODES_7
+    expect_length(result, EXPECTED_NODES_7)
     # Isolated node should have non-zero PageRank (damping factor)
-    assert "Isolated" in result
-    assert result["Isolated"] > 0
+    expect_in("Isolated", result)
+    expect_true(result["Isolated"] > 0)
 
 
 def test_pagerank_sums_to_one() -> None:
@@ -330,7 +338,7 @@ def test_pagerank_sums_to_one() -> None:
     graph = _make_call_graph_realistic()
     result = compute_pagerank(graph)
     total = sum(result.values())
-    assert abs(total - PAGERANK_SUM) < TOLERANCE
+    expect_true(abs(total - PAGERANK_SUM) < TOLERANCE)
 
 
 def test_pagerank_keys_match_nodes() -> None:
@@ -340,7 +348,7 @@ def test_pagerank_keys_match_nodes() -> None:
     result = compute_pagerank(graph)
     # Keys should be the original node types
     for key in result:
-        assert isinstance(key, int)
+        expect_is_instance(key, int)
 
 
 def test_pagerank_values_are_floats() -> None:
@@ -348,7 +356,7 @@ def test_pagerank_values_are_floats() -> None:
     graph = _make_simple_chain()
     result = compute_pagerank(graph)
     for value in result.values():
-        assert isinstance(value, float)
+        expect_is_instance(value, float)
 
 
 # =============================================================================
@@ -360,7 +368,7 @@ def test_betweenness_empty_graph() -> None:
     """Empty graph returns empty betweenness dictionary."""
     graph = nx.DiGraph()
     result = compute_betweenness(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_betweenness_single_node_zero() -> None:
@@ -368,8 +376,8 @@ def test_betweenness_single_node_zero() -> None:
     graph = nx.DiGraph()
     graph.add_node("single")
     result = compute_betweenness(graph)
-    assert "single" in result
-    assert result["single"] == 0.0
+    expect_in("single", result)
+    expect_equal(result["single"], 0.0)
 
 
 def test_betweenness_chain_middle_nodes_high() -> None:
@@ -378,8 +386,8 @@ def test_betweenness_chain_middle_nodes_high() -> None:
     result = compute_betweenness(graph)
     # B and C are on the shortest paths between A and D
     # End nodes A and D have lower betweenness
-    assert result["B"] > result["A"]
-    assert result["C"] > result["D"]
+    expect_true(result["B"] > result["A"])
+    expect_true(result["C"] > result["D"])
 
 
 def test_betweenness_star_hub_high() -> None:
@@ -388,7 +396,7 @@ def test_betweenness_star_hub_high() -> None:
     result = compute_betweenness(graph)
     hub_betweenness = result["Hub"]
     for spoke in ["A", "B", "C", "D"]:
-        assert hub_betweenness >= result[spoke]
+        expect_true(hub_betweenness >= result[spoke])
 
 
 def test_betweenness_cycle_equal() -> None:
@@ -396,7 +404,7 @@ def test_betweenness_cycle_equal() -> None:
     graph = _make_simple_cycle()
     result = compute_betweenness(graph)
     values = list(result.values())
-    assert max(values) - min(values) < TOLERANCE
+    expect_true(max(values) - min(values) < TOLERANCE)
 
 
 def test_betweenness_normalized() -> None:
@@ -404,7 +412,7 @@ def test_betweenness_normalized() -> None:
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph, normalized=True)
     for value in result.values():
-        assert 0.0 <= value <= 1.0
+        expect_true(0.0 <= value <= 1.0)
 
 
 def test_betweenness_unnormalized() -> None:
@@ -412,7 +420,7 @@ def test_betweenness_unnormalized() -> None:
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph, normalized=False)
     # Just verify it runs and produces results
-    assert len(result) == graph.number_of_nodes()
+    expect_length(result, graph.number_of_nodes())
 
 
 def test_betweenness_sampled_with_k() -> None:
@@ -421,7 +429,7 @@ def test_betweenness_sampled_with_k() -> None:
     # Sample 3 nodes for approximation
     result = compute_betweenness(graph, k=3)
     # Should still produce results for all nodes
-    assert len(result) == EXPECTED_NODES_5
+    expect_length(result, EXPECTED_NODES_5)
 
 
 def test_betweenness_disconnected_components() -> None:
@@ -429,9 +437,9 @@ def test_betweenness_disconnected_components() -> None:
     graph = _make_disconnected_components()
     result = compute_betweenness(graph)
     # All nodes should be present
-    assert len(result) == EXPECTED_NODES_7
+    expect_length(result, EXPECTED_NODES_7)
     # Isolated node has zero betweenness
-    assert result["Isolated"] == 0.0
+    expect_equal(result["Isolated"], 0.0)
 
 
 def test_betweenness_realistic_call_graph() -> None:
@@ -439,9 +447,9 @@ def test_betweenness_realistic_call_graph() -> None:
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph)
     # process_request is a bridge between main and many other functions
-    assert "process_request" in result
+    expect_in("process_request", result)
     # process_request should have significant betweenness
-    assert result["process_request"] > 0
+    expect_true(result["process_request"] > 0)
 
 
 def test_betweenness_keys_match_nodes() -> None:
@@ -451,7 +459,7 @@ def test_betweenness_keys_match_nodes() -> None:
     result = compute_betweenness(graph)
     # Keys should be the original node types
     for key in result:
-        assert isinstance(key, int)
+        expect_is_instance(key, int)
 
 
 def test_betweenness_values_are_floats() -> None:
@@ -459,7 +467,7 @@ def test_betweenness_values_are_floats() -> None:
     graph = _make_simple_chain()
     result = compute_betweenness(graph)
     for value in result.values():
-        assert isinstance(value, float)
+        expect_is_instance(value, float)
 
 
 # =============================================================================
@@ -472,7 +480,7 @@ def test_both_metrics_same_nodes() -> None:
     graph = _make_call_graph_realistic()
     pagerank = compute_pagerank(graph)
     betweenness = compute_betweenness(graph)
-    assert set(pagerank.keys()) == set(betweenness.keys())
+    expect_equal(set(pagerank.keys()), set(betweenness.keys()))
 
 
 def test_metrics_identify_different_importance() -> None:
@@ -489,8 +497,8 @@ def test_metrics_identify_different_importance() -> None:
     top_pr = [n for n, _ in pr_sorted[:EXPECTED_TOP_3]]
     top_bc = [n for n, _ in bc_sorted[:EXPECTED_TOP_3]]
     # Just verify both metrics produce reasonable rankings
-    assert len(top_pr) == EXPECTED_TOP_3
-    assert len(top_bc) == EXPECTED_TOP_3
+    expect_length(top_pr, EXPECTED_TOP_3)
+    expect_length(top_bc, EXPECTED_TOP_3)
 
 
 def test_dense_graph_metrics() -> None:
@@ -504,5 +512,5 @@ def test_dense_graph_metrics() -> None:
     pr_range = max(pr_values) - min(pr_values)
     bc_range = max(bc_values) - min(bc_values)
     # Values should be relatively uniform in complete graph
-    assert pr_range < DENSE_GRAPH_RANGE_TOLERANCE
-    assert bc_range < DENSE_GRAPH_RANGE_TOLERANCE
+    expect_true(pr_range < DENSE_GRAPH_RANGE_TOLERANCE)
+    expect_true(bc_range < DENSE_GRAPH_RANGE_TOLERANCE)

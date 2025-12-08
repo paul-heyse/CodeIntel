@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-import pytest
-
 from codeintel.analytics.semantic_roles import FunctionContext, classify_function_role
+from tests._helpers.assertions.expectation_assertions import expect_true
 
 
 class _FunctionContextBuilder:
@@ -116,10 +115,13 @@ def test_fastapi_role_detected() -> None:
     ctx = _make_context(decorators=["router.get('/hello')"])
     role, confidence, framework, sources = classify_function_role(ctx)
 
-    _expect(role == "api_handler", "role not api_handler for fastapi")
-    _expect(framework == "fastapi", f"framework unexpected: {framework}")
-    _expect(confidence > 0.0, "confidence should be positive")
-    _expect("decorator:router.get('/hello')" in _signals(sources), "missing fastapi signal")
+    expect_true(role == "api_handler", message="role not api_handler for fastapi")
+    expect_true(framework == "fastapi", message=f"framework unexpected: {framework}")
+    expect_true(confidence > 0.0, message="confidence should be positive")
+    expect_true(
+        "decorator:router.get('/hello')" in _signals(sources),
+        message="missing fastapi signal",
+    )
 
 
 def test_flask_role_detected() -> None:
@@ -127,10 +129,10 @@ def test_flask_role_detected() -> None:
     ctx = _make_context(decorators=["app.route('/hi')"])
     role, _, _, sources = classify_function_role(ctx)
 
-    _expect(role == "api_handler", "role not api_handler for flask")
-    _expect(
+    expect_true(role == "api_handler", message="role not api_handler for flask")
+    expect_true(
         any(sig.startswith("decorator:app.route") for sig in _signals(sources)),
-        "missing flask decorator signal",
+        message="missing flask decorator signal",
     )
 
 
@@ -143,11 +145,11 @@ def test_typer_cli_detected() -> None:
     )
     role, _, framework, sources = classify_function_role(ctx)
 
-    _expect(role == "cli_command", "role not cli_command for typer")
-    _expect(framework == "typer", f"framework unexpected: {framework}")
-    _expect(
+    expect_true(role == "cli_command", message="role not cli_command for typer")
+    expect_true(framework == "typer", message=f"framework unexpected: {framework}")
+    expect_true(
         any("decorator:typer.command" in sig for sig in _signals(sources)),
-        "missing typer decorator signal",
+        message="missing typer decorator signal",
     )
 
 
@@ -160,8 +162,11 @@ def test_pytest_fixture_vs_test_role() -> None:
         decorators=["pytest.fixture"],
     )
     role, _, _, sources = classify_function_role(fixture_ctx)
-    _expect(role == "test_helper", "fixture should be test_helper")
-    _expect("decorator:pytest.fixture" in _signals(sources), "missing fixture signal")
+    expect_true(role == "test_helper", message="fixture should be test_helper")
+    expect_true(
+        "decorator:pytest.fixture" in _signals(sources),
+        message="missing fixture signal",
+    )
 
     test_ctx = _make_context(
         rel_path="tests/test_app.py",
@@ -169,8 +174,8 @@ def test_pytest_fixture_vs_test_role() -> None:
         qualname="tests.test_app.test_hello",
     )
     role_test, _, _, sources_test = classify_function_role(test_ctx)
-    _expect(role_test == "test", "test function should be test role")
-    _expect("path:tests" in _signals(sources_test), "missing tests path signal")
+    expect_true(role_test == "test", message="test function should be test role")
+    expect_true("path:tests" in _signals(sources_test), message="missing tests path signal")
 
 
 def test_service_tag_and_graph_signal() -> None:
@@ -182,16 +187,11 @@ def test_service_tag_and_graph_signal() -> None:
     )
     role, _, _, sources = classify_function_role(ctx)
 
-    _expect(role == "service", "service role not detected")
-    _expect(
+    expect_true(role == "service", message="service role not detected")
+    expect_true(
         {"tag:service", "graph:fan_in", "graph:fan_out"}.issubset(set(_signals(sources))),
-        "missing service signals",
+        message="missing service signals",
     )
-
-
-def _expect(condition: object, message: str) -> None:
-    if not condition:
-        pytest.fail(message)
 
 
 def _signals(source_payload: dict[str, object]) -> list[str]:

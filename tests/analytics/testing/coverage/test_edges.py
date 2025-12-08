@@ -25,6 +25,12 @@ from codeintel.analytics.testing.coverage.edges import (
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK, TestContext
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
 
@@ -62,10 +68,10 @@ class TestEdgeContext:
             now=now,
             test_meta_by_id={"test_a": (123, "urn:test_a")},
         )
-        assert ctx.status_by_test["test_a"] == "passed"
-        assert ctx.cfg.repo == DEFAULT_REPO
-        assert ctx.now == now
-        assert ctx.test_meta_by_id["test_a"] == (123, "urn:test_a")
+        expect_equal(ctx.status_by_test["test_a"], "passed")
+        expect_equal(ctx.cfg.repo, DEFAULT_REPO)
+        expect_equal(ctx.now, now)
+        expect_equal(ctx.test_meta_by_id["test_a"], (123, "urn:test_a"))
 
     @staticmethod
     def test_edge_context_allows_empty_dicts(tmp_path: Path) -> None:
@@ -78,8 +84,8 @@ class TestEdgeContext:
             now=datetime.now(UTC),
             test_meta_by_id={},
         )
-        assert ctx.status_by_test == {}
-        assert ctx.test_meta_by_id == {}
+        expect_equal(ctx.status_by_test, {})
+        expect_equal(ctx.test_meta_by_id, {})
 
 
 class TestFunctionRow:
@@ -96,12 +102,12 @@ class TestFunctionRow:
             "start_line": TEST_START_LINE,
             "end_line": TEST_END_LINE,
         }
-        assert row["goid_h128"] == TEST_GOID
-        assert row["urn"] == TEST_URN
-        assert row["rel_path"] == TEST_REL_PATH
-        assert row["qualname"] == TEST_QUALNAME
-        assert row["start_line"] == TEST_START_LINE
-        assert row["end_line"] == TEST_END_LINE
+        expect_equal(row["goid_h128"], TEST_GOID)
+        expect_equal(row["urn"], TEST_URN)
+        expect_equal(row["rel_path"], TEST_REL_PATH)
+        expect_equal(row["qualname"], TEST_QUALNAME)
+        expect_equal(row["start_line"], TEST_START_LINE)
+        expect_equal(row["end_line"], TEST_END_LINE)
 
     @staticmethod
     def test_function_row_allows_none_end_line() -> None:
@@ -114,7 +120,7 @@ class TestFunctionRow:
             "start_line": TEST_START_LINE,
             "end_line": None,
         }
-        assert row["end_line"] is None
+        expect_is_none(row["end_line"])
 
 
 class TestBuildEdgesForFile:
@@ -153,7 +159,7 @@ class TestBuildEdgesForFile:
             rel_path=TEST_REL_PATH,
             ctx=ctx,
         )
-        assert result == []
+        expect_equal(result, [])
 
     def test_returns_empty_for_empty_statements(self, tmp_path: Path) -> None:
         """Verify returns empty when no executable statements in function range."""
@@ -173,7 +179,7 @@ class TestBuildEdgesForFile:
             rel_path=TEST_REL_PATH,
             ctx=ctx,
         )
-        assert result == []
+        expect_equal(result, [])
 
     def test_builds_edge_for_covered_function(self, tmp_path: Path) -> None:
         """Verify builds edge when function is covered by test."""
@@ -198,13 +204,13 @@ class TestBuildEdgesForFile:
             ctx=ctx,
         )
 
-        assert len(result) == EXPECTED_SINGLE_EDGE
+        expect_length(result, EXPECTED_SINGLE_EDGE)
         edge = result[0]
-        assert edge["test_id"] == "test_func"
-        assert edge["function_goid_h128"] == TEST_GOID
-        assert edge["repo"] == DEFAULT_REPO
-        assert edge["commit"] == DEFAULT_COMMIT
-        assert edge["coverage_ratio"] == EXPECTED_COVERAGE_RATIO_FULL
+        expect_equal(edge["test_id"], "test_func")
+        expect_equal(edge["function_goid_h128"], TEST_GOID)
+        expect_equal(edge["repo"], DEFAULT_REPO)
+        expect_equal(edge["commit"], DEFAULT_COMMIT)
+        expect_equal(edge["coverage_ratio"], EXPECTED_COVERAGE_RATIO_FULL)
 
     def test_handles_partial_coverage(self, tmp_path: Path) -> None:
         """Verify computes correct coverage ratio for partial coverage."""
@@ -230,11 +236,11 @@ class TestBuildEdgesForFile:
             ctx=ctx,
         )
 
-        assert len(result) == EXPECTED_SINGLE_EDGE
+        expect_length(result, EXPECTED_SINGLE_EDGE)
         edge = result[0]
         # 5 covered lines out of 11 total (10-20 inclusive)
         expected_ratio = 5 / 11
-        assert abs(edge["coverage_ratio"] - expected_ratio) < FLOAT_COMPARISON_TOLERANCE
+        expect_true(abs(edge["coverage_ratio"] - expected_ratio) < FLOAT_COMPARISON_TOLERANCE)
 
     def test_handles_none_end_line(self, tmp_path: Path) -> None:
         """Verify handles function with None end_line (single line function)."""
@@ -258,8 +264,8 @@ class TestBuildEdgesForFile:
             ctx=ctx,
         )
 
-        assert len(result) == EXPECTED_SINGLE_EDGE
-        assert result[0]["coverage_ratio"] == EXPECTED_COVERAGE_RATIO_FULL
+        expect_length(result, EXPECTED_SINGLE_EDGE)
+        expect_equal(result[0]["coverage_ratio"], EXPECTED_COVERAGE_RATIO_FULL)
 
     @staticmethod
     def test_uses_unknown_status_for_unmapped_test(tmp_path: Path) -> None:
@@ -291,8 +297,8 @@ class TestBuildEdgesForFile:
             ctx=ctx,
         )
 
-        assert len(result) == EXPECTED_SINGLE_EDGE
-        assert result[0]["last_status"] == "unknown"
+        expect_length(result, EXPECTED_SINGLE_EDGE)
+        expect_equal(result[0]["last_status"], "unknown")
 
 
 class TestBackfillTestGoids:
@@ -310,8 +316,8 @@ class TestBackfillTestGoids:
 
         goid_by_id, urn_by_id = backfill_test_goids_for_catalog(test_ctx.gateway, cfg)
 
-        assert goid_by_id == {}
-        assert urn_by_id == {}
+        expect_equal(goid_by_id, {})
+        expect_equal(urn_by_id, {})
 
     @staticmethod
     def test_returns_empty_dicts_when_no_goids(coverage_ctx: TestContext) -> None:
@@ -326,8 +332,8 @@ class TestBackfillTestGoids:
 
         goid_by_id, urn_by_id = backfill_test_goids_for_catalog(coverage_ctx.gateway, cfg)
 
-        assert goid_by_id == {}
-        assert urn_by_id == {}
+        expect_equal(goid_by_id, {})
+        expect_equal(urn_by_id, {})
 
 
 class TestComputeTestCoverageEdges:
@@ -353,7 +359,7 @@ class TestComputeTestCoverageEdges:
             "analytics.test_coverage_edges",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
-        assert edge_count >= EXPECTED_EMPTY_LIST_LENGTH
+        expect_true(edge_count >= EXPECTED_EMPTY_LIST_LENGTH)
 
     @staticmethod
     def test_accepts_custom_coverage_loader(test_ctx: TestContext) -> None:

@@ -19,6 +19,7 @@ from codeintel.graphs.compute.metrics.statistics import (
     get_out_degrees,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
 # =============================================================================
 # Constants
@@ -225,9 +226,9 @@ def test_statistics_create_all_fields() -> None:
         weakly_connected_components=EXPECTED_WCC_1,
         is_dag=False,
     )
-    assert stats.node_count == EXPECTED_NODES_10
-    assert stats.edge_count == EXPECTED_EDGES_15
-    assert not stats.is_dag
+    expect_equal(stats.node_count, EXPECTED_NODES_10)
+    expect_equal(stats.edge_count, EXPECTED_EDGES_15)
+    expect_false(stats.is_dag)
 
 
 def test_statistics_is_frozen() -> None:
@@ -254,34 +255,34 @@ def test_stats_empty_graph() -> None:
     """Empty graph produces zero statistics."""
     graph = _make_empty_graph()
     stats = compute_graph_statistics(graph)
-    assert stats.node_count == 0
-    assert stats.edge_count == 0
-    assert stats.density == 0.0
-    assert stats.is_dag
+    expect_equal(stats.node_count, 0)
+    expect_equal(stats.edge_count, 0)
+    expect_equal(stats.density, 0.0)
+    expect_true(stats.is_dag)
 
 
 def test_stats_single_node() -> None:
     """Single node graph statistics."""
     graph = _make_single_node()
     stats = compute_graph_statistics(graph)
-    assert stats.node_count == 1
-    assert stats.edge_count == 0
-    assert stats.density == 0.0
-    assert stats.weakly_connected_components == 1
+    expect_equal(stats.node_count, 1)
+    expect_equal(stats.edge_count, 0)
+    expect_equal(stats.density, 0.0)
+    expect_equal(stats.weakly_connected_components, 1)
 
 
 def test_stats_simple_dag_is_dag() -> None:
     """Simple DAG is correctly identified."""
     graph = _make_simple_dag()
     stats = compute_graph_statistics(graph)
-    assert stats.is_dag
+    expect_true(stats.is_dag)
 
 
 def test_stats_cycle_is_not_dag() -> None:
     """Graph with cycle is not a DAG."""
     graph = _make_simple_cycle()
     stats = compute_graph_statistics(graph)
-    assert not stats.is_dag
+    expect_false(stats.is_dag)
 
 
 def test_stats_node_and_edge_counts() -> None:
@@ -289,8 +290,8 @@ def test_stats_node_and_edge_counts() -> None:
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
     # main, init, process, cleanup, validate, execute, helper1, helper2
-    assert stats.node_count == EXPECTED_NODES_8
-    assert stats.edge_count == EXPECTED_EDGES_8
+    expect_equal(stats.node_count, EXPECTED_NODES_8)
+    expect_equal(stats.edge_count, EXPECTED_EDGES_8)
 
 
 def test_stats_density_calculation() -> None:
@@ -299,7 +300,7 @@ def test_stats_density_calculation() -> None:
     stats = compute_graph_statistics(graph)
     # For directed graph: density = edges / (nodes * (nodes - 1))
     # 12 / (4 * 3) = 1.0
-    assert abs(stats.density - DENSITY_1_0) < TOLERANCE
+    expect_true(abs(stats.density - DENSITY_1_0) < TOLERANCE)
 
 
 def test_stats_average_degrees() -> None:
@@ -309,8 +310,8 @@ def test_stats_average_degrees() -> None:
     # In a directed graph, sum of in-degrees = sum of out-degrees = edge count
     # Therefore avg_in_degree = avg_out_degree = edges / nodes
     expected_avg = stats.edge_count / stats.node_count
-    assert abs(stats.avg_in_degree - expected_avg) < TOLERANCE
-    assert abs(stats.avg_out_degree - expected_avg) < TOLERANCE
+    expect_true(abs(stats.avg_in_degree - expected_avg) < TOLERANCE)
+    expect_true(abs(stats.avg_out_degree - expected_avg) < TOLERANCE)
 
 
 def test_stats_multiple_components() -> None:
@@ -318,17 +319,17 @@ def test_stats_multiple_components() -> None:
     graph = _make_multiple_components()
     stats = compute_graph_statistics(graph)
     # 3 weakly connected components
-    assert stats.weakly_connected_components == EXPECTED_WCC_3
+    expect_equal(stats.weakly_connected_components, EXPECTED_WCC_3)
     # Each component is its own strongly connected component
     # A->B (2 SCCs), X->Y->Z (3 SCCs), Isolated (1 SCC) = 6 SCCs total
-    assert stats.strongly_connected_components >= EXPECTED_SCC_3
+    expect_true(stats.strongly_connected_components >= EXPECTED_SCC_3)
 
 
 def test_stats_strongly_connected_graph() -> None:
     """Strongly connected graph has 1 SCC."""
     graph = _make_strongly_connected()
     stats = compute_graph_statistics(graph)
-    assert stats.strongly_connected_components == EXPECTED_SCC_1
+    expect_equal(stats.strongly_connected_components, EXPECTED_SCC_1)
 
 
 def test_stats_realistic_call_graph() -> None:
@@ -336,9 +337,9 @@ def test_stats_realistic_call_graph() -> None:
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
     # Call graph should be DAG (no recursion)
-    assert stats.is_dag
+    expect_true(stats.is_dag)
     # Should have 1 weakly connected component
-    assert stats.weakly_connected_components == EXPECTED_WCC_1
+    expect_equal(stats.weakly_connected_components, EXPECTED_WCC_1)
 
 
 # =============================================================================
@@ -350,7 +351,7 @@ def test_in_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = get_in_degrees(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_in_degrees_simple_chain() -> None:
@@ -359,9 +360,9 @@ def test_in_degrees_simple_chain() -> None:
     graph.add_edges_from([(1, 2), (2, 3)])
     result = get_in_degrees(graph)
     result_dict = dict(result)
-    assert result_dict[1] == 0
-    assert result_dict[2] == 1
-    assert result_dict[3] == 1
+    expect_equal(result_dict[1], 0)
+    expect_equal(result_dict[2], 1)
+    expect_equal(result_dict[3], 1)
 
 
 def test_in_degrees_star_graph() -> None:
@@ -372,16 +373,16 @@ def test_in_degrees_star_graph() -> None:
     result = get_in_degrees(graph)
     result_dict = dict(result)
     # Hub has 0 in-degree, spokes have 1
-    assert result_dict[0] == 0
+    expect_equal(result_dict[0], 0)
     for i in range(1, 5):
-        assert result_dict[i] == 1
+        expect_equal(result_dict[i], 1)
 
 
 def test_out_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = get_out_degrees(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_out_degrees_simple_chain() -> None:
@@ -390,9 +391,9 @@ def test_out_degrees_simple_chain() -> None:
     graph.add_edges_from([(1, 2), (2, 3)])
     result = get_out_degrees(graph)
     result_dict = dict(result)
-    assert result_dict[1] == 1
-    assert result_dict[2] == 1
-    assert result_dict[3] == 0
+    expect_equal(result_dict[1], 1)
+    expect_equal(result_dict[2], 1)
+    expect_equal(result_dict[3], 0)
 
 
 def test_out_degrees_star_graph() -> None:
@@ -403,16 +404,16 @@ def test_out_degrees_star_graph() -> None:
     result = get_out_degrees(graph)
     result_dict = dict(result)
     # Hub has out_degree=4, spokes have 0
-    assert result_dict[0] == HUB_OUT_DEGREE
+    expect_equal(result_dict[0], HUB_OUT_DEGREE)
     for i in range(1, 5):
-        assert result_dict[i] == 0
+        expect_equal(result_dict[i], 0)
 
 
 def test_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = get_degrees(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_degrees_simple_path() -> None:
@@ -421,9 +422,9 @@ def test_degrees_simple_path() -> None:
     graph.add_edges_from([(1, 2), (2, 3)])
     result = get_degrees(graph)
     result_dict = dict(result)
-    assert result_dict[1] == 1
-    assert result_dict[2] == PATH_MIDDLE_DEGREE
-    assert result_dict[3] == 1
+    expect_equal(result_dict[1], 1)
+    expect_equal(result_dict[2], PATH_MIDDLE_DEGREE)
+    expect_equal(result_dict[3], 1)
 
 
 def test_degrees_triangle() -> None:
@@ -434,7 +435,7 @@ def test_degrees_triangle() -> None:
     result_dict = dict(result)
     # All nodes should have degree 2 in triangle
     for node in [1, 2, 3]:
-        assert result_dict[node] == TRIANGLE_DEGREE
+        expect_equal(result_dict[node], TRIANGLE_DEGREE)
 
 
 # =============================================================================
@@ -446,7 +447,7 @@ def test_in_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = get_in_degree_values(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_in_degree_values_only() -> None:
@@ -455,14 +456,14 @@ def test_in_degree_values_only() -> None:
     graph.add_edges_from([(1, 2), (2, 3), (1, 3)])
     result = get_in_degree_values(graph)
     # Node 1: in_degree=0, Node 2: in_degree=1, Node 3: in_degree=2
-    assert sorted(result) == [0, 1, 2]
+    expect_equal(sorted(result), [0, 1, 2])
 
 
 def test_out_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = get_out_degree_values(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_out_degree_values_only() -> None:
@@ -471,14 +472,14 @@ def test_out_degree_values_only() -> None:
     graph.add_edges_from([(1, 2), (1, 3), (2, 3)])
     result = get_out_degree_values(graph)
     # Node 1: out_degree=2, Node 2: out_degree=1, Node 3: out_degree=0
-    assert sorted(result) == [0, 1, 2]
+    expect_equal(sorted(result), [0, 1, 2])
 
 
 def test_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = nx.Graph()
     result = get_degree_values(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_degree_values_only() -> None:
@@ -486,7 +487,7 @@ def test_degree_values_only() -> None:
     graph = _make_undirected_test()  # A-B, B-C, A-C, C-D
     result = get_degree_values(graph)
     # A: degree=2, B: degree=2, C: degree=3, D: degree=1
-    assert sorted(result) == [1, 2, 2, 3]
+    expect_equal(sorted(result), [1, 2, 2, 3])
 
 
 # =============================================================================
@@ -499,7 +500,7 @@ def test_statistics_consistency() -> None:
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
     # avg_in_degree = avg_out_degree for any directed graph
-    assert abs(stats.avg_in_degree - stats.avg_out_degree) < TOLERANCE
+    expect_true(abs(stats.avg_in_degree - stats.avg_out_degree) < TOLERANCE)
 
 
 def test_degree_functions_match_statistics() -> None:
@@ -509,8 +510,8 @@ def test_degree_functions_match_statistics() -> None:
     in_values = get_in_degree_values(graph)
     out_values = get_out_degree_values(graph)
     # Sum of in-degrees = sum of out-degrees = edge count
-    assert sum(in_values) == stats.edge_count
-    assert sum(out_values) == stats.edge_count
+    expect_equal(sum(in_values), stats.edge_count)
+    expect_equal(sum(out_values), stats.edge_count)
 
 
 def test_various_graph_sizes() -> None:
@@ -520,5 +521,5 @@ def test_various_graph_sizes() -> None:
         for i in range(num_nodes - 1):
             graph.add_edge(i, i + 1)
         stats = compute_graph_statistics(graph)
-        assert stats.node_count == num_nodes
-        assert stats.edge_count == num_nodes - 1
+        expect_equal(stats.node_count, num_nodes)
+        expect_equal(stats.edge_count, num_nodes - 1)

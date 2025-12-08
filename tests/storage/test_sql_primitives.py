@@ -6,6 +6,8 @@ following the Testing Charter by using real DuckDB connections for validation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
@@ -26,6 +28,35 @@ from codeintel.storage.sql.primitives import (
     validate_identifier,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_not_in,
+    expect_true,
+    require_row,
+)
+
+
+def expect_query_contains(query: str, *parts: str) -> None:
+    """Verify that each fragment appears in the SQL query."""
+    for part in parts:
+        expect_in(part, query)
+
+
+def expect_query_not_contains(query: str, *parts: str) -> None:
+    """Verify that each fragment is absent from the SQL query."""
+    for part in parts:
+        expect_not_in(part, query)
+
+
+def expect_params(params: Sequence[object], expected: Sequence[object]) -> None:
+    """Assert parameter lists match exactly."""
+    expect_equal(params, expected, label="params")
+
 
 # =============================================================================
 # Exception Classes Tests
@@ -35,23 +66,23 @@ from tests._helpers import assert_frozen
 def test_sql_builder_error_inherits_from_exception() -> None:
     """Verify SqlBuilderError is a proper exception."""
     err = SqlBuilderError("test message")
-    assert isinstance(err, Exception)
-    assert str(err) == "test message"
+    expect_is_instance(err, Exception)
+    expect_equal(str(err), "test message")
 
 
 def test_invalid_identifier_error_stores_attributes() -> None:
     """Verify error stores identifier and reason attributes."""
     err = InvalidIdentifierError("bad_id", "contains special chars")
-    assert err.identifier == "bad_id"
-    assert err.reason == "contains special chars"
-    assert "bad_id" in str(err)
-    assert "contains special chars" in str(err)
+    expect_equal(err.identifier, "bad_id")
+    expect_equal(err.reason, "contains special chars")
+    expect_in("bad_id", str(err))
+    expect_in("contains special chars", str(err))
 
 
 def test_invalid_identifier_error_inherits_from_sql_builder_error() -> None:
     """Verify it inherits from SqlBuilderError."""
     err = InvalidIdentifierError("test", "reason")
-    assert isinstance(err, SqlBuilderError)
+    expect_is_instance(err, SqlBuilderError)
 
 
 # =============================================================================
@@ -79,7 +110,7 @@ def test_invalid_identifier_error_inherits_from_sql_builder_error() -> None:
 def test_validate_identifier_accepts_valid(identifier: str) -> None:
     """Verify valid identifiers pass validation."""
     result = validate_identifier(identifier)
-    assert result == identifier
+    expect_equal(result, identifier)
 
 
 def test_validate_identifier_rejects_empty() -> None:
@@ -99,7 +130,7 @@ def test_validate_identifier_accepts_max_length() -> None:
     """Verify identifier at exactly max length is accepted."""
     max_id = "a" * 128
     result = validate_identifier(max_id)
-    assert result == max_id
+    expect_equal(result, max_id)
 
 
 @pytest.mark.parametrize(
@@ -129,14 +160,14 @@ def test_validate_identifier_rejects_invalid_patterns(identifier: str) -> None:
 def test_safe_table_creates_with_valid_name() -> None:
     """Verify SafeTable accepts valid table names."""
     table = SafeTable("analytics.metrics")
-    assert table.name == "analytics.metrics"
-    assert str(table) == "analytics.metrics"
+    expect_equal(table.name, "analytics.metrics")
+    expect_equal(str(table), "analytics.metrics")
 
 
 def test_safe_table_creates_with_simple_name() -> None:
     """Verify SafeTable accepts unqualified names."""
     table = SafeTable("modules")
-    assert table.name == "modules"
+    expect_equal(table.name, "modules")
 
 
 def test_safe_table_raises_on_invalid_name() -> None:
@@ -165,8 +196,8 @@ def test_safe_table_is_frozen() -> None:
 def test_safe_column_creates_with_valid_name() -> None:
     """Verify SafeColumn accepts valid column names."""
     col = SafeColumn("function_name")
-    assert col.name == "function_name"
-    assert str(col) == "function_name"
+    expect_equal(col.name, "function_name")
+    expect_equal(str(col), "function_name")
 
 
 @pytest.mark.parametrize(
@@ -176,7 +207,7 @@ def test_safe_column_creates_with_valid_name() -> None:
 def test_safe_column_accepts_various_valid_names(name: str) -> None:
     """Verify various valid column names are accepted."""
     col = SafeColumn(name)
-    assert col.name == name
+    expect_equal(col.name, name)
 
 
 def test_safe_column_rejects_names_with_dots() -> None:
@@ -205,10 +236,9 @@ def test_safe_column_is_frozen() -> None:
 def test_query_builder_count_without_where() -> None:
     """Verify COUNT query without WHERE clause."""
     query, params = QueryBuilder.count("core.modules")
-    assert "SELECT COUNT(*)" in query
-    assert "core.modules" in query
-    assert "WHERE" not in query
-    assert params == []
+    expect_query_contains(query, "SELECT COUNT(*)", "core.modules")
+    expect_query_not_contains(query, "WHERE")
+    expect_params(params, [])
 
 
 def test_query_builder_count_with_where() -> None:
@@ -217,19 +247,16 @@ def test_query_builder_count_with_where() -> None:
         "core.modules",
         where={"repo": "test/repo", "commit": "abc123"},
     )
-    assert "SELECT COUNT(*)" in query
-    assert "WHERE" in query
-    assert "repo = ?" in query
-    assert "commit = ?" in query
-    assert params == ["test/repo", "abc123"]
+    expect_query_contains(query, "SELECT COUNT(*)", "WHERE", "repo = ?", "commit = ?")
+    expect_params(params, ["test/repo", "abc123"])
 
 
 def test_query_builder_count_with_safe_table() -> None:
     """Verify COUNT accepts SafeTable."""
     table = SafeTable("analytics.metrics")
     query, params = QueryBuilder.count(table)
-    assert "analytics.metrics" in query
-    assert params == []
+    expect_query_contains(query, "analytics.metrics")
+    expect_params(params, [])
 
 
 def test_query_builder_count_executes_on_real_db(fresh_gateway: StorageGateway) -> None:
@@ -239,8 +266,8 @@ def test_query_builder_count_executes_on_real_db(fresh_gateway: StorageGateway) 
         where={"repo": "test/repo", "commit": "abc123"},
     )
     result = fresh_gateway.con.execute(query, params).fetchone()
-    assert result is not None
-    assert result[0] == 0  # Empty table
+    row = require_row(result, message="Expected COUNT(*) row")
+    expect_equal(row[0], 0, label="row_count")
 
 
 # =============================================================================
@@ -251,8 +278,7 @@ def test_query_builder_count_executes_on_real_db(fresh_gateway: StorageGateway) 
 def test_query_builder_count_null_basic() -> None:
     """Verify COUNT with IS NULL condition."""
     query, _ = QueryBuilder.count_where_null("core.goids", "qualname")
-    assert "SELECT COUNT(*)" in query
-    assert "qualname IS NULL" in query
+    expect_query_contains(query, "SELECT COUNT(*)", "qualname IS NULL")
 
 
 def test_query_builder_count_null_with_where() -> None:
@@ -262,16 +288,15 @@ def test_query_builder_count_null_with_where() -> None:
         "qualname",
         where={"repo": "test/repo"},
     )
-    assert "qualname IS NULL" in query
-    assert "repo = ?" in query
-    assert params == ["test/repo"]
+    expect_query_contains(query, "qualname IS NULL", "repo = ?")
+    expect_params(params, ["test/repo"])
 
 
 def test_query_builder_count_null_with_safe_column() -> None:
     """Verify COUNT accepts SafeColumn."""
     col = SafeColumn("description")
     query, _ = QueryBuilder.count_where_null("analytics.metrics", col)
-    assert "description IS NULL" in query
+    expect_query_contains(query, "description IS NULL")
 
 
 # =============================================================================
@@ -282,11 +307,8 @@ def test_query_builder_count_null_with_safe_column() -> None:
 def test_query_builder_delete_with_single_condition() -> None:
     """Verify DELETE with single WHERE condition."""
     query, params = QueryBuilder.delete("core.modules", where={"repo": "test/repo"})
-    assert "DELETE FROM" in query
-    assert "core.modules" in query
-    assert "WHERE" in query
-    assert "repo = ?" in query
-    assert params == ["test/repo"]
+    expect_query_contains(query, "DELETE FROM", "core.modules", "WHERE", "repo = ?")
+    expect_params(params, ["test/repo"])
 
 
 def test_query_builder_delete_with_multiple_conditions() -> None:
@@ -295,18 +317,15 @@ def test_query_builder_delete_with_multiple_conditions() -> None:
         "core.modules",
         where={"repo": "test/repo", "commit": "abc123"},
     )
-    assert "repo = ?" in query
-    assert "commit = ?" in query
-    assert "AND" in query
-    expected_param_count = 2
-    assert len(params) == expected_param_count
+    expect_query_contains(query, "repo = ?", "commit = ?", "AND")
+    expect_length(params, 2, label="param_count")
 
 
 def test_query_builder_delete_with_safe_table() -> None:
     """Verify DELETE accepts SafeTable."""
     table = SafeTable("analytics.metrics")
     query, _ = QueryBuilder.delete(table, where={"id": 1})
-    assert "analytics.metrics" in query
+    expect_query_contains(query, "analytics.metrics")
 
 
 # =============================================================================
@@ -317,23 +336,22 @@ def test_query_builder_delete_with_safe_table() -> None:
 def test_query_builder_delete_in_basic() -> None:
     """Verify DELETE with IN clause."""
     query, params = QueryBuilder.delete_in("core.modules", "repo", ["a", "b", "c"])
-    assert "DELETE FROM" in query
-    assert "IN (?, ?, ?)" in query
-    assert params == ["a", "b", "c"]
+    expect_query_contains(query, "DELETE FROM", "IN (?, ?, ?)")
+    expect_params(params, ["a", "b", "c"])
 
 
 def test_query_builder_delete_in_single_value() -> None:
     """Verify DELETE IN with single value."""
     query, params = QueryBuilder.delete_in("core.modules", "id", [1])
-    assert "IN (?)" in query
-    assert params == [1]
+    expect_query_contains(query, "IN (?)")
+    expect_params(params, [1])
 
 
 def test_query_builder_delete_in_with_safe_column() -> None:
     """Verify DELETE IN accepts SafeColumn."""
     col = SafeColumn("goid_h128")
     query, _ = QueryBuilder.delete_in("core.goids", col, [100, 200])
-    assert "goid_h128 IN" in query
+    expect_query_contains(query, "goid_h128 IN")
 
 
 # =============================================================================
@@ -344,21 +362,21 @@ def test_query_builder_delete_in_with_safe_column() -> None:
 def test_query_builder_select_all_basic() -> None:
     """Verify SELECT * query."""
     query = QueryBuilder.select_all("core.modules")
-    assert query == "SELECT * FROM core.modules"
+    expect_equal(query, "SELECT * FROM core.modules")
 
 
 def test_query_builder_select_all_with_safe_table() -> None:
     """Verify SELECT * accepts SafeTable."""
     table = SafeTable("analytics.metrics")
     query = QueryBuilder.select_all(table)
-    assert "analytics.metrics" in query
+    expect_query_contains(query, "analytics.metrics")
 
 
 def test_query_builder_select_all_executes_on_real_db(fresh_gateway: StorageGateway) -> None:
     """Verify SELECT * executes on real DuckDB."""
     query = QueryBuilder.select_all("core.modules")
     result = fresh_gateway.con.execute(query).fetchall()
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 # =============================================================================
@@ -369,24 +387,20 @@ def test_query_builder_select_all_executes_on_real_db(fresh_gateway: StorageGate
 def test_query_builder_insert_basic() -> None:
     """Verify INSERT query generation."""
     query = QueryBuilder.insert("core.modules", ["module", "path", "repo", "commit"])
-    assert "INSERT INTO" in query
-    assert "core.modules" in query
-    assert "module" in query
-    assert "VALUES (?, ?, ?, ?)" in query
+    expect_query_contains(query, "INSERT INTO", "core.modules", "module", "VALUES (?, ?, ?, ?)")
 
 
 def test_query_builder_insert_single_column() -> None:
     """Verify INSERT with single column."""
     query = QueryBuilder.insert("test.table", ["col"])
-    assert "VALUES (?)" in query
+    expect_query_contains(query, "VALUES (?)")
 
 
 def test_query_builder_insert_with_safe_columns() -> None:
     """Verify INSERT accepts SafeColumn."""
     cols = [SafeColumn("repo"), SafeColumn("commit")]
     query = QueryBuilder.insert("core.modules", cols)
-    assert "repo" in query
-    assert "commit" in query
+    expect_query_contains(query, "repo", "commit")
 
 
 # =============================================================================
@@ -397,17 +411,14 @@ def test_query_builder_insert_with_safe_columns() -> None:
 def test_query_builder_delete_repo_commit_basic() -> None:
     """Verify standard repo/commit scoped DELETE."""
     query = QueryBuilder.delete_repo_commit("core.modules")
-    assert "DELETE FROM" in query
-    assert "repo = ?" in query
-    assert "commit = ?" in query
-    assert "AND" in query
+    expect_query_contains(query, "DELETE FROM", "repo = ?", "commit = ?", "AND")
 
 
 def test_query_builder_delete_repo_commit_with_safe_table() -> None:
     """Verify delete_repo_commit accepts SafeTable."""
     table = SafeTable("analytics.metrics")
     query = QueryBuilder.delete_repo_commit(table)
-    assert "analytics.metrics" in query
+    expect_query_contains(query, "analytics.metrics")
 
 
 # =============================================================================
@@ -418,15 +429,14 @@ def test_query_builder_delete_repo_commit_with_safe_table() -> None:
 def test_build_delete_query_returns_query_when_has_scope() -> None:
     """Verify returns DELETE query when has_scope is True."""
     query = build_delete_query("core.modules", has_scope=True)
-    assert query is not None
-    assert "DELETE FROM" in query
-    assert "repo = ?" in query
+    expect_is_not_none(query)
+    expect_query_contains(query or "", "DELETE FROM", "repo = ?")
 
 
 def test_build_delete_query_returns_none_when_no_scope() -> None:
     """Verify returns None when has_scope is False."""
     query = build_delete_query("core.modules", has_scope=False)
-    assert query is None
+    expect_is_none(query)
 
 
 # =============================================================================
@@ -437,10 +447,10 @@ def test_build_delete_query_returns_none_when_no_scope() -> None:
 def test_prepared_statements_creates_with_required_field() -> None:
     """Verify PreparedStatements with only insert_sql."""
     stmt = PreparedStatements(insert_sql="INSERT INTO test VALUES (?)")
-    assert stmt.insert_sql == "INSERT INTO test VALUES (?)"
-    assert stmt.delete_sql is None
-    assert stmt.select_sql is None
-    assert stmt.select_params is None
+    expect_equal(stmt.insert_sql, "INSERT INTO test VALUES (?)")
+    expect_is_none(stmt.delete_sql)
+    expect_is_none(stmt.select_sql)
+    expect_is_none(stmt.select_params)
 
 
 def test_prepared_statements_creates_with_all_fields() -> None:
@@ -451,10 +461,10 @@ def test_prepared_statements_creates_with_all_fields() -> None:
         select_sql="SELECT * FROM test WHERE repo = ?",
         select_params=["test/repo"],
     )
-    assert stmt.insert_sql is not None
-    assert stmt.delete_sql is not None
-    assert stmt.select_sql is not None
-    assert stmt.select_params == ["test/repo"]
+    expect_is_not_none(stmt.insert_sql)
+    expect_is_not_none(stmt.delete_sql)
+    expect_is_not_none(stmt.select_sql)
+    expect_equal(stmt.select_params, ["test/repo"])
 
 
 def test_prepared_statements_is_frozen() -> None:
@@ -471,25 +481,25 @@ def test_prepared_statements_is_frozen() -> None:
 def test_render_sql_joins_parts_with_spaces() -> None:
     """Verify parts are joined with spaces."""
     result = render_sql(["SELECT", "*", "FROM", "table"])
-    assert result == "SELECT * FROM table"
+    expect_equal(result, "SELECT * FROM table")
 
 
 def test_render_sql_filters_empty_parts() -> None:
     """Verify empty parts are filtered out."""
     result = render_sql(["SELECT", "", "*", "FROM", "table"])
-    assert result == "SELECT * FROM table"
+    expect_equal(result, "SELECT * FROM table")
 
 
 def test_render_sql_handles_single_part() -> None:
     """Verify single part is returned as-is."""
     result = render_sql(["SELECT *"])
-    assert result == "SELECT *"
+    expect_equal(result, "SELECT *")
 
 
 def test_render_sql_handles_empty_list() -> None:
     """Verify empty list returns empty string."""
     result = render_sql([])
-    assert not result
+    expect_true(not result, message="Expected empty string for empty parts")
 
 
 # =============================================================================
@@ -499,13 +509,13 @@ def test_render_sql_handles_empty_list() -> None:
 
 def test_quote_identifier_quotes_simple() -> None:
     """Verify simple identifiers are quoted."""
-    assert quote_identifier("foo") == '"foo"'
-    assert quote_identifier("Table_1") == '"Table_1"'
+    expect_equal(quote_identifier("foo"), '"foo"')
+    expect_equal(quote_identifier("Table_1"), '"Table_1"')
 
 
 def test_quote_identifier_quotes_underscore_prefix() -> None:
     """Verify underscore-prefixed identifiers are quoted."""
-    assert quote_identifier("_private") == '"_private"'
+    expect_equal(quote_identifier("_private"), '"_private"')
 
 
 @pytest.mark.parametrize(
@@ -525,8 +535,8 @@ def test_quote_identifier_rejects_unsafe(value: str) -> None:
 
 def test_quote_table_key_quotes_schema_and_table() -> None:
     """Verify schema.table format is properly quoted."""
-    assert quote_table_key("core.modules") == '"core"."modules"'
-    assert quote_table_key("analytics.metrics") == '"analytics"."metrics"'
+    expect_equal(quote_table_key("core.modules"), '"core"."modules"')
+    expect_equal(quote_table_key("analytics.metrics"), '"analytics"."metrics"')
 
 
 @pytest.mark.parametrize(
@@ -547,13 +557,13 @@ def test_quote_table_key_rejects_invalid(value: str) -> None:
 def test_macro_select_sql_builds_select() -> None:
     """Verify macro SELECT statement generation."""
     sql = macro_select_sql("metadata.dataset_rows", "?, ?")
-    assert sql == 'SELECT * FROM /*metadata.dataset_rows*/ "metadata"."dataset_rows"(?, ?)'
+    expect_equal(sql, 'SELECT * FROM /*metadata.dataset_rows*/ "metadata"."dataset_rows"(?, ?)')
 
 
 def test_macro_select_sql_preserves_placeholders() -> None:
     """Verify placeholders are preserved in output."""
     sql = macro_select_sql("schema.macro", "?, ?, ?")
-    assert "(?, ?, ?)" in sql
+    expect_in("(?, ?, ?)", sql)
 
 
 def test_macro_select_sql_rejects_unqualified() -> None:
@@ -570,15 +580,15 @@ def test_macro_select_sql_rejects_unqualified() -> None:
 def test_safe_macro_call_generates_sql_and_preserves_args() -> None:
     """Verify SQL generation and argument preservation."""
     sql, args = safe_macro_call("metadata.dataset_rows", [1, "test"])
-    assert "metadata.dataset_rows" in sql
-    assert args == [1, "test"]
+    expect_query_contains(sql, "metadata.dataset_rows")
+    expect_params(args, [1, "test"])
 
 
 def test_safe_macro_call_validates_against_allowlist() -> None:
     """Verify allowlist validation."""
     allowed = {"metadata.dataset_rows", "metadata.other"}
     sql, _ = safe_macro_call("metadata.dataset_rows", [], allowed=allowed)
-    assert "dataset_rows" in sql
+    expect_query_contains(sql, "dataset_rows")
 
 
 def test_safe_macro_call_rejects_non_allowlisted() -> None:
@@ -591,7 +601,7 @@ def test_safe_macro_call_rejects_non_allowlisted() -> None:
 def test_safe_macro_call_allows_any_without_allowlist() -> None:
     """Verify any macro is accepted when allowlist is None."""
     sql, _ = safe_macro_call("any.macro", [])
-    assert "any.macro" in sql
+    expect_query_contains(sql, "any.macro")
 
 
 # =============================================================================
@@ -602,22 +612,21 @@ def test_safe_macro_call_allows_any_without_allowlist() -> None:
 def test_build_insert_sql_builds_basic() -> None:
     """Verify basic INSERT statement generation."""
     sql = build_insert_sql("core.modules", ["module", "path", "repo", "commit"])
-    assert 'INSERT INTO "core"."modules"' in sql
-    assert '"module"' in sql
-    assert '"path"' in sql
-    assert "VALUES (?, ?, ?, ?)" in sql
+    expect_query_contains(
+        sql, 'INSERT INTO "core"."modules"', '"module"', '"path"', "VALUES (?, ?, ?, ?)"
+    )
 
 
 def test_build_insert_sql_single_column() -> None:
     """Verify INSERT with single column."""
     sql = build_insert_sql("test.table", ["col"])
-    assert "VALUES (?)" in sql
+    expect_query_contains(sql, "VALUES (?)")
 
 
 def test_build_insert_sql_identifier_already_quoted() -> None:
     """Verify pre-quoted identifier is preserved."""
     sql = build_insert_sql('"temp"."view"', ["col"], identifier_is_quoted=True)
-    assert '"temp"."view"' in sql
+    expect_query_contains(sql, '"temp"."view"')
 
 
 def test_build_insert_sql_executes_on_real_db(fresh_gateway: StorageGateway) -> None:
@@ -629,8 +638,8 @@ def test_build_insert_sql_executes_on_real_db(fresh_gateway: StorageGateway) -> 
     result = fresh_gateway.con.execute(
         "SELECT module FROM core.modules WHERE repo = ?", ["test/repo"]
     ).fetchone()
-    assert result is not None
-    assert result[0] == "test_mod"
+    row = require_row(result, message="Expected module row after insert")
+    expect_equal(row[0], "test_mod")
 
 
 # =============================================================================
@@ -648,9 +657,8 @@ def test_count_after_insert(fresh_gateway: StorageGateway) -> None:
     # Count with WHERE
     query, params = QueryBuilder.count("core.modules", where={"repo": "test/repo"})
     result = fresh_gateway.con.execute(query, params).fetchone()
-    assert result is not None
-    expected_count = 2
-    assert result[0] == expected_count
+    row = require_row(result, message="Expected count row after insert")
+    expect_equal(row[0], 2)
 
 
 def test_delete_removes_rows(fresh_gateway: StorageGateway) -> None:
@@ -666,8 +674,8 @@ def test_delete_removes_rows(fresh_gateway: StorageGateway) -> None:
     # Verify deletion
     count_query, count_params = QueryBuilder.count("core.modules", where={"repo": "test/repo"})
     result = fresh_gateway.con.execute(count_query, count_params).fetchone()
-    assert result is not None
-    assert result[0] == 0
+    row = require_row(result, message="Expected count row after delete")
+    expect_equal(row[0], 0)
 
 
 def test_delete_in_removes_specific_rows(fresh_gateway: StorageGateway) -> None:
@@ -685,8 +693,8 @@ def test_delete_in_removes_specific_rows(fresh_gateway: StorageGateway) -> None:
     # Verify only repo2 remains
     select = QueryBuilder.select_all("core.modules")
     result = fresh_gateway.con.execute(select).fetchall()
-    assert len(result) == 1
-    assert result[0][2] == "repo2"  # repo column
+    expect_length(result, 1, label="remaining_rows")
+    expect_equal(result[0][2], "repo2")
 
 
 def test_select_all_returns_data(fresh_gateway: StorageGateway) -> None:
@@ -698,5 +706,5 @@ def test_select_all_returns_data(fresh_gateway: StorageGateway) -> None:
     # Select all
     query = QueryBuilder.select_all("core.modules")
     result = fresh_gateway.con.execute(query).fetchall()
-    assert len(result) == 1
-    assert result[0][0] == "test_mod"
+    expect_length(result, 1, label="row_count")
+    expect_equal(result[0][0], "test_mod")

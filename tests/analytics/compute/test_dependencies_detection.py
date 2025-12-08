@@ -31,6 +31,16 @@ from codeintel.analytics.compute.dependencies.detection import (
     group_calls_by_library,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_not_in,
+    expect_true,
+)
 
 # =============================================================================
 # Test Constants
@@ -99,24 +109,24 @@ class TestSeverityScore:
     )
     def test_known_severities(severity: str, expected: float) -> None:
         """Verify known severities return correct scores."""
-        assert severity_score(severity) == expected
+        expect_equal(severity_score(severity), expected)
 
     @staticmethod
     def test_returns_none_for_none() -> None:
         """Verify None input returns None."""
-        assert severity_score(None) is None
+        expect_is_none(severity_score(None))
 
     @staticmethod
     def test_returns_none_for_unknown() -> None:
         """Verify unknown severity returns None."""
-        assert severity_score("unknown") is None
-        assert severity_score("CRITICAL") is None  # Case-sensitive
+        expect_is_none(severity_score("unknown"))
+        expect_is_none(severity_score("CRITICAL"))  # Case-sensitive
 
     @staticmethod
     def test_severity_scores_constant() -> None:
         """Verify SEVERITY_SCORES constant is accessible."""
-        assert len(SEVERITY_SCORES) == EXPECTED_SEVERITY_COUNT
-        assert "critical" in SEVERITY_SCORES
+        expect_equal(len(SEVERITY_SCORES), EXPECTED_SEVERITY_COUNT)
+        expect_in("critical", SEVERITY_SCORES)
 
 
 class TestRiskScore:
@@ -134,22 +144,22 @@ class TestRiskScore:
     )
     def test_computes_product(severity: str, criticality: float, expected: float) -> None:
         """Verify risk score is severity_score * criticality."""
-        assert risk_score(severity, criticality) == expected
+        expect_equal(risk_score(severity, criticality), expected)
 
     @staticmethod
     def test_returns_none_for_none_severity() -> None:
         """Verify None severity returns None."""
-        assert risk_score(None, 3.0) is None
+        expect_is_none(risk_score(None, 3.0))
 
     @staticmethod
     def test_returns_none_for_none_criticality() -> None:
         """Verify None criticality returns None."""
-        assert risk_score("high", None) is None
+        expect_is_none(risk_score("high", None))
 
     @staticmethod
     def test_returns_none_for_unknown_severity() -> None:
         """Verify unknown severity returns None."""
-        assert risk_score("unknown", 3.0) is None
+        expect_is_none(risk_score("unknown", 3.0))
 
 
 class TestRiskLevel:
@@ -170,17 +180,17 @@ class TestRiskLevel:
     )
     def test_risk_levels(modes: set[str], count: int, expected: str) -> None:
         """Verify risk level determination."""
-        assert risk_level(modes, count) == expected
+        expect_equal(risk_level(modes, count), expected)
 
     @staticmethod
     def test_write_takes_precedence() -> None:
         """Verify write mode returns high even with many callsites."""
-        assert risk_level({"write"}, 100) == "high"
+        expect_equal(risk_level({"write"}, 100), "high")
 
     @staticmethod
     def test_empty_modes_low() -> None:
         """Verify empty modes with low count returns low."""
-        assert risk_level(set(), 1) == "low"
+        expect_equal(risk_level(set(), 1), "low")
 
 
 class TestDependencyModePattern:
@@ -190,29 +200,29 @@ class TestDependencyModePattern:
     def test_matches_exact_method() -> None:
         """Verify exact method matching."""
         pattern = DependencyModePattern(modes=["read"], method="get")
-        assert pattern.matches("get", "requests.get(url)")
-        assert not pattern.matches("post", "requests.post(url)")
+        expect_true(pattern.matches("get", "requests.get(url)"))
+        expect_false(pattern.matches("post", "requests.post(url)"))
 
     @staticmethod
     def test_matches_method_prefix() -> None:
         """Verify method prefix matching."""
         pattern = DependencyModePattern(modes=["write"], method_prefix="insert")
-        assert pattern.matches("insert_one", "db.insert_one(doc)")
-        assert pattern.matches("insert_many", "db.insert_many(docs)")
-        assert not pattern.matches("update_one", "db.update_one(doc)")
+        expect_true(pattern.matches("insert_one", "db.insert_one(doc)"))
+        expect_true(pattern.matches("insert_many", "db.insert_many(docs)"))
+        expect_false(pattern.matches("update_one", "db.update_one(doc)"))
 
     @staticmethod
     def test_matches_target_substring() -> None:
         """Verify target substring matching."""
         pattern = DependencyModePattern(modes=["query"], match="SELECT")
-        assert pattern.matches("execute", "conn.execute('SELECT * FROM users')")
-        assert not pattern.matches("execute", "conn.execute('INSERT INTO users')")
+        expect_true(pattern.matches("execute", "conn.execute('SELECT * FROM users')"))
+        expect_false(pattern.matches("execute", "conn.execute('INSERT INTO users')"))
 
     @staticmethod
     def test_no_match_with_none_method() -> None:
         """Verify None method doesn't cause errors."""
         pattern = DependencyModePattern(modes=["read"], method="get")
-        assert not pattern.matches(None, "some_target")
+        expect_false(pattern.matches(None, "some_target"))
 
     @staticmethod
     def test_multiple_match_conditions() -> None:
@@ -223,9 +233,9 @@ class TestDependencyModePattern:
             match="DROP TABLE",
         )
         # Method match
-        assert pattern.matches("admin_execute", "db.admin_execute()")
+        expect_true(pattern.matches("admin_execute", "db.admin_execute()"))
         # Target match
-        assert pattern.matches("execute", "db.execute('DROP TABLE users')")
+        expect_true(pattern.matches("execute", "db.execute('DROP TABLE users')"))
 
 
 class TestClassifyModes:
@@ -235,16 +245,19 @@ class TestClassifyModes:
     def test_matches_single_mode() -> None:
         """Verify single mode classification."""
         modes, matched = classify_modes(REQUESTS_PATTERN, "get", "requests.get(url)")
-        assert modes == ["read"]
-        assert matched is not None
-        assert matched.method == "get"
+        expect_equal(modes, ["read"])
+        expect_is_not_none(matched)
+        if matched is None:
+            pytest.fail("matched pattern should be present for requests.get")
+
+        expect_equal(matched.method, "get")
 
     @staticmethod
     def test_returns_unknown_for_no_match() -> None:
         """Verify unknown mode when no matchers match."""
         modes, matched = classify_modes(REQUESTS_PATTERN, "head", "requests.head(url)")
-        assert modes == ["unknown"]
-        assert matched is None
+        expect_equal(modes, ["unknown"])
+        expect_is_none(matched)
 
     @staticmethod
     def test_deduplicates_modes() -> None:
@@ -259,7 +272,7 @@ class TestClassifyModes:
             ],
         )
         modes, _ = classify_modes(pattern, "get", "api.get('GET /users')")
-        assert modes == ["read"]  # Deduplicated
+        expect_equal(modes, ["read"])  # Deduplicated
 
     @staticmethod
     def test_multiple_modes_sorted() -> None:
@@ -273,7 +286,7 @@ class TestClassifyModes:
             ],
         )
         modes, _ = classify_modes(pattern, "execute", "db.execute()")
-        assert modes == ["admin", "write"]  # Sorted
+        expect_equal(modes, ["admin", "write"])  # Sorted
 
 
 # =============================================================================
@@ -290,7 +303,7 @@ class TestBuildAliasMap:
         source = "import requests"
         tree = ast.parse(source)
         alias_map = build_alias_map(tree)
-        assert alias_map == {"requests": "requests"}
+        expect_equal(alias_map, {"requests": "requests"})
 
     @staticmethod
     def test_aliased_import() -> None:
@@ -298,7 +311,7 @@ class TestBuildAliasMap:
         source = "import pandas as pd"
         tree = ast.parse(source)
         alias_map = build_alias_map(tree)
-        assert alias_map == {"pd": "pandas"}
+        expect_equal(alias_map, {"pd": "pandas"})
 
     @staticmethod
     def test_from_import() -> None:
@@ -306,7 +319,7 @@ class TestBuildAliasMap:
         source = "from sqlalchemy import create_engine"
         tree = ast.parse(source)
         alias_map = build_alias_map(tree)
-        assert alias_map == {"create_engine": "sqlalchemy"}
+        expect_equal(alias_map, {"create_engine": "sqlalchemy"})
 
     @staticmethod
     def test_from_import_with_alias() -> None:
@@ -314,7 +327,7 @@ class TestBuildAliasMap:
         source = "from requests import Session as S"
         tree = ast.parse(source)
         alias_map = build_alias_map(tree)
-        assert alias_map == {"S": "requests"}
+        expect_equal(alias_map, {"S": "requests"})
 
     @staticmethod
     def test_dotted_import() -> None:
@@ -322,7 +335,7 @@ class TestBuildAliasMap:
         source = "import sqlalchemy.orm"
         tree = ast.parse(source)
         alias_map = build_alias_map(tree)
-        assert alias_map == {"sqlalchemy.orm": "sqlalchemy"}
+        expect_equal(alias_map, {"sqlalchemy.orm": "sqlalchemy"})
 
     @staticmethod
     def test_multiple_imports() -> None:
@@ -341,14 +354,14 @@ from os.path import join
             "create_engine": "sqlalchemy",
             "join": "os",
         }
-        assert alias_map == expected
+        expect_equal(alias_map, expected)
 
     @staticmethod
     def test_empty_source() -> None:
         """Verify empty source returns empty map."""
         tree = ast.parse("")
         alias_map = build_alias_map(tree)
-        assert alias_map == {}
+        expect_equal(alias_map, {})
 
 
 class TestDependencyCallVisitor:
@@ -374,11 +387,11 @@ requests.get("http://example.com")
         )
         visitor.visit(tree)
 
-        assert len(visitor.calls) == 1
+        expect_length(visitor.calls, 1)
         call = visitor.calls[0]
-        assert call.library == "requests"
-        assert call.modes == ["read"]
-        assert call.lineno is not None
+        expect_equal(call.library, "requests")
+        expect_equal(call.modes, ["read"])
+        expect_is_not_none(call.lineno)
 
     @staticmethod
     def test_detects_multiple_calls() -> None:
@@ -401,10 +414,10 @@ requests.post("http://example.com/users", data={})
         )
         visitor.visit(tree)
 
-        assert len(visitor.calls) == EXPECTED_REQUESTS_CALLS
+        expect_length(visitor.calls, EXPECTED_REQUESTS_CALLS)
         modes = [c.modes for c in visitor.calls]
-        assert ["read"] in modes
-        assert ["write"] in modes
+        expect_in(["read"], modes)
+        expect_in(["write"], modes)
 
     @staticmethod
     def test_ignores_non_dependency_calls() -> None:
@@ -429,8 +442,8 @@ requests.get("http://example.com")
         visitor.visit(tree)
 
         # Only the requests.get call should be captured
-        assert len(visitor.calls) == 1
-        assert visitor.calls[0].library == "requests"
+        expect_length(visitor.calls, 1)
+        expect_equal(visitor.calls[0].library, "requests")
 
     @staticmethod
     def test_ignores_unknown_libraries() -> None:
@@ -452,7 +465,7 @@ unknown_lib.do_something()
         )
         visitor.visit(tree)
 
-        assert len(visitor.calls) == 0
+        expect_length(visitor.calls, 0)
 
     @staticmethod
     def test_captures_snippet() -> None:
@@ -473,7 +486,7 @@ requests.get("http://example.com")
         )
         visitor.visit(tree)
 
-        assert len(visitor.calls) == 1
+        expect_length(visitor.calls, 1)
         # Snippet should contain the call
 
 
@@ -508,15 +521,15 @@ class TestGroupCallsByLibrary:
         ]
         grouped = group_calls_by_library(calls)
 
-        assert len(grouped) == EXPECTED_GROUPED_LIBRARIES
-        assert len(grouped["requests"]) == EXPECTED_REQUESTS_CALLS
-        assert len(grouped["pandas"]) == 1
+        expect_equal(len(grouped), EXPECTED_GROUPED_LIBRARIES)
+        expect_equal(len(grouped["requests"]), EXPECTED_REQUESTS_CALLS)
+        expect_equal(len(grouped["pandas"]), 1)
 
     @staticmethod
     def test_empty_list() -> None:
         """Verify empty list returns empty dict."""
         grouped = group_calls_by_library([])
-        assert grouped == {}
+        expect_equal(grouped, {})
 
     @staticmethod
     def test_single_library() -> None:
@@ -531,8 +544,8 @@ class TestGroupCallsByLibrary:
             ),
         ]
         grouped = group_calls_by_library(calls)
-        assert len(grouped) == 1
-        assert "requests" in grouped
+        expect_equal(len(grouped), 1)
+        expect_in("requests", grouped)
 
 
 class TestBuildAliasMaps:
@@ -555,11 +568,11 @@ class TestBuildAliasMaps:
 
         alias_maps = build_alias_maps(tmp_path, module_map)
 
-        assert "module1.py" in alias_maps
-        assert "module2.py" in alias_maps
-        assert alias_maps["module1.py"]["requests"] == "requests"
-        assert alias_maps["module1.py"]["pd"] == "pandas"
-        assert alias_maps["module2.py"]["create_engine"] == "sqlalchemy"
+        expect_in("module1.py", alias_maps)
+        expect_in("module2.py", alias_maps)
+        expect_equal(alias_maps["module1.py"]["requests"], "requests")
+        expect_equal(alias_maps["module1.py"]["pd"], "pandas")
+        expect_equal(alias_maps["module2.py"]["create_engine"], "sqlalchemy")
 
     @staticmethod
     def test_handles_missing_files(tmp_path: Path) -> None:
@@ -568,7 +581,7 @@ class TestBuildAliasMaps:
             "nonexistent.py": "nonexistent",
         }
         alias_maps = build_alias_maps(tmp_path, module_map)
-        assert "nonexistent.py" not in alias_maps
+        expect_not_in("nonexistent.py", alias_maps)
 
     @staticmethod
     def test_handles_syntax_errors(tmp_path: Path) -> None:
@@ -578,13 +591,13 @@ class TestBuildAliasMaps:
 
         module_map = {"bad.py": "bad"}
         alias_maps = build_alias_maps(tmp_path, module_map)
-        assert "bad.py" not in alias_maps
+        expect_not_in("bad.py", alias_maps)
 
     @staticmethod
     def test_empty_module_map(tmp_path: Path) -> None:
         """Verify empty module map returns empty result."""
         alias_maps = build_alias_maps(tmp_path, {})
-        assert alias_maps == {}
+        expect_equal(alias_maps, {})
 
 
 class TestDependencyCallDataclass:
@@ -600,11 +613,11 @@ class TestDependencyCallDataclass:
             severity="medium",
             criticality=2.0,
         )
-        assert call.library == "requests"
-        assert call.target == "get"
-        assert call.modes == ["read"]
-        assert call.severity == "medium"
-        assert call.criticality == DEFAULT_CRITICALITY
+        expect_equal(call.library, "requests")
+        expect_equal(call.target, "get")
+        expect_equal(call.modes, ["read"])
+        expect_equal(call.severity, "medium")
+        expect_equal(call.criticality, DEFAULT_CRITICALITY)
 
     @staticmethod
     def test_optional_fields_defaults() -> None:
@@ -616,11 +629,11 @@ class TestDependencyCallDataclass:
             severity=None,
             criticality=None,
         )
-        assert call.matched_pattern is None
-        assert call.risk_score is None
-        assert call.lineno is None
-        assert call.end_lineno is None
-        assert not call.snippet
+        expect_is_none(call.matched_pattern)
+        expect_is_none(call.risk_score)
+        expect_is_none(call.lineno)
+        expect_is_none(call.end_lineno)
+        expect_false(call.snippet)
 
     @staticmethod
     def test_all_fields() -> None:
@@ -637,11 +650,11 @@ class TestDependencyCallDataclass:
             end_lineno=LINE_NUMBER_END,
             snippet="conn.execute('SELECT * FROM users')",
         )
-        assert call.matched_pattern == "execute"
-        assert call.risk_score == HIGH_RISK_SCORE
-        assert call.lineno == LINE_NUMBER_START
-        assert call.end_lineno == LINE_NUMBER_END
-        assert "SELECT" in call.snippet
+        expect_equal(call.matched_pattern, "execute")
+        expect_equal(call.risk_score, HIGH_RISK_SCORE)
+        expect_equal(call.lineno, LINE_NUMBER_START)
+        expect_equal(call.end_lineno, LINE_NUMBER_END)
+        expect_in("SELECT", call.snippet)
 
     @staticmethod
     def test_frozen_dataclass() -> None:

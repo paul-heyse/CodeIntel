@@ -220,56 +220,7 @@ strict = true
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.lint.per-file-ignores]
-# ConfigBuilder intentionally has many methods (one per step config type)
-# PLR0904: Too many public methods
-# PLR0913: Too many arguments (entrypoints toggles)
-"src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
-# ResourceRegistry is a central DI container with many required public methods
-"src/codeintel/core/resources/registry.py" = ["PLR0904"]
-# Generated insert methods mixin classes have many methods (one per table)
-"src/codeintel/storage/gateway/_generated_inserts.py" = ["PLR0904"]
-# Primitives has complex constructors
-"src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
-# Test files use assert statements which is standard practice
-# PLR6301: Test methods don't use self but pytest requires instance methods
-# PLR2004: Magic values are common and acceptable in test assertions
-"tests/**/*.py" = ["S101", "PLR6301", "PLR2004"]
-# MkDocs generation tests need path manipulation before imports
-"tests/docs_export/test_mkdocs_generation.py" = ["S101", "E402"]
-# MkDocs generation scripts have hyphenated directory name, use subprocess safely, and are CLI tools
-"mkdocs-gen/*.py" = ["N999", "S404", "S603", "S607", "T201"]
-# CLI commands module: Typer commands require many positional arguments for options
-# FBT001/FBT002: Boolean positional arguments (required by Typer for flags)
-# PLR0913/PLR0917: Too many arguments (CLI commands naturally have many options)
-# DOC501: Raises Exit (Typer commands raise typer.Exit for error handling)
-# PLC0415: Deferred imports for project discovery logic (avoid circular imports)
-"src/codeintel/cli/commands/*.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
-"src/codeintel/cli/main.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
-# Pipeline step runner uses deferred imports to avoid circular dependencies with steps.py
-"src/codeintel/pipeline/execution/step_runner.py" = ["PLC0415"]
-# Op planner uses deferred imports to avoid circular dependency with execution/runner.py
-"src/codeintel/pipeline/planning/op_planner.py" = ["PLC0415"]
-# Core plugin system uses factory patterns with many configuration options
-"src/codeintel/core/recipes/dsl.py" = ["PLR0913"]
-"src/codeintel/core/recipes/model.py" = ["PLR0913"]
-# Graph plugin system uses factory patterns with many configuration options
-"src/codeintel/graphs/core/context.py" = ["PLR0913"]
-"src/codeintel/graphs/core/protocol.py" = ["PLR0913"]
-# Base plugin executor abstract class signature requires many arguments and uses Generic[]
-# UP046: Uses Generic[] for type bounds which is the clearest pattern for abstract base classes
-# PLR0913/PLR0917: Abstract _build_report method signature requires all report components
-# FBT001: Boolean fatal_error is required context, not a toggle flag
-# PLR6301: Hook methods (_on_plugin_success/failure) use self for subclass override pattern
-"src/codeintel/core/plugins/execution/executor.py" = ["UP046", "PLR0913", "PLR0917", "FBT001", "PLR6301"]
-# Analytics executor inherits base executor requirements
-"src/codeintel/analytics/core/executor.py" = ["PLR0913", "PLR0917", "FBT001", "PLR6301"]
-# PLR6301: Hook methods in registry are designed for subclass override pattern
-"src/codeintel/core/plugins/registry/base.py" = ["PLR6301"]
-"src/codeintel/analytics/core/registry.py" = ["PLR6301"]
-"src/codeintel/graphs/core/registry.py" = ["PLR6301"]
-# Tracking module helper functions use boolean parameters naturally
-"src/codeintel/core/plugins/execution/tracking.py" = ["FBT001", "FBT002"]
+
 
 [tool.vulture]
 # Strict, but still manageable threshold.

@@ -26,6 +26,15 @@ from codeintel.core.plugins.registry.base import (
 )
 from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # Test constants
 EXPECTED_PLUGIN_COUNT = 2
@@ -144,8 +153,8 @@ def test_plugin_skip_construction() -> None:
     """Verify PluginSkip can be constructed."""
     skip = PluginSkip(name="test.plugin", reason="disabled")
 
-    assert skip.name == "test.plugin"
-    assert skip.reason == "disabled"
+    expect_equal(skip.name, "test.plugin")
+    expect_equal(skip.reason, "disabled")
 
 
 def test_plugin_skip_is_frozen() -> None:
@@ -161,7 +170,7 @@ def test_plugin_skip_common_reasons() -> None:
 
     for reason in reasons:
         skip = PluginSkip(name="test", reason=reason)
-        assert skip.reason == reason
+        expect_equal(skip.reason, reason)
 
 
 # =============================================================================
@@ -173,9 +182,9 @@ def test_plugin_plan_empty() -> None:
     """Verify PluginPlan can be created with no plugins."""
     plan: PluginPlan[MockPlugin] = PluginPlan(plugins=())
 
-    assert plan.plugins == ()
-    assert plan.skipped == ()
-    assert plan.plan_id is not None
+    expect_equal(plan.plugins, ())
+    expect_equal(plan.skipped, ())
+    expect_is_not_none(plan.plan_id)
 
 
 def test_plugin_plan_with_plugins() -> None:
@@ -185,9 +194,9 @@ def test_plugin_plan_with_plugins() -> None:
 
     plan: PluginPlan[MockPlugin] = PluginPlan(plugins=(plugin1, plugin2))
 
-    assert len(plan.plugins) == EXPECTED_PLUGIN_COUNT
-    assert plan.plugins[0] is plugin1
-    assert plan.plugins[1] is plugin2
+    expect_length(plan.plugins, EXPECTED_PLUGIN_COUNT)
+    expect_true(plan.plugins[0] is plugin1)
+    expect_true(plan.plugins[1] is plugin2)
 
 
 def test_plugin_plan_with_skipped() -> None:
@@ -198,8 +207,8 @@ def test_plugin_plan_with_skipped() -> None:
         skipped=(skip,),
     )
 
-    assert len(plan.skipped) == 1
-    assert plan.skipped[0].name == "skipped.plugin"
+    expect_length(plan.skipped, 1)
+    expect_equal(plan.skipped[0].name, "skipped.plugin")
 
 
 def test_plugin_plan_ordered_names() -> None:
@@ -210,7 +219,7 @@ def test_plugin_plan_ordered_names() -> None:
 
     plan: PluginPlan[MockPlugin] = PluginPlan(plugins=(plugin1, plugin2, plugin3))
 
-    assert plan.ordered_names == ("first", "second", "third")
+    expect_equal(plan.ordered_names, ("first", "second", "third"))
 
 
 def test_plugin_plan_dep_graph() -> None:
@@ -220,7 +229,7 @@ def test_plugin_plan_dep_graph() -> None:
         dep_graph={"a": ("b", "c"), "b": ()},
     )
 
-    assert plan.dep_graph == {"a": ("b", "c"), "b": ()}
+    expect_equal(plan.dep_graph, {"a": ("b", "c"), "b": ()})
 
 
 def test_plugin_plan_unique_ids() -> None:
@@ -228,7 +237,7 @@ def test_plugin_plan_unique_ids() -> None:
     plan1: PluginPlan[MockPlugin] = PluginPlan(plugins=())
     plan2: PluginPlan[MockPlugin] = PluginPlan(plugins=())
 
-    assert plan1.plan_id != plan2.plan_id
+    expect_true(plan1.plan_id != plan2.plan_id)
 
 
 # =============================================================================
@@ -242,7 +251,7 @@ def test_register_plugin(registry: TestRegistry) -> None:
 
     registry.register(plugin)
 
-    assert registry.contains("test.plugin")
+    expect_true(registry.contains("test.plugin"))
 
 
 def test_register_duplicate_raises(registry: TestRegistry) -> None:
@@ -261,7 +270,7 @@ def test_unregister_removes_plugin(registry: TestRegistry) -> None:
 
     registry.unregister("test.plugin")
 
-    assert not registry.contains("test.plugin")
+    expect_false(registry.contains("test.plugin"))
 
 
 def test_unregister_nonexistent_no_error(registry: TestRegistry) -> None:
@@ -282,8 +291,8 @@ def test_index_by_capability(registry: TestRegistry) -> None:
 
     result = registry.list_providing("capability.test")
 
-    assert len(result) == 1
-    assert result[0].metadata.name == "provider"
+    expect_length(result, 1)
+    expect_equal(result[0].metadata.name, "provider")
 
 
 def test_index_by_stage(registry: TestRegistry) -> None:
@@ -296,10 +305,10 @@ def test_index_by_stage(registry: TestRegistry) -> None:
     function_plugins = registry.list_by_stage("function")
     graph_plugins = registry.list_by_stage("graph")
 
-    assert len(function_plugins) == 1
-    assert function_plugins[0].metadata.name == "p1"
-    assert len(graph_plugins) == 1
-    assert graph_plugins[0].metadata.name == "p2"
+    expect_length(function_plugins, 1)
+    expect_equal(function_plugins[0].metadata.name, "p1")
+    expect_length(graph_plugins, 1)
+    expect_equal(graph_plugins[0].metadata.name, "p2")
 
 
 def test_index_by_kind(registry: TestRegistry) -> None:
@@ -312,8 +321,8 @@ def test_index_by_kind(registry: TestRegistry) -> None:
     analytics_plugins = registry.list_by_kind("analytics")
     builder_plugins = registry.list_by_kind("builder")
 
-    assert len(analytics_plugins) == 1
-    assert len(builder_plugins) == 1
+    expect_length(analytics_plugins, 1)
+    expect_length(builder_plugins, 1)
 
 
 def test_index_by_table(registry: TestRegistry) -> None:
@@ -327,8 +336,8 @@ def test_index_by_table(registry: TestRegistry) -> None:
     metrics_plugins = registry.list_by_table("analytics.metrics")
     stats_plugins = registry.list_by_table("analytics.stats")
 
-    assert len(metrics_plugins) == 1
-    assert len(stats_plugins) == 1
+    expect_length(metrics_plugins, 1)
+    expect_length(stats_plugins, 1)
 
 
 def test_unindex_on_unregister(registry: TestRegistry) -> None:
@@ -341,8 +350,8 @@ def test_unindex_on_unregister(registry: TestRegistry) -> None:
     registry.register(plugin)
     registry.unregister("test")
 
-    assert len(registry.list_providing("cap")) == 0
-    assert len(registry.list_by_table("table")) == 0
+    expect_length(registry.list_providing("cap"), 0)
+    expect_length(registry.list_by_table("table"), 0)
 
 
 # =============================================================================
@@ -357,7 +366,7 @@ def test_get_returns_plugin(registry: TestRegistry) -> None:
 
     result = registry.get("test.plugin")
 
-    assert result is plugin
+    expect_true(result is plugin)
 
 
 def test_get_unknown_raises(registry: TestRegistry) -> None:
@@ -370,12 +379,12 @@ def test_contains_true(registry: TestRegistry) -> None:
     """Verify contains() returns True for registered plugin."""
     registry.register(make_plugin("test"))
 
-    assert registry.contains("test")
+    expect_true(registry.contains("test"))
 
 
 def test_contains_false(registry: TestRegistry) -> None:
     """Verify contains() returns False for unregistered plugin."""
-    assert not registry.contains("nonexistent")
+    expect_false(registry.contains("nonexistent"))
 
 
 def test_list_all(registry: TestRegistry) -> None:
@@ -386,9 +395,9 @@ def test_list_all(registry: TestRegistry) -> None:
 
     result = registry.list_all()
 
-    assert len(result) == EXPECTED_PLAN_PLUGINS
+    expect_length(result, EXPECTED_PLAN_PLUGINS)
     names = {p.metadata.name for p in result}
-    assert names == {"p1", "p2", "p3"}
+    expect_equal(names, {"p1", "p2", "p3"})
 
 
 def test_list_names(registry: TestRegistry) -> None:
@@ -398,28 +407,28 @@ def test_list_names(registry: TestRegistry) -> None:
 
     result = registry.list_names()
 
-    assert set(result) == {"alpha", "beta"}
+    expect_equal(set(result), {"alpha", "beta"})
 
 
 def test_list_by_stage_empty(registry: TestRegistry) -> None:
     """Verify list_by_stage() returns empty for no matches."""
     result = registry.list_by_stage("nonexistent")
 
-    assert result == ()
+    expect_equal(result, ())
 
 
 def test_list_by_kind_empty(registry: TestRegistry) -> None:
     """Verify list_by_kind() returns empty for no matches."""
     result = registry.list_by_kind("nonexistent")
 
-    assert result == ()
+    expect_equal(result, ())
 
 
 def test_list_providing_empty(registry: TestRegistry) -> None:
     """Verify list_providing() returns empty for no matches."""
     result = registry.list_providing("nonexistent.capability")
 
-    assert result == ()
+    expect_equal(result, ())
 
 
 def test_metadata_for(registry: TestRegistry) -> None:
@@ -429,8 +438,8 @@ def test_metadata_for(registry: TestRegistry) -> None:
 
     meta = registry.metadata_for("test")
 
-    assert meta.name == "test"
-    assert meta.kind == "builder"
+    expect_equal(meta.name, "test")
+    expect_equal(meta.kind, "builder")
 
 
 def test_dependency_graph(registry: TestRegistry) -> None:
@@ -441,11 +450,14 @@ def test_dependency_graph(registry: TestRegistry) -> None:
 
     graph = registry.dependency_graph()
 
-    assert graph == {
-        "a": ("b", "c"),
-        "b": ("c",),
-        "c": (),
-    }
+    expect_equal(
+        graph,
+        {
+            "a": ("b", "c"),
+            "b": ("c",),
+            "c": (),
+        },
+    )
 
 
 # =============================================================================
@@ -466,7 +478,7 @@ def test_resolve_selection_with_enabled(registry: TestRegistry) -> None:
         defaults=["c"],
     )
 
-    assert set(selected.keys()) == {"a", "b"}
+    expect_equal(set(selected.keys()), {"a", "b"})
 
 
 def test_resolve_selection_with_disabled(registry: TestRegistry) -> None:
@@ -482,10 +494,10 @@ def test_resolve_selection_with_disabled(registry: TestRegistry) -> None:
         defaults=[],
     )
 
-    assert set(selected.keys()) == {"a", "c"}
-    assert len(skipped) == 1
-    assert skipped[0].name == "b"
-    assert skipped[0].reason == "disabled"
+    expect_equal(set(selected.keys()), {"a", "c"})
+    expect_length(skipped, 1)
+    expect_equal(skipped[0].name, "b")
+    expect_equal(skipped[0].reason, "disabled")
 
 
 def test_resolve_selection_uses_defaults(registry: TestRegistry) -> None:
@@ -500,7 +512,7 @@ def test_resolve_selection_uses_defaults(registry: TestRegistry) -> None:
         defaults=["default1", "default2"],
     )
 
-    assert set(selected.keys()) == {"default1", "default2"}
+    expect_equal(set(selected.keys()), {"default1", "default2"})
 
 
 def test_resolve_selection_missing_plugin(registry: TestRegistry) -> None:
@@ -514,10 +526,10 @@ def test_resolve_selection_missing_plugin(registry: TestRegistry) -> None:
         defaults=[],
     )
 
-    assert set(selected.keys()) == {"exists"}
-    assert len(skipped) == 1
-    assert skipped[0].name == "missing"
-    assert skipped[0].reason == "missing_dependency"
+    expect_equal(set(selected.keys()), {"exists"})
+    expect_length(skipped, 1)
+    expect_equal(skipped[0].name, "missing")
+    expect_equal(skipped[0].reason, "missing_dependency")
 
 
 # =============================================================================
@@ -533,8 +545,8 @@ def test_resolve_dependencies_explicit(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b}
     deps = registry.resolve_dependencies_debug(selected)
 
-    assert deps["a"] == {"b"}
-    assert deps["b"] == set()
+    expect_equal(deps["a"], {"b"})
+    expect_equal(deps["b"], set())
 
 
 def test_resolve_dependencies_capability_based(registry: TestRegistry) -> None:
@@ -545,7 +557,7 @@ def test_resolve_dependencies_capability_based(registry: TestRegistry) -> None:
     selected = {"consumer": consumer, "provider": provider}
     deps = registry.resolve_dependencies_debug(selected)
 
-    assert "provider" in deps["consumer"]
+    expect_in("provider", deps["consumer"])
 
 
 def test_resolve_dependencies_missing_capability(registry: TestRegistry) -> None:
@@ -556,7 +568,7 @@ def test_resolve_dependencies_missing_capability(registry: TestRegistry) -> None
     deps = registry.resolve_dependencies_debug(selected)
 
     # Should not raise, just logs warning
-    assert deps["consumer"] == set()
+    expect_equal(deps["consumer"], set())
 
 
 def test_resolve_dependencies_self_provide(registry: TestRegistry) -> None:
@@ -570,7 +582,7 @@ def test_resolve_dependencies_self_provide(registry: TestRegistry) -> None:
     selected = {"self_sufficient": plugin}
     deps = registry.resolve_dependencies_debug(selected)
 
-    assert "self_sufficient" not in deps["self_sufficient"]
+    expect_false("self_sufficient" in deps["self_sufficient"])
 
 
 # =============================================================================
@@ -591,8 +603,8 @@ def test_topological_sort_linear(registry: TestRegistry) -> None:
     names = [p.metadata.name for p in result]
 
     # c must come before b, b before a
-    assert names.index("c") < names.index("b")
-    assert names.index("b") < names.index("a")
+    expect_true(names.index("c") < names.index("b"))
+    expect_true(names.index("b") < names.index("a"))
 
 
 def test_topological_sort_diamond(registry: TestRegistry) -> None:
@@ -610,8 +622,8 @@ def test_topological_sort_diamond(registry: TestRegistry) -> None:
     names = [p.metadata.name for p in result]
 
     # a must come first, d must come last
-    assert names[0] == "a"
-    assert names[-1] == "d"
+    expect_equal(names[0], "a")
+    expect_equal(names[-1], "d")
 
 
 def test_topological_sort_cycle_detection(registry: TestRegistry) -> None:
@@ -638,7 +650,7 @@ def test_topological_sort_independent(registry: TestRegistry) -> None:
     result = registry.topological_sort_debug(selected, deps)
 
     # All plugins should be in result
-    assert len(result) == EXPECTED_INDEPENDENT_COUNT
+    expect_length(result, EXPECTED_INDEPENDENT_COUNT)
 
 
 # =============================================================================
@@ -650,7 +662,7 @@ def test_mock_plugin_implements_registrable() -> None:
     """Verify MockPlugin implements RegistrablePlugin protocol."""
     plugin = make_plugin("test")
 
-    assert isinstance(plugin, RegistrablePlugin)
+    expect_is_instance(plugin, RegistrablePlugin)
 
 
 def test_non_conforming_not_registrable() -> None:
@@ -659,4 +671,4 @@ def test_non_conforming_not_registrable() -> None:
     class NotAPlugin:
         pass
 
-    assert not isinstance(NotAPlugin(), RegistrablePlugin)
+    expect_false(isinstance(NotAPlugin(), RegistrablePlugin))

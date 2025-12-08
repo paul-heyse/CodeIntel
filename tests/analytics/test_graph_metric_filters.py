@@ -6,14 +6,9 @@ import networkx as nx
 
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
+from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.factories.config_factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
-
-
-def _expect(*, condition: bool, detail: str) -> None:
-    if condition:
-        return
-    raise AssertionError(detail)
 
 
 def test_filter_call_graph_prunes_nodes() -> None:
@@ -25,11 +20,8 @@ def test_filter_call_graph_prunes_nodes() -> None:
 
     filtered = filters.filter_call_graph(graph)
 
-    _expect(condition=set(filtered.nodes) == {1, 2}, detail="filtered nodes should match allowlist")
-    _expect(
-        condition=set(filtered.edges) == {(1, 2)},
-        detail="filtered edges should match surviving nodes",
-    )
+    expect_equal(set(filtered.nodes), {1, 2})
+    expect_equal(set(filtered.edges), {(1, 2)})
 
 
 def test_filter_import_graph_noop_without_modules() -> None:
@@ -40,12 +32,8 @@ def test_filter_import_graph_noop_without_modules() -> None:
 
     filtered = filters.filter_import_graph(graph)
 
-    _expect(
-        condition=set(filtered.nodes) == {"a", "b"}, detail="import nodes should remain unchanged"
-    )
-    _expect(
-        condition=set(filtered.edges) == {("a", "b")}, detail="import edges should remain unchanged"
-    )
+    expect_equal(set(filtered.nodes), {"a", "b"})
+    expect_equal(set(filtered.edges), {("a", "b")})
 
 
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
@@ -55,11 +43,8 @@ def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
         cfg_snapshot = make_snapshot(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
         cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)
         filters = build_graph_metric_filters(gateway, cfg)
-        _expect(
-            condition=filters.function_goids is None,
-            detail="function filter should default to None",
-        )
-        _expect(condition=filters.modules is None, detail="module filter should default to None")
+        expect_equal(filters.function_goids, None)
+        expect_equal(filters.modules, None)
     finally:
         gateway.close()
 
@@ -74,10 +59,7 @@ def test_filter_subsystem_memberships_respects_allowlists() -> None:
 
     filtered = filters.filter_subsystem_memberships(memberships)
 
-    _expect(
-        condition=filtered == [("s1", "mod.a")],
-        detail="only matching subsystem+module should remain",
-    )
+    expect_equal(filtered, [("s1", "mod.a")])
 
 
 def test_filter_subsystem_graph_prunes_nodes() -> None:
@@ -89,9 +71,5 @@ def test_filter_subsystem_graph_prunes_nodes() -> None:
 
     filtered = filters.filter_subsystem_graph(graph)
 
-    _expect(
-        condition=set(filtered.nodes) == {"s1", "s2"}, detail="subsystem nodes should be pruned"
-    )
-    _expect(
-        condition=set(filtered.edges) == {("s1", "s2")}, detail="edges should match surviving nodes"
-    )
+    expect_equal(set(filtered.nodes), {"s1", "s2"})
+    expect_equal(set(filtered.edges), {("s1", "s2")})

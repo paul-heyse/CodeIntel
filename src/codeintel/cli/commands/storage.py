@@ -11,13 +11,18 @@ Commands
 from __future__ import annotations
 
 import logging
+import sys
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from codeintel.cli.commands._common import VerboseOpt, setup_logging
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.helpers.profiling import run_profile
+from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.metadata import (
     _assert_macro_coverage,
     dataset_rows_only_entries,
@@ -36,6 +41,20 @@ storage_app = typer.Typer(
 )
 
 
+class MacroRequirement(Enum):
+    """Policy for ingest macro validation."""
+
+    REQUIRE = "require"
+    ALLOW_MISSING = "allow_missing"
+
+
+class AnalyzeMode(Enum):
+    """Profiling execution strategy."""
+
+    PLAN = "plan"
+    ANALYZE = "analyze"
+
+
 # -----------------------------------------------------------------------------
 # Option Type Aliases
 # -----------------------------------------------------------------------------
@@ -49,10 +68,10 @@ DbPathArg = Annotated[
 ]
 
 RequireIngestMacrosOpt = Annotated[
-    bool,
+    MacroRequirement,
     typer.Option(
-        "--require-ingest-macros/--no-require-ingest-macros",
-        help="Fail if any ingest macros are missing (default: enabled).",
+        "--macros",
+        help="Ingest macro requirement policy.",
     ),
 ]
 
@@ -65,8 +84,8 @@ RequireIngestMacrosOpt = Annotated[
 @storage_app.command("validate-macros")
 def storage_validate_macros(
     db_path: DbPathArg = Path("build/db/codeintel.duckdb"),
-    require_ingest_macros: RequireIngestMacrosOpt = True,
-    verbose: VerboseOpt = 0,
+    macro_requirement: RequireIngestMacrosOpt = MacroRequirement.REQUIRE,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Validate macro registry hashes and normalized macro schemas.
 
@@ -85,6 +104,11 @@ def storage_validate_macros(
 
         # Allow missing ingest macros
         codeintel storage validate-macros --no-require-ingest-macros
+
+    Raises
+    ------
+    typer.Exit
+        If validation fails or required macros are missing.
     """
     setup_logging(verbose)
 
@@ -102,7 +126,7 @@ def storage_validate_macros(
         if missing_ingest:
             LOG.warning("Missing ingest macros: %s", ", ".join(missing_ingest))
         LOG.debug("Present ingest macros: %s", ", ".join(present_ingest))
-        if require_ingest_macros and missing_ingest:
+        if macro_requirement is MacroRequirement.REQUIRE and missing_ingest:
             message = ", ".join(missing_ingest)
             error = RuntimeError(f"Ingest macros missing: {message}")
     except RuntimeError as exc:
@@ -137,7 +161,7 @@ def storage_generate_macros(
         list[str] | None,
         typer.Argument(help="Table keys to render (defaults to all with schemas)."),
     ] = None,
-    verbose: VerboseOpt = 0,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Generate normalized macro DDL for dataset tables.
 
@@ -156,12 +180,12 @@ def storage_generate_macros(
 
         # Generate multiple tables
         codeintel storage generate-macros core.functions analytics.metrics
+
+    Raises
+    ------
+    typer.Exit
+        If no tables are available or rendering fails.
     """
-    import sys
-
-    from codeintel.config.datasets import get_dataset_contracts_by_table_key
-    from codeintel.storage.macros.generation import render_macro
-
     setup_logging(verbose)
 
     def _iter_tables(selected: list[str] | None) -> list[str]:
@@ -201,10 +225,11 @@ OutputDirOpt = Annotated[
 ]
 
 AnalyzeOpt = Annotated[
-    bool,
+    AnalyzeMode,
     typer.Option(
-        "--analyze/--no-analyze",
-        help="Use EXPLAIN ANALYZE instead of EXPLAIN.",
+        "--analyze-mode",
+        help="Explain plan mode.",
+        case_sensitive=False,
     ),
 ]
 
@@ -213,8 +238,8 @@ AnalyzeOpt = Annotated[
 def storage_profile_views(
     db_path: DbPathArg = Path("build/db/codeintel.duckdb"),
     output_dir: OutputDirOpt = Path("build/profiling"),
-    analyze: AnalyzeOpt = False,
-    verbose: VerboseOpt = 0,
+    analyze_mode: AnalyzeOpt = AnalyzeMode.PLAN,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Generate EXPLAIN plans for docs views.
 
@@ -233,13 +258,20 @@ def storage_profile_views(
 
         # Custom paths
         codeintel storage profile-views --db-path my.duckdb --output-dir profiles/
-    """
-    from codeintel.storage.helpers.profiling import run_profile
 
+    Raises
+    ------
+    typer.Exit
+        If profiling fails or the database path is missing.
+    """
     setup_logging(verbose)
 
     try:
-        run_profile(db_path=db_path, output_dir=output_dir, analyze=analyze)
+        run_profile(
+            db_path=db_path,
+            output_dir=output_dir,
+            analyze=analyze_mode is AnalyzeMode.ANALYZE,
+        )
         typer.secho(f"Profiling artifacts written to {output_dir}", fg=typer.colors.GREEN)
     except FileNotFoundError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)

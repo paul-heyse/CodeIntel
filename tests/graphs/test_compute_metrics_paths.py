@@ -16,6 +16,7 @@ from codeintel.graphs.compute.metrics.paths import (
     compute_reachable_nodes,
     count_simple_paths,
 )
+from tests._helpers.assertions import expect_equal, expect_length, expect_true
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     diamond_graph,
@@ -49,7 +50,7 @@ def test_simple_paths_empty_graph() -> None:
     """Empty graph returns zero paths."""
     graph = nx.DiGraph()
     result = count_simple_paths(graph, [1], [2], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT)
-    assert result == EXPECTED_PATH_COUNT_ZERO
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
 
 def test_simple_paths_no_sources() -> None:
@@ -58,7 +59,7 @@ def test_simple_paths_no_sources() -> None:
     result = count_simple_paths(
         graph, [], ["D"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_ZERO
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
 
 def test_simple_paths_no_targets() -> None:
@@ -67,7 +68,7 @@ def test_simple_paths_no_targets() -> None:
     result = count_simple_paths(
         graph, ["A"], [], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_ZERO
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
 
 def test_simple_paths_unreachable_target() -> None:
@@ -76,7 +77,7 @@ def test_simple_paths_unreachable_target() -> None:
     result = count_simple_paths(
         graph, ["A"], ["X"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_ZERO
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
 
 def test_simple_paths_chain_graph() -> None:
@@ -85,7 +86,7 @@ def test_simple_paths_chain_graph() -> None:
     result = count_simple_paths(
         graph, ["A"], ["D"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_ONE
+    expect_equal(result, EXPECTED_PATH_COUNT_ONE)
 
 
 def test_simple_paths_diamond_graph() -> None:
@@ -94,7 +95,7 @@ def test_simple_paths_diamond_graph() -> None:
     result = count_simple_paths(
         graph, ["A"], ["D"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_TWO
+    expect_equal(result, EXPECTED_PATH_COUNT_TWO)
 
 
 def test_simple_paths_multiple_sources() -> None:
@@ -105,7 +106,7 @@ def test_simple_paths_multiple_sources() -> None:
         graph, ["A", "B"], ["C"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
     # One path from A to C, one path from B to C
-    assert result == EXPECTED_PATH_COUNT_TWO
+    expect_equal(result, EXPECTED_PATH_COUNT_TWO)
 
 
 def test_simple_paths_multiple_targets() -> None:
@@ -115,7 +116,7 @@ def test_simple_paths_multiple_targets() -> None:
     result = count_simple_paths(
         graph, ["A"], ["B", "C"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_TWO
+    expect_equal(result, EXPECTED_PATH_COUNT_TWO)
 
 
 def test_simple_paths_max_paths_limit() -> None:
@@ -135,7 +136,7 @@ def test_simple_paths_max_paths_limit() -> None:
     result = count_simple_paths(
         graph, ["A"], ["D"], max_paths=MAX_PATHS_LIMITED, cutoff=CUTOFF_DEFAULT
     )
-    assert result == MAX_PATHS_LIMITED
+    expect_equal(result, MAX_PATHS_LIMITED)
 
 
 def test_simple_paths_cutoff_limit() -> None:
@@ -145,11 +146,11 @@ def test_simple_paths_cutoff_limit() -> None:
     result = count_simple_paths(
         graph, ["A"], ["E"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_SHORT
     )
-    assert result == EXPECTED_PATH_COUNT_ZERO  # E is 4 hops away
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)  # E is 4 hops away
 
     # With cutoff=4, can reach E
     result = count_simple_paths(graph, ["A"], ["E"], max_paths=MAX_PATHS_DEFAULT, cutoff=4)
-    assert result == EXPECTED_PATH_COUNT_ONE
+    expect_equal(result, EXPECTED_PATH_COUNT_ONE)
 
 
 def test_simple_paths_self_loop_handled() -> None:
@@ -161,7 +162,7 @@ def test_simple_paths_self_loop_handled() -> None:
         graph, ["A"], ["A"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
     # Simple path from A to A is just [A] (length 0) - not counted
-    assert result >= EXPECTED_PATH_COUNT_ZERO
+    expect_true(result >= EXPECTED_PATH_COUNT_ZERO)
 
 
 def test_simple_paths_node_not_in_graph() -> None:
@@ -170,7 +171,7 @@ def test_simple_paths_node_not_in_graph() -> None:
     result = count_simple_paths(
         graph, ["X"], ["Y"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
-    assert result == EXPECTED_PATH_COUNT_ZERO
+    expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
 
 # ===========================================================================
@@ -182,7 +183,7 @@ def test_avg_shortest_path_empty_graph() -> None:
     """Empty graph returns zero."""
     graph = nx.DiGraph()
     result = compute_avg_shortest_path_from_source(graph, "A")
-    assert result == AVG_PATH_ZERO
+    expect_equal(result, AVG_PATH_ZERO)
 
 
 def test_avg_shortest_path_single_node() -> None:
@@ -191,7 +192,7 @@ def test_avg_shortest_path_single_node() -> None:
     graph.add_node("A")
     result = compute_avg_shortest_path_from_source(graph, "A")
     # Only path is to itself (length 0)
-    assert result == AVG_PATH_ZERO
+    expect_equal(result, AVG_PATH_ZERO)
 
 
 def test_avg_shortest_path_chain_graph() -> None:
@@ -201,7 +202,7 @@ def test_avg_shortest_path_chain_graph() -> None:
 
     # Sum of distances 0,1,2,3 divided by 4 gives 1.5
     expected_avg: float = 1.5
-    assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
+    expect_true(abs(result - expected_avg) < AVG_PATH_TOLERANCE)
 
 
 def test_avg_shortest_path_star_graph() -> None:
@@ -211,7 +212,7 @@ def test_avg_shortest_path_star_graph() -> None:
 
     # Sum of distances 0,1,1,1 divided by 4 gives 0.75
     expected_avg: float = 0.75
-    assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
+    expect_true(abs(result - expected_avg) < AVG_PATH_TOLERANCE)
 
 
 def test_avg_shortest_path_from_sink() -> None:
@@ -220,7 +221,7 @@ def test_avg_shortest_path_from_sink() -> None:
     result = compute_avg_shortest_path_from_source(graph, "D")
 
     # D can only reach itself (distance 0)
-    assert result == AVG_PATH_ZERO
+    expect_equal(result, AVG_PATH_ZERO)
 
 
 def test_avg_shortest_path_disconnected_source() -> None:
@@ -230,14 +231,14 @@ def test_avg_shortest_path_disconnected_source() -> None:
 
     # A can reach A, B, C (distances 0, 1, 2)
     expected_avg: float = (0 + 1 + 2) / 3
-    assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
+    expect_true(abs(result - expected_avg) < AVG_PATH_TOLERANCE)
 
 
 def test_avg_shortest_path_source_not_in_graph() -> None:
     """Source not in graph returns zero."""
     graph = chain_graph(3)
     result = compute_avg_shortest_path_from_source(graph, "X")
-    assert result == AVG_PATH_ZERO
+    expect_equal(result, AVG_PATH_ZERO)
 
 
 def test_avg_shortest_path_diamond_graph() -> None:
@@ -247,7 +248,7 @@ def test_avg_shortest_path_diamond_graph() -> None:
 
     # Sum of distances 0,1,1,2 divided by 4 gives 1.0
     expected_avg: float = 1.0
-    assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
+    expect_true(abs(result - expected_avg) < AVG_PATH_TOLERANCE)
 
 
 # ===========================================================================
@@ -260,7 +261,7 @@ def test_reachable_nodes_empty_graph() -> None:
     graph = nx.DiGraph()
     result = compute_reachable_nodes(graph, "A")
     # Source is always included even if not in graph
-    assert "A" in result
+    expect_true("A" in result)
 
 
 def test_reachable_nodes_single_node() -> None:
@@ -269,7 +270,7 @@ def test_reachable_nodes_single_node() -> None:
     graph.add_node("A")
     result = compute_reachable_nodes(graph, "A")
 
-    assert result == {"A"}
+    expect_equal(result, {"A"})
 
 
 def test_reachable_nodes_chain_graph() -> None:
@@ -277,7 +278,7 @@ def test_reachable_nodes_chain_graph() -> None:
     graph = chain_graph(4)  # A -> B -> C -> D
     result = compute_reachable_nodes(graph, "A")
 
-    assert result == {"A", "B", "C", "D"}
+    expect_equal(result, {"A", "B", "C", "D"})
 
 
 def test_reachable_nodes_from_middle() -> None:
@@ -285,7 +286,7 @@ def test_reachable_nodes_from_middle() -> None:
     graph = chain_graph(4)
     result = compute_reachable_nodes(graph, "B")
 
-    assert result == {"B", "C", "D"}
+    expect_equal(result, {"B", "C", "D"})
 
 
 def test_reachable_nodes_from_sink() -> None:
@@ -293,7 +294,7 @@ def test_reachable_nodes_from_sink() -> None:
     graph = chain_graph(4)
     result = compute_reachable_nodes(graph, "D")
 
-    assert result == {"D"}
+    expect_equal(result, {"D"})
 
 
 def test_reachable_nodes_star_graph() -> None:
@@ -301,7 +302,7 @@ def test_reachable_nodes_star_graph() -> None:
     graph = star_graph(3)
     result = compute_reachable_nodes(graph, "hub")
 
-    assert result == {"hub", "spoke1", "spoke2", "spoke3"}
+    expect_equal(result, {"hub", "spoke1", "spoke2", "spoke3"})
 
 
 def test_reachable_nodes_star_spoke() -> None:
@@ -309,7 +310,7 @@ def test_reachable_nodes_star_spoke() -> None:
     graph = star_graph(3)
     result = compute_reachable_nodes(graph, "spoke1")
 
-    assert result == {"spoke1"}
+    expect_equal(result, {"spoke1"})
 
 
 def test_reachable_nodes_disconnected() -> None:
@@ -318,7 +319,7 @@ def test_reachable_nodes_disconnected() -> None:
     result = compute_reachable_nodes(graph, "A")
 
     # A can reach A, B, C but not X, Y, Z
-    assert result == {"A", "B", "C"}
+    expect_equal(result, {"A", "B", "C"})
 
 
 def test_reachable_nodes_diamond() -> None:
@@ -326,7 +327,7 @@ def test_reachable_nodes_diamond() -> None:
     graph = diamond_graph()
     result = compute_reachable_nodes(graph, "A")
 
-    assert result == {"A", "B", "C", "D"}
+    expect_equal(result, {"A", "B", "C", "D"})
 
 
 def test_reachable_nodes_source_not_in_graph() -> None:
@@ -335,7 +336,7 @@ def test_reachable_nodes_source_not_in_graph() -> None:
     result = compute_reachable_nodes(graph, "X")
 
     # NetworkX descendants fails, but source is still added
-    assert result == {"X"}
+    expect_equal(result, {"X"})
 
 
 def test_reachable_nodes_cyclic_graph() -> None:
@@ -343,7 +344,7 @@ def test_reachable_nodes_cyclic_graph() -> None:
     graph = nx.DiGraph([("A", "B"), ("B", "C"), ("C", "A")])
     result = compute_reachable_nodes(graph, "A")
 
-    assert result == {"A", "B", "C"}
+    expect_equal(result, {"A", "B", "C"})
 
 
 # ===========================================================================
@@ -361,7 +362,7 @@ def test_integration_reachable_matches_path_count() -> None:
             paths = count_simple_paths(
                 graph, ["A"], [target], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
             )
-            assert paths >= EXPECTED_PATH_COUNT_ONE
+            expect_true(paths >= EXPECTED_PATH_COUNT_ONE)
 
 
 def test_integration_avg_path_length_consistency() -> None:
@@ -374,7 +375,7 @@ def test_integration_avg_path_length_consistency() -> None:
     reachable = compute_reachable_nodes(graph, "A")
 
     expected_avg = sum(range(len(reachable))) / len(reachable)
-    assert abs(avg - expected_avg) < AVG_PATH_TOLERANCE
+    expect_true(abs(avg - expected_avg) < AVG_PATH_TOLERANCE)
 
 
 # ===========================================================================
@@ -396,7 +397,7 @@ def test_reachable_various_chains(chain_length: int, expected_reachable_from_fir
     graph = chain_graph(chain_length)
     result = compute_reachable_nodes(graph, "A")
 
-    assert len(result) == expected_reachable_from_first
+    expect_length(result, expected_reachable_from_first)
 
 
 @pytest.mark.parametrize(
@@ -413,7 +414,7 @@ def test_reachable_star_graphs(spoke_count: int, expected_reachable_from_hub: in
     graph = star_graph(spoke_count)
     result = compute_reachable_nodes(graph, "hub")
 
-    assert len(result) == expected_reachable_from_hub
+    expect_length(result, expected_reachable_from_hub)
 
 
 @pytest.mark.parametrize(
@@ -435,4 +436,4 @@ def test_paths_with_various_cutoffs(chain_length: int, cutoff: int, expected_pat
         graph, ["A"], [last_node], max_paths=MAX_PATHS_DEFAULT, cutoff=cutoff
     )
 
-    assert result == expected_paths
+    expect_equal(result, expected_paths)
