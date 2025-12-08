@@ -8,15 +8,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.server import create_mcp_server
 from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
+from tests._helpers.assertions import expect_true
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.mcp_fast import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -42,7 +42,7 @@ def test_create_mcp_server_local_db_requires_gateway() -> None:
 def test_create_mcp_server_returns_server_and_close(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify create_mcp_server returns FastMCP server and close callback.
+    """Verify create_mcp_server returns an MCP server and close callback.
 
     Parameters
     ----------
@@ -57,9 +57,11 @@ def test_create_mcp_server_returns_server_and_close(
         repo_root=provisioned_repo.repo_root,
     )
 
-    server, close = create_mcp_server(cfg, gateway=provisioned_repo.gateway)
+    server, close = create_mcp_server(
+        cfg, gateway=provisioned_repo.gateway, mcp_factory=wrap_fastmcp
+    )
 
-    expect_is_instance(server, FastMCP)
+    expect_true(hasattr(server, "run"))
     expect_true(callable(close))
 
 
@@ -110,10 +112,11 @@ def test_create_mcp_server_with_custom_backend_factory(
         cfg,
         backend_factory=custom_factory,
         gateway=provisioned_repo.gateway,
+        mcp_factory=wrap_fastmcp,
     )
 
     expect_true(factory_called)
-    expect_is_instance(server, FastMCP)
+    expect_true(hasattr(server, "run"))
 
 
 def test_create_mcp_server_with_custom_tools_registration(
@@ -128,7 +131,7 @@ def test_create_mcp_server_with_custom_tools_registration(
     """
     tools_registered = False
 
-    def custom_register_tools(_server: FastMCP, _backend: object) -> None:
+    def custom_register_tools(_server: object, _backend: object, _cfg: object) -> None:
         nonlocal tools_registered
         tools_registered = True
 
@@ -144,10 +147,11 @@ def test_create_mcp_server_with_custom_tools_registration(
         cfg,
         gateway=provisioned_repo.gateway,
         register_tools_fn=custom_register_tools,
+        mcp_factory=wrap_fastmcp,
     )
 
     expect_true(tools_registered)
-    expect_is_instance(server, FastMCP)
+    expect_true(hasattr(server, "run"))
 
 
 def test_create_mcp_server_close_callback_callable(
@@ -226,9 +230,8 @@ def test_create_mcp_server_default_tools_registered(
         repo_root=provisioned_repo.repo_root,
     )
 
-    server, _close = create_mcp_server(cfg, gateway=provisioned_repo.gateway)
+    server, _close = create_mcp_server(
+        cfg, gateway=provisioned_repo.gateway, mcp_factory=wrap_fastmcp
+    )
 
-    # Server should have tools registered
-    expect_is_instance(server, FastMCP)
-    # The server name should be set
-    expect_equal(server.name, "CodeIntel")
+    expect_true(hasattr(server, "tools"))

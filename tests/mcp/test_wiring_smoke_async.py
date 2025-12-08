@@ -44,8 +44,9 @@ def test_mcp_wiring_smoke_async_registrar() -> None:
     )
 
     expect_true(called)
-    tools = getattr(mcp, "tools", None)
-    expect_true(isinstance(tools, list))
+    tools_obj = getattr(mcp, "tools", None)
+    expect_true(isinstance(tools_obj, list))
+    tools = cast("list[object]", tools_obj)
     registered.extend(tool["name"] for tool in tools if isinstance(tool, dict))
     expect_true("async_tool" in registered)
     close()

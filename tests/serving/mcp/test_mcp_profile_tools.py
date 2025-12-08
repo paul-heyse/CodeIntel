@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
@@ -23,6 +22,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.mcp_fast import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -89,7 +89,7 @@ def test_register_profile_tools_success(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Profile Tools", json_response=True)
+    mcp = wrap_fastmcp("Test Profile Tools")
     backend = _build_backend(provisioned_repo)
 
     # Should not raise
@@ -109,7 +109,7 @@ def test_register_profile_tools_with_service(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Service", json_response=True)
+    mcp = wrap_fastmcp("Test Service")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -137,7 +137,7 @@ def test_register_profile_tools_with_config(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test With Config", json_response=True)
+    mcp = wrap_fastmcp("Test With Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig()
 
@@ -158,11 +158,11 @@ def test_register_profile_tools_on_multiple_servers(
     """
     backend = _build_backend(provisioned_repo)
 
-    mcp1 = FastMCP("Server 1", json_response=True)
+    mcp1 = wrap_fastmcp("Server 1")
     register_profile_tools(mcp1, backend)
     expect_equal(mcp1.name, "Server 1")
 
-    mcp2 = FastMCP("Server 2", json_response=True)
+    mcp2 = wrap_fastmcp("Server 2")
     register_profile_tools(mcp2, backend)
     expect_equal(mcp2.name, "Server 2")
 
@@ -397,7 +397,7 @@ def test_register_profile_tools_preserves_backend_state(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test State", json_response=True)
+    mcp = wrap_fastmcp("Test State")
     backend = _build_backend(provisioned_repo)
 
     original_repo = backend.repo
@@ -438,7 +438,7 @@ def test_local_query_service_as_backend(
         dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
     )
 
-    mcp = FastMCP("Test Local Service", json_response=True)
+    mcp = wrap_fastmcp("Test Local Service")
     register_profile_tools(mcp, service)
 
     expect_equal(mcp.name, "Test Local Service")

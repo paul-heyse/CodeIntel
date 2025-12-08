@@ -10,7 +10,6 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import pytest
-from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.graphs.core.registry import plan_graph_plugins
@@ -28,6 +27,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.mcp_fast import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -146,7 +146,7 @@ def test_register_architecture_tools_success(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Architecture", json_response=True)
+    mcp = wrap_fastmcp("Test Architecture")
     backend = _build_backend(provisioned_repo)
 
     # Should not raise
@@ -166,7 +166,7 @@ def test_register_architecture_tools_with_config(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Architecture Config", json_response=True)
+    mcp = wrap_fastmcp("Test Architecture Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="remote_api",
@@ -192,7 +192,7 @@ def test_register_architecture_tools_with_architecture_gateway(
     architecture_gateway
         Gateway with architecture data seeded.
     """
-    mcp = FastMCP("Test Architecture Gateway", json_response=True)
+    mcp = wrap_fastmcp("Test Architecture Gateway")
     backend = _build_architecture_backend(architecture_gateway)
 
     # Should not raise
@@ -211,7 +211,7 @@ def test_register_architecture_tools_without_config(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test No Config", json_response=True)
+    mcp = wrap_fastmcp("Test No Config")
     backend = _build_backend(provisioned_repo)
 
     # Should work with config=None (default)
@@ -230,7 +230,7 @@ def test_register_architecture_tools_with_local_query_service(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Local Service", json_response=True)
+    mcp = wrap_fastmcp("Test Local Service")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -267,12 +267,12 @@ def test_register_architecture_tools_different_servers(
     backend = _build_backend(provisioned_repo)
 
     # Register on first server
-    mcp1 = FastMCP("Server One", json_response=True)
+    mcp1 = wrap_fastmcp("Server One")
     register_architecture_tools(mcp1, backend)
     expect_equal(mcp1.name, "Server One")
 
     # Register on second server
-    mcp2 = FastMCP("Server Two", json_response=True)
+    mcp2 = wrap_fastmcp("Server Two")
     register_architecture_tools(mcp2, backend)
     expect_equal(mcp2.name, "Server Two")
 
@@ -291,13 +291,13 @@ def test_register_architecture_tools_different_backends(
         Gateway with architecture data seeded.
     """
     # Register with provisioned repo backend
-    mcp1 = FastMCP("Test Backend 1", json_response=True)
+    mcp1 = wrap_fastmcp("Test Backend 1")
     backend1 = _build_backend(provisioned_repo)
     register_architecture_tools(mcp1, backend1)
     expect_equal(mcp1.name, "Test Backend 1")
 
     # Register with architecture gateway backend
-    mcp2 = FastMCP("Test Backend 2", json_response=True)
+    mcp2 = wrap_fastmcp("Test Backend 2")
     backend2 = _build_architecture_backend(architecture_gateway)
     register_architecture_tools(mcp2, backend2)
     expect_equal(mcp2.name, "Test Backend 2")
@@ -318,7 +318,7 @@ def test_register_architecture_tools_duckdb_backend(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test DuckDB Backend", json_response=True)
+    mcp = wrap_fastmcp("Test DuckDB Backend")
     backend = _build_backend(provisioned_repo)
 
     # Verify backend is DuckDBBackend
@@ -338,7 +338,7 @@ def test_register_architecture_tools_service_with_repo_info(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Service Repo", json_response=True)
+    mcp = wrap_fastmcp("Test Service Repo")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -375,7 +375,7 @@ def test_register_architecture_tools_local_db_config(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Local DB Config", json_response=True)
+    mcp = wrap_fastmcp("Test Local DB Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="local_db",
@@ -399,7 +399,7 @@ def test_register_architecture_tools_remote_api_config(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    mcp = FastMCP("Test Remote API Config", json_response=True)
+    mcp = wrap_fastmcp("Test Remote API Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="remote_api",
@@ -449,7 +449,7 @@ def test_register_architecture_tools_custom_limits(
         service=service,
     )
 
-    mcp = FastMCP("Test Custom Limits", json_response=True)
+    mcp = wrap_fastmcp("Test Custom Limits")
     register_architecture_tools(mcp, backend)
 
     expect_equal(mcp.name, "Test Custom Limits")
