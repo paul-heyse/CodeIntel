@@ -329,20 +329,20 @@ def insert_entrypoints(
             handler_qualname, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-            (
-                snapshot.repo,
-                snapshot.commit,
-                "api.get_items",
-                "http",
-                "fastapi",
-                goids["func_a"],
-                "urn:pkg.mod_a.func_a",
-                ast_by_goid[goids["func_a"]].rel_path,
-                "pkg.mod_a",
-                "func_a",
-                now,
-            ),
-        )
+        (
+            snapshot.repo,
+            snapshot.commit,
+            "api.get_items",
+            "http",
+            "fastapi",
+            goids["func_a"],
+            "urn:pkg.mod_a.func_a",
+            ast_by_goid[goids["func_a"]].rel_path,
+            "pkg.mod_a",
+            "func_a",
+            now,
+        ),
+    )
 
 
 def insert_subsystems(gateway: StorageGateway, snapshot: SnapshotRef) -> None:

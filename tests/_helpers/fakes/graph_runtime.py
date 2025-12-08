@@ -353,8 +353,10 @@ class GraphRuntimeDouble:
         return self._clone(graph)
 
     def _clone(self, graph: _GraphT) -> _GraphT:
-        if self.copy_graphs:
-            return graph.copy()
+        if graph is None:
+            return None  # type: ignore[return-value]
+        if self.copy_graphs and hasattr(graph, "copy"):
+            return graph.copy()  # type: ignore[return-value]
         return graph
 
     def _load_call_graph_from_db(self) -> nx.DiGraph | None:

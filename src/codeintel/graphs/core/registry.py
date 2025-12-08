@@ -150,20 +150,81 @@ class PlanningOptions:
     requested_required: bool | None = None
 
     def __post_init__(self) -> None:
+        """Derive ``requested_required`` from other fields when not set explicitly."""
         if self.requested_required is not None:
             return
         auto_required = self.dependency_policy is DependencyPolicy.STRICT or not self.use_stubs
         object.__setattr__(self, "requested_required", auto_required)
 
     @classmethod
-    def for_required_requests(cls, **kwargs: object) -> PlanningOptions:
-        """Build planning options that treat explicit requests as required."""
-        return cls(requested_required=True, **kwargs)
+    def for_required_requests(
+        cls,
+        *,
+        allow_missing_dependencies: bool = False,
+        dependency_policy: DependencyPolicy = DependencyPolicy.STRICT,
+        selection_policy: SelectionPolicy = SelectionPolicy.LENIENT,
+        use_stubs: bool = True,
+    ) -> PlanningOptions:
+        """Build planning options that treat explicit requests as required.
+
+        Parameters
+        ----------
+        allow_missing_dependencies
+            Whether to allow missing dependencies in plans.
+        dependency_policy
+            Policy for handling dependencies.
+        selection_policy
+            Policy for plugin selection.
+        use_stubs
+            Whether to use stub plugins for missing dependencies.
+
+        Returns
+        -------
+        PlanningOptions
+            Configured planning options with ``requested_required=True``.
+        """
+        return cls(
+            requested_required=True,
+            allow_missing_dependencies=allow_missing_dependencies,
+            dependency_policy=dependency_policy,
+            selection_policy=selection_policy,
+            use_stubs=use_stubs,
+        )
 
     @classmethod
-    def for_lenient_requests(cls, **kwargs: object) -> PlanningOptions:
-        """Build planning options that treat explicit requests as optional."""
-        return cls(requested_required=False, **kwargs)
+    def for_lenient_requests(
+        cls,
+        *,
+        allow_missing_dependencies: bool = False,
+        dependency_policy: DependencyPolicy = DependencyPolicy.STRICT,
+        selection_policy: SelectionPolicy = SelectionPolicy.LENIENT,
+        use_stubs: bool = True,
+    ) -> PlanningOptions:
+        """Build planning options that treat explicit requests as optional.
+
+        Parameters
+        ----------
+        allow_missing_dependencies
+            Whether to allow missing dependencies in plans.
+        dependency_policy
+            Policy for handling dependencies.
+        selection_policy
+            Policy for plugin selection.
+        use_stubs
+            Whether to use stub plugins for missing dependencies.
+
+        Returns
+        -------
+        PlanningOptions
+            Configured planning options with ``requested_required=False``.
+        """
+        return cls(
+            requested_required=False,
+            allow_missing_dependencies=allow_missing_dependencies,
+            dependency_policy=dependency_policy,
+            selection_policy=selection_policy,
+            use_stubs=use_stubs,
+        )
 
 
 GraphSkipReason = Literal[

@@ -93,7 +93,9 @@ class CoverageLinesPack:
         rows: list[CoverageLineRow] = []
 
         rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_A, self.full_coverage_ratio))
-        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_B, self.partial_coverage_ratio))
+        rows.extend(
+            self._coverage_lines_for_function(ctx, GOID_FUNC_B, self.partial_coverage_ratio)
+        )
         rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_C, self.full_coverage_ratio))
         if self.include_uncovered_function:
             rows.extend(

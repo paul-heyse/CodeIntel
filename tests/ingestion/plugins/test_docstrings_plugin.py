@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -11,6 +12,8 @@ from codeintel.build.context import TargetExecutionContext
 from codeintel.ingestion.compute import DocstringsExtractStep
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
+from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
+from codeintel.ingestion.ports.storage import IngestStoragePort
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_context import RecordingGateway, _RecordingConnection
@@ -33,7 +36,24 @@ def _make_plugin(
         discovery_adapter_factory=lambda repo_root: RecordingDiscoveryAdapter(
             repo_root, capture=capture
         ),
-        step_factory=lambda storage, discovery: cast(
+        step_factory=_build_step_factory(
+            capture=capture,
+            table_key=table_key,
+            result=result,
+        ),
+    )
+
+
+def _build_step_factory(
+    *,
+    capture: StepCallCapture,
+    table_key: str,
+    result: StepResult | None,
+) -> Callable[[IngestStoragePort, ModuleDiscoveryPort], DocstringsExtractStep]:
+    def _factory(
+        storage: IngestStoragePort, discovery: ModuleDiscoveryPort
+    ) -> DocstringsExtractStep:
+        return cast(
             "DocstringsExtractStep",
             RecordingStep(
                 storage,
@@ -42,8 +62,9 @@ def _make_plugin(
                 table_key=table_key,
                 result=result,
             ),
-        ),
-    )
+        )
+
+    return _factory
 
 
 @pytest.mark.anyio
@@ -98,7 +119,8 @@ class _FailingConnection(_RecordingConnection):
     def __init__(self, gateway: RecordingGateway) -> None:
         super().__init__(gateway)
 
-    def execute(self, sql: str, params: object) -> _RecordingConnection:
+    @staticmethod
+    def execute(sql: str, params: object) -> _RecordingConnection:
         _ = sql, params
         message = "db down"
         raise OSError(message)

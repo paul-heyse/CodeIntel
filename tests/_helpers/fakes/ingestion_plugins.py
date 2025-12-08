@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.build.protocols import TypeCheckResult, TypeDiagnostic
 from codeintel.ingestion.compute.base import StepResult
@@ -19,9 +20,26 @@ from codeintel.ingestion.ports.tools import (
     DiagnosticEntry,
     DiagnosticResult,
     IngestToolPort,
+    ScipResult,
+    TestResult,
     ToolStatus,
 )
 from tests._helpers.fakes.storage import FakeIngestStorage
+
+if TYPE_CHECKING:
+    from codeintel.build.protocols import TypeChecker
+else:  # pragma: no cover - runtime placeholder
+
+    class TypeChecker:  # pragma: no cover - minimal stub
+        async def check(
+            self,
+            repo_root: Path,
+            *,
+            paths: Sequence[Path] | None = None,
+            config_path: Path | None = None,
+        ) -> TypeCheckResult:
+            _ = self, repo_root, paths, config_path
+            return TypeCheckResult(success=True)
 
 
 @dataclass
@@ -183,7 +201,7 @@ class RecordingTypeChecker:
         *,
         paths: Sequence[Path] | None = None,
         config_path: Path | None = None,
-    ) -> object:
+    ) -> TypeCheckResult:
         _ = repo_root, paths, config_path
 
         return TypeCheckResult(
@@ -205,15 +223,20 @@ class RecordingTypeChecker:
 class RecordingToolPort(IngestToolPort):
     """Tool port double that can return deterministic results."""
 
-    def __init__(self, status: ToolStatus = ToolStatus.OK) -> None:
+    def __init__(
+        self,
+        status: ToolStatus = ToolStatus.OK,
+        diagnostics: Sequence[DiagnosticEntry] | None = None,
+    ) -> None:
         self.status = status
+        self._diagnostics = list(diagnostics or ())
 
-    async def run_pyright(self, repo_root: Path) -> object:
+    async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
         _ = repo_root
 
-        return DiagnosticResult(
-            status=self.status,
-            diagnostics=(
+        diagnostics = list(self._diagnostics)
+        if not diagnostics:
+            diagnostics.append(
                 DiagnosticEntry(
                     path="pkg/sample.py",
                     line=1,
@@ -221,15 +244,23 @@ class RecordingToolPort(IngestToolPort):
                     severity="info",
                     code="info",
                     message="ok",
-                ),
-            ),
+                )
+            )
+
+        return DiagnosticResult(
+            status=self.status,
+            diagnostics=diagnostics,
         )
 
-    async def run_pyrefly(self, repo_root: Path) -> object:
+    async def run_pyrefly(self, repo_root: Path) -> DiagnosticResult:
         return await self.run_pyright(repo_root)
 
-    async def run_ruff(self, repo_root: Path) -> object:
+    async def run_ruff(self, repo_root: Path) -> DiagnosticResult:
         return await self.run_pyright(repo_root)
+
+    async def run_pytest(self, repo_root: Path, *, json_report_path: Path) -> TestResult:
+        _ = repo_root, json_report_path
+        return TestResult(status=self.status, tests=[])
 
     async def run_coverage(
         self,
@@ -237,10 +268,22 @@ class RecordingToolPort(IngestToolPort):
         *,
         coverage_file: Path | None = None,
         output_path: Path | None = None,
-    ) -> object:
+    ) -> CoverageResult:
         _ = repo_root, coverage_file, output_path
 
-        return CoverageResult(status=self.status, files=())
+        return CoverageResult(status=self.status, files=[])
+
+    async def run_scip(
+        self,
+        repo_root: Path,
+        *,
+        output_scip: Path,
+        output_json: Path,
+        target_dir: Path | None = None,
+        rel_paths: list[str] | None = None,
+    ) -> ScipResult:
+        _ = repo_root, output_scip, output_json, target_dir, rel_paths
+        return ScipResult(status=self.status, documents=[])
 
 
 def make_type_checker_factory(

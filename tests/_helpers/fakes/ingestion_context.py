@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,6 +19,22 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.build.protocols import TypeChecker
     from codeintel.storage.gateway import StorageGateway
+else:  # pragma: no cover - runtime placeholder
+    TypeChecker = object  # type: ignore[misc,assignment]
+
+
+# Valid override keys for make_target_context
+_VALID_OVERRIDE_KEYS = frozenset(
+    {
+        "modules",
+        "snapshot",
+        "type_checker",
+        "gateway",
+        "use_real_gateway",
+        "tmp_path",
+        "options",
+    }
+)
 
 
 @dataclass
@@ -29,18 +45,35 @@ class RecordingGateway:
     executions: list[tuple[str, list[object]]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """Initialize the connection attribute."""
         self.con = _RecordingConnection(self)
 
 
 class _RecordingConnection:
+    """Stub connection that records SQL and returns canned results."""
+
     def __init__(self, gateway: RecordingGateway) -> None:
         self._gateway = gateway
 
     def execute(self, sql: str, params: Iterable[object]) -> _RecordingConnection:
+        """Record an SQL execution and return self for chaining.
+
+        Returns
+        -------
+        _RecordingConnection
+            Self for method chaining.
+        """
         self._gateway.executions.append((sql, list(params)))
         return self
 
     def fetchall(self) -> list[tuple[object, ...]]:
+        """Return the canned result rows.
+
+        Returns
+        -------
+        list[tuple[object, ...]]
+            List of result row tuples.
+        """
         return self._gateway.result_rows
 
 
@@ -59,10 +92,14 @@ class TargetContextOverrides:
 
     modules: tuple[str, ...] = ()
     snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT)
-    type_checker: TypeChecker | None = None
+    type_checker: object | None = None
     gateway: StorageGateway | RecordingGateway | None = None
     use_real_gateway: bool = True
     tmp_path: Path | None = None
+
+
+# Legacy alias for backward compatibility with tests
+LegacyTargetContextOptions = TargetContextOverrides
 
 
 @dataclass
@@ -78,19 +115,42 @@ class RecordingContext:
 
 def make_target_context(
     repo_root: Path,
-    options: LegacyTargetContextOptions | None = None,
-    **overrides: object,
+    overrides: TargetContextOverrides | None = None,
+    *,
+    modules: Sequence[str] | None = None,
+    snapshot: tuple[str, str] | None = None,
+    type_checker: object | None = None,
+    gateway: StorageGateway | RecordingGateway | None = None,
+    use_real_gateway: bool | None = None,
+    tmp_path: Path | None = None,
+    options: TargetContextOverrides | None = None,
 ) -> RecordingContext:
     """Construct a recording context matching plugin expectations.
+
+    This function supports two API styles:
+    1. Dataclass style: pass a `TargetContextOverrides` object
+    2. Keyword style: pass individual kwargs (modules, gateway, etc.)
 
     Parameters
     ----------
     repo_root
         Repository root directory.
-    options
-        Pre-built options bundle. Mutually exclusive with overrides.
     overrides
-        Optional overrides: modules, gateway, type_checker, use_real_gateway, tmp_path, snapshot.
+        Optional overrides bundle (dataclass style API).
+    modules
+        Module paths to include in resources (keyword style).
+    snapshot
+        Tuple of (repo, commit) identifiers.
+    type_checker
+        Type checker instance for resources.
+    gateway
+        Pre-existing gateway to use.
+    use_real_gateway
+        Whether to create a real gateway (True) or use RecordingGateway (False).
+    tmp_path
+        Temporary path for gateway setup.
+    options
+        Alias for `overrides` (for backward compatibility).
 
     Returns
     -------
@@ -100,36 +160,32 @@ def make_target_context(
     Raises
     ------
     ValueError
-        If both options and overrides are provided or unexpected keys are supplied.
+        If both `overrides` and keyword overrides are provided, or if unknown
+        keyword arguments are passed.
     """
-    allowed_keys = {
-        "modules",
-        "gateway",
-        "type_checker",
-        "use_real_gateway",
-        "tmp_path",
-        "snapshot",
-    }
-    unexpected_keys = set(overrides) - allowed_keys
-    if options is not None and overrides:
-        message = "Pass either options or individual overrides, not both."
-        raise ValueError(message)
-    if unexpected_keys:
-        unexpected_list = ", ".join(sorted(unexpected_keys))
-        message = f"Unexpected overrides: {unexpected_list}"
+    # Check for mixed API usage
+    has_kwargs = any(
+        v is not None
+        for v in [modules, snapshot, type_checker, gateway, use_real_gateway, tmp_path]
+    )
+    opts_arg = overrides or options
+
+    if opts_arg is not None and has_kwargs:
+        message = "Use either options/overrides OR keyword arguments, not both"
         raise ValueError(message)
 
-    if options is None:
-        opts = LegacyTargetContextOptions(
-            modules=tuple(overrides["modules"]) if "modules" in overrides else None,
-            snapshot=overrides.get("snapshot", (DEFAULT_REPO, DEFAULT_COMMIT)),
-            type_checker=overrides.get("type_checker"),
-            gateway=overrides.get("gateway"),
-            use_real_gateway=overrides.get("use_real_gateway", True),
-            tmp_path=overrides.get("tmp_path"),
+    # Build overrides from kwargs if no dataclass provided
+    if opts_arg is None and has_kwargs:
+        opts = TargetContextOverrides(
+            modules=tuple(modules) if modules else (),
+            snapshot=snapshot if snapshot else (DEFAULT_REPO, DEFAULT_COMMIT),
+            type_checker=type_checker,
+            gateway=gateway,
+            use_real_gateway=use_real_gateway if use_real_gateway is not None else True,
+            tmp_path=tmp_path,
         )
     else:
-        opts = options
+        opts = opts_arg or TargetContextOverrides()
 
     repo, commit = opts.snapshot
     gateway_obj = opts.gateway
@@ -158,9 +214,18 @@ def make_target_context(
 def make_target_context_from_modules(
     repo_root: Path,
     modules: Iterable[str],
-    **overrides: object,
+    overrides: TargetContextOverrides | None = None,
+    *,
+    snapshot: tuple[str, str] | None = None,
+    type_checker: object | None = None,
+    gateway: StorageGateway | RecordingGateway | None = None,
+    use_real_gateway: bool | None = None,
+    tmp_path: Path | None = None,
 ) -> RecordingContext:
     """Build a RecordingContext with explicit modules and optional overrides.
+
+    This is a convenience wrapper around `make_target_context` that accepts
+    modules as a positional argument.
 
     Parameters
     ----------
@@ -169,22 +234,37 @@ def make_target_context_from_modules(
     modules
         Module paths to include in the context.
     overrides
-        Optional overrides forwarded to `make_target_context`.
+        Optional overrides bundle (dataclass style API).
+    snapshot
+        Tuple of (repo, commit) identifiers.
+    type_checker
+        Type checker instance for resources.
+    gateway
+        Pre-existing gateway to use.
+    use_real_gateway
+        Whether to create a real gateway (True) or use RecordingGateway (False).
+    tmp_path
+        Temporary path for gateway setup.
 
     Returns
     -------
     RecordingContext
         Context populated with provided modules and overrides.
     """
-    opts = LegacyTargetContextOptions(
+    base_overrides = overrides or TargetContextOverrides()
+
+    # Merge kwargs with base overrides, preferring explicit kwargs
+    merged = TargetContextOverrides(
         modules=tuple(modules),
-        snapshot=overrides.get("snapshot", (DEFAULT_REPO, DEFAULT_COMMIT)),
-        type_checker=overrides.get("type_checker"),
-        gateway=overrides.get("gateway"),
-        use_real_gateway=overrides.get("use_real_gateway", True),
-        tmp_path=overrides.get("tmp_path"),
+        snapshot=snapshot if snapshot else base_overrides.snapshot,
+        type_checker=type_checker if type_checker is not None else base_overrides.type_checker,
+        gateway=gateway if gateway is not None else base_overrides.gateway,
+        use_real_gateway=(
+            use_real_gateway if use_real_gateway is not None else base_overrides.use_real_gateway
+        ),
+        tmp_path=tmp_path if tmp_path is not None else base_overrides.tmp_path,
     )
-    return make_target_context(repo_root=repo_root, options=opts)
+    return make_target_context(repo_root=repo_root, overrides=merged)
 
 
 def build_target_context(
@@ -207,19 +287,7 @@ def build_target_context(
         target,
         tmp_path=tmp_path,
         options=opts,
-        resources=TargetResourceOverrides(
-            modules=overrides.modules,
-            type_checker=overrides.type_checker,
-            providers=overrides.providers,
-            change_tracker=overrides.change_tracker,
-            graph_runtime=overrides.graph_runtime,
-            catalog=overrides.catalog,
-            test_reporter=overrides.test_reporter,
-            coverage_collector=overrides.coverage_collector,
-            scip_indexer=overrides.scip_indexer,
-            tool_runner=overrides.tool_runner,
-            git_history=overrides.git_history,
-        ),
+        resources=overrides,
         parameters=None,
     )
 
@@ -245,6 +313,7 @@ __all__ = [
     "RecordingContext",
     "RecordingGateway",
     "RecordingResources",
+    "TargetContextOverrides",
     "_RecordingConnection",
     "build_repo_tree",
     "build_target_context",

@@ -79,9 +79,16 @@ class AstExtractPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Parse Python AST and persist rows + metrics into core.ast_* tables."
     )
-    _storage_adapter_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
-    _discovery_adapter_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    _step_factory: ClassVar[StepFactory] = AstExtractStep
+
+    # Class-level defaults for adapter and step factories
+    default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
+    default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
+    default_step_factory: ClassVar[StepFactory] = AstExtractStep
+
+    # Instance attributes (set in __init__)
+    _storage_factory: StorageFactory
+    _discovery_factory: DiscoveryFactory
+    _step_factory: StepFactory
 
     def __init__(
         self,
@@ -90,9 +97,9 @@ class AstExtractPlugin(TargetPlugin):
         discovery_adapter_factory: DiscoveryFactory | None = None,
         step_factory: StepFactory | None = None,
     ) -> None:
-        self._storage_factory = storage_adapter_factory or self._storage_adapter_factory
-        self._discovery_factory = discovery_adapter_factory or self._discovery_adapter_factory
-        self._step_factory = step_factory or self._step_factory
+        self._storage_factory = storage_adapter_factory or type(self).default_storage_factory
+        self._discovery_factory = discovery_adapter_factory or type(self).default_discovery_factory
+        self._step_factory = step_factory or type(self).default_step_factory
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute AST extraction.
@@ -112,8 +119,6 @@ class AstExtractPlugin(TargetPlugin):
         ValueError
             If no storage gateway is available.
         """
-        _ = self  # Protocol method requires instance
-
         # Create adapters
         gateway = ctx.resources.gateway
         if gateway is None:
