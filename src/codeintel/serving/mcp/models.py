@@ -77,8 +77,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -1638,15 +1639,53 @@ class DatasetSchemaColumn(BaseModel):
     nullable: bool
 
 
+CapabilitiesValue = Decimal | bool | float | int | str
+CapabilitiesMapping = Mapping[bytearray | bytes | str, CapabilitiesValue]
+
+
+def _normalize_capabilities(capabilities: Mapping[Any, Any] | None) -> CapabilitiesMapping:
+    """
+    Normalize capability mappings to string keys and a strict value union.
+
+    Returns
+    -------
+    dict[str, CapabilitiesValue]
+        Normalized capability mapping with UTF-8 decoded keys/values.
+
+    Raises
+    ------
+    TypeError
+        If a capability value cannot be coerced into the allowed union.
+    """
+    if capabilities is None:
+        return {}
+    normalized: dict[str, CapabilitiesValue] = {}
+    for key, value in capabilities.items():
+        key_str = (
+            str(key) if not isinstance(key, (bytes, bytearray)) else key.decode("utf-8", "ignore")
+        )
+        if isinstance(value, (bytes, bytearray)):
+            value_obj: Any = value.decode("utf-8", "ignore")
+        else:
+            value_obj = value
+        if not isinstance(value_obj, (Decimal, bool, float, int, str)):
+            message = f"Unsupported capability value type: {type(value_obj).__name__}"
+            raise TypeError(message)
+        normalized[key_str] = value_obj
+    return cast("CapabilitiesMapping", normalized)
+
+
 class DatasetSchemaResponse(BaseModel):
     """Composite schema detail payload for datasets."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     dataset: str
     table_key: str
     duckdb_schema: list[DatasetSchemaColumn] = Field(default_factory=list)
     json_schema: dict[str, object] | None = None
     sample_rows: list[ViewRow] = Field(default_factory=list)
-    capabilities: Mapping[str, bool] = Field(default_factory=dict)
+    capabilities: CapabilitiesMapping = Field(default_factory=dict)
     owner: str | None = None
     freshness_sla: str | None = None
     retention_policy: str | None = None
@@ -1664,13 +1703,16 @@ class DatasetSchemaResponse(BaseModel):
         dm.DatasetSchema
             Domain schema model with matching payload.
         """
+        normalized_caps = cast(
+            "Mapping[str, CapabilitiesValue]", _normalize_capabilities(self.capabilities)
+        )
         return dm.DatasetSchema(
             dataset_name=self.dataset,
             table_key=self.table_key,
             duckdb_schema=[column.model_dump() for column in self.duckdb_schema],
             json_schema=self.json_schema,
             sample_rows=[row.model_dump() for row in self.sample_rows],
-            capabilities=dict(self.capabilities or {}),
+            capabilities={key: bool(value) for key, value in normalized_caps.items()},
             owner=self.owner,
             freshness_sla=self.freshness_sla,
             retention_policy=self.retention_policy,
@@ -1690,7 +1732,7 @@ class DatasetSchemaResponse(BaseModel):
         DatasetSchemaResponse
             Transport model reflecting the domain payload.
         """
-        capabilities: Mapping[str, bool] = dict(schema.capabilities)
+        capabilities: CapabilitiesMapping = _normalize_capabilities(schema.capabilities)
         return cls(
             dataset=schema.dataset_name,
             table_key=schema.table_key,
