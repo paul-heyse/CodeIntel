@@ -15,6 +15,7 @@ from codeintel.serving.bootstrap import (
     build_backend_resource,
 )
 from codeintel.serving.mcp.registry import register_tools
+from codeintel.serving.mcp.tools_base import as_registrar, expose_tools
 from codeintel.storage.gateway import StorageGateway
 
 BackendFactory = Callable[..., BackendResource]
@@ -89,10 +90,12 @@ def create_mcp_server(
     mcp_instance = mcp_ctor("CodeIntel")
     service = getattr(backend, "service", None)
     # Pass config to enable auto-pipeline support
+    registrar = as_registrar(mcp_instance)
     if register_tools_fn is not None:
-        register_tools_fn(mcp_instance, service or backend, config)
+        register_tools_fn(registrar, service or backend, config)
     else:
-        register_tools(cast("FastMCP", mcp_instance), service or backend, config)
+        register_tools(registrar, service or backend, config)
+    expose_tools(mcp_instance)
     return mcp_instance, close
 
 

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TypedDict, cast
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.meta_tools import MetaToolOptions, register_meta_tools
+from codeintel.serving.mcp.meta_tools import DatasetMetaLike, MetaToolOptions, register_meta_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -65,6 +65,20 @@ class _ExplainPayload(TypedDict):
     outgoing_edges: list[dict[str, object]]
 
 
+@dataclass
+class _DatasetMetaStub:
+    id: str
+    name: str
+    table_key: str
+    description: str
+    schema_version: str | None
+    family: str | None
+    is_docs_view: bool
+    is_read_only: bool
+    default_limit: int
+    max_limit: int
+
+
 def _make_operation(op_id: str, tool_name: str) -> Operation:
     return Operation(
         id=op_id,
@@ -91,7 +105,7 @@ def _make_operation(op_id: str, tool_name: str) -> Operation:
 def test_register_meta_tools_registers_expected_tools() -> None:
     """Meta tools should register and return serialized payloads."""
     dataset_meta = (
-        SimpleNamespace(
+        _DatasetMetaStub(
             id="d1",
             name="Dataset One",
             table_key="table1",
@@ -162,6 +176,50 @@ def test_register_meta_tools_registers_expected_tools() -> None:
             cast("list[_DataflowPayload]", explain_path("table1", "op.one", max_hops=2))[0]["edges"]
         )
     )
+
+
+def test_list_datasets_returns_problem_on_missing_field() -> None:
+    """Malformed dataset meta should yield invalid-argument ProblemDetail payload."""
+    malformed = (SimpleNamespace(id="d1", name="Dataset One"),)
+    backend = SimpleNamespace(limits=BackendLimits(), service=SimpleNamespace())
+    mcp = _RecordingMcp()
+
+    register_meta_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        options=MetaToolOptions(
+            operations=(),
+            dataflow_builder=lambda: ([], []),
+            dataset_meta_builder=lambda _service, _limits: cast(
+                "Iterable[DatasetMetaLike]", malformed
+            ),
+        ),
+    )
+    list_datasets = mcp.registry[0]
+    result = cast("dict[str, object]", list_datasets())
+    expect_in("error", result)
+
+
+def test_list_operations_applies_limit_defaults() -> None:
+    """Operation payloads should adopt backend limits when unset."""
+    limits = BackendLimits(default_limit=5, max_rows_per_call=25)
+    backend = SimpleNamespace(limits=limits, service=SimpleNamespace())
+    mcp = _RecordingMcp()
+    ops = (_make_operation("op.with_limits", "tool_limits"),)
+
+    register_meta_tools(
+        mcp,
+        cast("QueryBackendOrService", backend),
+        options=MetaToolOptions(
+            operations=ops,
+            dataflow_builder=lambda: ([], []),
+            dataset_meta_builder=lambda _service, _limits: (),
+        ),
+    )
+    list_operations = mcp.registry[1]
+    payloads = cast("list[dict[str, object]]", list_operations())
+    expect_equal(payloads[0]["default_limit"], limits.default_limit)
+    expect_equal(payloads[0]["max_limit"], limits.max_rows_per_call)
 
 
 def test_explain_dataset_returns_error_for_unknown_id() -> None:

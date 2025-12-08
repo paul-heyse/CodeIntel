@@ -415,7 +415,7 @@ _GRAPH_PLUGIN_SPECS = [
     OptionSpec("selection_policy", SelectionPolicyOpt, SelectionPolicy.LENIENT),
     OptionSpec("dependency_policy", DependencyPolicyOpt, DependencyPolicy.STRICT),
     OptionSpec("validate_plan", ValidationModeOpt, default=False),
-    OptionSpec("json", JsonFlagOpt, default=False),
+    OptionSpec("json", bool, JsonFlagOpt),
     OptionSpec("output_format", OutputFormat, JsonOutputOpt),
 ]
 
