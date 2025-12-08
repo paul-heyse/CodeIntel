@@ -35,7 +35,7 @@ def _make_plugin(
     capture: StepCallCapture,
     *,
     result: StepResult | None = None,
-    type_checker: object | None = None,
+    type_checker: RecordingTypeChecker | None = None,
 ) -> TypingIngestPlugin:
     checker = type_checker if type_checker is not None else RecordingTypeChecker()
     return TypingIngestPlugin(
@@ -73,10 +73,13 @@ async def test_typing_plugin_skips_without_type_checker(tmp_path: Path) -> None:
 async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> None:
     """Happy path: adapters are constructed and async step is executed."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
-    ctx = make_target_context(repo_root=repo_root, modules=("pkg/typed.py",), type_checker=object())
+    # Use RecordingTypeChecker (a proper double) instead of object()
+    checker = RecordingTypeChecker()
+    ctx = make_target_context(repo_root=repo_root, modules=("pkg/typed.py",), type_checker=checker)
     captured = StepCallCapture()
 
-    result = await _make_plugin(captured, type_checker=ctx.resources.type_checker).execute(
+    # Pass the checker directly rather than via ctx.resources.type_checker
+    result = await _make_plugin(captured, type_checker=checker).execute(
         cast("TargetExecutionContext", ctx)
     )
 
@@ -86,7 +89,7 @@ async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> Non
     expect_equal(captured.repo_root, repo_root)
     expect_equal(captured.repo, DEFAULT_REPO)
     expect_equal(captured.commit, DEFAULT_COMMIT)
-    expect_true(getattr(captured.tool_port, "_type_checker", None) is ctx.resources.type_checker)
+    expect_true(getattr(captured.tool_port, "_type_checker", None) is checker)
     module_record = captured.modules[0]
     expect_equal(module_record.rel_path, "pkg/typed.py")
     expect_equal(module_record.file_path, repo_root / "pkg/typed.py")
@@ -96,14 +99,17 @@ async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> Non
 async def test_typing_plugin_reports_failure(tmp_path: Path) -> None:
     """Errors returned from the async step should fail the target result."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
-    ctx = make_target_context(repo_root=repo_root, modules=("pkg/typed.py",), type_checker=object())
+    # Use RecordingTypeChecker (a proper double) instead of object()
+    checker = RecordingTypeChecker()
+    ctx = make_target_context(repo_root=repo_root, modules=("pkg/typed.py",), type_checker=checker)
     captured = StepCallCapture()
     failing_result = StepResult.fail("typing blew up")
 
+    # Pass the checker directly rather than via ctx.resources.type_checker
     result = await _make_plugin(
         captured,
         result=failing_result,
-        type_checker=ctx.resources.type_checker,
+        type_checker=checker,
     ).execute(cast("TargetExecutionContext", ctx))
 
     expect_true(result.success is False)

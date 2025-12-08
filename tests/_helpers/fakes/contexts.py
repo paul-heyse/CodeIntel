@@ -28,9 +28,10 @@ from tests._helpers.env import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID, cre
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.analytics.resources.catalog import FunctionCatalogProvider
     from codeintel.analytics.runtime import GraphRuntime
-    from codeintel.build.protocols import CoverageCollector, GitHistoryProvider, ScipIndexer, ToolRunner, TypeChecker
-    from codeintel.build.providers import Providers, RealTestReporter
+    from codeintel.build.providers import Providers
+    from codeintel.ingestion.tracker import ChangeTracker
 
 T = TypeVar("T")
 
@@ -124,22 +125,16 @@ class TargetResourceOverrides:
 
     providers: Providers | None = None
     modules: tuple[str, ...] = ()
-    change_tracker: object | None = None
+    change_tracker: ChangeTracker | None = None
     graph_runtime: GraphRuntime | None = None
-    catalog: object | None = None
-    test_reporter: RealTestReporter | None = None
-    coverage_collector: CoverageCollector | None = None
-    scip_indexer: ScipIndexer | None = None
-    type_checker: TypeChecker | None = None
-    tool_runner: ToolRunner | None = None
-    git_history: GitHistoryProvider | None = None
+    catalog: FunctionCatalogProvider | None = None
 
 
 @dataclass
 class ExecutionContextBuilder:
     """Fluent builder for plugin and target execution contexts."""
 
-    gateway: StorageGateway
+    gateway: StorageGateway | RecordingGateway
     snapshot: SnapshotRef
     paths: BuildPaths | None = None
     run_id: str = DEFAULT_RUN_ID
@@ -154,11 +149,11 @@ class ExecutionContextBuilder:
         self._plugin_name: str | None = None
         self._run_context: RunContext | None = None
         self._scratch: PluginScratch | None = None
-        self._gateway = self.gateway
+        self._gateway: StorageGateway | RecordingGateway = self.gateway
         self.sql_records: list[SqlCall] | None = None
         if self.record_sql:
-            recorder = RecordingGateway(self.gateway)
-            self._gateway = cast("StorageGateway", recorder)
+            recorder = RecordingGateway(cast("StorageGateway", self.gateway))
+            self._gateway = recorder
             self.sql_records = recorder.records
 
     @classmethod
@@ -301,7 +296,7 @@ class ExecutionContextBuilder:
             Configured execution context.
         """
         return PluginExecutionContext(
-            gateway=self._gateway,
+            gateway=cast("StorageGateway", self._gateway),
             snapshot=self.snapshot,
             run_id=self.run_id,
             resources=self._resources,
@@ -329,25 +324,19 @@ class ExecutionContextBuilder:
             Configured target execution context.
         """
         overrides = resources or TargetResourceOverrides()
-        resources = ContextResources(
-            providers=cast("Providers | None", overrides.providers),
-            gateway=self._gateway,
+        ctx_resources = ContextResources(
+            providers=overrides.providers,
+            gateway=cast("StorageGateway", self._gateway),
             modules=overrides.modules,
             change_tracker=overrides.change_tracker,
-            graph_runtime=cast("GraphRuntime | None", overrides.graph_runtime),
+            graph_runtime=overrides.graph_runtime,
             catalog=overrides.catalog,
-            test_reporter=cast("RealTestReporter | None", overrides.test_reporter),
-            coverage_collector=cast("CoverageCollector | None", overrides.coverage_collector),
-            scip_indexer=cast("ScipIndexer | None", overrides.scip_indexer),
-            type_checker=cast("TypeChecker | None", overrides.type_checker),
-            tool_runner=cast("ToolRunner | None", overrides.tool_runner),
-            git_history=cast("GitHistoryProvider | None", overrides.git_history),
         )
         return TargetExecutionContext(
             target=target,
             snapshot=self.snapshot,
             paths=self._paths or BuildPaths.from_repo_root(self.snapshot.repo_root),
-            resources=resources,
+            resources=ctx_resources,
             parameters=parameters or EMPTY_PARAMETERS,
         )
 

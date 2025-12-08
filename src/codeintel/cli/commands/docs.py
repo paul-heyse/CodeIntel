@@ -185,33 +185,34 @@ docs_app = typer.Typer(
     no_args_is_help=True,
 )
 
+DEFAULT_VALIDATE = False
+DEFAULT_REQUIRE_NORMALIZED_MACROS = False
+
 
 # -----------------------------------------------------------------------------
 # Option Type Aliases
 # -----------------------------------------------------------------------------
 
 ValidationOpt = Annotated[
-    ExportValidationMode,
+    bool,
     typer.Option(
-        ExportValidationMode.SKIP,
+        DEFAULT_VALIDATE,
         "--validation",
         "--validate",
-        flag_value=ExportValidationMode.REQUIRED,
-        help="Validation strategy for exports. Use --validate to require validation.",
-        case_sensitive=False,
+        help="Require validation for exports (exit code 1 on failures).",
+        is_flag=True,
         show_default=True,
     ),
 ]
 
 MacroRequirementOpt = Annotated[
-    MacroRequirement,
+    bool,
     typer.Option(
-        MacroRequirement.ALLOW_PARTIAL,
+        DEFAULT_REQUIRE_NORMALIZED_MACROS,
         "--macro-requirement",
         "--require-normalized-macros",
-        flag_value=MacroRequirement.REQUIRE_NORMALIZED,
-        help="Requirement policy for normalized macros.",
-        case_sensitive=False,
+        help="Require normalized macros during export.",
+        is_flag=True,
         show_default=True,
     ),
 ]
@@ -744,13 +745,23 @@ def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> Mapping[str, object
         nx_gpu_mode=cast("NxGpuMode", cli_kwargs.get("nx_gpu_mode", NxGpuMode.DISABLED)),
     )
     validation = _docs_validation_options(
-        validation=cast(
-            "ExportValidationMode",
-            cli_kwargs.get("validation", ExportValidationMode.SKIP),
+        validation=(
+            cast("ExportValidationMode", cli_kwargs["validation"])
+            if isinstance(cli_kwargs.get("validation"), ExportValidationMode)
+            else (
+                ExportValidationMode.REQUIRED
+                if bool(cli_kwargs.get("validation"))
+                else ExportValidationMode.SKIP
+            )
         ),
-        macro_requirement=cast(
-            "MacroRequirement",
-            cli_kwargs.get("macro_requirement", MacroRequirement.ALLOW_PARTIAL),
+        macro_requirement=(
+            cast("MacroRequirement", cli_kwargs["macro_requirement"])
+            if isinstance(cli_kwargs.get("macro_requirement"), MacroRequirement)
+            else (
+                MacroRequirement.REQUIRE_NORMALIZED
+                if bool(cli_kwargs.get("macro_requirement"))
+                else MacroRequirement.ALLOW_PARTIAL
+            )
         ),
     )
     selection = _docs_selection_options(
@@ -783,8 +794,30 @@ _DOCS_EXPORT_SPECS = [
     OptionSpec("document_output_dir", DocumentOutputDirOpt, None),
     OptionSpec("nx_backend", NxBackendOpt, "auto"),
     OptionSpec("nx_gpu_mode", NxGpuModeOpt, NxGpuMode.DISABLED),
-    OptionSpec("validation", ValidationOpt, ExportValidationMode.SKIP),
-    OptionSpec("macro_requirement", MacroRequirementOpt, MacroRequirement.ALLOW_PARTIAL),
+    OptionSpec(
+        "validation",
+        bool,
+        typer.Option(
+            DEFAULT_VALIDATE,
+            "--validation",
+            "--validate",
+            help="Require validation for exports (exit code 1 on failures).",
+            is_flag=True,
+            show_default=True,
+        ),
+    ),
+    OptionSpec(
+        "macro_requirement",
+        bool,
+        typer.Option(
+            DEFAULT_REQUIRE_NORMALIZED_MACROS,
+            "--macro-requirement",
+            "--require-normalized-macros",
+            help="Require normalized macros during export.",
+            is_flag=True,
+            show_default=True,
+        ),
+    ),
     OptionSpec("schemas", SchemasOpt, None),
     OptionSpec("datasets", DatasetsOpt, None),
     OptionSpec("output_format", OutputFormat, OutputFormatOpt),

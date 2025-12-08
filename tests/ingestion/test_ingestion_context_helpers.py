@@ -45,9 +45,10 @@ def test_make_target_context_rejects_mixed_options_and_overrides(tmp_path: Path)
 
 
 def test_make_target_context_rejects_unknown_override(tmp_path: Path) -> None:
-    """Unknown override keys must raise to keep API strict."""
-    with pytest.raises(ValueError, match="Unexpected overrides"):
-        make_target_context(repo_root=tmp_path, bogus="nope")  # type: ignore[arg-type]
+    """Unknown override keys raise TypeError via Python's function signature."""
+    # With explicit keyword parameters, Python enforces this at call time
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        make_target_context(repo_root=tmp_path, bogus="nope")  # type: ignore[call-arg]
 
 
 def test_make_target_context_from_modules_shortcut(tmp_path: Path) -> None:

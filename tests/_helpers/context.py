@@ -20,7 +20,11 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.env import DEFAULT_COMMIT, DEFAULT_REPO, create_test_env
+from codeintel.storage.macros import ensure_ingest_macros
+from codeintel.storage.schema import apply_all_schemas
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.env_options import EnvOptions, GatewayOptions
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -421,25 +425,117 @@ class TestContext:
 
 def create_test_context(
     tmp_path: Path,
+    options: EnvOptions | None = None,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-    file_backed: bool = False,
+    gateway_options: GatewayOptions | None = None,
 ) -> TestContext:
-    """Create a minimal TestContext for testing."""
-    return create_test_env(
-        tmp_path,
-        repo=repo,
-        commit=commit,
-        file_backed=file_backed,
+    """Create a minimal TestContext for testing.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test artifacts.
+    options
+        Environment options bundle; defaults to standard repo/commit and in-memory DB.
+    gateway_options
+        Optional gateway configuration to override schema/view/validation or snapshot defaults.
+
+    Returns
+    -------
+    TestContext
+        Configured test context with gateway, snapshot, and build paths.
+    """
+    env_opts = options or EnvOptions()
+    repo_root_path, build_dir_path, db_path = _prepare_paths(tmp_path, env_opts)
+
+    snapshot = SnapshotRef(repo=env_opts.repo, commit=env_opts.commit, repo_root=repo_root_path)
+    build_paths = BuildPaths.from_repo_root(repo_root_path, build_dir=build_dir_path)
+
+    gateway = build_test_gateway(
+        gateway_options
+        or GatewayOptions(
+            file_backed=env_opts.file_backed,
+            db_path=db_path,
+            repo=env_opts.repo,
+            commit=env_opts.commit,
+        )
     )
+
+    return TestContext(
+        snapshot=snapshot,
+        gateway=gateway,
+        build_paths=build_paths,
+    )
+
+
+def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
+    """Create a StorageGateway with schema/views/macros ensured.
+
+    Parameters
+    ----------
+    options
+        Gateway configuration bundle.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway ready for test use with macros ensured.
+
+    Raises
+    ------
+    ValueError
+        If file_backed is True but no db_path is provided.
+    """
+    opts = options or GatewayOptions()
+    factory = GatewayFactory()
+    factory = factory.with_schema() if opts.apply_schema else factory.without_schema()
+    factory = factory.with_views() if opts.ensure_views else factory.without_views()
+    factory = factory.with_validation() if opts.validate_schema else factory.without_validation()
+    if opts.repo is not None and opts.commit is not None:
+        factory = factory.with_snapshot(opts.repo, opts.commit)
+
+    if opts.file_backed:
+        if opts.db_path is None:
+            message = "db_path must be provided for file_backed gateways"
+            raise ValueError(message)
+        factory = factory.file_backed(opts.db_path)
+
+    gateway = factory.open()
+    apply_all_schemas(gateway.con)
+    ensure_ingest_macros(gateway.con)
+    return gateway
+
+
+def _prepare_paths(
+    tmp_path: Path,
+    env_opts: EnvOptions,
+) -> tuple[Path, Path, Path | None]:
+    """Resolve repository and build paths, ensuring directories exist.
+
+    Returns
+    -------
+    tuple[Path, Path, Path | None]
+        Resolved repo_root, build_dir, and optional database path.
+    """
+    repo_root_path = env_opts.repo_root or (tmp_path / "repo")
+    build_dir_path = env_opts.build_dir or (tmp_path / "build")
+    repo_root_path.mkdir(parents=True, exist_ok=True)
+    build_dir_path.mkdir(parents=True, exist_ok=True)
+    db_path = env_opts.db_path
+    if env_opts.file_backed and db_path is None:
+        db_path = build_dir_path / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    return repo_root_path, build_dir_path, db_path
 
 
 __all__ = [
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
+    "EnvOptions",
+    "GatewayOptions",
     "QueryRow",
     "SeedPack",
     "TestContext",
+    "build_test_gateway",
     "create_test_context",
 ]
