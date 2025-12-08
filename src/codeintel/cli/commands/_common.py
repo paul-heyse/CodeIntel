@@ -17,14 +17,24 @@ import logging
 import os
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 import typer
 
+from codeintel.analytics.runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+)
+from codeintel.analytics.runtime import (
+    build_graph_runtime as build_graph_runtime_internal,
+)
 from codeintel.cli.project import (
+    ProjectConfig,
     ProjectNotFoundError,
     ProjectRuntime,
+    StorageProjectConfig,
     build_project_runtime,
 )
 from codeintel.config import GraphRunScope
@@ -35,11 +45,9 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
+from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway_cache import close_gateways, get_gateway
-
-if TYPE_CHECKING:
-    from codeintel.analytics.runtime import GraphRuntime
 
 LOG = logging.getLogger(__name__)
 
@@ -74,25 +82,36 @@ def setup_logging(verbosity: int) -> None:
 # -----------------------------------------------------------------------------
 
 # Project discovery options
-ProjectRootOpt = Annotated[
-    Path | None,
-    typer.Option("--root", "-r", help="Explicit project root directory"),
-]
+ProjectRootOpt = typer.Option(
+    None,
+    "--root",
+    "-r",
+    help="Explicit project root directory",
+)
 
-VerboseOpt = Annotated[
-    int,
-    typer.Option(
-        "--verbose",
-        "-v",
-        count=True,
-        help="Increase verbosity (can be repeated: -v=INFO, -vv=DEBUG)",
-    ),
-]
+VerboseOpt = typer.Option(
+    0,
+    "--verbose",
+    "-v",
+    count=True,
+    help="Increase verbosity (can be repeated: -v=INFO, -vv=DEBUG)",
+)
 
-JsonOutputOpt = Annotated[
-    bool,
-    typer.Option("--json", help="Output as JSON", is_flag=True),
-]
+
+class OutputFormat(Enum):
+    """Output rendering format."""
+
+    TEXT = "text"
+    JSON = "json"
+
+
+JsonOutputOpt = typer.Option(
+    OutputFormat.TEXT,
+    "--output-format",
+    help="Output format (text or json).",
+    case_sensitive=False,
+    show_choices=True,
+)
 
 # Repository configuration options (fallback when no project file)
 RepoOpt = Annotated[
@@ -206,7 +225,11 @@ ScopeTimeWindowEndOpt = Annotated[
 # Limit options
 LimitOpt = Annotated[
     int | None,
-    typer.Option("--limit", "-n", help="Limit number of results"),
+    typer.Option(
+        "--limit",
+        "-n",
+        help="Limit number of results",
+    ),
 ]
 
 
@@ -544,9 +567,6 @@ def build_runtime_or_exit(
     storage_cfg = StorageConfig.for_ingest(db_path=paths.db_path)
     gateway = open_gateway(storage_cfg)
 
-    from codeintel.cli.project import ProjectConfig, StorageProjectConfig
-    from codeintel.config.serving_models import ServingConfig
-
     # Build minimal project config for the runtime
     project = ProjectConfig(
         repo=repo,
@@ -561,8 +581,6 @@ def build_runtime_or_exit(
         db_path=paths.db_path,
         read_only=True,
     )
-
-    from codeintel.cli.project import ProjectRuntime
 
     return ProjectRuntime(
         root=resolved_repo_root,
@@ -625,19 +643,12 @@ def build_graph_runtime(cfg: CodeIntelConfig, gateway: StorageGateway) -> GraphR
     GraphRuntime
         Runtime bound to the CLI snapshot and backend settings.
     """
-    from codeintel.analytics.runtime import (
-        GraphRuntimeOptions,
-    )
-    from codeintel.analytics.runtime import (
-        build_graph_runtime as _build_graph_runtime,
-    )
-
     snapshot = SnapshotRef(
         repo=cfg.repo.repo,
         commit=cfg.repo.commit,
         repo_root=cfg.paths.repo_root,
     )
-    return _build_graph_runtime(
+    return build_graph_runtime_internal(
         gateway,
         GraphRuntimeOptions(
             snapshot=snapshot,

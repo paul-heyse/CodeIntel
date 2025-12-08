@@ -16,7 +16,9 @@ and reduces boilerplate.
 Example
 -------
 >>> from codeintel.config import ConfigBuilder
->>> builder = ConfigBuilder.from_snapshot("org/repo", "abc123", Path("/repo"))
+>>> builder = ConfigBuilder.from_snapshot(
+...     snapshot=SnapshotInit(repo="org/repo", commit="abc123", repo_root=Path("/repo")),
+... )
 >>> config = builder.call_graph()  # Preferred
 """
 

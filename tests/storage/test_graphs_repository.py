@@ -13,6 +13,13 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.repositories.graphs import GraphRepository
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_empty,
+    expect_equal,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 
 # Test constants
 EXPECTED_COUNT_1 = 1
@@ -131,8 +138,8 @@ def test_graph_repository_inherits_base_repository(
         repo="test/repo",
         commit="abc123",
     )
-    assert isinstance(repo, BaseRepository)
-    assert repo.con is fresh_gateway.con
+    expect_is_instance(repo, BaseRepository)
+    expect_true(repo.con is fresh_gateway.con)
 
 
 def test_get_outgoing_callgraph_neighbors_returns_empty_list(
@@ -145,7 +152,7 @@ def test_get_outgoing_callgraph_neighbors_returns_empty_list(
         commit="abc123",
     )
     result = repo.get_outgoing_callgraph_neighbors(EXPECTED_GOID_CALLER, limit=10)
-    assert result == []
+    expect_empty(result)
 
 
 def test_get_incoming_callgraph_neighbors_returns_empty_list(
@@ -158,7 +165,7 @@ def test_get_incoming_callgraph_neighbors_returns_empty_list(
         commit="abc123",
     )
     result = repo.get_incoming_callgraph_neighbors(EXPECTED_GOID_CALLEE, limit=10)
-    assert result == []
+    expect_empty(result)
 
 
 def test_get_outgoing_callgraph_neighbors_with_data(
@@ -176,9 +183,9 @@ def test_get_outgoing_callgraph_neighbors_with_data(
     )
     result = graph_repo.get_outgoing_callgraph_neighbors(caller_goid, limit=10)
 
-    assert len(result) == EXPECTED_COUNT_1
-    assert result[0]["caller_goid_h128"] == caller_goid
-    assert result[0]["callee_goid_h128"] == callee_goid
+    expect_length(result, EXPECTED_COUNT_1)
+    expect_equal(result[0]["caller_goid_h128"], caller_goid)
+    expect_equal(result[0]["callee_goid_h128"], callee_goid)
 
 
 def test_get_incoming_callgraph_neighbors_with_data(
@@ -196,9 +203,9 @@ def test_get_incoming_callgraph_neighbors_with_data(
     )
     result = graph_repo.get_incoming_callgraph_neighbors(callee_goid, limit=10)
 
-    assert len(result) == EXPECTED_COUNT_1
-    assert result[0]["caller_goid_h128"] == caller_goid
-    assert result[0]["callee_goid_h128"] == callee_goid
+    expect_length(result, EXPECTED_COUNT_1)
+    expect_equal(result[0]["caller_goid_h128"], caller_goid)
+    expect_equal(result[0]["callee_goid_h128"], callee_goid)
 
 
 def test_get_outgoing_callgraph_neighbors_filters_by_repo_commit(
@@ -215,7 +222,7 @@ def test_get_outgoing_callgraph_neighbors_filters_by_repo_commit(
         commit="other_commit",
     )
     result = graph_repo.get_outgoing_callgraph_neighbors(EXPECTED_GOID_CALLER, limit=10)
-    assert result == []
+    expect_empty(result)
 
 
 def test_get_outgoing_callgraph_neighbors_respects_limit(
@@ -313,4 +320,4 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
     )
 
     # Should only return 2 even though 5 exist
-    assert len(result) == EXPECTED_COUNT_2
+    expect_length(result, EXPECTED_COUNT_2)

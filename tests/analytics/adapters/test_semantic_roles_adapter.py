@@ -6,9 +6,8 @@ classification data using real DuckDB instances.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -18,7 +17,17 @@ from codeintel.analytics.adapters.semantic_roles import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    require_row,
+)
 from tests._helpers.contracts import count_rows
+from tests._helpers.rows import (
+    SemanticRoleFunctionSeed,
+    SemanticRoleModuleSeed,
+    semantic_role_function_row,
+    semantic_role_module_row,
+)
 
 # =============================================================================
 # Constants
@@ -30,87 +39,12 @@ EXPECTED_COUNT_0 = 0
 EXPECTED_COUNT_1 = 1
 EXPECTED_COUNT_2 = 2
 EXPECTED_COUNT_3 = 3
-TEST_GOID_12345 = Decimal(12345)
-TEST_GOID_67890 = Decimal(67890)
-TEST_GOID_11111 = Decimal(11111)
+TEST_GOID_12345 = 12345
+TEST_GOID_67890 = 67890
+TEST_GOID_11111 = 11111
 CONFIDENCE_0_85 = 0.85
 CONFIDENCE_0_90 = 0.9
 CONFIDENCE_0_75 = 0.75
-
-
-# =============================================================================
-# Test Data Factories
-# =============================================================================
-
-
-def _make_function_role_row(
-    goid: Decimal = TEST_GOID_12345,
-    role: str = "api_handler",
-    confidence: float = CONFIDENCE_0_85,
-) -> tuple[object, ...]:
-    """
-    Create a function semantic role row for testing.
-
-    Parameters
-    ----------
-    goid
-        Function global object ID.
-    role
-        Classified semantic role.
-    confidence
-        Role classification confidence.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Function role row tuple.
-    """
-    # Columns: repo, commit, function_goid_h128, role, framework, role_confidence,
-    #          role_sources_json, created_at
-    return (
-        DEMO_REPO,
-        DEMO_COMMIT,
-        goid,
-        role,
-        "fastapi",  # framework
-        confidence,
-        ["decorator", "path_hint"],  # role_sources_json
-        datetime.now(tz=UTC),
-    )
-
-
-def _make_module_role_row(
-    module: str = "api.users",
-    role: str = "service",
-    confidence: float = CONFIDENCE_0_90,
-) -> tuple[object, ...]:
-    """
-    Create a module semantic role row for testing.
-
-    Parameters
-    ----------
-    module
-        Module name.
-    role
-        Classified semantic role.
-    confidence
-        Role classification confidence.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Module role row tuple.
-    """
-    # Columns: repo, commit, module, role, role_confidence, role_sources_json, created_at
-    return (
-        DEMO_REPO,
-        DEMO_COMMIT,
-        module,
-        role,
-        confidence,
-        ["path_hint", "module_tags"],  # role_sources_json
-        datetime.now(tz=UTC),
-    )
 
 
 # =============================================================================
@@ -146,7 +80,7 @@ def test_functions_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
-    assert adapter.table_name == "analytics.semantic_roles_functions"
+    expect_equal(adapter.table_name, "analytics.semantic_roles_functions")
 
 
 def test_functions_adapter_load_raises(
@@ -166,7 +100,7 @@ def test_functions_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_functions_adapter_persist_single(
@@ -175,10 +109,18 @@ def test_functions_adapter_persist_single(
 ) -> None:
     """Persist single function role."""
     adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
-    row = _make_function_role_row()
+    row = semantic_role_function_row(
+        SemanticRoleFunctionSeed(
+            goid=int(TEST_GOID_12345),
+            role="api_handler",
+            confidence=CONFIDENCE_0_85,
+            repo=DEMO_REPO,
+            commit=DEMO_COMMIT,
+        )
+    )
 
     count = adapter.persist([row])
-    assert count == EXPECTED_COUNT_1
+    expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify row was inserted
     total = count_rows(
@@ -186,7 +128,7 @@ def test_functions_adapter_persist_single(
         "SELECT COUNT(*) FROM analytics.semantic_roles_functions WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_1
+    expect_equal(total, EXPECTED_COUNT_1)
 
 
 def test_functions_adapter_persist_multiple(
@@ -197,13 +139,37 @@ def test_functions_adapter_persist_multiple(
     adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
 
     rows = [
-        _make_function_role_row(goid=TEST_GOID_12345, role="api_handler"),
-        _make_function_role_row(goid=TEST_GOID_67890, role="repository"),
-        _make_function_role_row(goid=TEST_GOID_11111, role="validator"),
+        semantic_role_function_row(
+            SemanticRoleFunctionSeed(
+                goid=int(TEST_GOID_12345),
+                role="api_handler",
+                confidence=CONFIDENCE_0_85,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
+        semantic_role_function_row(
+            SemanticRoleFunctionSeed(
+                goid=int(TEST_GOID_67890),
+                role="repository",
+                confidence=CONFIDENCE_0_90,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
+        semantic_role_function_row(
+            SemanticRoleFunctionSeed(
+                goid=int(TEST_GOID_11111),
+                role="validator",
+                confidence=CONFIDENCE_0_75,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
     ]
 
     count = adapter.persist(rows)
-    assert count == EXPECTED_COUNT_3
+    expect_equal(count, EXPECTED_COUNT_3)
 
 
 def test_functions_adapter_persist_verifies_data(
@@ -212,10 +178,14 @@ def test_functions_adapter_persist_verifies_data(
 ) -> None:
     """Persisted data can be retrieved and verified."""
     adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
-    row = _make_function_role_row(
-        goid=TEST_GOID_12345,
-        role="test_helper",
-        confidence=CONFIDENCE_0_75,
+    row = semantic_role_function_row(
+        SemanticRoleFunctionSeed(
+            goid=int(TEST_GOID_12345),
+            role="test_helper",
+            confidence=CONFIDENCE_0_75,
+            repo=DEMO_REPO,
+            commit=DEMO_COMMIT,
+        )
     )
     adapter.persist([row])
 
@@ -229,9 +199,10 @@ def test_functions_adapter_persist_verifies_data(
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "test_helper"
-    assert float(result[1]) == pytest.approx(CONFIDENCE_0_75)
+    row = require_row(result, message="Expected semantic role function row")
+    confidence = float(cast("float | int | str", row[1]))
+    expect_equal(row[0], "test_helper")
+    expect_equal(confidence, pytest.approx(CONFIDENCE_0_75))
 
 
 # =============================================================================
@@ -245,7 +216,7 @@ def test_modules_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
-    assert adapter.table_name == "analytics.semantic_roles_modules"
+    expect_equal(adapter.table_name, "analytics.semantic_roles_modules")
 
 
 def test_modules_adapter_load_raises(
@@ -265,7 +236,7 @@ def test_modules_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_modules_adapter_persist_single(
@@ -274,10 +245,18 @@ def test_modules_adapter_persist_single(
 ) -> None:
     """Persist single module role."""
     adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
-    row = _make_module_role_row()
+    row = semantic_role_module_row(
+        SemanticRoleModuleSeed(
+            module="api.users",
+            role="service",
+            confidence=CONFIDENCE_0_90,
+            repo=DEMO_REPO,
+            commit=DEMO_COMMIT,
+        )
+    )
 
     count = adapter.persist([row])
-    assert count == EXPECTED_COUNT_1
+    expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify row was inserted
     total = count_rows(
@@ -285,7 +264,7 @@ def test_modules_adapter_persist_single(
         "SELECT COUNT(*) FROM analytics.semantic_roles_modules WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_1
+    expect_equal(total, EXPECTED_COUNT_1)
 
 
 def test_modules_adapter_persist_multiple(
@@ -296,13 +275,37 @@ def test_modules_adapter_persist_multiple(
     adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
 
     rows = [
-        _make_module_role_row(module="api.users", role="api"),
-        _make_module_role_row(module="db.models", role="repository"),
-        _make_module_role_row(module="cli.commands", role="cli"),
+        semantic_role_module_row(
+            SemanticRoleModuleSeed(
+                module="api.users",
+                role="api",
+                confidence=CONFIDENCE_0_90,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
+        semantic_role_module_row(
+            SemanticRoleModuleSeed(
+                module="db.models",
+                role="repository",
+                confidence=CONFIDENCE_0_85,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
+        semantic_role_module_row(
+            SemanticRoleModuleSeed(
+                module="cli.commands",
+                role="cli",
+                confidence=CONFIDENCE_0_75,
+                repo=DEMO_REPO,
+                commit=DEMO_COMMIT,
+            )
+        ),
     ]
 
     count = adapter.persist(rows)
-    assert count == EXPECTED_COUNT_3
+    expect_equal(count, EXPECTED_COUNT_3)
 
 
 def test_modules_adapter_persist_verifies_data(
@@ -311,10 +314,14 @@ def test_modules_adapter_persist_verifies_data(
 ) -> None:
     """Persisted data can be retrieved and verified."""
     adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
-    row = _make_module_role_row(
-        module="utils.helpers",
-        role="utility",
-        confidence=CONFIDENCE_0_85,
+    row = semantic_role_module_row(
+        SemanticRoleModuleSeed(
+            module="utils.helpers",
+            role="utility",
+            confidence=CONFIDENCE_0_85,
+            repo=DEMO_REPO,
+            commit=DEMO_COMMIT,
+        )
     )
     adapter.persist([row])
 
@@ -328,7 +335,8 @@ def test_modules_adapter_persist_verifies_data(
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "utils.helpers"
-    assert result[1] == "utility"
-    assert float(result[2]) == pytest.approx(CONFIDENCE_0_85)
+    row = require_row(result, message="Expected semantic role module row")
+    confidence = float(cast("float | int | str", row[2]))
+    expect_equal(row[0], "utils.helpers")
+    expect_equal(row[1], "utility")
+    expect_equal(confidence, pytest.approx(CONFIDENCE_0_85))

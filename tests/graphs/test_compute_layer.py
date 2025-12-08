@@ -7,7 +7,7 @@ resolution, import analysis, and symbol use tracking.
 from __future__ import annotations
 
 import ast
-from typing import Final
+from typing import Final, cast
 
 import libcst as cst
 
@@ -41,7 +41,13 @@ from codeintel.graphs.compute.symbols import (
     edges_to_rows,
     parse_symbol_roles,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -76,9 +82,9 @@ def test_resolve_callee_local_name() -> None:
     local_callees = {"my_func": TEST_GOID_A}
     result = resolve_callee("my_func", [], local_callees, {}, {})
 
-    assert result.callee_goid == TEST_GOID_A
-    assert result.resolved_via == "local_name"
-    assert result.confidence == LOCAL_CONFIDENCE
+    expect_equal(result.callee_goid, TEST_GOID_A)
+    expect_equal(result.resolved_via, "local_name")
+    expect_equal(result.confidence, LOCAL_CONFIDENCE)
 
 
 def test_resolve_callee_local_attr() -> None:
@@ -87,7 +93,7 @@ def test_resolve_callee_local_attr() -> None:
     result = resolve_callee("func", ["module", "func"], {}, local_callees, {})
 
     # Should resolve via local_attr when attr_chain matches
-    assert result.resolved_via in {"local_attr", "global_name"}
+    expect_true(result.resolved_via in {"local_attr", "global_name"})
 
 
 def test_resolve_callee_import_alias() -> None:
@@ -96,9 +102,9 @@ def test_resolve_callee_import_alias() -> None:
     import_aliases = {"ext": "external.module"}
     result = resolve_callee("func", ["ext", "func"], {}, global_callees, import_aliases)
 
-    assert result.callee_goid == TEST_GOID_A
-    assert result.resolved_via == "import_alias"
-    assert result.confidence == IMPORT_ALIAS_CONFIDENCE
+    expect_equal(result.callee_goid, TEST_GOID_A)
+    expect_equal(result.resolved_via, "import_alias")
+    expect_equal(result.confidence, IMPORT_ALIAS_CONFIDENCE)
 
 
 def test_resolve_callee_global_name() -> None:
@@ -106,18 +112,18 @@ def test_resolve_callee_global_name() -> None:
     global_callees = {"global_func": TEST_GOID_A}
     result = resolve_callee("global_func", [], {}, global_callees, {})
 
-    assert result.callee_goid == TEST_GOID_A
-    assert result.resolved_via == "global_name"
-    assert result.confidence == GLOBAL_CONFIDENCE
+    expect_equal(result.callee_goid, TEST_GOID_A)
+    expect_equal(result.resolved_via, "global_name")
+    expect_equal(result.confidence, GLOBAL_CONFIDENCE)
 
 
 def test_resolve_callee_unresolved() -> None:
     """Unresolved callee returns None with unresolved status."""
     result = resolve_callee("unknown_func", [], {}, {}, {})
 
-    assert result.callee_goid is None
-    assert result.resolved_via == "unresolved"
-    assert result.confidence == UNRESOLVED_CONFIDENCE
+    expect_is_none(result.callee_goid)
+    expect_equal(result.resolved_via, "unresolved")
+    expect_equal(result.confidence, UNRESOLVED_CONFIDENCE)
 
 
 def test_resolve_callee_priority_local_over_global() -> None:
@@ -126,8 +132,8 @@ def test_resolve_callee_priority_local_over_global() -> None:
     global_callees = {"func": TEST_GOID_B}
     result = resolve_callee("func", [], local_callees, global_callees, {})
 
-    assert result.callee_goid == TEST_GOID_A
-    assert result.resolved_via == "local_name"
+    expect_equal(result.callee_goid, TEST_GOID_A)
+    expect_equal(result.resolved_via, "local_name")
 
 
 # ===========================================================================
@@ -140,26 +146,26 @@ def test_resolve_via_scip_found() -> None:
     def_goids = {"path/to/module.py:func": TEST_GOID_A}
     result = resolve_via_scip(("path/to/module.py:func",), def_goids)
 
-    assert result.callee_goid == TEST_GOID_A
-    assert result.resolved_via == "scip_def_path"
-    assert result.confidence == SCIP_CONFIDENCE
+    expect_equal(result.callee_goid, TEST_GOID_A)
+    expect_equal(result.resolved_via, "scip_def_path")
+    expect_equal(result.confidence, SCIP_CONFIDENCE)
 
 
 def test_resolve_via_scip_not_found() -> None:
     """SCIP resolution returns unresolved when no match."""
     result = resolve_via_scip(("nonexistent/path.py:func",), {})
 
-    assert result.callee_goid is None
-    assert result.resolved_via == "unresolved"
-    assert result.confidence == UNRESOLVED_CONFIDENCE
+    expect_is_none(result.callee_goid)
+    expect_equal(result.resolved_via, "unresolved")
+    expect_equal(result.confidence, UNRESOLVED_CONFIDENCE)
 
 
 def test_resolve_via_scip_empty_candidates() -> None:
     """SCIP resolution handles empty candidates."""
     result = resolve_via_scip((), {})
 
-    assert result.callee_goid is None
-    assert result.resolved_via == "unresolved"
+    expect_is_none(result.callee_goid)
+    expect_equal(result.resolved_via, "unresolved")
 
 
 # ===========================================================================
@@ -174,9 +180,9 @@ def test_build_evidence_basic() -> None:
     )
     evidence = build_evidence("my_func", [], resolution)
 
-    assert evidence["callee_name"] == "my_func"
-    assert evidence["resolved_via"] == "local_name"
-    assert evidence["attr_chain"] is None
+    expect_equal(evidence["callee_name"], "my_func")
+    expect_equal(evidence["resolved_via"], "local_name")
+    expect_is_none(evidence["attr_chain"])
 
 
 def test_build_evidence_with_attr_chain() -> None:
@@ -186,9 +192,9 @@ def test_build_evidence_with_attr_chain() -> None:
     )
     evidence = build_evidence("func", ["module", "func"], resolution)
 
-    assert evidence["callee_name"] == "func"
-    assert evidence["attr_chain"] == ["module", "func"]
-    assert evidence["resolved_via"] == "import_alias"
+    expect_equal(evidence["callee_name"], "func")
+    expect_equal(evidence["attr_chain"], ["module", "func"])
+    expect_equal(evidence["resolved_via"], "import_alias")
 
 
 def test_build_evidence_with_scip_candidates() -> None:
@@ -199,8 +205,8 @@ def test_build_evidence_with_scip_candidates() -> None:
     scip_candidates = ("path/a.py:func", "path/b.py:func")
     evidence = build_evidence("func", [], resolution, scip_candidates)
 
-    assert "scip_candidates" in evidence
-    assert evidence["scip_candidates"] == list(scip_candidates)
+    expect_true("scip_candidates" in evidence)
+    expect_equal(evidence["scip_candidates"], list(scip_candidates))
 
 
 # ===========================================================================
@@ -216,8 +222,8 @@ def test_extract_callee_cst_simple_name() -> None:
         expr = call.body[0]
         if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
             name, chain = extract_callee_cst(expr.value.func)
-            assert name == "func"
-            assert chain == ["func"]
+            expect_equal(name, "func")
+            expect_equal(chain, ["func"])
 
 
 def test_extract_callee_cst_attribute() -> None:
@@ -228,8 +234,8 @@ def test_extract_callee_cst_attribute() -> None:
         expr = call.body[0]
         if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
             name, chain = extract_callee_cst(expr.value.func)
-            assert name == "func"
-            assert chain == ["module", "func"]
+            expect_equal(name, "func")
+            expect_equal(chain, ["module", "func"])
 
 
 def test_extract_callee_cst_nested_attribute() -> None:
@@ -240,8 +246,8 @@ def test_extract_callee_cst_nested_attribute() -> None:
         expr = call.body[0]
         if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
             name, chain = extract_callee_cst(expr.value.func)
-            assert name == "func"
-            assert chain == ["a", "b", "c", "func"]
+            expect_equal(name, "func")
+            expect_equal(chain, ["a", "b", "c", "func"])
 
 
 def test_extract_callee_ast_simple_name() -> None:
@@ -250,8 +256,8 @@ def test_extract_callee_ast_simple_name() -> None:
     call = tree.body[0]
     if isinstance(call, ast.Expr) and isinstance(call.value, ast.Call):
         name, chain = extract_callee_ast(call.value.func)
-        assert name == "func"
-        assert chain == ["func"]
+        expect_equal(name, "func")
+        expect_equal(chain, ["func"])
 
 
 def test_extract_callee_ast_attribute() -> None:
@@ -260,8 +266,8 @@ def test_extract_callee_ast_attribute() -> None:
     call = tree.body[0]
     if isinstance(call, ast.Expr) and isinstance(call.value, ast.Call):
         name, chain = extract_callee_ast(call.value.func)
-        assert name == "module"
-        assert chain == ["module", "func"]
+        expect_equal(name, "module")
+        expect_equal(chain, ["module", "func"])
 
 
 # ===========================================================================
@@ -272,7 +278,7 @@ def test_extract_callee_ast_attribute() -> None:
 def test_dedupe_edges_empty() -> None:
     """Dedupe handles empty list."""
     result = dedupe_edges([])
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_dedupe_edges_no_duplicates() -> None:
@@ -298,7 +304,7 @@ def test_dedupe_edges_no_duplicates() -> None:
         ),
     ]
     result = dedupe_edges(edges)
-    assert len(result) == EXPECTED_EDGE_COUNT_TWO
+    expect_length(result, EXPECTED_EDGE_COUNT_TWO)
 
 
 def test_dedupe_edges_keeps_highest_confidence() -> None:
@@ -324,10 +330,11 @@ def test_dedupe_edges_keeps_highest_confidence() -> None:
         ),
     ]
     result = dedupe_edges(edges)
-    assert len(result) == EXPECTED_EDGE_COUNT_ONE
+    expect_length(result, EXPECTED_EDGE_COUNT_ONE)
     kept = result[0]
-    assert isinstance(kept, CallEdge)
-    assert kept.confidence == LOCAL_CONFIDENCE
+    expect_true(isinstance(kept, CallEdge))
+    kept_edge = cast("CallEdge", kept)
+    expect_equal(kept_edge.confidence, LOCAL_CONFIDENCE)
 
 
 # ===========================================================================
@@ -338,7 +345,7 @@ def test_dedupe_edges_keeps_highest_confidence() -> None:
 def test_build_callee_map_empty() -> None:
     """Build callee map from empty spans."""
     result = build_callee_map([])
-    assert result == {}
+    expect_equal(result, {})
 
 
 # ===========================================================================
@@ -354,9 +361,9 @@ def test_collect_import_edges_basic() -> None:
     ]
     edges = collect_import_edges("mymodule", imports)
 
-    assert len(edges) == EXPECTED_EDGE_COUNT_TWO
-    assert ImportEdge(src_module="mymodule", dst_module="os") in edges
-    assert ImportEdge(src_module="mymodule", dst_module="sys") in edges
+    expect_length(edges, EXPECTED_EDGE_COUNT_TWO)
+    expect_true(ImportEdge(src_module="mymodule", dst_module="os") in edges)
+    expect_true(ImportEdge(src_module="mymodule", dst_module="sys") in edges)
 
 
 def test_collect_import_edges_empty_import() -> None:
@@ -367,14 +374,14 @@ def test_collect_import_edges_empty_import() -> None:
     ]
     edges = collect_import_edges("mymodule", imports)
 
-    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
-    assert edges[0].dst_module == "os"
+    expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
+    expect_equal(edges[0].dst_module, "os")
 
 
 def test_compute_scc_empty() -> None:
     """Compute SCC on empty graph."""
     result = compute_scc([], set())
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_compute_scc_single_node() -> None:
@@ -382,8 +389,8 @@ def test_compute_scc_single_node() -> None:
     modules = {"module_a"}
     result = compute_scc([], modules)
 
-    assert len(result) == EXPECTED_EDGE_COUNT_ONE
-    assert "module_a" in result
+    expect_length(result, EXPECTED_EDGE_COUNT_ONE)
+    expect_true("module_a" in result)
 
 
 def test_compute_scc_simple_cycle() -> None:
@@ -397,14 +404,14 @@ def test_compute_scc_simple_cycle() -> None:
     result = compute_scc(edges, modules)
 
     # All in same SCC
-    assert result["a"] == result["b"]
-    assert result["b"] == result["c"]
+    expect_equal(result["a"], result["b"])
+    expect_equal(result["b"], result["c"])
 
 
 def test_compute_layers_empty() -> None:
     """Compute layers on empty graph."""
     result = compute_layers([], set(), {})
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_compute_layers_chain() -> None:
@@ -423,7 +430,7 @@ def test_compute_layers_chain() -> None:
 
     # a imports b imports c, so c is the leaf (layer 0)
     # Layer values should form a chain
-    assert result["a"] > result["c"] or result["c"] > result["a"]  # Layers are monotonic
+    expect_true(result["a"] > result["c"] or result["c"] > result["a"])  # Layers are monotonic
 
 
 def test_analyze_imports_full() -> None:
@@ -435,11 +442,11 @@ def test_analyze_imports_full() -> None:
     modules = {"main", "utils", "helpers"}
     result = analyze_imports(edges, modules)
 
-    assert isinstance(result, ImportAnalysisResult)
-    assert len(result.edges) == EXPECTED_EDGE_COUNT_TWO
-    assert len(result.modules) == EXPECTED_EDGE_COUNT_THREE
-    assert "main" in result.scc_map
-    assert "main" in result.layer_map
+    expect_true(isinstance(result, ImportAnalysisResult))
+    expect_length(result.edges, EXPECTED_EDGE_COUNT_TWO)
+    expect_length(result.modules, EXPECTED_EDGE_COUNT_THREE)
+    expect_true("main" in result.scc_map)
+    expect_true("main" in result.layer_map)
 
 
 def test_build_import_module_rows() -> None:
@@ -450,9 +457,9 @@ def test_build_import_module_rows() -> None:
 
     rows = build_import_module_rows("repo", "commit", analysis)
 
-    assert len(rows) == EXPECTED_EDGE_COUNT_TWO
-    assert all(r.repo == "repo" for r in rows)
-    assert all(r.commit == "commit" for r in rows)
+    expect_length(rows, EXPECTED_EDGE_COUNT_TWO)
+    expect_true(all(r.repo == "repo" for r in rows))
+    expect_true(all(r.commit == "commit" for r in rows))
 
 
 def test_build_import_edge_rows() -> None:
@@ -463,10 +470,10 @@ def test_build_import_edge_rows() -> None:
 
     rows = build_import_edge_rows("repo", "commit", analysis)
 
-    assert len(rows) == EXPECTED_EDGE_COUNT_ONE
+    expect_length(rows, EXPECTED_EDGE_COUNT_ONE)
     row = rows[0]
-    assert row.src_module == "a"
-    assert row.dst_module == "b"
+    expect_equal(row.src_module, "a")
+    expect_equal(row.dst_module, "b")
 
 
 # ===========================================================================
@@ -477,21 +484,21 @@ def test_build_import_edge_rows() -> None:
 def test_symbol_occurrence_is_definition() -> None:
     """SymbolOccurrence identifies definition role."""
     occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=DEFINITION_ROLE)
-    assert occ.is_definition is True
-    assert occ.is_reference is False
+    expect_true(occ.is_definition)
+    expect_true(not occ.is_reference)
 
 
 def test_symbol_occurrence_is_reference() -> None:
     """SymbolOccurrence identifies reference role."""
     occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=REFERENCE_ROLE)
-    assert occ.is_definition is False
-    assert occ.is_reference is True
+    expect_true(not occ.is_definition)
+    expect_true(occ.is_reference)
 
 
 def test_symbol_occurrence_combined_roles() -> None:
     """SymbolOccurrence handles combined roles."""
     occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=REFERENCE_ROLE_COMBINED)
-    assert occ.is_reference is True
+    expect_true(occ.is_reference)
 
 
 def test_build_def_map_basic() -> None:
@@ -502,8 +509,8 @@ def test_build_def_map_basic() -> None:
     ]
     result = build_def_map(occurrences)
 
-    assert result["func"] == "a.py"
-    assert result["var"] == "b.py"
+    expect_equal(result["func"], "a.py")
+    expect_equal(result["var"], "b.py")
 
 
 def test_build_def_map_first_definition_wins() -> None:
@@ -514,7 +521,7 @@ def test_build_def_map_first_definition_wins() -> None:
     ]
     result = build_def_map(occurrences)
 
-    assert result["func"] == "a.py"
+    expect_equal(result["func"], "a.py")
 
 
 def test_build_def_map_ignores_references() -> None:
@@ -524,7 +531,7 @@ def test_build_def_map_ignores_references() -> None:
     ]
     result = build_def_map(occurrences)
 
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_build_use_edges_basic() -> None:
@@ -538,12 +545,12 @@ def test_build_use_edges_basic() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
     edge = edges[0]
-    assert edge.symbol == "func"
-    assert edge.def_path == "a.py"
-    assert edge.use_path == "b.py"
-    assert edge.same_file is False
+    expect_equal(edge.symbol, "func")
+    expect_equal(edge.def_path, "a.py")
+    expect_equal(edge.use_path, "b.py")
+    expect_true(edge.same_file is False)
 
 
 def test_build_use_edges_same_file() -> None:
@@ -557,8 +564,8 @@ def test_build_use_edges_same_file() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
-    assert edges[0].same_file is True
+    expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
+    expect_true(edges[0].same_file)
 
 
 def test_build_use_edges_same_module() -> None:
@@ -572,8 +579,8 @@ def test_build_use_edges_same_module() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
-    assert edges[0].same_module is True
+    expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
+    expect_true(edges[0].same_module)
 
 
 def test_build_use_edges_deduplicates() -> None:
@@ -588,7 +595,7 @@ def test_build_use_edges_deduplicates() -> None:
     edges = build_use_edges(occurrences, def_map, {})
 
     # Only one edge despite two references from same file
-    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
 
 
 def test_build_use_def_mapping() -> None:
@@ -603,8 +610,8 @@ def test_build_use_def_mapping() -> None:
 
     result = build_use_def_mapping(occurrences, def_map)
 
-    assert "c.py" in result
-    assert result["c.py"] == {"a.py", "b.py"}
+    expect_true("c.py" in result)
+    expect_equal(result["c.py"], {"a.py", "b.py"})
 
 
 def test_edges_to_rows() -> None:
@@ -622,35 +629,35 @@ def test_edges_to_rows() -> None:
     ]
     rows = edges_to_rows(edges)
 
-    assert len(rows) == EXPECTED_EDGE_COUNT_ONE
+    expect_length(rows, EXPECTED_EDGE_COUNT_ONE)
     row = rows[0]
-    assert row.symbol == "func"
-    assert row.def_path == "a.py"
-    assert row.use_path == "b.py"
-    assert row.same_file is False
-    assert row.same_module is True
-    assert row.def_goid_h128 == TEST_GOID_A
-    assert row.use_goid_h128 == TEST_GOID_B
+    expect_equal(row.symbol, "func")
+    expect_equal(row.def_path, "a.py")
+    expect_equal(row.use_path, "b.py")
+    expect_true(row.same_file is False)
+    expect_true(row.same_module is True)
+    expect_equal(row.def_goid_h128, TEST_GOID_A)
+    expect_equal(row.use_goid_h128, TEST_GOID_B)
 
 
 def test_parse_symbol_roles_int() -> None:
     """Parse symbol roles from int."""
-    assert parse_symbol_roles(DEFINITION_ROLE) == DEFINITION_ROLE
+    expect_equal(parse_symbol_roles(DEFINITION_ROLE), DEFINITION_ROLE)
 
 
 def test_parse_symbol_roles_string() -> None:
     """Parse symbol roles from string."""
-    assert parse_symbol_roles("2") == REFERENCE_ROLE
+    expect_equal(parse_symbol_roles("2"), REFERENCE_ROLE)
 
 
 def test_parse_symbol_roles_invalid_string() -> None:
     """Parse symbol roles handles invalid string."""
-    assert parse_symbol_roles("invalid") == 0
+    expect_equal(parse_symbol_roles("invalid"), 0)
 
 
 def test_parse_symbol_roles_none() -> None:
     """Parse symbol roles handles None."""
-    assert parse_symbol_roles(None) == 0
+    expect_equal(parse_symbol_roles(None), 0)
 
 
 # ===========================================================================

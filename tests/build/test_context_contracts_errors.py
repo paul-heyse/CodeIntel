@@ -17,6 +17,7 @@ from codeintel.build.parameters import TargetParameters
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers import make_build_paths, make_snapshot
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 
 def _context_with_contract(contract: OutputContract, tmp_path: Path) -> TargetExecutionContext:
@@ -42,7 +43,7 @@ def test_artifact_path_resolution(tmp_path: Path) -> None:
     ctx = _context_with_contract(contract, tmp_path)
 
     resolved = ctx.artifact_path("scip_index")
-    assert resolved == make_build_paths(tmp_path).scip_dir / "index.scip"
+    expect_equal(resolved, make_build_paths(tmp_path).scip_dir / "index.scip")
 
 
 def test_write_table_validation_and_recording(tmp_path: Path) -> None:
@@ -57,10 +58,10 @@ def test_write_table_validation_and_recording(tmp_path: Path) -> None:
     rows = [(1, "a"), (2, "b")]
 
     written = ctx.write_table("core.items", rows)
-    assert written == 2
+    expect_equal(written, 2)
     record = ctx.written_tables["core.items"]
-    assert record.validated is True
-    assert record.rows == rows
+    expect_true(record.validated is True)
+    expect_equal(record.rows, rows)
 
 
 def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
@@ -83,8 +84,8 @@ def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
 
     rows = [(1, "x")]
     written = ctx.write_table("core.legacy", rows)
-    assert written == 1
-    assert ctx.written_tables["core.legacy"].validated is True
+    expect_equal(written, 1)
+    expect_true(ctx.written_tables["core.legacy"].validated is True)
 
 
 def test_write_table_missing_schema_raises(tmp_path: Path) -> None:
@@ -113,9 +114,9 @@ def test_write_table_column_mismatch_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ColumnCountMismatchError) as exc_info:
         ctx.write_table("core.items", [(1,), (2, "ok")])
-    assert "core.items" in str(exc_info.value)
-    assert exc_info.value.actual == 1
-    assert exc_info.value.expected == 2
+    expect_true("core.items" in str(exc_info.value))
+    expect_equal(exc_info.value.actual, 1)
+    expect_equal(exc_info.value.expected, 2)
 
 
 def test_gateway_property_requires_resource(tmp_path: Path) -> None:
@@ -153,8 +154,8 @@ def test_contract_validation_reports_duplicates() -> None:
     )
 
     errors = contract.validate()
-    assert "Duplicate table key: core.items" in errors
-    assert "Duplicate artifact name: a1" in errors
+    expect_true("Duplicate table key: core.items" in errors)
+    expect_true("Duplicate artifact name: a1" in errors)
 
 
 def test_build_error_collection_formats_and_filters() -> None:
@@ -163,12 +164,12 @@ def test_build_error_collection_formats_and_filters() -> None:
     collection.add(SchemaNotFoundError("target", "core.table"))
     collection.add_warning("non-fatal")
 
-    assert collection.has_errors is True
-    assert collection.has_warnings is True
-    assert len(collection.by_type(SchemaNotFoundError)) == 1
+    expect_true(collection.has_errors is True)
+    expect_true(collection.has_warnings is True)
+    expect_equal(len(collection.by_type(SchemaNotFoundError)), 1)
     summary = collection.format_summary()
-    assert "SCHEMANOTFOUNDERROR" in summary
-    assert "Hint: Add schema for 'core.table'" in summary
+    expect_in("SCHEMANOTFOUNDERROR", summary)
+    expect_in("Hint: Add schema for 'core.table'", summary)
 
     with pytest.raises(SchemaNotFoundError):
         collection.raise_if_errors()

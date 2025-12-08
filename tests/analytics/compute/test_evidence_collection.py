@@ -14,6 +14,12 @@ from codeintel.analytics.compute.evidence.collection import (
     validate_evidence_samples,
 )
 from tests._helpers.assertions import assert_mapping_value
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 
 
 def test_evidence_sample_from_ast_and_to_dict() -> None:
@@ -28,12 +34,12 @@ def test_evidence_sample_from_ast_and_to_dict() -> None:
         tags=("example",),
     )
     serialized = sample.to_dict()
-    assert serialized["path"] == "module.py"
-    assert serialized["lineno"] == 1
+    expect_equal(serialized["path"], "module.py")
+    expect_equal(serialized["lineno"], 1)
     snippet = assert_mapping_value(serialized, "snippet", str)
-    assert "def sample" in snippet
-    assert assert_mapping_value(serialized, "details", dict) == {"kind": "function"}
-    assert assert_mapping_value(serialized, "tags", list) == ["example"]
+    expect_in("def sample", snippet)
+    expect_equal(assert_mapping_value(serialized, "details", dict), {"kind": "function"})
+    expect_equal(assert_mapping_value(serialized, "tags", list), ["example"])
 
 
 def test_evidence_collector_deduplicates_and_caps() -> None:
@@ -47,7 +53,7 @@ def test_evidence_collector_deduplicates_and_caps() -> None:
     collector.add(duplicate)
     collector.add(second)
 
-    assert collector.samples == [first]
+    expect_equal(collector.samples, [first])
 
 
 def test_evidence_collector_add_from_ast_and_extend() -> None:
@@ -69,9 +75,13 @@ def test_evidence_collector_add_from_ast_and_extend() -> None:
         ]
     )
     dicts = collector.to_dicts()
-    assert len(dicts) == 3
-    assert dicts[0]["details"] == {"assign": True}
-    assert dicts[1]["snippet"] == "value = value + 1"
+    expect_length(dicts, 3)
+    expect_equal(dicts[0]["details"], {"assign": True})
+    expect_equal(dicts[1]["snippet"], "value = value + 1")
+    expect_true(
+        any(item["snippet"] == "value = value + 2" for item in dicts),
+        message="third sample present",
+    )
 
 
 def test_validate_evidence_samples_errors() -> None:

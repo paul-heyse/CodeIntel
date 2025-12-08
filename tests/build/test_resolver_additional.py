@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import ClassVar
 
 import pytest
 
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
 from codeintel.build.targets import OutputTarget, TargetGraph
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 
 def _make_graph() -> TargetGraph:
@@ -143,9 +142,9 @@ def test_resolve_cascade_and_stale(
     result = resolver.resolve(["leaf"])
 
     kinds = tuple(result.reasons[name].kind for name in ("root", "mid", "leaf"))
-    assert kinds == expected_kinds
-    assert "requested goal" in result.reasons["leaf"].details
-    assert result.total_work == expected_work
+    expect_equal(kinds, expected_kinds)
+    expect_in("requested goal", result.reasons["leaf"].details)
+    expect_equal(result.total_work, expected_work)
 
 
 def test_resolve_handles_blocked_dependencies() -> None:
@@ -162,8 +161,8 @@ def test_resolve_handles_blocked_dependencies() -> None:
     result = resolver.resolve(["leaf"])
 
     mid_reason = result.reasons["mid"]
-    assert mid_reason.kind == "blocked_external"
-    assert "external" in mid_reason.details
+    expect_equal(mid_reason.kind, "blocked_external")
+    expect_in("external", mid_reason.details)
 
 
 def test_dependency_reason_when_blocking_will_compute() -> None:
@@ -174,9 +173,9 @@ def test_dependency_reason_when_blocking_will_compute() -> None:
 
     result = resolver.resolve(["leaf"])
 
-    assert result.reasons["mid"].kind == "dependency"
-    assert result.reasons["root"].kind == "missing"
-    assert "Dependencies" in result.reasons["mid"].details
+    expect_equal(result.reasons["mid"].kind, "dependency")
+    expect_equal(result.reasons["root"].kind, "missing")
+    expect_in("Dependencies", result.reasons["mid"].details)
 
 
 def test_force_recompute_filters_irrelevant_targets(caplog: pytest.LogCaptureFixture) -> None:
@@ -188,39 +187,34 @@ def test_force_recompute_filters_irrelevant_targets(caplog: pytest.LogCaptureFix
 
     result = resolver.resolve(("leaf",), force_recompute=("unknown", "extra"))
 
-    assert result.to_compute == ()
-    assert any("Force target 'unknown'" in rec.message for rec in caplog.records)
-    assert any("not in transitive deps" in rec.message for rec in caplog.records)
+    expect_equal(result.to_compute, ())
+    expect_true(any("Force target 'unknown'" in rec.message for rec in caplog.records))
+    expect_true(any("not in transitive deps" in rec.message for rec in caplog.records))
 
 
 def test_resolve_all_filters_by_module() -> None:
     """resolve_all with module restricts goals to that module."""
     graph = _make_graph()
 
-    @dataclass
-    class FakeState:
-        """DatabaseState stub returning computed states for all targets."""
+    computed_targets = {
+        t.name: TargetState(
+            name=t.name,
+            status="computed",
+            manifest=None,
+            staleness_reason=None,
+            blocking_deps=(),
+            current_input_hash=f"{t.name}-hash",
+        )
+        for t in graph.all_targets
+    }
+    state = DatabaseState(repo="r", commit="c", targets=computed_targets)
 
-        repo: ClassVar[str] = "r"
-        commit: ClassVar[str] = "c"
-        targets: ClassVar[dict[str, TargetState]] = {}
-
-        def get(self, name: str) -> TargetState:
-            return TargetState(
-                name=name,
-                status="computed",
-                manifest=None,
-                staleness_reason=None,
-                blocking_deps=(),
-                current_input_hash=f"{name}-hash",
-            )
-
-    resolver = BuildResolver(graph, FakeState())  # type: ignore[arg-type]
+    resolver = BuildResolver(graph, state)
     result = resolver.resolve_all(module="ingestion")
 
-    assert result.requested == ("root",)
-    assert result.to_skip == ("root",)
-    assert result.total_work == 0
+    expect_equal(result.requested, ("root",))
+    expect_equal(result.to_skip, ("root",))
+    expect_equal(result.total_work, 0)
 
 
 def test_get_reason_missing_key() -> None:

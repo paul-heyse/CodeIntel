@@ -14,6 +14,13 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import meta_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -145,7 +152,7 @@ def test_register_meta_tools_registers_expected_tools(monkeypatch: pytest.Monkey
 
     meta_tools.register_meta_tools(cast("FastMCP", mcp), cast("QueryBackendOrService", backend))
 
-    assert len(mcp.registry) == 6
+    expect_length(mcp.registry, 6)
     (
         list_datasets,
         list_operations,
@@ -155,21 +162,21 @@ def test_register_meta_tools_registers_expected_tools(monkeypatch: pytest.Monkey
         explain_path,
     ) = mcp.registry
 
-    datasets = cast("list[dict[str, object]]", list_datasets())
+    datasets = list_datasets()
     dataflow = cast("list[_DataflowPayload]", list_dataflow())
     dataset_details = cast("list[_ExplainPayload]", explain_dataset("table1"))
     op_details = cast("list[_ExplainPayload]", explain_operation("op.one"))
     path = cast("list[_DataflowPayload]", explain_path("table1", "op.one", max_hops=2))
 
-    assert datasets[0]["id"] == "d1"
-    assert cast("list[dict[str, object]]", list_operations())[0]["id"] == "op.one"
-    assert len(dataflow[0]["nodes"]) == 2
-    assert dataset_details[0]["node"]["id"] == "table1"
-    assert dataset_details[0]["incoming_edges"] == []
-    assert len(dataset_details[0]["outgoing_edges"]) == 1
-    assert len(op_details[0]["incoming_edges"]) == 1
-    assert op_details[0]["outgoing_edges"] == []
-    assert path[0]["edges"]
+    expect_equal(datasets[0]["id"], "d1")
+    expect_equal(list_operations()[0]["id"], "op.one")
+    expect_length(dataflow[0]["nodes"], 2)
+    expect_equal(dataset_details[0]["node"]["id"], "table1")
+    expect_equal(dataset_details[0]["incoming_edges"], [])
+    expect_length(dataset_details[0]["outgoing_edges"], 1)
+    expect_length(op_details[0]["incoming_edges"], 1)
+    expect_equal(op_details[0]["outgoing_edges"], [])
+    expect_true(bool(path[0]["edges"]))
 
 
 def test_explain_dataset_returns_error_for_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,5 +215,6 @@ def test_explain_dataset_returns_error_for_unknown_id(monkeypatch: pytest.Monkey
     ) = mcp.registry
 
     result = cast("Callable[[str], object]", explain_dataset)("missing")
-    assert isinstance(result, dict)
-    assert "error" in result
+    expect_is_instance(result, dict)
+    result_dict = cast("dict[str, object]", result)
+    expect_in("error", result_dict)

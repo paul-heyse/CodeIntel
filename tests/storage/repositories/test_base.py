@@ -11,17 +11,32 @@ from codeintel.storage.repositories.base import (
     fetch_paginated,
     row_exists,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
+from tests._helpers.rows import module_row
 
 
 def test_fetch_one_dict_returns_mapping(fresh_gateway: StorageGateway) -> None:
     """Verify fetch_one_dict returns single row as dict."""
     con = fresh_gateway.con
 
-    con.execute(
+    con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit)
-        VALUES ('test_mod', 'test.py', 'test/repo', 'abc123')
-        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            module_row(
+                module="test_mod", path="test.py", snapshot=("test/repo", "abc123")
+            ).to_tuple()
+        ],
     )
 
     result = fetch_one_dict(
@@ -30,10 +45,10 @@ def test_fetch_one_dict_returns_mapping(fresh_gateway: StorageGateway) -> None:
         ["test/repo", "abc123"],
     )
 
-    assert result is not None
-    assert isinstance(result, dict)
-    assert result["module"] == "test_mod"
-    assert result["path"] == "test.py"
+    row = expect_is_not_none(result)
+    expect_is_instance(row, dict)
+    expect_equal(row["module"], "test_mod")
+    expect_equal(row["path"], "test.py")
 
 
 def test_fetch_one_dict_returns_none_when_empty(
@@ -48,20 +63,23 @@ def test_fetch_one_dict_returns_none_when_empty(
         ["nonexistent/repo"],
     )
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_fetch_all_dicts_returns_list(fresh_gateway: StorageGateway) -> None:
     """Verify fetch_all_dicts returns all rows as list of dicts."""
     con = fresh_gateway.con
 
-    con.execute(
+    con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit) VALUES
-            ('mod1', 'mod1.py', 'test/repo', 'abc123'),
-            ('mod2', 'mod2.py', 'test/repo', 'abc123'),
-            ('mod3', 'mod3.py', 'test/repo', 'abc123')
-        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            module_row(module="mod1", path="mod1.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod2", path="mod2.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod3", path="mod3.py", snapshot=("test/repo", "abc123")).to_tuple(),
+        ],
     )
 
     result = fetch_all_dicts(
@@ -70,12 +88,12 @@ def test_fetch_all_dicts_returns_list(fresh_gateway: StorageGateway) -> None:
         ["test/repo"],
     )
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
     expected_count = 3
-    assert len(result) == expected_count
-    assert result[0]["module"] == "mod1"
-    assert result[1]["module"] == "mod2"
-    assert result[2]["module"] == "mod3"
+    expect_length(result, expected_count)
+    expect_equal(result[0]["module"], "mod1")
+    expect_equal(result[1]["module"], "mod2")
+    expect_equal(result[2]["module"], "mod3")
 
 
 def test_fetch_all_dicts_returns_empty_list_when_no_match(
@@ -90,8 +108,8 @@ def test_fetch_all_dicts_returns_empty_list_when_no_match(
         ["nonexistent/repo"],
     )
 
-    assert isinstance(result, list)
-    assert len(result) == 0
+    expect_is_instance(result, list)
+    expect_length(result, 0)
 
 
 def test_fetch_paginated_detects_truncation(
@@ -100,15 +118,18 @@ def test_fetch_paginated_detects_truncation(
     """Verify fetch_paginated detects when more rows exist than limit."""
     con = fresh_gateway.con
 
-    con.execute(
+    con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit) VALUES
-            ('mod1', 'mod1.py', 'test/repo', 'abc123'),
-            ('mod2', 'mod2.py', 'test/repo', 'abc123'),
-            ('mod3', 'mod3.py', 'test/repo', 'abc123'),
-            ('mod4', 'mod4.py', 'test/repo', 'abc123'),
-            ('mod5', 'mod5.py', 'test/repo', 'abc123')
-        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            module_row(module="mod1", path="mod1.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod2", path="mod2.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod3", path="mod3.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod4", path="mod4.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod5", path="mod5.py", snapshot=("test/repo", "abc123")).to_tuple(),
+        ],
     )
 
     result = fetch_paginated(
@@ -118,11 +139,11 @@ def test_fetch_paginated_detects_truncation(
         limit=3,
     )
 
-    assert isinstance(result, PaginatedRows)
+    expect_is_instance(result, PaginatedRows)
     expected_count = 3
-    assert len(result.rows) == expected_count
-    assert result.limit == expected_count
-    assert result.truncated is True
+    expect_length(result.rows, expected_count)
+    expect_equal(result.limit, expected_count)
+    expect_true(result.truncated)
 
 
 def test_fetch_paginated_no_truncation_when_under_limit(
@@ -131,12 +152,15 @@ def test_fetch_paginated_no_truncation_when_under_limit(
     """Verify fetch_paginated reports no truncation when fewer rows than limit."""
     con = fresh_gateway.con
 
-    con.execute(
+    con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit) VALUES
-            ('mod1', 'mod1.py', 'test/repo', 'abc123'),
-            ('mod2', 'mod2.py', 'test/repo', 'abc123')
-        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            module_row(module="mod1", path="mod1.py", snapshot=("test/repo", "abc123")).to_tuple(),
+            module_row(module="mod2", path="mod2.py", snapshot=("test/repo", "abc123")).to_tuple(),
+        ],
     )
 
     result = fetch_paginated(
@@ -146,10 +170,10 @@ def test_fetch_paginated_no_truncation_when_under_limit(
         limit=10,
     )
 
-    assert isinstance(result, PaginatedRows)
+    expect_is_instance(result, PaginatedRows)
     expected_count = 2
-    assert len(result.rows) == expected_count
-    assert result.truncated is False
+    expect_length(result.rows, expected_count)
+    expect_false(result.truncated)
 
 
 def test_row_exists_returns_true_when_match(
@@ -158,11 +182,16 @@ def test_row_exists_returns_true_when_match(
     """Verify row_exists returns True when at least one row matches."""
     con = fresh_gateway.con
 
-    con.execute(
+    con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit)
-        VALUES ('test_mod', 'test.py', 'test/repo', 'abc123')
-        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            module_row(
+                module="test_mod", path="test.py", snapshot=("test/repo", "abc123")
+            ).to_tuple()
+        ],
     )
 
     result = row_exists(
@@ -171,7 +200,7 @@ def test_row_exists_returns_true_when_match(
         ["test/repo"],
     )
 
-    assert result is True
+    expect_true(result)
 
 
 def test_row_exists_returns_false_when_no_match(
@@ -186,7 +215,7 @@ def test_row_exists_returns_false_when_no_match(
         ["nonexistent/repo"],
     )
 
-    assert result is False
+    expect_false(result)
 
 
 def test_paginated_rows_count_property() -> None:
@@ -195,7 +224,7 @@ def test_paginated_rows_count_property() -> None:
     paginated = PaginatedRows(rows=rows, limit=10, truncated=False)
 
     expected_count = 3
-    assert paginated.count == expected_count
+    expect_equal(paginated.count, expected_count)
 
 
 def test_base_repository_con_property(fresh_gateway: StorageGateway) -> None:
@@ -206,7 +235,7 @@ def test_base_repository_con_property(fresh_gateway: StorageGateway) -> None:
         commit="abc123",
     )
 
-    assert base_repo.con is fresh_gateway.con
+    expect_true(base_repo.con is fresh_gateway.con)
 
 
 def test_base_repository_stores_attributes(fresh_gateway: StorageGateway) -> None:
@@ -217,6 +246,6 @@ def test_base_repository_stores_attributes(fresh_gateway: StorageGateway) -> Non
         commit="abc123",
     )
 
-    assert base_repo.gateway is fresh_gateway
-    assert base_repo.repo == "test/repo"
-    assert base_repo.commit == "abc123"
+    expect_true(base_repo.gateway is fresh_gateway)
+    expect_equal(base_repo.repo, "test/repo")
+    expect_equal(base_repo.commit, "abc123")

@@ -25,6 +25,13 @@ from codeintel.ingestion.engine.results import CoverageReport
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.ports.tools import ToolStatus
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
 
 # Test constants
@@ -85,7 +92,7 @@ def test_quote_identifier_valid(identifier: str, expected: str) -> None:
     """Should quote valid identifiers."""
     result = quote_identifier(identifier)
 
-    assert result == expected
+    expect_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -113,9 +120,9 @@ def test_quote_table_key_valid() -> None:
     """Should quote valid table keys."""
     schema, table, quoted = quote_table_key("core.modules")
 
-    assert schema == "core"
-    assert table == "modules"
-    assert quoted == '"core"."modules"'
+    expect_equal(schema, "core")
+    expect_equal(table, "modules")
+    expect_equal(quoted, '"core"."modules"')
 
 
 def test_quote_table_key_unknown_table() -> None:
@@ -131,29 +138,29 @@ def test_quote_table_key_unknown_table() -> None:
 
 def test_small_batch_threshold_positive() -> None:
     """SMALL_BATCH_THRESHOLD should be a positive integer."""
-    assert SMALL_BATCH_THRESHOLD > 0
-    assert isinstance(SMALL_BATCH_THRESHOLD, int)
+    expect_true(SMALL_BATCH_THRESHOLD > 0)
+    expect_true(isinstance(SMALL_BATCH_THRESHOLD, int))
 
 
 def test_ingest_macros_not_empty() -> None:
     """INGEST_MACROS should contain mappings."""
-    assert len(INGEST_MACROS) > 0
-    assert isinstance(INGEST_MACROS, dict)
+    expect_true(len(INGEST_MACROS) > 0)
+    expect_true(isinstance(INGEST_MACROS, dict))
 
 
 def test_ingest_macros_keys_are_table_format() -> None:
     """INGEST_MACROS keys should be in schema.table format."""
     for key in INGEST_MACROS:
-        assert "." in key
+        expect_true("." in key)
         parts = key.split(".")
         min_parts = 2
-        assert len(parts) >= min_parts
+        expect_true(len(parts) >= min_parts)
 
 
 def test_ingest_macros_values_start_with_metadata() -> None:
     """INGEST_MACROS values should start with metadata.ingest_."""
     for value in INGEST_MACROS.values():
-        assert value.startswith("metadata.ingest_")
+        expect_true(value.startswith("metadata.ingest_"))
 
 
 # =============================================================================
@@ -169,16 +176,16 @@ def test_batch_result_attributes() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert result.table_key == "core.test"
-    assert result.rows_written == ROWS_WRITTEN_100
-    assert result.duration_s == DURATION_1_5
+    expect_equal(result.table_key, "core.test")
+    expect_equal(result.rows_written, ROWS_WRITTEN_100)
+    expect_equal(result.duration_s, DURATION_1_5)
 
 
 def test_batch_result_defaults() -> None:
     """BatchResult should have sensible defaults."""
     result = BatchResult(table_key="core.test", rows_written=50)
 
-    assert result.duration_s == 0.0
+    expect_equal(result.duration_s, 0.0)
 
 
 # =============================================================================
@@ -195,18 +202,18 @@ def test_query_result_attributes() -> None:
     )
 
     expected_rows = 2
-    assert len(result.rows) == expected_rows
-    assert result.columns == ("name", "value")
-    assert result.row_count == expected_rows
+    expect_length(result.rows, expected_rows)
+    expect_equal(result.columns, ("name", "value"))
+    expect_equal(result.row_count, expected_rows)
 
 
 def test_query_result_defaults() -> None:
     """QueryResult should have sensible defaults."""
     result = QueryResult()
 
-    assert result.rows == []
-    assert result.columns == ()
-    assert result.row_count == 0
+    expect_equal(result.rows, [])
+    expect_equal(result.columns, ())
+    expect_equal(result.row_count, 0)
 
 
 # =============================================================================
@@ -216,7 +223,7 @@ def test_query_result_defaults() -> None:
 
 def test_duckdb_adapter_initialization(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter should initialize from gateway."""
-    assert duckdb_adapter is not None
+    expect_is_not_none(duckdb_adapter)
 
 
 def test_duckdb_adapter_ensure_schema(duckdb_adapter: DuckDBStorageAdapter) -> None:
@@ -237,8 +244,8 @@ def test_duckdb_adapter_execute_query(duckdb_adapter: DuckDBStorageAdapter) -> N
     """DuckDBStorageAdapter.execute_query should return results."""
     result = duckdb_adapter.execute_query("SELECT 1 as value")
 
-    assert result is not None
-    assert result.row_count >= 0
+    expect_is_not_none(result)
+    expect_true(result.row_count >= 0)
 
 
 def test_duckdb_adapter_execute_query_with_params(
@@ -247,8 +254,8 @@ def test_duckdb_adapter_execute_query_with_params(
     """DuckDBStorageAdapter.execute_query should handle parameters."""
     result = duckdb_adapter.execute_query("SELECT ? + ? as sum", [1, 2])
 
-    assert result is not None
-    assert result.row_count == 1
+    expect_is_not_none(result)
+    expect_equal(result.row_count, 1)
 
 
 def test_duckdb_adapter_write_batch_small(duckdb_adapter: DuckDBStorageAdapter) -> None:
@@ -259,7 +266,7 @@ def test_duckdb_adapter_write_batch_small(duckdb_adapter: DuckDBStorageAdapter) 
 
     result = duckdb_adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
 
-    assert result.rows_written == 1
+    expect_equal(result.rows_written, 1)
 
 
 def test_duckdb_adapter_delete_by_paths(
@@ -280,16 +287,16 @@ def test_duckdb_adapter_delete_by_paths(
         path_column="path",
     )
 
-    assert deleted >= 0  # May be 0 if table structure differs
+    expect_true(deleted >= 0)  # May be 0 if table structure differs
 
 
 def test_duckdb_adapter_fetch_dataframe(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter.fetch_dataframe should return dataframe."""
     df = duckdb_adapter.fetch_dataframe("SELECT 1 as value, 'test' as name")
 
-    assert df is not None
+    expect_is_not_none(df)
     # Check it has expected shape
-    assert len(df) >= 0
+    expect_true(len(df) >= 0)
 
 
 # =============================================================================
@@ -305,7 +312,7 @@ def test_adapter_write_and_query_cycle(duckdb_adapter: DuckDBStorageAdapter) -> 
     ]
     write_result = duckdb_adapter.write_batch("core.modules", rows, scope="cycle/repo@xyz789")
 
-    assert write_result.rows_written == 1
+    expect_equal(write_result.rows_written, 1)
 
     # Query it back
     query_result = duckdb_adapter.execute_query(
@@ -313,7 +320,7 @@ def test_adapter_write_and_query_cycle(duckdb_adapter: DuckDBStorageAdapter) -> 
         ["cycle/repo"],
     )
 
-    assert query_result.row_count >= 1
+    expect_true(query_result.row_count >= 1)
 
 
 # =============================================================================
@@ -326,17 +333,17 @@ def testbuild_delete_in_query() -> None:
     result = build_delete_in_query('"core"."modules"', '"path"', 3)
 
     expected_count = 3
-    assert "DELETE FROM" in result
-    assert '"core"."modules"' in result
-    assert '"path"' in result
-    assert result.count("?") == expected_count
+    expect_in("DELETE FROM", result)
+    expect_in('"core"."modules"', result)
+    expect_in('"path"', result)
+    expect_equal(result.count("?"), expected_count)
 
 
 def test_quote_macro_name_simple() -> None:
     """quote_macro_name should handle simple macro names."""
     result = quote_macro_name("metadata.ingest_modules")
 
-    assert result == "metadata.ingest_modules"
+    expect_equal(result, "metadata.ingest_modules")
 
 
 def test_quote_macro_name_invalid() -> None:
@@ -354,7 +361,7 @@ def test_duckdb_adapter_con_property(
     duckdb_adapter: DuckDBStorageAdapter, fresh_gateway: StorageGateway
 ) -> None:
     """DuckDBStorageAdapter.con should return the gateway connection."""
-    assert duckdb_adapter.con is fresh_gateway.con
+    expect_true(duckdb_adapter.con is fresh_gateway.con)
 
 
 # =============================================================================
@@ -366,8 +373,8 @@ def test_duckdb_adapter_write_batch_empty(duckdb_adapter: DuckDBStorageAdapter) 
     """DuckDBStorageAdapter.write_batch should handle empty rows."""
     result = duckdb_adapter.write_batch("core.modules", [], scope="test@abc")
 
-    assert result.rows_written == 0
-    assert result.duration_s == 0.0
+    expect_equal(result.rows_written, 0)
+    expect_equal(result.duration_s, 0.0)
 
 
 def test_duckdb_adapter_write_batch_no_scope(duckdb_adapter: DuckDBStorageAdapter) -> None:
@@ -377,7 +384,7 @@ def test_duckdb_adapter_write_batch_no_scope(duckdb_adapter: DuckDBStorageAdapte
     ]
     result = duckdb_adapter.write_batch("core.modules", rows)
 
-    assert result.rows_written == 1
+    expect_equal(result.rows_written, 1)
 
 
 def test_duckdb_adapter_write_batch_larger(duckdb_adapter: DuckDBStorageAdapter) -> None:
@@ -391,7 +398,7 @@ def test_duckdb_adapter_write_batch_larger(duckdb_adapter: DuckDBStorageAdapter)
     result = duckdb_adapter.write_batch("core.modules", rows, scope="test/repo@abc123")
 
     expected_rows = 30
-    assert result.rows_written == expected_rows
+    expect_equal(result.rows_written, expected_rows)
 
 
 # =============================================================================
@@ -403,7 +410,7 @@ def test_duckdb_adapter_delete_by_paths_empty(duckdb_adapter: DuckDBStorageAdapt
     """DuckDBStorageAdapter.delete_by_paths should handle empty paths list."""
     deleted = duckdb_adapter.delete_by_paths("core.modules", [])
 
-    assert deleted == 0
+    expect_equal(deleted, 0)
 
 
 def test_duckdb_adapter_delete_by_params(duckdb_adapter: DuckDBStorageAdapter) -> None:
@@ -417,7 +424,7 @@ def test_duckdb_adapter_delete_by_params(duckdb_adapter: DuckDBStorageAdapter) -
     # Try delete by params - should not raise
     deleted = duckdb_adapter.delete_by_params("core.modules", ["test/repo", "abc123"])
 
-    assert deleted >= 0  # DuckDB doesn't return count
+    expect_true(deleted >= 0)  # DuckDB doesn't return count
 
 
 # =============================================================================
@@ -429,8 +436,8 @@ def test_duckdb_adapter_execute_query_no_params(duckdb_adapter: DuckDBStorageAda
     """DuckDBStorageAdapter.execute_query should work without params."""
     result = duckdb_adapter.execute_query("SELECT 42 as answer")
 
-    assert result.row_count == 1
-    assert result.columns == ("answer",)
+    expect_equal(result.row_count, 1)
+    expect_equal(result.columns, ("answer",))
 
 
 def test_duckdb_adapter_fetch_dataframe_with_params(
@@ -439,7 +446,7 @@ def test_duckdb_adapter_fetch_dataframe_with_params(
     """DuckDBStorageAdapter.fetch_dataframe should handle params."""
     df = duckdb_adapter.fetch_dataframe("SELECT ? as value", [100])
 
-    assert len(df) == 1
+    expect_length(df, 1)
 
 
 # =============================================================================
@@ -449,8 +456,8 @@ def test_duckdb_adapter_fetch_dataframe_with_params(
 
 def test_ingest_macros_has_core_modules() -> None:
     """INGEST_MACROS should have entry for core.modules."""
-    assert "core.modules" in INGEST_MACROS
-    assert INGEST_MACROS["core.modules"].startswith("metadata.")
+    expect_in("core.modules", INGEST_MACROS)
+    expect_true(INGEST_MACROS["core.modules"].startswith("metadata."))
 
 
 # =============================================================================
@@ -502,7 +509,7 @@ def _make_failing_service() -> FakeToolService:
 
 def test_tool_runner_adapter_initialization(success_tool_adapter: ToolRunnerAdapter) -> None:
     """ToolRunnerAdapter should initialize with ToolService."""
-    assert success_tool_adapter is not None
+    expect_is_not_none(success_tool_adapter)
 
 
 @pytest.mark.parametrize(
@@ -522,10 +529,10 @@ def test_tool_runner_adapter_diagnostic_tools_success(
     method = getattr(success_tool_adapter, method_name)
     result = asyncio.run(method(Path()))
 
-    assert result.status == ToolStatus.OK
-    assert len(result.diagnostics) == expected_diagnostics
+    expect_equal(result.status, ToolStatus.OK)
+    expect_length(result.diagnostics, expected_diagnostics)
     if method_name == "run_pyright":
-        assert result.duration_s > 0
+        expect_true(result.duration_s > 0)
 
 
 @pytest.mark.parametrize(
@@ -545,8 +552,8 @@ def test_tool_runner_adapter_diagnostic_tools_failure(
     method = getattr(failing_tool_adapter, method_name)
     result = asyncio.run(method(Path()))
 
-    assert result.status == ToolStatus.FAILED
-    assert message in (result.error or "")
+    expect_equal(result.status, ToolStatus.FAILED)
+    expect_true(message in (result.error or ""))
 
 
 def test_tool_runner_adapter_run_coverage_success(
@@ -555,9 +562,9 @@ def test_tool_runner_adapter_run_coverage_success(
     """ToolRunnerAdapter.run_coverage should return file data."""
     result = asyncio.run(success_tool_adapter.run_coverage(Path()))
 
-    assert result.status == ToolStatus.OK
-    assert len(result.files) == 1
-    assert result.files[0].rel_path == "mod.py"
+    expect_equal(result.status, ToolStatus.OK)
+    expect_length(result.files, 1)
+    expect_equal(result.files[0].rel_path, "mod.py")
 
 
 def test_tool_runner_adapter_run_coverage_failure(
@@ -566,8 +573,8 @@ def test_tool_runner_adapter_run_coverage_failure(
     """ToolRunnerAdapter.run_coverage should handle failures."""
     result = asyncio.run(failing_tool_adapter.run_coverage(Path()))
 
-    assert result.status == ToolStatus.FAILED
-    assert "coverage failed" in (result.error or "")
+    expect_equal(result.status, ToolStatus.FAILED)
+    expect_true("coverage failed" in (result.error or ""))
 
 
 @pytest.mark.parametrize("rel_paths", [None, ["src/mod.py"]])
@@ -587,7 +594,7 @@ def test_tool_runner_adapter_run_scip_success(
         )
     )
 
-    assert result.status == ToolStatus.OK
+    expect_equal(result.status, ToolStatus.OK)
 
 
 def test_tool_runner_adapter_run_scip_failure(
@@ -605,8 +612,8 @@ def test_tool_runner_adapter_run_scip_failure(
         )
     )
 
-    assert result.status == ToolStatus.FAILED
-    assert "SCIP failed" in (result.error or "")
+    expect_equal(result.status, ToolStatus.FAILED)
+    expect_true("SCIP failed" in (result.error or ""))
 
 
 def test_tool_runner_adapter_run_pytest_no_report(
@@ -617,8 +624,8 @@ def test_tool_runner_adapter_run_pytest_no_report(
 
     result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
-    assert result.status == ToolStatus.OK
-    assert result.tests == []
+    expect_equal(result.status, ToolStatus.OK)
+    expect_equal(result.tests, [])
 
 
 def test_tool_runner_adapter_run_pytest_with_report(
@@ -638,8 +645,8 @@ def test_tool_runner_adapter_run_pytest_with_report(
 
     result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
-    assert result.status == ToolStatus.OK
-    assert len(result.tests) == 1
+    expect_equal(result.status, ToolStatus.OK)
+    expect_length(result.tests, 1)
 
 
 def test_tool_runner_adapter_run_pytest_failure(
@@ -650,5 +657,5 @@ def test_tool_runner_adapter_run_pytest_failure(
 
     result = asyncio.run(failing_tool_adapter.run_pytest(Path(), json_report_path=json_path))
 
-    assert result.status == ToolStatus.FAILED
-    assert "pytest failed" in (result.error or "")
+    expect_equal(result.status, ToolStatus.FAILED)
+    expect_true("pytest failed" in (result.error or ""))

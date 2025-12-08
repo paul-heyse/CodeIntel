@@ -19,6 +19,7 @@ from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql.builder import ensure_schema
+from tests._helpers.assertions import expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.gateway import GatewayFactory
@@ -190,15 +191,18 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
         gateway.close()
 
     effects_by_goid = {int(row[2]): row for row in rows}
-    assert effects_by_goid[goids["impure"]][4] is True  # uses_io
-    assert effects_by_goid[goids["impure"]][6] is True  # uses_time
-    assert effects_by_goid[goids["impure"]][7] is True  # uses_randomness
-    assert effects_by_goid[goids["impure"]][8] is True  # modifies_globals
-    assert effects_by_goid[goids["impure"]][10] is True  # spawns_threads_or_tasks
-    assert effects_by_goid[goids["caller"]][11] is True
-    assert effects_by_goid[goids["caller"]][3] is False
-    assert effects_by_goid[goids["caller"]][12] < 1.0
-    assert effects_by_goid[goids["uses_nonlocal"]][9] is True
-    assert effects_by_goid[goids["missing"]][3] is False
-    assert effects_by_goid[goids["missing"]][12] == 0.0
-    assert effects_by_goid[goids["missing"]][13]["errors"][0]["details"]["kind"] == "missing_ast"
+    expect_true(effects_by_goid[goids["impure"]][4])  # uses_io
+    expect_true(effects_by_goid[goids["impure"]][6])  # uses_time
+    expect_true(effects_by_goid[goids["impure"]][7])  # uses_randomness
+    expect_true(effects_by_goid[goids["impure"]][8])  # modifies_globals
+    expect_true(effects_by_goid[goids["impure"]][10])  # spawns_threads_or_tasks
+    expect_true(effects_by_goid[goids["caller"]][11])
+    expect_false(effects_by_goid[goids["caller"]][3])
+    expect_true(effects_by_goid[goids["caller"]][12] < 1.0)
+    expect_true(effects_by_goid[goids["uses_nonlocal"]][9])
+    expect_false(effects_by_goid[goids["missing"]][3])
+    expect_equal(effects_by_goid[goids["missing"]][12], 0.0)
+    expect_equal(
+        effects_by_goid[goids["missing"]][13]["errors"][0]["details"]["kind"],
+        "missing_ast",
+    )

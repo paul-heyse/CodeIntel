@@ -13,6 +13,7 @@ from codeintel.analytics.compute.data_models import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -118,10 +119,14 @@ def process_user(user: User) -> dict[str, str]:
         """
     ).fetchone()
 
-    assert row is not None
+    if row is None:
+        pytest.fail("Expected data_model_usage row for function goid")
     _, usages_raw, evidence_raw, context_raw = row
     usages = json.loads(usages_raw)
-    assert set(usages) >= {"create", "update", "serialize", "delete"}
+    expect_true(
+        set(usages) >= {"create", "update", "serialize", "delete"},
+        message="usage kinds captured",
+    )
     evidence = json.loads(evidence_raw)
-    assert evidence["create"]
-    assert json.loads(context_raw)["module"] == "app.models"
+    expect_true(evidence["create"], message="create evidence")
+    expect_equal(json.loads(context_raw)["module"], "app.models", label="module context")

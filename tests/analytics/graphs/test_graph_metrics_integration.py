@@ -42,6 +42,12 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ConfigDataFlowStepConfig, GraphMetricsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
@@ -57,6 +63,10 @@ from tests._helpers.graphs import (
     insert_subsystems,
     insert_symbol_edges,
 )
+
+MIN_CONFIG_DATA_FLOW_ROWS = 2
+CONFIG_GRAPH_METRICS_KEY_COUNT = 2
+MIN_GRAPH_STATS_ROWS = 4
 
 
 @dataclass
@@ -209,13 +219,13 @@ def test_graph_metrics_end_to_end(tmp_path: Path) -> None:
         params = [sample.snapshot.repo, sample.snapshot.commit]
         con = sample.gateway.con
 
-        assert (
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.config_data_flow WHERE repo = ? AND commit = ?",
                 params,
             )
-            >= 2
+            >= MIN_CONFIG_DATA_FLOW_ROWS,
         )
         chain_row = con.execute(
             """
@@ -226,83 +236,104 @@ def test_graph_metrics_end_to_end(tmp_path: Path) -> None:
             """,
             params,
         ).fetchone()
-        assert chain_row is not None
-        chain_json = chain_row[0]
-        assert str(sample.goids["api_handler"]) in chain_json
+        expect_is_not_none(chain_row)
+        if chain_row is None:
+            pytest.fail("Expected config_data_flow row")
 
-        assert (
+        chain_json = chain_row[0]
+        expect_in(str(sample.goids["api_handler"]), chain_json)
+
+        expect_equal(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.config_graph_metrics_keys WHERE repo = ? AND commit = ?",
                 params,
-            )
-            == 2
+            ),
+            CONFIG_GRAPH_METRICS_KEY_COUNT,
         )
-        assert (
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.config_projection_module_edges WHERE repo = ? AND commit = ?",
                 params,
             )
-            > 0
+            > 0,
         )
 
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
-            params,
-        ) == len(sample.call_graph.nodes)
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
-            params,
-        ) >= len(sample.import_graph.nodes)
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
-            params,
-        ) == len(sample.call_graph.nodes)
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
-            params,
-        ) >= len(sample.import_graph.nodes)
+        expect_equal(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
+                params,
+            ),
+            len(sample.call_graph.nodes),
+        )
+        expect_true(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
+                params,
+            )
+            >= len(sample.import_graph.nodes),
+        )
+        expect_equal(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
+                params,
+            ),
+            len(sample.call_graph.nodes),
+        )
+        expect_true(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
+                params,
+            )
+            >= len(sample.import_graph.nodes),
+        )
 
-        assert (
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
                 params,
             )
-            >= 4
+            >= MIN_GRAPH_STATS_ROWS,
         )
-        assert (
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
                 params,
             )
-            >= 1
+            >= 1,
         )
-        assert (
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?",
                 params,
             )
-            >= 1
+            >= 1,
         )
 
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
-            params,
-        ) >= len(sample.symbol_module_graph.nodes)
-        assert count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
-            params,
-        ) >= len(sample.symbol_function_graph.nodes)
+        expect_true(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
+                params,
+            )
+            >= len(sample.symbol_module_graph.nodes),
+        )
+        expect_true(
+            count_rows(
+                con,
+                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
+                params,
+            )
+            >= len(sample.symbol_function_graph.nodes),
+        )
     finally:
         sample.close()
 
@@ -336,8 +367,8 @@ def test_contracts_and_catalog(tmp_path: Path) -> None:
             ),
         )
         statuses = {check.name: check.status for check in table_checks}
-        assert statuses["analytics.graph_metrics_functions_exists"] == "passed"
-        assert statuses["analytics.graph_metrics_functions_not_empty"] == "passed"
+        expect_equal(statuses["analytics.graph_metrics_functions_exists"], "passed")
+        expect_equal(statuses["analytics.graph_metrics_functions_not_empty"], "passed")
 
         nullable_result = assert_not_null_fraction(
             sample.gateway,
@@ -348,23 +379,23 @@ def test_contracts_and_catalog(tmp_path: Path) -> None:
                 min_fraction=0.1,
             ),
         )
-        assert nullable_result.status in {"passed", "failed"}
+        expect_in(nullable_result.status, {"passed", "failed"})
 
         with pytest.raises(ValueError, match="Unsafe or unknown table"):
             assert_table_exists(sample.gateway, table="analytics.unknown_table")
 
         catalog = build_plugin_catalog()
-        assert catalog["count"] == len(catalog["plugins"])
+        expect_equal(catalog["count"], len(catalog["plugins"]))
         markdown = render_plugin_catalog_markdown(catalog)
-        assert "Analytics Plugin Catalog" in markdown
-        assert str(len(catalog["plugins"])) in markdown
-        assert (
+        expect_in("Analytics Plugin Catalog", markdown)
+        expect_in(str(len(catalog["plugins"])), markdown)
+        expect_true(
             count_rows(
                 con,
                 "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
                 params,
             )
-            > 0
+            > 0,
         )
     finally:
         sample.close()

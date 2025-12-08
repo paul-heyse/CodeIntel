@@ -20,7 +20,14 @@ from codeintel.graphs.compute.metrics.dfg import (
     compute_use_def_chains,
     find_dfg_cycles,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     cyclic_graph,
@@ -62,7 +69,7 @@ def test_path_lengths_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_dfg_path_lengths(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_path_lengths_single_node() -> None:
@@ -71,10 +78,10 @@ def test_path_lengths_single_node() -> None:
     graph.add_node("A")
     result = compute_dfg_path_lengths(graph)
 
-    assert len(result) == 1
-    assert result["A"].max_def_use_distance == 0
-    assert result["A"].avg_def_use_distance == 0.0
-    assert result["A"].reach_count == EXPECTED_REACH_COUNT_ZERO
+    expect_length(result, 1)
+    expect_equal(result["A"].max_def_use_distance, 0)
+    expect_equal(result["A"].avg_def_use_distance, 0.0)
+    expect_equal(result["A"].reach_count, EXPECTED_REACH_COUNT_ZERO)
 
 
 def test_path_lengths_chain_graph() -> None:
@@ -82,19 +89,19 @@ def test_path_lengths_chain_graph() -> None:
     graph = chain_graph(4)  # A -> B -> C -> D
     result = compute_dfg_path_lengths(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
     # A reaches B, C, D at distances 1, 2, 3
-    assert result["A"].max_def_use_distance == EXPECTED_MAX_DISTANCE_THREE
-    assert result["A"].reach_count == EXPECTED_REACH_COUNT_THREE
+    expect_equal(result["A"].max_def_use_distance, EXPECTED_MAX_DISTANCE_THREE)
+    expect_equal(result["A"].reach_count, EXPECTED_REACH_COUNT_THREE)
 
     # B reaches C, D at distances 1, 2
-    assert result["B"].max_def_use_distance == EXPECTED_MAX_DISTANCE_TWO
-    assert result["B"].reach_count == EXPECTED_REACH_COUNT_TWO
+    expect_equal(result["B"].max_def_use_distance, EXPECTED_MAX_DISTANCE_TWO)
+    expect_equal(result["B"].reach_count, EXPECTED_REACH_COUNT_TWO)
 
     # D reaches nothing (sink)
-    assert result["D"].max_def_use_distance == 0
-    assert result["D"].reach_count == EXPECTED_REACH_COUNT_ZERO
+    expect_equal(result["D"].max_def_use_distance, 0)
+    expect_equal(result["D"].reach_count, EXPECTED_REACH_COUNT_ZERO)
 
 
 def test_path_lengths_diamond_graph() -> None:
@@ -102,15 +109,15 @@ def test_path_lengths_diamond_graph() -> None:
     graph = diamond_graph()  # A -> B, A -> C, B -> D, C -> D
     result = compute_dfg_path_lengths(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
     # A reaches B, C (dist 1) and D (dist 2)
-    assert result["A"].max_def_use_distance == EXPECTED_MAX_DISTANCE_TWO
-    assert result["A"].reach_count == EXPECTED_REACH_COUNT_THREE
+    expect_equal(result["A"].max_def_use_distance, EXPECTED_MAX_DISTANCE_TWO)
+    expect_equal(result["A"].reach_count, EXPECTED_REACH_COUNT_THREE)
 
     # B reaches only D
-    assert result["B"].max_def_use_distance == EXPECTED_MAX_DISTANCE_ONE
-    assert result["B"].reach_count == EXPECTED_REACH_COUNT_ONE
+    expect_equal(result["B"].max_def_use_distance, EXPECTED_MAX_DISTANCE_ONE)
+    expect_equal(result["B"].reach_count, EXPECTED_REACH_COUNT_ONE)
 
 
 def test_path_lengths_star_graph() -> None:
@@ -118,9 +125,9 @@ def test_path_lengths_star_graph() -> None:
     graph = star_graph(3)  # hub -> spoke1, spoke2, spoke3
     result = compute_dfg_path_lengths(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
-    assert result["hub"].max_def_use_distance == EXPECTED_MAX_DISTANCE_ONE
-    assert result["hub"].reach_count == EXPECTED_REACH_COUNT_THREE
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
+    expect_equal(result["hub"].max_def_use_distance, EXPECTED_MAX_DISTANCE_ONE)
+    expect_equal(result["hub"].reach_count, EXPECTED_REACH_COUNT_THREE)
 
 
 def test_path_lengths_max_depth_limiting() -> None:
@@ -133,8 +140,8 @@ def test_path_lengths_max_depth_limiting() -> None:
     result = compute_dfg_path_lengths(graph, max_depth=MAX_DEPTH_LIMITED)
 
     # A reaches B (1), C (2), and D (3) since we explore from depth 2
-    assert result["A"].max_def_use_distance == EXPECTED_MAX_DISTANCE_THREE
-    assert result["A"].reach_count == EXPECTED_REACH_COUNT_THREE
+    expect_equal(result["A"].max_def_use_distance, EXPECTED_MAX_DISTANCE_THREE)
+    expect_equal(result["A"].reach_count, EXPECTED_REACH_COUNT_THREE)
 
 
 def test_path_lengths_avg_calculation() -> None:
@@ -146,7 +153,7 @@ def test_path_lengths_avg_calculation() -> None:
 
     # Avg for A: (1 + 2 + 3) / 3 = 2.0
     expected_avg: float = 2.0
-    assert abs(result["A"].avg_def_use_distance - expected_avg) < DENSITY_TOLERANCE
+    expect_true(abs(result["A"].avg_def_use_distance - expected_avg) < DENSITY_TOLERANCE)
 
 
 def test_path_lengths_returns_dataclass() -> None:
@@ -155,10 +162,10 @@ def test_path_lengths_returns_dataclass() -> None:
     result = compute_dfg_path_lengths(graph)
 
     for stats in result.values():
-        assert isinstance(stats, DFGPathStats)
-        assert hasattr(stats, "max_def_use_distance")
-        assert hasattr(stats, "avg_def_use_distance")
-        assert hasattr(stats, "reach_count")
+        expect_is_instance(stats, DFGPathStats)
+        expect_true(hasattr(stats, "max_def_use_distance"))
+        expect_true(hasattr(stats, "avg_def_use_distance"))
+        expect_true(hasattr(stats, "reach_count"))
 
 
 # ===========================================================================
@@ -170,8 +177,8 @@ def test_dfg_components_empty_graph_returns_empty() -> None:
     """Empty graph returns empty component lists."""
     graph = nx.DiGraph()
     scc, wcc = compute_dfg_components(graph)
-    assert scc == []
-    assert wcc == []
+    expect_equal(scc, [])
+    expect_equal(wcc, [])
 
 
 def test_dfg_components_single_node() -> None:
@@ -180,8 +187,8 @@ def test_dfg_components_single_node() -> None:
     graph.add_node("A")
     scc, wcc = compute_dfg_components(graph)
 
-    assert len(scc) == EXPECTED_SINGLE_COMPONENT
-    assert len(wcc) == EXPECTED_SINGLE_COMPONENT
+    expect_length(scc, EXPECTED_SINGLE_COMPONENT)
+    expect_length(wcc, EXPECTED_SINGLE_COMPONENT)
 
 
 def test_dfg_components_chain_graph() -> None:
@@ -190,9 +197,9 @@ def test_dfg_components_chain_graph() -> None:
     scc, wcc = compute_dfg_components(graph)
 
     # Each node is its own SCC (no cycles)
-    assert len(scc) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(scc, EXPECTED_NODE_COUNT_FOUR)
     # All connected weakly
-    assert len(wcc) == EXPECTED_SINGLE_COMPONENT
+    expect_length(wcc, EXPECTED_SINGLE_COMPONENT)
 
 
 def test_dfg_components_cyclic_graph() -> None:
@@ -201,10 +208,10 @@ def test_dfg_components_cyclic_graph() -> None:
     scc, wcc = compute_dfg_components(graph)
 
     # One SCC containing all nodes
-    assert len(scc) == EXPECTED_SINGLE_COMPONENT
-    assert scc[0].size == EXPECTED_NODE_COUNT_THREE
+    expect_length(scc, EXPECTED_SINGLE_COMPONENT)
+    expect_equal(scc[0].size, EXPECTED_NODE_COUNT_THREE)
     # One WCC
-    assert len(wcc) == EXPECTED_SINGLE_COMPONENT
+    expect_length(wcc, EXPECTED_SINGLE_COMPONENT)
 
 
 def test_dfg_components_disconnected_graph() -> None:
@@ -213,9 +220,9 @@ def test_dfg_components_disconnected_graph() -> None:
     scc, wcc = compute_dfg_components(graph)
 
     # 6 nodes, all trivial SCCs (chains)
-    assert len(scc) == EXPECTED_NODE_COUNT_SIX
+    expect_length(scc, EXPECTED_NODE_COUNT_SIX)
     # 2 disconnected components
-    assert len(wcc) == EXPECTED_TWO_COMPONENTS
+    expect_length(wcc, EXPECTED_TWO_COMPONENTS)
 
 
 def test_dfg_components_mixed_graph() -> None:
@@ -231,9 +238,9 @@ def test_dfg_components_mixed_graph() -> None:
     scc, wcc = compute_dfg_components(graph)
 
     # SCCs: {A,B,C}, {D}, {E}
-    assert len(scc) == EXPECTED_NODE_COUNT_THREE
+    expect_length(scc, EXPECTED_NODE_COUNT_THREE)
     # All weakly connected
-    assert len(wcc) == EXPECTED_SINGLE_COMPONENT
+    expect_length(wcc, EXPECTED_SINGLE_COMPONENT)
 
 
 # ===========================================================================
@@ -245,7 +252,7 @@ def test_def_use_chains_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_def_use_chains(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_def_use_chains_single_node() -> None:
@@ -254,8 +261,8 @@ def test_def_use_chains_single_node() -> None:
     graph.add_node("def")
     result = compute_def_use_chains(graph)
 
-    assert len(result) == 1
-    assert result["def"] == []
+    expect_length(result, 1)
+    expect_equal(result["def"], [])
 
 
 def test_def_use_chains_chain_graph() -> None:
@@ -263,11 +270,11 @@ def test_def_use_chains_chain_graph() -> None:
     graph = chain_graph(4)  # A -> B -> C -> D
     result = compute_def_use_chains(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
-    assert result["A"] == ["B"]
-    assert result["B"] == ["C"]
-    assert result["C"] == ["D"]
-    assert result["D"] == []
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
+    expect_equal(result["A"], ["B"])
+    expect_equal(result["B"], ["C"])
+    expect_equal(result["C"], ["D"])
+    expect_equal(result["D"], [])
 
 
 def test_def_use_chains_star_graph() -> None:
@@ -276,13 +283,13 @@ def test_def_use_chains_star_graph() -> None:
     result = compute_def_use_chains(graph)
 
     # Hub has 3 uses (spokes)
-    assert len(result["hub"]) == EXPECTED_REACH_COUNT_THREE
-    assert set(result["hub"]) == {"spoke1", "spoke2", "spoke3"}
+    expect_length(result["hub"], EXPECTED_REACH_COUNT_THREE)
+    expect_equal(set(result["hub"]), {"spoke1", "spoke2", "spoke3"})
 
     # Spokes have no uses
-    assert result["spoke1"] == []
-    assert result["spoke2"] == []
-    assert result["spoke3"] == []
+    expect_equal(result["spoke1"], [])
+    expect_equal(result["spoke2"], [])
+    expect_equal(result["spoke3"], [])
 
 
 def test_def_use_chains_diamond_graph() -> None:
@@ -291,12 +298,12 @@ def test_def_use_chains_diamond_graph() -> None:
     result = compute_def_use_chains(graph)
 
     # A defines to B and C
-    assert set(result["A"]) == {"B", "C"}
+    expect_equal(set(result["A"]), {"B", "C"})
     # B and C both use D
-    assert result["B"] == ["D"]
-    assert result["C"] == ["D"]
+    expect_equal(result["B"], ["D"])
+    expect_equal(result["C"], ["D"])
     # D is a sink
-    assert result["D"] == []
+    expect_equal(result["D"], [])
 
 
 # ===========================================================================
@@ -308,7 +315,7 @@ def test_use_def_chains_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_use_def_chains(graph)
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_use_def_chains_single_node() -> None:
@@ -317,8 +324,8 @@ def test_use_def_chains_single_node() -> None:
     graph.add_node("use")
     result = compute_use_def_chains(graph)
 
-    assert len(result) == 1
-    assert result["use"] == []
+    expect_length(result, 1)
+    expect_equal(result["use"], [])
 
 
 def test_use_def_chains_chain_graph() -> None:
@@ -326,11 +333,11 @@ def test_use_def_chains_chain_graph() -> None:
     graph = chain_graph(4)
     result = compute_use_def_chains(graph)
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
-    assert result["A"] == []  # No predecessors
-    assert result["B"] == ["A"]
-    assert result["C"] == ["B"]
-    assert result["D"] == ["C"]
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
+    expect_equal(result["A"], [])
+    expect_equal(result["B"], ["A"])
+    expect_equal(result["C"], ["B"])
+    expect_equal(result["D"], ["C"])
 
 
 def test_use_def_chains_diamond_graph() -> None:
@@ -339,9 +346,9 @@ def test_use_def_chains_diamond_graph() -> None:
     result = compute_use_def_chains(graph)
 
     # D has two definitions (B and C)
-    assert set(result["D"]) == {"B", "C"}
+    expect_equal(set(result["D"]), {"B", "C"})
     # A has no definitions
-    assert result["A"] == []
+    expect_equal(result["A"], [])
 
 
 def test_use_def_chains_star_inward() -> None:
@@ -350,7 +357,7 @@ def test_use_def_chains_star_inward() -> None:
     result = compute_use_def_chains(graph)
 
     # Hub has 3 definitions
-    assert set(result["hub"]) == {"spoke1", "spoke2", "spoke3"}
+    expect_equal(set(result["hub"]), {"spoke1", "spoke2", "spoke3"})
 
 
 # ===========================================================================
@@ -362,7 +369,7 @@ def test_dfg_density_empty_graph_returns_zero() -> None:
     """Empty graph returns zero density."""
     graph = nx.DiGraph()
     result = compute_dfg_density(graph)
-    assert result == DENSITY_ZERO
+    expect_equal(result, DENSITY_ZERO)
 
 
 def test_dfg_density_single_node_returns_zero() -> None:
@@ -370,7 +377,7 @@ def test_dfg_density_single_node_returns_zero() -> None:
     graph = nx.DiGraph()
     graph.add_node("A")
     result = compute_dfg_density(graph)
-    assert result == DENSITY_ZERO
+    expect_equal(result, DENSITY_ZERO)
 
 
 def test_dfg_density_complete_graph() -> None:
@@ -380,7 +387,7 @@ def test_dfg_density_complete_graph() -> None:
 
     # Complete digraph: n*(n-1) edges / n*(n-1) max = 1.0
     expected_density: float = 1.0
-    assert abs(result - expected_density) < DENSITY_TOLERANCE
+    expect_true(abs(result - expected_density) < DENSITY_TOLERANCE)
 
 
 def test_dfg_density_chain_graph() -> None:
@@ -390,7 +397,7 @@ def test_dfg_density_chain_graph() -> None:
 
     # Density = 3 / 12 = 0.25
     expected_density: float = 0.25
-    assert abs(result - expected_density) < DENSITY_TOLERANCE
+    expect_true(abs(result - expected_density) < DENSITY_TOLERANCE)
 
 
 def test_dfg_density_star_graph() -> None:
@@ -399,7 +406,7 @@ def test_dfg_density_star_graph() -> None:
     result = compute_dfg_density(graph)
 
     expected_density: float = 3 / 12
-    assert abs(result - expected_density) < DENSITY_TOLERANCE
+    expect_true(abs(result - expected_density) < DENSITY_TOLERANCE)
 
 
 def test_dfg_density_two_node_graph() -> None:
@@ -409,7 +416,7 @@ def test_dfg_density_two_node_graph() -> None:
 
     # 1 edge, max 2 edges -> density 0.5
     expected_density: float = 0.5
-    assert abs(result - expected_density) < DENSITY_TOLERANCE
+    expect_true(abs(result - expected_density) < DENSITY_TOLERANCE)
 
 
 # ===========================================================================
@@ -421,14 +428,14 @@ def test_find_cycles_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
     graph = nx.DiGraph()
     result = find_dfg_cycles(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_find_cycles_dag_returns_empty() -> None:
     """DAG has no cycles."""
     graph = chain_graph(5)
     result = find_dfg_cycles(graph)
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_find_cycles_simple_cycle() -> None:
@@ -436,10 +443,10 @@ def test_find_cycles_simple_cycle() -> None:
     graph = cyclic_graph(3)  # A -> B -> C -> A
     result = find_dfg_cycles(graph)
 
-    assert len(result) >= 1
+    expect_true(len(result) >= 1)
     # Cycle should contain all three nodes
     cycle_nodes = set(result[0])
-    assert cycle_nodes == {"A", "B", "C"}
+    expect_equal(cycle_nodes, {"A", "B", "C"})
 
 
 def test_find_cycles_self_loop() -> None:
@@ -448,8 +455,8 @@ def test_find_cycles_self_loop() -> None:
     graph.add_edge("A", "A")
     result = find_dfg_cycles(graph)
 
-    assert len(result) >= 1
-    assert "A" in result[0]
+    expect_true(len(result) >= 1)
+    expect_in("A", result[0])
 
 
 def test_find_cycles_multiple_cycles() -> None:
@@ -462,7 +469,7 @@ def test_find_cycles_multiple_cycles() -> None:
 
     result = find_dfg_cycles(graph)
 
-    assert len(result) >= EXPECTED_TWO_COMPONENTS
+    expect_true(len(result) >= EXPECTED_TWO_COMPONENTS)
 
 
 def test_find_cycles_limit_respected() -> None:
@@ -475,7 +482,7 @@ def test_find_cycles_limit_respected() -> None:
 
     result = find_dfg_cycles(graph, limit=CYCLE_LIMIT_ONE)
 
-    assert len(result) <= CYCLE_LIMIT_ONE
+    expect_true(len(result) <= CYCLE_LIMIT_ONE)
 
 
 def test_find_cycles_nested_cycles() -> None:
@@ -496,7 +503,7 @@ def test_find_cycles_nested_cycles() -> None:
     result = find_dfg_cycles(graph)
 
     # Should find multiple cycles
-    assert len(result) >= EXPECTED_TWO_COMPONENTS
+    expect_true(len(result) >= EXPECTED_TWO_COMPONENTS)
 
 
 def test_find_cycles_with_dag_part() -> None:
@@ -512,7 +519,7 @@ def test_find_cycles_with_dag_part() -> None:
     result = find_dfg_cycles(graph)
 
     # Should find the cycle
-    assert len(result) >= EXPECTED_SINGLE_COMPONENT
+    expect_true(len(result) >= EXPECTED_SINGLE_COMPONENT)
 
 
 # ===========================================================================
@@ -549,7 +556,7 @@ def test_path_lengths_various_chains(chain_length: int, expected_max_from_first:
     graph = chain_graph(chain_length)
     result = compute_dfg_path_lengths(graph)
 
-    assert result["A"].max_def_use_distance == expected_max_from_first
+    expect_equal(result["A"].max_def_use_distance, expected_max_from_first)
 
 
 @pytest.mark.parametrize(
@@ -561,7 +568,7 @@ def test_cycles_detected_various_sizes(cycle_size: int) -> None:
     graph = cyclic_graph(cycle_size)
     result = find_dfg_cycles(graph)
 
-    assert len(result) > 0
+    expect_true(len(result) > 0)
 
 
 @pytest.mark.parametrize(
@@ -586,4 +593,4 @@ def test_density_various_graphs(node_count: int, edge_count: int, expected_densi
 
     result = compute_dfg_density(graph)
 
-    assert abs(result - expected_density) < DENSITY_TOLERANCE
+    expect_true(abs(result - expected_density) < DENSITY_TOLERANCE)

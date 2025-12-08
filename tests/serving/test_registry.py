@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.operations.catalog import (
@@ -19,6 +21,14 @@ from codeintel.serving.operations.catalog import (
     iter_operation_graph_edges,
     iter_operation_nodes,
     iter_registry_operations,
+)
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
 )
 
 # Constants for test values
@@ -37,8 +47,8 @@ def test_iter_registry_operations_returns_list() -> None:
     """Verify iter_registry_operations returns a non-empty list."""
     operations = iter_registry_operations()
 
-    assert isinstance(operations, list)
-    assert len(operations) > 0
+    expect_is_instance(operations, list)
+    expect_true(len(operations) > 0)
 
 
 def test_iter_registry_operations_all_have_ids() -> None:
@@ -46,9 +56,9 @@ def test_iter_registry_operations_all_have_ids() -> None:
     operations = iter_registry_operations()
 
     for op in operations:
-        assert hasattr(op, "id")
-        assert op.id
-        assert isinstance(op.id, str)
+        expect_true(hasattr(op, "id"))
+        expect_true(bool(op.id))
+        expect_is_instance(op.id, str)
 
 
 def test_iter_registry_operations_includes_datasets_rows() -> None:
@@ -56,10 +66,12 @@ def test_iter_registry_operations_includes_datasets_rows() -> None:
     operations = iter_registry_operations()
     datasets_rows = next((op for op in operations if op.id == "datasets.rows"), None)
 
-    assert datasets_rows is not None
-    assert hasattr(datasets_rows, "exposed_datasets")
+    if datasets_rows is None:
+        pytest.fail("datasets.rows operation missing")
+    expect_is_not_none(datasets_rows)
+    expect_true(hasattr(datasets_rows, "exposed_datasets"))
     # Should be patched with DATASET_CONTRACTS_BY_TABLE_KEY keys
-    assert len(datasets_rows.exposed_datasets) > 0
+    expect_true(len(datasets_rows.exposed_datasets) > 0)
 
 
 def test_iter_registry_operations_patched_datasets_match_contracts() -> None:
@@ -67,12 +79,14 @@ def test_iter_registry_operations_patched_datasets_match_contracts() -> None:
     operations = iter_registry_operations()
     datasets_rows = next((op for op in operations if op.id == "datasets.rows"), None)
 
-    assert datasets_rows is not None
+    if datasets_rows is None:
+        pytest.fail("datasets.rows operation missing")
+    expect_is_not_none(datasets_rows)
     exposed_set = set(datasets_rows.exposed_datasets)
     contract_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
 
     # Exposed datasets should be exactly the contract keys
-    assert exposed_set == contract_keys
+    expect_equal(exposed_set, contract_keys)
 
 
 # =============================================================================
@@ -88,24 +102,28 @@ def test_get_registry_operation_found() -> None:
 
     result = get_registry_operation(first_op.id)
 
-    assert result is not None
-    assert result.id == first_op.id
+    if result is None:
+        pytest.fail("get_registry_operation returned None")
+    expect_is_not_none(result)
+    expect_equal(result.id, first_op.id)
 
 
 def test_get_registry_operation_not_found() -> None:
     """Verify get_registry_operation returns None for unknown ID."""
     result = get_registry_operation("non_existent_operation_xyz")
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_get_registry_operation_datasets_rows() -> None:
     """Verify datasets.rows can be retrieved."""
     result = get_registry_operation("datasets.rows")
 
-    assert result is not None
-    assert result.id == "datasets.rows"
-    assert hasattr(result, "exposed_datasets")
+    if result is None:
+        pytest.fail("datasets.rows operation missing")
+    expect_is_not_none(result)
+    expect_equal(result.id, "datasets.rows")
+    expect_true(hasattr(result, "exposed_datasets"))
 
 
 # =============================================================================
@@ -117,8 +135,8 @@ def test_iter_operation_nodes_returns_list() -> None:
     """Verify iter_operation_nodes returns DataflowNode list."""
     nodes = iter_operation_nodes()
 
-    assert isinstance(nodes, list)
-    assert len(nodes) > 0
+    expect_is_instance(nodes, list)
+    expect_true(len(nodes) > 0)
 
 
 def test_iter_operation_nodes_all_dataflow_nodes() -> None:
@@ -126,7 +144,7 @@ def test_iter_operation_nodes_all_dataflow_nodes() -> None:
     nodes = iter_operation_nodes()
 
     for node in nodes:
-        assert isinstance(node, DataflowNode)
+        expect_is_instance(node, DataflowNode)
 
 
 def test_iter_operation_nodes_have_operation_kind() -> None:
@@ -134,7 +152,7 @@ def test_iter_operation_nodes_have_operation_kind() -> None:
     nodes = iter_operation_nodes()
 
     for node in nodes:
-        assert node.kind == "operation"
+        expect_equal(node.kind, "operation")
 
 
 def test_iter_operation_nodes_have_serving_family() -> None:
@@ -142,7 +160,7 @@ def test_iter_operation_nodes_have_serving_family() -> None:
     nodes = iter_operation_nodes()
 
     for node in nodes:
-        assert node.family == "serving"
+        expect_equal(node.family, "serving")
 
 
 def test_iter_operation_nodes_match_operations() -> None:
@@ -153,7 +171,7 @@ def test_iter_operation_nodes_match_operations() -> None:
     op_ids = {op.id for op in operations}
     node_ids = {node.id for node in nodes}
 
-    assert op_ids == node_ids
+    expect_equal(op_ids, node_ids)
 
 
 # =============================================================================
@@ -165,7 +183,7 @@ def test_iter_graph_nodes_returns_list() -> None:
     """Verify iter_graph_nodes returns DataflowNode list."""
     nodes = iter_graph_nodes()
 
-    assert isinstance(nodes, list)
+    expect_is_instance(nodes, list)
     # May be empty if no operations require graphs
 
 
@@ -174,7 +192,7 @@ def test_iter_graph_nodes_all_dataflow_nodes() -> None:
     nodes = iter_graph_nodes()
 
     for node in nodes:
-        assert isinstance(node, DataflowNode)
+        expect_is_instance(node, DataflowNode)
 
 
 def test_iter_graph_nodes_have_graph_kind() -> None:
@@ -182,7 +200,7 @@ def test_iter_graph_nodes_have_graph_kind() -> None:
     nodes = iter_graph_nodes()
 
     for node in nodes:
-        assert node.kind == "graph"
+        expect_equal(node.kind, "graph")
 
 
 def test_iter_graph_nodes_have_graph_prefix_ids() -> None:
@@ -190,7 +208,7 @@ def test_iter_graph_nodes_have_graph_prefix_ids() -> None:
     nodes = iter_graph_nodes()
 
     for node in nodes:
-        assert node.id.startswith("graph.")
+        expect_true(node.id.startswith("graph."))
 
 
 def test_iter_graph_nodes_derive_from_operations() -> None:
@@ -206,7 +224,7 @@ def test_iter_graph_nodes_derive_from_operations() -> None:
 
     node_ids = {node.id for node in nodes}
 
-    assert node_ids == required_graphs
+    expect_equal(node_ids, required_graphs)
 
 
 # =============================================================================
@@ -218,7 +236,7 @@ def test_iter_operation_dataset_edges_returns_list() -> None:
     """Verify iter_operation_dataset_edges returns DataflowEdge list."""
     edges = iter_operation_dataset_edges()
 
-    assert isinstance(edges, list)
+    expect_is_instance(edges, list)
 
 
 def test_iter_operation_dataset_edges_all_dataflow_edges() -> None:
@@ -226,7 +244,7 @@ def test_iter_operation_dataset_edges_all_dataflow_edges() -> None:
     edges = iter_operation_dataset_edges()
 
     for edge in edges:
-        assert isinstance(edge, DataflowEdge)
+        expect_is_instance(edge, DataflowEdge)
 
 
 def test_iter_operation_dataset_edges_have_valid_types() -> None:
@@ -235,7 +253,7 @@ def test_iter_operation_dataset_edges_have_valid_types() -> None:
 
     valid_types = {"reads", "exposes"}
     for edge in edges:
-        assert edge.edge_type in valid_types
+        expect_in(edge.edge_type, valid_types)
 
 
 def test_iter_operation_dataset_edges_dst_are_operations() -> None:
@@ -245,7 +263,7 @@ def test_iter_operation_dataset_edges_dst_are_operations() -> None:
 
     op_ids = {op.id for op in operations}
     for edge in edges:
-        assert edge.dst in op_ids
+        expect_in(edge.dst, op_ids)
 
 
 # =============================================================================
@@ -257,7 +275,7 @@ def test_iter_operation_graph_edges_returns_list() -> None:
     """Verify iter_operation_graph_edges returns DataflowEdge list."""
     edges = iter_operation_graph_edges()
 
-    assert isinstance(edges, list)
+    expect_is_instance(edges, list)
 
 
 def test_iter_operation_graph_edges_all_dataflow_edges() -> None:
@@ -265,7 +283,7 @@ def test_iter_operation_graph_edges_all_dataflow_edges() -> None:
     edges = iter_operation_graph_edges()
 
     for edge in edges:
-        assert isinstance(edge, DataflowEdge)
+        expect_is_instance(edge, DataflowEdge)
 
 
 def test_iter_operation_graph_edges_have_depends_on_type() -> None:
@@ -273,7 +291,7 @@ def test_iter_operation_graph_edges_have_depends_on_type() -> None:
     edges = iter_operation_graph_edges()
 
     for edge in edges:
-        assert edge.edge_type == "depends_on"
+        expect_equal(edge.edge_type, "depends_on")
 
 
 def test_iter_operation_graph_edges_src_are_graph_nodes() -> None:
@@ -281,7 +299,7 @@ def test_iter_operation_graph_edges_src_are_graph_nodes() -> None:
     edges = iter_operation_graph_edges()
 
     for edge in edges:
-        assert edge.src.startswith("graph.")
+        expect_true(edge.src.startswith("graph."))
 
 
 def test_iter_operation_graph_edges_dst_are_operations() -> None:
@@ -291,7 +309,7 @@ def test_iter_operation_graph_edges_dst_are_operations() -> None:
 
     op_ids = {op.id for op in operations}
     for edge in edges:
-        assert edge.dst in op_ids
+        expect_in(edge.dst, op_ids)
 
 
 # =============================================================================
@@ -303,26 +321,26 @@ def test_build_serving_dataflow_graph_returns_tuple() -> None:
     """Verify build_serving_dataflow_graph returns nodes and edges tuple."""
     result = build_serving_dataflow_graph()
 
-    assert isinstance(result, tuple)
-    assert len(result) == TUPLE_LENGTH
+    expect_is_instance(result, tuple)
+    expect_equal(len(result), TUPLE_LENGTH)
 
 
 def test_build_serving_dataflow_graph_nodes_list() -> None:
     """Verify first element is list of DataflowNode."""
     nodes, _ = build_serving_dataflow_graph()
 
-    assert isinstance(nodes, list)
+    expect_is_instance(nodes, list)
     for node in nodes:
-        assert isinstance(node, DataflowNode)
+        expect_is_instance(node, DataflowNode)
 
 
 def test_build_serving_dataflow_graph_edges_list() -> None:
     """Verify second element is list of DataflowEdge."""
     _, edges = build_serving_dataflow_graph()
 
-    assert isinstance(edges, list)
+    expect_is_instance(edges, list)
     for edge in edges:
-        assert isinstance(edge, DataflowEdge)
+        expect_is_instance(edge, DataflowEdge)
 
 
 def test_build_serving_dataflow_graph_includes_operations() -> None:
@@ -330,7 +348,7 @@ def test_build_serving_dataflow_graph_includes_operations() -> None:
     nodes, _ = build_serving_dataflow_graph()
 
     operation_nodes = [n for n in nodes if n.kind == "operation"]
-    assert len(operation_nodes) > 0
+    expect_true(len(operation_nodes) > 0)
 
 
 def test_build_serving_dataflow_graph_includes_datasets() -> None:
@@ -340,7 +358,7 @@ def test_build_serving_dataflow_graph_includes_datasets() -> None:
     # Dataset nodes have kind 'dataset' or 'view'
     dataset_view_kinds = {"dataset", "view"}
     dataset_nodes = [n for n in nodes if n.kind in dataset_view_kinds]
-    assert len(dataset_nodes) > 0
+    expect_true(len(dataset_nodes) > 0)
 
 
 def test_build_serving_dataflow_graph_edges_deduplicated() -> None:
@@ -350,7 +368,7 @@ def test_build_serving_dataflow_graph_edges_deduplicated() -> None:
     edge_keys = [(e.src, e.dst, e.edge_type) for e in edges]
     unique_keys = set(edge_keys)
 
-    assert len(edge_keys) == len(unique_keys)
+    expect_equal(len(edge_keys), len(unique_keys))
 
 
 def test_build_serving_dataflow_graph_nodes_deduplicated() -> None:
@@ -360,7 +378,7 @@ def test_build_serving_dataflow_graph_nodes_deduplicated() -> None:
     node_keys = [(n.id, n.kind) for n in nodes]
     unique_keys = set(node_keys)
 
-    assert len(node_keys) == len(unique_keys)
+    expect_equal(len(node_keys), len(unique_keys))
 
 
 # =============================================================================
@@ -383,16 +401,16 @@ def test_dataset_meta_construction() -> None:
         max_limit=MAX_LIMIT,
     )
 
-    assert meta.id == "test.dataset"
-    assert meta.name == "test.dataset"
-    assert meta.table_key == "test.dataset"
-    assert meta.description == "Test dataset"
-    assert meta.schema_version == "1.0.0"
-    assert meta.family == "test"
-    assert meta.is_docs_view is False
-    assert meta.is_read_only is True
-    assert meta.default_limit == DEFAULT_LIMIT
-    assert meta.max_limit == MAX_LIMIT
+    expect_equal(meta.id, "test.dataset")
+    expect_equal(meta.name, "test.dataset")
+    expect_equal(meta.table_key, "test.dataset")
+    expect_equal(meta.description, "Test dataset")
+    expect_equal(meta.schema_version, "1.0.0")
+    expect_equal(meta.family, "test")
+    expect_false(meta.is_docs_view)
+    expect_true(meta.is_read_only)
+    expect_equal(meta.default_limit, DEFAULT_LIMIT)
+    expect_equal(meta.max_limit, MAX_LIMIT)
 
 
 def test_dataset_meta_optional_fields() -> None:
@@ -410,10 +428,10 @@ def test_dataset_meta_optional_fields() -> None:
         max_limit=SMALL_MAX_LIMIT,
     )
 
-    assert meta.owner is None
-    assert meta.freshness_sla is None
-    assert meta.retention_policy is None
-    assert meta.validation_profile is None
+    expect_true(meta.owner is None)
+    expect_true(meta.freshness_sla is None)
+    expect_true(meta.retention_policy is None)
+    expect_true(meta.validation_profile is None)
 
 
 def test_dataset_meta_with_all_optional_fields() -> None:
@@ -435,10 +453,10 @@ def test_dataset_meta_with_all_optional_fields() -> None:
         validation_profile="strict",
     )
 
-    assert meta.owner == "analytics-team"
-    assert meta.freshness_sla == "1h"
-    assert meta.retention_policy == "30d"
-    assert meta.validation_profile == "strict"
+    expect_equal(meta.owner, "analytics-team")
+    expect_equal(meta.freshness_sla, "1h")
+    expect_equal(meta.retention_policy, "30d")
+    expect_equal(meta.validation_profile, "strict")
 
 
 def test_dataset_meta_is_frozen() -> None:
@@ -457,8 +475,10 @@ def test_dataset_meta_is_frozen() -> None:
     )
 
     # Verify the dataclass is frozen by checking the __dataclass_fields__
-    assert dataclasses.is_dataclass(meta)
+    expect_true(dataclasses.is_dataclass(meta))
     # A frozen dataclass should have frozen=True in its __dataclass_params__
     params = getattr(type(meta), "__dataclass_params__", None)
-    assert params is not None
-    assert params.frozen is True
+    if params is None:
+        pytest.fail("DatasetMeta dataclass params missing")
+    expect_is_not_none(params)
+    expect_true(params.frozen is True)

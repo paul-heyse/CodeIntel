@@ -20,6 +20,12 @@ from codeintel.cli.project import (
     find_project_root,
     load_project_config,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 runner = CliRunner()
 
@@ -75,14 +81,14 @@ def test_find_project_root_finds_config(temp_project: Path) -> None:
 
     # Should find the project root from nested directory
     root = find_project_root(nested)
-    assert root == temp_project
+    expect_equal(root, temp_project)
 
 
 def test_load_project_config_parses_yaml(temp_project: Path) -> None:
     """Verify YAML config is parsed correctly."""
     config = load_project_config(temp_project)
-    assert config.repo == "test/repo"
-    assert config.default_profile == "default"
+    expect_equal(config.repo, "test/repo")
+    expect_equal(config.default_profile, "default")
 
 
 # -----------------------------------------------------------------------------
@@ -94,31 +100,31 @@ def test_op_list_shows_operations() -> None:
     """Verify op list shows available operations."""
     result = runner.invoke(app, ["op", "list"])
 
-    assert result.exit_code == 0
-    assert "Available operations" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("Available operations", result.stdout)
     # Check for some known operations
-    assert "function.summary" in result.stdout
+    expect_in("function.summary", result.stdout)
 
 
 def test_op_list_json_output() -> None:
     """Verify op list --json produces valid JSON."""
     result = runner.invoke(app, ["op", "list", "--json"])
 
-    assert result.exit_code == 0
+    expect_equal(result.exit_code, 0)
     data = json.loads(result.stdout)
-    assert isinstance(data, list)
-    assert len(data) > 0
+    expect_is_instance(data, list)
+    expect_true(len(data) > 0)
     # Check structure
-    assert "id" in data[0]
-    assert "category" in data[0]
+    expect_in("id", data[0])
+    expect_in("category", data[0])
 
 
 def test_op_list_filter_by_category() -> None:
     """Verify op list --category filters operations."""
     result = runner.invoke(app, ["op", "list", "--category", "functions"])
 
-    assert result.exit_code == 0
-    assert "function.summary" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("function.summary", result.stdout)
 
 
 # -----------------------------------------------------------------------------
@@ -130,19 +136,19 @@ def test_dataset_describe_known_dataset() -> None:
     """Verify dataset describe shows contract details."""
     result = runner.invoke(app, ["dataset", "describe", "core.goids"])
 
-    assert result.exit_code == 0
-    assert "Dataset:" in result.stdout
-    assert "core.goids" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("Dataset:", result.stdout)
+    expect_in("core.goids", result.stdout)
 
 
 def test_dataset_describe_unknown_dataset() -> None:
     """Verify dataset describe fails for unknown dataset."""
     result = runner.invoke(app, ["dataset", "describe", "nonexistent.table"])
 
-    assert result.exit_code == 1
+    expect_equal(result.exit_code, 1)
     # Error message may be in stdout, stderr, or combined output
     output = result.output or result.stdout
-    assert "not found" in output.lower() or "Error" in output
+    expect_true("not found" in output.lower() or "error" in output.lower())
 
 
 # -----------------------------------------------------------------------------
@@ -154,18 +160,18 @@ def test_serve_http_help() -> None:
     """Verify serve http --help shows options."""
     result = runner.invoke(app, ["serve", "http", "--help"])
 
-    assert result.exit_code == 0
-    assert "--host" in result.stdout
-    assert "--port" in result.stdout
-    assert "--auto-pipeline" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("--host", result.stdout)
+    expect_in("--port", result.stdout)
+    expect_in("--auto-pipeline", result.stdout)
 
 
 def test_serve_mcp_help() -> None:
     """Verify serve mcp --help shows options."""
     result = runner.invoke(app, ["serve", "mcp", "--help"])
 
-    assert result.exit_code == 0
-    assert "--auto-pipeline" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("--auto-pipeline", result.stdout)
 
 
 # -----------------------------------------------------------------------------
@@ -177,11 +183,11 @@ def test_main_help() -> None:
     """Verify main help shows all command groups."""
     result = runner.invoke(app, ["--help"])
 
-    assert result.exit_code == 0
-    assert "build" in result.stdout
-    assert "op" in result.stdout
-    assert "dataset" in result.stdout
-    assert "serve" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("build", result.stdout)
+    expect_in("op", result.stdout)
+    expect_in("dataset", result.stdout)
+    expect_in("serve", result.stdout)
     # Note: "pipeline" is intentionally removed (replaced by "build")
 
 
@@ -190,27 +196,27 @@ def test_pipeline_removed() -> None:
     result = runner.invoke(app, ["pipeline"])
 
     # pipeline command should not exist anymore
-    assert result.exit_code == 2  # Typer returns 2 for unknown command
-    assert "No such command" in result.stdout or "pipeline" not in result.stdout
+    expect_equal(result.exit_code, 2)  # Typer returns 2 for unknown command
+    expect_true("No such command" in result.stdout or "pipeline" not in result.stdout)
 
 
 def test_op_help() -> None:
     """Verify op group help shows subcommands."""
     result = runner.invoke(app, ["op", "--help"])
 
-    assert result.exit_code == 0
-    assert "list" in result.stdout
-    assert "call" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("list", result.stdout)
+    expect_in("call", result.stdout)
 
 
 def test_dataset_help() -> None:
     """Verify dataset group help shows subcommands."""
     result = runner.invoke(app, ["dataset", "--help"])
 
-    assert result.exit_code == 0
-    assert "list" in result.stdout
-    assert "describe" in result.stdout
-    assert "verify" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("list", result.stdout)
+    expect_in("describe", result.stdout)
+    expect_in("verify", result.stdout)
 
 
 # -----------------------------------------------------------------------------
@@ -222,36 +228,36 @@ def test_build_help() -> None:
     """Verify build group help shows subcommands."""
     result = runner.invoke(app, ["build", "--help"])
 
-    assert result.exit_code == 0
-    assert "run" in result.stdout
-    assert "status" in result.stdout
-    assert "history" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("run", result.stdout)
+    expect_in("status", result.stdout)
+    expect_in("history", result.stdout)
 
 
 def test_build_run_help() -> None:
     """Verify build run --help shows all options."""
     result = runner.invoke(app, ["build", "run", "--help"])
 
-    assert result.exit_code == 0
-    assert "--module" in result.stdout
-    assert "--all" in result.stdout
-    assert "--dry-run" in result.stdout
-    assert "--force" in result.stdout
+    expect_equal(result.exit_code, 0)
+    expect_in("--module", result.stdout)
+    expect_in("--all", result.stdout)
+    expect_in("--dry-run", result.stdout)
+    expect_in("--force", result.stdout)
 
 
 def test_build_run_all_requires_project() -> None:
     """Verify build run --all fails without project context."""
     result = runner.invoke(app, ["build", "run", "--all", "--root", "/nonexistent/path"])
 
-    assert result.exit_code == 1
+    expect_equal(result.exit_code, 1)
     output = result.output or result.stdout
-    assert "Error" in output or "not found" in output.lower()
+    expect_true("error" in output.lower() or "not found" in output.lower())
 
 
 def test_build_status_requires_project() -> None:
     """Verify build status fails without project context."""
     result = runner.invoke(app, ["build", "status", "--root", "/nonexistent/path"])
 
-    assert result.exit_code == 1
+    expect_equal(result.exit_code, 1)
     output = result.output or result.stdout
-    assert "Error" in output or "not found" in output.lower()
+    expect_true("error" in output.lower() or "not found" in output.lower())

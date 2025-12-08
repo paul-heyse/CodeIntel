@@ -6,12 +6,19 @@ import pytest
 
 from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 
 
 class TestOutputTarget:
     """Tests for OutputTarget dataclass."""
 
-    def test_create_target_with_required_fields(self) -> None:
+    @staticmethod
+    def test_create_target_with_required_fields() -> None:
         """Create a target with only required fields."""
         target = OutputTarget(
             name="test_target",
@@ -19,16 +26,17 @@ class TestOutputTarget:
             plugin="test_plugin",
             tables=("core.test_table",),
         )
-        assert target.name == "test_target"
-        assert target.module == "ingestion"
-        assert target.plugin == "test_plugin"
-        assert target.tables == ("core.test_table",)
-        assert target.dependencies == ()
-        assert not target.description
+        expect_equal(target.name, "test_target")
+        expect_equal(target.module, "ingestion")
+        expect_equal(target.plugin, "test_plugin")
+        expect_equal(target.tables, ("core.test_table",))
+        expect_equal(target.dependencies, ())
+        expect_true(not target.description)
         # estimated_duration_ms is now computed from TargetExecution (default: 5000ms)
-        assert target.estimated_duration_ms == 5000
+        expect_equal(target.estimated_duration_ms, 5000)
 
-    def test_create_target_with_all_fields(self) -> None:
+    @staticmethod
+    def test_create_target_with_all_fields() -> None:
         """Create a target with all optional fields."""
         target = OutputTarget(
             name="test_target",
@@ -38,13 +46,14 @@ class TestOutputTarget:
             dependencies=("dep1", "dep2"),
             description="Test target description",
         )
-        assert target.name == "test_target"
-        assert target.dependencies == ("dep1", "dep2")
-        assert target.description == "Test target description"
+        expect_equal(target.name, "test_target")
+        expect_equal(target.dependencies, ("dep1", "dep2"))
+        expect_equal(target.description, "Test target description")
         # estimated_duration_ms is computed from default TargetExecution
-        assert target.estimated_duration_ms == 5000
+        expect_equal(target.estimated_duration_ms, 5000)
 
-    def test_target_is_frozen(self) -> None:
+    @staticmethod
+    def test_target_is_frozen() -> None:
         """Verify target is immutable."""
         target = OutputTarget(
             name="test_target",
@@ -58,7 +67,8 @@ class TestOutputTarget:
 class TestTargetGraph:
     """Tests for TargetGraph class."""
 
-    def test_register_target(self) -> None:
+    @staticmethod
+    def test_register_target() -> None:
         """Register a target in the graph."""
         graph = TargetGraph()
         target = OutputTarget(
@@ -69,10 +79,11 @@ class TestTargetGraph:
         )
         graph.register(target)
 
-        assert "test_target" in graph
-        assert len(graph) == 1
+        expect_in("test_target", graph)
+        expect_length(graph, 1)
 
-    def test_register_duplicate_raises(self) -> None:
+    @staticmethod
+    def test_register_duplicate_raises() -> None:
         """Registering the same target twice raises ValueError."""
         graph = TargetGraph()
         target = OutputTarget(
@@ -86,7 +97,8 @@ class TestTargetGraph:
         with pytest.raises(ValueError, match="already registered"):
             graph.register(target)
 
-    def test_get_target(self) -> None:
+    @staticmethod
+    def test_get_target() -> None:
         """Get a registered target by name."""
         graph = TargetGraph()
         target = OutputTarget(
@@ -98,16 +110,18 @@ class TestTargetGraph:
         graph.register(target)
 
         retrieved = graph.get("test_target")
-        assert retrieved is target
+        expect_true(retrieved is target)
 
-    def test_get_nonexistent_raises(self) -> None:
+    @staticmethod
+    def test_get_nonexistent_raises() -> None:
         """Getting a non-existent target raises KeyError."""
         graph = TargetGraph()
 
         with pytest.raises(KeyError, match="not found"):
             graph.get("nonexistent")
 
-    def test_all_targets(self) -> None:
+    @staticmethod
+    def test_all_targets() -> None:
         """Get all registered targets."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -126,11 +140,12 @@ class TestTargetGraph:
         graph.register(t2)
 
         all_targets = graph.all_targets
-        assert len(all_targets) == 2
-        assert t1 in all_targets
-        assert t2 in all_targets
+        expect_length(all_targets, 2)
+        expect_true(t1 in all_targets)
+        expect_true(t2 in all_targets)
 
-    def test_dependencies_of(self) -> None:
+    @staticmethod
+    def test_dependencies_of() -> None:
         """Get direct dependencies of a target."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -150,9 +165,10 @@ class TestTargetGraph:
         graph.register(t2)
 
         deps = graph.dependencies_of("target2")
-        assert deps == ("target1",)
+        expect_equal(deps, ("target1",))
 
-    def test_transitive_deps(self) -> None:
+    @staticmethod
+    def test_transitive_deps() -> None:
         """Get transitive dependencies of a target."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -180,9 +196,10 @@ class TestTargetGraph:
         graph.register(t3)
 
         trans_deps = graph.transitive_deps("target3")
-        assert trans_deps == frozenset({"target1", "target2"})
+        expect_equal(trans_deps, frozenset({"target1", "target2"}))
 
-    def test_dependents_of(self) -> None:
+    @staticmethod
+    def test_dependents_of() -> None:
         """Get dependents of a target."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -210,9 +227,10 @@ class TestTargetGraph:
         graph.register(t3)
 
         dependents = graph.dependents_of("target1")
-        assert set(dependents) == {"target2", "target3"}
+        expect_equal(set(dependents), {"target2", "target3"})
 
-    def test_topological_order_simple(self) -> None:
+    @staticmethod
+    def test_topological_order_simple() -> None:
         """Topological sort of targets."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -241,10 +259,11 @@ class TestTargetGraph:
 
         order = graph.topological_order(["target3"])
         # target1 must come before target2, target2 before target3
-        assert order.index("target1") < order.index("target2")
-        assert order.index("target2") < order.index("target3")
+        expect_true(order.index("target1") < order.index("target2"))
+        expect_true(order.index("target2") < order.index("target3"))
 
-    def test_topological_order_multiple_roots(self) -> None:
+    @staticmethod
+    def test_topological_order_multiple_roots() -> None:
         """Topological sort with multiple independent roots."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -272,10 +291,11 @@ class TestTargetGraph:
 
         order = graph.topological_order(["target3"])
         # Both target1 and target2 must come before target3
-        assert order.index("target1") < order.index("target3")
-        assert order.index("target2") < order.index("target3")
+        expect_true(order.index("target1") < order.index("target3"))
+        expect_true(order.index("target2") < order.index("target3"))
 
-    def test_topological_order_cycle_raises(self) -> None:
+    @staticmethod
+    def test_topological_order_cycle_raises() -> None:
         """Topological sort with cycle raises ValueError."""
         graph = TargetGraph()
         # Create a cycle: t1 -> t2 -> t3 -> t1
@@ -307,7 +327,8 @@ class TestTargetGraph:
         with pytest.raises(ValueError, match="Cycle detected"):
             graph.topological_order(["target1"])
 
-    def test_targets_for_module(self) -> None:
+    @staticmethod
+    def test_targets_for_module() -> None:
         """Filter targets by module."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -333,11 +354,12 @@ class TestTargetGraph:
         graph.register(t3)
 
         ingestion_targets = graph.targets_for_module("ingestion")
-        assert len(ingestion_targets) == 2
-        assert t1 in ingestion_targets
-        assert t3 in ingestion_targets
+        expect_length(ingestion_targets, 2)
+        expect_true(t1 in ingestion_targets)
+        expect_true(t3 in ingestion_targets)
 
-    def test_validate_valid_graph(self) -> None:
+    @staticmethod
+    def test_validate_valid_graph() -> None:
         """Validate a valid graph returns no errors."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -357,9 +379,10 @@ class TestTargetGraph:
         graph.register(t2)
 
         errors = graph.validate()
-        assert errors == ()
+        expect_equal(errors, ())
 
-    def test_validate_missing_dependency(self) -> None:
+    @staticmethod
+    def test_validate_missing_dependency() -> None:
         """Validate graph with missing dependency returns error."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -372,10 +395,11 @@ class TestTargetGraph:
         graph.register(t1)
 
         errors = graph.validate()
-        assert len(errors) == 1
-        assert "nonexistent" in errors[0]
+        expect_length(errors, 1)
+        expect_in("nonexistent", errors[0])
 
-    def test_iterate_over_graph(self) -> None:
+    @staticmethod
+    def test_iterate_over_graph() -> None:
         """Iterate over target names in graph."""
         graph = TargetGraph()
         t1 = OutputTarget(
@@ -394,4 +418,4 @@ class TestTargetGraph:
         graph.register(t2)
 
         names = list(graph)
-        assert set(names) == {"target1", "target2"}
+        expect_equal(set(names), {"target1", "target2"})

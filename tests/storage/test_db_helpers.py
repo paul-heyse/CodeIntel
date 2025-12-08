@@ -9,6 +9,14 @@ from codeintel.storage.validation import (
     count_rows_for_tables,
     safe_count_rows,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+)
 
 
 def test_count_rows_for_tables_returns_dict(
@@ -28,10 +36,10 @@ def test_count_rows_for_tables_returns_dict(
     tables = ["core.modules", "core.repo_map"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
 
-    assert result is not None
-    assert isinstance(result, dict)
-    assert "core.modules" in result
-    assert "core.repo_map" in result
+    expect_is_not_none(result)
+    expect_is_instance(result, dict)
+    expect_in("core.modules", result or {})
+    expect_in("core.repo_map", result or {})
 
 
 def test_count_rows_for_tables_filters_by_repo_commit(
@@ -50,8 +58,10 @@ def test_count_rows_for_tables_filters_by_repo_commit(
     tables = ["core.modules"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
 
-    assert result is not None
-    assert result.get("core.modules") == 1
+    expect_is_not_none(result)
+    if result is None:
+        return
+    expect_equal(result.get("core.modules"), 1)
 
 
 def test_count_rows_for_tables_returns_none_on_missing_table(
@@ -65,7 +75,7 @@ def test_count_rows_for_tables_returns_none_on_missing_table(
     tables = ["nonexistent.table"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_count_rows_for_tables_handles_special_chars_in_repo(
@@ -81,8 +91,10 @@ def test_count_rows_for_tables_handles_special_chars_in_repo(
     tables = ["core.modules"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
 
-    assert result is not None
-    assert result.get("core.modules") == 1
+    expect_is_not_none(result)
+    if result is None:
+        return
+    expect_equal(result.get("core.modules"), 1)
 
 
 def test_count_rows_for_tables_handles_empty_tables(
@@ -96,15 +108,17 @@ def test_count_rows_for_tables_handles_empty_tables(
     tables = ["core.modules"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
 
-    assert result is not None
-    assert result.get("core.modules") == 0
+    expect_is_not_none(result)
+    if result is None:
+        return
+    expect_equal(result.get("core.modules"), 0)
 
 
 def test_safe_count_rows_tolerates_none_connection() -> None:
     """Verify safe_count_rows returns None when connection is None."""
     result = safe_count_rows(None, repo="test/repo", commit="abc123", tables=["core.modules"])
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_safe_count_rows_returns_counts_with_valid_connection(
@@ -119,8 +133,8 @@ def test_safe_count_rows_returns_counts_with_valid_connection(
 
     result = safe_count_rows(con, repo=repo, commit=commit, tables=["core.modules"])
 
-    assert result is not None
-    assert "core.modules" in result
+    expect_is_not_none(result)
+    expect_in("core.modules", result or {})
 
 
 def test_safe_count_rows_accepts_iterable_tables(
@@ -136,9 +150,8 @@ def test_safe_count_rows_accepts_iterable_tables(
     tables_set = {"core.modules", "core.repo_map"}
     result = safe_count_rows(con, repo=repo, commit=commit, tables=tables_set)
 
-    assert result is not None
-    expected_table_count = 2
-    assert len(result) == expected_table_count
+    expect_is_not_none(result)
+    expect_length(result or {}, 2)
 
 
 def test_safe_count_rows_returns_none_on_table_error(
@@ -151,4 +164,4 @@ def test_safe_count_rows_returns_none_on_table_error(
 
     result = safe_count_rows(con, repo=repo, commit=commit, tables=["nonexistent.table"])
 
-    assert result is None
+    expect_is_none(result)

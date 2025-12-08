@@ -8,6 +8,7 @@ graph_ctx, etc., use the fixtures from the main conftest.py.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_RUN_ID
+from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
@@ -31,6 +33,8 @@ from tests._helpers.fakes.graph_runtimes import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
+from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.plugin_execution import PluginTestContext
 from tests.analytics.integration.sample_repo import SampleRepo, write_sample_repo
 
 # =============================================================================
@@ -70,6 +74,22 @@ def sample_repo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SampleRepo
         yield repo
     finally:
         repo.gateway.close()
+
+
+@pytest.fixture
+def memory_gateway() -> Iterator[StorageGateway]:
+    """Provide a gateway with macros and schema validation enabled.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with schema applied and validation enabled.
+    """
+    gateway = gateway_with_macros()
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 @pytest.fixture
@@ -281,6 +301,45 @@ def mock_catalog_realistic() -> MockFunctionCatalog:
         Mock catalog with realistic function patterns.
     """
     return create_mock_catalog_realistic()
+
+
+# =============================================================================
+# Plugin Test Harness
+# =============================================================================
+
+
+@dataclass
+class PluginTestHarness:
+    """Bundle TestContext with a ready PluginTestContext and cleanup."""
+
+    ctx: TestContext
+    plugin_ctx: PluginTestContext
+
+    def close(self) -> None:
+        """Close the underlying TestContext."""
+        self.ctx.close()
+
+
+@pytest.fixture
+def plugin_harness(tmp_path: Path) -> Iterator[PluginTestHarness]:
+    """Provide a reusable plugin test harness with automatic cleanup.
+
+    Yields
+    ------
+    PluginTestHarness
+        Harness containing both TestContext and PluginTestContext.
+    """
+    ctx = create_test_context(tmp_path)
+    plugin_ctx = PluginTestContext(
+        gateway=ctx.gateway,
+        snapshot=ctx.snapshot,
+        paths=ctx.build_paths,
+    )
+    harness = PluginTestHarness(ctx=ctx, plugin_ctx=plugin_ctx)
+    try:
+        yield harness
+    finally:
+        harness.close()
 
 
 # Re-export for convenience in tests

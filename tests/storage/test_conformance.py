@@ -15,6 +15,11 @@ from codeintel.storage.validation.conformance import (
     ConformanceReport,
     run_conformance,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 
 # Constants
 SAMPLE_SIZE_5 = 5
@@ -24,27 +29,27 @@ SAMPLE_SIZE_10 = 10
 def test_conformance_report_ok_when_no_issues() -> None:
     """Verify ConformanceReport.ok is True when issues list is empty."""
     report = ConformanceReport(issues=[])
-    assert report.ok
+    expect_true(report.ok, message="empty issues ok flag")
 
 
 def test_conformance_report_not_ok_when_issues_exist() -> None:
     """Verify ConformanceReport.ok is False when issues exist."""
     issue = ConformanceIssue(dataset="test", message="test issue")
     report = ConformanceReport(issues=[issue])
-    assert not report.ok
+    expect_true(report.ok is False, message="non-empty issues not ok")
 
 
 def test_conformance_issue_stores_dataset_and_message() -> None:
     """Verify ConformanceIssue stores dataset and message."""
     issue = ConformanceIssue(dataset="core.modules", message="Test failure")
-    assert issue.dataset == "core.modules"
-    assert issue.message == "Test failure"
+    expect_equal(issue.dataset, "core.modules", label="dataset")
+    expect_equal(issue.message, "Test failure", label="message")
 
 
 def test_conformance_issue_allows_none_dataset() -> None:
     """Verify ConformanceIssue allows None dataset for global issues."""
     issue = ConformanceIssue(dataset=None, message="Global issue")
-    assert issue.dataset is None
+    expect_true(issue.dataset is None, message="dataset may be None")
 
 
 def test_conformance_passes_with_empty_db(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -58,7 +63,10 @@ def test_conformance_passes_with_empty_db(fresh_gateway: StorageGateway, tmp_pat
         if not destination.exists():
             shutil.copy2(schema_file, destination)
     report = run_conformance(fresh_gateway.con, schema_base_dir=tmp_path, sample_rows=False)
-    assert report.ok, f"Unexpected contract issues: {[issue.message for issue in report.issues]}"
+    expect_true(
+        report.ok,
+        message=f"Unexpected contract issues: {[issue.message for issue in report.issues]}",
+    )
 
 
 def test_conformance_with_sample_rows_enabled(
@@ -78,7 +86,7 @@ def test_conformance_with_sample_rows_enabled(
         fresh_gateway.con, schema_base_dir=tmp_path, sample_rows=True, sample_size=SAMPLE_SIZE_10
     )
 
-    assert isinstance(report, ConformanceReport)
+    expect_is_instance(report, ConformanceReport, label="report type")
 
 
 def test_conformance_skips_missing_schema_files(
@@ -92,7 +100,7 @@ def test_conformance_skips_missing_schema_files(
 
     report = run_conformance(fresh_gateway.con, schema_base_dir=empty_schema_dir, sample_rows=True)
 
-    assert isinstance(report, ConformanceReport)
+    expect_is_instance(report, ConformanceReport, label="report type")
 
 
 def test_conformance_validates_schema_rows(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -113,7 +121,7 @@ def test_conformance_validates_schema_rows(fresh_gateway: StorageGateway, tmp_pa
         sample_size=SAMPLE_SIZE_5,
     )
 
-    assert isinstance(report, ConformanceReport)
+    expect_is_instance(report, ConformanceReport, label="report type")
 
 
 def test_conformance_reports_json_schema_errors(
@@ -147,4 +155,4 @@ def test_conformance_reports_json_schema_errors(
         sample_size=SAMPLE_SIZE_10,
     )
 
-    assert isinstance(report, ConformanceReport)
+    expect_is_instance(report, ConformanceReport, label="report type")

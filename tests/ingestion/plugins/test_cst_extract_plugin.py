@@ -14,6 +14,7 @@ from codeintel.ingestion.plugins import cst_extract
 from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.fakes.ingestion_context import RecordingGateway
 
 
@@ -41,6 +42,9 @@ async def test_execute_logs_errors_and_succeeds(
             discovery = kwargs.get("discovery") or (args[1] if len(args) > 1 else None)
             captured.gateway = storage
             captured.repo_root = cast("Path", discovery)
+            self.modules: list[ModuleRecord] = []
+            self.repo: str | None = None
+            self.commit: str | None = None
 
         def execute(
             self,
@@ -49,6 +53,9 @@ async def test_execute_logs_errors_and_succeeds(
             repo: str,
             commit: str,
         ) -> StepResult:
+            self.modules = modules
+            self.repo = repo
+            self.commit = commit
             captured.modules = modules
             captured.repo = repo
             captured.commit = commit
@@ -69,16 +76,16 @@ async def test_execute_logs_errors_and_succeeds(
     with caplog.at_level("WARNING", logger=cst_extract.log.name):
         result = await CstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert result.row_counts == {}
-    assert captured.gateway is ctx.gateway
-    assert captured.repo_root == repo_root
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {})
+    expect_true(captured.gateway is ctx.gateway)
+    expect_equal(captured.repo_root, repo_root)
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)
     module_record = captured.modules[0]
-    assert module_record.rel_path == "pkg/cst_mod.py"
-    assert module_record.file_path == repo_root / "pkg/cst_mod.py"
-    assert any("bad cst" in record.getMessage() for record in caplog.records)
+    expect_equal(module_record.rel_path, "pkg/cst_mod.py")
+    expect_equal(module_record.file_path, repo_root / "pkg/cst_mod.py")
+    expect_true(any("bad cst" in record.getMessage() for record in caplog.records))
 
 
 @pytest.mark.anyio
@@ -93,7 +100,9 @@ async def test_execute_queries_gateway_when_modules_missing(
 
     class FakeStep:
         def __init__(self, *_: object, **__: object) -> None:
-            return
+            self.modules: list[ModuleRecord] = []
+            self.repo: str | None = None
+            self.commit: str | None = None
 
         def execute(
             self,
@@ -102,6 +111,9 @@ async def test_execute_queries_gateway_when_modules_missing(
             repo: str,
             commit: str,
         ) -> StepResult:
+            self.modules = modules
+            self.repo = repo
+            self.commit = commit
             captured.modules = modules
             captured.repo = repo
             captured.commit = commit
@@ -113,15 +125,15 @@ async def test_execute_queries_gateway_when_modules_missing(
 
     result = await CstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.row_counts == {"core.cst_nodes": 1}
+    expect_equal(result.row_counts, {"core.cst_nodes": 1})
     sql, params = gateway.executions[0]
-    assert "core.modules" in sql
-    assert params == [DEFAULT_REPO, DEFAULT_COMMIT]
+    expect_in("core.modules", sql)
+    expect_equal(params, [DEFAULT_REPO, DEFAULT_COMMIT])
     module_record = captured.modules[0]
-    assert module_record.rel_path == "pkg/from_db.py"
-    assert module_record.file_path == repo_root / "pkg/from_db.py"
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_equal(module_record.rel_path, "pkg/from_db.py")
+    expect_equal(module_record.file_path, repo_root / "pkg/from_db.py")
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)
 
 
 @pytest.mark.anyio
@@ -140,7 +152,9 @@ async def test_execute_handles_gateway_errors(
 
     class FakeStep:
         def __init__(self, *_: object, **__: object) -> None:
-            return
+            self.modules: list[ModuleRecord] = []
+            self.repo: str | None = None
+            self.commit: str | None = None
 
         def execute(
             self,
@@ -149,6 +163,9 @@ async def test_execute_handles_gateway_errors(
             repo: str,
             commit: str,
         ) -> StepResult:
+            self.modules = modules
+            self.repo = repo
+            self.commit = commit
             captured.modules = modules
             captured.repo = repo
             captured.commit = commit
@@ -161,7 +178,7 @@ async def test_execute_handles_gateway_errors(
 
     result = await CstExtractPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert captured.modules == []
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_true(result.success is True)
+    expect_equal(captured.modules, [])
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)

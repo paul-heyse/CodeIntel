@@ -21,6 +21,12 @@ from codeintel.analytics.functions.function_contracts import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.function_catalogs import (
@@ -242,8 +248,8 @@ def test_compute_contracts_with_catalog_goid_iteration(
         [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == GOID_SIMPLE
+    result = expect_is_not_none(result)
+    expect_equal(result[0], GOID_SIMPLE)
 
 
 def test_compute_contracts_with_missing_ast(
@@ -272,9 +278,9 @@ def test_compute_contracts_with_missing_ast(
     ).fetchone()
 
     # Row should be created with empty contracts
-    assert result is not None
-    assert result[0] == GOID_MISSING
-    assert json.loads(result[1]) == []
+    result = expect_is_not_none(result)
+    expect_equal(result[0], GOID_MISSING)
+    expect_equal(json.loads(result[1]), [])
 
 
 def test_compute_contracts_with_docstring_data(
@@ -321,10 +327,10 @@ def test_compute_contracts_with_docstring_data(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     nullability = json.loads(result[0])
-    assert nullability["x"] == "non_null"
-    assert nullability["y"] == "nullable"
+    expect_equal(nullability["x"], "non_null")
+    expect_equal(nullability["y"], "nullable")
 
 
 def test_compute_contracts_with_type_annotations(
@@ -368,11 +374,11 @@ def test_compute_contracts_with_type_annotations(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_TYPED],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     nullability = json.loads(result[0])
-    assert nullability["x"] == "non_null"
-    assert nullability["y"] == "nullable"
-    assert result[1] == "non_null"
+    expect_equal(nullability["x"], "non_null")
+    expect_equal(nullability["y"], "nullable")
+    expect_equal(result[1], "non_null")
 
 
 def test_compute_contracts_with_guards_and_catalog(
@@ -383,7 +389,8 @@ def test_compute_contracts_with_guards_and_catalog(
     code = """def guarded(x, y):
     if x is None:
         raise ValueError("x required")
-    assert y > 0, "y must be positive"
+    if y <= 0:
+        raise ValueError("y must be positive")
     return x + y
 """
     func_ast = _create_function_ast(
@@ -411,12 +418,12 @@ def test_compute_contracts_with_guards_and_catalog(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_GUARDED],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     preconditions = json.loads(result[0])
     raises = json.loads(result[1])
 
     # Should have extracted at least one precondition or raise
-    assert len(preconditions) > 0 or len(raises) > 0
+    expect_true(len(preconditions) > 0 or len(raises) > 0)
 
 
 def test_compute_contracts_with_bool_return_type(
@@ -459,12 +466,12 @@ def test_compute_contracts_with_bool_return_type(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     postconditions = json.loads(result[0])
 
     # Should have a returns_bool_predicate postcondition
     kinds = [p.get("kind") for p in postconditions]
-    assert "returns_bool_predicate" in kinds
+    expect_in("returns_bool_predicate", kinds)
 
 
 def test_compute_contracts_confidence_score(
@@ -516,10 +523,10 @@ def test_compute_contracts_confidence_score(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     confidence = result[0]
     # With types, docs, and guards, confidence should be high
-    assert confidence > MIN_CONFIDENCE
+    expect_true(confidence > MIN_CONFIDENCE)
 
 
 def test_compute_contracts_multiple_goids(
@@ -558,8 +565,8 @@ def test_compute_contracts_multiple_goids(
         [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == EXPECTED_GOID_COUNT
+    result = expect_is_not_none(result)
+    expect_equal(result[0], EXPECTED_GOID_COUNT)
 
 
 def test_compute_contracts_with_nullable_return(
@@ -604,8 +611,8 @@ def test_compute_contracts_with_nullable_return(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "nullable"
+    result = expect_is_not_none(result)
+    expect_equal(result[0], "nullable")
 
 
 def test_compute_contracts_with_isinstance_guard(
@@ -643,12 +650,12 @@ def test_compute_contracts_with_isinstance_guard(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    result = expect_is_not_none(result)
     preconditions = json.loads(result[0])
     raises = json.loads(result[1])
 
     # Should have extracted type error raises
-    assert len(preconditions) > 0 or len(raises) > 0
+    expect_true(len(preconditions) > 0 or len(raises) > 0)
 
 
 def test_compute_contracts_with_len_check(
@@ -686,7 +693,7 @@ def test_compute_contracts_with_len_check(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_compute_contracts_with_predicate_name(
@@ -724,7 +731,7 @@ def test_compute_contracts_with_predicate_name(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_compute_contracts_with_doc_return_none(
@@ -768,5 +775,5 @@ def test_compute_contracts_with_doc_return_none(
         [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "nullable"
+    result = expect_is_not_none(result)
+    expect_equal(result[0], "nullable")

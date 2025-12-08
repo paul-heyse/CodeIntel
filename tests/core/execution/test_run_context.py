@@ -13,7 +13,12 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.execution import RunContext, new_run_context, new_run_id
 from codeintel.core.execution.context import RunKind, TriggerKind
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_in,
+    expect_true,
+)
 
 # Constants for test assertions
 UNIQUENESS_SAMPLE_SIZE = 100
@@ -48,26 +53,26 @@ class TestNewRunId:
     def test_default_prefix() -> None:
         """Default prefix should be 'ci'."""
         run_id = new_run_id()
-        assert run_id.startswith("ci-")
+        expect_true(run_id.startswith("ci-"))
 
     @staticmethod
     def test_custom_prefix() -> None:
         """Custom prefix should be used."""
         run_id = new_run_id(prefix="ingest")
-        assert run_id.startswith("ingest-")
+        expect_true(run_id.startswith("ingest-"))
 
     @staticmethod
     def test_uniqueness() -> None:
         """Each call should generate a unique ID."""
         ids = {new_run_id() for _ in range(UNIQUENESS_SAMPLE_SIZE)}
-        assert len(ids) == UNIQUENESS_SAMPLE_SIZE
+        expect_equal(len(ids), UNIQUENESS_SAMPLE_SIZE)
 
     @staticmethod
     def test_hex_suffix_length() -> None:
         """Suffix should be a 32-character hex string."""
         run_id = new_run_id(prefix="test")
         suffix = run_id.split("-", 1)[1]
-        assert len(suffix) == RUN_ID_HEX_SUFFIX_LENGTH
+        expect_equal(len(suffix), RUN_ID_HEX_SUFFIX_LENGTH)
         # Should be valid hex
         int(suffix, 16)
 
@@ -84,11 +89,11 @@ class TestRunContext:
             snapshot=snapshot,
             trigger="cli",
         )
-        assert ctx.run_id == "test-123"
-        assert ctx.kind == "full"
-        assert ctx.trigger == "cli"
-        assert ctx.requested_operation is None
-        assert ctx.requested_datasets == ()
+        expect_equal(ctx.run_id, "test-123")
+        expect_equal(ctx.kind, "full")
+        expect_equal(ctx.trigger, "cli")
+        expect_true(ctx.requested_operation is None)
+        expect_equal(ctx.requested_datasets, ())
 
     @staticmethod
     def test_with_operation(snapshot: SnapshotRef) -> None:
@@ -100,7 +105,7 @@ class TestRunContext:
             trigger="http",
             requested_operation="functions.summary",
         )
-        assert ctx.requested_operation == "functions.summary"
+        expect_equal(ctx.requested_operation, "functions.summary")
 
     @staticmethod
     def test_with_datasets(snapshot: SnapshotRef) -> None:
@@ -112,9 +117,9 @@ class TestRunContext:
             trigger="api",
             requested_datasets=("analytics.function_metrics", "analytics.module_profiles"),
         )
-        assert ctx.requested_datasets == (
-            "analytics.function_metrics",
-            "analytics.module_profiles",
+        expect_equal(
+            ctx.requested_datasets,
+            ("analytics.function_metrics", "analytics.module_profiles"),
         )
 
     @staticmethod
@@ -126,7 +131,7 @@ class TestRunContext:
             snapshot=snapshot,
             trigger="cli",
         )
-        assert ctx.repo == "test-org/test-repo"
+        expect_equal(ctx.repo, "test-org/test-repo")
 
     @staticmethod
     def test_commit_property(snapshot: SnapshotRef) -> None:
@@ -137,7 +142,7 @@ class TestRunContext:
             snapshot=snapshot,
             trigger="cli",
         )
-        assert ctx.commit == "abc123def456"
+        expect_equal(ctx.commit, "abc123def456")
 
     @staticmethod
     def test_frozen(snapshot: SnapshotRef) -> None:
@@ -158,32 +163,32 @@ class TestNewRunContext:
     def test_generates_run_id(snapshot: SnapshotRef) -> None:
         """new_run_context should generate a unique run_id."""
         ctx = new_run_context(snapshot=snapshot, kind="full", trigger="cli")
-        assert ctx.run_id.startswith("full-")
-        assert len(ctx.run_id.split("-", 1)[1]) == RUN_ID_HEX_SUFFIX_LENGTH
+        expect_true(ctx.run_id.startswith("full-"))
+        expect_equal(len(ctx.run_id.split("-", 1)[1]), RUN_ID_HEX_SUFFIX_LENGTH)
 
     @staticmethod
     def test_ingest_kind_prefix(snapshot: SnapshotRef) -> None:
         """Ingest kind should use 'ingest-' prefix."""
         ctx = new_run_context(snapshot=snapshot, kind="ingest", trigger="cli")
-        assert ctx.run_id.startswith("ingest-")
+        expect_true(ctx.run_id.startswith("ingest-"))
 
     @staticmethod
     def test_graphs_kind_prefix(snapshot: SnapshotRef) -> None:
         """Graphs kind should use 'graphs-' prefix."""
         ctx = new_run_context(snapshot=snapshot, kind="graphs", trigger="cli")
-        assert ctx.run_id.startswith("graphs-")
+        expect_true(ctx.run_id.startswith("graphs-"))
 
     @staticmethod
     def test_analytics_kind_prefix(snapshot: SnapshotRef) -> None:
         """Analytics kind should use 'analytics-' prefix."""
         ctx = new_run_context(snapshot=snapshot, kind="analytics", trigger="cli")
-        assert ctx.run_id.startswith("analytics-")
+        expect_true(ctx.run_id.startswith("analytics-"))
 
     @staticmethod
     def test_preserves_snapshot(snapshot: SnapshotRef) -> None:
         """new_run_context should preserve the snapshot reference."""
         ctx = new_run_context(snapshot=snapshot, kind="full", trigger="cli")
-        assert ctx.snapshot is snapshot
+        expect_true(ctx.snapshot is snapshot)
 
     @staticmethod
     def test_requested_operation(snapshot: SnapshotRef) -> None:
@@ -194,7 +199,7 @@ class TestNewRunContext:
             trigger="http",
             requested_operation="functions.summary",
         )
-        assert ctx.requested_operation == "functions.summary"
+        expect_equal(ctx.requested_operation, "functions.summary")
 
     @staticmethod
     def test_requested_datasets_from_list(snapshot: SnapshotRef) -> None:
@@ -207,7 +212,7 @@ class TestNewRunContext:
             requested_datasets=datasets,
         )
         # Should be converted to tuple
-        assert ctx.requested_datasets == tuple(datasets)
+        expect_equal(ctx.requested_datasets, tuple(datasets))
 
 
 class TestRunKindValues:
@@ -220,7 +225,7 @@ class TestRunKindValues:
         valid_kinds = {"ingest", "graphs", "analytics", "full", "op_prereqs"}
         # Create a context with each kind to verify they're valid
         for kind in expected:
-            assert kind in valid_kinds
+            expect_in(kind, valid_kinds)
 
 
 class TestTriggerKindValues:
@@ -232,4 +237,4 @@ class TestTriggerKindValues:
         expected: set[TriggerKind] = {"cli", "http", "mcp", "api"}
         valid_triggers = {"cli", "http", "mcp", "api"}
         for kind in expected:
-            assert kind in valid_triggers
+            expect_in(kind, valid_triggers)

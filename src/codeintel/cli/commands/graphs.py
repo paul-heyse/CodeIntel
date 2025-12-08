@@ -13,12 +13,13 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from enum import Enum
 from textwrap import indent
 from typing import Annotated
 
 import typer
 
-from codeintel.cli.commands._common import JsonOutputOpt
+from codeintel.cli.commands._common import JsonOutputOpt, OutputFormat
 from codeintel.graphs.core.protocol import DEFAULT_GRAPH_PLUGINS
 from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
 
@@ -35,12 +36,22 @@ graphs_app = typer.Typer(
 # Option Type Aliases
 # -----------------------------------------------------------------------------
 
+
+class PlanMode(Enum):
+    """Graph plugin listing mode."""
+
+    LIST = "list"
+    PLAN = "plan"
+
+
 PlanOpt = Annotated[
-    bool,
+    PlanMode,
     typer.Option(
+        PlanMode.LIST,
         "--plan",
-        is_flag=True,
+        flag_value=PlanMode.PLAN,
         help="Show planned execution order plus dependency graph and metadata.",
+        case_sensitive=False,
     ),
 ]
 
@@ -76,16 +87,21 @@ DisableOpt = Annotated[
 
 @graphs_app.command("plugins")
 def graph_plugins(
-    plan: PlanOpt = False,
+    plan: PlanOpt = PlanMode.LIST,
     names: NamesOpt = None,
     enable: EnableOpt = None,
     disable: DisableOpt = None,
-    json_output: JsonOutputOpt = False,
+    json_output: OutputFormat = JsonOutputOpt,
 ) -> None:
     """List registered graph metric plugins or show execution plan.
 
     Shows all registered graph plugins with their metadata. Use --plan to
     see the planned execution order including dependency resolution.
+
+    Raises
+    ------
+    typer.Exit
+        If planning fails due to invalid plugin selection.
 
     Examples
     --------
@@ -105,7 +121,7 @@ def graph_plugins(
     disabled = tuple(disable) if disable else ()
     requested = requested_names if requested_names is not None else DEFAULT_GRAPH_PLUGINS
 
-    if plan:
+    if plan is PlanMode.PLAN:
         try:
             plan_result = plan_graph_plugins(
                 plugin_names=requested if enabled is None else None,
@@ -118,7 +134,7 @@ def graph_plugins(
             raise typer.Exit(code=1) from None
 
         ordered = plan_result.ordered_names
-        if json_output:
+        if json_output is OutputFormat.JSON:
             payload = {
                 "plan_id": plan_result.plan_id,
                 "ordered_plugins": list(ordered),
@@ -161,7 +177,7 @@ def graph_plugins(
         return
 
     plugins = list_graph_plugins()
-    if json_output:
+    if json_output is OutputFormat.JSON:
         payload = {
             "count": len(plugins),
             "plugins": {

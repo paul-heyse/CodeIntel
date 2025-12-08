@@ -27,6 +27,10 @@ from codeintel.analytics.compute.profiles.features import (
     extract_profile_features,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_true,
+)
 
 # =============================================================================
 # Constants
@@ -197,10 +201,10 @@ def _make_realistic_codebase() -> list[FunctionMetricInput]:
 def test_aggregates_default_values() -> None:
     """Verify default values for ProfileAggregates."""
     agg = ProfileAggregates()
-    assert agg.total_functions == EXPECTED_FUNCTIONS_0
-    assert agg.total_loc == EXPECTED_LOC_0
-    assert agg.avg_complexity == 0.0
-    assert agg.complexity_buckets == {}
+    expect_equal(agg.total_functions, EXPECTED_FUNCTIONS_0)
+    expect_equal(agg.total_loc, EXPECTED_LOC_0)
+    expect_equal(agg.avg_complexity, 0.0)
+    expect_equal(agg.complexity_buckets, {})
 
 
 def test_aggregates_custom_values() -> None:
@@ -215,8 +219,8 @@ def test_aggregates_custom_values() -> None:
         untyped_count=1,
         complexity_buckets={"low": 5, "medium": 3, "high": 2},
     )
-    assert agg.total_functions == EXPECTED_FUNCTIONS_10
-    assert agg.typed_count == EXPECTED_TYPED_COUNT_7
+    expect_equal(agg.total_functions, EXPECTED_FUNCTIONS_10)
+    expect_equal(agg.typed_count, EXPECTED_TYPED_COUNT_7)
 
 
 # =============================================================================
@@ -235,8 +239,8 @@ def test_metric_create() -> None:
     )
     expected_loc = 25
     expected_ratio = 0.75
-    assert metric.loc == expected_loc
-    assert metric.typedness_ratio == expected_ratio
+    expect_equal(metric.loc, expected_loc)
+    expect_equal(metric.typedness_ratio, expected_ratio)
 
 
 # =============================================================================
@@ -247,17 +251,17 @@ def test_metric_create() -> None:
 def test_aggregate_empty_metrics() -> None:
     """Empty metrics return default aggregates."""
     result = aggregate_function_metrics([])
-    assert result.total_functions == EXPECTED_FUNCTIONS_0
+    expect_equal(result.total_functions, EXPECTED_FUNCTIONS_0)
 
 
 def test_aggregate_single_function() -> None:
     """Aggregate single function metrics."""
     metric = _make_typed_function(loc=20, complexity=3)
     result = aggregate_function_metrics([metric])
-    assert result.total_functions == EXPECTED_FUNCTIONS_1
-    assert result.total_loc == EXPECTED_LOC_20
-    assert result.avg_complexity == EXPECTED_COMPLEXITY_3
-    assert result.typed_count == EXPECTED_FUNCTIONS_1
+    expect_equal(result.total_functions, EXPECTED_FUNCTIONS_1)
+    expect_equal(result.total_loc, EXPECTED_LOC_20)
+    expect_equal(result.avg_complexity, EXPECTED_COMPLEXITY_3)
+    expect_equal(result.typed_count, EXPECTED_FUNCTIONS_1)
 
 
 def test_aggregate_multiple_functions() -> None:
@@ -268,9 +272,9 @@ def test_aggregate_multiple_functions() -> None:
         _make_partial_function(loc=30, complexity=6),
     ]
     result = aggregate_function_metrics(metrics)
-    assert result.total_functions == EXPECTED_FUNCTIONS_3
-    assert result.total_loc == EXPECTED_LOC_60
-    assert abs(result.avg_complexity - EXPECTED_AVG_COMPLEXITY) < RATIO_TOLERANCE
+    expect_equal(result.total_functions, EXPECTED_FUNCTIONS_3)
+    expect_equal(result.total_loc, EXPECTED_LOC_60)
+    expect_true(abs(result.avg_complexity - EXPECTED_AVG_COMPLEXITY) < RATIO_TOLERANCE)
 
 
 def test_aggregate_typedness_counts() -> None:
@@ -282,9 +286,9 @@ def test_aggregate_typedness_counts() -> None:
         _make_untyped_function(),
     ]
     result = aggregate_function_metrics(metrics)
-    assert result.typed_count == EXPECTED_TYPED_COUNT_2
-    assert result.partial_typed_count == EXPECTED_PARTIAL_COUNT_1
-    assert result.untyped_count == EXPECTED_UNTYPED_COUNT_1
+    expect_equal(result.typed_count, EXPECTED_TYPED_COUNT_2)
+    expect_equal(result.partial_typed_count, EXPECTED_PARTIAL_COUNT_1)
+    expect_equal(result.untyped_count, EXPECTED_UNTYPED_COUNT_1)
 
 
 def test_aggregate_complexity_buckets() -> None:
@@ -296,9 +300,9 @@ def test_aggregate_complexity_buckets() -> None:
         FunctionMetricInput(40, 15, 0.0, "untyped", "high"),
     ]
     result = aggregate_function_metrics(metrics)
-    assert result.complexity_buckets.get("low") == EXPECTED_TYPED_COUNT_2
-    assert result.complexity_buckets.get("medium") == EXPECTED_PARTIAL_COUNT_1
-    assert result.complexity_buckets.get("high") == EXPECTED_UNTYPED_COUNT_1
+    expect_equal(result.complexity_buckets.get("low"), EXPECTED_TYPED_COUNT_2)
+    expect_equal(result.complexity_buckets.get("medium"), EXPECTED_PARTIAL_COUNT_1)
+    expect_equal(result.complexity_buckets.get("high"), EXPECTED_UNTYPED_COUNT_1)
 
 
 def test_aggregate_average_typedness() -> None:
@@ -310,17 +314,17 @@ def test_aggregate_average_typedness() -> None:
     ]
     result = aggregate_function_metrics(metrics)
     expected = (1.0 + 0.5 + 0.0) / 3
-    assert abs(result.avg_typedness - expected) < RATIO_TOLERANCE
+    expect_true(abs(result.avg_typedness - expected) < RATIO_TOLERANCE)
 
 
 def test_aggregate_realistic_codebase() -> None:
     """Aggregate realistic codebase metrics."""
     metrics = _make_realistic_codebase()
     result = aggregate_function_metrics(metrics)
-    assert result.total_functions == EXPECTED_FUNCTIONS_10
-    assert result.typed_count == EXPECTED_TYPED_COUNT_6
-    assert result.partial_typed_count == EXPECTED_PARTIAL_COUNT_3
-    assert result.untyped_count == EXPECTED_UNTYPED_COUNT_1
+    expect_equal(result.total_functions, EXPECTED_FUNCTIONS_10)
+    expect_equal(result.typed_count, EXPECTED_TYPED_COUNT_6)
+    expect_equal(result.partial_typed_count, EXPECTED_PARTIAL_COUNT_3)
+    expect_equal(result.untyped_count, EXPECTED_UNTYPED_COUNT_1)
 
 
 # =============================================================================
@@ -332,7 +336,7 @@ def test_stats_empty_aggregates() -> None:
     """Handle empty aggregates without division by zero."""
     agg = ProfileAggregates()
     stats = compute_profile_stats(agg)
-    assert stats["typed_ratio"] == 0.0
+    expect_equal(stats["typed_ratio"], 0.0)
 
 
 def test_stats_all_typed() -> None:
@@ -347,8 +351,8 @@ def test_stats_all_typed() -> None:
         untyped_count=0,
     )
     stats = compute_profile_stats(agg)
-    assert stats["typed_ratio"] == 1.0
-    assert stats["partial_ratio"] == 0.0
+    expect_equal(stats["typed_ratio"], 1.0)
+    expect_equal(stats["partial_ratio"], 0.0)
 
 
 def test_stats_mixed_typedness() -> None:
@@ -363,16 +367,16 @@ def test_stats_mixed_typedness() -> None:
         untyped_count=2,
     )
     stats = compute_profile_stats(agg)
-    assert stats["typed_ratio"] == TYPED_RATIO_0_5
-    assert stats["partial_ratio"] == PARTIAL_RATIO_0_3
-    assert stats["untyped_ratio"] == UNTYPED_RATIO_0_2
+    expect_equal(stats["typed_ratio"], TYPED_RATIO_0_5)
+    expect_equal(stats["partial_ratio"], PARTIAL_RATIO_0_3)
+    expect_equal(stats["untyped_ratio"], UNTYPED_RATIO_0_2)
 
 
 def test_stats_avg_loc() -> None:
     """Compute average LOC per function."""
     agg = ProfileAggregates(total_functions=4, total_loc=EXPECTED_LOC_100)
     stats = compute_profile_stats(agg)
-    assert stats["avg_loc"] == EXPECTED_AVG_LOC_25
+    expect_equal(stats["avg_loc"], EXPECTED_AVG_LOC_25)
 
 
 def test_stats_all_present() -> None:
@@ -395,7 +399,7 @@ def test_stats_all_present() -> None:
         "avg_complexity",
         "avg_typedness",
     }
-    assert set(stats.keys()) == expected_keys
+    expect_equal(set(stats.keys()), expected_keys)
 
 
 # =============================================================================
@@ -411,8 +415,8 @@ def test_features_create() -> None:
         typedness_category="typed",
         quality_score=EXPECTED_QUALITY_SCORE_0_85,
     )
-    assert features.size_category == "medium"
-    assert features.quality_score == EXPECTED_QUALITY_SCORE_0_85
+    expect_equal(features.size_category, "medium")
+    expect_equal(features.quality_score, EXPECTED_QUALITY_SCORE_0_85)
 
 
 def test_features_is_frozen() -> None:
@@ -441,9 +445,9 @@ def test_extract_small_simple_typed() -> None:
         typed_count=5,
     )
     features = extract_profile_features(agg)
-    assert features.size_category == "small"
-    assert features.complexity_category == "simple"
-    assert features.typedness_category == "typed"
+    expect_equal(features.size_category, "small")
+    expect_equal(features.complexity_category, "simple")
+    expect_equal(features.typedness_category, "typed")
 
 
 def test_extract_large_complex_untyped() -> None:
@@ -456,9 +460,9 @@ def test_extract_large_complex_untyped() -> None:
         untyped_count=45,
     )
     features = extract_profile_features(agg)
-    assert features.size_category == "large"
-    assert features.complexity_category == "complex"
-    assert features.typedness_category == "untyped"
+    expect_equal(features.size_category, "large")
+    expect_equal(features.complexity_category, "complex")
+    expect_equal(features.typedness_category, "untyped")
 
 
 def test_extract_medium_moderate_partial() -> None:
@@ -471,9 +475,9 @@ def test_extract_medium_moderate_partial() -> None:
         partial_typed_count=10,
     )
     features = extract_profile_features(agg)
-    assert features.size_category == "medium"
-    assert features.complexity_category == "moderate"
-    assert features.typedness_category == "partial"
+    expect_equal(features.size_category, "medium")
+    expect_equal(features.complexity_category, "moderate")
+    expect_equal(features.typedness_category, "partial")
 
 
 def test_quality_score_bounds() -> None:
@@ -487,7 +491,7 @@ def test_quality_score_bounds() -> None:
         typed_count=10,
     )
     high_features = extract_profile_features(high_agg)
-    assert 0.0 <= high_features.quality_score <= 1.0
+    expect_true(0.0 <= high_features.quality_score <= 1.0)
 
     # Low quality case
     low_agg = ProfileAggregates(
@@ -497,21 +501,21 @@ def test_quality_score_bounds() -> None:
         avg_typedness=0.0,
     )
     low_features = extract_profile_features(low_agg)
-    assert 0.0 <= low_features.quality_score <= 1.0
+    expect_true(0.0 <= low_features.quality_score <= 1.0)
 
 
 def test_quality_score_weights() -> None:
     """Quality score uses correct weights."""
     # Verify weights sum to 1.0
     total_weight = TYPEDNESS_WEIGHT + COMPLEXITY_WEIGHT + SIZE_WEIGHT
-    assert abs(total_weight - WEIGHT_SUM) < RATIO_TOLERANCE
+    expect_true(abs(total_weight - WEIGHT_SUM) < RATIO_TOLERANCE)
 
 
 def test_threshold_constants() -> None:
     """Verify threshold constants are reasonable."""
-    assert SMALL_MODULE_THRESHOLD < LARGE_MODULE_THRESHOLD
-    assert LOW_COMPLEXITY_THRESHOLD < HIGH_COMPLEXITY_THRESHOLD
-    assert LOW_TYPED_RATIO < HIGH_TYPED_RATIO
+    expect_true(SMALL_MODULE_THRESHOLD < LARGE_MODULE_THRESHOLD)
+    expect_true(LOW_COMPLEXITY_THRESHOLD < HIGH_COMPLEXITY_THRESHOLD)
+    expect_true(LOW_TYPED_RATIO < HIGH_TYPED_RATIO)
 
 
 def test_size_boundary_small_medium() -> None:
@@ -522,7 +526,7 @@ def test_size_boundary_small_medium() -> None:
         total_loc=SMALL_MODULE_THRESHOLD - 1,
     )
     small_features = extract_profile_features(small)
-    assert small_features.size_category == "small"
+    expect_equal(small_features.size_category, "small")
 
     # At threshold
     medium = ProfileAggregates(
@@ -530,7 +534,7 @@ def test_size_boundary_small_medium() -> None:
         total_loc=SMALL_MODULE_THRESHOLD,
     )
     medium_features = extract_profile_features(medium)
-    assert medium_features.size_category == "medium"
+    expect_equal(medium_features.size_category, "medium")
 
 
 def test_size_boundary_medium_large() -> None:
@@ -541,7 +545,7 @@ def test_size_boundary_medium_large() -> None:
         total_loc=LARGE_MODULE_THRESHOLD - 1,
     )
     medium_features = extract_profile_features(medium)
-    assert medium_features.size_category == "medium"
+    expect_equal(medium_features.size_category, "medium")
 
     # At threshold
     large = ProfileAggregates(
@@ -549,7 +553,7 @@ def test_size_boundary_medium_large() -> None:
         total_loc=LARGE_MODULE_THRESHOLD,
     )
     large_features = extract_profile_features(large)
-    assert large_features.size_category == "large"
+    expect_equal(large_features.size_category, "large")
 
 
 def test_complexity_boundary() -> None:
@@ -559,21 +563,21 @@ def test_complexity_boundary() -> None:
         avg_complexity=LOW_COMPLEXITY_THRESHOLD - 0.1,
     )
     simple_features = extract_profile_features(simple)
-    assert simple_features.complexity_category == "simple"
+    expect_equal(simple_features.complexity_category, "simple")
 
     moderate = ProfileAggregates(
         total_functions=5,
         avg_complexity=LOW_COMPLEXITY_THRESHOLD,
     )
     moderate_features = extract_profile_features(moderate)
-    assert moderate_features.complexity_category == "moderate"
+    expect_equal(moderate_features.complexity_category, "moderate")
 
     complex_ = ProfileAggregates(
         total_functions=5,
         avg_complexity=HIGH_COMPLEXITY_THRESHOLD,
     )
     complex_features = extract_profile_features(complex_)
-    assert complex_features.complexity_category == "complex"
+    expect_equal(complex_features.complexity_category, "complex")
 
 
 def test_typedness_boundary() -> None:
@@ -583,21 +587,21 @@ def test_typedness_boundary() -> None:
         avg_typedness=LOW_TYPED_RATIO - 0.01,
     )
     untyped_features = extract_profile_features(untyped)
-    assert untyped_features.typedness_category == "untyped"
+    expect_equal(untyped_features.typedness_category, "untyped")
 
     partial = ProfileAggregates(
         total_functions=5,
         avg_typedness=LOW_TYPED_RATIO,
     )
     partial_features = extract_profile_features(partial)
-    assert partial_features.typedness_category == "partial"
+    expect_equal(partial_features.typedness_category, "partial")
 
     typed = ProfileAggregates(
         total_functions=5,
         avg_typedness=HIGH_TYPED_RATIO,
     )
     typed_features = extract_profile_features(typed)
-    assert typed_features.typedness_category == "typed"
+    expect_equal(typed_features.typedness_category, "typed")
 
 
 def test_complexity_normalization() -> None:
@@ -611,7 +615,7 @@ def test_complexity_normalization() -> None:
     features = extract_profile_features(high_complex)
     # Complexity score would be max(0, 1 - 2) = 0
     # So quality = 0.4 * 1.0 + 0.3 * 0 + 0.3 * 1.0 = 0.7
-    assert abs(features.quality_score - EXPECTED_QUALITY_HIGH_COMPLEX) < QUALITY_TOLERANCE
+    expect_true(abs(features.quality_score - EXPECTED_QUALITY_HIGH_COMPLEX) < QUALITY_TOLERANCE)
 
 
 # =============================================================================
@@ -630,10 +634,10 @@ def test_aggregate_then_extract() -> None:
     features = extract_profile_features(aggregates)
 
     # Should be small (90 loc)
-    assert features.size_category == "small"
+    expect_equal(features.size_category, "small")
 
     # Should be simple (avg ~3)
-    assert features.complexity_category == "simple"
+    expect_equal(features.complexity_category, "simple")
 
 
 def test_realistic_codebase_features() -> None:
@@ -644,9 +648,9 @@ def test_realistic_codebase_features() -> None:
     features = extract_profile_features(aggregates)
 
     # Verify stats match features
-    assert stats["avg_complexity"] == aggregates.avg_complexity
+    expect_equal(stats["avg_complexity"], aggregates.avg_complexity)
 
     # Quality should be reasonable for mixed codebase
     min_quality = 0.3
     max_quality = 0.9
-    assert min_quality < features.quality_score < max_quality
+    expect_true(min_quality < features.quality_score < max_quality)

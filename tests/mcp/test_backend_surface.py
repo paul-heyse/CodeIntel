@@ -14,6 +14,7 @@ from codeintel.serving.mcp.models import DatasetDescriptor
 from codeintel.serving.services.errors import ProblemDetail
 from codeintel.serving.services.query_service import QueryService
 from tests._helpers import FakeQueryService, ModelLike, RecordingAsyncClient
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 
 @pytest.mark.anyio
@@ -22,13 +23,13 @@ async def test_async_get_and_close_use_client_methods() -> None:
     client = RecordingAsyncClient()
     get_async = mcp_backend.__dict__["_get_async"]
     response = await get_async(client, "/path", {"q": "1"})
-    assert response.json()["ok"] is True
-    assert client.get_calls == [("/path", {"q": "1"})]
+    expect_true(response.json()["ok"] is True)
+    expect_equal(client.get_calls, [("/path", {"q": "1"})])
 
     aclose_client = mcp_backend.__dict__["_aclose_client"]
     await aclose_client(client)
     await aclose_client(client)
-    assert client.closed_count == 2
+    expect_equal(client.closed_count, 2)
 
 
 class _DatasetService:
@@ -84,11 +85,14 @@ def test_list_datasets_serializes_mixed_inputs(monkeypatch: pytest.MonkeyPatch) 
     """DatasetBackendMixin should normalize dataclasses, model_dump, and raw models."""
     backend = _DatasetBackend(_DatasetService())
     datasets = backend.list_datasets()
-    assert {d.name for d in datasets} == {
-        "docs.functions",
-        "analytics.risks",
-        "docs.model_dump",
-    }
+    expect_equal(
+        {d.name for d in datasets},
+        {
+            "docs.functions",
+            "analytics.risks",
+            "docs.model_dump",
+        },
+    )
 
     # Simulate serialization failure
     def _raise_validation(*_: object, **__: object) -> DatasetDescriptor:
@@ -130,12 +134,12 @@ def test_backend_forwards_service_calls_and_serializes_profiles() -> None:
     file_profile = backend.get_file_profile(rel_path="pkg/file.py")
     mod_profile = backend.get_module_profile(module="pkg.mod")
 
-    assert fn_profile["value"] == "pkg.func.1"
-    assert file_profile["value"] == "pkg/file.py"
-    assert mod_profile["value"] == "pkg.mod"
-    assert ("get_function_profile", {"goid_h128": 1}) in service.calls
-    assert ("get_file_profile", {"rel_path": "pkg/file.py"}) in service.calls
-    assert ("get_module_profile", {"module": "pkg.mod"}) in service.calls
+    expect_equal(fn_profile["value"], "pkg.func.1")
+    expect_equal(file_profile["value"], "pkg/file.py")
+    expect_equal(mod_profile["value"], "pkg.mod")
+    expect_in(("get_function_profile", {"goid_h128": 1}), service.calls)
+    expect_in(("get_file_profile", {"rel_path": "pkg/file.py"}), service.calls)
+    expect_in(("get_module_profile", {"module": "pkg.mod"}), service.calls)
 
 
 def test_dataset_rows_and_schema_forwarding() -> None:
@@ -144,16 +148,16 @@ def test_dataset_rows_and_schema_forwarding() -> None:
     backend = _ForwardingBackend(service)
 
     rows = backend.read_dataset_rows(dataset_name="docs.functions", limit=2, offset=1)
-    assert rows.dataset == "docs.functions"
-    assert rows.dataset_name == "docs.functions"
-    assert rows.limit == 2
-    assert rows.offset == 1
-    assert rows.rows[0].model_dump()["goid"] == 1
+    expect_equal(rows.dataset, "docs.functions")
+    expect_equal(rows.dataset_name, "docs.functions")
+    expect_equal(rows.limit, 2)
+    expect_equal(rows.offset, 1)
+    expect_equal(rows.rows[0].model_dump()["goid"], 1)
 
     schema = backend.dataset_schema(dataset_name="docs.functions", sample_limit=1)
-    assert schema.dataset == "docs.functions"
-    assert schema.table_key == "docs.v_functions"
-    assert schema.sample_rows[0].model_dump()["goid"] == 1
+    expect_equal(schema.dataset, "docs.functions")
+    expect_equal(schema.table_key, "docs.v_functions")
+    expect_equal(schema.sample_rows[0].model_dump()["goid"], 1)
 
     # Force service error
     service.enable_rows_failure()
@@ -166,6 +170,7 @@ def test_backend_raises_problem_detail_on_service_errors() -> None:
 
     class _BadService(FakeQueryService):
         def get_function_profile(self, *, goid_h128: int) -> ModelLike:
+            _ = self
             _ = goid_h128
             detail = ProblemDetail(type="t", title="bad", detail="fail", status=500, code="boom")
             raise errors.McpError(detail)

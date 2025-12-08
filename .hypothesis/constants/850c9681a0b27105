@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/registry/__init__.py
+# hypothesis_version: 6.148.7
+
+['BasePluginRegistry', 'DefaultRegistryHooks', 'PluginPlan', 'PluginSkip', 'RegistrablePlugin', 'RegistryEntry', 'RegistryHooks', 'build_provider_index', 'topological_sort']

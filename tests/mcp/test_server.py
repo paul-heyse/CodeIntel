@@ -10,6 +10,7 @@ import pytest
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp import server
+from tests._helpers.assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -53,12 +54,12 @@ def test_create_mcp_server_uses_register_tools_fn() -> None:
         register_tools_fn=_register_tools_fn,
     )
 
-    assert register_calls
-    assert register_calls[0][1] is backend.service
+    expect_true(bool(register_calls))
+    expect_true(register_calls[0][1] is backend.service)
     close()
-    assert close_called
+    expect_true(close_called)
     # FastMCP should be returned
-    assert hasattr(srv, "run")
+    expect_true(hasattr(srv, "run"))
 
 
 def test_main_uses_register_tools_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,6 +84,7 @@ def test_main_uses_register_tools_and_runs(monkeypatch: pytest.MonkeyPatch) -> N
             return _decorator
 
         def run(self) -> None:
+            _ = self
             nonlocal run_called
             run_called = True
 
@@ -106,8 +108,8 @@ def test_main_uses_register_tools_and_runs(monkeypatch: pytest.MonkeyPatch) -> N
         gateway=cast("StorageGateway", SimpleNamespace()),
         register_tools_fn=None,
     )
-    assert register_calls
-    assert register_calls[0][0] == "svc"
+    expect_true(bool(register_calls))
+    expect_equal(register_calls[0][0], "svc")
     srv.run()
-    assert run_called
+    expect_true(run_called)
     close()

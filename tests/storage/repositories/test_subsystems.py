@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.subsystems import SubsystemRepository
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_true,
+)
 
 
 def test_list_subsystems_returns_rows(
@@ -16,7 +23,7 @@ def test_list_subsystems_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems(limit=10)
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystems_respects_limit(
@@ -29,7 +36,7 @@ def test_list_subsystems_respects_limit(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems(limit=1)
 
-    assert len(result) <= 1
+    expect_true(len(result) <= 1)
 
 
 def test_list_subsystems_filters_by_role(
@@ -43,7 +50,7 @@ def test_list_subsystems_filters_by_role(
 
     result_with_role = repository.list_subsystems(limit=10, role="api")
 
-    assert isinstance(result_with_role, list)
+    expect_is_instance(result_with_role, list)
 
 
 def test_list_subsystems_searches_by_query(
@@ -57,7 +64,7 @@ def test_list_subsystems_searches_by_query(
 
     result_with_query = repository.list_subsystems(limit=10, query="api")
 
-    assert isinstance(result_with_query, list)
+    expect_is_instance(result_with_query, list)
 
 
 def test_get_subsystem_summary_returns_row(
@@ -71,7 +78,7 @@ def test_get_subsystem_summary_returns_row(
     result = repository.get_subsystem_summary("subsysdemo")
 
     if result is not None:
-        assert "subsystem_id" in result
+        expect_in("subsystem_id", result)
 
 
 def test_get_subsystem_summary_returns_none_for_missing(
@@ -84,7 +91,7 @@ def test_get_subsystem_summary_returns_none_for_missing(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.get_subsystem_summary("nonexistent_subsystem")
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_search_subsystems_is_alias_for_list(
@@ -98,7 +105,7 @@ def test_search_subsystems_is_alias_for_list(
     list_result = repository.list_subsystems(limit=10)
     search_result = repository.search_subsystems(limit=10)
 
-    assert len(list_result) == len(search_result)
+    expect_equal(len(list_result), len(search_result))
 
 
 def test_list_subsystem_modules_returns_rows(
@@ -111,7 +118,7 @@ def test_list_subsystem_modules_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_modules("subsysdemo")
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystem_memberships_returns_rows(
@@ -124,7 +131,7 @@ def test_list_subsystem_memberships_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_memberships()
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystems_for_module_returns_rows(
@@ -137,7 +144,7 @@ def test_list_subsystems_for_module_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems_for_module("pkg.mod")
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystem_profiles_returns_rows(
@@ -150,7 +157,7 @@ def test_list_subsystem_profiles_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_profiles(limit=10)
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystem_coverage_returns_rows(
@@ -163,7 +170,7 @@ def test_list_subsystem_coverage_returns_rows(
     repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_coverage(limit=10)
 
-    assert isinstance(result, list)
+    expect_is_instance(result, list)
 
 
 def test_list_subsystem_profiles_uses_cache_when_present(
@@ -187,7 +194,7 @@ def test_list_subsystem_profiles_uses_cache_when_present(
     result = repository.list_subsystem_profiles(limit=10)
 
     has_cached = any(row.get("subsystem_id") == "cached_sub" for row in result)
-    assert has_cached
+    expect_true(has_cached)
 
 
 def test_list_subsystem_coverage_uses_cache_when_present(
@@ -211,4 +218,4 @@ def test_list_subsystem_coverage_uses_cache_when_present(
     result = repository.list_subsystem_coverage(limit=10)
 
     has_cached = any(row.get("subsystem_id") == "cached_cov" for row in result)
-    assert has_cached
+    expect_true(has_cached)

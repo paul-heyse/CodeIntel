@@ -13,6 +13,10 @@ from codeintel.serving.mcp import function_tools, models
 from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_true,
+)
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
@@ -37,8 +41,10 @@ class _Backend:
     def __init__(self) -> None:
         self.gateway = SimpleNamespace()
         self.captured_scope: str | None = None
+        self.calls: list[str] = []
 
     def get_fn(self, *, payload: object = "x") -> _DomainModel:
+        self.calls.append("get_fn")
         return _DomainModel.from_domain(payload)
 
     def get_fn_with_scope(self, *, scope: str | None = None) -> _DomainModel:
@@ -48,16 +54,20 @@ class _Backend:
         return _DomainModel.from_domain(scope or "none")
 
     def get_raw(self, **_: object) -> dict[str, object]:
+        self.calls.append("get_raw")
         return {"id": "raw-fn"}
 
     def get_domain_from_str(self, **_: object) -> str:
+        self.calls.append("get_domain_from_str")
         return "payload"
 
     def raise_error(self, **_: object) -> _DomainModel:
+        self.calls.append("raise_error")
         message = "fail"
         raise RuntimeError(message)
 
     def validate_fn(self, **_: object) -> str:
+        self.calls.append("validate_fn")
         return "validated"
 
 
@@ -100,10 +110,10 @@ def test_register_function_tools_registers_and_executes(monkeypatch: pytest.Monk
     typed_backend = cast("QueryBackendOrService", backend)
     mcp = RecordingMcp()
     register_function_tools(cast("FastMCP", mcp), typed_backend, config=None)
-    assert [reg.name for reg in mcp.registrations.calls] == ["functions_summary"]
+    expect_equal([reg.name for reg in mcp.registrations.calls], ["functions_summary"])
     tool_func = mcp.registry["functions_summary"]
     result = tool_func(payload="hello")
-    assert result == {"value": "hello"}
+    expect_equal(result, {"value": "hello"})
 
 
 def test_serialize_payload_validator_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,7 +146,7 @@ def test_serialize_payload_validator_path(monkeypatch: pytest.MonkeyPatch) -> No
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
     result = mcp.registry["functions_validate"]()
-    assert result == {"value": "validated"}
+    expect_equal(result, {"value": "validated"})
 
 
 def test_function_tool_sets_scope_and_resets_context(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,9 +178,9 @@ def test_function_tool_sets_scope_and_resets_context(monkeypatch: pytest.MonkeyP
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
     result = mcp.registry["graph_scope"](scope="abc")
-    assert result == {"value": "abc"}
-    assert backend.captured_scope == "abc"
-    assert get_current_request_context() is None
+    expect_equal(result, {"value": "abc"})
+    expect_equal(backend.captured_scope, "abc")
+    expect_true(get_current_request_context() is None)
 
 
 def test_function_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,7 +213,7 @@ def test_function_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) 
     )
     with pytest.raises(RuntimeError):
         mcp.registry["graph_error"]()
-    assert get_current_request_context() is None
+    expect_true(get_current_request_context() is None)
 
 
 def test_function_tool_from_domain_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -235,7 +245,7 @@ def test_function_tool_from_domain_path(monkeypatch: pytest.MonkeyPatch) -> None
     register_function_tools(
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
-    assert mcp.registry["functions_domain"]() == {"value": "payload"}
+    expect_equal(mcp.registry["functions_domain"](), {"value": "payload"})
 
 
 def test_function_tool_passes_through_raw_dict_when_no_model(
@@ -268,7 +278,7 @@ def test_function_tool_passes_through_raw_dict_when_no_model(
     register_function_tools(
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
-    assert mcp.registry["functions_raw"]() == {"id": "raw-fn"}
+    expect_equal(mcp.registry["functions_raw"](), {"id": "raw-fn"})
 
 
 def test_function_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,5 +325,5 @@ def test_function_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) ->
         config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
     )
     mcp.registry["functions_summary"]()
-    assert calls == ["functions.summary"]
+    expect_equal(calls, ["functions.summary"])
     monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)

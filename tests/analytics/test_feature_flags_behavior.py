@@ -11,14 +11,9 @@ from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphKind
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_snapshot
 from tests._helpers.graphs import GraphStubEngine
-
-
-def _expect(*, condition: bool, detail: str) -> None:
-    if condition:
-        return
-    raise AssertionError(detail)
 
 
 class _StubEngine(GraphStubEngine):
@@ -63,9 +58,9 @@ def test_eager_hydration_respects_feature_override(
     )
     build_graph_runtime(fresh_gateway, opts)
 
-    _expect(
-        condition=stub.call_loads > 0 and stub.import_loads > 0,
-        detail="Eager hydration should load call and import graphs when enabled",
+    expect_true(
+        stub.call_loads > 0 and stub.import_loads > 0,
+        message="Eager hydration should load call and import graphs when enabled",
     )
 
 
@@ -85,9 +80,9 @@ def test_eager_hydration_off_defers_graph_loads(
     )
     build_graph_runtime(fresh_gateway, opts)
 
-    _expect(
-        condition=stub.call_loads == 0 and stub.import_loads == 0,
-        detail="Graphs should not be preloaded when eager hydration is disabled",
+    expect_true(
+        stub.call_loads == 0 and stub.import_loads == 0,
+        message="Graphs should not be preloaded when eager hydration is disabled",
     )
 
 
@@ -95,14 +90,14 @@ def test_community_detection_cap_skips_when_exceeded() -> None:
     """Community detection should be skipped when graph exceeds the configured cap."""
     graph = nx.complete_graph(5)
     metrics = structural_metrics(graph, community_limit=3)
-    _expect(
-        condition=metrics.community_id == {},
-        detail="Community ids should be empty when exceeding the cap",
+    expect_true(
+        metrics.community_id == {},
+        message="Community ids should be empty when exceeding the cap",
     )
 
     small_graph = nx.path_graph(3)
     small_metrics = structural_metrics(small_graph, community_limit=10)
-    _expect(
-        condition=bool(small_metrics.community_id),
-        detail="Community ids should be computed when under the cap",
+    expect_true(
+        bool(small_metrics.community_id),
+        message="Community ids should be computed when under the cap",
     )

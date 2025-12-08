@@ -29,6 +29,11 @@ from codeintel.graphs.catalog import (
     FunctionMeta,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.fakes.graph_engine import StubGraphEngine
 
 # Test constants
@@ -67,7 +72,7 @@ class DummyCatalogProvider(FunctionCatalogProvider):
         str | None
             Always None for the dummy provider.
         """
-        _ = goid
+        _ = (self._catalog, goid)
         return None
 
     def lookup_goid(
@@ -96,7 +101,7 @@ class DummyCatalogProvider(FunctionCatalogProvider):
         int | None
             Always None for the dummy provider.
         """
-        _ = (rel_path, start_line, end_line, qualname)
+        _ = (self._catalog, rel_path, start_line, end_line, qualname)
         return None
 
     def module_for_path(self, rel_path: str) -> str | None:
@@ -113,7 +118,7 @@ class DummyCatalogProvider(FunctionCatalogProvider):
         str | None
             Always None for the dummy provider.
         """
-        _ = rel_path
+        _ = (self._catalog, rel_path)
         return None
 
 
@@ -121,10 +126,10 @@ def test_provider_factory_options_defaults() -> None:
     """ProviderFactoryOptions has sensible defaults."""
     options = ProviderFactoryOptions()
 
-    assert options.graph_backend is None
-    assert options.graph_options is None
-    assert options.max_functions is None
-    assert options.language is None
+    expect_true(options.graph_backend is None)
+    expect_true(options.graph_options is None)
+    expect_true(options.max_functions is None)
+    expect_true(options.language is None)
 
 
 def test_provider_factory_options_custom() -> None:
@@ -141,18 +146,18 @@ def test_provider_factory_options_custom() -> None:
         language=lang,
     )
 
-    assert options.graph_backend is backend_config
-    assert options.graph_options is graph_opts
-    assert options.max_functions == max_funcs
-    assert options.language == lang
+    expect_true(options.graph_backend is backend_config)
+    expect_true(options.graph_options is graph_opts)
+    expect_equal(options.max_functions, max_funcs)
+    expect_equal(options.language, lang)
 
 
 def test_provider_factory_init(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
     """ProviderFactory initializes with gateway and snapshot."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    assert factory.gateway is test_gateway
-    assert factory.snapshot is test_snapshot
+    expect_true(factory.gateway is test_gateway)
+    expect_true(factory.snapshot is test_snapshot)
 
 
 def test_provider_factory_with_options(
@@ -163,8 +168,8 @@ def test_provider_factory_with_options(
 
     factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
-    assert factory.options.max_functions == MAX_FUNCTIONS_TEST_VALUE
-    assert factory.options.language == "python"
+    expect_equal(factory.options.max_functions, MAX_FUNCTIONS_TEST_VALUE)
+    expect_equal(factory.options.language, "python")
 
 
 def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -173,13 +178,13 @@ def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: Sn
 
     registry = factory.create_registry()
 
-    assert isinstance(registry, ResourceRegistry)
-    assert registry.has(GraphProvider)
-    assert registry.has(CatalogProvider)
+    expect_is_instance(registry, ResourceRegistry)
+    expect_true(registry.has(GraphProvider))
+    expect_true(registry.has(CatalogProvider))
     # Default excludes AST, features, module map
-    assert not registry.has(AstProvider)
-    assert not registry.has(FeaturesProvider)
-    assert not registry.has(ModuleMapProvider)
+    expect_true(not registry.has(AstProvider))
+    expect_true(not registry.has(FeaturesProvider))
+    expect_true(not registry.has(ModuleMapProvider))
 
 
 def test_create_registry_no_graphs(
@@ -190,8 +195,8 @@ def test_create_registry_no_graphs(
 
     registry = factory.create_registry(include_graphs=False)
 
-    assert not registry.has(GraphProvider)
-    assert registry.has(CatalogProvider)
+    expect_true(not registry.has(GraphProvider))
+    expect_true(registry.has(CatalogProvider))
 
 
 def test_create_registry_no_catalog(
@@ -202,8 +207,8 @@ def test_create_registry_no_catalog(
 
     registry = factory.create_registry(include_catalog=False)
 
-    assert registry.has(GraphProvider)
-    assert not registry.has(CatalogProvider)
+    expect_true(registry.has(GraphProvider))
+    expect_true(not registry.has(CatalogProvider))
 
 
 def test_create_registry_with_asts(
@@ -214,7 +219,7 @@ def test_create_registry_with_asts(
 
     registry = factory.create_registry(include_asts=True)
 
-    assert registry.has(AstProvider)
+    expect_true(registry.has(AstProvider))
 
 
 def test_create_registry_with_features(
@@ -225,7 +230,7 @@ def test_create_registry_with_features(
 
     registry = factory.create_registry(include_features=True)
 
-    assert registry.has(FeaturesProvider)
+    expect_true(registry.has(FeaturesProvider))
 
 
 def test_create_registry_with_module_map(
@@ -236,7 +241,7 @@ def test_create_registry_with_module_map(
 
     registry = factory.create_registry(include_module_map=True)
 
-    assert registry.has(ModuleMapProvider)
+    expect_true(registry.has(ModuleMapProvider))
 
 
 def test_create_registry_all_providers(
@@ -253,11 +258,11 @@ def test_create_registry_all_providers(
         include_module_map=True,
     )
 
-    assert registry.has(GraphProvider)
-    assert registry.has(CatalogProvider)
-    assert registry.has(AstProvider)
-    assert registry.has(FeaturesProvider)
-    assert registry.has(ModuleMapProvider)
+    expect_true(registry.has(GraphProvider))
+    expect_true(registry.has(CatalogProvider))
+    expect_true(registry.has(AstProvider))
+    expect_true(registry.has(FeaturesProvider))
+    expect_true(registry.has(ModuleMapProvider))
 
 
 def test_function_catalog_service_module_lookup() -> None:
@@ -265,8 +270,8 @@ def test_function_catalog_service_module_lookup() -> None:
     catalog = FunctionCatalog(functions=[], module_by_path={"src/a.py": "src.a"})
     provider = FunctionCatalogService(catalog)
 
-    assert provider.module_for_path("src/a.py") == "src.a"
-    assert provider.module_for_path("missing.py") is None
+    expect_equal(provider.module_for_path("src/a.py"), "src.a")
+    expect_true(provider.module_for_path("missing.py") is None)
 
 
 def test_make_catalog_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -275,7 +280,7 @@ def test_make_catalog_provider(test_gateway: StorageGateway, test_snapshot: Snap
 
     provider = factory.make_catalog_provider()
 
-    assert isinstance(provider, CatalogProvider)
+    expect_is_instance(provider, CatalogProvider)
 
 
 def test_make_catalog_provider_caches(
@@ -287,7 +292,7 @@ def test_make_catalog_provider_caches(
     provider1 = factory.make_catalog_provider()
     provider2 = factory.make_catalog_provider()
 
-    assert provider1 is provider2
+    expect_true(provider1 is provider2)
 
 
 def test_make_catalog_provider_with_catalog(
@@ -300,7 +305,7 @@ def test_make_catalog_provider_with_catalog(
     provider = factory.make_catalog_provider(catalog=catalog_obj)
 
     # Provider wraps the provided catalog
-    assert isinstance(provider, CatalogProvider)
+    expect_is_instance(provider, CatalogProvider)
 
 
 def test_make_graph_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -313,7 +318,7 @@ def test_make_graph_provider(test_gateway: StorageGateway, test_snapshot: Snapsh
 
     provider = factory.make_graph_provider()
 
-    assert isinstance(provider, GraphProvider)
+    expect_is_instance(provider, GraphProvider)
 
 
 def test_make_graph_provider_caches(
@@ -329,7 +334,7 @@ def test_make_graph_provider_caches(
     provider1 = factory.make_graph_provider()
     provider2 = factory.make_graph_provider()
 
-    assert provider1 is provider2
+    expect_true(provider1 is provider2)
 
 
 def test_make_graph_provider_with_runtime(
@@ -346,10 +351,10 @@ def test_make_graph_provider_with_runtime(
     provider = factory.make_graph_provider(runtime=runtime)
 
     # Provider wraps the provided runtime
-    assert isinstance(provider, GraphProvider)
+    expect_is_instance(provider, GraphProvider)
     # Does not cache when runtime is provided
     provider2 = factory.make_graph_provider()
-    assert provider is not provider2
+    expect_true(provider is not provider2)
 
 
 def test_make_graph_provider_with_options(
@@ -362,7 +367,7 @@ def test_make_graph_provider_with_options(
 
     provider = factory.make_graph_provider(options=custom_options)
 
-    assert isinstance(provider, GraphProvider)
+    expect_is_instance(provider, GraphProvider)
 
 
 def test_make_graph_provider_with_backend(
@@ -375,7 +380,7 @@ def test_make_graph_provider_with_backend(
 
     provider = factory.make_graph_provider()
 
-    assert isinstance(provider, GraphProvider)
+    expect_is_instance(provider, GraphProvider)
 
 
 def test_make_ast_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -384,7 +389,7 @@ def test_make_ast_provider(test_gateway: StorageGateway, test_snapshot: Snapshot
 
     provider = factory.make_ast_provider()
 
-    assert isinstance(provider, AstProvider)
+    expect_is_instance(provider, AstProvider)
 
 
 def test_make_ast_provider_with_max_functions(
@@ -395,7 +400,7 @@ def test_make_ast_provider_with_max_functions(
 
     provider = factory.make_ast_provider(max_functions=50)
 
-    assert isinstance(provider, AstProvider)
+    expect_is_instance(provider, AstProvider)
 
 
 def test_make_ast_provider_uses_factory_option(
@@ -407,7 +412,7 @@ def test_make_ast_provider_uses_factory_option(
 
     provider = factory.make_ast_provider()
 
-    assert isinstance(provider, AstProvider)
+    expect_is_instance(provider, AstProvider)
 
 
 def test_make_features_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -416,7 +421,7 @@ def test_make_features_provider(test_gateway: StorageGateway, test_snapshot: Sna
 
     provider = factory.make_features_provider()
 
-    assert isinstance(provider, FeaturesProvider)
+    expect_is_instance(provider, FeaturesProvider)
 
 
 def test_make_features_provider_with_max_functions(
@@ -427,7 +432,7 @@ def test_make_features_provider_with_max_functions(
 
     provider = factory.make_features_provider(max_functions=75)
 
-    assert isinstance(provider, FeaturesProvider)
+    expect_is_instance(provider, FeaturesProvider)
 
 
 def test_make_module_map_provider(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -436,7 +441,7 @@ def test_make_module_map_provider(test_gateway: StorageGateway, test_snapshot: S
 
     provider = factory.make_module_map_provider()
 
-    assert isinstance(provider, ModuleMapProvider)
+    expect_is_instance(provider, ModuleMapProvider)
 
 
 def test_make_module_map_provider_with_language(
@@ -447,7 +452,7 @@ def test_make_module_map_provider_with_language(
 
     provider = factory.make_module_map_provider(language="python")
 
-    assert isinstance(provider, ModuleMapProvider)
+    expect_is_instance(provider, ModuleMapProvider)
 
 
 def test_make_module_map_provider_uses_factory_option(
@@ -459,7 +464,7 @@ def test_make_module_map_provider_uses_factory_option(
 
     provider = factory.make_module_map_provider()
 
-    assert isinstance(provider, ModuleMapProvider)
+    expect_is_instance(provider, ModuleMapProvider)
 
 
 def test_clear_cache(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -> None:
@@ -477,5 +482,5 @@ def test_clear_cache(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -
     catalog2 = factory.make_catalog_provider()
     graphs2 = factory.make_graph_provider()
 
-    assert catalog1 is not catalog2
-    assert graphs1 is not graphs2
+    expect_true(catalog1 is not catalog2)
+    expect_true(graphs1 is not graphs2)

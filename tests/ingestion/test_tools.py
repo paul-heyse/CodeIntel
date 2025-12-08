@@ -63,6 +63,13 @@ from codeintel.ingestion.ports.tools import (
 from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
 from tests._helpers.orchestration.tooling import (
     ToolingOutputs,
@@ -223,9 +230,9 @@ def test_pyright_plugin_not_found_downgrades_to_not_found_status() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path()))
 
-    assert result.status == ToolStatus.NOT_FOUND
-    assert result.run is None
-    assert isinstance(result.error, ToolNotFoundError)
+    expect_equal(result.status, ToolStatus.NOT_FOUND)
+    expect_is_none(result.run)
+    expect_is_instance(result.error, ToolNotFoundError)
 
 
 def test_pyright_plugin_successful_run_returns_ok_status() -> None:
@@ -246,10 +253,10 @@ def test_pyright_plugin_successful_run_returns_ok_status() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path()))
 
-    assert result.status == ToolStatus.OK
-    assert result.ok is True
-    assert result.run == run
-    assert result.error is None
+    expect_equal(result.status, ToolStatus.OK)
+    expect_true(result.ok)
+    expect_equal(result.run, run)
+    expect_is_none(result.error)
 
 
 def test_default_registry_contains_expected_plugins() -> None:
@@ -270,8 +277,11 @@ def test_default_registry_contains_expected_plugins() -> None:
 
     expected_plugins = ("pyright", "pyrefly", "ruff", "coverage", "pytest", "scip")
     for plugin_name in expected_plugins:
-        assert plugin_name in names, f"Expected plugin {plugin_name} in registry, got {names}"
-    assert len(names) >= PYRIGHT_PLUGINS_COUNT
+        expect_true(
+            plugin_name in names,
+            message=f"Expected plugin {plugin_name} in registry, got {names}",
+        )
+    expect_true(len(names) >= PYRIGHT_PLUGINS_COUNT)
 
 
 # =============================================================================
@@ -282,16 +292,18 @@ def test_default_registry_contains_expected_plugins() -> None:
 def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyright diagnostics per file."""
     errors = tooling_outputs.pyright_errors
-    assert errors.get("pkg/mod.py", 0) >= 1, (
-        f"Expected pyright to report errors for pkg/mod.py, got {errors}"
+    expect_true(
+        errors.get("pkg/mod.py", 0) >= 1,
+        message=f"Expected pyright to report errors for pkg/mod.py, got {errors}",
     )
 
 
 def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyrefly diagnostics per file."""
     errors = tooling_outputs.pyrefly_errors
-    assert errors.get("pkg/mod.py", 0) >= 1, (
-        f"Expected pyrefly to report errors for pkg/mod.py, got {errors}"
+    expect_true(
+        errors.get("pkg/mod.py", 0) >= 1,
+        message=f"Expected pyrefly to report errors for pkg/mod.py, got {errors}",
     )
 
 
@@ -299,9 +311,14 @@ def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOut
     """ToolService normalizes coverage.json payloads."""
     reports = {report.rel_path: report for report in tooling_outputs.coverage_reports}
     report = reports.get("pkg/mod.py")
-    assert report is not None, f"Coverage report missing for pkg/mod.py: {reports}"
-    assert report.executed_lines, "Expected executed_lines to be populated"
-    assert not report.missing_lines, f"Expected no missing lines, got {report.missing_lines}"
+    expect_is_not_none(report)
+    if report is None:
+        return
+    expect_true(report.executed_lines, message="Expected executed_lines to be populated")
+    expect_true(
+        not report.missing_lines,
+        message=f"Expected no missing lines, got {report.missing_lines}",
+    )
 
 
 # =============================================================================
@@ -311,16 +328,16 @@ def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOut
 
 def test_tool_status_enum_values() -> None:
     """ToolStatus should have expected enum values."""
-    assert ToolStatus.OK.value == "ok"
-    assert ToolStatus.NOT_FOUND.value == "not_found"
-    assert ToolStatus.FAILED.value == "failed"
-    assert ToolStatus.TIMEOUT.value == "timeout"
+    expect_true(ToolStatus.OK.value == "ok")
+    expect_true(ToolStatus.NOT_FOUND.value == "not_found")
+    expect_true(ToolStatus.FAILED.value == "failed")
+    expect_true(ToolStatus.TIMEOUT.value == "timeout")
 
 
 def test_tool_status_enum_comparison() -> None:
     """ToolStatus values should be comparable."""
-    assert ToolStatus.OK == ToolStatus.OK
-    assert ToolStatus.OK != ToolStatus.FAILED
+    expect_true(ToolStatus.OK == ToolStatus.OK)
+    expect_true(ToolStatus.OK != ToolStatus.FAILED)
 
 
 # =============================================================================
@@ -339,12 +356,12 @@ def test_diagnostic_entry_attributes() -> None:
         message="Undefined variable",
     )
 
-    assert entry.path == "src/module.py"
-    assert entry.line == LINE_10
-    assert entry.column == COLUMN_5
-    assert entry.severity == "error"
-    assert entry.code == "E001"
-    assert entry.message == "Undefined variable"
+    expect_true(entry.path == "src/module.py")
+    expect_true(entry.line == LINE_10)
+    expect_true(entry.column == COLUMN_5)
+    expect_true(entry.severity == "error")
+    expect_true(entry.code == "E001")
+    expect_true(entry.message == "Undefined variable")
 
 
 # =============================================================================
@@ -360,10 +377,10 @@ def test_diagnostic_result_ok_status() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == ToolStatus.OK
-    assert result.diagnostics == []
-    assert result.error is None
-    assert result.duration_s == DURATION_1_5
+    expect_true(result.status == ToolStatus.OK)
+    expect_true(result.diagnostics == [])
+    expect_true(result.error is None)
+    expect_true(result.duration_s == DURATION_1_5)
 
 
 def test_diagnostic_result_with_diagnostics() -> None:
@@ -380,7 +397,7 @@ def test_diagnostic_result_with_diagnostics() -> None:
         diagnostics=[entry1, entry2],
     )
 
-    assert len(result.diagnostics) == EXPECTED_DIAG_COUNT
+    expect_true(len(result.diagnostics) == EXPECTED_DIAG_COUNT)
 
 
 def test_diagnostic_result_errors_by_path() -> None:
@@ -395,9 +412,9 @@ def test_diagnostic_result_errors_by_path() -> None:
     result = DiagnosticResult(status=ToolStatus.OK, diagnostics=entries)
     errors = result.errors_by_path()
 
-    assert errors["a.py"] == EXPECTED_ERROR_COUNT
-    assert errors["b.py"] == 1
-    assert "c.py" not in errors
+    expect_true(errors["a.py"] == EXPECTED_ERROR_COUNT)
+    expect_true(errors["b.py"] == 1)
+    expect_true("c.py" not in errors)
 
 
 def test_diagnostic_result_failed_status() -> None:
@@ -407,8 +424,8 @@ def test_diagnostic_result_failed_status() -> None:
         error="Tool crashed",
     )
 
-    assert result.status == ToolStatus.FAILED
-    assert result.error == "Tool crashed"
+    expect_true(result.status == ToolStatus.FAILED)
+    expect_true(result.error == "Tool crashed")
 
 
 # =============================================================================
@@ -426,10 +443,10 @@ def test_coverage_file_data_attributes() -> None:
         excluded_lines=frozenset({10}),
     )
 
-    assert data.rel_path == "module.py"
-    assert 1 in data.executed_lines
-    assert missing_line in data.missing_lines
-    assert data.excluded_lines == frozenset({10})
+    expect_true(data.rel_path == "module.py")
+    expect_true(1 in data.executed_lines)
+    expect_true(missing_line in data.missing_lines)
+    expect_true(data.excluded_lines == frozenset({10}))
 
 
 def test_coverage_file_data_default_excluded_lines() -> None:
@@ -440,7 +457,7 @@ def test_coverage_file_data_default_excluded_lines() -> None:
         missing_lines=frozenset(),
     )
 
-    assert data.excluded_lines == frozenset()
+    expect_true(data.excluded_lines == frozenset())
 
 
 # =============================================================================
@@ -456,9 +473,9 @@ def test_coverage_result_ok_status() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == ToolStatus.OK
-    assert result.files == []
-    assert result.duration_s == DURATION_1_5
+    expect_true(result.status == ToolStatus.OK)
+    expect_true(result.files == [])
+    expect_true(result.duration_s == DURATION_1_5)
 
 
 def test_coverage_result_with_files() -> None:
@@ -479,8 +496,8 @@ def test_coverage_result_with_files() -> None:
         files=[file1, file2],
     )
 
-    assert len(result.files) == EXPECTED_FILE_COUNT
-    assert result.files[0].rel_path == "a.py"
+    expect_true(len(result.files) == EXPECTED_FILE_COUNT)
+    expect_true(result.files[0].rel_path == "a.py")
 
 
 # =============================================================================
@@ -495,15 +512,15 @@ def test_scip_symbol_attributes() -> None:
         documentation="A test class.",
     )
 
-    assert "MyClass" in symbol.symbol
-    assert symbol.documentation == "A test class."
+    expect_true("MyClass" in symbol.symbol)
+    expect_true(symbol.documentation == "A test class.")
 
 
 def test_scip_symbol_defaults() -> None:
     """ScipSymbol should have sensible defaults."""
     symbol = ScipSymbol(symbol="test")
 
-    assert symbol.documentation is None
+    expect_true(symbol.documentation is None)
 
 
 # =============================================================================
@@ -522,9 +539,9 @@ def test_port_scip_occurrence_attributes() -> None:
         symbol_roles=1,  # Definition role
     )
 
-    assert "func" in occurrence.symbol
-    assert occurrence.range_start_line == LINE_10
-    assert occurrence.range_start_col == COLUMN_5
+    expect_true("func" in occurrence.symbol)
+    expect_true(occurrence.range_start_line == LINE_10)
+    expect_true(occurrence.range_start_col == COLUMN_5)
 
 
 def test_port_scip_occurrence_required_fields_only() -> None:
@@ -538,7 +555,7 @@ def test_port_scip_occurrence_required_fields_only() -> None:
         symbol_roles=0,
     )
 
-    assert occurrence.symbol == "test"
+    expect_true(occurrence.symbol == "test")
 
 
 # =============================================================================
@@ -554,17 +571,17 @@ def test_port_scip_document_attributes() -> None:
         occurrences=[PortScipOccurrence("sym1", 1, 0, 1, COLUMN_5, 0)],
     )
 
-    assert doc.relative_path == "src/module.py"
-    assert len(doc.symbols) == 1
-    assert len(doc.occurrences) == 1
+    expect_true(doc.relative_path == "src/module.py")
+    expect_true(len(doc.symbols) == 1)
+    expect_true(len(doc.occurrences) == 1)
 
 
 def test_port_scip_document_defaults() -> None:
     """PortScipDocument should have sensible defaults."""
     doc = PortScipDocument(relative_path="test.py", symbols=[], occurrences=[])
 
-    assert doc.occurrences == []
-    assert doc.symbols == []
+    expect_true(doc.occurrences == [])
+    expect_true(doc.symbols == [])
 
 
 # =============================================================================
@@ -580,9 +597,9 @@ def test_scip_result_ok_status() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == ToolStatus.OK
-    assert result.documents == []
-    assert result.duration_s == DURATION_1_5
+    expect_true(result.status == ToolStatus.OK)
+    expect_true(result.documents == [])
+    expect_true(result.duration_s == DURATION_1_5)
 
 
 def test_scip_result_with_documents() -> None:
@@ -594,7 +611,7 @@ def test_scip_result_with_documents() -> None:
         documents=[doc],
     )
 
-    assert len(result.documents) == 1
+    expect_true(len(result.documents) == 1)
 
 
 # =============================================================================
@@ -610,9 +627,9 @@ def test_test_case_attributes() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert case.nodeid == "tests/test_mod.py::test_example"
-    assert case.outcome == "passed"
-    assert case.duration_s == DURATION_1_5
+    expect_true(case.nodeid == "tests/test_mod.py::test_example")
+    expect_true(case.outcome == "passed")
+    expect_true(case.duration_s == DURATION_1_5)
 
 
 def test_test_case_with_failure() -> None:
@@ -624,8 +641,8 @@ def test_test_case_with_failure() -> None:
         longrepr="AssertionError: Expected 1, got 2",
     )
 
-    assert case.outcome == "failed"
-    assert "AssertionError" in (case.longrepr or "")
+    expect_true(case.outcome == "failed")
+    expect_true("AssertionError" in (case.longrepr or ""))
 
 
 def test_test_case_defaults() -> None:
@@ -635,8 +652,8 @@ def test_test_case_defaults() -> None:
         outcome="passed",
     )
 
-    assert case.duration_s == 0.0
-    assert case.longrepr is None
+    expect_true(case.duration_s == 0.0)
+    expect_true(case.longrepr is None)
 
 
 # =============================================================================
@@ -652,9 +669,9 @@ def test_test_result_ok_status() -> None:
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == ToolStatus.OK
-    assert result.tests == []
-    assert result.duration_s == DURATION_1_5
+    expect_true(result.status == ToolStatus.OK)
+    expect_true(result.tests == [])
+    expect_true(result.duration_s == DURATION_1_5)
 
 
 def test_test_result_with_tests() -> None:
@@ -667,7 +684,7 @@ def test_test_result_with_tests() -> None:
 
     result = TestResult(status=ToolStatus.OK, tests=tests)
 
-    assert len(result.tests) == EXPECTED_TEST_COUNT
+    expect_true(len(result.tests) == EXPECTED_TEST_COUNT)
 
 
 def test_test_result_passed_count() -> None:
@@ -686,7 +703,7 @@ def test_test_result_passed_count() -> None:
         skipped=0,
     )
 
-    assert result.passed == EXPECTED_ERROR_COUNT
+    expect_true(result.passed == EXPECTED_ERROR_COUNT)
 
 
 def test_test_result_failed_count() -> None:
@@ -705,7 +722,7 @@ def test_test_result_failed_count() -> None:
         skipped=0,
     )
 
-    assert result.failed == EXPECTED_ERROR_COUNT
+    expect_true(result.failed == EXPECTED_ERROR_COUNT)
 
 
 # =============================================================================
@@ -728,9 +745,9 @@ def test_tool_result_diagnostic_workflow() -> None:
     )
 
     # Verify structure
-    assert diag_result.status == ToolStatus.OK
-    assert len(diag_result.diagnostics) == 1
-    assert diag_result.errors_by_path() == {"src/a.py": 1}
+    expect_true(diag_result.status == ToolStatus.OK)
+    expect_true(len(diag_result.diagnostics) == 1)
+    expect_true(diag_result.errors_by_path() == {"src/a.py": 1})
 
 
 # =============================================================================
@@ -748,7 +765,7 @@ def test_tool_service_get_plugin_returns_registered_plugin() -> None:
     )
     service = ToolService(runner)
     plugin = service.get_plugin("pyright")
-    assert plugin is not None
+    expect_true(plugin is not None)
 
 
 def test_tool_service_run_plugin_raises_key_error_for_unknown() -> None:
@@ -779,7 +796,7 @@ def test_tool_service_run_plugin_success(tmp_path: Path) -> None:
     runner = PresetRunner(run)
     service = ToolService(runner)
     result = asyncio.run(service.run_plugin("pyright", repo_root=tmp_path))
-    assert result.status == ToolStatus.OK
+    expect_true(result.status == ToolStatus.OK)
 
 
 def test_tool_service_run_pyright_not_found(tmp_path: Path) -> None:
@@ -789,7 +806,7 @@ def test_tool_service_run_pyright_not_found(tmp_path: Path) -> None:
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
     errors = asyncio.run(service.run_pyright(tmp_path))
-    assert errors == {}
+    expect_true(errors == {})
 
 
 def test_tool_service_run_pyright_success(tmp_path: Path) -> None:
@@ -809,7 +826,7 @@ def test_tool_service_run_pyright_success(tmp_path: Path) -> None:
     service = ToolService(runner)
     errors = asyncio.run(service.run_pyright(tmp_path))
     # Should return mapping of errors per path
-    assert isinstance(errors, dict)
+    expect_true(isinstance(errors, dict))
 
 
 def test_tool_service_run_pyrefly_not_found(tmp_path: Path) -> None:
@@ -819,7 +836,7 @@ def test_tool_service_run_pyrefly_not_found(tmp_path: Path) -> None:
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
     errors = asyncio.run(service.run_pyrefly(tmp_path))
-    assert errors == {}
+    expect_true(errors == {})
 
 
 def test_tool_service_run_ruff_not_found(tmp_path: Path) -> None:
@@ -829,7 +846,7 @@ def test_tool_service_run_ruff_not_found(tmp_path: Path) -> None:
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
     errors = asyncio.run(service.run_ruff(tmp_path))
-    assert errors == {}
+    expect_true(errors == {})
 
 
 def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
@@ -839,7 +856,7 @@ def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
     report = asyncio.run(service.run_coverage_report(tmp_path))
-    assert report.files == ()
+    expect_true(report.files == ())
 
 
 def test_tool_service_get_test_report_returns_parsed() -> None:
@@ -859,7 +876,7 @@ def test_tool_service_get_test_report_returns_parsed() -> None:
         parsed=test_report,
     )
     extracted = ToolService.get_test_report(result)
-    assert extracted is test_report
+    expect_true(extracted is test_report)
 
 
 def test_tool_service_get_test_report_returns_empty_for_none() -> None:
@@ -872,8 +889,8 @@ def test_tool_service_get_test_report_returns_empty_for_none() -> None:
         parsed=None,
     )
     extracted = ToolService.get_test_report(result)
-    assert extracted.tests == ()
-    assert extracted.passed_count == 0
+    expect_true(extracted.tests == ())
+    expect_true(extracted.passed_count == 0)
 
 
 def test_tool_service_run_pytest_raises_not_found(tmp_path: Path) -> None:
@@ -903,7 +920,7 @@ def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
     runner = PresetRunner(run)
     service = ToolService(runner)
     executed = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
-    assert executed is False
+    expect_true(executed is False)
 
 
 def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
@@ -930,9 +947,9 @@ def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
 def test_file_diagnostic_count_attributes() -> None:
     """FileDiagnosticCount should store diagnostic counts."""
     count = FileDiagnosticCount(rel_path="mod.py", error_count=5, warning_count=3)
-    assert count.rel_path == "mod.py"
-    assert count.error_count == COLUMN_5
-    assert count.warning_count == EXPECTED_TEST_COUNT
+    expect_true(count.rel_path == "mod.py")
+    expect_true(count.error_count == COLUMN_5)
+    expect_true(count.warning_count == EXPECTED_TEST_COUNT)
 
 
 def test_diagnostic_report_from_error_counts() -> None:
@@ -941,10 +958,10 @@ def test_diagnostic_report_from_error_counts() -> None:
     warnings = {"a.py": 1}
     report = DiagnosticReport.from_error_counts("pyright", errors, warnings_by_file=warnings)
 
-    assert report.tool_name == "pyright"
-    assert report.total_errors == EXPECTED_TEST_COUNT
-    assert report.total_warnings == 1
-    assert "a.py" in report.files
+    expect_true(report.tool_name == "pyright")
+    expect_true(report.total_errors == EXPECTED_TEST_COUNT)
+    expect_true(report.total_warnings == 1)
+    expect_true("a.py" in report.files)
 
 
 def test_diagnostic_report_errors_by_path() -> None:
@@ -952,15 +969,15 @@ def test_diagnostic_report_errors_by_path() -> None:
     errors = {"x.py": 3}
     report = DiagnosticReport.from_error_counts("ruff", errors)
     result = report.errors_by_path()
-    assert result == {"x.py": 3}
+    expect_true(result == {"x.py": 3})
 
 
 def test_diagnostic_report_empty() -> None:
     """DiagnosticReport.empty should return empty report."""
     report = DiagnosticReport.empty("test_tool")
-    assert report.tool_name == "test_tool"
-    assert report.files == {}
-    assert report.total_errors == 0
+    expect_true(report.tool_name == "test_tool")
+    expect_true(report.files == {})
+    expect_true(report.total_errors == 0)
 
 
 def test_coverage_file_summary_properties() -> None:
@@ -970,8 +987,8 @@ def test_coverage_file_summary_properties() -> None:
         executed_lines=frozenset({1, 2, 3}),
         missing_lines=frozenset({4, 5}),
     )
-    assert summary.total_executable == COLUMN_5
-    assert summary.coverage_ratio == EXPECTED_COVERAGE_RATIO
+    expect_true(summary.total_executable == COLUMN_5)
+    expect_true(summary.coverage_ratio == EXPECTED_COVERAGE_RATIO)
 
 
 def test_coverage_file_summary_zero_lines() -> None:
@@ -981,7 +998,7 @@ def test_coverage_file_summary_zero_lines() -> None:
         executed_lines=frozenset(),
         missing_lines=frozenset(),
     )
-    assert summary.coverage_ratio == 1.0
+    expect_true(summary.coverage_ratio == 1.0)
 
 
 def test_coverage_report_from_file_reports() -> None:
@@ -991,16 +1008,16 @@ def test_coverage_report_from_file_reports() -> None:
         ("b.py", {1}, set()),
     ]
     result = CoverageReport.from_file_reports(reports)
-    assert len(result.files) == EXPECTED_COUNT_2
-    assert result.total_executed == EXPECTED_TEST_COUNT
-    assert result.total_missing == 1
+    expect_true(len(result.files) == EXPECTED_COUNT_2)
+    expect_true(result.total_executed == EXPECTED_TEST_COUNT)
+    expect_true(result.total_missing == 1)
 
 
 def test_coverage_report_empty() -> None:
     """CoverageReport.empty should return empty report."""
     report = CoverageReport.empty()
-    assert report.files == ()
-    assert report.total_executed == 0
+    expect_true(report.files == ())
+    expect_true(report.total_executed == 0)
 
 
 def test_coverage_report_by_path() -> None:
@@ -1008,40 +1025,40 @@ def test_coverage_report_by_path() -> None:
     reports = [("mod.py", {1, 2}, set())]
     result = CoverageReport.from_file_reports(reports)
     by_path = result.by_path()
-    assert "mod.py" in by_path
+    expect_true("mod.py" in by_path)
 
 
 def test_parse_test_duration_valid() -> None:
     """parse_test_duration should extract duration from call dict."""
     entry = {"call": {"duration": 1.5}}
-    assert parse_test_duration(entry) == DURATION_1_5
+    expect_true(parse_test_duration(entry) == DURATION_1_5)
 
 
 def test_parse_test_duration_missing() -> None:
     """parse_test_duration should return 0.0 for missing data."""
-    assert parse_test_duration({}) == 0.0
-    assert parse_test_duration({"call": {}}) == 0.0
+    expect_true(parse_test_duration({}) == 0.0)
+    expect_true(parse_test_duration({"call": {}}) == 0.0)
 
 
 def test_parse_test_markers_dict() -> None:
     """parse_test_markers should extract from keywords dict."""
     entry = {"keywords": {"slow": True, "fast": False, "integration": True}}
     markers = parse_test_markers(entry)
-    assert "slow" in markers
-    assert "integration" in markers
-    assert "fast" not in markers
+    expect_true("slow" in markers)
+    expect_true("integration" in markers)
+    expect_true("fast" not in markers)
 
 
 def test_parse_test_markers_list() -> None:
     """parse_test_markers should handle keywords as list."""
     entry = {"keywords": ["slow", "integration"]}
     markers = parse_test_markers(entry)
-    assert markers == ("integration", "slow")
+    expect_true(markers == ("integration", "slow"))
 
 
 def test_parse_test_markers_empty() -> None:
     """parse_test_markers should return empty for missing keywords."""
-    assert parse_test_markers({}) == ()
+    expect_true(parse_test_markers({}) == ())
 
 
 def test_test_report_from_test_entries() -> None:
@@ -1054,11 +1071,11 @@ def test_test_report_from_test_entries() -> None:
     ]
     report = TestReport.from_test_entries(entries)
     expected_tests = 4
-    assert len(report.tests) == expected_tests
-    assert report.passed_count == 1
-    assert report.failed_count == 1
-    assert report.skipped_count == 1
-    assert report.error_count == 1
+    expect_true(len(report.tests) == expected_tests)
+    expect_true(report.passed_count == 1)
+    expect_true(report.failed_count == 1)
+    expect_true(report.skipped_count == 1)
+    expect_true(report.error_count == 1)
 
 
 def test_test_report_from_entries_skips_empty_nodeid() -> None:
@@ -1069,72 +1086,74 @@ def test_test_report_from_entries_skips_empty_nodeid() -> None:
         {"nodeid": "test::valid", "outcome": "passed"},
     ]
     report = TestReport.from_test_entries(entries)
-    assert len(report.tests) == 1
+    expect_true(len(report.tests) == 1)
 
 
 def test_test_report_empty() -> None:
     """TestReport.empty should return empty report."""
     report = TestReport.empty()
-    assert report.tests == ()
-    assert report.passed_count == 0
+    expect_true(report.tests == ())
+    expect_true(report.passed_count == 0)
 
 
 def test_results_scip_occurrence_attributes() -> None:
     """ScipOccurrence from results.py should store symbol and range."""
     occ = ScipOccurrence(symbol="pkg.mod#func", range_=(10, 0, 10, 5), is_definition=True)
-    assert occ.symbol == "pkg.mod#func"
-    assert occ.range_ == (LINE_10, 0, LINE_10, COLUMN_5)
-    assert occ.is_definition is True
+    expect_true(occ.symbol == "pkg.mod#func")
+    expect_true(occ.range_ == (LINE_10, 0, LINE_10, COLUMN_5))
+    expect_true(occ.is_definition is True)
 
 
 def test_results_scip_document_attributes() -> None:
     """ScipDocument from results.py should store path and occurrences."""
     occ = ScipOccurrence(symbol="sym", range_=(1, 0, 1, 3))
     doc = ScipDocument(relative_path="src/mod.py", occurrences=(occ,))
-    assert doc.relative_path == "src/mod.py"
-    assert len(doc.occurrences) == 1
+    expect_true(doc.relative_path == "src/mod.py")
+    expect_true(len(doc.occurrences) == 1)
 
 
 def test_parse_scip_range_three_elements() -> None:
     """parse_scip_range should handle 3-element ranges (single line)."""
     result = parse_scip_range([10, 5, 15])
-    assert result == (LINE_10, COLUMN_5, LINE_10, COLUMN_15)
+    expect_true(result == (LINE_10, COLUMN_5, LINE_10, COLUMN_15))
 
 
 def test_parse_scip_range_four_elements() -> None:
     """parse_scip_range should handle 4-element ranges."""
     result = parse_scip_range([10, 5, 12, 8])
     expected = (10, 5, 12, 8)
-    assert result == expected
+    expect_true(result == expected)
 
 
 def test_parse_scip_range_invalid() -> None:
     """parse_scip_range should return None for invalid ranges."""
-    assert parse_scip_range([1]) is None
-    assert parse_scip_range([1, 2]) is None
-    assert parse_scip_range([]) is None
+    expect_true(parse_scip_range([1]) is None)
+    expect_true(parse_scip_range([1, 2]) is None)
+    expect_true(parse_scip_range([]) is None)
 
 
 def test_parse_scip_occurrence_valid() -> None:
     """parse_scip_occurrence should parse valid occurrence."""
     occ = {"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}
     result = parse_scip_occurrence(occ)
-    assert result is not None
+    expect_is_not_none(result)
+    if result is None:
+        return
     parsed, is_def = result
-    assert parsed.symbol == "pkg#func"
-    assert is_def is True
+    expect_true(parsed.symbol == "pkg#func")
+    expect_true(is_def is True)
 
 
 def test_parse_scip_occurrence_invalid_symbol() -> None:
     """parse_scip_occurrence should return None for missing symbol."""
-    assert parse_scip_occurrence({"range": [1, 0, 5]}) is None
-    assert parse_scip_occurrence({"symbol": 123, "range": [1, 0, 5]}) is None
+    expect_true(parse_scip_occurrence({"range": [1, 0, 5]}) is None)
+    expect_true(parse_scip_occurrence({"symbol": 123, "range": [1, 0, 5]}) is None)
 
 
 def test_parse_scip_occurrence_invalid_range() -> None:
     """parse_scip_occurrence should return None for invalid range."""
-    assert parse_scip_occurrence({"symbol": "s", "range": [1]}) is None
-    assert parse_scip_occurrence({"symbol": "s", "range": "bad"}) is None
+    expect_true(parse_scip_occurrence({"symbol": "s", "range": [1]}) is None)
+    expect_true(parse_scip_occurrence({"symbol": "s", "range": "bad"}) is None)
 
 
 def test_scip_index_result_from_json_documents() -> None:
@@ -1149,9 +1168,9 @@ def test_scip_index_result_from_json_documents() -> None:
         },
     ]
     result = ScipIndexResult.from_json_documents(docs)
-    assert len(result.documents) == 1
-    assert result.definition_count == 1
-    assert result.reference_count == 1
+    expect_true(len(result.documents) == 1)
+    expect_true(result.definition_count == 1)
+    expect_true(result.reference_count == 1)
 
 
 def test_scip_index_result_skips_invalid_docs() -> None:
@@ -1162,14 +1181,14 @@ def test_scip_index_result_skips_invalid_docs() -> None:
         {"relative_path": "valid.py", "occurrences": []},
     ]
     result = ScipIndexResult.from_json_documents(docs)
-    assert len(result.documents) == 1
+    expect_true(len(result.documents) == 1)
 
 
 def test_scip_index_result_empty() -> None:
     """ScipIndexResult.empty should return empty result."""
     result = ScipIndexResult.empty()
-    assert result.documents == ()
-    assert result.definition_count == 0
+    expect_true(result.documents == ())
+    expect_true(result.definition_count == 0)
 
 
 # =============================================================================
@@ -1192,9 +1211,9 @@ def test_scip_plugin_not_found_during_scip_python() -> None:
         )
     )
 
-    assert result.status == ToolStatus.NOT_FOUND
-    assert result.run is None
-    assert isinstance(result.error, ToolNotFoundError)
+    expect_true(result.status == ToolStatus.NOT_FOUND)
+    expect_true(result.run is None)
+    expect_true(isinstance(result.error, ToolNotFoundError))
 
 
 def test_scip_plugin_type_error_on_missing_output_scip() -> None:
@@ -1282,9 +1301,9 @@ def test_pytest_plugin_not_found() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
-    assert result.status == ToolStatus.NOT_FOUND
-    assert result.run is None
-    assert isinstance(result.error, ToolNotFoundError)
+    expect_true(result.status == ToolStatus.NOT_FOUND)
+    expect_true(result.run is None)
+    expect_true(isinstance(result.error, ToolNotFoundError))
 
 
 def test_pytest_plugin_type_error_on_missing_json_report_path() -> None:
@@ -1310,8 +1329,8 @@ def test_pytest_plugin_execution_error() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
-    assert result.status == ToolStatus.FAILED
-    assert isinstance(result.error, ToolExecutionError)
+    expect_true(result.status == ToolStatus.FAILED)
+    expect_true(isinstance(result.error, ToolExecutionError))
 
 
 # =============================================================================
@@ -1348,7 +1367,7 @@ def test_tool_service_run_pyright_returns_errors_from_parsed_report(tmp_path: Pa
     errors = asyncio.run(service.run_pyright(tmp_path))
 
     # Should return mapping (may be empty if parsing differs)
-    assert isinstance(errors, dict)
+    expect_true(isinstance(errors, dict))
 
 
 def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
@@ -1369,7 +1388,7 @@ def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
     report = asyncio.run(service.run_coverage_report(tmp_path))
 
     # Should return a CoverageReport
-    assert isinstance(report, CoverageReport)
+    expect_true(isinstance(report, CoverageReport))
 
 
 def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
@@ -1393,7 +1412,7 @@ def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     executed = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
 
     # Since file exists beforehand, should return False (reused)
-    assert executed is False
+    expect_true(executed is False)
 
 
 def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
@@ -1449,4 +1468,4 @@ def test_tool_service_run_pyrefly_success(tmp_path: Path) -> None:
     errors = asyncio.run(service.run_pyrefly(tmp_path))
 
     # Should return dict of errors (may be empty)
-    assert isinstance(errors, dict)
+    expect_true(isinstance(errors, dict))

@@ -7,6 +7,14 @@ from datetime import UTC, datetime
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from tests._helpers import ProvisionedGateway
+from tests._helpers.assertions import (
+    expect_empty,
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+)
 
 
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:
@@ -20,7 +28,7 @@ def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> Non
     result = repo.resolve_function_goid(goid_h128=12345)
 
     expected_goid = 12345
-    assert result == expected_goid
+    expect_equal(result, expected_goid)
 
 
 def test_resolve_function_goid_returns_none_when_no_identifiers(
@@ -35,7 +43,7 @@ def test_resolve_function_goid_returns_none_when_no_identifiers(
 
     result = repo.resolve_function_goid()
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_get_function_summary_by_goid_returns_none_when_not_found(
@@ -50,7 +58,7 @@ def test_get_function_summary_by_goid_returns_none_when_not_found(
 
     result = repo.get_function_summary_by_goid(99999)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_list_function_summaries_for_file_returns_empty_when_no_match(
@@ -65,7 +73,7 @@ def test_list_function_summaries_for_file_returns_empty_when_no_match(
 
     result = repo.list_function_summaries_for_file("nonexistent.py")
 
-    assert result == []
+    expect_empty(result)
 
 
 def test_list_high_risk_functions_returns_empty_when_no_match(
@@ -80,7 +88,7 @@ def test_list_high_risk_functions_returns_empty_when_no_match(
 
     result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
 
-    assert result == []
+    expect_empty(result)
 
 
 def test_list_high_risk_functions_with_tested_only_filter(
@@ -141,11 +149,11 @@ def test_list_high_risk_functions_with_tested_only_filter(
     tested_only_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=True)
     all_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
 
-    assert len(tested_only_result) == 1
-    assert tested_only_result[0]["tested"] is True
+    expect_length(tested_only_result, 1)
+    expect_is_not_none(tested_only_result[0]["tested"])
 
     expected_all_count = 2
-    assert len(all_result) == expected_all_count
+    expect_length(all_result, expected_all_count)
 
 
 def test_get_function_profile_returns_none_when_not_found(
@@ -160,7 +168,7 @@ def test_get_function_profile_returns_none_when_not_found(
 
     result = repo.get_function_profile(99999)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_get_function_profile_returns_row(fresh_gateway: StorageGateway) -> None:
@@ -201,8 +209,9 @@ def test_get_function_profile_returns_row(fresh_gateway: StorageGateway) -> None
 
     result = repo.get_function_profile(1)
 
-    assert result is not None
-    assert result["qualname"] == "test_fn"
+    expect_is_not_none(result, message="Expected function profile row to exist.")
+    if result is not None:
+        expect_equal(result["qualname"], "test_fn")
 
 
 def test_get_function_architecture_returns_none_when_not_found(
@@ -217,7 +226,7 @@ def test_get_function_architecture_returns_none_when_not_found(
 
     result = repo.get_function_architecture(99999)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_list_function_goids_returns_empty_when_no_data(
@@ -232,7 +241,7 @@ def test_list_function_goids_returns_empty_when_no_data(
 
     result = repo.list_function_goids()
 
-    assert result == []
+    expect_empty(result)
 
 
 def test_function_repository_with_docs_export(
@@ -245,13 +254,13 @@ def test_function_repository_with_docs_export(
         commit=docs_export_gateway.commit,
     )
 
-    goid = repo.resolve_function_goid(urn="urn:foo")
-
-    assert goid is not None
+    goid = expect_is_not_none(repo.resolve_function_goid(urn="urn:foo"))
 
     summary = repo.get_function_summary_by_goid(goid)
-    assert summary is not None
-    assert summary["qualname"] == "pkg.foo:func"
+    expect_is_not_none(summary)
+    if summary is not None:
+        expect_equal(summary["qualname"], "pkg.foo:func")
 
     goids = repo.list_function_goids()
-    assert goid in goids
+    if goid is not None:
+        expect_in(goid, goids)

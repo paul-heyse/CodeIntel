@@ -13,6 +13,12 @@ from codeintel.ingestion.infrastructure.macros import (
     macro_exists,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 # =============================================================================
 # INGEST_MACRO_TABLES Tests
@@ -21,26 +27,26 @@ from codeintel.storage.gateway import StorageGateway
 
 def test_ingest_macro_tables_is_frozenset() -> None:
     """INGEST_MACRO_TABLES should be a frozenset."""
-    assert isinstance(INGEST_MACRO_TABLES, frozenset)
+    expect_is_instance(INGEST_MACRO_TABLES, frozenset)
 
 
 def test_ingest_macro_tables_contains_expected_tables() -> None:
     """INGEST_MACRO_TABLES should contain key ingestion tables."""
     # Core tables
-    assert "core.ast_nodes" in INGEST_MACRO_TABLES
-    assert "core.cst_nodes" in INGEST_MACRO_TABLES
-    assert "core.docstrings" in INGEST_MACRO_TABLES
-    assert "core.modules" in INGEST_MACRO_TABLES
-    assert "core.goids" in INGEST_MACRO_TABLES
+    expect_in("core.ast_nodes", INGEST_MACRO_TABLES)
+    expect_in("core.cst_nodes", INGEST_MACRO_TABLES)
+    expect_in("core.docstrings", INGEST_MACRO_TABLES)
+    expect_in("core.modules", INGEST_MACRO_TABLES)
+    expect_in("core.goids", INGEST_MACRO_TABLES)
 
     # Analytics tables
-    assert "analytics.coverage_lines" in INGEST_MACRO_TABLES
-    assert "analytics.function_metrics" in INGEST_MACRO_TABLES
-    assert "analytics.typedness" in INGEST_MACRO_TABLES
+    expect_in("analytics.coverage_lines", INGEST_MACRO_TABLES)
+    expect_in("analytics.function_metrics", INGEST_MACRO_TABLES)
+    expect_in("analytics.typedness", INGEST_MACRO_TABLES)
 
     # Graph tables
-    assert "graph.call_graph_edges" in INGEST_MACRO_TABLES
-    assert "graph.call_graph_nodes" in INGEST_MACRO_TABLES
+    expect_in("graph.call_graph_edges", INGEST_MACRO_TABLES)
+    expect_in("graph.call_graph_nodes", INGEST_MACRO_TABLES)
 
 
 EXPECTED_TABLE_KEY_PARTS = 2
@@ -50,17 +56,18 @@ def test_ingest_macro_tables_all_have_schema_prefix() -> None:
     """All entries in INGEST_MACRO_TABLES should have schema.table format."""
     for table_key in INGEST_MACRO_TABLES:
         parts = table_key.split(".")
-        assert len(parts) == EXPECTED_TABLE_KEY_PARTS, (
-            f"Table key '{table_key}' should have format 'schema.table'"
+        expect_true(
+            len(parts) == EXPECTED_TABLE_KEY_PARTS,
+            message=f"Table key '{table_key}' should have format 'schema.table'",
         )
         schema, table = parts
-        assert schema, f"Table key '{table_key}' has empty schema"
-        assert table, f"Table key '{table_key}' has empty table name"
+        expect_true(bool(schema), message=f"Table key '{table_key}' has empty schema")
+        expect_true(bool(table), message=f"Table key '{table_key}' has empty table name")
 
 
 def test_ingest_macro_tables_not_empty() -> None:
     """INGEST_MACRO_TABLES should not be empty."""
-    assert len(INGEST_MACRO_TABLES) > 0
+    expect_true(len(INGEST_MACRO_TABLES) > 0)
 
 
 # =============================================================================
@@ -78,7 +85,7 @@ def test_macro_exists_returns_true_for_existing_macro(
 
     # If macros are registered, this should return True
     # If not, the test verifies the function doesn't crash
-    assert isinstance(result, bool)
+    expect_is_instance(result, bool)
 
 
 def test_macro_exists_returns_false_for_nonexistent_macro(
@@ -87,7 +94,7 @@ def test_macro_exists_returns_false_for_nonexistent_macro(
     """macro_exists should return False for macros that don't exist."""
     result = macro_exists(fresh_gateway.con, "nonexistent.table_xyz")
 
-    assert result is False
+    expect_false(result)
 
 
 def test_macro_exists_handles_malformed_table_key(
@@ -108,7 +115,7 @@ def test_macro_exists_with_multiple_dots_in_table_key(
 
     # Function extracts "table.extra" as the table name and looks for
     # "ingest_table.extra" macro which won't exist
-    assert result is False
+    expect_false(result)
 
 
 def test_macro_exists_extracts_correct_macro_name(
@@ -126,7 +133,7 @@ def test_macro_exists_extracts_correct_macro_name(
 
     result = macro_exists(fresh_gateway.con, "any_schema.test_custom_table")
 
-    assert result is True
+    expect_true(result)
 
 
 def test_macro_exists_with_various_schemas(
@@ -140,9 +147,9 @@ def test_macro_exists_with_various_schemas(
     """)
 
     # Different schema prefixes should all work
-    assert macro_exists(fresh_gateway.con, "core.schema_test") is True
-    assert macro_exists(fresh_gateway.con, "analytics.schema_test") is True
-    assert macro_exists(fresh_gateway.con, "graph.schema_test") is True
+    expect_true(macro_exists(fresh_gateway.con, "core.schema_test"))
+    expect_true(macro_exists(fresh_gateway.con, "analytics.schema_test"))
+    expect_true(macro_exists(fresh_gateway.con, "graph.schema_test"))
 
 
 def test_macro_exists_handles_duckdb_errors_gracefully(
@@ -155,7 +162,7 @@ def test_macro_exists_handles_duckdb_errors_gracefully(
 
     # Test with a valid connection but nonexistent table
     result = macro_exists(fresh_gateway.con, "test.nonexistent")
-    assert result is False
+    expect_false(result)
 
 
 # =============================================================================
@@ -171,4 +178,4 @@ def test_ingest_macro_tables_members_can_be_checked(
     for table_key in INGEST_MACRO_TABLES:
         # Should not raise an exception
         result = macro_exists(fresh_gateway.con, table_key)
-        assert isinstance(result, bool)
+        expect_is_instance(result, bool)

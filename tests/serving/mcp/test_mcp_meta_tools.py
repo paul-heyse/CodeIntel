@@ -18,6 +18,11 @@ from codeintel.serving.operations.catalog import (
     iter_registry_operations,
 )
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -92,7 +97,7 @@ def test_register_meta_tools_success(
     register_meta_tools(mcp, backend)
 
     # Server should be configured
-    assert mcp.name == "Test Meta Tools"
+    expect_equal(mcp.name, "Test Meta Tools")
 
 
 def test_register_meta_tools_different_backend(
@@ -111,7 +116,7 @@ def test_register_meta_tools_different_backend(
     # First registration
     register_meta_tools(mcp, backend)
 
-    assert mcp.name == "Test Different Backend"
+    expect_equal(mcp.name, "Test Different Backend")
 
 
 def test_register_meta_tools_with_service_directly(
@@ -139,7 +144,7 @@ def test_register_meta_tools_with_service_directly(
 
     register_meta_tools(mcp, service)
 
-    assert mcp.name == "Test Service Direct"
+    expect_equal(mcp.name, "Test Service Direct")
 
 
 def test_register_meta_tools_with_local_query_service(
@@ -168,7 +173,7 @@ def test_register_meta_tools_with_local_query_service(
     # Should work with service directly
     register_meta_tools(mcp, service)
 
-    assert mcp.name == "Test Local Service"
+    expect_equal(mcp.name, "Test Local Service")
 
 
 # =============================================================================
@@ -191,12 +196,12 @@ def test_register_meta_tools_different_servers(
     # Register on first server
     mcp1 = FastMCP("Server One", json_response=True)
     register_meta_tools(mcp1, backend)
-    assert mcp1.name == "Server One"
+    expect_equal(mcp1.name, "Server One")
 
     # Register on second server
     mcp2 = FastMCP("Server Two", json_response=True)
     register_meta_tools(mcp2, backend)
-    assert mcp2.name == "Server Two"
+    expect_equal(mcp2.name, "Server Two")
 
 
 # =============================================================================
@@ -218,7 +223,7 @@ def test_register_meta_tools_backend_with_limits(
     backend = _build_backend(provisioned_repo)
 
     register_meta_tools(mcp, backend)
-    assert mcp.name == "Test Backend Limits"
+    expect_equal(mcp.name, "Test Backend Limits")
 
 
 def test_register_meta_tools_backend_with_service(
@@ -235,10 +240,10 @@ def test_register_meta_tools_backend_with_service(
     backend = _build_backend(provisioned_repo)
 
     # Backend was built with service
-    assert backend.service is not None
+    expect_true(backend.service is not None)
 
     register_meta_tools(mcp, backend)
-    assert mcp.name == "Test With Service"
+    expect_equal(mcp.name, "Test With Service")
 
 
 # =============================================================================
@@ -281,9 +286,9 @@ def test_register_meta_tools_custom_limits(
     mcp = FastMCP("Test Custom Limits", json_response=True)
     register_meta_tools(mcp, backend)
 
-    assert mcp.name == "Test Custom Limits"
-    assert backend.limits.default_limit == custom_limit
-    assert backend.limits.max_rows_per_call == custom_max
+    expect_equal(mcp.name, "Test Custom Limits")
+    expect_equal(backend.limits.default_limit, custom_limit)
+    expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
 # =============================================================================
@@ -305,10 +310,10 @@ def test_register_meta_tools_duckdb_backend(
     backend = _build_backend(provisioned_repo)
 
     # Verify backend is DuckDBBackend
-    assert isinstance(backend, DuckDBBackend)
+    expect_is_instance(backend, DuckDBBackend)
 
     register_meta_tools(mcp, backend)
-    assert mcp.name == "Test DuckDB Backend"
+    expect_equal(mcp.name, "Test DuckDB Backend")
 
 
 def test_register_meta_tools_preserves_backend_properties(
@@ -331,9 +336,9 @@ def test_register_meta_tools_preserves_backend_properties(
     register_meta_tools(mcp, backend)
 
     # Backend properties should be unchanged
-    assert backend.repo == original_repo
-    assert backend.commit == original_commit
-    assert backend.limits == original_limits
+    expect_equal(backend.repo, original_repo)
+    expect_equal(backend.commit, original_commit)
+    expect_equal(backend.limits, original_limits)
 
 
 # =============================================================================
@@ -355,7 +360,7 @@ def test_backend_list_datasets(
 
     datasets = backend.list_datasets()
 
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 def test_backend_dataset_specs(
@@ -372,7 +377,7 @@ def test_backend_dataset_specs(
 
     specs = backend.dataset_specs()
 
-    assert isinstance(specs, list)
+    expect_is_instance(specs, list)
 
 
 def test_service_list_datasets(
@@ -399,7 +404,7 @@ def test_service_list_datasets(
 
     datasets = service.list_datasets()
 
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 def test_service_dataset_specs(
@@ -426,7 +431,7 @@ def test_service_dataset_specs(
 
     specs = service.dataset_specs()
 
-    assert isinstance(specs, list)
+    expect_is_instance(specs, list)
 
 
 # =============================================================================
@@ -450,23 +455,23 @@ def test_build_dataset_meta(
 
     metas = build_dataset_meta(service, limits)
 
-    assert isinstance(metas, list)
+    expect_is_instance(metas, list)
 
 
 def test_build_serving_dataflow_graph() -> None:
     """Verify build_serving_dataflow_graph returns nodes and edges."""
     nodes, edges = build_serving_dataflow_graph()
 
-    assert isinstance(nodes, list)
-    assert isinstance(edges, list)
+    expect_is_instance(nodes, list)
+    expect_is_instance(edges, list)
 
 
 def test_iter_registry_operations() -> None:
     """Verify iter_registry_operations yields operations."""
     operations = list(iter_registry_operations())
 
-    assert isinstance(operations, list)
-    assert len(operations) > 0
+    expect_is_instance(operations, list)
+    expect_true(len(operations) > 0)
 
 
 # =============================================================================
@@ -490,4 +495,4 @@ def test_registered_tools_after_meta_registration(
     register_meta_tools(mcp, backend)
 
     # MCP server should have tools registered
-    assert mcp.name == "Test Tools"
+    expect_equal(mcp.name, "Test Tools")

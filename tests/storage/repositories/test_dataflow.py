@@ -6,6 +6,12 @@ from duckdb import DuckDBPyConnection
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.dataflow import DataflowRepository
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 
 
 def _seed_dataflow_data(con: DuckDBPyConnection) -> None:
@@ -48,12 +54,12 @@ def test_list_nodes_returns_nodes(fresh_gateway: StorageGateway) -> None:
     nodes = repo.list_nodes()
 
     expected_new_count = 3
-    assert len(nodes) == initial_count + expected_new_count
+    expect_length(nodes, initial_count + expected_new_count, label="node count")
 
     node_ids = [n["id"] for n in nodes]
-    assert "node1" in node_ids
-    assert "node2" in node_ids
-    assert "node3" in node_ids
+    expect_in("node1", node_ids, label="node1 present")
+    expect_in("node2", node_ids, label="node2 present")
+    expect_in("node3", node_ids, label="node3 present")
 
 
 def test_list_nodes_includes_expected_columns(
@@ -71,11 +77,11 @@ def test_list_nodes_includes_expected_columns(
 
     nodes = repo.list_nodes()
 
-    assert len(nodes) > 0
+    expect_true(len(nodes) > 0, message="nodes returned")
     first_node = nodes[0]
-    assert "id" in first_node
-    assert "kind" in first_node
-    assert "family" in first_node
+    expect_in("id", first_node, label="id key present")
+    expect_in("kind", first_node, label="kind key present")
+    expect_in("family", first_node, label="family key present")
 
 
 def test_list_edges_returns_edges(fresh_gateway: StorageGateway) -> None:
@@ -95,7 +101,7 @@ def test_list_edges_returns_edges(fresh_gateway: StorageGateway) -> None:
     edges = repo.list_edges()
 
     expected_new_count = 3
-    assert len(edges) >= initial_count + expected_new_count
+    expect_true(len(edges) >= initial_count + expected_new_count, message="edge count increased")
 
 
 def test_list_edges_filtered_by_src(fresh_gateway: StorageGateway) -> None:
@@ -112,8 +118,8 @@ def test_list_edges_filtered_by_src(fresh_gateway: StorageGateway) -> None:
     edges = repo.list_edges(src="node1")
 
     expected_count = 2
-    assert len(edges) == expected_count
-    assert all(e["src"] == "node1" for e in edges)
+    expect_length(edges, expected_count, label="filtered edge count")
+    expect_true(all(e["src"] == "node1" for e in edges), message="all edges match src")
 
 
 def test_list_edges_filtered_by_dst(fresh_gateway: StorageGateway) -> None:
@@ -130,8 +136,8 @@ def test_list_edges_filtered_by_dst(fresh_gateway: StorageGateway) -> None:
     edges = repo.list_edges(dst="node3")
 
     expected_count = 2
-    assert len(edges) == expected_count
-    assert all(e["dst"] == "node3" for e in edges)
+    expect_length(edges, expected_count, label="filtered edge count")
+    expect_true(all(e["dst"] == "node3" for e in edges), message="all edges match dst")
 
 
 def test_list_edges_filtered_by_both(fresh_gateway: StorageGateway) -> None:
@@ -147,10 +153,10 @@ def test_list_edges_filtered_by_both(fresh_gateway: StorageGateway) -> None:
 
     edges = repo.list_edges(src="node1", dst="node2")
 
-    assert len(edges) == 1
-    assert edges[0]["src"] == "node1"
-    assert edges[0]["dst"] == "node2"
-    assert edges[0]["edge_type"] == "depends_on"
+    expect_length(edges, 1, label="filtered edges")
+    expect_equal(edges[0]["src"], "node1", label="src")
+    expect_equal(edges[0]["dst"], "node2", label="dst")
+    expect_equal(edges[0]["edge_type"], "depends_on", label="edge_type")
 
 
 def test_list_edges_returns_empty_when_no_match(
@@ -168,4 +174,4 @@ def test_list_edges_returns_empty_when_no_match(
 
     edges = repo.list_edges(src="nonexistent")
 
-    assert edges == []
+    expect_equal(edges, [], label="no matching edges")

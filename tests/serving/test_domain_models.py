@@ -7,6 +7,8 @@ the serving protocols.
 
 from __future__ import annotations
 
+import pytest
+
 from codeintel.serving.domain_models import (
     CallGraphNeighbors,
     DatasetDescriptorDomain,
@@ -38,6 +40,15 @@ from codeintel.serving.domain_models import (
     SubsystemSummaryResult,
     TestsForFunctionResult,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # Constants for tests
 LIMIT_VALUE = 10
@@ -66,27 +77,27 @@ def test_message_with_all_fields() -> None:
         context={"limit": LIMIT_VALUE, "total": 100},
     )
 
-    assert msg.code == "WARN_TRUNCATED"
-    assert msg.severity == "warning"
-    assert msg.detail == "Results were truncated to limit"
-    assert msg.context == {"limit": LIMIT_VALUE, "total": 100}
+    expect_equal(msg.code, "WARN_TRUNCATED")
+    expect_equal(msg.severity, "warning")
+    expect_equal(msg.detail, "Results were truncated to limit")
+    expect_equal(msg.context, {"limit": LIMIT_VALUE, "total": 100})
 
 
 def test_message_with_minimal_fields() -> None:
     """Verify Message construction with minimal fields."""
     msg = Message(code="OK", severity="info")
 
-    assert msg.code == "OK"
-    assert msg.severity == "info"
-    assert msg.detail is None
-    assert msg.context == {}
+    expect_equal(msg.code, "OK")
+    expect_equal(msg.severity, "info")
+    expect_true(msg.detail is None)
+    expect_equal(msg.context, {})
 
 
 def test_message_severity_types() -> None:
     """Verify all valid severity levels work."""
     for severity in ("info", "warning", "error"):
         msg = Message(code="TEST", severity=severity)
-        assert msg.severity == severity
+        expect_equal(msg.severity, severity)
 
 
 # =============================================================================
@@ -98,12 +109,12 @@ def test_response_meta_defaults() -> None:
     """Verify ResponseMeta default values."""
     meta = ResponseMeta()
 
-    assert meta.requested_limit is None
-    assert meta.applied_limit is None
-    assert meta.requested_offset is None
-    assert meta.applied_offset is None
-    assert meta.truncated is False
-    assert meta.messages == []
+    expect_true(meta.requested_limit is None)
+    expect_true(meta.applied_limit is None)
+    expect_true(meta.requested_offset is None)
+    expect_true(meta.applied_offset is None)
+    expect_false(meta.truncated)
+    expect_equal(meta.messages, [])
 
 
 def test_response_meta_with_all_fields() -> None:
@@ -117,10 +128,10 @@ def test_response_meta_with_all_fields() -> None:
         messages=[Message(code="TRUNCATED", severity="info")],
     )
 
-    assert meta.requested_limit == REQUESTED_LIMIT
-    assert meta.applied_limit == APPLIED_LIMIT_50
-    assert meta.truncated is True
-    assert len(meta.messages) == 1
+    expect_equal(meta.requested_limit, REQUESTED_LIMIT)
+    expect_equal(meta.applied_limit, APPLIED_LIMIT_50)
+    expect_true(meta.truncated)
+    expect_length(meta.messages, 1)
 
 
 def test_response_meta_model_dump_empty() -> None:
@@ -128,12 +139,12 @@ def test_response_meta_model_dump_empty() -> None:
     meta = ResponseMeta()
     dumped = meta.model_dump()
 
-    assert dumped["requested_limit"] is None
-    assert dumped["applied_limit"] is None
-    assert dumped["requested_offset"] is None
-    assert dumped["applied_offset"] is None
-    assert dumped["truncated"] is False
-    assert dumped["messages"] == []
+    expect_true(dumped["requested_limit"] is None)
+    expect_true(dumped["applied_limit"] is None)
+    expect_true(dumped["requested_offset"] is None)
+    expect_true(dumped["applied_offset"] is None)
+    expect_false(dumped["truncated"])
+    expect_equal(dumped["messages"], [])
 
 
 def test_response_meta_model_dump_with_messages() -> None:
@@ -154,23 +165,23 @@ def test_response_meta_model_dump_with_messages() -> None:
 
     dumped = meta.model_dump()
 
-    assert dumped["applied_limit"] == LIMIT_VALUE
-    assert dumped["truncated"] is True
-    assert len(dumped["messages"]) == COUNT_TWO
+    expect_equal(dumped["applied_limit"], LIMIT_VALUE)
+    expect_true(dumped["truncated"])
+    expect_length(dumped["messages"], COUNT_TWO)
 
     # First message fully populated
     msg1 = dumped["messages"][0]
-    assert msg1["code"] == "WARN"
-    assert msg1["severity"] == "warning"
-    assert msg1["detail"] == "Test detail"
-    assert msg1["context"] == {"key": "value"}
+    expect_equal(msg1["code"], "WARN")
+    expect_equal(msg1["severity"], "warning")
+    expect_equal(msg1["detail"], "Test detail")
+    expect_equal(msg1["context"], {"key": "value"})
 
     # Second message minimal
     msg2 = dumped["messages"][1]
-    assert msg2["code"] == "INFO"
-    assert msg2["severity"] == "info"
-    assert msg2["detail"] is None
-    assert msg2["context"] == {}
+    expect_equal(msg2["code"], "INFO")
+    expect_equal(msg2["severity"], "info")
+    expect_true(msg2["detail"] is None)
+    expect_equal(msg2["context"], {})
 
 
 # =============================================================================
@@ -189,11 +200,11 @@ def test_dataset_rows_construction() -> None:
         meta=meta,
     )
 
-    assert rows.dataset_name == "analytics.functions"
-    assert rows.limit == LIMIT_VALUE
-    assert rows.offset == OFFSET_VALUE
-    assert len(rows.rows) == COUNT_TWO
-    assert rows.meta.truncated is False
+    expect_equal(rows.dataset_name, "analytics.functions")
+    expect_equal(rows.limit, LIMIT_VALUE)
+    expect_equal(rows.offset, OFFSET_VALUE)
+    expect_length(rows.rows, COUNT_TWO)
+    expect_false(rows.meta.truncated)
 
 
 def test_dataset_rows_model_dump() -> None:
@@ -212,16 +223,16 @@ def test_dataset_rows_model_dump() -> None:
     dumped = rows.model_dump()
 
     # Top-level fields use expected keys
-    assert dumped["dataset"] == "test.dataset"
-    assert dumped["limit"] == LIMIT_VALUE
-    assert dumped["offset"] == OFFSET_FIVE
-    assert dumped["rows"] == [{"col": "val"}]
+    expect_equal(dumped["dataset"], "test.dataset")
+    expect_equal(dumped["limit"], LIMIT_VALUE)
+    expect_equal(dumped["offset"], OFFSET_FIVE)
+    expect_equal(dumped["rows"], [{"col": "val"}])
 
     # Nested meta is fully dumped
-    assert "meta" in dumped
-    assert dumped["meta"]["applied_limit"] == LIMIT_VALUE
-    assert dumped["meta"]["truncated"] is True
-    assert len(dumped["meta"]["messages"]) == 1
+    expect_in("meta", dumped)
+    expect_equal(dumped["meta"]["applied_limit"], LIMIT_VALUE)
+    expect_true(dumped["meta"]["truncated"])
+    expect_length(dumped["meta"]["messages"], 1)
 
 
 def test_dataset_rows_empty() -> None:
@@ -237,8 +248,8 @@ def test_dataset_rows_empty() -> None:
 
     dumped = rows.model_dump()
 
-    assert dumped["rows"] == []
-    assert dumped["meta"]["truncated"] is False
+    expect_equal(dumped["rows"], [])
+    expect_false(dumped["meta"]["truncated"])
 
 
 # =============================================================================
@@ -260,13 +271,13 @@ def test_function_summary_construction() -> None:
         meta=meta,
     )
 
-    assert summary.urn == "repo::pkg.mod::func"
-    assert summary.goid_h128 == GOID_VALUE
-    assert summary.rel_path == "pkg/mod.py"
-    assert summary.qualname == "pkg.mod.func"
-    assert summary.short_summary == "Short description"
-    assert summary.long_summary == "Longer detailed description"
-    assert summary.is_test is False
+    expect_equal(summary.urn, "repo::pkg.mod::func")
+    expect_equal(summary.goid_h128, GOID_VALUE)
+    expect_equal(summary.rel_path, "pkg/mod.py")
+    expect_equal(summary.qualname, "pkg.mod.func")
+    expect_equal(summary.short_summary, "Short description")
+    expect_equal(summary.long_summary, "Longer detailed description")
+    expect_false(summary.is_test)
 
 
 def test_function_summary_nullable_summaries() -> None:
@@ -283,9 +294,9 @@ def test_function_summary_nullable_summaries() -> None:
         meta=meta,
     )
 
-    assert summary.short_summary is None
-    assert summary.long_summary is None
-    assert summary.is_test is True
+    expect_is_none(summary.short_summary)
+    expect_is_none(summary.long_summary)
+    expect_true(summary.is_test)
 
 
 # =============================================================================
@@ -303,11 +314,11 @@ def test_high_risk_function_construction() -> None:
         is_tested=False,
     )
 
-    assert func.goid_h128 == GOID_VALUE
-    assert func.qualname == "pkg.mod.risky_func"
-    assert func.rel_path == "pkg/mod.py"
-    assert func.risk_score == RISK_SCORE
-    assert func.is_tested is False
+    expect_equal(func.goid_h128, GOID_VALUE)
+    expect_equal(func.qualname, "pkg.mod.risky_func")
+    expect_equal(func.rel_path, "pkg/mod.py")
+    expect_equal(func.risk_score, RISK_SCORE)
+    expect_false(func.is_tested)
 
 
 def test_high_risk_functions_collection() -> None:
@@ -323,9 +334,9 @@ def test_high_risk_functions_collection() -> None:
     meta = ResponseMeta(applied_limit=COUNT_TWO, truncated=False)
     result = HighRiskFunctions(functions=funcs, meta=meta)
 
-    assert len(result.functions) == COUNT_TWO
-    assert result.functions[0].risk_score == RISK_SCORE_HIGH
-    assert result.meta.applied_limit == COUNT_TWO
+    expect_length(result.functions, COUNT_TWO)
+    expect_equal(result.functions[0].risk_score, RISK_SCORE_HIGH)
+    expect_equal(result.meta.applied_limit, COUNT_TWO)
 
 
 # =============================================================================
@@ -354,9 +365,9 @@ def test_file_summary_construction() -> None:
         meta=meta,
     )
 
-    assert file_summary.rel_path == "pkg/mod.py"
-    assert file_summary.module == "pkg.mod"
-    assert len(file_summary.functions) == 1
+    expect_equal(file_summary.rel_path, "pkg/mod.py")
+    expect_equal(file_summary.module, "pkg.mod")
+    expect_length(file_summary.functions, 1)
 
 
 def test_file_summary_no_module() -> None:
@@ -369,8 +380,8 @@ def test_file_summary_no_module() -> None:
         meta=meta,
     )
 
-    assert file_summary.module is None
-    assert file_summary.functions == []
+    expect_is_none(file_summary.module)
+    expect_equal(file_summary.functions, [])
 
 
 # =============================================================================
@@ -392,12 +403,12 @@ def test_dataset_descriptor_full() -> None:
         is_read_only=True,
     )
 
-    assert desc.name == "analytics.functions"
-    assert desc.table == "analytics.functions"
-    assert desc.description == "Function metadata"
-    assert desc.family == "analytics"
-    assert desc.owner == "analytics-team"
-    assert desc.is_read_only is True
+    expect_equal(desc.name, "analytics.functions")
+    expect_equal(desc.table, "analytics.functions")
+    expect_equal(desc.description, "Function metadata")
+    expect_equal(desc.family, "analytics")
+    expect_equal(desc.owner, "analytics-team")
+    expect_true(desc.is_read_only)
 
 
 def test_dataset_descriptor_minimal() -> None:
@@ -408,11 +419,11 @@ def test_dataset_descriptor_minimal() -> None:
         description="Test",
     )
 
-    assert desc.family is None
-    assert desc.owner is None
-    assert desc.schema_version is None
-    assert desc.is_docs_view is False
-    assert desc.is_read_only is False
+    expect_is_none(desc.family)
+    expect_is_none(desc.owner)
+    expect_is_none(desc.schema_version)
+    expect_false(desc.is_docs_view)
+    expect_false(desc.is_read_only)
 
 
 # =============================================================================
@@ -441,10 +452,10 @@ def test_dataset_schema_construction() -> None:
         meta=ResponseMeta(),
     )
 
-    assert schema.dataset_name == "analytics.functions"
-    assert len(schema.duckdb_schema) == COUNT_TWO
-    assert schema.capabilities["read"] is True
-    assert schema.validation_profile == "strict"
+    expect_equal(schema.dataset_name, "analytics.functions")
+    expect_length(schema.duckdb_schema, COUNT_TWO)
+    expect_true(schema.capabilities["read"])
+    expect_equal(schema.validation_profile, "strict")
 
 
 def test_dataset_schema_minimal() -> None:
@@ -464,8 +475,8 @@ def test_dataset_schema_minimal() -> None:
         validation_profile=None,
     )
 
-    assert schema.json_schema is None
-    assert schema.meta is None
+    expect_is_none(schema.json_schema)
+    expect_is_none(schema.meta)
 
 
 # =============================================================================
@@ -483,11 +494,11 @@ def test_graph_plan_construction() -> None:
         plugin_metadata={"plugin_a": {"version": "1.0"}},
     )
 
-    assert plan.plan_id == "plan-123"
-    assert len(plan.ordered_plugins) == COUNT_THREE
-    assert plan.ordered_plugins[0] == "plugin_a"
-    assert len(plan.skipped_plugins) == 1
-    assert "plugin_b" in plan.dep_graph
+    expect_equal(plan.plan_id, "plan-123")
+    expect_length(plan.ordered_plugins, COUNT_THREE)
+    expect_equal(plan.ordered_plugins[0], "plugin_a")
+    expect_length(plan.skipped_plugins, 1)
+    expect_in("plugin_b", plan.dep_graph)
 
 
 def test_graph_plan_empty() -> None:
@@ -497,10 +508,10 @@ def test_graph_plan_empty() -> None:
         ordered_plugins=(),
     )
 
-    assert plan.ordered_plugins == ()
-    assert plan.skipped_plugins == []
-    assert plan.dep_graph == {}
-    assert plan.plugin_metadata == {}
+    expect_equal(plan.ordered_plugins, ())
+    expect_equal(plan.skipped_plugins, [])
+    expect_equal(plan.dep_graph, {})
+    expect_equal(plan.plugin_metadata, {})
 
 
 # =============================================================================
@@ -517,9 +528,10 @@ def test_function_summary_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert result.summary is not None
-    assert result.summary["qualname"] == "test.func"
+    expect_true(result.found)
+    if result.summary is None:
+        pytest.fail("Expected summary to be present")
+    expect_equal(result.summary["qualname"], "test.func")
 
 
 def test_function_summary_result_not_found() -> None:
@@ -527,8 +539,8 @@ def test_function_summary_result_not_found() -> None:
     meta = ResponseMeta()
     result = FunctionSummaryResult(found=False, summary=None, meta=meta)
 
-    assert result.found is False
-    assert result.summary is None
+    expect_false(result.found)
+    expect_is_none(result.summary)
 
 
 def test_high_risk_functions_result() -> None:
@@ -540,8 +552,8 @@ def test_high_risk_functions_result() -> None:
         meta=meta,
     )
 
-    assert len(result.functions) == COUNT_TWO
-    assert result.truncated is True
+    expect_length(result.functions, COUNT_TWO)
+    expect_true(result.truncated)
 
 
 def test_call_graph_neighbors() -> None:
@@ -553,8 +565,8 @@ def test_call_graph_neighbors() -> None:
         meta=meta,
     )
 
-    assert len(neighbors.outgoing) == 1
-    assert len(neighbors.incoming) == COUNT_TWO
+    expect_length(neighbors.outgoing, 1)
+    expect_length(neighbors.incoming, COUNT_TWO)
 
 
 def test_tests_for_function_result() -> None:
@@ -565,7 +577,7 @@ def test_tests_for_function_result() -> None:
         meta=meta,
     )
 
-    assert len(result.tests) == COUNT_TWO
+    expect_length(result.tests, COUNT_TWO)
 
 
 def test_graph_neighborhood() -> None:
@@ -577,8 +589,8 @@ def test_graph_neighborhood() -> None:
         meta=meta,
     )
 
-    assert len(neighborhood.nodes) == COUNT_TWO
-    assert len(neighborhood.edges) == 1
+    expect_length(neighborhood.nodes, COUNT_TWO)
+    expect_length(neighborhood.edges, 1)
 
 
 def test_import_boundary() -> None:
@@ -590,8 +602,8 @@ def test_import_boundary() -> None:
         meta=meta,
     )
 
-    assert len(boundary.nodes) == COUNT_TWO
-    assert len(boundary.edges) == 1
+    expect_length(boundary.nodes, COUNT_TWO)
+    expect_length(boundary.edges, 1)
 
 
 def test_file_summary_result() -> None:
@@ -603,8 +615,8 @@ def test_file_summary_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert result.file is not None
+    expect_true(result.found)
+    expect_is_not_none(result.file)
 
 
 def test_function_profile_result() -> None:
@@ -616,8 +628,8 @@ def test_function_profile_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert result.profile is not None
+    expect_true(result.found)
+    expect_is_not_none(result.profile)
 
 
 def test_file_profile_result() -> None:
@@ -629,7 +641,7 @@ def test_file_profile_result() -> None:
         meta=meta,
     )
 
-    assert result.found is False
+    expect_false(result.found)
 
 
 def test_module_profile_result() -> None:
@@ -641,7 +653,7 @@ def test_module_profile_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
+    expect_true(result.found)
 
 
 def test_function_architecture_result() -> None:
@@ -653,8 +665,8 @@ def test_function_architecture_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert result.architecture is not None
+    expect_true(result.found)
+    expect_is_not_none(result.architecture)
 
 
 def test_module_architecture_result() -> None:
@@ -666,7 +678,7 @@ def test_module_architecture_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
+    expect_true(result.found)
 
 
 def test_subsystem_summary_result() -> None:
@@ -677,7 +689,7 @@ def test_subsystem_summary_result() -> None:
         meta=meta,
     )
 
-    assert len(result.subsystems) == COUNT_TWO
+    expect_length(result.subsystems, COUNT_TWO)
 
 
 def test_module_subsystem_result() -> None:
@@ -689,8 +701,8 @@ def test_module_subsystem_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert len(result.memberships) == 1
+    expect_true(result.found)
+    expect_length(result.memberships, 1)
 
 
 def test_file_hints_result() -> None:
@@ -702,8 +714,8 @@ def test_file_hints_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert len(result.hints) == 1
+    expect_true(result.found)
+    expect_length(result.hints, 1)
 
 
 def test_subsystem_modules_result() -> None:
@@ -716,9 +728,9 @@ def test_subsystem_modules_result() -> None:
         meta=meta,
     )
 
-    assert result.found is True
-    assert result.subsystem is not None
-    assert len(result.modules) == COUNT_TWO
+    expect_true(result.found)
+    expect_is_not_none(result.subsystem)
+    expect_length(result.modules, COUNT_TWO)
 
 
 def test_subsystem_search_result() -> None:
@@ -729,7 +741,7 @@ def test_subsystem_search_result() -> None:
         meta=meta,
     )
 
-    assert len(result.subsystems) == 1
+    expect_length(result.subsystems, 1)
 
 
 def test_subsystem_profile_result() -> None:
@@ -740,7 +752,7 @@ def test_subsystem_profile_result() -> None:
         meta=meta,
     )
 
-    assert len(result.profiles) == 1
+    expect_length(result.profiles, 1)
 
 
 def test_subsystem_coverage_result() -> None:
@@ -751,4 +763,4 @@ def test_subsystem_coverage_result() -> None:
         meta=meta,
     )
 
-    assert len(result.coverage) == 1
+    expect_length(result.coverage, 1)

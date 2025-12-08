@@ -9,10 +9,14 @@ import pytest
 
 from codeintel.analytics.plugins.semantic_roles.compute import SemanticRolesPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
-from tests._helpers.context import TestContext, create_test_context
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.context import TestContext
+from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
+from tests.analytics.conftest import PluginTestHarness
+
+MIN_ROLE_CONFIDENCE = 0.5
 
 
 def _seed_test_module(repo_root: Path) -> None:
@@ -24,7 +28,7 @@ def _seed_test_module(repo_root: Path) -> None:
         "\n".join(
             [
                 "def test_example() -> None:",
-                "    assert 1 == 1",
+                "    return None",
             ]
         ),
         encoding="utf-8",
@@ -85,27 +89,21 @@ def _insert_module_row(ctx: TestContext) -> None:
     )
 
 
-def test_semantic_roles_plugin_classifies_tests(tmp_path: Path) -> None:
+def test_semantic_roles_plugin_classifies_tests(plugin_harness: PluginTestHarness) -> None:
     """SemanticRolesPlugin should classify test functions by path/name heuristics."""
-    ctx = create_test_context(tmp_path)
-    _seed_test_module(ctx.repo_root)
-    catalog_provider = _make_catalog(ctx.repo, ctx.commit)
+    _seed_test_module(plugin_harness.ctx.repo_root)
+    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
     now = datetime.now(tz=UTC)
-    _insert_function_metrics(ctx, now)
-    _insert_module_row(ctx)
+    _insert_function_metrics(plugin_harness.ctx, now)
+    _insert_module_row(plugin_harness.ctx)
 
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    plugin_ctx.resources.catalog = catalog_provider
+    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
 
-    result = execute_target_plugin(SemanticRolesPlugin(), plugin_ctx)
-    assert result.success
+    result = execute_target_plugin(SemanticRolesPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
 
-    role_row = ctx.query(
+    role_row = plugin_harness.ctx.query(
         """
         SELECT role, role_confidence
         FROM analytics.semantic_roles_functions
@@ -113,13 +111,13 @@ def test_semantic_roles_plugin_classifies_tests(tmp_path: Path) -> None:
         """,
         [7101],
     )[0]
-    assert role_row.role == "test"
+    expect_equal(role_row.role, "test")
     confidence = role_row.role_confidence
     if not isinstance(confidence, float):
         pytest.fail(f"Expected float role_confidence, got {type(confidence)}")
-    assert confidence > 0.5
+    expect_true(confidence > MIN_ROLE_CONFIDENCE)
 
-    module_rows = ctx.query(
+    module_rows = plugin_harness.ctx.query(
         """
         SELECT role
         FROM analytics.semantic_roles_modules
@@ -127,6 +125,4 @@ def test_semantic_roles_plugin_classifies_tests(tmp_path: Path) -> None:
         """,
         ["tests.test_sample"],
     )
-    assert module_rows, "expected semantic role entry for module"
-
-    ctx.close()
+    expect_true(module_rows, message="expected semantic role entry for module")

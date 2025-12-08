@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/docs.py
+# hypothesis_version: 6.148.7
+
+['--dataset', '--schema', '--skip-prereqs', '--validate', '.codeintel', 'Export complete.', 'auto', 'build', 'build_dir', 'commit', 'db_path', 'docs', 'docs_app', 'export', 'export_jsonl', 'export_parquet', 'failed', 'repo', 'repo_root', 'run_docs_export']

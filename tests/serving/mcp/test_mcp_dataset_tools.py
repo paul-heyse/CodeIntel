@@ -18,6 +18,12 @@ from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -92,7 +98,7 @@ def test_register_dataset_tools_success(
     register_dataset_tools(mcp, backend)
 
     # Server should be configured
-    assert mcp.name == "Test Dataset Tools"
+    expect_equal(mcp.name, "Test Dataset Tools")
 
 
 def test_register_dataset_tools_with_service(
@@ -120,7 +126,7 @@ def test_register_dataset_tools_with_service(
 
     register_dataset_tools(mcp, service)
 
-    assert mcp.name == "Test Service"
+    expect_equal(mcp.name, "Test Service")
 
 
 def test_register_dataset_tools_with_config(
@@ -139,7 +145,7 @@ def test_register_dataset_tools_with_config(
 
     register_dataset_tools(mcp, backend, config=config)
 
-    assert mcp.name == "Test With Config"
+    expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_dataset_tools_on_multiple_servers(
@@ -156,11 +162,11 @@ def test_register_dataset_tools_on_multiple_servers(
 
     mcp1 = FastMCP("Server 1", json_response=True)
     register_dataset_tools(mcp1, backend)
-    assert mcp1.name == "Server 1"
+    expect_equal(mcp1.name, "Server 1")
 
     mcp2 = FastMCP("Server 2", json_response=True)
     register_dataset_tools(mcp2, backend)
-    assert mcp2.name == "Server 2"
+    expect_equal(mcp2.name, "Server 2")
 
 
 # =============================================================================
@@ -172,10 +178,10 @@ def test_iter_operations_yields_dataset_operations() -> None:
     """Verify iter_operations yields dataset category operations."""
     dataset_ops = [spec for spec in iter_operations() if spec.category == "datasets"]
 
-    assert len(dataset_ops) > 0
+    expect_true(len(dataset_ops) > 0)
     # Dataset operations should have tool_name
     ops_with_tools = [op for op in dataset_ops if op.tool_name is not None]
-    assert len(ops_with_tools) > 0
+    expect_true(len(ops_with_tools) > 0)
 
 
 def test_dataset_operations_have_required_fields() -> None:
@@ -183,10 +189,10 @@ def test_dataset_operations_have_required_fields() -> None:
     dataset_ops = [spec for spec in iter_operations() if spec.category == "datasets"]
 
     for spec in dataset_ops:
-        assert spec.id is not None
-        assert spec.category == "datasets"
-        assert spec.backend_method is not None
-        assert spec.output_model_name is not None
+        expect_is_not_none(spec.id)
+        expect_equal(spec.category, "datasets")
+        expect_is_not_none(spec.backend_method)
+        expect_is_not_none(spec.output_model_name)
 
 
 # =============================================================================
@@ -208,7 +214,7 @@ def test_backend_list_datasets(
 
     datasets = backend.list_datasets()
 
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 def test_backend_dataset_specs(
@@ -225,7 +231,7 @@ def test_backend_dataset_specs(
 
     specs = backend.dataset_specs()
 
-    assert isinstance(specs, list)
+    expect_is_instance(specs, list)
 
 
 def test_backend_read_dataset_rows(
@@ -244,8 +250,8 @@ def test_backend_read_dataset_rows(
     if datasets:
         dataset_name = datasets[0].name
         rows = backend.read_dataset_rows(dataset_name=dataset_name, limit=5)
-        assert hasattr(rows, "dataset_name")
-        assert hasattr(rows, "rows")
+        expect_true(hasattr(rows, "dataset_name"))
+        expect_true(hasattr(rows, "rows"))
 
 
 def test_backend_read_dataset_rows_with_offset(
@@ -264,8 +270,8 @@ def test_backend_read_dataset_rows_with_offset(
     if datasets:
         dataset_name = datasets[0].name
         rows = backend.read_dataset_rows(dataset_name=dataset_name, limit=5, offset=0)
-        assert hasattr(rows, "rows")
-        assert hasattr(rows, "offset")
+        expect_true(hasattr(rows, "rows"))
+        expect_true(hasattr(rows, "offset"))
 
 
 def test_backend_dataset_schema(
@@ -284,7 +290,7 @@ def test_backend_dataset_schema(
     if datasets:
         dataset_name = datasets[0].name
         schema = backend.dataset_schema(dataset_name=dataset_name)
-        assert schema is not None
+        expect_is_not_none(schema)
 
 
 # =============================================================================
@@ -345,8 +351,8 @@ def test_backend_with_custom_limits(
         service=service,
     )
 
-    assert backend.limits.default_limit == custom_limit
-    assert backend.limits.max_rows_per_call == custom_max
+    expect_equal(backend.limits.default_limit, custom_limit)
+    expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
 # =============================================================================
@@ -370,7 +376,7 @@ def test_backend_list_datasets_returns_descriptors(
 
     # Verify we get objects with name attribute
     for dataset in datasets:
-        assert hasattr(dataset, "name")
+        expect_true(hasattr(dataset, "name"))
 
 
 def test_backend_dataset_specs_returns_pydantic_models(
@@ -388,7 +394,7 @@ def test_backend_dataset_specs_returns_pydantic_models(
     specs = backend.dataset_specs()
 
     for spec in specs:
-        assert isinstance(spec, DatasetSpecDescriptor)
+        expect_is_instance(spec, DatasetSpecDescriptor)
 
 
 # =============================================================================
@@ -415,9 +421,9 @@ def test_register_dataset_tools_preserves_backend_state(
 
     register_dataset_tools(mcp, backend)
 
-    assert backend.repo == original_repo
-    assert backend.commit == original_commit
-    assert backend.limits == original_limits
+    expect_equal(backend.repo, original_repo)
+    expect_equal(backend.commit, original_commit)
+    expect_equal(backend.limits, original_limits)
 
 
 def test_local_query_service_as_backend(
@@ -445,4 +451,4 @@ def test_local_query_service_as_backend(
     mcp = FastMCP("Test Local Service", json_response=True)
     register_dataset_tools(mcp, service)
 
-    assert mcp.name == "Test Local Service"
+    expect_equal(mcp.name, "Test Local Service")

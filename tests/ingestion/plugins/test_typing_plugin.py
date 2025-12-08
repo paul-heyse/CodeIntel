@@ -15,6 +15,7 @@ from codeintel.ingestion.plugins import typing_plugin
 from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
+from tests._helpers.assertions import expect_equal, expect_true
 
 
 @dataclass
@@ -26,6 +27,7 @@ class _Capture:
     commit: str | None = None
     tools: object | None = None
     type_checker: object | None = None
+
 
 TYPED_SOURCE = dedent(
     """\
@@ -43,8 +45,8 @@ async def test_typing_plugin_skips_without_type_checker(tmp_path: Path) -> None:
 
     result = await TypingIngestPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert result.row_counts == {}
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {})
 
 
 @pytest.mark.anyio
@@ -57,16 +59,16 @@ async def test_typing_plugin_runs_step_and_returns_counts(
     captured = _Capture()
 
     class FakeStep:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            storage = kwargs.get("storage") or (args[0] if args else None)
-            discovery = kwargs.get("discovery") or (args[1] if len(args) > 1 else None)
-            tools = kwargs.get("tools") or (args[2] if len(args) > 2 else None)
+        def __init__(self, *_: object, **kwargs: object) -> None:
+            storage = kwargs.get("storage")
+            discovery = kwargs.get("discovery")
+            tools = kwargs.get("tools")
             captured.gateway = storage
             captured.repo_root = cast("Path", discovery)
             captured.tools = tools
 
+        @staticmethod
         async def execute_async(
-            self,
             modules: list[ModuleRecord],
             *,
             repo: str,
@@ -98,16 +100,16 @@ async def test_typing_plugin_runs_step_and_returns_counts(
 
     result = await TypingIngestPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is True
-    assert result.row_counts == {"analytics.typedness": 1}
-    assert captured.gateway is ctx.gateway
-    assert captured.type_checker is ctx.resources.type_checker
-    assert captured.repo_root == repo_root
-    assert captured.repo == DEFAULT_REPO
-    assert captured.commit == DEFAULT_COMMIT
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {"analytics.typedness": 1})
+    expect_true(captured.gateway is ctx.gateway)
+    expect_true(captured.type_checker is ctx.resources.type_checker)
+    expect_equal(captured.repo_root, repo_root)
+    expect_equal(captured.repo, DEFAULT_REPO)
+    expect_equal(captured.commit, DEFAULT_COMMIT)
     module_record = captured.modules[0]
-    assert module_record.rel_path == "pkg/typed.py"
-    assert module_record.file_path == repo_root / "pkg/typed.py"
+    expect_equal(module_record.rel_path, "pkg/typed.py")
+    expect_equal(module_record.file_path, repo_root / "pkg/typed.py")
 
 
 @pytest.mark.anyio
@@ -122,7 +124,8 @@ async def test_typing_plugin_reports_failure(
         def __init__(self, *_: object, **__: object) -> None:
             return
 
-        async def execute_async(self, *_: object, **__: object) -> StepResult:
+        @staticmethod
+        async def execute_async(*_: object, **__: object) -> StepResult:
             return StepResult.fail("typing blew up")
 
     monkeypatch.setattr(typing_plugin, "DuckDBStorageAdapter", lambda gateway: gateway)
@@ -132,5 +135,5 @@ async def test_typing_plugin_reports_failure(
 
     result = await TypingIngestPlugin().execute(cast("TargetExecutionContext", ctx))
 
-    assert result.success is False
-    assert result.error_message == "Typing ingest failed: typing blew up"
+    expect_true(result.success is False)
+    expect_equal(result.error_message, "Typing ingest failed: typing blew up")

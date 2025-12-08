@@ -28,6 +28,15 @@ from codeintel.core.execution.retry import (
     with_retry_async,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
+
+SECOND_ATTEMPT = 2
 
 # =============================================================================
 # RetryPolicy Construction Tests
@@ -38,13 +47,13 @@ def test_retry_policy_defaults() -> None:
     """Verify RetryPolicy default values."""
     policy = RetryPolicy()
 
-    assert policy.max_attempts == 3
-    assert policy.max_delay_s == 30.0
-    assert policy.backoff_multiplier == 0.5
-    assert policy.backoff_max_s == 10.0
-    assert policy.retryable_exceptions == PLUGIN_CATCHABLE_ERRORS
-    assert policy.use_jitter is True
-    assert policy.log_retries is True
+    expect_equal(policy.max_attempts, 3)
+    expect_equal(policy.max_delay_s, 30.0)
+    expect_equal(policy.backoff_multiplier, 0.5)
+    expect_equal(policy.backoff_max_s, 10.0)
+    expect_equal(policy.retryable_exceptions, PLUGIN_CATCHABLE_ERRORS)
+    expect_true(policy.use_jitter)
+    expect_true(policy.log_retries)
 
 
 def test_retry_policy_custom_values() -> None:
@@ -59,13 +68,13 @@ def test_retry_policy_custom_values() -> None:
         log_retries=False,
     )
 
-    assert policy.max_attempts == 5
-    assert policy.max_delay_s == 60.0
-    assert policy.backoff_multiplier == 1.0
-    assert policy.backoff_max_s == 20.0
-    assert policy.retryable_exceptions == (ValueError, TypeError)
-    assert policy.use_jitter is False
-    assert policy.log_retries is False
+    expect_equal(policy.max_attempts, 5)
+    expect_equal(policy.max_delay_s, 60.0)
+    expect_equal(policy.backoff_multiplier, 1.0)
+    expect_equal(policy.backoff_max_s, 20.0)
+    expect_equal(policy.retryable_exceptions, (ValueError, TypeError))
+    expect_true(not policy.use_jitter)
+    expect_true(not policy.log_retries)
 
 
 def test_retry_policy_is_frozen() -> None:
@@ -85,7 +94,7 @@ def test_get_wait_strategy_with_jitter() -> None:
     policy = RetryPolicy(use_jitter=True)
     strategy = policy.get_wait_strategy()
 
-    assert isinstance(strategy, wait_random_exponential)
+    expect_is_instance(strategy, wait_random_exponential)
 
 
 def test_get_wait_strategy_without_jitter() -> None:
@@ -93,7 +102,7 @@ def test_get_wait_strategy_without_jitter() -> None:
     policy = RetryPolicy(use_jitter=False)
     strategy = policy.get_wait_strategy()
 
-    assert isinstance(strategy, wait_exponential)
+    expect_is_instance(strategy, wait_exponential)
 
 
 # =============================================================================
@@ -108,7 +117,7 @@ def test_get_stop_strategy() -> None:
 
     # Strategy should be a combination (stop_after_attempt | stop_after_delay)
     # We can't easily inspect the combined strategy, but we can verify it works
-    assert strategy is not None
+    expect_is_not_none(strategy)
 
 
 # =============================================================================
@@ -121,7 +130,7 @@ def test_create_retrying_returns_retrying() -> None:
     policy = RetryPolicy()
     retrying = policy.create_retrying()
 
-    assert isinstance(retrying, Retrying)
+    expect_is_instance(retrying, Retrying)
 
 
 def test_create_retrying_respects_max_attempts() -> None:
@@ -150,7 +159,7 @@ def test_create_retrying_respects_max_attempts() -> None:
     with pytest.raises(ValueError, match="Always fails"):
         run_retry_loop()
 
-    assert call_count == 3
+    expect_equal(call_count, 3)
 
 
 def test_create_retrying_success_on_first_try() -> None:
@@ -162,7 +171,7 @@ def test_create_retrying_success_on_first_try() -> None:
         with attempt:
             result = "success"
 
-    assert result == "success"
+    expect_equal(result, "success")
 
 
 def test_create_retrying_success_after_retry() -> None:
@@ -180,7 +189,7 @@ def test_create_retrying_success_after_retry() -> None:
     def transient_failure() -> None:
         nonlocal call_count
         call_count += 1
-        if call_count < 2:
+        if call_count < SECOND_ATTEMPT:
             msg = "Transient failure"
             raise ValueError(msg)
 
@@ -188,7 +197,7 @@ def test_create_retrying_success_after_retry() -> None:
         with attempt:
             transient_failure()
 
-    assert call_count == 2
+    expect_equal(call_count, SECOND_ATTEMPT)
 
 
 # =============================================================================
@@ -201,7 +210,7 @@ def test_create_async_retrying_returns_async_retrying() -> None:
     policy = RetryPolicy()
     async_retrying = policy.create_async_retrying()
 
-    assert isinstance(async_retrying, AsyncRetrying)
+    expect_is_instance(async_retrying, AsyncRetrying)
 
 
 # =============================================================================
@@ -214,7 +223,7 @@ def test_as_decorator() -> None:
     policy = RetryPolicy()
     decorator = policy.as_decorator()
 
-    assert callable(decorator)
+    expect_true(callable(decorator))
 
 
 def test_as_decorator_application() -> None:
@@ -233,14 +242,14 @@ def test_as_decorator_application() -> None:
     def flaky_function() -> str:
         nonlocal call_count
         call_count += 1
-        if call_count < 2:
+        if call_count < SECOND_ATTEMPT:
             msg = "Transient"
             raise ValueError(msg)
         return "decorated_success"
 
     result = flaky_function()
-    assert result == "decorated_success"
-    assert call_count == 2
+    expect_equal(result, "decorated_success")
+    expect_equal(call_count, SECOND_ATTEMPT)
 
 
 # =============================================================================
@@ -253,10 +262,10 @@ def test_with_max_attempts() -> None:
     original = RetryPolicy(max_attempts=3)
     modified = original.with_max_attempts(5)
 
-    assert original.max_attempts == 3
-    assert modified.max_attempts == 5
-    assert modified.max_delay_s == original.max_delay_s
-    assert modified.backoff_multiplier == original.backoff_multiplier
+    expect_equal(original.max_attempts, 3)
+    expect_equal(modified.max_attempts, 5)
+    expect_equal(modified.max_delay_s, original.max_delay_s)
+    expect_equal(modified.backoff_multiplier, original.backoff_multiplier)
 
 
 def test_with_exceptions() -> None:
@@ -264,9 +273,9 @@ def test_with_exceptions() -> None:
     original = RetryPolicy(retryable_exceptions=(ValueError,))
     modified = original.with_exceptions((TypeError, RuntimeError))
 
-    assert original.retryable_exceptions == (ValueError,)
-    assert modified.retryable_exceptions == (TypeError, RuntimeError)
-    assert modified.max_attempts == original.max_attempts
+    expect_equal(original.retryable_exceptions, (ValueError,))
+    expect_equal(modified.retryable_exceptions, (TypeError, RuntimeError))
+    expect_equal(modified.max_attempts, original.max_attempts)
 
 
 # =============================================================================
@@ -276,31 +285,31 @@ def test_with_exceptions() -> None:
 
 def test_plugin_retry_policy() -> None:
     """Verify PLUGIN_RETRY_POLICY defaults."""
-    assert PLUGIN_RETRY_POLICY.max_attempts == 3
-    assert PLUGIN_RETRY_POLICY.max_delay_s == 30.0
-    assert PLUGIN_RETRY_POLICY.backoff_max_s == 5.0
+    expect_equal(PLUGIN_RETRY_POLICY.max_attempts, 3)
+    expect_equal(PLUGIN_RETRY_POLICY.max_delay_s, 30.0)
+    expect_equal(PLUGIN_RETRY_POLICY.backoff_max_s, 5.0)
 
 
 def test_network_retry_policy() -> None:
     """Verify NETWORK_RETRY_POLICY defaults."""
-    assert NETWORK_RETRY_POLICY.max_attempts == 5
-    assert NETWORK_RETRY_POLICY.max_delay_s == 60.0
-    assert NETWORK_RETRY_POLICY.backoff_max_s == 20.0
-    assert TimeoutError in NETWORK_RETRY_POLICY.retryable_exceptions
-    assert ConnectionError in NETWORK_RETRY_POLICY.retryable_exceptions
+    expect_equal(NETWORK_RETRY_POLICY.max_attempts, 5)
+    expect_equal(NETWORK_RETRY_POLICY.max_delay_s, 60.0)
+    expect_equal(NETWORK_RETRY_POLICY.backoff_max_s, 20.0)
+    expect_in(TimeoutError, NETWORK_RETRY_POLICY.retryable_exceptions)
+    expect_in(ConnectionError, NETWORK_RETRY_POLICY.retryable_exceptions)
 
 
 def test_no_retry_policy() -> None:
     """Verify NO_RETRY_POLICY disables retries."""
-    assert NO_RETRY_POLICY.max_attempts == 1
-    assert NO_RETRY_POLICY.max_delay_s == 0.0
+    expect_equal(NO_RETRY_POLICY.max_attempts, 1)
+    expect_equal(NO_RETRY_POLICY.max_delay_s, 0.0)
 
 
 def test_database_retry_policy() -> None:
     """Verify DATABASE_RETRY_POLICY defaults."""
-    assert DATABASE_RETRY_POLICY.max_attempts == 3
-    assert DATABASE_RETRY_POLICY.max_delay_s == 15.0
-    assert DATABASE_RETRY_POLICY.backoff_max_s == 3.0
+    expect_equal(DATABASE_RETRY_POLICY.max_attempts, 3)
+    expect_equal(DATABASE_RETRY_POLICY.max_delay_s, 15.0)
+    expect_equal(DATABASE_RETRY_POLICY.backoff_max_s, 3.0)
 
 
 # =============================================================================
@@ -315,7 +324,7 @@ def test_with_retry_success() -> None:
         return "result"
 
     result = with_retry(PLUGIN_RETRY_POLICY, simple_fn)
-    assert result == "result"
+    expect_equal(result, "result")
 
 
 def test_with_retry_with_args() -> None:
@@ -325,7 +334,7 @@ def test_with_retry_with_args() -> None:
         return a + b
 
     result = with_retry(PLUGIN_RETRY_POLICY, add, 2, 3)
-    assert result == 5
+    expect_equal(result, 5)
 
 
 def test_with_retry_with_kwargs() -> None:
@@ -335,7 +344,7 @@ def test_with_retry_with_kwargs() -> None:
         return f"{greeting}, {name}!"
 
     result = with_retry(PLUGIN_RETRY_POLICY, greet, "World", greeting="Hi")
-    assert result == "Hi, World!"
+    expect_equal(result, "Hi, World!")
 
 
 def test_with_retry_retries_on_exception() -> None:
@@ -345,7 +354,7 @@ def test_with_retry_retries_on_exception() -> None:
     def flaky() -> str:
         nonlocal call_count
         call_count += 1
-        if call_count < 2:
+        if call_count < SECOND_ATTEMPT:
             msg = "Transient"
             raise ValueError(msg)
         return "success"
@@ -359,8 +368,8 @@ def test_with_retry_retries_on_exception() -> None:
     )
 
     result = with_retry(policy, flaky)
-    assert result == "success"
-    assert call_count == 2
+    expect_equal(result, "success")
+    expect_equal(call_count, SECOND_ATTEMPT)
 
 
 def test_with_retry_raises_after_exhaustion() -> None:
@@ -389,7 +398,7 @@ def test_with_retry_raises_after_exhaustion() -> None:
 
 def test_with_retry_async_is_coroutine_function() -> None:
     """Verify with_retry_async is available as an async helper."""
-    assert inspect.iscoroutinefunction(with_retry_async)
+    expect_true(inspect.iscoroutinefunction(with_retry_async))
 
 
 # =============================================================================
@@ -405,9 +414,9 @@ def test_get_retry_policy_for_retryable() -> None:
         retryable_exceptions=(ValueError, TypeError),
     )
 
-    assert policy.max_attempts == 5
-    assert policy.backoff_multiplier == 0.5  # 500ms / 1000
-    assert policy.retryable_exceptions == (ValueError, TypeError)
+    expect_equal(policy.max_attempts, 5)
+    expect_equal(policy.backoff_multiplier, 0.5)  # 500ms / 1000
+    expect_equal(policy.retryable_exceptions, (ValueError, TypeError))
 
 
 def test_get_retry_policy_for_retryable_zero_backoff() -> None:
@@ -418,8 +427,8 @@ def test_get_retry_policy_for_retryable_zero_backoff() -> None:
         retryable_exceptions=(RuntimeError,),
     )
 
-    assert policy.max_attempts == 3
-    assert policy.backoff_multiplier == 0.0
+    expect_equal(policy.max_attempts, 3)
+    expect_equal(policy.backoff_multiplier, 0.0)
 
 
 def test_get_retry_policy_for_retryable_single_retry() -> None:
@@ -430,4 +439,4 @@ def test_get_retry_policy_for_retryable_single_retry() -> None:
         retryable_exceptions=(OSError,),
     )
 
-    assert policy.max_attempts == 1
+    expect_equal(policy.max_attempts, 1)

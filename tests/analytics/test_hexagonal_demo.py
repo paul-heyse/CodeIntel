@@ -11,6 +11,7 @@ production-parity testing principles.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -22,6 +23,13 @@ from tests._helpers import (
     METRICS_PACK,
     TestContext,
     TestScenario,
+)
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
 )
 from tests._helpers.context import SeedPack
 from tests._helpers.seeds.core import GOID_FUNC_A, GOID_FUNC_B
@@ -58,8 +66,10 @@ def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
     )
     # GRAPH_PACK seeds 4 GOIDs with call graph nodes
     expected_rows = EXPECTED_GRAPH_PACK_GOIDS
-    assert row_count == expected_rows, (
-        f"Expected {expected_rows} function metric rows, got {row_count}"
+    expect_equal(
+        row_count,
+        expected_rows,
+        label="graph_metrics_functions row_count",
     )
 
 
@@ -75,15 +85,15 @@ def test_query_helper_returns_typed_rows(graph_ctx: TestContext) -> None:
     )
 
     # Both access patterns work
-    assert len(rows) == EXPECTED_QUERY_ROW_COUNT
+    expect_length(rows, EXPECTED_QUERY_ROW_COUNT)
     for row in rows:
         # Index access - goid_h128 is stored as DECIMAL(38,0), returns Decimal
-        assert row[0] is not None
+        expect_true(row[0] is not None)
         # Attribute access
-        assert isinstance(row.qualname, str)
+        expect_is_instance(row.qualname, str)
         # Dict conversion
         row_dict = row.as_dict()
-        assert "goid_h128" in row_dict
+        expect_in("goid_h128", row_dict)
 
 
 # =============================================================================
@@ -102,12 +112,12 @@ def test_custom_scenario_with_multiple_packs(tmp_path: Path) -> None:
 
     try:
         # Verify all expected data is present
-        assert ctx.query_count("core.goids") > 0
-        assert ctx.query_count("graph.call_graph_edges") > 0
-        assert ctx.query_count("analytics.test_catalog") > 0
+        expect_true(ctx.query_count("core.goids") > 0)
+        expect_true(ctx.query_count("graph.call_graph_edges") > 0)
+        expect_true(ctx.query_count("analytics.test_catalog") > 0)
 
         # Verify sample files were written
-        assert (ctx.repo_root / "pkg" / "mod_a.py").exists()
+        expect_true((ctx.repo_root / "pkg" / "mod_a.py").exists())
     finally:
         ctx.close()
 
@@ -117,12 +127,12 @@ def test_scenario_with_custom_repo_commit(tmp_path: Path) -> None:
     ctx = TestScenario.minimal().with_repo("custom/repo").with_commit("abc123").build(tmp_path)
 
     try:
-        assert ctx.repo == "custom/repo"
-        assert ctx.commit == "abc123"
+        expect_equal(ctx.repo, "custom/repo")
+        expect_equal(ctx.commit, "abc123")
 
         # Seeded data uses the custom identifiers
         rows = ctx.query("SELECT DISTINCT repo FROM core.modules")
-        assert rows[0][0] == "custom/repo"
+        expect_equal(rows[0][0], "custom/repo")
     finally:
         ctx.close()
 
@@ -146,7 +156,7 @@ def test_require_packs_idempotently(test_ctx: TestContext) -> None:
     test_ctx.require(GRAPH_PACK)
     second_count = test_ctx.query_count("graph.call_graph_edges")
 
-    assert initial_count == second_count
+    expect_equal(initial_count, second_count)
 
 
 def test_pack_dependencies_resolved(test_ctx: TestContext) -> None:
@@ -159,8 +169,8 @@ def test_pack_dependencies_resolved(test_ctx: TestContext) -> None:
     test_ctx.require(GRAPH_PACK)
 
     # Core data was also seeded due to dependency
-    assert test_ctx.query_count("core.modules") > 0
-    assert test_ctx.query_count("core.goids") > 0
+    expect_true(test_ctx.query_count("core.modules") > 0)
+    expect_true(test_ctx.query_count("core.goids") > 0)
 
 
 def test_full_stack_provides_all_data(full_ctx: TestContext) -> None:
@@ -169,20 +179,20 @@ def test_full_stack_provides_all_data(full_ctx: TestContext) -> None:
     This is useful for integration tests that need multiple data types.
     """
     # Core data
-    assert full_ctx.query_count("core.modules") > 0
-    assert full_ctx.query_count("core.goids") > 0
+    expect_true(full_ctx.query_count("core.modules") > 0)
+    expect_true(full_ctx.query_count("core.goids") > 0)
 
     # Graph data
-    assert full_ctx.query_count("graph.call_graph_edges") > 0
-    assert full_ctx.query_count("graph.import_graph_edges") > 0
+    expect_true(full_ctx.query_count("graph.call_graph_edges") > 0)
+    expect_true(full_ctx.query_count("graph.import_graph_edges") > 0)
 
     # Coverage data
-    assert full_ctx.query_count("analytics.test_catalog") > 0
-    assert full_ctx.query_count("analytics.test_coverage_edges") > 0
+    expect_true(full_ctx.query_count("analytics.test_catalog") > 0)
+    expect_true(full_ctx.query_count("analytics.test_coverage_edges") > 0)
 
     # Metrics data
-    assert full_ctx.query_count("analytics.function_metrics") > 0
-    assert full_ctx.query_count("analytics.goid_risk_factors") > 0
+    expect_true(full_ctx.query_count("analytics.function_metrics") > 0)
+    expect_true(full_ctx.query_count("analytics.goid_risk_factors") > 0)
 
 
 # =============================================================================
@@ -201,10 +211,11 @@ def test_metrics_ctx_provides_function_metrics(metrics_ctx: TestContext) -> None
         [metrics_ctx.repo, metrics_ctx.commit],
     )
 
-    assert len(rows) == METRICS_PACK_FUNCTION_COUNT  # METRICS_PACK seeds 4 functions
+    expect_length(rows, METRICS_PACK_FUNCTION_COUNT)  # METRICS_PACK seeds 4 functions
     for row in rows:
-        assert isinstance(row.cyclomatic_complexity, int)
-        assert row.cyclomatic_complexity >= 1
+        expect_is_instance(row.cyclomatic_complexity, int)
+        complexity = int(cast("int | float | str", row.cyclomatic_complexity))
+        expect_true(complexity >= 1)
 
 
 def test_risk_factors_correlate_with_metrics(metrics_ctx: TestContext) -> None:
@@ -223,7 +234,7 @@ def test_risk_factors_correlate_with_metrics(metrics_ctx: TestContext) -> None:
     }
 
     # Both tables have data for the same GOIDs
-    assert metric_goids == risk_goids
+    expect_equal(metric_goids, risk_goids)
 
 
 # =============================================================================
@@ -257,4 +268,4 @@ def test_pack_seeds_expected_table(
     """
     test_ctx.require(pack)
     count = test_ctx.query_count(expected_table)
-    assert count > 0, f"Expected {expected_table} to have rows after {pack.name}"
+    expect_true(count > 0, message=f"Expected {expected_table} to have rows after {pack.name}")

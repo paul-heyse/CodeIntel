@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config import BuildPaths
+from codeintel.config import BuildLayoutOptions, BuildPaths
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion import (
     DuckDBStorageAdapter,
@@ -88,9 +88,11 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
 
     _ = BuildPaths.from_layout(
         repo_root=repo_root,
-        build_dir=build_dir,
-        db_path=db_path,
-        document_output_dir=document_output_dir,
+        overrides=BuildLayoutOptions(
+            build_dir=build_dir,
+            db_path=db_path,
+            document_output_dir=document_output_dir,
+        ),
     )
 
     gateway = open_gateway(

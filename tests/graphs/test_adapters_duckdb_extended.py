@@ -19,6 +19,13 @@ import pytest
 from codeintel.graphs.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.sql import QueryBuilder, SafeTable, render_sql
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -145,7 +152,7 @@ def test_duckdb_adapter_init_with_gateway(graph_gateway: StorageGateway) -> None
     """DuckDBStorageAdapter initializes with gateway."""
     adapter = DuckDBStorageAdapter(graph_gateway)
 
-    assert adapter.gateway is graph_gateway
+    expect_true(adapter.gateway is graph_gateway)
 
 
 def test_duckdb_adapter_connection_accessible(graph_gateway: StorageGateway) -> None:
@@ -153,7 +160,7 @@ def test_duckdb_adapter_connection_accessible(graph_gateway: StorageGateway) -> 
     adapter = DuckDBStorageAdapter(graph_gateway)
 
     # Connection should be accessible via gateway
-    assert adapter.gateway.con is not None
+    expect_is_not_none(adapter.gateway.con)
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +174,12 @@ def test_duckdb_adapter_execute_simple_query(graph_gateway: StorageGateway) -> N
 
     result = adapter.execute("SELECT 1 AS value")
 
-    assert result is not None
+    expect_is_not_none(result)
     row = result.fetchone()
-    assert row is not None
-    assert row[0] == 1
+    expect_is_not_none(row)
+    if row is None:
+        pytest.fail("Expected a row from SELECT")
+    expect_equal(row[0], 1)
 
 
 def test_duckdb_adapter_execute_with_params(graph_gateway: StorageGateway) -> None:
@@ -180,8 +189,10 @@ def test_duckdb_adapter_execute_with_params(graph_gateway: StorageGateway) -> No
     result = adapter.execute("SELECT ? AS value", [PARAM_VALUE])
 
     row = result.fetchone()
-    assert row is not None
-    assert row[0] == PARAM_VALUE
+    expect_is_not_none(row)
+    if row is None:
+        pytest.fail("Expected a row from parameterized query")
+    expect_equal(row[0], PARAM_VALUE)
 
 
 def test_duckdb_adapter_execute_fetch_all(graph_gateway: StorageGateway) -> None:
@@ -192,8 +203,8 @@ def test_duckdb_adapter_execute_fetch_all(graph_gateway: StorageGateway) -> None
     result = adapter.execute("SELECT unnest([1, 2, 3]) AS value")
     rows = result.fetchall()
 
-    assert len(rows) == len(UNNEST_VALUES)
-    assert [r[0] for r in rows] == list(UNNEST_VALUES)
+    expect_length(rows, len(UNNEST_VALUES))
+    expect_equal([r[0] for r in rows], list(UNNEST_VALUES))
 
 
 # ---------------------------------------------------------------------------
@@ -211,8 +222,10 @@ def test_duckdb_adapter_create_temp_table(graph_gateway: StorageGateway) -> None
     count_sql, params = QueryBuilder.count(TABLE_BASE)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    assert count is not None
-    assert count[0] == 0
+    expect_is_not_none(count)
+    if count is None:
+        pytest.fail("Expected count row from QueryBuilder.count")
+    expect_equal(count[0], 0)
 
 
 def test_duckdb_adapter_insert_and_select(graph_gateway: StorageGateway) -> None:
@@ -229,9 +242,9 @@ def test_duckdb_adapter_insert_and_select(graph_gateway: StorageGateway) -> None
     result = adapter.execute(_select_ordered_sql(TABLE_INSERT, "id"))
     rows = result.fetchall()
 
-    assert len(rows) == INSERT_ROW_COUNT
-    assert rows[0] == (1, "test1")
-    assert rows[1] == (2, "test2")
+    expect_length(rows, INSERT_ROW_COUNT)
+    expect_equal(rows[0], (1, "test1"))
+    expect_equal(rows[1], (2, "test2"))
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +268,10 @@ def test_duckdb_adapter_batch_insert(graph_gateway: StorageGateway) -> None:
     count_sql, params = QueryBuilder.count(TABLE_BATCH)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    assert count is not None
-    assert count[0] == BATCH_SIZE
+    expect_is_not_none(count)
+    if count is None:
+        pytest.fail("Expected count row for batch insert")
+    expect_equal(count[0], BATCH_SIZE)
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +311,7 @@ def test_duckdb_adapter_list_tables(graph_gateway: StorageGateway) -> None:
 
     rows = result.fetchall()
     # Should have some tables
-    assert isinstance(rows, list)
+    expect_true(isinstance(rows, list))
 
 
 def test_duckdb_adapter_table_columns(graph_gateway: StorageGateway) -> None:
@@ -312,9 +327,9 @@ def test_duckdb_adapter_table_columns(graph_gateway: StorageGateway) -> None:
     rows = result.fetchall()
     column_names = [r[0] for r in rows]
 
-    assert "id" in column_names
-    assert "name" in column_names
-    assert "value" in column_names
+    expect_in("id", column_names)
+    expect_in("name", column_names)
+    expect_in("value", column_names)
 
 
 # ---------------------------------------------------------------------------
@@ -336,8 +351,10 @@ def test_duckdb_adapter_transaction_commit(graph_gateway: StorageGateway) -> Non
     count_sql, params = QueryBuilder.count(TABLE_TX)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    assert count is not None
-    assert count[0] == 1
+    expect_is_not_none(count)
+    if count is None:
+        pytest.fail("Expected count row after transaction")
+    expect_equal(count[0], 1)
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +378,6 @@ def test_duckdb_adapter_aggregate_query(graph_gateway: StorageGateway) -> None:
     result = adapter.execute(_aggregate_sql(TABLE_AGG))
 
     rows = result.fetchall()
-    assert len(rows) == len(AGG_EXPECTED)
-    assert rows[0] == AGG_EXPECTED[0]
-    assert rows[1] == AGG_EXPECTED[1]
+    expect_length(rows, len(AGG_EXPECTED))
+    expect_equal(rows[0], AGG_EXPECTED[0])
+    expect_equal(rows[1], AGG_EXPECTED[1])

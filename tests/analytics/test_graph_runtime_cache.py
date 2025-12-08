@@ -9,15 +9,10 @@ import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
+from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import GraphFixtures, GraphStubEngine
-
-
-def _expect(*, condition: bool, detail: str) -> None:
-    if condition:
-        return
-    raise AssertionError(detail)
 
 
 class _CountingGraphEngine(GraphStubEngine):
@@ -58,22 +53,16 @@ def test_disk_cache_round_trip(tmp_path: Path) -> None:
         runtime = GraphRuntime(options=opts, engine=engine)
 
         graph1 = runtime.ensure_call_graph()
-        _expect(condition=engine.calls == 1, detail="loader should be invoked on first load")
+        expect_equal(engine.calls, 1)
         expected_nodes = 2
-        _expect(
-            condition=graph1.number_of_nodes() == expected_nodes,
-            detail="graph should have expected node count",
-        )
+        expect_equal(graph1.number_of_nodes(), expected_nodes)
 
         engine2 = _CountingGraphEngine(tmp_path)
         try:
             runtime2 = GraphRuntime(options=opts, engine=engine2)
             graph2 = runtime2.ensure_call_graph()
-            _expect(condition=engine2.calls == 0, detail="cache should be used on second load")
-            _expect(
-                condition=graph2.number_of_edges() == 1,
-                detail="graph should retain edges from cache",
-            )
+            expect_equal(engine2.calls, 0)
+            expect_equal(graph2.number_of_edges(), 1)
         finally:
             engine2.gateway.close()
     finally:
@@ -96,6 +85,6 @@ def test_disk_cache_mismatch_falls_back_to_loader(tmp_path: Path) -> None:
     runtime = GraphRuntime(options=opts, engine=engine)
     try:
         runtime.ensure_call_graph()
-        _expect(condition=engine.calls == 1, detail="cache mismatch should trigger loader")
+        expect_equal(engine.calls, 1)
     finally:
         engine.gateway.close()

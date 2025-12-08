@@ -20,6 +20,13 @@ from codeintel.analytics.adapters.base import (
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Constants
@@ -213,7 +220,7 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
         # Access self.table_name to satisfy PLR6301 (method uses self)
         _ = self.table_name
         # Record that a gateway was provided to ensure interface compliance
-        assert gateway is not None
+        expect_is_not_none(gateway)
         return len(rows)
 
 
@@ -290,14 +297,14 @@ def snapshot() -> SnapshotRef:
 def test_create_delete_scope() -> None:
     """Create delete scope with repo and commit."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
-    assert scope.repo == DEMO_REPO
-    assert scope.commit == DEMO_COMMIT
+    expect_equal(scope.repo, DEMO_REPO)
+    expect_equal(scope.commit, DEMO_COMMIT)
 
 
 def test_delete_scope_defaults() -> None:
     """Delete scope has None defaults for optional fields."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
-    assert scope.columns is None
+    expect_is_none(scope.columns)
 
 
 def test_delete_scope_with_columns() -> None:
@@ -307,8 +314,8 @@ def test_delete_scope_with_columns() -> None:
         commit=DEMO_COMMIT,
         columns=("repo", "commit", "version"),
     )
-    assert scope.columns is not None
-    assert len(scope.columns) == EXPECTED_COUNT_3
+    expect_is_not_none(scope.columns)
+    expect_length(scope.columns or (), EXPECTED_COUNT_3)
 
 
 def test_delete_scope_is_frozen() -> None:
@@ -329,10 +336,10 @@ def test_adapter_properties(
     """Adapter exposes gateway, snapshot, repo, commit properties."""
     adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
 
-    assert adapter.gateway is gateway_with_tables
-    assert adapter.snapshot is snapshot
-    assert adapter.repo == DEMO_REPO
-    assert adapter.commit == DEMO_COMMIT
+    expect_equal(adapter.gateway, gateway_with_tables)
+    expect_equal(adapter.snapshot, snapshot)
+    expect_equal(adapter.repo, DEMO_REPO)
+    expect_equal(adapter.commit, DEMO_COMMIT)
 
 
 def test_adapter_load_empty(
@@ -342,7 +349,7 @@ def test_adapter_load_empty(
     """Load from empty table returns no rows."""
     adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
     rows = list(adapter.load())
-    assert not rows
+    expect_true(not rows)
 
 
 def test_adapter_persist_and_load(
@@ -358,11 +365,11 @@ def test_adapter_persist_and_load(
         SampleRow(repo=DEMO_REPO, commit=DEMO_COMMIT, value=2, name="second"),
     ]
     count = adapter.persist(sample_rows)
-    assert count == EXPECTED_COUNT_2
+    expect_equal(count, EXPECTED_COUNT_2)
 
     # Load back
     loaded = list(adapter.load())
-    assert len(loaded) == EXPECTED_COUNT_2
+    expect_length(loaded, EXPECTED_COUNT_2)
 
 
 def test_adapter_persist_empty(
@@ -372,7 +379,7 @@ def test_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_adapter_persist_replaces_existing(
@@ -389,8 +396,8 @@ def test_adapter_persist_replaces_existing(
     adapter.persist([SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "replaced")])
 
     loaded = list(adapter.load())
-    assert len(loaded) == EXPECTED_COUNT_1
-    assert loaded[0].name == "replaced"
+    expect_length(loaded, EXPECTED_COUNT_1)
+    expect_equal(loaded[0].name, "replaced")
 
 
 # =============================================================================
@@ -404,7 +411,7 @@ def test_batch_table_name_property(
 ) -> None:
     """Batch adapter exposes table_name property."""
     adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
-    assert adapter.table_name == "sample_batch"
+    expect_equal(adapter.table_name, "sample_batch")
 
 
 def test_batch_delete_scope_default(
@@ -414,8 +421,8 @@ def test_batch_delete_scope_default(
     """Default delete scope uses repo/commit."""
     adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
     scope = adapter.delete_scope()
-    assert scope.repo == DEMO_REPO
-    assert scope.commit == DEMO_COMMIT
+    expect_equal(scope.repo, DEMO_REPO)
+    expect_equal(scope.commit, DEMO_COMMIT)
 
 
 def test_batch_persist_with_delete(
@@ -434,8 +441,8 @@ def test_batch_persist_with_delete(
     adapter.persist_batch(new_rows, delete_before=True)
 
     loaded = list(adapter.load())
-    assert len(loaded) == EXPECTED_COUNT_1
-    assert loaded[0].name == "second"
+    expect_length(loaded, EXPECTED_COUNT_1)
+    expect_equal(loaded[0].name, "second")
 
 
 def test_batch_persist_without_delete(
@@ -458,7 +465,7 @@ def test_batch_persist_without_delete(
     )
 
     loaded = list(adapter.load())
-    assert len(loaded) == EXPECTED_COUNT_2
+    expect_length(loaded, EXPECTED_COUNT_2)
 
 
 def test_batch_persist_empty(
@@ -468,7 +475,7 @@ def test_batch_persist_empty(
     """Persist empty batch returns 0."""
     adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
     count = adapter.persist_batch([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 # =============================================================================
@@ -479,7 +486,7 @@ def test_batch_persist_empty(
 def test_simple_batch_table_name_property() -> None:
     """Simple batch adapter exposes table_name property."""
     adapter = ConcreteSimpleBatchAdapter()
-    assert adapter.table_name == "sample_simple_batch"
+    expect_equal(adapter.table_name, "sample_simple_batch")
 
 
 def test_simple_batch_insert_rows(
@@ -493,7 +500,7 @@ def test_simple_batch_insert_rows(
     ]
     # Note: Our test impl just returns len(rows)
     count = adapter.insert_rows(gateway_with_tables, rows)
-    assert count == EXPECTED_COUNT_2
+    expect_equal(count, EXPECTED_COUNT_2)
 
 
 def test_simple_batch_execute_delete(
@@ -513,15 +520,15 @@ def test_simple_batch_execute_delete(
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
     deleted = adapter.execute_delete(gateway_with_tables, scope)
 
-    assert deleted == EXPECTED_COUNT_1
+    expect_equal(deleted, EXPECTED_COUNT_1)
 
     # Verify row is gone
     result = gateway_with_tables.con.execute(
         "SELECT COUNT(*) FROM sample_simple_batch WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     ).fetchone()
-    assert result is not None
-    assert result[0] == EXPECTED_COUNT_0
+    row = expect_is_not_none(result)
+    expect_equal(row[0], EXPECTED_COUNT_0)
 
 
 def test_simple_batch_execute_delete_no_rows(
@@ -532,4 +539,4 @@ def test_simple_batch_execute_delete_no_rows(
     scope = DeleteScope(repo="nonexistent", commit="none")
     deleted = adapter.execute_delete(gateway_with_tables, scope)
 
-    assert deleted == EXPECTED_COUNT_0
+    expect_equal(deleted, EXPECTED_COUNT_0)

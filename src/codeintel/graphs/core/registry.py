@@ -11,10 +11,10 @@ from __future__ import annotations
 import importlib
 import logging
 from collections.abc import Sequence
-from typing import cast
+from typing import TypeGuard
 
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.plugins.registry.base import BasePluginRegistry
+from codeintel.core.plugins.registry.base import BasePluginRegistry, RegistryHooks
 from codeintel.core.plugins.registry.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
@@ -37,6 +37,55 @@ class _GraphPluginRegistryHolder(SingletonHolder["GraphPluginRegistry"]):
     """
 
 
+class GraphRegistryHooks(RegistryHooks[GraphPluginProtocol]):
+    """Graph-specific registry hooks."""
+
+    def __init__(self) -> None:
+        """Initialize graph registry hooks."""
+        self._entrypoint_group = "codeintel.graph_plugins"
+
+    @property
+    def entrypoint_group(self) -> str:
+        """Entrypoint group name for graph plugins."""
+        return self._entrypoint_group
+
+    def load_builtins(self) -> None:
+        """Import built-in graph plugins to guarantee registration."""
+        _ = self._entrypoint_group
+        try:
+            importlib.import_module("codeintel.graphs.plugins")
+        except ImportError as exc:
+            log.warning("Failed to import built-in graph plugins: %s", exc)
+
+    def resolve_entrypoint(self, loaded: object) -> GraphPluginProtocol | None:
+        """Resolve an entry point to a GraphPluginProtocol instance.
+
+        Returns
+        -------
+        GraphPluginProtocol | None
+            Valid plugin instance or None if resolution fails.
+        """
+        if self.is_valid_plugin(loaded):
+            return loaded
+
+        if isinstance(loaded, type) or (callable(loaded) and not hasattr(loaded, "metadata")):
+            instance = loaded()
+            if self.is_valid_plugin(instance):
+                return instance
+        return None
+
+    def is_valid_plugin(self, obj: object) -> TypeGuard[GraphPluginProtocol]:
+        """Check if an object is a valid graph plugin.
+
+        Returns
+        -------
+        TypeGuard[GraphPluginProtocol]
+            True when the object satisfies the graph plugin protocol.
+        """
+        _ = self._entrypoint_group
+        return isinstance(obj, GraphPluginProtocol)
+
+
 class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
     """Central registry for graph plugins.
 
@@ -46,6 +95,10 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
     For singleton access, use :func:`get_graph_registry` rather than
     instantiating directly. Direct instantiation is useful for testing.
     """
+
+    def __init__(self, hooks: RegistryHooks[GraphPluginProtocol] | None = None) -> None:
+        """Initialize the graph registry with hooks."""
+        super().__init__(hooks=hooks or GraphRegistryHooks())
 
     @staticmethod
     def _get_default_plugins() -> Sequence[str]:
@@ -57,70 +110,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
             Default graph plugin names.
         """
         return DEFAULT_GRAPH_PLUGINS
-
-    def _ensure_builtins_loaded(self) -> None:
-        """Import built-in graph plugins to guarantee registration."""
-        if self._builtins_loaded:
-            return
-        try:
-            importlib.import_module("codeintel.graphs.plugins")
-        except ImportError as exc:
-            log.warning("Failed to import built-in graph plugins: %s", exc)
-        self._builtins_loaded = True
-
-    @property
-    def _default_entrypoint_group(self) -> str:
-        """Return the graph plugins entry point group.
-
-        Returns
-        -------
-        str
-            Entry point group name for graph plugins.
-        """
-        return "codeintel.graph_plugins"
-
-    def _resolve_entrypoint(self, loaded: object) -> GraphPluginProtocol | None:
-        """Resolve an entry point to a GraphPluginProtocol instance.
-
-        Handles both direct plugin instances and callable factories.
-
-        Parameters
-        ----------
-        loaded
-            The object loaded from the entry point.
-
-        Returns
-        -------
-        GraphPluginProtocol | None
-            A valid plugin instance, or None if resolution failed.
-        """
-        # Direct plugin instance - use self._is_valid_plugin for consistency
-        if self._is_valid_plugin(loaded):
-            return cast("GraphPluginProtocol", loaded)
-
-        # Callable factory (class or function without metadata attr)
-        if isinstance(loaded, type) or (callable(loaded) and not hasattr(loaded, "metadata")):
-            instance = loaded()
-            if self._is_valid_plugin(instance):
-                return cast("GraphPluginProtocol", instance)
-        return None
-
-    def _is_valid_plugin(self, obj: object) -> bool:
-        """Check if an object is a valid graph plugin.
-
-        Parameters
-        ----------
-        obj
-            Object to validate.
-
-        Returns
-        -------
-        bool
-            True if the object implements GraphPluginProtocol.
-        """
-        # Access self to satisfy PLR6301 while also checking for protocol
-        _ = self._entrypoints_loaded  # Ensure registry state is accessible
-        return isinstance(obj, GraphPluginProtocol)
 
     def plan(
         self,
@@ -382,6 +371,7 @@ def plan_graph_plugins(
 
 __all__ = [
     "GraphPluginRegistry",
+    "GraphRegistryHooks",
     "get_graph_registry",
     "list_graph_plugins",
     "plan_graph_plugins",

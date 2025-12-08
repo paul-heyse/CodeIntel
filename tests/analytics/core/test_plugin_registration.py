@@ -14,13 +14,19 @@ import pytest
 
 from codeintel.analytics.plugins.registration import ALL_PLUGINS
 from codeintel.build.plugin import TargetPlugin
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 
 def test_all_plugins_have_names() -> None:
     """Verify ALL_PLUGINS all have unique plugin names."""
     plugin_names = {p.plugin_name for p in ALL_PLUGINS}
     # All plugins should have unique names
-    assert len(plugin_names) == len(ALL_PLUGINS), "Duplicate plugin names found"
+    expect_equal(len(plugin_names), len(ALL_PLUGINS), label="Duplicate plugin names found")
 
 
 def test_expected_plugins_are_present() -> None:
@@ -51,7 +57,8 @@ def test_expected_plugins_are_present() -> None:
     registered_names = {p.plugin_name for p in ALL_PLUGINS}
 
     missing = expected_plugins - registered_names
-    assert not missing, f"Missing expected plugins: {missing}"
+    if missing:
+        pytest.fail(f"Missing expected plugins: {missing}")
 
 
 def test_no_duplicate_plugin_names() -> None:
@@ -60,21 +67,27 @@ def test_no_duplicate_plugin_names() -> None:
 
     # Check for duplicates
     duplicates = [name for name in names if names.count(name) > 1]
-    assert not duplicates, f"Duplicate plugin names found: {set(duplicates)}"
+    if duplicates:
+        pytest.fail(f"Duplicate plugin names found: {set(duplicates)}")
 
 
 def test_plugins_have_valid_metadata() -> None:
     """Verify all registered plugins have complete metadata."""
     for plugin in ALL_PLUGINS:
-        assert plugin.plugin_name, "Plugin must have a name"
-        assert plugin.plugin_description, f"Plugin {plugin.plugin_name} must have a description"
-        assert plugin.plugin_version, f"Plugin {plugin.plugin_name} must have a version"
+        expect_true(plugin.plugin_name, message="plugin name present")
+        expect_true(
+            plugin.plugin_description,
+            message=f"plugin {plugin.plugin_name} description present",
+        )
+        expect_true(plugin.plugin_version, message=f"plugin {plugin.plugin_name} version present")
 
 
 def test_plugins_are_target_plugins() -> None:
     """Verify all plugins inherit from TargetPlugin."""
     for plugin in ALL_PLUGINS:
-        assert isinstance(plugin, TargetPlugin), f"{plugin.plugin_name} is not a TargetPlugin"
+        expect_is_instance(
+            plugin, TargetPlugin, label=f"{plugin.plugin_name} is not a TargetPlugin"
+        )
 
 
 @pytest.mark.parametrize(
@@ -89,4 +102,4 @@ def test_plugins_are_target_plugins() -> None:
 def test_specific_plugins_present(plugin_name: str) -> None:
     """Verify specific expected plugins are present."""
     names = {p.plugin_name for p in ALL_PLUGINS}
-    assert plugin_name in names, f"Expected plugin {plugin_name} not found"
+    expect_in(plugin_name, names, label=f"Expected plugin {plugin_name} not found")

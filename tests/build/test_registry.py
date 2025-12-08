@@ -11,56 +11,70 @@ from codeintel.build.registry import (
     build_target_graph,
     get_target_graph,
 )
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
+
+MIN_INGESTION_TARGETS = 5
+MIN_GRAPHS_TARGETS = 5
+MIN_ANALYTICS_TARGETS = 10
 
 
 class TestTargetRegistry:
     """Tests for the target registry."""
 
-    def test_all_targets_not_empty(self) -> None:
+    @staticmethod
+    def test_all_targets_not_empty() -> None:
         """Verify ALL_TARGETS contains targets."""
-        assert len(ALL_TARGETS) > 0
+        expect_true(len(ALL_TARGETS) > 0)
 
-    def test_modules_target_has_no_dependencies(self) -> None:
+    @staticmethod
+    def test_modules_target_has_no_dependencies() -> None:
         """Modules target is a root with no dependencies."""
-        assert MODULES_TARGET.dependencies == ()
-        assert MODULES_TARGET.module == "ingestion"
+        expect_equal(MODULES_TARGET.dependencies, ())
+        expect_equal(MODULES_TARGET.module, "ingestion")
 
-    def test_profiles_target_has_dependencies(self) -> None:
+    @staticmethod
+    def test_profiles_target_has_dependencies() -> None:
         """Profiles target depends on multiple other targets."""
-        assert len(PROFILES_TARGET.dependencies) > 0
-        assert PROFILES_TARGET.module == "analytics"
+        expect_true(len(PROFILES_TARGET.dependencies) > 0)
+        expect_equal(PROFILES_TARGET.module, "analytics")
 
-    def test_build_target_graph_succeeds(self) -> None:
+    @staticmethod
+    def test_build_target_graph_succeeds() -> None:
         """Build target graph without validation errors."""
         graph = build_target_graph()
-        assert len(graph) == len(ALL_TARGETS)
+        expect_equal(len(graph), len(ALL_TARGETS))
 
-    def test_get_target_graph_is_cached(self) -> None:
+    @staticmethod
+    def test_get_target_graph_is_cached() -> None:
         """get_target_graph returns the same instance."""
         graph1 = get_target_graph()
         graph2 = get_target_graph()
-        assert graph1 is graph2
+        expect_true(graph1 is graph2)
 
-    def test_all_targets_have_valid_modules(self) -> None:
+    @staticmethod
+    def test_all_targets_have_valid_modules() -> None:
         """All targets have valid module assignments."""
         valid_modules = {"ingestion", "graphs", "analytics", "export"}
         for target in ALL_TARGETS:
-            assert target.module in valid_modules, f"Invalid module for {target.name}"
+            expect_true(target.module in valid_modules, message=f"Invalid module for {target.name}")
 
-    def test_all_targets_have_tables(self) -> None:
+    @staticmethod
+    def test_all_targets_have_tables() -> None:
         """All non-export targets specify at least one output table."""
         for target in ALL_TARGETS:
             # Export targets produce files, not tables
             if target.module == "export":
                 continue
-            assert len(target.tables) > 0, f"No tables for {target.name}"
+            expect_true(len(target.tables) > 0, message=f"No tables for {target.name}")
 
-    def test_target_names_are_unique(self) -> None:
+    @staticmethod
+    def test_target_names_are_unique() -> None:
         """All target names are unique."""
         names = [t.name for t in ALL_TARGETS]
-        assert len(names) == len(set(names))
+        expect_equal(len(names), len(set(names)))
 
-    def test_topological_order_includes_all_deps(self) -> None:
+    @staticmethod
+    def test_topological_order_includes_all_deps() -> None:
         """Topological sort includes all transitive dependencies."""
         graph = get_target_graph()
 
@@ -70,9 +84,10 @@ class TestTargetRegistry:
         # All transitive deps should be included
         trans_deps = graph.transitive_deps("profiles")
         for dep in trans_deps:
-            assert dep in order
+            expect_in(dep, order)
 
-    def test_ingestion_targets_come_before_graphs(self) -> None:
+    @staticmethod
+    def test_ingestion_targets_come_before_graphs() -> None:
         """Ingestion targets precede graph targets in topological order."""
         graph = get_target_graph()
 
@@ -84,39 +99,44 @@ class TestTargetRegistry:
         for dep in graph.transitive_deps("call_graph"):
             dep_target = graph.get(dep)
             if dep_target.module == "ingestion":
-                assert order.index(dep) < call_graph_idx
+                expect_true(order.index(dep) < call_graph_idx)
 
-    def test_no_cycles_in_registry(self) -> None:
+    @staticmethod
+    def test_no_cycles_in_registry() -> None:
         """Registry has no cyclic dependencies."""
         graph = get_target_graph()
 
         # If we can get topological order of all, no cycles
         order = graph.topological_order(list(graph))
-        assert len(order) == len(ALL_TARGETS)
+        expect_equal(len(order), len(ALL_TARGETS))
 
 
 class TestTargetsByModule:
     """Tests for module-specific targets."""
 
-    def test_ingestion_targets_exist(self) -> None:
+    @staticmethod
+    def test_ingestion_targets_exist() -> None:
         """At least some ingestion targets are registered."""
         graph = get_target_graph()
         ingestion = graph.targets_for_module("ingestion")
-        assert len(ingestion) > 0
+        expect_true(len(ingestion) > 0)
 
-    def test_graphs_targets_exist(self) -> None:
+    @staticmethod
+    def test_graphs_targets_exist() -> None:
         """At least some graphs targets are registered."""
         graph = get_target_graph()
         graphs = graph.targets_for_module("graphs")
-        assert len(graphs) > 0
+        expect_true(len(graphs) > 0)
 
-    def test_analytics_targets_exist(self) -> None:
+    @staticmethod
+    def test_analytics_targets_exist() -> None:
         """At least some analytics targets are registered."""
         graph = get_target_graph()
         analytics = graph.targets_for_module("analytics")
-        assert len(analytics) > 0
+        expect_true(len(analytics) > 0)
 
-    def test_module_distribution_reasonable(self) -> None:
+    @staticmethod
+    def test_module_distribution_reasonable() -> None:
         """Check target distribution across modules."""
         graph = get_target_graph()
 
@@ -125,13 +145,13 @@ class TestTargetsByModule:
         analytics = graph.targets_for_module("analytics")
 
         # Ingestion should have several targets
-        assert len(ingestion) >= 5
+        expect_true(len(ingestion) >= MIN_INGESTION_TARGETS)
 
         # Graphs should have several targets
-        assert len(graphs) >= 5
+        expect_true(len(graphs) >= MIN_GRAPHS_TARGETS)
 
         # Analytics should have the most targets
-        assert len(analytics) >= 10
+        expect_true(len(analytics) >= MIN_ANALYTICS_TARGETS)
 
 
 @pytest.mark.parametrize(
@@ -141,4 +161,4 @@ class TestTargetsByModule:
 def test_key_targets_are_registered(target_name: str) -> None:
     """Key targets are available in the registry."""
     graph = get_target_graph()
-    assert target_name in graph
+    expect_in(target_name, graph)

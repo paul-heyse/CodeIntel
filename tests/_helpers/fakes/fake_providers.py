@@ -9,7 +9,7 @@ Example
 ...     symbols=[ScipSymbol("my_func", "my_func", "function")],
 ... )
 >>> result = await fake_scip.index(Path("/repo"), Path("/output/index.scip"))
->>> assert result.success
+>>> result.success  # True
 """
 
 from __future__ import annotations

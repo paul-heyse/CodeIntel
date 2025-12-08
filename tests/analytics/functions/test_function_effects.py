@@ -13,6 +13,12 @@ from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_none,
+    expect_true,
+)
 
 type EvidencePayload = dict[str, list[dict[str, object]]]
 
@@ -41,13 +47,13 @@ def test_effect_analysis_creation() -> None:
         evidence=_empty_evidence(),
     )
 
-    assert analysis.uses_io is True
-    assert analysis.touches_db is False
-    assert analysis.uses_time is True
-    assert analysis.uses_randomness is False
-    assert analysis.modifies_globals is False
-    assert analysis.modifies_closure is False
-    assert analysis.spawns_threads_or_tasks is False
+    expect_true(analysis.uses_io)
+    expect_false(analysis.touches_db)
+    expect_true(analysis.uses_time)
+    expect_false(analysis.uses_randomness)
+    expect_false(analysis.modifies_globals)
+    expect_false(analysis.modifies_closure)
+    expect_false(analysis.spawns_threads_or_tasks)
 
 
 def test_effect_analysis_pure_function() -> None:
@@ -63,7 +69,7 @@ def test_effect_analysis_pure_function() -> None:
         evidence=_empty_evidence(),
     )
 
-    assert analysis.direct_effectful is False
+    expect_false(analysis.direct_effectful)
 
 
 def test_effect_analysis_io_effect() -> None:
@@ -79,7 +85,7 @@ def test_effect_analysis_io_effect() -> None:
         evidence={"io": [{"line": 10, "call": "print"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_db_effect() -> None:
@@ -95,7 +101,7 @@ def test_effect_analysis_db_effect() -> None:
         evidence={"db": [{"line": 20, "call": "execute"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_time_effect() -> None:
@@ -111,7 +117,7 @@ def test_effect_analysis_time_effect() -> None:
         evidence={"time": [{"line": 5, "call": "datetime.now"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_randomness_effect() -> None:
@@ -127,7 +133,7 @@ def test_effect_analysis_randomness_effect() -> None:
         evidence={"random": [{"line": 15, "call": "random.randint"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_global_modification() -> None:
@@ -143,7 +149,7 @@ def test_effect_analysis_global_modification() -> None:
         evidence={"globals": [{"line": 30, "name": "counter"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_closure_modification() -> None:
@@ -159,7 +165,7 @@ def test_effect_analysis_closure_modification() -> None:
         evidence={"closure": [{"line": 25, "name": "outer_var"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_thread_spawn() -> None:
@@ -175,7 +181,7 @@ def test_effect_analysis_thread_spawn() -> None:
         evidence={"concurrency": [{"line": 40, "call": "threading.Thread"}]},
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_multiple_effects() -> None:
@@ -195,7 +201,7 @@ def test_effect_analysis_multiple_effects() -> None:
         },
     )
 
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_immutable() -> None:
@@ -238,18 +244,18 @@ def test_effect_analysis_evidence_structure() -> None:
     )
 
     expected_io_count = 2
-    assert len(analysis.evidence["io"]) == expected_io_count
-    assert len(analysis.evidence["db"]) == 1
+    expect_equal(len(analysis.evidence["io"]), expected_io_count)
+    expect_equal(len(analysis.evidence["db"]), 1)
 
 
 def test_function_effects_inputs_defaults() -> None:
     """FunctionEffectsInputs has all None defaults."""
     inputs = FunctionEffectsInputs()
 
-    assert inputs.catalog_provider is None
-    assert inputs.runtime is None
-    assert inputs.ast_map is None
-    assert inputs.missing_goids is None
+    expect_is_none(inputs.catalog_provider)
+    expect_is_none(inputs.runtime)
+    expect_is_none(inputs.ast_map)
+    expect_is_none(inputs.missing_goids)
 
 
 def test_function_effects_inputs_with_ast_map() -> None:
@@ -259,8 +265,8 @@ def test_function_effects_inputs_with_ast_map() -> None:
         missing_goids=set(),
     )
 
-    assert inputs.ast_map == {}
-    assert inputs.missing_goids == set()
+    expect_equal(inputs.ast_map, {})
+    expect_equal(inputs.missing_goids, set())
 
 
 def test_function_effects_inputs_immutable() -> None:
@@ -284,7 +290,7 @@ def test_effect_analysis_direct_effectful_all_false() -> None:
     )
 
     # Verify property returns False
-    assert analysis.direct_effectful is False
+    expect_false(analysis.direct_effectful)
 
 
 def test_effect_analysis_direct_effectful_any_true() -> None:
@@ -305,7 +311,10 @@ def test_effect_analysis_direct_effectful_any_true() -> None:
         kwargs[flag] = True
 
         analysis = EffectAnalysis(evidence=_empty_evidence(), **kwargs)
-        assert analysis.direct_effectful is True, f"Expected True when {flag}=True"
+        expect_true(
+            analysis.direct_effectful,
+            message=f"Expected True when {flag}=True",
+        )
 
 
 def test_effect_analysis_no_io_no_db() -> None:
@@ -320,7 +329,7 @@ def test_effect_analysis_no_io_no_db() -> None:
         spawns_threads_or_tasks=False,
         evidence=_empty_evidence(),
     )
-    assert analysis.direct_effectful is False
+    expect_false(analysis.direct_effectful)
 
 
 def test_effect_analysis_io_no_db() -> None:
@@ -335,7 +344,7 @@ def test_effect_analysis_io_no_db() -> None:
         spawns_threads_or_tasks=False,
         evidence=_empty_evidence(),
     )
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_no_io_db() -> None:
@@ -350,7 +359,7 @@ def test_effect_analysis_no_io_db() -> None:
         spawns_threads_or_tasks=False,
         evidence=_empty_evidence(),
     )
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)
 
 
 def test_effect_analysis_io_and_db() -> None:
@@ -365,4 +374,4 @@ def test_effect_analysis_io_and_db() -> None:
         spawns_threads_or_tasks=False,
         evidence=_empty_evidence(),
     )
-    assert analysis.direct_effectful is True
+    expect_true(analysis.direct_effectful)

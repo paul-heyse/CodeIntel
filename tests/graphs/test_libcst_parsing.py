@@ -8,8 +8,16 @@ from __future__ import annotations
 
 from typing import Final
 
+import pytest
+
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.ports.parsing import ParsedModule
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 
 EXPECTED_IMPORT_COUNT: Final = 2
 EXPECTED_FUNCTION_COUNT: Final = 2
@@ -19,13 +27,7 @@ EXPECTED_MIN_IMPORTS: Final = 4
 
 
 def test_parse_module_simple_function() -> None:
-    """Parse a module with a simple function.
-
-    Raises
-    ------
-    AssertionError
-        If parsing fails or function is not found.
-    """
+    """Parse a module with a simple function."""
     source = '''
 def hello():
     """Say hello."""
@@ -33,29 +35,16 @@ def hello():
 '''
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success:
-        msg = f"Expected parsing to succeed, got error: {result.error}"
-        raise AssertionError(msg)
+    expect_true(result.success, message=f"Expected parsing to succeed, got error: {result.error}")
     if result.module is None:
-        msg = "Expected module to be set"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 1:
-        msg = f"Expected 1 function, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+        pytest.fail("Expected module to be set")
+    expect_equal(len(result.module.functions), 1)
     func = result.module.functions[0]
-    if func.name != "hello":
-        msg = f"Expected function name 'hello', got '{func.name}'"
-        raise AssertionError(msg)
+    expect_equal(func.name, "hello")
 
 
 def test_parse_module_async_function() -> None:
-    """Parse a module with an async function.
-
-    Raises
-    ------
-    AssertionError
-        If async function is not detected.
-    """
+    """Parse a module with an async function."""
     source = '''
 async def fetch_data():
     """Fetch data asynchronously."""
@@ -63,26 +52,16 @@ async def fetch_data():
 '''
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 1:
-        msg = f"Expected 1 function, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    if result.module is None:
+        pytest.fail("Expected module to be set")
+    expect_equal(len(result.module.functions), 1)
     func = result.module.functions[0]
-    if not func.is_async:
-        msg = "Expected function to be async"
-        raise AssertionError(msg)
+    expect_true(func.is_async, message="Expected function to be async")
 
 
 def test_parse_module_with_decorators() -> None:
-    """Parse a module with decorated functions.
-
-    Raises
-    ------
-    AssertionError
-        If decorators are not extracted.
-    """
+    """Parse a module with decorated functions."""
     source = """
 @staticmethod
 def helper():
@@ -95,32 +74,20 @@ def value(self):
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != EXPECTED_FUNCTION_COUNT:
-        msg = f"Expected {EXPECTED_FUNCTION_COUNT} functions, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    if result.module is None:
+        pytest.fail("Expected module to be set")
+    expect_equal(len(result.module.functions), EXPECTED_FUNCTION_COUNT)
 
     helper = result.module.functions[0]
-    if "staticmethod" not in helper.decorator_names:
-        msg = f"Expected staticmethod decorator, got {helper.decorator_names}"
-        raise AssertionError(msg)
+    expect_in("staticmethod", helper.decorator_names)
 
     value_func = result.module.functions[1]
-    if "property" not in value_func.decorator_names:
-        msg = f"Expected property decorator, got {value_func.decorator_names}"
-        raise AssertionError(msg)
+    expect_in("property", value_func.decorator_names)
 
 
 def test_parse_module_class_methods() -> None:
-    """Parse methods inside a class.
-
-    Raises
-    ------
-    AssertionError
-        If method qualnames are not correct.
-    """
+    """Parse methods inside a class."""
     source = """
 class MyClass:
     def __init__(self):
@@ -131,32 +98,20 @@ class MyClass:
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != EXPECTED_FUNCTION_COUNT:
-        msg = f"Expected {EXPECTED_FUNCTION_COUNT} methods, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    if result.module is None:
+        pytest.fail("Expected module to be set")
+    expect_equal(len(result.module.functions), EXPECTED_FUNCTION_COUNT)
 
     init_method = result.module.functions[0]
-    if init_method.qualname != "MyClass.__init__":
-        msg = f"Expected qualname 'MyClass.__init__', got '{init_method.qualname}'"
-        raise AssertionError(msg)
+    expect_equal(init_method.qualname, "MyClass.__init__")
 
     method = result.module.functions[1]
-    if method.qualname != "MyClass.method":
-        msg = f"Expected qualname 'MyClass.method', got '{method.qualname}'"
-        raise AssertionError(msg)
+    expect_equal(method.qualname, "MyClass.method")
 
 
 def test_parse_module_with_imports() -> None:
-    """Parse a module with import statements.
-
-    Raises
-    ------
-    AssertionError
-        If imports are not extracted correctly.
-    """
+    """Parse a module with import statements."""
     source = """
 import os
 import sys
@@ -165,22 +120,17 @@ from typing import List, Optional
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.imports) < EXPECTED_MIN_IMPORTS:
-        msg = f"Expected at least {EXPECTED_MIN_IMPORTS} imports, got {len(result.module.imports)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    if result.module is None:
+        pytest.fail("Expected module to be set")
+    expect_true(
+        len(result.module.imports) >= EXPECTED_MIN_IMPORTS,
+        message=f"Expected at least {EXPECTED_MIN_IMPORTS} imports, got {len(result.module.imports)}",
+    )
 
 
 def test_parse_module_syntax_error() -> None:
-    """Parse invalid source returns error result.
-
-    Raises
-    ------
-    AssertionError
-        If error is not returned.
-    """
+    """Parse invalid source returns error result."""
     source = """
 def broken(
     # Missing closing paren
@@ -189,123 +139,84 @@ def other():
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if result.success:
-        msg = "Expected parsing to fail for invalid syntax"
-        raise AssertionError(msg)
-    if result.error is None:
-        msg = "Expected error to be set"
-        raise AssertionError(msg)
+    expect_true(not result.success, message="Expected parsing to fail for invalid syntax")
+    expect_true(result.error is not None, message="Expected error to be set")
 
 
 def test_extract_imports_simple() -> None:
-    """Extract imports from simple source.
-
-    Raises
-    ------
-    AssertionError
-        If imports are not extracted correctly.
-    """
+    """Extract imports from simple source."""
     source = """
 import os
 from pathlib import Path
 """
     imports = LibCSTParsingAdapter.extract_imports(source)
 
-    if len(imports) < EXPECTED_IMPORT_COUNT:
-        msg = f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}"
-        raise AssertionError(msg)
+    expect_true(
+        len(imports) >= EXPECTED_IMPORT_COUNT,
+        message=f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}",
+    )
 
     # Check os import
     os_import = next((i for i in imports if i[0] == "os"), None)
-    if os_import is None:
-        msg = "Expected 'os' import"
-        raise AssertionError(msg)
+    expect_is_not_none(os_import, message="Expected 'os' import")
 
 
 def test_extract_imports_with_alias() -> None:
-    """Extract imports with aliases.
-
-    Raises
-    ------
-    AssertionError
-        If aliases are not handled.
-    """
+    """Extract imports with aliases."""
     source = """
 import numpy as np
 from pandas import DataFrame as DF
 """
     imports = LibCSTParsingAdapter.extract_imports(source)
 
-    if len(imports) < EXPECTED_IMPORT_COUNT:
-        msg = f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}"
-        raise AssertionError(msg)
+    expect_true(
+        len(imports) >= EXPECTED_IMPORT_COUNT,
+        message=f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}",
+    )
 
 
 def test_extract_imports_from_package() -> None:
-    """Extract from-imports from packages.
-
-    Raises
-    ------
-    AssertionError
-        If package imports are not extracted.
-    """
+    """Extract from-imports from packages."""
     source = """
 from os.path import join, dirname
 from collections.abc import Mapping, Sequence
 """
     imports = LibCSTParsingAdapter.extract_imports(source)
 
-    if len(imports) < EXPECTED_IMPORT_COUNT:
-        msg = f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}"
-        raise AssertionError(msg)
+    expect_true(
+        len(imports) >= EXPECTED_IMPORT_COUNT,
+        message=f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}",
+    )
 
     # Check os.path import
     path_import = next((i for i in imports if i[0] == "os.path"), None)
-    if path_import is None:
-        msg = "Expected 'os.path' import"
-        raise AssertionError(msg)
-    if "join" not in path_import[1] and "dirname" not in path_import[1]:
-        msg = f"Expected 'join' or 'dirname' in imported names, got {path_import[1]}"
-        raise AssertionError(msg)
+    expect_is_not_none(path_import, message="Expected 'os.path' import")
+    if path_import is not None:
+        expect_true(
+            "join" in path_import[1] or "dirname" in path_import[1],
+            message=f"Expected 'join' or 'dirname' in imported names, got {path_import[1]}",
+        )
 
 
 def test_extract_imports_star() -> None:
-    """Extract star imports.
-
-    Raises
-    ------
-    AssertionError
-        If star import is not recognized.
-    """
+    """Extract star imports."""
     source = """
 from typing import *
 """
     imports = LibCSTParsingAdapter.extract_imports(source)
 
-    if len(imports) != 1:
-        msg = f"Expected 1 import, got {len(imports)}"
-        raise AssertionError(msg)
-    if imports[0][1] != ("*",):
-        msg = f"Expected star import, got {imports[0][1]}"
-        raise AssertionError(msg)
+    expect_equal(len(imports), 1)
+    expect_equal(imports[0][1], ("*",))
 
 
 def test_extract_imports_invalid_source() -> None:
-    """Extract imports from invalid source returns empty list.
-
-    Raises
-    ------
-    AssertionError
-        If non-empty list is returned for invalid source.
-    """
+    """Extract imports from invalid source returns empty list."""
     source = """
 def broken(
 """
     imports = LibCSTParsingAdapter.extract_imports(source)
 
-    if len(imports) != 0:
-        msg = f"Expected empty imports for invalid source, got {len(imports)}"
-        raise AssertionError(msg)
+    expect_equal(len(imports), 0)
 
 
 def test_parse_function_instance() -> None:
@@ -329,41 +240,29 @@ def last():
 
 
 def test_parse_module_function_parameters() -> None:
-    """Parse function with various parameters.
-
-    Raises
-    ------
-    AssertionError
-        If parameters are not extracted.
-    """
+    """Parse function with various parameters."""
     source = """
 def func_with_params(a, b, c=None, *args, **kwargs):
     pass
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 1:
-        msg = f"Expected 1 function, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
+    expect_equal(len(result.module.functions), 1)
 
     func = result.module.functions[0]
     # Parameters should include at least a, b, c
-    if len(func.parameters) < EXPECTED_PARAM_COUNT:
-        msg = f"Expected at least {EXPECTED_PARAM_COUNT} parameters, got {func.parameters}"
-        raise AssertionError(msg)
+    expect_true(
+        len(func.parameters) >= EXPECTED_PARAM_COUNT,
+        message=f"Expected at least {EXPECTED_PARAM_COUNT} parameters, got {func.parameters}",
+    )
 
 
 def test_extract_call_sites() -> None:
-    """Extract call sites from a function.
-
-    Raises
-    ------
-    AssertionError
-        If call sites are not extracted.
-    """
+    """Extract call sites from a function."""
     source = """
 def caller():
     foo()
@@ -374,25 +273,21 @@ def caller():
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
 
     call_sites = LibCSTParsingAdapter.extract_call_sites(result.module, function_span=(1, 10))
 
-    if len(call_sites) < EXPECTED_CALL_SITE_COUNT:
-        msg = f"Expected at least {EXPECTED_CALL_SITE_COUNT} call sites, got {len(call_sites)}"
-        raise AssertionError(msg)
+    expect_true(
+        len(call_sites) >= EXPECTED_CALL_SITE_COUNT,
+        message=f"Expected at least {EXPECTED_CALL_SITE_COUNT} call sites, got {len(call_sites)}",
+    )
 
 
 def test_extract_call_sites_no_ast_module() -> None:
-    """Extract call sites when AST module is None.
-
-    Raises
-    ------
-    AssertionError
-        If non-empty result for missing AST.
-    """
+    """Extract call sites when AST module is None."""
     # Create a ParsedModule with no AST
     parsed = ParsedModule(
         source="",
@@ -404,19 +299,11 @@ def test_extract_call_sites_no_ast_module() -> None:
 
     call_sites = LibCSTParsingAdapter.extract_call_sites(parsed, function_span=(1, 10))
 
-    if len(call_sites) != 0:
-        msg = f"Expected empty call sites, got {len(call_sites)}"
-        raise AssertionError(msg)
+    expect_equal(len(call_sites), 0)
 
 
 def test_parse_module_nested_class() -> None:
-    """Parse nested class methods.
-
-    Raises
-    ------
-    AssertionError
-        If nested class methods are not found.
-    """
+    """Parse nested class methods."""
     source = """
 class Outer:
     class Inner:
@@ -425,95 +312,65 @@ class Outer:
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 1:
-        msg = f"Expected 1 method, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
+    expect_equal(len(result.module.functions), 1)
 
 
 def test_parse_module_preserves_source() -> None:
-    """Parsed module preserves original source.
-
-    Raises
-    ------
-    AssertionError
-        If source is not preserved.
-    """
+    """Parsed module preserves original source."""
     source = """
 def test():
     pass
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if result.module.source != source:
-        msg = "Expected source to be preserved"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
+    expect_equal(result.module.source, source)
 
 
 def test_parse_module_cst_and_ast_available() -> None:
-    """Parsed module has both CST and AST available.
-
-    Raises
-    ------
-    AssertionError
-        If CST or AST is missing.
-    """
+    """Parsed module has both CST and AST available."""
     source = """
 def func():
     return 42
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if result.module.cst_module is None:
-        msg = "Expected CST module to be set"
-        raise AssertionError(msg)
-    if result.module.ast_module is None:
-        msg = "Expected AST module to be set"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
+    expect_is_not_none(result.module.cst_module, message="Expected CST module to be set")
+    expect_is_not_none(result.module.ast_module, message="Expected AST module to be set")
 
 
 def test_import_collector_dotted_imports() -> None:
-    """Import collector handles dotted module names.
-
-    Raises
-    ------
-    AssertionError
-        If dotted imports are not handled.
-    """
+    """Import collector handles dotted module names."""
     source = """
 import os.path.join
 from collections.abc import Mapping
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
 
     imports = result.module.imports
     # Should have collected at least the dotted module names
     module_names = [i[0] for i in imports]
-    if "collections.abc" not in module_names:
-        msg = f"Expected 'collections.abc' in imports, got {module_names}"
-        raise AssertionError(msg)
+    expect_in("collections.abc", module_names)
 
 
 def test_decorated_function_with_call() -> None:
-    """Parse function with decorator that is a call.
-
-    Raises
-    ------
-    AssertionError
-        If decorator call is not handled.
-    """
+    """Parse function with decorator that is a call."""
     source = """
 @decorator_factory(arg=1)
 def decorated():
@@ -521,36 +378,23 @@ def decorated():
 """
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success or result.module is None:
-        msg = "Expected parsing to succeed"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 1:
-        msg = f"Expected 1 function, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    if result.module is None:
+        return
+    expect_equal(len(result.module.functions), 1)
 
     func = result.module.functions[0]
-    if "decorator_factory" not in func.decorator_names:
-        msg = f"Expected 'decorator_factory' decorator, got {func.decorator_names}"
-        raise AssertionError(msg)
+    expect_in("decorator_factory", func.decorator_names)
 
 
 def test_parse_empty_module() -> None:
-    """Parse empty module succeeds.
-
-    Raises
-    ------
-    AssertionError
-        If parsing fails on empty input.
-    """
+    """Parse empty module succeeds."""
     source = ""
     result = LibCSTParsingAdapter.parse_module(source)
 
-    if not result.success:
-        msg = "Expected parsing to succeed for empty source"
-        raise AssertionError(msg)
+    expect_true(result.success, message="Expected parsing to succeed for empty source")
+    expect_is_not_none(result.module, message="Expected module to be set")
     if result.module is None:
-        msg = "Expected module to be set"
-        raise AssertionError(msg)
-    if len(result.module.functions) != 0:
-        msg = f"Expected 0 functions, got {len(result.module.functions)}"
-        raise AssertionError(msg)
+        return
+    expect_equal(len(result.module.functions), 0)

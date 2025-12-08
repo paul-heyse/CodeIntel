@@ -16,20 +16,28 @@ from __future__ import annotations
 from typing import Final
 
 import networkx as nx
+import pytest
 
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.config.primitives import GraphBackendConfig
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.fakes.graph_runtimes import (
     MockGraphRuntime,
     create_mock_runtime_all_graphs,
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
+    create_mock_runtime_with_standard_graphs,
 )
-from tests._helpers.fakes.networkx_graphs import (
-    chain_graph,
-    cyclic_graph,
-    diamond_graph,
-    star_graph,
+from tests._helpers.graphs import (
+    call_chain_graph,
+    call_star_graph,
+    import_cycle_graph,
+    standard_graph_fixtures,
 )
 
 # ---------------------------------------------------------------------------
@@ -38,7 +46,6 @@ from tests._helpers.fakes.networkx_graphs import (
 EXPECTED_CHAIN_NODES: Final = 4
 EXPECTED_STAR_EDGES: Final = 3
 EXPECTED_CYCLE_SIZE: Final = 3
-EXPECTED_DIAMOND_EDGES: Final = 4
 
 
 # ===========================================================================
@@ -49,60 +56,69 @@ EXPECTED_DIAMOND_EDGES: Final = 4
 class TestGraphProviderWithMockRuntime:
     """Test GraphProvider behavior using MockGraphRuntime."""
 
+    @staticmethod
     def test_provider_loads_call_graph_from_mock(
-        self, mock_runtime_with_call_graph: MockGraphRuntime
+        mock_runtime_with_call_graph: MockGraphRuntime,
     ) -> None:
         """GraphProvider correctly loads call graph from mock runtime."""
         provider = GraphProvider.from_runtime(mock_runtime_with_call_graph)
         resources = provider.get()
 
-        assert resources.call_graph is not None
-        assert resources.call_graph.number_of_edges() > 0
+        call_graph = expect_is_not_none(
+            resources.call_graph, message="Expected call graph to be set"
+        )
+        expect_true(call_graph.number_of_edges() > 0)
 
+    @staticmethod
     def test_provider_loads_import_graph_from_mock(
-        self, mock_runtime_with_import_graph: MockGraphRuntime
+        mock_runtime_with_import_graph: MockGraphRuntime,
     ) -> None:
         """GraphProvider correctly loads import graph from mock runtime."""
         provider = GraphProvider.from_runtime(mock_runtime_with_import_graph)
         resources = provider.get()
 
-        assert resources.import_graph is not None
-        assert resources.import_graph.number_of_edges() > 0
+        import_graph = expect_is_not_none(
+            resources.import_graph, message="Expected import graph to be set"
+        )
+        expect_true(import_graph.number_of_edges() > 0)
 
+    @staticmethod
     def test_provider_loads_all_graphs_from_mock(
-        self, mock_runtime_all_graphs: MockGraphRuntime
+        mock_runtime_all_graphs: MockGraphRuntime,
     ) -> None:
         """GraphProvider loads all graph types from comprehensive mock."""
         provider = GraphProvider.from_runtime(mock_runtime_all_graphs)
         resources = provider.get()
 
         # All graphs should be available
-        assert resources.call_graph is not None
-        assert resources.import_graph is not None
-        assert resources.symbol_module_graph is not None
-        assert resources.symbol_function_graph is not None
-        assert resources.config_module_bipartite is not None
-        assert resources.test_function_bipartite is not None
-        assert resources.cfg_graph is not None
+        expect_is_not_none(resources.call_graph)
+        expect_is_not_none(resources.import_graph)
+        expect_is_not_none(resources.symbol_module_graph)
+        expect_is_not_none(resources.symbol_function_graph)
+        expect_is_not_none(resources.config_module_bipartite)
+        expect_is_not_none(resources.test_function_bipartite)
+        expect_is_not_none(resources.cfg_graph)
 
+    @staticmethod
     def test_provider_empty_mock_returns_none_graphs(
-        self, mock_graph_runtime: MockGraphRuntime
+        mock_graph_runtime: MockGraphRuntime,
     ) -> None:
         """GraphProvider returns None for graphs not set in mock."""
         provider = GraphProvider.from_runtime(mock_graph_runtime)
         resources = provider.get()
 
-        assert resources.call_graph is None
-        assert resources.import_graph is None
+        expect_is_none(resources.call_graph)
+        expect_is_none(resources.import_graph)
 
-    def test_provider_backend_from_mock(self) -> None:
+    @staticmethod
+    def test_provider_backend_from_mock() -> None:
         """GraphProvider exposes backend config from mock runtime."""
         backend = GraphBackendConfig(use_gpu=True)
         mock = MockGraphRuntime(backend=backend, use_gpu=True)
         provider = GraphProvider.from_runtime(mock)
 
-        assert provider.backend is backend
-        assert provider.use_gpu is True
+        expect_true(provider.backend is backend)
+        expect_true(provider.use_gpu)
 
 
 # ===========================================================================
@@ -113,46 +129,58 @@ class TestGraphProviderWithMockRuntime:
 class TestCustomGraphShapes:
     """Test MockGraphRuntime with various graph topologies."""
 
-    def test_chain_graph_topology(self) -> None:
+    @staticmethod
+    def test_chain_graph_topology() -> None:
         """MockGraphRuntime works with chain graph topology."""
-        call_g = chain_graph(EXPECTED_CHAIN_NODES)
+        call_g = call_chain_graph(EXPECTED_CHAIN_NODES)
         mock = MockGraphRuntime(call_graph=call_g)
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        assert resources.call_graph is not None
-        assert resources.call_graph.number_of_nodes() == EXPECTED_CHAIN_NODES
+        call_graph = expect_is_not_none(
+            resources.call_graph, message="Expected call graph to be set"
+        )
+        expect_equal(call_graph.number_of_nodes(), EXPECTED_CHAIN_NODES)
 
-    def test_star_graph_topology(self) -> None:
+    @staticmethod
+    def test_star_graph_topology() -> None:
         """MockGraphRuntime works with star graph topology."""
-        call_g = star_graph(EXPECTED_STAR_EDGES, inward=True)
+        call_g = call_star_graph(EXPECTED_STAR_EDGES, inward=True)
         mock = MockGraphRuntime(call_graph=call_g)
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        assert resources.call_graph is not None
-        assert resources.call_graph.number_of_edges() == EXPECTED_STAR_EDGES
+        call_graph = expect_is_not_none(
+            resources.call_graph, message="Expected call graph to be set"
+        )
+        expect_equal(call_graph.number_of_edges(), EXPECTED_STAR_EDGES)
 
-    def test_cyclic_graph_topology(self) -> None:
+    @staticmethod
+    def test_cyclic_graph_topology() -> None:
         """MockGraphRuntime works with cyclic graph topology."""
-        import_g = cyclic_graph(EXPECTED_CYCLE_SIZE)
+        import_g = import_cycle_graph(EXPECTED_CYCLE_SIZE)
         mock = MockGraphRuntime(import_graph=import_g)
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        assert resources.import_graph is not None
+        import_graph = expect_is_not_none(
+            resources.import_graph, message="Expected import graph to be set"
+        )
         # Cyclic graph has same number of edges as nodes
-        assert resources.import_graph.number_of_edges() == EXPECTED_CYCLE_SIZE
+        expect_equal(import_graph.number_of_edges(), EXPECTED_CYCLE_SIZE)
 
-    def test_diamond_graph_topology(self) -> None:
+    @staticmethod
+    def test_diamond_graph_topology() -> None:
         """MockGraphRuntime works with diamond graph topology."""
-        call_g = diamond_graph()
-        mock = MockGraphRuntime(call_graph=call_g)
+        fixtures = standard_graph_fixtures(chain_length=EXPECTED_CHAIN_NODES)
+        mock = create_mock_runtime_with_standard_graphs(fixtures)
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        assert resources.call_graph is not None
-        assert resources.call_graph.number_of_edges() == EXPECTED_DIAMOND_EDGES
+        call_graph = expect_is_not_none(
+            resources.call_graph, message="Expected call graph to be set"
+        )
+        expect_equal(call_graph.number_of_edges(), EXPECTED_CHAIN_NODES - 1)
 
 
 # ===========================================================================
@@ -163,7 +191,8 @@ class TestCustomGraphShapes:
 class TestMixedGraphTypes:
     """Test MockGraphRuntime with mixed graph types."""
 
-    def test_directed_and_undirected_together(self) -> None:
+    @staticmethod
+    def test_directed_and_undirected_together() -> None:
         """MockGraphRuntime handles both directed and undirected graphs."""
         # Directed graphs
         call_g = nx.DiGraph([("a", "b"), ("b", "c")])
@@ -181,13 +210,23 @@ class TestMixedGraphTypes:
         resources = provider.get()
 
         # Directed graphs
-        assert isinstance(resources.call_graph, nx.DiGraph)
-        assert isinstance(resources.import_graph, nx.DiGraph)
+        call_graph = expect_is_not_none(
+            resources.call_graph, message="Expected call graph to be set"
+        )
+        import_graph = expect_is_not_none(
+            resources.import_graph, message="Expected import graph to be set"
+        )
+        expect_true(isinstance(call_graph, nx.DiGraph))
+        expect_true(isinstance(import_graph, nx.DiGraph))
 
         # Undirected graph
-        assert isinstance(resources.symbol_module_graph, nx.Graph)
+        symbol_module_graph = expect_is_not_none(
+            resources.symbol_module_graph, message="Expected symbol_module_graph to be set"
+        )
+        expect_true(isinstance(symbol_module_graph, nx.Graph))
 
-    def test_cfg_graph_structure(self) -> None:
+    @staticmethod
+    def test_cfg_graph_structure() -> None:
         """MockGraphRuntime preserves CFG graph structure."""
         # Create a simple CFG with entry/exit blocks
         cfg = nx.DiGraph()
@@ -205,9 +244,9 @@ class TestMixedGraphTypes:
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        assert resources.cfg_graph is not None
-        assert "entry" in resources.cfg_graph.nodes
-        assert "exit" in resources.cfg_graph.nodes
+        cfg_graph = expect_is_not_none(resources.cfg_graph, message="Expected cfg_graph to be set")
+        expect_true("entry" in cfg_graph.nodes)
+        expect_true("exit" in cfg_graph.nodes)
 
 
 # ===========================================================================
@@ -218,7 +257,8 @@ class TestMixedGraphTypes:
 class TestGraphResourceCaching:
     """Test that GraphProvider caches resources from MockGraphRuntime."""
 
-    def test_resources_cached_on_get(self, mock_runtime_with_call_graph: MockGraphRuntime) -> None:
+    @staticmethod
+    def test_resources_cached_on_get(mock_runtime_with_call_graph: MockGraphRuntime) -> None:
         """GraphProvider caches resources after first get() call."""
         provider = GraphProvider.from_runtime(mock_runtime_with_call_graph)
 
@@ -226,10 +266,11 @@ class TestGraphResourceCaching:
         resources2 = provider.get()
 
         # Should return same cached instance
-        assert resources1 is resources2
+        expect_true(resources1 is resources2)
 
+    @staticmethod
     def test_invalidation_clears_cache(
-        self, mock_runtime_with_call_graph: MockGraphRuntime
+        mock_runtime_with_call_graph: MockGraphRuntime,
     ) -> None:
         """Invalidation clears the cached resources."""
         provider = GraphProvider.from_runtime(mock_runtime_with_call_graph)
@@ -240,7 +281,7 @@ class TestGraphResourceCaching:
 
         # Should get fresh resources after invalidation
         # Note: for mocks without state changes, content is same but instance may differ
-        assert resources1 is not resources2
+        expect_true(resources1 is not resources2)
 
 
 # ===========================================================================
@@ -251,44 +292,54 @@ class TestGraphResourceCaching:
 class TestMockRuntimeFactories:
     """Test the mock runtime factory functions."""
 
-    def test_create_mock_runtime_with_call_graph_defaults(self) -> None:
+    @staticmethod
+    def test_create_mock_runtime_with_call_graph_defaults() -> None:
         """Factory creates mock with default call graph edges."""
         mock = create_mock_runtime_with_call_graph()
 
-        assert mock.call_graph is not None
-        assert mock.call_graph.number_of_edges() > 0
-        assert "func_a" in mock.call_graph.nodes
-        assert "func_b" in mock.call_graph.nodes
+        call_graph = mock.call_graph
+        if call_graph is None:
+            pytest.fail("Expected call graph to be set")
+        expect_true(call_graph.number_of_edges() > 0)
+        expect_true("func_a" in call_graph.nodes)
+        expect_true("func_b" in call_graph.nodes)
 
-    def test_create_mock_runtime_with_call_graph_custom(self) -> None:
+    @staticmethod
+    def test_create_mock_runtime_with_call_graph_custom() -> None:
         """Factory creates mock with custom call graph edges."""
         custom_edges = [("main", "helper"), ("helper", "util")]
         mock = create_mock_runtime_with_call_graph(custom_edges)
 
-        assert mock.call_graph is not None
-        assert "main" in mock.call_graph.nodes
-        assert "helper" in mock.call_graph.nodes
-        assert "util" in mock.call_graph.nodes
+        call_graph = mock.call_graph
+        if call_graph is None:
+            pytest.fail("Expected call graph to be set")
+        expect_true("main" in call_graph.nodes)
+        expect_true("helper" in call_graph.nodes)
+        expect_true("util" in call_graph.nodes)
 
-    def test_create_mock_runtime_with_import_graph_defaults(self) -> None:
+    @staticmethod
+    def test_create_mock_runtime_with_import_graph_defaults() -> None:
         """Factory creates mock with default import graph edges."""
         mock = create_mock_runtime_with_import_graph()
 
-        assert mock.import_graph is not None
-        assert mock.import_graph.number_of_edges() > 0
+        import_graph = mock.import_graph
+        if import_graph is None:
+            pytest.fail("Expected import graph to be set")
+        expect_true(import_graph.number_of_edges() > 0)
 
-    def test_create_mock_runtime_all_graphs_coverage(self) -> None:
+    @staticmethod
+    def test_create_mock_runtime_all_graphs_coverage() -> None:
         """Factory creates mock with all graph types populated."""
         mock = create_mock_runtime_all_graphs()
 
         # All graph properties should be non-None
-        assert mock.call_graph is not None
-        assert mock.import_graph is not None
-        assert mock.symbol_module_graph is not None
-        assert mock.symbol_function_graph is not None
-        assert mock.config_module_bipartite is not None
-        assert mock.test_function_bipartite is not None
-        assert mock.cfg_graph is not None
+        expect_true(mock.call_graph is not None)
+        expect_true(mock.import_graph is not None)
+        expect_true(mock.symbol_module_graph is not None)
+        expect_true(mock.symbol_function_graph is not None)
+        expect_true(mock.config_module_bipartite is not None)
+        expect_true(mock.test_function_bipartite is not None)
+        expect_true(mock.cfg_graph is not None)
 
 
 # ===========================================================================
@@ -299,32 +350,35 @@ class TestMockRuntimeFactories:
 class TestEnsureMethods:
     """Test the ensure_* methods on MockGraphRuntime."""
 
-    def test_ensure_call_graph_returns_graph(self) -> None:
+    @staticmethod
+    def test_ensure_call_graph_returns_graph() -> None:
         """ensure_call_graph returns the call graph."""
         call_g = nx.DiGraph([("a", "b")])
         mock = MockGraphRuntime(call_graph=call_g)
 
         result = mock.ensure_call_graph()
 
-        assert result is call_g
+        expect_true(result is call_g)
 
-    def test_ensure_import_graph_returns_graph(self) -> None:
+    @staticmethod
+    def test_ensure_import_graph_returns_graph() -> None:
         """ensure_import_graph returns the import graph."""
         import_g = nx.DiGraph([("mod1", "mod2")])
         mock = MockGraphRuntime(import_graph=import_g)
 
         result = mock.ensure_import_graph()
 
-        assert result is import_g
+        expect_true(result is import_g)
 
-    def test_ensure_returns_none_when_not_set(self) -> None:
+    @staticmethod
+    def test_ensure_returns_none_when_not_set() -> None:
         """ensure_* methods return None when graph not set."""
         mock = MockGraphRuntime()
 
-        assert mock.ensure_call_graph() is None
-        assert mock.ensure_import_graph() is None
-        assert mock.ensure_symbol_module_graph() is None
-        assert mock.ensure_symbol_function_graph() is None
-        assert mock.ensure_config_module_bipartite() is None
-        assert mock.ensure_test_function_bipartite() is None
-        assert mock.ensure_cfg_graph() is None
+        expect_is_none(mock.ensure_call_graph())
+        expect_is_none(mock.ensure_import_graph())
+        expect_is_none(mock.ensure_symbol_module_graph())
+        expect_is_none(mock.ensure_symbol_function_graph())
+        expect_is_none(mock.ensure_config_module_bipartite())
+        expect_is_none(mock.ensure_test_function_bipartite())
+        expect_is_none(mock.ensure_cfg_graph())

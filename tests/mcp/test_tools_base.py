@@ -10,6 +10,7 @@ import pytest
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp import tool_builder, tools_base
+from tests._helpers.assertions import expect_equal
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -51,14 +52,17 @@ def test_register_tools_delegates_to_category_registrars(monkeypatch: pytest.Mon
         cast("FastMCP", mcp), cast("tools_base.QueryBackendOrService", backend), config
     )
 
-    assert calls == [
-        ("functions", "remote_api"),
-        ("profiles", "remote_api"),
-        ("architecture", "remote_api"),
-        ("datasets", "remote_api"),
-        ("meta", None),
-    ]
-    assert mcp.tools == mcp.recorded_tools
+    expect_equal(
+        calls,
+        [
+            ("functions", "remote_api"),
+            ("profiles", "remote_api"),
+            ("architecture", "remote_api"),
+            ("datasets", "remote_api"),
+            ("meta", None),
+        ],
+    )
+    expect_equal(mcp.tools, mcp.recorded_tools)
 
 
 def test_register_tools_for_category_type_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:

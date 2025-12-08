@@ -14,6 +14,13 @@ import pytest
 from codeintel.core.resources import ResourceNotFoundError, ResourceProviderBase, ResourceRegistry
 from codeintel.graphs.resources import ResourceProvider
 from codeintel.graphs.resources.storage import StorageResource
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -194,7 +201,7 @@ def test_registry_register_and_require() -> None:
     registry.register_provider(provider)
     result = registry.require_by_name(TEST_RESOURCE_NAME)
 
-    assert result == TEST_VALUE
+    expect_equal(result, TEST_VALUE)
 
 
 def test_registry_require_by_name() -> None:
@@ -205,7 +212,7 @@ def test_registry_require_by_name() -> None:
     registry.register_provider(provider)
     result = registry.require_by_name(TEST_RESOURCE_NAME)
 
-    assert result == TEST_VALUE
+    expect_equal(result, TEST_VALUE)
 
 
 def test_registry_has_registered() -> None:
@@ -213,9 +220,9 @@ def test_registry_has_registered() -> None:
     registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
-    assert registry.has_by_name(TEST_RESOURCE_NAME) is False
+    expect_false(registry.has_by_name(TEST_RESOURCE_NAME))
     registry.register_provider(provider)
-    assert registry.has_by_name(TEST_RESOURCE_NAME) is True
+    expect_true(registry.has_by_name(TEST_RESOURCE_NAME))
 
 
 def test_registry_has_factory() -> None:
@@ -225,9 +232,9 @@ def test_registry_has_factory() -> None:
     def factory() -> _FactoryResourceProvider:
         return _FactoryResourceProvider()
 
-    assert registry.has_by_name(FACTORY_RESOURCE_NAME) is False
+    expect_false(registry.has_by_name(FACTORY_RESOURCE_NAME))
     registry.register_factory(FACTORY_RESOURCE_NAME, factory)
-    assert registry.has_by_name(FACTORY_RESOURCE_NAME) is True
+    expect_true(registry.has_by_name(FACTORY_RESOURCE_NAME))
 
 
 def test_registry_require_not_found() -> None:
@@ -259,15 +266,15 @@ def test_registry_factory_lazy_creation() -> None:
     registry.register_factory(FACTORY_RESOURCE_NAME, factory)
 
     # Factory not called yet
-    assert creation_count == 0
+    expect_equal(creation_count, 0)
 
     # First access creates resource
     registry.require_by_name(FACTORY_RESOURCE_NAME)
-    assert creation_count == EXPECTED_ONE
+    expect_equal(creation_count, EXPECTED_ONE)
 
     # Second access uses cached
     registry.require_by_name(FACTORY_RESOURCE_NAME)
-    assert creation_count == EXPECTED_ONE
+    expect_equal(creation_count, EXPECTED_ONE)
 
 
 def test_registry_invalidate_all() -> None:
@@ -281,8 +288,8 @@ def test_registry_invalidate_all() -> None:
 
     registry.invalidate()
 
-    assert provider1.invalidate_count == EXPECTED_ONE
-    assert provider2.invalidate_count == EXPECTED_ONE
+    expect_equal(provider1.invalidate_count, EXPECTED_ONE)
+    expect_equal(provider2.invalidate_count, EXPECTED_ONE)
 
 
 def test_registry_cleanup() -> None:
@@ -293,8 +300,8 @@ def test_registry_cleanup() -> None:
     registry.register_provider(provider)
     registry.cleanup()
 
-    assert registry.has_by_name(TEST_RESOURCE_NAME) is False
-    assert provider.invalidate_count == EXPECTED_ONE
+    expect_false(registry.has_by_name(TEST_RESOURCE_NAME))
+    expect_equal(provider.invalidate_count, EXPECTED_ONE)
 
 
 def test_registry_registered_names() -> None:
@@ -310,9 +317,9 @@ def test_registry_registered_names() -> None:
 
     names = registry.registered_names
 
-    assert TEST_RESOURCE_NAME in names
-    assert FACTORY_RESOURCE_NAME in names
-    assert len(names) == EXPECTED_TWO
+    expect_in(TEST_RESOURCE_NAME, names)
+    expect_in(FACTORY_RESOURCE_NAME, names)
+    expect_equal(len(names), EXPECTED_TWO)
 
 
 def test_registry_overwrite_allows_new_value() -> None:
@@ -327,7 +334,7 @@ def test_registry_overwrite_allows_new_value() -> None:
 
     # The new value should be stored
     result = registry.require_by_name(TEST_RESOURCE_NAME)
-    assert result == "new_value"
+    expect_equal(result, "new_value")
 
 
 # ===========================================================================
@@ -387,12 +394,12 @@ def test_base_provider_lazy_loading() -> None:
     provider = _CountingProvider("test")
 
     # Not loaded yet - load_count is 0
-    assert _CountingProvider.load_count == 0
+    expect_equal(_CountingProvider.load_count, 0)
 
     # First access loads
     result = provider.get()
-    assert result == "value"
-    assert _CountingProvider.load_count == EXPECTED_ONE
+    expect_equal(result, "value")
+    expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
 
 def test_base_provider_invalidate() -> None:
@@ -402,16 +409,16 @@ def test_base_provider_invalidate() -> None:
 
     # Load and cache
     provider.get()
-    assert _CountingProvider.load_count == EXPECTED_ONE
+    expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
     # Second get uses cache
     provider.get()
-    assert _CountingProvider.load_count == EXPECTED_ONE
+    expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
     # Invalidate clears, next get reloads
     provider.invalidate()
     provider.get()
-    assert _CountingProvider.load_count == EXPECTED_TWO
+    expect_equal(_CountingProvider.load_count, EXPECTED_TWO)
 
 
 def test_base_provider_reloads_after_invalidate() -> None:
@@ -420,18 +427,18 @@ def test_base_provider_reloads_after_invalidate() -> None:
     provider = _CountingProvider("test")
 
     provider.get()
-    assert _CountingProvider.load_count == EXPECTED_ONE
+    expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
     provider.invalidate()
     provider.get()
-    assert _CountingProvider.load_count == EXPECTED_TWO
+    expect_equal(_CountingProvider.load_count, EXPECTED_TWO)
 
 
 def test_base_provider_resource_name() -> None:
     """ResourceProviderBase returns resource name."""
     provider = _ConcreteBaseProvider("my_resource", "value")
 
-    assert provider.resource_name == "my_resource"
+    expect_equal(provider.resource_name, "my_resource")
 
 
 def test_base_provider_load_not_implemented() -> None:
@@ -455,17 +462,17 @@ def test_resource_provider_protocol_conformance() -> None:
     """Test resources conform to ResourceProvider protocol."""
     provider = _TestResourceProvider()
 
-    assert isinstance(provider, ResourceProvider)
-    assert hasattr(provider, "resource_name")
-    assert hasattr(provider, "get")
-    assert hasattr(provider, "invalidate")
+    expect_is_instance(provider, ResourceProvider)
+    expect_true(hasattr(provider, "resource_name"))
+    expect_true(hasattr(provider, "get"))
+    expect_true(hasattr(provider, "invalidate"))
 
 
 def test_resource_provider_base_protocol_conformance() -> None:
     """ResourceProviderBase conforms to ResourceProvider protocol."""
     provider = _ConcreteBaseProvider("test", "value")
 
-    assert isinstance(provider, ResourceProvider)
+    expect_is_instance(provider, ResourceProvider)
 
 
 # ===========================================================================
@@ -477,8 +484,8 @@ def test_storage_resource_creation(fresh_gateway: StorageGateway, tmp_path: Path
     """StorageResource can be created."""
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
-    assert resource.resource_name == STORAGE_RESOURCE_NAME
-    assert resource.repo_root == tmp_path
+    expect_equal(resource.resource_name, STORAGE_RESOURCE_NAME)
+    expect_equal(resource.repo_root, tmp_path)
 
 
 def test_storage_resource_get_returns_self(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -486,7 +493,7 @@ def test_storage_resource_get_returns_self(fresh_gateway: StorageGateway, tmp_pa
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.get()
 
-    assert result is resource
+    expect_true(result is resource)
 
 
 def test_storage_resource_invalidate_noop(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -507,7 +514,7 @@ def test_storage_resource_read_source(fresh_gateway: StorageGateway, tmp_path: P
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.read_source("test.py")
 
-    assert result == test_content
+    expect_equal(result, test_content)
 
 
 def test_storage_resource_read_source_not_found(
@@ -517,7 +524,7 @@ def test_storage_resource_read_source_not_found(
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.read_source("nonexistent.py")
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_storage_resource_execute_query(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -525,7 +532,7 @@ def test_storage_resource_execute_query(fresh_gateway: StorageGateway, tmp_path:
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.execute_query("SELECT 1 as value")
 
-    assert len(result.rows) == EXPECTED_ONE
+    expect_equal(len(result.rows), EXPECTED_ONE)
 
 
 def test_storage_resource_execute_query_with_params(
@@ -535,8 +542,8 @@ def test_storage_resource_execute_query_with_params(
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.execute_query("SELECT ? + ? as value", [1, 2])
 
-    assert len(result.rows) == EXPECTED_ONE
-    assert result.rows[0][0] == EXPECTED_THREE
+    expect_equal(len(result.rows), EXPECTED_ONE)
+    expect_equal(result.rows[0][0], EXPECTED_THREE)
 
 
 def test_storage_resource_execute_query_empty_result(
@@ -548,7 +555,7 @@ def test_storage_resource_execute_query_empty_result(
     fresh_gateway.con.execute("CREATE TEMP TABLE test_empty (id INT)")
     result = resource.execute_query("SELECT * FROM test_empty WHERE id > 999")
 
-    assert len(result.rows) == 0
+    expect_equal(len(result.rows), 0)
 
 
 def test_storage_resource_execute_mutation(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -560,7 +567,7 @@ def test_storage_resource_execute_mutation(fresh_gateway: StorageGateway, tmp_pa
     result = resource.execute_mutation("INSERT INTO test_mut VALUES (1, 'test') RETURNING id")
 
     # execute_mutation returns the result of fetchone()[0]
-    assert result == EXPECTED_ONE
+    expect_equal(result, EXPECTED_ONE)
 
 
 def test_storage_resource_execute_mutation_with_params(
@@ -576,7 +583,7 @@ def test_storage_resource_execute_mutation_with_params(
     )
 
     # execute_mutation returns the result of fetchone()[0]
-    assert result == EXPECTED_FORTY_TWO
+    expect_equal(result, EXPECTED_FORTY_TWO)
 
 
 def test_storage_resource_execute_mutation_multiple_rows(
@@ -595,7 +602,7 @@ def test_storage_resource_execute_mutation_multiple_rows(
     )
 
     # First row returned should be 1 (first updated id)
-    assert result == EXPECTED_ONE
+    expect_equal(result, EXPECTED_ONE)
 
 
 def test_storage_resource_protocol_conformance(
@@ -604,7 +611,7 @@ def test_storage_resource_protocol_conformance(
     """StorageResource conforms to ResourceProvider protocol."""
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
-    assert isinstance(resource, ResourceProvider)
+    expect_is_instance(resource, ResourceProvider)
 
 
 # ===========================================================================
@@ -616,12 +623,12 @@ def test_resource_not_found_error_message() -> None:
     """ResourceNotFoundError includes resource name."""
     error = ResourceNotFoundError("my_resource")
 
-    assert "my_resource" in str(error)
-    assert error.resource_name == "my_resource"
+    expect_in("my_resource", str(error))
+    expect_equal(error.resource_name, "my_resource")
 
 
 def test_resource_not_found_error_is_exception() -> None:
     """ResourceNotFoundError is an Exception."""
     error = ResourceNotFoundError("test")
 
-    assert isinstance(error, Exception)
+    expect_is_instance(error, Exception)

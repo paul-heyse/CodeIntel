@@ -19,6 +19,7 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.http.routes.meta import build_meta_router
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -41,9 +42,9 @@ def test_build_meta_router_returns_router() -> None:
             if isinstance(path_value, str):
                 routes.append(path_value)
 
-    assert "/meta/datasets" in routes
-    assert "/meta/operations" in routes
-    assert "/meta/dataflow" in routes
+    expect_in("/meta/datasets", routes)
+    expect_in("/meta/operations", routes)
+    expect_in("/meta/dataflow", routes)
 
 
 # =============================================================================
@@ -97,15 +98,15 @@ def test_meta_datasets_returns_list(
     with TestClient(app) as client:
         response = client.get("/meta/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
     # Should have at least some datasets registered
     if data:
         first = data[0]
-        assert "id" in first
-        assert "table_key" in first
-        assert "description" in first
+        expect_in("id", first)
+        expect_in("table_key", first)
+        expect_in("description", first)
 
 
 def test_meta_datasets_includes_limit_info(
@@ -158,12 +159,12 @@ def test_meta_datasets_includes_limit_info(
     with TestClient(app) as client:
         response = client.get("/meta/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     if data:
         first = data[0]
-        assert "default_limit" in first
-        assert "max_limit" in first
+        expect_in("default_limit", first)
+        expect_in("max_limit", first)
 
 
 # =============================================================================
@@ -217,15 +218,15 @@ def test_meta_operations_returns_list(
     with TestClient(app) as client:
         response = client.get("/meta/operations")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
     # Should have many operations registered
-    assert len(data) > 0
+    expect_true(len(data) > 0)
     first = data[0]
-    assert "id" in first
-    assert "category" in first
-    assert "summary" in first
+    expect_in("id", first)
+    expect_in("category", first)
+    expect_in("summary", first)
 
 
 def test_meta_operations_includes_http_details(
@@ -274,14 +275,14 @@ def test_meta_operations_includes_http_details(
     with TestClient(app) as client:
         response = client.get("/meta/operations")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     # Find an operation with HTTP details (most have them)
     http_ops = [op for op in data if op.get("http_path") is not None]
-    assert len(http_ops) > 0
+    expect_true(len(http_ops) > 0)
     http_op = http_ops[0]
-    assert "http_method" in http_op
-    assert "http_path" in http_op
+    expect_in("http_method", http_op)
+    expect_in("http_path", http_op)
 
 
 # =============================================================================
@@ -335,12 +336,12 @@ def test_meta_dataflow_returns_graph(
     with TestClient(app) as client:
         response = client.get("/meta/dataflow")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "nodes" in data
-    assert "edges" in data
-    assert isinstance(data["nodes"], list)
-    assert isinstance(data["edges"], list)
+    expect_in("nodes", data)
+    expect_in("edges", data)
+    expect_is_instance(data["nodes"], list)
+    expect_is_instance(data["edges"], list)
 
 
 def test_meta_dataflow_nodes_have_expected_fields(
@@ -389,13 +390,13 @@ def test_meta_dataflow_nodes_have_expected_fields(
     with TestClient(app) as client:
         response = client.get("/meta/dataflow")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     nodes = data["nodes"]
     if nodes:
         first_node = nodes[0]
-        assert "id" in first_node
-        assert "kind" in first_node
+        expect_in("id", first_node)
+        expect_in("kind", first_node)
 
 
 # =============================================================================
@@ -449,7 +450,7 @@ def test_meta_debug_prereqs_unknown_operation(
     with TestClient(app) as client:
         response = client.get("/meta/debug/pipeline/prereqs?op_id=nonexistent.op")
 
-    assert response.status_code == status.HTTP_404_NOT_FOUND
+    expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 def test_meta_debug_prereqs_valid_operation(
@@ -499,10 +500,10 @@ def test_meta_debug_prereqs_valid_operation(
     with TestClient(app) as client:
         response = client.get("/meta/debug/pipeline/prereqs?op_id=health.status")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "op_id" in data
-    assert data["op_id"] == "health.status"
-    assert "repo" in data
-    assert "commit" in data
-    assert "overall_satisfied" in data
+    expect_in("op_id", data)
+    expect_equal(data["op_id"], "health.status")
+    expect_in("repo", data)
+    expect_in("commit", data)
+    expect_in("overall_satisfied", data)

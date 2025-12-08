@@ -8,25 +8,27 @@ from pathlib import Path
 import pytest
 import typer
 
+from tests._helpers.assertions import expect_equal, expect_true
+
 common = importlib.import_module("codeintel.cli.commands._common")
 
 
 def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Flag resolution and backend config selection behave as expected."""
-    assert common.resolve_flag(value=None) is False
-    assert common.resolve_flag(value=True) is True
+    expect_true(common.resolve_flag(value=None) is False)
+    expect_true(common.resolve_flag(value=True) is True)
     backend = common.build_graph_backend_config(nx_gpu=True, nx_backend="cpu", nx_gpu_strict=True)
-    assert backend.use_gpu is True
-    assert backend.backend == "cpu"
-    assert backend.strict is True
+    expect_true(backend.use_gpu is True)
+    expect_equal(backend.backend, "cpu")
+    expect_true(backend.strict is True)
 
     monkeypatch.setenv("CODEINTEL_GRAPH_EAGER", "true")
     monkeypatch.setenv("CODEINTEL_GRAPH_COMMUNITY_LIMIT", "25")
     monkeypatch.setenv("CODEINTEL_GRAPH_VALIDATION_STRICT", "0")
     flags = common.build_graph_feature_flags_from_env()
-    assert flags.eager_hydration is True
-    assert flags.community_detection_limit == 25
-    assert flags.validation_strict is False
+    expect_true(flags.eager_hydration is True)
+    expect_equal(flags.community_detection_limit, 25)
+    expect_true(flags.validation_strict is False)
 
 
 def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
@@ -42,10 +44,10 @@ def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
         db_path=db_path,
         build_dir=build_dir,
     )
-    assert cfg.repo.repo == "demo/repo"
-    assert cfg.repo.commit == "deadbeef"
-    assert cfg.paths.db_path == db_path
-    assert cfg.build_paths.db_path == db_path
+    expect_equal(cfg.repo.repo, "demo/repo")
+    expect_equal(cfg.repo.commit, "deadbeef")
+    expect_equal(cfg.paths.db_path, db_path)
+    expect_equal(cfg.build_paths.db_path, db_path)
 
 
 def test_build_runtime_or_exit_fallback_and_missing(tmp_path: Path) -> None:
@@ -64,10 +66,10 @@ def test_build_runtime_or_exit_fallback_and_missing(tmp_path: Path) -> None:
         build_dir=build_dir,
         repo_root=repo_root,
     )
-    assert runtime.snapshot.repo == "demo/repo"
-    assert runtime.snapshot.commit == "deadbeef"
+    expect_equal(runtime.snapshot.repo, "demo/repo")
+    expect_equal(runtime.snapshot.commit, "deadbeef")
     runtime.gateway.close()
 
     with pytest.raises(typer.Exit) as excinfo:
         common.build_runtime_or_exit(project_root=tmp_path)
-    assert excinfo.value.exit_code == 1
+    expect_equal(excinfo.value.exit_code, 1)

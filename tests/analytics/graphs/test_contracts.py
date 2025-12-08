@@ -9,7 +9,6 @@ This module tests the contract checking functionality for graph metric plugins:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
@@ -32,8 +31,14 @@ from codeintel.analytics.graphs.contracts import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
-from tests._helpers.gateway import gateway_with_macros
 
 # Test constants (non-repo/commit)
 MIN_FRACTION_HIGH = 0.95
@@ -50,22 +55,6 @@ class MockContractContext:
     gateway: StorageGateway
     repo: str
     commit: str
-
-
-@pytest.fixture
-def memory_gateway() -> Iterator[StorageGateway]:
-    """Provide an in-memory DuckDB gateway for testing.
-
-    Yields
-    ------
-    StorageGateway
-        Configured gateway with schema applied.
-    """
-    gateway = gateway_with_macros()
-    try:
-        yield gateway
-    finally:
-        gateway.con.close()
 
 
 @pytest.fixture
@@ -95,9 +84,9 @@ def test_plugin_contract_result_passed() -> None:
         name="test_contract",
         status="passed",
     )
-    assert result.name == "test_contract"
-    assert result.status == "passed"
-    assert result.message is None
+    expect_equal(result.name, "test_contract")
+    expect_equal(result.status, "passed")
+    expect_is_none(result.message)
 
 
 def test_plugin_contract_result_failed() -> None:
@@ -107,8 +96,8 @@ def test_plugin_contract_result_failed() -> None:
         status="failed",
         message="Something went wrong",
     )
-    assert result.status == "failed"
-    assert result.message == "Something went wrong"
+    expect_equal(result.status, "failed")
+    expect_equal(result.message, "Something went wrong")
 
 
 def test_plugin_contract_result_soft_failed() -> None:
@@ -118,7 +107,7 @@ def test_plugin_contract_result_soft_failed() -> None:
         status="soft_failed",
         message="Non-critical issue",
     )
-    assert result.status == "soft_failed"
+    expect_equal(result.status, "soft_failed")
 
 
 def test_plugin_contract_result_immutable() -> None:
@@ -130,8 +119,8 @@ def test_plugin_contract_result_immutable() -> None:
 def test_snapshot_key_creation() -> None:
     """Create a snapshot key."""
     key = SnapshotKey(repo="test/repo", commit="abc123")
-    assert key.repo == "test/repo"
-    assert key.commit == "abc123"
+    expect_equal(key.repo, "test/repo")
+    expect_equal(key.commit, "abc123")
 
 
 def test_snapshot_key_immutable() -> None:
@@ -148,10 +137,10 @@ def test_not_null_fraction_spec_creation() -> None:
         min_fraction=0.9,
         name="pagerank_check",
     )
-    assert spec.table == "analytics.graph_metrics_functions"
-    assert spec.column == "pagerank"
-    assert spec.min_fraction == SPEC_MIN_FRACTION
-    assert spec.name == "pagerank_check"
+    expect_equal(spec.table, "analytics.graph_metrics_functions")
+    expect_equal(spec.column, "pagerank")
+    expect_equal(spec.min_fraction, SPEC_MIN_FRACTION)
+    expect_equal(spec.name, "pagerank_check")
 
 
 def test_not_null_fraction_spec_default_name() -> None:
@@ -161,31 +150,31 @@ def test_not_null_fraction_spec_default_name() -> None:
         column="pagerank",
         min_fraction=0.9,
     )
-    assert spec.name is None
+    expect_is_none(spec.name)
 
 
 def test_safe_table_queries_contains_expected_tables() -> None:
     """Verify SAFE_TABLE_QUERIES contains expected tables."""
-    assert "analytics.graph_metrics_functions" in SAFE_TABLE_QUERIES
-    assert "analytics.graph_metrics_modules" in SAFE_TABLE_QUERIES
-    assert "analytics.graph_stats" in SAFE_TABLE_QUERIES
+    expect_in("analytics.graph_metrics_functions", SAFE_TABLE_QUERIES)
+    expect_in("analytics.graph_metrics_modules", SAFE_TABLE_QUERIES)
+    expect_in("analytics.graph_stats", SAFE_TABLE_QUERIES)
 
 
 def test_safe_table_columns_contains_expected_tables() -> None:
     """Verify SAFE_TABLE_COLUMNS contains expected tables."""
-    assert "analytics.graph_metrics_functions" in SAFE_TABLE_COLUMNS
-    assert "analytics.graph_metrics_modules" in SAFE_TABLE_COLUMNS
-    assert "analytics.graph_stats" in SAFE_TABLE_COLUMNS
+    expect_in("analytics.graph_metrics_functions", SAFE_TABLE_COLUMNS)
+    expect_in("analytics.graph_metrics_modules", SAFE_TABLE_COLUMNS)
+    expect_in("analytics.graph_stats", SAFE_TABLE_COLUMNS)
 
 
 def test_safe_table_columns_has_expected_columns() -> None:
     """Verify graph_metrics_functions has expected columns."""
     columns = SAFE_TABLE_COLUMNS["analytics.graph_metrics_functions"]
-    assert "repo" in columns
-    assert "commit" in columns
-    assert "pagerank" in columns
-    assert "betweenness" in columns
-    assert len(columns) == EXPECTED_COLUMN_COUNT
+    expect_in("repo", columns)
+    expect_in("commit", columns)
+    expect_in("pagerank", columns)
+    expect_in("betweenness", columns)
+    expect_length(columns, EXPECTED_COLUMN_COUNT)
 
 
 def test_assert_table_not_empty_with_empty_table(memory_gateway: StorageGateway) -> None:
@@ -196,8 +185,8 @@ def test_assert_table_not_empty_with_empty_table(memory_gateway: StorageGateway)
         repo=DEFAULT_REPO,
         commit=DEFAULT_COMMIT,
     )
-    assert result.status == "failed"
-    assert "empty" in (result.message or "").lower()
+    expect_equal(result.status, "failed")
+    expect_in("empty", (result.message or "").lower())
 
 
 def test_assert_table_not_empty_with_data(memory_gateway: StorageGateway) -> None:
@@ -221,7 +210,7 @@ def test_assert_table_not_empty_with_data(memory_gateway: StorageGateway) -> Non
         repo=DEFAULT_REPO,
         commit=DEFAULT_COMMIT,
     )
-    assert result.status == "passed"
+    expect_equal(result.status, "passed")
 
 
 def test_assert_table_not_empty_unsafe_table(memory_gateway: StorageGateway) -> None:
@@ -232,8 +221,8 @@ def test_assert_table_not_empty_unsafe_table(memory_gateway: StorageGateway) -> 
         repo=DEFAULT_REPO,
         commit=DEFAULT_COMMIT,
     )
-    assert result.status == "failed"
-    assert "unsafe" in (result.message or "").lower()
+    expect_equal(result.status, "failed")
+    expect_in("unsafe", (result.message or "").lower())
 
 
 def test_assert_table_not_empty_custom_name(memory_gateway: StorageGateway) -> None:
@@ -245,7 +234,7 @@ def test_assert_table_not_empty_custom_name(memory_gateway: StorageGateway) -> N
         commit=DEFAULT_COMMIT,
         name="my_custom_check",
     )
-    assert result.name == "my_custom_check"
+    expect_equal(result.name, "my_custom_check")
 
 
 def test_assert_table_exists_with_existing_table(memory_gateway: StorageGateway) -> None:
@@ -254,7 +243,7 @@ def test_assert_table_exists_with_existing_table(memory_gateway: StorageGateway)
         memory_gateway,
         table="analytics.graph_metrics_functions",
     )
-    assert result.status == "passed"
+    expect_equal(result.status, "passed")
 
 
 def test_assert_table_exists_custom_name(memory_gateway: StorageGateway) -> None:
@@ -264,7 +253,7 @@ def test_assert_table_exists_custom_name(memory_gateway: StorageGateway) -> None
         table="analytics.graph_metrics_functions",
         name="custom_exists_check",
     )
-    assert result.name == "custom_exists_check"
+    expect_equal(result.name, "custom_exists_check")
 
 
 def test_assert_table_exists_unsafe_table(memory_gateway: StorageGateway) -> None:
@@ -286,7 +275,7 @@ def test_assert_columns_present_with_valid_columns(memory_gateway: StorageGatewa
     )
     # Even if columns are in allowlist, they must also exist in the actual schema
     # Since the schema has evolved, this may fail if allowlist is stale
-    assert result.status in {"passed", "failed"}
+    expect_in(result.status, {"passed", "failed"})
 
 
 def test_assert_columns_present_with_disallowed_columns(memory_gateway: StorageGateway) -> None:
@@ -296,8 +285,8 @@ def test_assert_columns_present_with_disallowed_columns(memory_gateway: StorageG
         table="analytics.graph_metrics_functions",
         expected_columns={"repo", "nonexistent_column"},
     )
-    assert result.status == "failed"
-    assert "not allowed" in (result.message or "").lower()
+    expect_equal(result.status, "failed")
+    expect_in("not allowed", (result.message or "").lower())
 
 
 def test_assert_columns_present_custom_name(memory_gateway: StorageGateway) -> None:
@@ -308,7 +297,7 @@ def test_assert_columns_present_custom_name(memory_gateway: StorageGateway) -> N
         expected_columns={"repo"},
         name="my_columns_check",
     )
-    assert result.name == "my_columns_check"
+    expect_equal(result.name, "my_columns_check")
 
 
 def test_assert_columns_present_unsafe_table(memory_gateway: StorageGateway) -> None:
@@ -335,7 +324,7 @@ def test_assert_not_null_fraction_empty_table(memory_gateway: StorageGateway) ->
         spec=spec,
     )
     # Empty table has 0.0 fraction which is below 0.95
-    assert result.status == "failed"
+    expect_equal(result.status, "failed")
 
 
 def test_assert_not_null_fraction_with_data(memory_gateway: StorageGateway) -> None:
@@ -368,7 +357,7 @@ def test_assert_not_null_fraction_with_data(memory_gateway: StorageGateway) -> N
         spec=spec,
     )
     # May fail if repo is not in the allowlist
-    assert result.status in {"passed", "failed"}
+    expect_in(result.status, {"passed", "failed"})
 
 
 def test_assert_not_null_fraction_disallowed_column(memory_gateway: StorageGateway) -> None:
@@ -384,8 +373,8 @@ def test_assert_not_null_fraction_disallowed_column(memory_gateway: StorageGatew
         snapshot=snapshot,
         spec=spec,
     )
-    assert result.status == "failed"
-    assert "not allowed" in (result.message or "").lower()
+    expect_equal(result.status, "failed")
+    expect_in("not allowed", (result.message or "").lower())
 
 
 def test_assert_not_null_fraction_unsafe_table(memory_gateway: StorageGateway) -> None:
@@ -405,8 +394,8 @@ def test_table_not_empty_checker(contract_context: MockContractContext) -> None:
     checker = table_not_empty_checker("analytics.graph_metrics_functions")
     result = checker(contract_context)
 
-    assert result.status == "failed"  # Empty table
-    assert "graph_metrics_functions_not_empty" in result.name
+    expect_equal(result.status, "failed")  # Empty table
+    expect_in("graph_metrics_functions_not_empty", result.name)
 
 
 def test_table_not_empty_checker_custom_name(contract_context: MockContractContext) -> None:
@@ -414,7 +403,7 @@ def test_table_not_empty_checker_custom_name(contract_context: MockContractConte
     checker = table_not_empty_checker("analytics.graph_metrics_functions", name="my_check")
     result = checker(contract_context)
 
-    assert result.name == "my_check"
+    expect_equal(result.name, "my_check")
 
 
 def test_table_exists_checker(contract_context: MockContractContext) -> None:
@@ -422,8 +411,8 @@ def test_table_exists_checker(contract_context: MockContractContext) -> None:
     checker = table_exists_checker("analytics.graph_metrics_functions")
     result = checker(contract_context)
 
-    assert result.status == "passed"  # Table exists
-    assert "graph_metrics_functions_exists" in result.name
+    expect_equal(result.status, "passed")  # Table exists
+    expect_in("graph_metrics_functions_exists", result.name)
 
 
 def test_table_exists_checker_custom_name(contract_context: MockContractContext) -> None:
@@ -431,7 +420,7 @@ def test_table_exists_checker_custom_name(contract_context: MockContractContext)
     checker = table_exists_checker("analytics.graph_metrics_functions", name="exists_check")
     result = checker(contract_context)
 
-    assert result.name == "exists_check"
+    expect_equal(result.name, "exists_check")
 
 
 def test_columns_present_checker(contract_context: MockContractContext) -> None:
@@ -442,7 +431,7 @@ def test_columns_present_checker(contract_context: MockContractContext) -> None:
     )
     result = checker(contract_context)
 
-    assert result.status == "passed"
+    expect_equal(result.status, "passed")
 
 
 def test_columns_present_checker_custom_name(contract_context: MockContractContext) -> None:
@@ -454,7 +443,7 @@ def test_columns_present_checker_custom_name(contract_context: MockContractConte
     )
     result = checker(contract_context)
 
-    assert result.name == "cols_check"
+    expect_equal(result.name, "cols_check")
 
 
 def test_not_null_fraction_checker(contract_context: MockContractContext) -> None:
@@ -467,7 +456,7 @@ def test_not_null_fraction_checker(contract_context: MockContractContext) -> Non
     result = checker(contract_context)
 
     # Empty table has 0 fraction
-    assert result.status == "failed"
+    expect_equal(result.status, "failed")
 
 
 def test_not_null_fraction_checker_custom_name(contract_context: MockContractContext) -> None:
@@ -480,7 +469,7 @@ def test_not_null_fraction_checker_custom_name(contract_context: MockContractCon
     )
     result = checker(contract_context)
 
-    assert result.name == "null_check"
+    expect_equal(result.name, "null_check")
 
 
 def test_run_contract_checkers_all_pass(contract_context: MockContractContext) -> None:
@@ -495,8 +484,8 @@ def test_run_contract_checkers_all_pass(contract_context: MockContractContext) -
 
     results = run_contract_checkers(ctx=contract_context, checkers=checkers)
 
-    assert len(results) == EXPECTED_CHECKER_COUNT
-    assert all(r.status == "passed" for r in results)
+    expect_length(results, EXPECTED_CHECKER_COUNT)
+    expect_true(all(r.status == "passed" for r in results))
 
 
 def test_run_contract_checkers_some_fail(contract_context: MockContractContext) -> None:
@@ -508,15 +497,15 @@ def test_run_contract_checkers_some_fail(contract_context: MockContractContext) 
 
     results = run_contract_checkers(ctx=contract_context, checkers=checkers)
 
-    assert len(results) == EXPECTED_CHECKER_COUNT
-    assert results[0].status == "passed"
-    assert results[1].status == "failed"
+    expect_length(results, EXPECTED_CHECKER_COUNT)
+    expect_equal(results[0].status, "passed")
+    expect_equal(results[1].status, "failed")
 
 
 def test_run_contract_checkers_empty_checkers(contract_context: MockContractContext) -> None:
     """Test run_contract_checkers with no checkers."""
     results = run_contract_checkers(ctx=contract_context, checkers=())
-    assert len(results) == 0
+    expect_length(results, 0)
 
 
 def test_contract_result_default_name_format() -> None:
@@ -527,15 +516,15 @@ def test_contract_result_default_name_format() -> None:
         name="analytics.graph_metrics_functions_not_empty",
         status="passed",
     )
-    assert "analytics.graph_metrics_functions" in result.name
-    assert "not_empty" in result.name
+    expect_in("analytics.graph_metrics_functions", result.name)
+    expect_in("not_empty", result.name)
 
 
 def test_graph_stats_table_operations(memory_gateway: StorageGateway) -> None:
     """Test contract operations on graph_stats table."""
     # Verify table exists
     result = assert_table_exists(memory_gateway, table="analytics.graph_stats")
-    assert result.status == "passed"
+    expect_equal(result.status, "passed")
 
     # Verify columns are present using only repo/commit which are stable
     result = assert_columns_present(
@@ -544,14 +533,14 @@ def test_graph_stats_table_operations(memory_gateway: StorageGateway) -> None:
         expected_columns={"repo", "commit"},
     )
     # Result depends on whether actual schema matches allowlist
-    assert result.status in {"passed", "failed"}
+    expect_in(result.status, {"passed", "failed"})
 
 
 def test_graph_metrics_modules_table_operations(memory_gateway: StorageGateway) -> None:
     """Test contract operations on graph_metrics_modules table."""
     # Verify table exists
     result = assert_table_exists(memory_gateway, table="analytics.graph_metrics_modules")
-    assert result.status == "passed"
+    expect_equal(result.status, "passed")
 
     # Verify columns are present using only repo/commit which are stable
     result = assert_columns_present(
@@ -560,4 +549,4 @@ def test_graph_metrics_modules_table_operations(memory_gateway: StorageGateway) 
         expected_columns={"repo", "commit"},
     )
     # Result depends on whether actual schema matches allowlist
-    assert result.status in {"passed", "failed"}
+    expect_in(result.status, {"passed", "failed"})

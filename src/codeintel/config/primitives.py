@@ -16,10 +16,52 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, TypedDict, Unpack
 
 if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
+
+
+def _assert_unique_paths(paths: dict[str, Path]) -> None:
+    """Ensure no two logical paths resolve to the same location.
+
+    Raises
+    ------
+    ValueError
+        If any two logical paths point to the same resolved location.
+    """
+    seen: dict[Path, str] = {}
+    for name, path in paths.items():
+        existing = seen.get(path)
+        if existing is not None:
+            message = f"Paths for {existing} and {name} both resolve to {path}"
+            raise ValueError(message)
+        seen[path] = name
+
+
+@dataclass(frozen=True)
+class SnapshotInit:
+    """Snapshot constructor inputs before normalization."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    branch: str | None = None
+
+    def to_snapshot_ref(self) -> SnapshotRef:
+        """Convert inputs into a normalized SnapshotRef.
+
+        Returns
+        -------
+        SnapshotRef
+            Snapshot reference with resolved paths.
+        """
+        return SnapshotRef(
+            repo=self.repo,
+            commit=self.commit,
+            repo_root=self.repo_root,
+            branch=self.branch,
+        )
 
 
 @dataclass(frozen=True)
@@ -84,6 +126,124 @@ class SnapshotRef:
             repo_root=repo_root.resolve(),
             branch=branch,
         )
+
+
+@dataclass(frozen=True)
+class BuildLayoutOptions:
+    """Optional layout overrides when deriving build paths from a repo root."""
+
+    build_dir: Path | None = None
+    db_path: Path | None = None
+    document_output_dir: Path | None = None
+    log_db_path: Path | None = None
+
+    def materialize(self, repo_root: Path, *, check_collisions: bool = False) -> BuildPaths:
+        """Construct BuildPaths using the provided repo root and overrides.
+
+        Parameters
+        ----------
+        repo_root
+            Base repository root to anchor derived paths.
+        check_collisions
+            When True, detect collisions between resolved paths and raise a ValueError.
+
+        Returns
+        -------
+        BuildPaths
+            Concrete build path bundle derived from this layout.
+        """
+        return BuildPaths.from_layout(
+            repo_root=repo_root,
+            overrides=self,
+            check_collisions=check_collisions,
+        )
+
+
+@dataclass(frozen=True)
+class BuildPathOverrides:
+    """Optional overrides for explicit build path construction."""
+
+    db_path: Path | None = None
+    document_output_dir: Path | None = None
+    scip_dir: Path | None = None
+    coverage_json: Path | None = None
+    pytest_report: Path | None = None
+    tool_cache: Path | None = None
+    log_db_path: Path | None = None
+
+    def validate(self, build_dir: Path) -> None:
+        """Validate overrides for collisions and path normalization.
+
+        Parameters
+        ----------
+        build_dir
+            Base build directory to resolve relative overrides.
+
+        Raises
+        ------
+        ValueError
+            If two override targets resolve to the same path.
+        """
+        normalized = self.resolved(build_dir)
+        paths = {
+            name: path
+            for name, path in (
+                ("db_path", normalized.db_path),
+                ("document_output_dir", normalized.document_output_dir),
+                ("scip_dir", normalized.scip_dir),
+                ("coverage_json", normalized.coverage_json),
+                ("pytest_report", normalized.pytest_report),
+                ("tool_cache", normalized.tool_cache),
+                ("log_db_path", normalized.log_db_path),
+            )
+            if path is not None
+        }
+        try:
+            _assert_unique_paths(paths)
+        except ValueError as error:
+            raise ValueError(str(error)) from error
+
+    def resolved(self, build_dir: Path) -> BuildPathOverrides:
+        """Resolve relative override paths against the build directory.
+
+        Parameters
+        ----------
+        build_dir
+            Base build directory used to resolve relative overrides.
+
+        Returns
+        -------
+        BuildPathOverrides
+            Overrides normalized to absolute paths where provided.
+        """
+        resolved_build = build_dir.resolve()
+        return BuildPathOverrides(
+            db_path=self._resolve_optional(self.db_path, resolved_build),
+            document_output_dir=self._resolve_optional(self.document_output_dir, resolved_build),
+            scip_dir=self._resolve_optional(self.scip_dir, resolved_build),
+            coverage_json=self._resolve_optional(self.coverage_json, resolved_build),
+            pytest_report=self._resolve_optional(self.pytest_report, resolved_build),
+            tool_cache=self._resolve_optional(self.tool_cache, resolved_build),
+            log_db_path=self._resolve_optional(self.log_db_path, resolved_build),
+        )
+
+    @staticmethod
+    def _resolve_optional(path: Path | None, anchor: Path) -> Path | None:
+        if path is None:
+            return None
+        if path.is_absolute():
+            return path
+        return (anchor / path).resolve()
+
+
+class _LegacyBuildPathOverrides(TypedDict, total=False):
+    db_path: Path | None
+    document_output_dir: Path | None
+    scip_dir: Path | None
+    coverage_json: Path | None
+    pytest_report: Path | None
+    tool_cache: Path | None
+    log_db_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -176,13 +336,8 @@ class BuildPaths:
         cls,
         *,
         build_dir: Path,
-        db_path: Path | None = None,
-        document_output_dir: Path | None = None,
-        scip_dir: Path | None = None,
-        coverage_json: Path | None = None,
-        pytest_report: Path | None = None,
-        tool_cache: Path | None = None,
-        log_db_path: Path | None = None,
+        overrides: BuildPathOverrides | None = None,
+        **legacy_overrides: Unpack[_LegacyBuildPathOverrides],
     ) -> Self:
         """Construct BuildPaths with explicit overrides for specific paths.
 
@@ -190,20 +345,10 @@ class BuildPaths:
         ----------
         build_dir
             Root build directory (required).
-        db_path
-            Optional override for database path.
-        document_output_dir
-            Optional override for document output directory.
-        scip_dir
-            Optional override for SCIP artifacts directory.
-        coverage_json
-            Optional override for coverage JSON path.
-        pytest_report
-            Optional override for pytest report path.
-        tool_cache
-            Optional override for tool cache directory.
-        log_db_path
-            Optional override for log database path.
+        overrides
+            Optional bundle of path overrides.
+        legacy_overrides
+            Backward-compatible individual overrides (e.g., db_path, coverage_json).
 
         Returns
         -------
@@ -211,21 +356,26 @@ class BuildPaths:
             BuildPaths with specified overrides applied.
         """
         resolved_build = build_dir.resolve()
+        override_bundle = overrides or BuildPathOverrides(**legacy_overrides)
+        override_bundle.validate(resolved_build)
+        normalized = override_bundle.resolved(resolved_build)
         return cls(
             build_dir=resolved_build,
-            db_path=(db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
+            db_path=(normalized.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
             document_output_dir=(
-                document_output_dir or resolved_build.parent / "Document Output"
+                normalized.document_output_dir or resolved_build.parent / "Document Output"
             ).resolve(),
-            scip_dir=(scip_dir or resolved_build / "scip").resolve(),
+            scip_dir=(normalized.scip_dir or resolved_build / "scip").resolve(),
             coverage_json=(
-                coverage_json or resolved_build / "coverage" / "coverage.json"
+                normalized.coverage_json or resolved_build / "coverage" / "coverage.json"
             ).resolve(),
             pytest_report=(
-                pytest_report or resolved_build / "test-results" / "pytest-report.json"
+                normalized.pytest_report or resolved_build / "test-results" / "pytest-report.json"
             ).resolve(),
-            tool_cache=(tool_cache or resolved_build / ".tool_cache").resolve(),
-            log_db_path=(log_db_path or resolved_build / "db" / "codeintel_logs.duckdb").resolve(),
+            tool_cache=(normalized.tool_cache or resolved_build / ".tool_cache").resolve(),
+            log_db_path=(
+                normalized.log_db_path or resolved_build / "db" / "codeintel_logs.duckdb"
+            ).resolve(),
         )
 
     @classmethod
@@ -233,10 +383,8 @@ class BuildPaths:
         cls,
         *,
         repo_root: Path,
-        build_dir: Path | None = None,
-        db_path: Path | None = None,
-        document_output_dir: Path | None = None,
-        log_db_path: Path | None = None,
+        overrides: BuildLayoutOptions | None = None,
+        check_collisions: bool = False,
     ) -> Self:
         """Construct BuildPaths from a repo-centric layout.
 
@@ -244,35 +392,46 @@ class BuildPaths:
         ----------
         repo_root
             Root directory of the repository.
-        build_dir
-            Optional explicit build directory; defaults to ``repo_root / "build"``.
-        db_path
-            Optional explicit database path; defaults to ``build_dir / "db" / "codeintel.duckdb"``.
-        document_output_dir
-            Optional explicit document output directory; defaults to
-            ``repo_root / "Document Output"``.
-        log_db_path
-            Optional explicit log database path; defaults to ``build_dir / "db" / "codeintel_logs.duckdb"``.
+        overrides
+            Optional layout overrides.
+        check_collisions
+            When True, detect collisions between resolved paths and raise a ValueError.
 
         Returns
         -------
         Self
             Build paths resolved against the repository layout.
         """
+        layout = overrides or BuildLayoutOptions()
         resolved_root = repo_root.resolve()
-        resolved_build = (build_dir or resolved_root / "build").resolve()
-        return cls(
+        resolved_build = (layout.build_dir or resolved_root / "build").resolve()
+        paths = cls(
             build_dir=resolved_build,
-            db_path=(db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
+            db_path=(layout.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
             document_output_dir=(
-                document_output_dir or resolved_root / "Document Output"
+                layout.document_output_dir or resolved_root / "Document Output"
             ).resolve(),
             scip_dir=(resolved_build / "scip").resolve(),
             coverage_json=(resolved_build / "coverage" / "coverage.json").resolve(),
             pytest_report=(resolved_build / "test-results" / "pytest-report.json").resolve(),
             tool_cache=(resolved_build / ".tool_cache").resolve(),
-            log_db_path=(log_db_path or resolved_build / "db" / "codeintel_logs.duckdb").resolve(),
+            log_db_path=(
+                layout.log_db_path or resolved_build / "db" / "codeintel_logs.duckdb"
+            ).resolve(),
         )
+        if check_collisions:
+            _assert_unique_paths(
+                {
+                    "db_path": paths.db_path,
+                    "document_output_dir": paths.document_output_dir,
+                    "scip_dir": paths.scip_dir,
+                    "coverage_json": paths.coverage_json,
+                    "pytest_report": paths.pytest_report,
+                    "tool_cache": paths.tool_cache,
+                    "log_db_path": paths.log_db_path,
+                }
+            )
+        return paths
 
 
 @dataclass(frozen=True)
@@ -398,10 +557,13 @@ class GraphFeatureFlags:
 
 
 __all__ = [
+    "BuildLayoutOptions",
+    "BuildPathOverrides",
     "BuildPaths",
     "GraphBackendConfig",
     "GraphFeatureFlags",
     "ScanProfiles",
+    "SnapshotInit",
     "SnapshotRef",
     "ToolBinaries",
 ]

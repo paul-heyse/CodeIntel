@@ -37,6 +37,12 @@ from codeintel.graphs.runtime.planning import (
     GraphPlanContext,
     plan_graph_plugin_run,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.graph_contexts import GraphExecutorTestEnv
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
@@ -191,18 +197,18 @@ def test_status_counts_aggregates_correctly() -> None:
 
     counts = STATUS_COUNTS(records)
 
-    assert counts["success"] == STATUS_SUCCESS_COUNT
-    assert counts["failure"] == STATUS_FAILURE_COUNT
-    assert counts["skipped"] == STATUS_SKIPPED_COUNT
+    expect_equal(counts["success"], STATUS_SUCCESS_COUNT)
+    expect_equal(counts["failure"], STATUS_FAILURE_COUNT)
+    expect_equal(counts["skipped"], STATUS_SKIPPED_COUNT)
 
 
 def test_status_counts_empty_records() -> None:
     """Status counts returns zeros for empty record list."""
     counts = STATUS_COUNTS([])
 
-    assert counts["success"] == 0
-    assert counts["failure"] == 0
-    assert counts["skipped"] == 0
+    expect_equal(counts["success"], 0)
+    expect_equal(counts["failure"], 0)
+    expect_equal(counts["skipped"], 0)
 
 
 def test_graph_plugin_executor_dry_run_skips_execution(
@@ -242,10 +248,10 @@ def test_graph_plugin_executor_dry_run_skips_execution(
             settings_by_plugin=plan.settings_by_plugin,
         )
 
-        assert report.skip_count == 1
-        assert report.success_count == 0
-        assert report.records
-        assert report.records[0].meta.get("skipped_reason") == "dry_run"
+        expect_equal(report.skip_count, 1)
+        expect_equal(report.success_count, 0)
+        expect_true(report.records)
+        expect_equal(report.records[0].meta.get("skipped_reason"), "dry_run")
 
 
 def test_graph_plugin_executor_skip_on_unchanged(
@@ -313,9 +319,9 @@ def test_graph_plugin_executor_skip_on_unchanged(
             settings_by_plugin=plan_with_correct_hash.settings_by_plugin,
         )
 
-        assert report.skip_count == 1
-        assert report.records
-        assert report.records[0].meta.get("skipped_reason") == "unchanged"
+        expect_equal(report.skip_count, 1)
+        expect_true(report.records)
+        expect_equal(report.records[0].meta.get("skipped_reason"), "unchanged")
 
 
 def test_graph_plugin_executor_builds_manifest(
@@ -351,10 +357,10 @@ def test_graph_plugin_executor_builds_manifest(
             settings_by_plugin=plan.settings_by_plugin,
         )
 
-        assert plugin.metadata.name in report.manifest
+        expect_in(plugin.metadata.name, report.manifest)
         entry = report.manifest[plugin.metadata.name]
-        assert "input_hash" in entry
-        assert "executed_at" in entry
+        expect_in("input_hash", entry)
+        expect_in("executed_at", entry)
 
 
 def test_graph_plugin_executor_fatal_stops_remaining(
@@ -396,10 +402,10 @@ def test_graph_plugin_executor_fatal_stops_remaining(
             settings_by_plugin=plan.settings_by_plugin,
         )
 
-        assert report.fatal_error
+        expect_true(report.fatal_error)
         # Only the fatal plugin should have a record
-        assert len(report.records) == 1
-        assert report.records[0].plugin_name == "fatal_first"
+        expect_length(report.records, 1)
+        expect_equal(report.records[0].plugin_name, "fatal_first")
 
 
 def test_graph_run_report_captures_all_fields() -> None:
@@ -426,13 +432,13 @@ def test_graph_run_report_captures_all_fields() -> None:
         manifest={"test_plugin": {"executed_at": now}},
     )
 
-    assert report.run_id == "run-123"
-    assert report.repo == "test/repo"
-    assert report.commit == "abc123"
-    assert len(report.records) == 1
-    assert report.success_count == 1
-    assert not report.fatal_error
-    assert "test_plugin" in report.manifest
+    expect_equal(report.run_id, "run-123")
+    expect_equal(report.repo, "test/repo")
+    expect_equal(report.commit, "abc123")
+    expect_length(report.records, 1)
+    expect_equal(report.success_count, 1)
+    expect_true(not report.fatal_error)
+    expect_in("test_plugin", report.manifest)
 
 
 def test_plugin_fatal_error_preserves_context() -> None:
@@ -450,9 +456,9 @@ def test_plugin_fatal_error_preserves_context() -> None:
 
     exc = PluginFatalError(record, original)
 
-    assert exc.record.plugin_name == "fatal_plugin"
-    assert exc.record.status == "failed"
-    assert "Original exception message" in str(exc)
+    expect_equal(exc.record.plugin_name, "fatal_plugin")
+    expect_equal(exc.record.status, "failed")
+    expect_true("Original exception message" in str(exc))
 
 
 def test_graph_plugin_executor_batch_executes_multiple(
@@ -478,8 +484,8 @@ def test_graph_plugin_executor_batch_executes_multiple(
             run_id="test-batch-run",
         )
 
-        assert report.success_count == REPORT_SUCCESS_COUNT
-        assert report.failure_count == 0
+        expect_equal(report.success_count, REPORT_SUCCESS_COUNT)
+        expect_equal(report.failure_count, 0)
 
 
 def test_graph_plugin_executor_batch_with_mixed_results(
@@ -505,5 +511,5 @@ def test_graph_plugin_executor_batch_with_mixed_results(
             run_id="test-mixed-run",
         )
 
-        assert report.success_count == REPORT_MIXED_SUCCESS_COUNT
-        assert report.failure_count == REPORT_FAILURE_COUNT
+        expect_equal(report.success_count, REPORT_MIXED_SUCCESS_COUNT)
+        expect_equal(report.failure_count, REPORT_FAILURE_COUNT)

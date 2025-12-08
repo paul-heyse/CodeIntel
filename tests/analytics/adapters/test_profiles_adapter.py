@@ -20,6 +20,7 @@ from codeintel.analytics.adapters.profiles import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal
 from tests._helpers.contracts import count_rows
 
 # =============================================================================
@@ -311,7 +312,7 @@ def test_function_profile_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
-    assert adapter.table_name == "analytics.function_profile"
+    expect_equal(adapter.table_name, "analytics.function_profile")
 
 
 def test_function_profile_adapter_load_raises(
@@ -331,7 +332,7 @@ def test_function_profile_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_function_profile_adapter_persist_single_row(
@@ -343,7 +344,7 @@ def test_function_profile_adapter_persist_single_row(
     row = _make_function_profile_row()
 
     count = adapter.persist([row])
-    assert count == EXPECTED_COUNT_1
+    expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify row was inserted
     total = count_rows(
@@ -351,7 +352,7 @@ def test_function_profile_adapter_persist_single_row(
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_1
+    expect_equal(total, EXPECTED_COUNT_1)
 
 
 def test_function_profile_adapter_persist_multiple_rows(
@@ -367,7 +368,7 @@ def test_function_profile_adapter_persist_multiple_rows(
     ]
 
     count = adapter.persist(rows)
-    assert count == EXPECTED_COUNT_2
+    expect_equal(count, EXPECTED_COUNT_2)
 
     # Verify rows were inserted
     total = count_rows(
@@ -375,7 +376,7 @@ def test_function_profile_adapter_persist_multiple_rows(
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_2
+    expect_equal(total, EXPECTED_COUNT_2)
 
 
 # =============================================================================
@@ -389,7 +390,7 @@ def test_file_profile_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = FileProfileAdapter(fresh_gateway, snapshot)
-    assert adapter.table_name == "analytics.file_profile"
+    expect_equal(adapter.table_name, "analytics.file_profile")
 
 
 def test_file_profile_adapter_load_raises(
@@ -409,7 +410,7 @@ def test_file_profile_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = FileProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_file_profile_adapter_persist_single_row(
@@ -421,7 +422,7 @@ def test_file_profile_adapter_persist_single_row(
     row = _make_file_profile_row()
 
     count = adapter.persist([row])
-    assert count == EXPECTED_COUNT_1
+    expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify row was inserted
     total = count_rows(
@@ -429,7 +430,7 @@ def test_file_profile_adapter_persist_single_row(
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_1
+    expect_equal(total, EXPECTED_COUNT_1)
 
 
 def test_file_profile_adapter_persist_multiple_rows(
@@ -445,7 +446,7 @@ def test_file_profile_adapter_persist_multiple_rows(
     ]
 
     count = adapter.persist(rows)
-    assert count == EXPECTED_COUNT_2
+    expect_equal(count, EXPECTED_COUNT_2)
 
     # Verify rows were inserted
     total = count_rows(
@@ -453,7 +454,7 @@ def test_file_profile_adapter_persist_multiple_rows(
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_2
+    expect_equal(total, EXPECTED_COUNT_2)
 
 
 # =============================================================================
@@ -467,7 +468,7 @@ def test_module_profile_adapter_table_name(
 ) -> None:
     """Adapter exposes correct table name."""
     adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
-    assert adapter.table_name == "analytics.module_profile"
+    expect_equal(adapter.table_name, "analytics.module_profile")
 
 
 def test_module_profile_adapter_load_raises(
@@ -487,7 +488,7 @@ def test_module_profile_adapter_persist_empty(
     """Persist empty list returns 0."""
     adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
     count = adapter.persist([])
-    assert count == EXPECTED_COUNT_0
+    expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_module_profile_adapter_persist_single_row(
@@ -499,7 +500,7 @@ def test_module_profile_adapter_persist_single_row(
     row = _make_module_profile_row()
 
     count = adapter.persist([row])
-    assert count == EXPECTED_COUNT_1
+    expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify row was inserted
     total = count_rows(
@@ -507,7 +508,7 @@ def test_module_profile_adapter_persist_single_row(
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_1
+    expect_equal(total, EXPECTED_COUNT_1)
 
 
 def test_module_profile_adapter_persist_multiple_rows(
@@ -523,7 +524,7 @@ def test_module_profile_adapter_persist_multiple_rows(
     ]
 
     count = adapter.persist(rows)
-    assert count == EXPECTED_COUNT_2
+    expect_equal(count, EXPECTED_COUNT_2)
 
     # Verify rows were inserted
     total = count_rows(
@@ -531,4 +532,4 @@ def test_module_profile_adapter_persist_multiple_rows(
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
-    assert total == EXPECTED_COUNT_2
+    expect_equal(total, EXPECTED_COUNT_2)

@@ -23,6 +23,14 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+from tests._helpers.fakes.networkx_graphs import (
+    DEFAULT_CHAIN_LENGTH,
+    DEFAULT_CYCLE_SIZE,
+    DEFAULT_SPOKES,
+    chain_graph,
+    cyclic_graph,
+    star_graph,
+)
 
 _GraphT = TypeVar("_GraphT", nx.Graph, nx.DiGraph)
 
@@ -36,6 +44,74 @@ class GraphFixtures:
     config_graph: nx.Graph
     symbol_module_graph: nx.Graph
     symbol_function_graph: nx.Graph
+    cfg_graph: nx.DiGraph | None = None
+
+
+def call_chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> nx.DiGraph:
+    """Build a call graph with a simple chain topology.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed chain graph.
+    """
+    return chain_graph(length)
+
+
+def call_star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGraph:
+    """Build a call graph with a star topology.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed star graph.
+    """
+    return star_graph(spokes, inward=inward)
+
+
+def import_cycle_graph(size: int = DEFAULT_CYCLE_SIZE) -> nx.DiGraph:
+    """Build an import graph with a directed cycle.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed cycle graph.
+    """
+    return cyclic_graph(size)
+
+
+def symbol_star_graph(spokes: int = DEFAULT_SPOKES) -> nx.Graph:
+    """Build a symbol graph with a star topology (undirected).
+
+    Returns
+    -------
+    nx.Graph
+        Undirected star graph.
+    """
+    return nx.Graph(star_graph(spokes, inward=False))
+
+
+def standard_graph_fixtures(
+    *,
+    chain_length: int = DEFAULT_CHAIN_LENGTH,
+    cycle_size: int = DEFAULT_CYCLE_SIZE,
+    star_spokes: int = DEFAULT_SPOKES,
+) -> GraphFixtures:
+    """Build a consistent set of graph fixtures for tests.
+
+    Returns
+    -------
+    GraphFixtures
+        Fixture bundle with call/import/symbol/config graphs.
+    """
+    return GraphFixtures(
+        call_graph=call_chain_graph(chain_length),
+        import_graph=import_cycle_graph(cycle_size),
+        config_graph=nx.Graph(),
+        symbol_module_graph=symbol_star_graph(star_spokes),
+        symbol_function_graph=symbol_star_graph(star_spokes),
+        cfg_graph=nx.DiGraph(),
+    )
 
 
 @dataclass

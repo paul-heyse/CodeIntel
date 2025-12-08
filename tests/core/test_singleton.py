@@ -18,6 +18,14 @@ from typing import ClassVar, cast
 import pytest
 
 from codeintel.core.singleton import SingletonHolder, SingletonNotInitializedError
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_length,
+    expect_true,
+)
 
 # =============================================================================
 # Test Fixture Classes
@@ -92,10 +100,10 @@ def test_singleton_get_creates_instance_via_factory() -> None:
     """Verify that get() creates an instance using the factory function."""
     registry = SampleRegistryHolder.get(SampleRegistry.create_default)
 
-    assert registry is not None
-    assert isinstance(registry, SampleRegistry)
-    assert registry.name == "default"
-    assert registry.items == []
+    expect_is_not_none(registry)
+    expect_is_instance(registry, SampleRegistry)
+    expect_equal(registry.name, "default")
+    expect_equal(registry.items, [])
 
 
 def test_singleton_get_returns_same_instance() -> None:
@@ -103,14 +111,14 @@ def test_singleton_get_returns_same_instance() -> None:
     registry1 = SampleRegistryHolder.get(SampleRegistry.create_default)
     registry2 = SampleRegistryHolder.get(SampleRegistry.create_default)
 
-    assert registry1 is registry2
+    expect_true(registry1 is registry2)
 
 
 def test_singleton_get_or_none_before_initialization() -> None:
     """Verify that get_or_none() returns None before initialization."""
     result = SampleRegistryHolder.get_or_none()
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_singleton_get_or_none_after_initialization() -> None:
@@ -118,30 +126,30 @@ def test_singleton_get_or_none_after_initialization() -> None:
     expected = SampleRegistryHolder.get(SampleRegistry.create_default)
     result = SampleRegistryHolder.get_or_none()
 
-    assert result is expected
+    expect_true(result is expected)
 
 
 def test_singleton_is_initialized_false_initially() -> None:
     """Verify that is_initialized() returns False before get() is called."""
-    assert not SampleRegistryHolder.is_initialized()
+    expect_true(not SampleRegistryHolder.is_initialized())
 
 
 def test_singleton_is_initialized_true_after_get() -> None:
     """Verify that is_initialized() returns True after get() is called."""
     SampleRegistryHolder.get(SampleRegistry.create_default)
 
-    assert SampleRegistryHolder.is_initialized()
+    expect_true(SampleRegistryHolder.is_initialized())
 
 
 def test_singleton_reset_clears_instance() -> None:
     """Verify that reset() clears the singleton instance."""
     SampleRegistryHolder.get(SampleRegistry.create_default)
-    assert SampleRegistryHolder.is_initialized()
+    expect_true(SampleRegistryHolder.is_initialized())
 
     SampleRegistryHolder.reset()
 
-    assert not SampleRegistryHolder.is_initialized()
-    assert SampleRegistryHolder.get_or_none() is None
+    expect_true(not SampleRegistryHolder.is_initialized())
+    expect_true(SampleRegistryHolder.get_or_none() is None)
 
 
 def test_singleton_reset_allows_new_instance() -> None:
@@ -150,9 +158,9 @@ def test_singleton_reset_allows_new_instance() -> None:
     SampleRegistryHolder.reset()
     registry2 = SampleRegistryHolder.get(lambda: SampleRegistry(name="second", items=["b"]))
 
-    assert registry1 is not registry2
-    assert registry1.name == "first"
-    assert registry2.name == "second"
+    expect_true(registry1 is not registry2)
+    expect_equal(registry1.name, "first")
+    expect_equal(registry2.name, "second")
 
 
 # =============================================================================
@@ -165,10 +173,10 @@ def test_singleton_subclasses_are_independent() -> None:
     sample_registry = SampleRegistryHolder.get(SampleRegistry.create_default)
     another_registry = AnotherRegistryHolder.get(lambda: AnotherRegistry(value=42))
 
-    assert isinstance(sample_registry, SampleRegistry)
-    assert isinstance(another_registry, AnotherRegistry)
-    assert SampleRegistryHolder.is_initialized()
-    assert AnotherRegistryHolder.is_initialized()
+    expect_is_instance(sample_registry, SampleRegistry)
+    expect_is_instance(another_registry, AnotherRegistry)
+    expect_true(SampleRegistryHolder.is_initialized())
+    expect_true(AnotherRegistryHolder.is_initialized())
 
 
 def test_singleton_reset_only_affects_own_subclass() -> None:
@@ -178,8 +186,8 @@ def test_singleton_reset_only_affects_own_subclass() -> None:
 
     SampleRegistryHolder.reset()
 
-    assert not SampleRegistryHolder.is_initialized()
-    assert AnotherRegistryHolder.is_initialized()
+    expect_true(not SampleRegistryHolder.is_initialized())
+    expect_true(AnotherRegistryHolder.is_initialized())
 
 
 # =============================================================================
@@ -200,8 +208,8 @@ def test_singleton_factory_called_only_once() -> None:
     result2 = CountingHolder.get(counting_factory)
     result3 = CountingHolder.get(counting_factory)
 
-    assert result1 == result2 == result3 == 1
-    assert call_count == 1
+    expect_true(result1 == result2 == result3 == 1)
+    expect_equal(call_count, 1)
 
 
 def test_singleton_factory_returning_none_raises_error() -> None:
@@ -216,7 +224,7 @@ def test_singleton_factory_returning_none_raises_error() -> None:
     with pytest.raises(SingletonNotInitializedError) as exc_info:
         SampleRegistryHolder.get(factory)
 
-    assert "SampleRegistryHolder" in str(exc_info.value)
+    expect_in("SampleRegistryHolder", str(exc_info.value))
 
 
 # =============================================================================
@@ -243,11 +251,11 @@ def test_singleton_thread_safe_initialization() -> None:
         for future in futures:
             future.result()
 
-    assert not errors, f"Unexpected errors: {errors}"
-    assert len(results) == 10
+    expect_true(not errors, message=f"Unexpected errors: {errors}")
+    expect_length(results, 10)
     # All results should be the same instance
     first = results[0]
-    assert all(r is first for r in results)
+    expect_true(all(r is first for r in results))
 
 
 def test_singleton_concurrent_get_single_factory_call() -> None:
@@ -271,9 +279,9 @@ def test_singleton_concurrent_get_single_factory_call() -> None:
         results = [f.result() for f in futures]
 
     # Factory should only be called once
-    assert call_count == 1
+    expect_equal(call_count, 1)
     # All results should be 1 (the value from the single factory call)
-    assert all(r == 1 for r in results)
+    expect_true(all(r == 1 for r in results))
 
 
 # =============================================================================
@@ -285,8 +293,8 @@ def test_singleton_not_initialized_error_message() -> None:
     """Verify the error message format for SingletonNotInitializedError."""
     error = SingletonNotInitializedError("TestHolder")
 
-    assert "TestHolder" in str(error)
-    assert "not initialized" in str(error)
+    expect_in("TestHolder", str(error))
+    expect_in("not initialized", str(error))
 
 
 def test_singleton_factory_exception_propagates() -> None:
@@ -300,4 +308,4 @@ def test_singleton_factory_exception_propagates() -> None:
         SampleRegistryHolder.get(failing_factory)
 
     # After a factory failure, the singleton should not be initialized
-    assert not SampleRegistryHolder.is_initialized()
+    expect_true(not SampleRegistryHolder.is_initialized())

@@ -17,6 +17,12 @@ from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -48,9 +54,9 @@ def test_duckdb_backend_creation(
         commit=provisioned_repo.commit,
     )
 
-    assert backend.gateway is provisioned_repo.gateway
-    assert backend.repo == provisioned_repo.repo
-    assert backend.commit == provisioned_repo.commit
+    expect_true(backend.gateway is provisioned_repo.gateway)
+    expect_equal(backend.repo, provisioned_repo.repo)
+    expect_equal(backend.commit, provisioned_repo.commit)
 
 
 def test_duckdb_backend_with_custom_limits(
@@ -73,8 +79,8 @@ def test_duckdb_backend_with_custom_limits(
         options=BackendOptions(limits=custom_limits),
     )
 
-    assert backend.limits.default_limit == CUSTOM_DEFAULT_LIMIT
-    assert backend.limits.max_rows_per_call == CUSTOM_MAX_ROWS
+    expect_equal(backend.limits.default_limit, CUSTOM_DEFAULT_LIMIT)
+    expect_equal(backend.limits.max_rows_per_call, CUSTOM_MAX_ROWS)
 
 
 def test_duckdb_backend_with_service(
@@ -104,7 +110,7 @@ def test_duckdb_backend_with_service(
         commit=provisioned_repo.commit,
     )
 
-    assert backend.service is service
+    expect_true(backend.service is service)
 
 
 # =============================================================================
@@ -140,7 +146,7 @@ def test_duckdb_backend_list_datasets(
 
     datasets = backend.list_datasets()
 
-    assert isinstance(datasets, list)
+    expect_is_instance(datasets, list)
 
 
 def test_duckdb_backend_dataset_specs(
@@ -171,7 +177,7 @@ def test_duckdb_backend_dataset_specs(
 
     specs = backend.dataset_specs()
 
-    assert isinstance(specs, list)
+    expect_is_instance(specs, list)
 
 
 # =============================================================================
@@ -207,7 +213,7 @@ def test_duckdb_backend_list_high_risk_functions(
 
     response = backend.list_high_risk_functions(min_risk=0.5, limit=10)
 
-    assert hasattr(response, "functions")
+    expect_true(hasattr(response, "functions"))
 
 
 def test_duckdb_backend_list_high_risk_functions_with_tested_only(
@@ -238,7 +244,7 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
 
     response = backend.list_high_risk_functions(min_risk=0.5, limit=10, tested_only=True)
 
-    assert hasattr(response, "functions")
+    expect_true(hasattr(response, "functions"))
 
 
 # =============================================================================
@@ -274,7 +280,7 @@ def test_duckdb_backend_list_subsystems(
 
     response = backend.list_subsystems(limit=10)
 
-    assert hasattr(response, "subsystems")
+    expect_true(hasattr(response, "subsystems"))
 
 
 def test_duckdb_backend_list_subsystems_with_role_filter(
@@ -305,7 +311,7 @@ def test_duckdb_backend_list_subsystems_with_role_filter(
 
     response = backend.list_subsystems(limit=10, role="test_role")
 
-    assert hasattr(response, "subsystems")
+    expect_true(hasattr(response, "subsystems"))
 
 
 def test_duckdb_backend_list_subsystems_with_query_filter(
@@ -336,7 +342,7 @@ def test_duckdb_backend_list_subsystems_with_query_filter(
 
     response = backend.list_subsystems(limit=10, q="test")
 
-    assert hasattr(response, "subsystems")
+    expect_true(hasattr(response, "subsystems"))
 
 
 def test_duckdb_backend_search_subsystems(
@@ -367,7 +373,7 @@ def test_duckdb_backend_search_subsystems(
 
     response = backend.search_subsystems(limit=10)
 
-    assert hasattr(response, "results") or hasattr(response, "subsystems")
+    expect_true(hasattr(response, "results") or hasattr(response, "subsystems"))
 
 
 # =============================================================================
@@ -401,7 +407,7 @@ def test_duckdb_backend_service_attribute(
         service=service,
     )
 
-    assert backend.service is not None
+    expect_is_not_none(backend.service)
 
 
 def test_duckdb_backend_limits_attribute(
@@ -420,9 +426,9 @@ def test_duckdb_backend_limits_attribute(
         commit=provisioned_repo.commit,
     )
 
-    assert backend.limits is not None
-    assert hasattr(backend.limits, "default_limit")
-    assert hasattr(backend.limits, "max_rows_per_call")
+    expect_is_not_none(backend.limits)
+    expect_true(hasattr(backend.limits, "default_limit"))
+    expect_true(hasattr(backend.limits, "max_rows_per_call"))
 
 
 # =============================================================================
@@ -468,7 +474,7 @@ def test_duckdb_backend_get_function_summary(
 
     try:
         response = backend.get_function_summary(goid_h128=goid_h128)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when function summary is not found
         pass
@@ -510,7 +516,7 @@ def test_duckdb_backend_get_callgraph_neighbors(
     goid_h128 = result[0]
 
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="both")
-    assert hasattr(response, "incoming") or hasattr(response, "outgoing")
+    expect_true(hasattr(response, "incoming") or hasattr(response, "outgoing"))
 
 
 def test_duckdb_backend_get_callgraph_neighbors_direction_in(
@@ -549,7 +555,7 @@ def test_duckdb_backend_get_callgraph_neighbors_direction_in(
     goid_h128 = result[0]
 
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="in")
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_duckdb_backend_get_callgraph_neighborhood(
@@ -588,8 +594,8 @@ def test_duckdb_backend_get_callgraph_neighborhood(
     goid_h128 = result[0]
 
     response = backend.get_callgraph_neighborhood(goid_h128=goid_h128, radius=1)
-    assert hasattr(response, "nodes")
-    assert hasattr(response, "edges")
+    expect_true(hasattr(response, "nodes"))
+    expect_true(hasattr(response, "edges"))
 
 
 def test_duckdb_backend_get_tests_for_function(
@@ -628,7 +634,7 @@ def test_duckdb_backend_get_tests_for_function(
     goid_h128 = result[0]
 
     response = backend.get_tests_for_function(goid_h128=goid_h128)
-    assert hasattr(response, "tests")
+    expect_true(hasattr(response, "tests"))
 
 
 def test_duckdb_backend_get_file_summary(
@@ -668,7 +674,7 @@ def test_duckdb_backend_get_file_summary(
 
     try:
         response = backend.get_file_summary(rel_path=rel_path)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when file summary is not found
         pass
@@ -716,7 +722,7 @@ def test_duckdb_backend_get_function_profile(
 
     try:
         response = backend.get_function_profile(goid_h128=goid_h128)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when profile is not found
         pass
@@ -759,7 +765,7 @@ def test_duckdb_backend_get_file_profile(
 
     try:
         response = backend.get_file_profile(rel_path=rel_path)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when profile is not found
         pass
@@ -802,7 +808,7 @@ def test_duckdb_backend_get_module_profile(
 
     try:
         response = backend.get_module_profile(module=module)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when profile is not found
         pass
@@ -845,7 +851,7 @@ def test_duckdb_backend_get_function_architecture(
 
     try:
         response = backend.get_function_architecture(goid_h128=goid_h128)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when architecture is not found
         pass
@@ -888,7 +894,7 @@ def test_duckdb_backend_get_module_architecture(
 
     try:
         response = backend.get_module_architecture(module=module)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when architecture is not found
         pass
@@ -934,7 +940,7 @@ def test_duckdb_backend_get_module_subsystems(
 
     try:
         response = backend.get_module_subsystems(module=module)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when subsystems not found
         pass
@@ -975,7 +981,7 @@ def test_duckdb_backend_get_file_hints(
 
     try:
         response = backend.get_file_hints(rel_path=rel_path)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when hints not found
         pass
@@ -1018,7 +1024,7 @@ def test_duckdb_backend_get_subsystem_modules(
 
     try:
         response = backend.get_subsystem_modules(subsystem_id=subsystem_id)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when subsystem not found
         pass
@@ -1061,7 +1067,7 @@ def test_duckdb_backend_summarize_subsystem(
 
     try:
         response = backend.summarize_subsystem(subsystem_id=subsystem_id)
-        assert response is not None
+        expect_is_not_none(response)
     except McpError:
         # Expected when subsystem not found
         pass
@@ -1098,7 +1104,7 @@ def test_callgraph_neighbors_direction_incoming(
     goid_h128 = result[0]
     # Should not raise - direction is normalized internally
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="incoming")
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_callgraph_neighbors_direction_outgoing(
@@ -1127,7 +1133,7 @@ def test_callgraph_neighbors_direction_outgoing(
     goid_h128 = result[0]
     # Should not raise - direction is normalized internally
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="outgoing")
-    assert response is not None
+    expect_is_not_none(response)
 
 
 # =============================================================================
@@ -1214,7 +1220,7 @@ def test_duckdb_backend_get_import_boundary(
 
     # Test with nonexistent subsystem - should return empty boundary
     response = backend.get_import_boundary(subsystem_id="nonexistent_subsystem")
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_duckdb_backend_read_dataset_rows(
@@ -1239,7 +1245,7 @@ def test_duckdb_backend_read_dataset_rows(
 
     dataset_name = datasets[0].name
     response = backend.read_dataset_rows(dataset_name=dataset_name, limit=5)
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_duckdb_backend_read_dataset_rows_nonexistent(
@@ -1284,7 +1290,7 @@ def test_duckdb_backend_dataset_schema(
 
     dataset_name = datasets[0].name
     response = backend.dataset_schema(dataset_name=dataset_name, sample_limit=3)
-    assert response is not None
+    expect_is_not_none(response)
 
 
 def test_duckdb_backend_dataset_schema_nonexistent(
@@ -1330,7 +1336,7 @@ def test_build_backend_resource_local_db_mode(
 
     resource = build_backend_resource(cfg, gateway=provisioned_repo.gateway)
 
-    assert isinstance(resource.backend, DuckDBBackend)
+    expect_is_instance(resource.backend, DuckDBBackend)
 
 
 def test_serving_config_remote_api_missing_url_raises(

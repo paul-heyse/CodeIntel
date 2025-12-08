@@ -35,6 +35,14 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
@@ -167,7 +175,7 @@ def test_register_plugin_basic(fresh_registry: GraphPluginRegistry) -> None:
 
     fresh_registry.register(plugin)
 
-    assert fresh_registry.contains(plugin.metadata.name)
+    expect_true(fresh_registry.contains(plugin.metadata.name))
 
 
 def test_register_plugin_duplicate_raises(fresh_registry: GraphPluginRegistry) -> None:
@@ -188,7 +196,7 @@ def test_register_plugin_indexes_by_capability(fresh_registry: GraphPluginRegist
     fresh_registry.register(plugin)
 
     providers = fresh_registry.list_providing("test_capability")
-    assert plugin in providers
+    expect_in(plugin, providers)
 
 
 def test_register_plugin_indexes_by_kind(fresh_registry: GraphPluginRegistry) -> None:
@@ -198,7 +206,7 @@ def test_register_plugin_indexes_by_kind(fresh_registry: GraphPluginRegistry) ->
     fresh_registry.register(plugin)
 
     plugins_by_kind = fresh_registry.list_by_kind("metric")
-    assert plugin in plugins_by_kind
+    expect_in(plugin, plugins_by_kind)
 
 
 def test_register_plugin_indexes_by_stage(fresh_registry: GraphPluginRegistry) -> None:
@@ -208,7 +216,7 @@ def test_register_plugin_indexes_by_stage(fresh_registry: GraphPluginRegistry) -
     fresh_registry.register(plugin)
 
     plugins_by_stage = fresh_registry.list_by_stage("core")
-    assert plugin in plugins_by_stage
+    expect_in(plugin, plugins_by_stage)
 
 
 def test_register_plugin_indexes_by_table(fresh_registry: GraphPluginRegistry) -> None:
@@ -218,7 +226,7 @@ def test_register_plugin_indexes_by_table(fresh_registry: GraphPluginRegistry) -
     fresh_registry.register(plugin)
 
     plugins_by_table = fresh_registry.list_by_table("analytics.test_table")
-    assert plugin in plugins_by_table
+    expect_in(plugin, plugins_by_table)
 
 
 # Tests: Plugin Unregistration
@@ -231,7 +239,7 @@ def test_unregister_plugin_removes(fresh_registry: GraphPluginRegistry) -> None:
 
     fresh_registry.unregister(plugin.metadata.name)
 
-    assert not fresh_registry.contains(plugin.metadata.name)
+    expect_false(fresh_registry.contains(plugin.metadata.name))
 
 
 def test_unregister_removes_from_indexes(fresh_registry: GraphPluginRegistry) -> None:
@@ -247,10 +255,10 @@ def test_unregister_removes_from_indexes(fresh_registry: GraphPluginRegistry) ->
 
     fresh_registry.unregister(plugin.metadata.name)
 
-    assert plugin not in fresh_registry.list_by_kind("metric")
-    assert plugin not in fresh_registry.list_by_stage("core")
-    assert plugin not in fresh_registry.list_providing("test_cap")
-    assert plugin not in fresh_registry.list_by_table("test_table")
+    expect_true(plugin not in fresh_registry.list_by_kind("metric"))
+    expect_true(plugin not in fresh_registry.list_by_stage("core"))
+    expect_true(plugin not in fresh_registry.list_providing("test_cap"))
+    expect_true(plugin not in fresh_registry.list_by_table("test_table"))
 
 
 def test_unregister_nonexistent_silent(fresh_registry: GraphPluginRegistry) -> None:
@@ -269,7 +277,7 @@ def test_get_plugin_returns_registered(fresh_registry: GraphPluginRegistry) -> N
 
     retrieved = fresh_registry.get(plugin.metadata.name)
 
-    assert retrieved is plugin
+    expect_true(retrieved is plugin)
 
 
 def test_get_plugin_unknown_raises(fresh_registry: GraphPluginRegistry) -> None:
@@ -283,12 +291,12 @@ def test_contains_returns_true_for_registered(fresh_registry: GraphPluginRegistr
     plugin = _make_test_plugin("contains")
     fresh_registry.register(plugin)
 
-    assert fresh_registry.contains(plugin.metadata.name)
+    expect_true(fresh_registry.contains(plugin.metadata.name))
 
 
 def test_contains_returns_false_for_unknown(fresh_registry: GraphPluginRegistry) -> None:
     """Contains returns False for unknown plugin."""
-    assert not fresh_registry.contains("nonexistent")
+    expect_false(fresh_registry.contains("nonexistent"))
 
 
 # Tests: List Methods
@@ -308,7 +316,7 @@ def test_list_all_returns_registered(fresh_registry: GraphPluginRegistry) -> Non
     all_plugins = fresh_registry.list_all()
 
     for plugin in plugins:
-        assert plugin in all_plugins
+        expect_in(plugin, all_plugins)
 
 
 def test_list_names_returns_names(fresh_registry: GraphPluginRegistry) -> None:
@@ -324,7 +332,7 @@ def test_list_names_returns_names(fresh_registry: GraphPluginRegistry) -> None:
     names = fresh_registry.list_names()
 
     for plugin in plugins:
-        assert plugin.metadata.name in names
+        expect_in(plugin.metadata.name, names)
 
 
 def test_list_providing_empty_for_unknown_capability(
@@ -332,7 +340,7 @@ def test_list_providing_empty_for_unknown_capability(
 ) -> None:
     """List providing returns empty for unknown capability."""
     result = fresh_registry.list_providing("unknown_capability")
-    assert result == ()
+    expect_equal(result, ())
 
 
 def test_list_by_kind_empty_for_unknown_kind(
@@ -340,7 +348,7 @@ def test_list_by_kind_empty_for_unknown_kind(
 ) -> None:
     """List by kind returns empty for unknown kind."""
     result = fresh_registry.list_by_kind("unknown_kind")
-    assert result == ()
+    expect_equal(result, ())
 
 
 def test_list_by_stage_empty_for_unknown_stage(
@@ -348,7 +356,7 @@ def test_list_by_stage_empty_for_unknown_stage(
 ) -> None:
     """List by stage returns empty for unknown stage."""
     result = fresh_registry.list_by_stage("unknown_stage")
-    assert result == ()
+    expect_equal(result, ())
 
 
 # Tests: Dependency Resolution
@@ -367,7 +375,7 @@ def test_resolve_dependencies_explicit(fresh_registry: GraphPluginRegistry) -> N
 
     # Dependency should come before main
     plugin_names = [p.metadata.name for p in plan.plugins]
-    assert plugin_names.index(dep_name) < plugin_names.index(main_plugin.metadata.name)
+    expect_true(plugin_names.index(dep_name) < plugin_names.index(main_plugin.metadata.name))
 
 
 def test_resolve_dependencies_missing_raises(fresh_registry: GraphPluginRegistry) -> None:
@@ -390,7 +398,9 @@ def test_resolve_dependencies_by_capability(fresh_registry: GraphPluginRegistry)
     plan = fresh_registry.plan(plugin_names=[provider.metadata.name, consumer.metadata.name])
 
     plugin_names = [p.metadata.name for p in plan.plugins]
-    assert plugin_names.index(provider.metadata.name) < plugin_names.index(consumer.metadata.name)
+    expect_true(
+        plugin_names.index(provider.metadata.name) < plugin_names.index(consumer.metadata.name)
+    )
 
 
 def test_resolve_dependencies_missing_capability_raises(
@@ -446,8 +456,8 @@ def test_topological_sort_orders_dependencies(fresh_registry: GraphPluginRegistr
     plan = fresh_registry.plan(plugin_names=[p3_name, p1_name, p2_name])
 
     names = [p.metadata.name for p in plan.plugins]
-    assert names.index(p1_name) < names.index(p2_name)
-    assert names.index(p2_name) < names.index(p3_name)
+    expect_true(names.index(p1_name) < names.index(p2_name))
+    expect_true(names.index(p2_name) < names.index(p3_name))
 
 
 def test_topological_sort_cycle_detection(fresh_registry: GraphPluginRegistry) -> None:
@@ -476,8 +486,8 @@ def test_plan_includes_plan_id(fresh_registry: GraphPluginRegistry) -> None:
 
     plan = fresh_registry.plan(plugin_names=[plugin.metadata.name])
 
-    assert plan.plan_id
-    assert len(plan.plan_id) > 0
+    expect_true(bool(plan.plan_id))
+    expect_true(len(plan.plan_id) > 0)
 
 
 def test_plan_includes_dep_graph(fresh_registry: GraphPluginRegistry) -> None:
@@ -493,8 +503,8 @@ def test_plan_includes_dep_graph(fresh_registry: GraphPluginRegistry) -> None:
 
     plan = fresh_registry.plan(plugin_names=[p1_name, p2_name])
 
-    assert p2_name in plan.dep_graph
-    assert p1_name in plan.dep_graph[p2_name]
+    expect_in(p2_name, plan.dep_graph)
+    expect_in(p1_name, plan.dep_graph[p2_name])
 
 
 def test_plan_tracks_skipped_plugins(fresh_registry: GraphPluginRegistry) -> None:
@@ -508,10 +518,10 @@ def test_plan_tracks_skipped_plugins(fresh_registry: GraphPluginRegistry) -> Non
     )
 
     skipped_names = [s.name for s in plan.skipped_plugins]
-    assert plugin.metadata.name in skipped_names
+    expect_in(plugin.metadata.name, skipped_names)
 
     skipped = next(s for s in plan.skipped_plugins if s.name == plugin.metadata.name)
-    assert skipped.reason == "disabled"
+    expect_equal(skipped.reason, "disabled")
 
 
 def test_plan_skips_unknown_plugins(fresh_registry: GraphPluginRegistry) -> None:
@@ -519,9 +529,9 @@ def test_plan_skips_unknown_plugins(fresh_registry: GraphPluginRegistry) -> None
     plan = fresh_registry.plan(plugin_names=["nonexistent_plugin"])
 
     skipped = plan.skipped_plugins
-    assert len(skipped) == 1
-    assert skipped[0].name == "nonexistent_plugin"
-    assert skipped[0].reason == "missing_dependency"
+    expect_length(skipped, 1)
+    expect_equal(skipped[0].name, "nonexistent_plugin")
+    expect_equal(skipped[0].reason, "missing_dependency")
 
 
 def test_plan_duplicate_plugin_raises(fresh_registry: GraphPluginRegistry) -> None:
@@ -547,8 +557,8 @@ def test_plan_with_enabled_overrides_defaults(fresh_registry: GraphPluginRegistr
     )
 
     plugin_names = [p.metadata.name for p in plan.plugins]
-    assert p1.metadata.name in plugin_names
-    assert p2.metadata.name not in plugin_names
+    expect_in(p1.metadata.name, plugin_names)
+    expect_true(p2.metadata.name not in plugin_names)
 
 
 # Tests: Global Registry Functions
@@ -559,7 +569,7 @@ def test_get_graph_registry_returns_singleton() -> None:
     reg1 = get_graph_registry()
     reg2 = get_graph_registry()
 
-    assert reg1 is reg2
+    expect_true(reg1 is reg2)
 
 
 def test_register_graph_plugin_uses_global() -> None:
@@ -568,7 +578,7 @@ def test_register_graph_plugin_uses_global() -> None:
 
     register_graph_plugin(plugin)
 
-    assert get_graph_registry().contains(plugin.metadata.name)
+    expect_true(get_graph_registry().contains(plugin.metadata.name))
 
 
 def test_unregister_graph_plugin_uses_global() -> None:
@@ -578,7 +588,7 @@ def test_unregister_graph_plugin_uses_global() -> None:
 
     unregister_graph_plugin(plugin.metadata.name)
 
-    assert not get_graph_registry().contains(plugin.metadata.name)
+    expect_false(get_graph_registry().contains(plugin.metadata.name))
 
 
 # Tests: Metadata Access
@@ -591,10 +601,10 @@ def test_metadata_for_returns_metadata(fresh_registry: GraphPluginRegistry) -> N
 
     meta = fresh_registry.metadata_for(plugin.metadata.name)
 
-    assert meta.name == plugin.metadata.name
-    assert meta.kind == "metric"
-    assert meta.stage == "core"
-    assert "test_cap" in meta.provides
+    expect_equal(meta.name, plugin.metadata.name)
+    expect_equal(meta.kind, "metric")
+    expect_equal(meta.stage, "core")
+    expect_in("test_cap", meta.provides)
 
 
 def test_dependency_graph_returns_deps(fresh_registry: GraphPluginRegistry) -> None:
@@ -608,9 +618,9 @@ def test_dependency_graph_returns_deps(fresh_registry: GraphPluginRegistry) -> N
 
     dep_graph = fresh_registry.dependency_graph()
 
-    assert p1_name in dep_graph
-    assert p2.metadata.name in dep_graph
-    assert p1_name in dep_graph[p2.metadata.name]
+    expect_in(p1_name, dep_graph)
+    expect_in(p2.metadata.name, dep_graph)
+    expect_in(p1_name, dep_graph[p2.metadata.name])
 
 
 # Tests: GraphPluginPlan Attributes
@@ -623,19 +633,19 @@ def test_graph_plugin_plan_plugins_tuple(fresh_registry: GraphPluginRegistry) ->
 
     plan = fresh_registry.plan(plugin_names=[plugin.metadata.name])
 
-    assert isinstance(plan.plugins, tuple)
+    expect_is_instance(plan.plugins, tuple)
 
 
 def test_graph_plugin_plan_skipped_tuple(fresh_registry: GraphPluginRegistry) -> None:
     """GraphPluginPlan.skipped_plugins is a tuple."""
     plan = fresh_registry.plan(plugin_names=["unknown"])
 
-    assert isinstance(plan.skipped_plugins, tuple)
+    expect_is_instance(plan.skipped_plugins, tuple)
 
 
 def test_graph_plugin_skip_has_name_and_reason() -> None:
     """GraphPluginSkip has name and reason attributes."""
     skip = GraphPluginSkip(name="skipped_plugin", reason="disabled")
 
-    assert skip.name == "skipped_plugin"
-    assert skip.reason == "disabled"
+    expect_equal(skip.name, "skipped_plugin")
+    expect_equal(skip.reason, "disabled")

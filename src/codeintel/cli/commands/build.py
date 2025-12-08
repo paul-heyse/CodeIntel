@@ -40,26 +40,31 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from codeintel.build.executor import BuildExecutor, BuildResult
-from codeintel.build.plan import BuildPlan, PlanGenerator
+from codeintel.build.manifest import BuildRunRecord
+from codeintel.build.plan import BuildPlan, PlanGenerator, format_duration
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.commands._common import (
     JsonOutputOpt,
+    OutputFormat,
     ProjectRootOpt,
     VerboseOpt,
     build_runtime_or_exit,
     setup_logging,
 )
+from codeintel.cli.commands._option_shim import OptionSpec, wrap_command
 
 if TYPE_CHECKING:
-    from codeintel.build.manifest import BuildRunRecord
     from codeintel.cli.project import ProjectRuntime
 
 LOG = logging.getLogger(__name__)
@@ -91,13 +96,22 @@ ModuleOpt = Annotated[
     ),
 ]
 
+
+class RunMode(Enum):
+    """Build execution mode."""
+
+    EXECUTE = "execute"
+    DRY_RUN = "dry_run"
+
+
 DryRunOpt = Annotated[
-    bool,
+    RunMode,
     typer.Option(
         "--dry-run",
         "-n",
-        is_flag=True,
+        flag_value=RunMode.DRY_RUN,
         help="Show build plan without executing",
+        case_sensitive=False,
     ),
 ]
 
@@ -110,15 +124,45 @@ ForceOpt = Annotated[
     ),
 ]
 
+
+class TargetScope(Enum):
+    """Scope selector for build goals."""
+
+    REQUESTED = "requested"
+    ALL = "all"
+
+
 AllOpt = Annotated[
-    bool,
+    TargetScope,
     typer.Option(
         "--all",
         "-a",
-        is_flag=True,
+        flag_value=TargetScope.ALL,
         help="Build all targets across all modules",
+        case_sensitive=False,
     ),
 ]
+
+
+@dataclass(frozen=True)
+class BuildRunOptions:
+    """Selection and execution options for a build run."""
+
+    targets: list[str] | None
+    module: str | None
+    target_scope: TargetScope
+    run_mode: RunMode
+    force: list[str] | None
+
+
+@dataclass(frozen=True)
+class BuildRunContext:
+    """Execution context options for a build run."""
+
+    project_root: Path | None
+    verbose: int
+    output_format: OutputFormat
+
 
 # =============================================================================
 # Helper Functions
@@ -128,7 +172,7 @@ AllOpt = Annotated[
 def _resolve_goals(
     targets: list[str] | None,
     module: str | None,
-    all_targets: bool,
+    target_scope: TargetScope,
     graph: TargetGraph,
 ) -> list[str]:
     """Resolve target goals from CLI arguments.
@@ -139,8 +183,8 @@ def _resolve_goals(
         Explicit target names from CLI arguments.
     module
         Module name to build all targets for.
-    all_targets
-        If True, build all targets across all modules.
+    target_scope
+        Scope selector indicating whether to build all targets or only requested ones.
     graph
         Target graph for validation.
 
@@ -154,7 +198,7 @@ def _resolve_goals(
     typer.BadParameter
         If no targets specified or unknown target provided.
     """
-    if all_targets:
+    if target_scope is TargetScope.ALL:
         return [t.name for t in graph.all_targets]
 
     if module:
@@ -178,6 +222,34 @@ def _resolve_goals(
 
     msg = "Specify targets, --module, or --all"
     raise typer.BadParameter(msg)
+
+
+def _build_run_options(
+    targets: TargetsArg = None,
+    module: ModuleOpt = None,
+    target_scope: AllOpt = TargetScope.REQUESTED,
+    run_mode: DryRunOpt = RunMode.EXECUTE,
+    force: ForceOpt = None,
+) -> BuildRunOptions:
+    return BuildRunOptions(
+        targets=targets,
+        module=module,
+        target_scope=target_scope,
+        run_mode=run_mode,
+        force=force,
+    )
+
+
+def _build_run_context(
+    project_root: Path | None = ProjectRootOpt,
+    verbose: int = VerboseOpt,
+    output_format: OutputFormat = JsonOutputOpt,
+) -> BuildRunContext:
+    return BuildRunContext(
+        project_root=project_root,
+        verbose=verbose,
+        output_format=output_format,
+    )
 
 
 def _group_targets_by_status(
@@ -424,7 +496,7 @@ def _execute_build(
     runtime: ProjectRuntime,
     goals: list[str],
     force_targets: list[str] | None,
-    dry_run: bool,
+    run_mode: RunMode,
 ) -> tuple[BuildResult | None, BuildPlan]:
     """Execute build with the full Phase 2-5 pipeline.
 
@@ -436,8 +508,8 @@ def _execute_build(
         Target names to build.
     force_targets
         Targets to force recompute.
-    dry_run
-        If True, generate plan without executing.
+    run_mode
+        Whether to execute or return a dry-run plan.
 
     Returns
     -------
@@ -462,7 +534,7 @@ def _execute_build(
     plan = generator.generate(resolution)
 
     # Phase 5: Execute or return dry-run result
-    if dry_run:
+    if run_mode is RunMode.DRY_RUN:
         LOG.info("build.cli.dry_run stages=%d", len(plan.stages))
         return None, plan
 
@@ -486,9 +558,9 @@ def _execute_build(
 @build_app.command("status")
 def build_status(
     module: ModuleOpt = None,
-    json_output: JsonOutputOpt = False,
-    project_root: ProjectRootOpt = None,
-    verbose: VerboseOpt = 0,
+    output_format: OutputFormat = JsonOutputOpt,
+    project_root: Path | None = ProjectRootOpt,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Show current state of all build targets.
 
@@ -508,6 +580,11 @@ def build_status(
     Output as JSON:
 
         codeintel build status --json
+
+    Raises
+    ------
+    typer.Exit
+        If module selection is invalid or state resolution fails.
     """
     setup_logging(verbose)
 
@@ -549,7 +626,7 @@ def build_status(
         )
 
     # Output
-    if json_output:
+    if output_format is OutputFormat.JSON:
         output = _format_status_json(state)
         typer.echo(json.dumps(output, indent=2))
     else:
@@ -557,16 +634,9 @@ def build_status(
         typer.echo(text)
 
 
-@build_app.command("run")
-def build_run(
-    targets: TargetsArg = None,
-    module: ModuleOpt = None,
-    all_targets: AllOpt = False,
-    dry_run: DryRunOpt = False,
-    force: ForceOpt = None,
-    json_output: JsonOutputOpt = False,
-    project_root: ProjectRootOpt = None,
-    verbose: VerboseOpt = 0,
+def build_run_handler(
+    options: BuildRunOptions,
+    ctx_opts: BuildRunContext,
 ) -> None:
     """Build targets with automatic dependency resolution.
 
@@ -594,48 +664,58 @@ def build_run(
     Force rebuild from AST:
 
         codeintel build run function_metrics --force ast
-    """
-    setup_logging(verbose)
 
-    runtime = build_runtime_or_exit(project_root)
+    Raises
+    ------
+    typer.Exit
+        If goal resolution fails or build execution encounters an error.
+    """
+    setup_logging(ctx_opts.verbose)
+
+    run_options = options
+    run_ctx = ctx_opts
+
+    runtime = build_runtime_or_exit(run_ctx.project_root)
     graph = get_target_graph()
 
     LOG.info(
-        "build.run repo=%s commit=%s targets=%s module=%s all=%s dry_run=%s force=%s",
+        "build.run repo=%s commit=%s targets=%s module=%s scope=%s run_mode=%s force=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
-        targets,
-        module,
-        all_targets,
-        dry_run,
-        force,
+        run_options.targets,
+        run_options.module,
+        run_options.target_scope,
+        run_options.run_mode,
+        run_options.force,
     )
 
     # Resolve goals
     try:
-        goals = _resolve_goals(targets, module, all_targets, graph)
+        goals = _resolve_goals(
+            run_options.targets, run_options.module, run_options.target_scope, graph
+        )
     except typer.BadParameter as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"Building targets: {', '.join(goals)}")
-    if force:
-        typer.echo(f"Forcing recompute of: {', '.join(force)}")
-    if dry_run:
+    if run_options.force:
+        typer.echo(f"Forcing recompute of: {', '.join(run_options.force)}")
+    if run_options.run_mode is RunMode.DRY_RUN:
         typer.echo("(dry-run mode)")
     typer.echo("")
 
     # Execute build
     try:
-        result, plan = _execute_build(runtime, goals, force, dry_run)
+        result, plan = _execute_build(runtime, goals, run_options.force, run_options.run_mode)
     except Exception as exc:
         LOG.exception("build.run.error")
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
     # Output
-    if dry_run:
-        if json_output:
+    if run_options.run_mode is RunMode.DRY_RUN:
+        if run_ctx.output_format is OutputFormat.JSON:
             typer.echo(json.dumps(plan.to_dict(), indent=2))
         else:
             typer.echo(_format_plan_text(plan))
@@ -646,7 +726,7 @@ def build_run(
         typer.secho("Error: No result from build execution", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
-    if json_output:
+    if run_ctx.output_format is OutputFormat.JSON:
         typer.echo(json.dumps(result.to_dict(), indent=2))
     else:
         typer.echo(_format_result_text(result))
@@ -661,6 +741,43 @@ def build_run(
         raise typer.Exit(code=1)
 
     typer.secho("Build completed successfully", fg=typer.colors.GREEN)
+
+
+def _bundle_build_run(cli_kwargs: dict[str, object]) -> dict[str, object]:
+    options = BuildRunOptions(
+        targets=cli_kwargs.get("targets"),
+        module=cli_kwargs.get("module"),
+        target_scope=cli_kwargs.get("target_scope", TargetScope.REQUESTED),
+        run_mode=cli_kwargs.get("run_mode", RunMode.EXECUTE),
+        force=cli_kwargs.get("force"),
+    )
+    ctx_opts = BuildRunContext(
+        project_root=cli_kwargs.get("project_root"),
+        verbose=int(cli_kwargs.get("verbose", 0)),
+        output_format=cli_kwargs.get("output_format", OutputFormat.JSON),
+    )
+    return {"options": options, "ctx_opts": ctx_opts}
+
+
+build_run_option_specs = [
+    OptionSpec("targets", TargetsArg, None),
+    OptionSpec("module", ModuleOpt, None),
+    OptionSpec("target_scope", AllOpt, TargetScope.REQUESTED),
+    OptionSpec("run_mode", DryRunOpt, RunMode.EXECUTE),
+    OptionSpec("force", ForceOpt, None),
+    OptionSpec("project_root", ProjectRootOpt, None),
+    OptionSpec("verbose", VerboseOpt, VerboseOpt),
+    OptionSpec("output_format", JsonOutputOpt, JsonOutputOpt),
+]
+
+build_run = build_app.command("run")(
+    wrap_command(
+        build_run_handler,
+        build_run_option_specs,
+        bundle=_bundle_build_run,
+        name="build_run",
+    )
+)
 
 
 # =============================================================================
@@ -699,8 +816,6 @@ def _format_run_detail(record: BuildRunRecord) -> str:
     str
         Formatted run details.
     """
-    from codeintel.build.plan import format_duration
-
     lines = [
         f"Run: {record.run_id}",
         f"  Repo:    {record.repo}",
@@ -744,8 +859,6 @@ def _format_run_summary(record: BuildRunRecord) -> str:
     str
         Formatted single-line summary.
     """
-    from codeintel.build.plan import format_duration
-
     duration_str = format_duration(record.duration_ms) if record.duration_ms else "?"
     computed_count = len(record.computed_targets)
     skipped_count = len(record.skipped_targets)
@@ -832,9 +945,9 @@ def _get_status_color(status: str) -> str:
 def build_history(
     run_id: RunIdOpt = None,
     limit: LimitOpt = 10,
-    project_root: ProjectRootOpt = None,
-    json_output: JsonOutputOpt = False,
-    verbose: VerboseOpt = 0,
+    project_root: Path | None = ProjectRootOpt,
+    output_format: OutputFormat = JsonOutputOpt,
+    verbose: int = VerboseOpt,
 ) -> None:
     """Show build run history and details.
 
@@ -863,7 +976,7 @@ def build_history(
 
     if run_id:
         record = _lookup_run_by_id(runtime, run_id)
-        if json_output:
+        if output_format is OutputFormat.JSON:
             typer.echo(json.dumps(record.to_dict(), indent=2))
         else:
             typer.echo(_format_run_detail(record))
@@ -876,7 +989,7 @@ def build_history(
         typer.echo("No build runs found.")
         return
 
-    if json_output:
+    if output_format is OutputFormat.JSON:
         typer.echo(json.dumps([r.to_dict() for r in runs], indent=2))
     else:
         typer.echo(f"Recent build runs (showing {len(runs)}):\n")

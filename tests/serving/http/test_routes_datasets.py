@@ -18,6 +18,11 @@ from codeintel.serving.http.fastapi import (
 )
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -75,9 +80,9 @@ def test_datasets_list_endpoint(
     with TestClient(app) as client:
         response = client.get("/datasets")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
 
 
 def test_datasets_specs_endpoint(
@@ -126,9 +131,9 @@ def test_datasets_specs_endpoint(
     with TestClient(app) as client:
         response = client.get("/datasets/specs")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert isinstance(data, list)
+    expect_is_instance(data, list)
 
 
 # =============================================================================
@@ -182,9 +187,9 @@ def test_dataset_rows_not_found(
     with TestClient(app) as client:
         response = client.get("/datasets/nonexistent_dataset")
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
     data = response.json()
-    assert data["code"] == "dataset-not-found"
+    expect_equal(data["code"], "dataset-not-found")
 
 
 def test_dataset_schema_not_found(
@@ -233,7 +238,7 @@ def test_dataset_schema_not_found(
     with TestClient(app) as client:
         response = client.get("/datasets/nonexistent_dataset/schema")
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -296,10 +301,13 @@ def test_dataset_rows_with_limit(
             with TestClient(app) as client:
                 response = client.get(f"/datasets/{ds_name}?limit=5")
             # If dataset exists and has data, should succeed
-            assert response.status_code in {
-                status.HTTP_200_OK,
-                status.HTTP_400_BAD_REQUEST,
-            }
+            expect_true(
+                response.status_code
+                in {
+                    status.HTTP_200_OK,
+                    status.HTTP_400_BAD_REQUEST,
+                }
+            )
 
 
 def test_dataset_rows_with_offset(
@@ -357,7 +365,10 @@ def test_dataset_rows_with_offset(
             with TestClient(app) as client:
                 response = client.get(f"/datasets/{ds_name}?offset=0")
             # If dataset exists and has data, should succeed
-            assert response.status_code in {
-                status.HTTP_200_OK,
-                status.HTTP_400_BAD_REQUEST,
-            }
+            expect_true(
+                response.status_code
+                in {
+                    status.HTTP_200_OK,
+                    status.HTTP_400_BAD_REQUEST,
+                }
+            )

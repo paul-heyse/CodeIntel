@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, Self, TypedDict, Unpack, overload
 
 from codeintel.config.primitives import (
+    BuildLayoutOptions,
     BuildPaths,
     GraphBackendConfig,
     ScanProfiles,
+    SnapshotInit,
     SnapshotRef,
     ToolBinaries,
 )
@@ -40,74 +42,225 @@ from codeintel.config.steps_graphs import (
     ConfigDataFlowStepConfig,
     ExternalDependenciesStepConfig,
     GoidBuilderStepConfig,
-    GraphMetricPluginOverrides,
     GraphMetricsStepConfig,
-    GraphMetricsTuning,
-    GraphPluginPolicy,
-    GraphRunScope,
     GraphStepBuilder,
     ImportGraphStepConfig,
     SymbolUsesStepConfig,
 )
 
-if TYPE_CHECKING:
-    from coverage import Coverage
 
-    from codeintel.config.datasets import (
-        CallGraphEdgeRow,
-        CFGBlockRow,
-        CFGEdgeRow,
-        DFGEdgeRow,
+class _LegacySnapshotKwargs(TypedDict, total=False):
+    repo: str
+    commit: str
+    repo_root: Path
+    branch: str | None
+    build_dir: Path | None
+    db_path: Path | None
+    document_output_dir: Path | None
+    log_db_path: Path | None
+    binaries: ToolBinaries | None
+    profiles: ScanProfiles | None
+    graph_backend: GraphBackendConfig | None
+
+
+@dataclass(frozen=True)
+class BuilderDependencies:
+    """Optional overrides for builder-scoped dependencies."""
+
+    binaries: ToolBinaries | None = None
+    profiles: ScanProfiles | None = None
+    graph_backend: GraphBackendConfig | None = None
+
+    def resolved(self) -> tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig]:
+        """Return dependency instances with defaults applied.
+
+        Returns
+        -------
+        tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig]
+            Concrete binaries, scan profiles, and graph backend configuration.
+        """
+        return (
+            self.binaries or ToolBinaries(),
+            self.profiles,
+            self.graph_backend or GraphBackendConfig(),
+        )
+
+
+_LEGACY_SNAPSHOT_KEYS = frozenset(_LegacySnapshotKwargs.__annotations__.keys())
+
+
+def _snapshot_from_legacy(legacy: _LegacySnapshotKwargs) -> SnapshotInit:
+    """Build a SnapshotInit from legacy keyword arguments.
+
+    Parameters
+    ----------
+    legacy
+        Legacy keyword arguments accepted by `ConfigBuilder.from_snapshot`.
+
+    Returns
+    -------
+    SnapshotInit
+        Normalized snapshot inputs.
+
+    Raises
+    ------
+    ValueError
+        If required parameters are missing.
+    TypeError
+        If provided values do not match expected types.
+    """
+    repo = legacy.get("repo")
+    commit = legacy.get("commit")
+    repo_root = legacy.get("repo_root")
+    missing = [
+        name
+        for name, value in (
+            ("repo", repo),
+            ("commit", commit),
+            ("repo_root", repo_root),
+        )
+        if value is None
+    ]
+    if missing:
+        message = (
+            "ConfigBuilder.from_snapshot requires SnapshotInit or legacy arguments "
+            f"for {', '.join(missing)}"
+        )
+        raise ValueError(message)
+    branch = legacy.get("branch")
+    if not isinstance(repo, str) or not isinstance(commit, str):
+        message = "repo and commit must be strings"
+        raise TypeError(message)
+    if not isinstance(repo_root, Path):
+        message = "repo_root must be a Path"
+        raise TypeError(message)
+    if branch is not None and not isinstance(branch, str):
+        message = "branch must be a string when provided"
+        raise TypeError(message)
+    return SnapshotInit(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        branch=branch,
     )
-    from codeintel.config.parser_types import FunctionParserKind
-    from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
 @dataclass
 class ConfigBuilder:
-    """Build specific step configs from a shared pipeline context."""
+    """Build specific step configs from a shared pipeline context.
+
+    Explicit facets (`graphs`, `analytics`) are preferred; legacy step helpers are
+    still available via attribute delegation for compatibility.
+    """
 
     snapshot: SnapshotRef
     paths: BuildPaths
     binaries: ToolBinaries = field(default_factory=ToolBinaries)
     profiles: ScanProfiles | None = None
     graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
+    _GRAPH_DELEGATES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "call_graph",
+            "cfg_builder",
+            "goid_builder",
+            "import_graph",
+            "symbol_uses",
+            "graph_metrics",
+            "config_data_flow",
+            "external_dependencies",
+        }
+    )
+    _ANALYTICS_DELEGATES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "hotspots",
+            "function_history",
+            "history_timeseries",
+            "coverage_analytics",
+            "test_coverage",
+            "test_profile",
+            "behavioral_coverage",
+            "function_analytics",
+            "function_effects",
+            "function_contracts",
+            "semantic_roles",
+            "data_models",
+            "data_model_usage",
+            "profiles_analytics",
+            "subsystems",
+            "entrypoints",
+        }
+    )
 
     @classmethod
     def from_snapshot(
         cls,
-        repo: str,
-        commit: str,
-        repo_root: Path,
+        snapshot: SnapshotInit | None = None,
         *,
-        build_dir: Path | None = None,
-        db_path: Path | None = None,
-        document_output_dir: Path | None = None,
-        log_db_path: Path | None = None,
-        branch: str | None = None,
+        layout: BuildLayoutOptions | None = None,
+        primitives: BuilderDependencies | None = None,
+        **legacy: Unpack[_LegacySnapshotKwargs],
     ) -> Self:
         """
-        Create a builder from basic snapshot parameters.
+        Create a builder from snapshot and layout primitives.
+
+        Raises
+        ------
+        TypeError
+            If unsupported parameter types are provided.
+        ValueError
+            If required snapshot parameters are missing or provided profiles are incomplete.
 
         Returns
         -------
         Self
             ConfigBuilder ready to produce step configs.
         """
-        snapshot = SnapshotRef.from_args(
-            repo=repo,
-            commit=commit,
-            repo_root=repo_root,
-            branch=branch,
+        unexpected = set(legacy).difference(_LEGACY_SNAPSHOT_KEYS)
+        if unexpected:
+            message = f"Unsupported arguments for ConfigBuilder.from_snapshot: {sorted(unexpected)}"
+            raise TypeError(message)
+
+        if snapshot is None:
+            missing_required = [
+                key
+                for key in (
+                    "repo",
+                    "commit",
+                    "repo_root",
+                )
+                if legacy.get(key) is None
+            ]
+            if missing_required:
+                message = (
+                    "ConfigBuilder.from_snapshot requires snapshot or legacy arguments "
+                    f"for {', '.join(missing_required)}"
+                )
+                raise ValueError(message)
+
+        snapshot_init = snapshot or _snapshot_from_legacy(legacy)
+        layout_options = layout or BuildLayoutOptions(
+            build_dir=legacy.get("build_dir"),
+            db_path=legacy.get("db_path"),
+            document_output_dir=legacy.get("document_output_dir"),
+            log_db_path=legacy.get("log_db_path"),
         )
-        paths = BuildPaths.from_layout(
-            repo_root=repo_root,
-            build_dir=build_dir,
-            db_path=db_path,
-            document_output_dir=document_output_dir,
-            log_db_path=log_db_path,
+        dependencies = primitives or BuilderDependencies(
+            binaries=legacy.get("binaries"),
+            profiles=legacy.get("profiles"),
+            graph_backend=legacy.get("graph_backend"),
         )
-        return cls(snapshot=snapshot, paths=paths)
+
+        snapshot_ref = snapshot_init.to_snapshot_ref()
+        paths = layout_options.materialize(snapshot_ref.repo_root)
+        binaries, profiles, graph_backend = dependencies.resolved()
+        profiles = cls._ensure_profiles(profiles)
+        return cls(
+            snapshot=snapshot_ref,
+            paths=paths,
+            binaries=binaries,
+            profiles=profiles,
+            graph_backend=graph_backend,
+        )
 
     @classmethod
     def from_primitives(
@@ -131,7 +284,7 @@ class ConfigBuilder:
             snapshot=snapshot,
             paths=paths,
             binaries=binaries or ToolBinaries(),
-            profiles=profiles,
+            profiles=cls._ensure_profiles(profiles),
             graph_backend=graph_backend or GraphBackendConfig(),
         )
 
@@ -145,441 +298,227 @@ class ConfigBuilder:
         """Access analytics-related config builders."""
         return AnalyticsStepBuilder(self)
 
-    # Graph Construction Steps ---------------------------------------------
+    def __getattr__(self, name: str) -> object:
+        """Delegate legacy step helpers to the underlying facet builders.
 
-    def call_graph(
-        self,
-        *,
-        cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None,
-        ast_collector: Callable[..., list[CallGraphEdgeRow]] | None = None,
-    ) -> CallGraphStepConfig:
-        """
-        Build call graph construction configuration.
+        Parameters
+        ----------
+        name
+            Requested attribute name.
 
         Returns
         -------
-        CallGraphStepConfig
-            Configuration for call graph construction.
+        object
+            Delegated step builder callable.
+
+        Raises
+        ------
+        AttributeError
+            If the attribute cannot be resolved from delegated builders.
         """
-        return self.graphs.call_graph(
-            cst_collector=cst_collector,
-            ast_collector=ast_collector,
+        if name in self._GRAPH_DELEGATES:
+            return getattr(self.graphs, name)
+        if name in self._ANALYTICS_DELEGATES:
+            return getattr(self.analytics, name)
+        message = f"{type(self).__name__!s} has no attribute {name!r}"
+        raise AttributeError(message)
+
+    @staticmethod
+    def _ensure_profiles(profiles: ScanProfiles | None) -> ScanProfiles | None:
+        """Validate scan profiles and enforce completeness when provided.
+
+        Parameters
+        ----------
+        profiles
+            Optional scan profiles bundle.
+
+        Returns
+        -------
+        ScanProfiles | None
+            Validated profiles or None.
+
+        Raises
+        ------
+        TypeError
+            If provided profiles are not a ScanProfiles instance.
+        ValueError
+            If provided profiles are missing code or config entries.
+        """
+        if profiles is None:
+            return None
+        if not isinstance(profiles, ScanProfiles):
+            message = "profiles must be a ScanProfiles instance when provided"
+            raise TypeError(message)
+        if profiles.code is None or profiles.config is None:
+            message = "profiles must include both code and config scan profiles"
+            raise ValueError(message)
+        return profiles
+
+    def __dir__(self) -> list[str]:
+        """Expose delegated step names for discoverability.
+
+        Returns
+        -------
+        list[str]
+            Combined attributes from the base class and delegated helpers.
+        """
+        base = super().__dir__()
+        dynamic = (*self._GRAPH_DELEGATES, *self._ANALYTICS_DELEGATES)
+        return sorted(set(base).union(dynamic))
+
+    def prepare_filesystem(self, *, create_missing_only: bool = True) -> tuple[Path, ...]:
+        """Ensure build-related directories exist.
+
+        Parameters
+        ----------
+        create_missing_only
+            When True, create only directories that do not already exist.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            Directories created during preparation.
+        """
+        targets = (
+            self.paths.build_dir,
+            self.paths.db_path.parent,
+            self.paths.document_output_dir,
+            self.paths.scip_dir,
+            self.paths.coverage_json.parent,
+            self.paths.pytest_report.parent,
+            self.paths.tool_cache,
+            self.paths.log_db_path.parent,
         )
+        created: list[Path] = []
+        for target in targets:
+            if create_missing_only and target.exists():
+                continue
+            target.mkdir(parents=True, exist_ok=True)
+            created.append(target)
+        return tuple(created)
 
-    def cfg_builder(
-        self,
-        *,
-        cfg_builder: (
-            Callable[..., tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]] | None
-        ) = None,
-    ) -> CFGBuilderStepConfig:
-        """
-        Build CFG/DFG scaffolding configuration.
+    if TYPE_CHECKING:
 
-        Returns
-        -------
-        CFGBuilderStepConfig
-            Configuration for control/data flow graph construction.
-        """
-        return self.graphs.cfg_builder(cfg_builder=cfg_builder)
+        @overload
+        def __getattr__(
+            self, name: Literal["call_graph"]
+        ) -> Callable[..., CallGraphStepConfig]: ...
 
-    def goid_builder(self, *, language: str = "python") -> GoidBuilderStepConfig:
-        """
-        Build GOID construction configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["cfg_builder"]
+        ) -> Callable[..., CFGBuilderStepConfig]: ...
 
-        Returns
-        -------
-        GoidBuilderStepConfig
-            Configuration for GOID generation.
-        """
-        return self.graphs.goid_builder(language=language)
+        @overload
+        def __getattr__(
+            self, name: Literal["goid_builder"]
+        ) -> Callable[..., GoidBuilderStepConfig]: ...
 
-    def import_graph(self) -> ImportGraphStepConfig:
-        """
-        Build import graph construction configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["import_graph"]
+        ) -> Callable[..., ImportGraphStepConfig]: ...
 
-        Returns
-        -------
-        ImportGraphStepConfig
-            Configuration for import graph construction.
-        """
-        return self.graphs.import_graph()
+        @overload
+        def __getattr__(
+            self, name: Literal["symbol_uses"]
+        ) -> Callable[..., SymbolUsesStepConfig]: ...
 
-    def symbol_uses(
-        self,
-        *,
-        scip_json_path: Path | None = None,
-    ) -> SymbolUsesStepConfig:
-        """
-        Build symbol uses derivation configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["graph_metrics"]
+        ) -> Callable[..., GraphMetricsStepConfig]: ...
 
-        Returns
-        -------
-        SymbolUsesStepConfig
-            Configuration for symbol usage extraction.
-        """
-        return self.graphs.symbol_uses(scip_json_path=scip_json_path)
+        @overload
+        def __getattr__(
+            self, name: Literal["config_data_flow"]
+        ) -> Callable[..., ConfigDataFlowStepConfig]: ...
 
-    # History and Hotspot Steps --------------------------------------------
+        @overload
+        def __getattr__(
+            self, name: Literal["external_dependencies"]
+        ) -> Callable[..., ExternalDependenciesStepConfig]: ...
 
-    def hotspots(self, *, max_commits: int = 2000) -> HotspotsStepConfig:
-        """
-        Build hotspot scoring configuration.
+        @overload
+        def __getattr__(self, name: Literal["hotspots"]) -> Callable[..., HotspotsStepConfig]: ...
 
-        Returns
-        -------
-        HotspotsStepConfig
-            Configuration for hotspot analysis.
-        """
-        return self.analytics.hotspots(max_commits=max_commits)
+        @overload
+        def __getattr__(
+            self, name: Literal["function_history"]
+        ) -> Callable[..., FunctionHistoryStepConfig]: ...
 
-    def function_history(
-        self,
-        *,
-        max_history_days: int | None = 365,
-        min_lines_threshold: int = 1,
-        default_branch: str = "HEAD",
-    ) -> FunctionHistoryStepConfig:
-        """
-        Build function history aggregation configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["history_timeseries"]
+        ) -> Callable[..., HistoryTimeseriesStepConfig]: ...
 
-        Returns
-        -------
-        FunctionHistoryStepConfig
-            Configuration for function history aggregation.
-        """
-        return self.analytics.function_history(
-            max_history_days=max_history_days,
-            min_lines_threshold=min_lines_threshold,
-            default_branch=default_branch,
-        )
+        @overload
+        def __getattr__(
+            self, name: Literal["coverage_analytics"]
+        ) -> Callable[..., CoverageAnalyticsStepConfig]: ...
 
-    def history_timeseries(
-        self,
-        commits: Sequence[str],
-        *,
-        entity_kind: str = "function",
-        max_entities: int = 500,
-        selection_strategy: str = "risk_score",
-    ) -> HistoryTimeseriesStepConfig:
-        """
-        Build cross-commit history timeseries configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["test_coverage"]
+        ) -> Callable[..., TestCoverageStepConfig]: ...
 
-        Returns
-        -------
-        HistoryTimeseriesStepConfig
-            Configuration for history timeseries analysis.
-        """
-        return self.analytics.history_timeseries(
-            commits=commits,
-            entity_kind=entity_kind,
-            max_entities=max_entities,
-            selection_strategy=selection_strategy,
-        )
+        @overload
+        def __getattr__(
+            self, name: Literal["test_profile"]
+        ) -> Callable[..., TestProfileStepConfig]: ...
 
-    # Coverage and Test Steps ----------------------------------------------
+        @overload
+        def __getattr__(
+            self, name: Literal["behavioral_coverage"]
+        ) -> Callable[..., BehavioralCoverageStepConfig]: ...
 
-    def coverage_analytics(self) -> CoverageAnalyticsStepConfig:
-        """
-        Build coverage aggregation configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["function_analytics"]
+        ) -> Callable[..., FunctionAnalyticsStepConfig]: ...
 
-        Returns
-        -------
-        CoverageAnalyticsStepConfig
-            Configuration for coverage analytics.
-        """
-        return self.analytics.coverage_analytics()
+        @overload
+        def __getattr__(
+            self, name: Literal["function_effects"]
+        ) -> Callable[..., FunctionEffectsStepConfig]: ...
 
-    def test_coverage(
-        self,
-        *,
-        coverage_file: Path | None = None,
-        coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
-    ) -> TestCoverageStepConfig:
-        """
-        Build test coverage edges configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["function_contracts"]
+        ) -> Callable[..., FunctionContractsStepConfig]: ...
 
-        Returns
-        -------
-        TestCoverageStepConfig
-            Configuration for test coverage edge extraction.
-        """
-        return self.analytics.test_coverage(
-            coverage_file=coverage_file,
-            coverage_loader=coverage_loader,
-        )
+        @overload
+        def __getattr__(
+            self, name: Literal["semantic_roles"]
+        ) -> Callable[..., SemanticRolesStepConfig]: ...
 
-    def test_profile(
-        self,
-        *,
-        slow_test_threshold_ms: float = 2000.0,
-        io_spec: dict[str, object] | None = None,
-        refresh_subsystem_cache: bool = True,
-        benchmark_subsystem_cache: bool = False,
-    ) -> TestProfileStepConfig:
-        """
-        Build test profile configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["data_models"]
+        ) -> Callable[..., DataModelsStepConfig]: ...
 
-        Returns
-        -------
-        TestProfileStepConfig
-            Configuration for test profile analysis.
-        """
-        return self.analytics.test_profile(
-            slow_test_threshold_ms=slow_test_threshold_ms,
-            io_spec=io_spec,
-            refresh_subsystem_cache=refresh_subsystem_cache,
-            benchmark_subsystem_cache=benchmark_subsystem_cache,
-        )
+        @overload
+        def __getattr__(
+            self, name: Literal["data_model_usage"]
+        ) -> Callable[..., DataModelUsageStepConfig]: ...
 
-    def behavioral_coverage(
-        self,
-        *,
-        enable_llm: bool = False,
-        llm_model: str | None = None,
-    ) -> BehavioralCoverageStepConfig:
-        """
-        Build behavioral coverage configuration.
+        @overload
+        def __getattr__(
+            self, name: Literal["profiles_analytics"]
+        ) -> Callable[..., ProfilesAnalyticsStepConfig]: ...
 
-        Returns
-        -------
-        BehavioralCoverageStepConfig
-            Configuration for behavioral coverage analysis.
-        """
-        return self.analytics.behavioral_coverage(
-            enable_llm=enable_llm,
-            llm_model=llm_model,
-        )
+        @overload
+        def __getattr__(
+            self, name: Literal["subsystems"]
+        ) -> Callable[..., SubsystemsStepConfig]: ...
 
-    # Function Analytics Steps ---------------------------------------------
+        @overload
+        def __getattr__(
+            self, name: Literal["entrypoints"]
+        ) -> Callable[..., EntryPointsStepConfig]: ...
 
-    def function_analytics(
-        self,
-        *,
-        fail_on_missing_spans: bool = False,
-        max_workers: int | None = None,
-        parser: FunctionParserKind | None = None,
-    ) -> FunctionAnalyticsStepConfig:
-        """
-        Build function metrics configuration.
-
-        Returns
-        -------
-        FunctionAnalyticsStepConfig
-            Configuration for function metrics analysis.
-        """
-        return self.analytics.function_analytics(
-            fail_on_missing_spans=fail_on_missing_spans,
-            max_workers=max_workers,
-            parser=parser,
-        )
-
-    def function_effects(
-        self,
-        *,
-        max_call_depth: int = 3,
-        require_all_callees_pure: bool = True,
-    ) -> FunctionEffectsStepConfig:
-        """
-        Build function effects detection configuration.
-
-        Returns
-        -------
-        FunctionEffectsStepConfig
-            Configuration for side-effect detection.
-        """
-        return self.analytics.function_effects(
-            max_call_depth=max_call_depth,
-            require_all_callees_pure=require_all_callees_pure,
-        )
-
-    def function_contracts(
-        self,
-        *,
-        max_conditions_per_func: int = 64,
-    ) -> FunctionContractsStepConfig:
-        """
-        Build function contracts configuration.
-
-        Returns
-        -------
-        FunctionContractsStepConfig
-            Configuration for contract inference.
-        """
-        return self.analytics.function_contracts(
-            max_conditions_per_func=max_conditions_per_func,
-        )
-
-    def semantic_roles(
-        self,
-        *,
-        enable_llm_refinement: bool = False,
-    ) -> SemanticRolesStepConfig:
-        """
-        Build semantic roles configuration.
-
-        Returns
-        -------
-        SemanticRolesStepConfig
-            Configuration for semantic role classification.
-        """
-        return self.analytics.semantic_roles(
-            enable_llm_refinement=enable_llm_refinement,
-        )
-
-    # Graph Analytics Steps -------------------------------------------------
-
-    def graph_metrics(
-        self,
-        *,
-        tuning: GraphMetricsTuning | None = None,
-        plugin_overrides: GraphMetricPluginOverrides | None = None,
-        plugin_policy: GraphPluginPolicy | None = None,
-        scope: GraphRunScope | None = None,
-    ) -> GraphMetricsStepConfig:
-        """
-        Build graph metrics analytics configuration.
-
-        Returns
-        -------
-        GraphMetricsStepConfig
-            Configuration for graph centrality metrics.
-        """
-        return self.graphs.graph_metrics(
-            tuning=tuning,
-            plugin_overrides=plugin_overrides,
-            plugin_policy=plugin_policy,
-            scope=scope,
-        )
-
-    # Data Model Steps ------------------------------------------------------
-
-    def data_models(self) -> DataModelsStepConfig:
-        """
-        Build data model extraction configuration.
-
-        Returns
-        -------
-        DataModelsStepConfig
-            Configuration for data model extraction.
-        """
-        return self.analytics.data_models()
-
-    def data_model_usage(
-        self,
-        *,
-        max_examples_per_usage: int = 5,
-    ) -> DataModelUsageStepConfig:
-        """
-        Build data model usage analytics configuration.
-
-        Returns
-        -------
-        DataModelUsageStepConfig
-            Configuration for data model usage analysis.
-        """
-        return self.analytics.data_model_usage(
-            max_examples_per_usage=max_examples_per_usage,
-        )
-
-    def config_data_flow(
-        self,
-        *,
-        max_paths_per_usage: int = 3,
-        max_path_length: int = 10,
-    ) -> ConfigDataFlowStepConfig:
-        """
-        Build config data flow analytics configuration.
-
-        Returns
-        -------
-        ConfigDataFlowStepConfig
-            Configuration for config data flow analysis.
-        """
-        return self.graphs.config_data_flow(
-            max_paths_per_usage=max_paths_per_usage,
-            max_path_length=max_path_length,
-        )
-
-    # Entrypoint and Dependency Steps --------------------------------------
-
-    def entrypoints(
-        self,
-        *,
-        scan_profile: ScanProfile | None = None,
-        toggles: EntryPointToggles | None = None,
-    ) -> EntryPointsStepConfig:
-        """
-        Build entrypoint detection configuration.
-
-        Returns
-        -------
-        EntryPointsStepConfig
-            Configuration for entrypoint detection.
-        """
-        return self.analytics.entrypoints(
-            scan_profile=scan_profile,
-            toggles=toggles,
-        )
-
-    def external_dependencies(
-        self,
-        *,
-        language: str = "python",
-        dependency_patterns_path: Path | None = None,
-        scan_profile: ScanProfile | None = None,
-    ) -> ExternalDependenciesStepConfig:
-        """
-        Build external dependencies configuration.
-
-        Returns
-        -------
-        ExternalDependenciesStepConfig
-            Configuration for dependency analysis.
-        """
-        return self.graphs.external_dependencies(
-            language=language,
-            dependency_patterns_path=dependency_patterns_path,
-            scan_profile=scan_profile,
-        )
-
-    # Aggregation and Profile Steps ----------------------------------------
-
-    def profiles_analytics(self) -> ProfilesAnalyticsStepConfig:
-        """
-        Build profiles analytics configuration.
-
-        Returns
-        -------
-        ProfilesAnalyticsStepConfig
-            Configuration for profiles analysis.
-        """
-        return self.analytics.profiles_analytics()
-
-    def subsystems(
-        self,
-        *,
-        min_modules: int = 3,
-        max_subsystems: int | None = None,
-        import_weight: float = 1.0,
-        symbol_weight: float = 0.5,
-        config_weight: float = 0.3,
-    ) -> SubsystemsStepConfig:
-        """
-        Build subsystems inference configuration.
-
-        Returns
-        -------
-        SubsystemsStepConfig
-            Configuration for subsystem inference.
-        """
-        return self.analytics.subsystems(
-            min_modules=min_modules,
-            max_subsystems=max_subsystems,
-            import_weight=import_weight,
-            symbol_weight=symbol_weight,
-            config_weight=config_weight,
-        )
+        @overload
+        def __getattr__(self, name: str) -> object: ...
 
 
 __all__ = [

@@ -25,6 +25,12 @@ from codeintel.serving.http.fastapi import (
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ProblemDetail
 from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -95,9 +101,9 @@ def test_load_api_config_remote_api_success(codeintel_env: None) -> None:
 
     config = load_api_config()
 
-    assert config.repo == "test/repo"
-    assert config.commit == "abc123"
-    assert config.mode == "remote_api"
+    expect_equal(config.repo, "test/repo")
+    expect_equal(config.commit, "abc123")
+    expect_equal(config.mode, "remote_api")
 
 
 def test_load_api_config_local_db_success(tmp_path: Path, codeintel_env: None) -> None:
@@ -120,9 +126,9 @@ def test_load_api_config_local_db_success(tmp_path: Path, codeintel_env: None) -
 
     config = load_api_config()
 
-    assert config.repo == "test/repo"
-    assert config.mode == "local_db"
-    assert config.db_path == db_file
+    expect_equal(config.repo, "test/repo")
+    expect_equal(config.mode, "local_db")
+    expect_equal(config.db_path, db_file)
 
 
 # =============================================================================
@@ -142,11 +148,11 @@ def test_problem_response_returns_json_response() -> None:
 
     response = problem_response(detail)
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
     body_bytes = response.body
     body = body_bytes.decode("utf-8") if isinstance(body_bytes, bytes) else str(body_bytes)
-    assert "test-error" in body
-    assert "Test Error" in body
+    expect_in("test-error", body)
+    expect_in("Test Error", body)
 
 
 def test_problem_response_defaults_status_500() -> None:
@@ -161,7 +167,7 @@ def test_problem_response_defaults_status_500() -> None:
 
     response = problem_response(detail)
 
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    expect_equal(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # =============================================================================
@@ -211,8 +217,8 @@ def test_build_backend_resource_with_gateway(
 
     resource = build_backend_resource(cfg, gateway=provisioned_repo.gateway)
 
-    assert resource.backend is not None
-    assert callable(resource.close)
+    expect_is_not_none(resource.backend)
+    expect_true(callable(resource.close))
 
 
 # =============================================================================
@@ -266,10 +272,10 @@ def test_create_app_with_provisioned_gateway(
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["repo"] == provisioned_repo.repo
+    expect_equal(payload["status"], "ok")
+    expect_equal(payload["repo"], provisioned_repo.repo)
 
 
 def test_create_app_correlation_id_from_header(
@@ -318,7 +324,7 @@ def test_create_app_correlation_id_from_header(
     with TestClient(app) as client:
         response = client.get("/health", headers={"X-Request-ID": "test-correlation-id"})
 
-    assert response.headers.get("X-Request-ID") == "test-correlation-id"
+    expect_equal(response.headers.get("X-Request-ID"), "test-correlation-id")
 
 
 def test_create_app_correlation_id_generated_when_missing(
@@ -368,8 +374,8 @@ def test_create_app_correlation_id_generated_when_missing(
         response = client.get("/health")
 
     correlation_id = response.headers.get("X-Request-ID")
-    assert correlation_id is not None
-    assert len(correlation_id) > 0
+    correlation_id = expect_is_not_none(correlation_id)
+    expect_true(len(correlation_id) > 0)
 
 
 def test_create_app_x_correlation_id_header(
@@ -419,7 +425,7 @@ def test_create_app_x_correlation_id_header(
         response = client.get("/health", headers={"X-Correlation-ID": "alt-correlation-id"})
 
     # Should use X-Correlation-ID when X-Request-ID is not present
-    assert response.headers.get("X-Request-ID") == "alt-correlation-id"
+    expect_equal(response.headers.get("X-Request-ID"), "alt-correlation-id")
 
 
 # =============================================================================
@@ -474,10 +480,10 @@ def test_exception_handler_problem_error(
     with TestClient(app) as client:
         response = client.get("/datasets/nonexistent_dataset")
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
     payload = response.json()
-    assert "code" in payload
-    assert payload["code"] == "dataset-not-found"
+    expect_in("code", payload)
+    expect_equal(payload["code"], "dataset-not-found")
 
 
 def test_exception_handler_validation_error(
@@ -527,9 +533,9 @@ def test_exception_handler_validation_error(
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?limit=invalid")
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
     payload = response.json()
-    assert payload["code"] == "invalid-request"
+    expect_equal(payload["code"], "invalid-request")
 
 
 # =============================================================================
@@ -588,10 +594,10 @@ def test_register_routes_includes_all_routers(
                 routes.append(path_value)
 
     # Verify key route groups are registered
-    assert "/health" in routes
-    assert any("/function" in r for r in routes)
-    assert any("/architecture" in r for r in routes)
-    assert any("/datasets" in r for r in routes)
+    expect_in("/health", routes)
+    expect_true(any("/function" in r for r in routes))
+    expect_true(any("/architecture" in r for r in routes))
+    expect_true(any("/datasets" in r for r in routes))
 
 
 def test_create_app_with_auto_pipeline_option(
@@ -642,4 +648,4 @@ def test_create_app_with_auto_pipeline_option(
         auto_pipeline=True,
     )
 
-    assert app is not None
+    expect_is_not_none(app)

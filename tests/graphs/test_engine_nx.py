@@ -10,6 +10,7 @@ import pytest
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
+from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
@@ -96,7 +97,7 @@ def test_cache_seed_with_none_is_noop() -> None:
 
     cache.seed(GraphKind.CALL_GRAPH, None)
 
-    assert cache.has(GraphKind.CALL_GRAPH) is False
+    expect_true(cache.has(GraphKind.CALL_GRAPH) is False)
 
 
 def test_cache_seed_stores_graph() -> None:
@@ -106,7 +107,7 @@ def test_cache_seed_stores_graph() -> None:
 
     cache.seed(GraphKind.CALL_GRAPH, graph)
 
-    assert cache.has(GraphKind.CALL_GRAPH) is True
+    expect_true(cache.has(GraphKind.CALL_GRAPH) is True)
 
 
 def test_cache_get_returns_cached_graph() -> None:
@@ -123,8 +124,8 @@ def test_cache_get_returns_cached_graph() -> None:
 
     result = cache.get(GraphKind.CALL_GRAPH, loader)
 
-    assert result is original_graph
-    assert call_count == 0
+    expect_true(result is original_graph)
+    expect_equal(call_count, 0)
 
 
 def test_cache_get_calls_loader_when_not_cached() -> None:
@@ -141,9 +142,9 @@ def test_cache_get_calls_loader_when_not_cached() -> None:
     result = cache.get(GraphKind.CALL_GRAPH, loader)
 
     expected_calls = 1
-    assert result is expected_graph
-    assert call_count == expected_calls
-    assert cache.has(GraphKind.CALL_GRAPH) is True
+    expect_true(result is expected_graph)
+    expect_equal(call_count, expected_calls)
+    expect_true(cache.has(GraphKind.CALL_GRAPH) is True)
 
 
 def test_cache_clear_removes_all_entries() -> None:
@@ -154,8 +155,8 @@ def test_cache_clear_removes_all_entries() -> None:
 
     cache.clear()
 
-    assert cache.has(GraphKind.CALL_GRAPH) is False
-    assert cache.has(GraphKind.IMPORT_GRAPH) is False
+    expect_true(cache.has(GraphKind.CALL_GRAPH) is False)
+    expect_true(cache.has(GraphKind.IMPORT_GRAPH) is False)
 
 
 def test_cache_invalidate_removes_specific_entry() -> None:
@@ -166,8 +167,8 @@ def test_cache_invalidate_removes_specific_entry() -> None:
 
     cache.invalidate(GraphKind.CALL_GRAPH)
 
-    assert cache.has(GraphKind.CALL_GRAPH) is False
-    assert cache.has(GraphKind.IMPORT_GRAPH) is True
+    expect_true(cache.has(GraphKind.CALL_GRAPH) is False)
+    expect_true(cache.has(GraphKind.IMPORT_GRAPH) is True)
 
 
 def test_cache_invalidate_with_missing_key_is_noop() -> None:

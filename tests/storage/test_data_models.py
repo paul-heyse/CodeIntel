@@ -20,6 +20,17 @@ from codeintel.storage.repositories.data_models import (
     fetch_relationships,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+    expect_not_in,
+    expect_true,
+)
 
 # Test constants to avoid magic value warnings
 EXPECTED_INT_42 = 42
@@ -53,7 +64,7 @@ def test_data_model_row_is_frozen() -> None:
         doc_long=None,
         created_at=now,
     )
-    assert row.model_name == "TestModel"
+    expect_equal(row.model_name, "TestModel")
     assert_frozen(row, "model_name", "Other")
 
 
@@ -75,18 +86,18 @@ def test_data_model_row_stores_all_fields() -> None:
         doc_long="Long documentation",
         created_at=now,
     )
-    assert row.repo == "test/repo"
-    assert row.commit == "abc123"
-    assert row.model_id == "model_1"
-    assert row.goid_h128 == EXPECTED_GOID
-    assert row.model_name == "TestModel"
-    assert row.module == "test.module"
-    assert row.rel_path == "test/module.py"
-    assert row.model_kind == "dataclass"
-    assert row.base_classes == base_classes
-    assert row.doc_short == "Short doc"
-    assert row.doc_long == "Long documentation"
-    assert row.created_at == now
+    expect_equal(row.repo, "test/repo")
+    expect_equal(row.commit, "abc123")
+    expect_equal(row.model_id, "model_1")
+    expect_equal(row.goid_h128, EXPECTED_GOID)
+    expect_equal(row.model_name, "TestModel")
+    expect_equal(row.module, "test.module")
+    expect_equal(row.rel_path, "test/module.py")
+    expect_equal(row.model_kind, "dataclass")
+    expect_equal(row.base_classes, base_classes)
+    expect_equal(row.doc_short, "Short doc")
+    expect_equal(row.doc_long, "Long documentation")
+    expect_equal(row.created_at, now)
 
 
 def test_data_model_field_row_is_frozen() -> None:
@@ -107,7 +118,7 @@ def test_data_model_field_row_is_frozen() -> None:
         lineno=EXPECTED_LINENO_10,
         created_at=now,
     )
-    assert row.name == "field1"
+    expect_equal(row.name, "field1")
     assert_frozen(row, "name", "other")
 
 
@@ -130,19 +141,19 @@ def test_data_model_field_row_stores_all_fields() -> None:
         lineno=EXPECTED_LINENO_10,
         created_at=now,
     )
-    assert row.repo == "test/repo"
-    assert row.commit == "abc123"
-    assert row.model_id == "model_1"
-    assert row.name == "field1"
-    assert row.field_type == "str"
-    assert row.required is True
-    assert row.has_default is True
-    assert row.default_expr == '"default"'
-    assert row.constraints == constraints
-    assert row.source == "annotation"
-    assert row.rel_path == "test/module.py"
-    assert row.lineno == EXPECTED_LINENO_10
-    assert row.created_at == now
+    expect_equal(row.repo, "test/repo")
+    expect_equal(row.commit, "abc123")
+    expect_equal(row.model_id, "model_1")
+    expect_equal(row.name, "field1")
+    expect_equal(row.field_type, "str")
+    expect_true(row.required)
+    expect_true(row.has_default)
+    expect_equal(row.default_expr, '"default"')
+    expect_equal(row.constraints, constraints)
+    expect_equal(row.source, "annotation")
+    expect_equal(row.rel_path, "test/module.py")
+    expect_equal(row.lineno, EXPECTED_LINENO_10)
+    expect_equal(row.created_at, now)
 
 
 def test_data_model_relationship_row_is_frozen() -> None:
@@ -164,7 +175,7 @@ def test_data_model_relationship_row_is_frozen() -> None:
         lineno=20,
         created_at=now,
     )
-    assert row.relationship_kind == "has_many"
+    expect_equal(row.relationship_kind, "has_many")
     assert_frozen(row, "relationship_kind", "other")
 
 
@@ -188,20 +199,20 @@ def test_data_model_relationship_row_stores_all_fields() -> None:
         lineno=EXPECTED_LINENO_25,
         created_at=now,
     )
-    assert row.repo == "test/repo"
-    assert row.commit == "abc123"
-    assert row.source_model_id == "model_1"
-    assert row.target_model_id == "model_2"
-    assert row.target_module == "target.module"
-    assert row.target_model_name == "TargetModel"
-    assert row.field_name == "items"
-    assert row.relationship_kind == "has_many"
-    assert row.multiplicity == "many"
-    assert row.via == "foreign_key"
-    assert row.evidence == evidence
-    assert row.rel_path == "test/module.py"
-    assert row.lineno == EXPECTED_LINENO_25
-    assert row.created_at == now
+    expect_equal(row.repo, "test/repo")
+    expect_equal(row.commit, "abc123")
+    expect_equal(row.source_model_id, "model_1")
+    expect_equal(row.target_model_id, "model_2")
+    expect_equal(row.target_module, "target.module")
+    expect_equal(row.target_model_name, "TargetModel")
+    expect_equal(row.field_name, "items")
+    expect_equal(row.relationship_kind, "has_many")
+    expect_equal(row.multiplicity, "many")
+    expect_equal(row.via, "foreign_key")
+    expect_equal(row.evidence, evidence)
+    expect_equal(row.rel_path, "test/module.py")
+    expect_equal(row.lineno, EXPECTED_LINENO_25)
+    expect_equal(row.created_at, now)
 
 
 def test_normalized_data_model_is_frozen() -> None:
@@ -223,7 +234,7 @@ def test_normalized_data_model_is_frozen() -> None:
         doc_long="Long doc",
         created_at=now,
     )
-    assert model.model_name == "TestModel"
+    expect_equal(model.model_name, "TestModel")
     assert_frozen(model, "model_name", "Other")
 
 
@@ -277,10 +288,10 @@ def test_normalized_data_model_stores_nested_data() -> None:
         doc_long=None,
         created_at=now,
     )
-    assert len(model.fields) == 1
-    assert model.fields[0].name == "field"
-    assert len(model.relationships) == 1
-    assert model.relationships[0].target_model_id == "model_2"
+    expect_length(model.fields, 1)
+    expect_equal(model.fields[0].name, "field")
+    expect_length(model.relationships, 1)
+    expect_equal(model.relationships[0].target_model_id, "model_2")
 
 
 # =============================================================================
@@ -291,8 +302,8 @@ def test_normalized_data_model_stores_nested_data() -> None:
 def test_fetch_models_returns_empty_list(fresh_gateway: StorageGateway) -> None:
     """Verify fetch_models returns empty list when no data."""
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
-    assert isinstance(result, list)
-    assert len(result) == 0
+    expect_is_instance(result, list)
+    expect_length(result, 0)
 
 
 def test_fetch_models_filters_by_repo_commit(fresh_gateway: StorageGateway) -> None:
@@ -324,10 +335,10 @@ def test_fetch_models_filters_by_repo_commit(fresh_gateway: StorageGateway) -> N
     )
 
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == 1
+    expect_length(result, 1)
 
     result_other = fetch_models(fresh_gateway, "other/repo", "def456")
-    assert len(result_other) == 0
+    expect_length(result_other, 0)
 
 
 def test_fetch_models_parses_all_fields(fresh_gateway: StorageGateway) -> None:
@@ -359,21 +370,21 @@ def test_fetch_models_parses_all_fields(fresh_gateway: StorageGateway) -> None:
     )
 
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == 1
+    expect_length(result, 1)
 
     model = result[0]
-    assert model.repo == "test/repo"
-    assert model.commit == "abc123"
-    assert model.model_id == "model_1"
-    assert model.goid_h128 == EXPECTED_GOID
-    assert model.model_name == "TestModel"
-    assert model.module == "test.module"
-    assert model.rel_path == "test/module.py"
-    assert model.model_kind == "pydantic"
-    assert len(model.base_classes) == 1
-    assert model.base_classes[0]["name"] == "BaseModel"
-    assert model.doc_short == "Short doc"
-    assert model.doc_long == "Long documentation"
+    expect_equal(model.repo, "test/repo")
+    expect_equal(model.commit, "abc123")
+    expect_equal(model.model_id, "model_1")
+    expect_equal(model.goid_h128, EXPECTED_GOID)
+    expect_equal(model.model_name, "TestModel")
+    expect_equal(model.module, "test.module")
+    expect_equal(model.rel_path, "test/module.py")
+    expect_equal(model.model_kind, "pydantic")
+    expect_length(model.base_classes, 1)
+    expect_equal(model.base_classes[0]["name"], "BaseModel")
+    expect_equal(model.doc_short, "Short doc")
+    expect_equal(model.doc_long, "Long documentation")
 
 
 def test_fetch_models_parses_base_classes_from_json(
@@ -409,9 +420,9 @@ def test_fetch_models_parses_base_classes_from_json(
 
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
     model = result[0]
-    assert len(model.base_classes) == EXPECTED_COUNT_2
-    assert model.base_classes[0]["name"] == "Base1"
-    assert model.base_classes[1]["name"] == "Base2"
+    expect_length(model.base_classes, EXPECTED_COUNT_2)
+    expect_equal(model.base_classes[0]["name"], "Base1")
+    expect_equal(model.base_classes[1]["name"], "Base2")
 
 
 def test_fetch_models_handles_goid_as_decimal(fresh_gateway: StorageGateway) -> None:
@@ -445,8 +456,8 @@ def test_fetch_models_handles_goid_as_decimal(fresh_gateway: StorageGateway) -> 
 
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
     model = result[0]
-    assert model.goid_h128 is not None
-    assert isinstance(model.goid_h128, int)
+    expect_is_not_none(model.goid_h128)
+    expect_is_instance(model.goid_h128, int)
 
 
 def test_fetch_models_returns_multiple(fresh_gateway: StorageGateway) -> None:
@@ -479,7 +490,7 @@ def test_fetch_models_returns_multiple(fresh_gateway: StorageGateway) -> None:
         )
 
     result = fetch_models(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == EXPECTED_COUNT_3
+    expect_length(result, EXPECTED_COUNT_3)
 
 
 # =============================================================================
@@ -490,8 +501,8 @@ def test_fetch_models_returns_multiple(fresh_gateway: StorageGateway) -> None:
 def test_fetch_fields_returns_empty_list(fresh_gateway: StorageGateway) -> None:
     """Verify fetch_fields returns empty list when no data."""
     result = fetch_fields(fresh_gateway, "test/repo", "abc123")
-    assert isinstance(result, list)
-    assert len(result) == 0
+    expect_is_instance(result, list)
+    expect_length(result, 0)
 
 
 def test_fetch_fields_parses_all_fields(fresh_gateway: StorageGateway) -> None:
@@ -524,21 +535,21 @@ def test_fetch_fields_parses_all_fields(fresh_gateway: StorageGateway) -> None:
     )
 
     result = fetch_fields(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == 1
+    expect_length(result, 1)
 
     field = result[0]
-    assert field.repo == "test/repo"
-    assert field.commit == "abc123"
-    assert field.model_id == "model_1"
-    assert field.name == "name"
-    assert field.field_type == "str"
-    assert field.required is True
-    assert field.has_default is False
-    assert field.default_expr is None
-    assert field.constraints == {"max_length": 100}
-    assert field.source == "annotation"
-    assert field.rel_path == "test/module.py"
-    assert field.lineno == EXPECTED_LINENO_10
+    expect_equal(field.repo, "test/repo")
+    expect_equal(field.commit, "abc123")
+    expect_equal(field.model_id, "model_1")
+    expect_equal(field.name, "name")
+    expect_equal(field.field_type, "str")
+    expect_true(field.required)
+    expect_false(field.has_default)
+    expect_is_none(field.default_expr)
+    expect_equal(field.constraints, {"max_length": 100})
+    expect_equal(field.source, "annotation")
+    expect_equal(field.rel_path, "test/module.py")
+    expect_equal(field.lineno, EXPECTED_LINENO_10)
 
 
 def test_fetch_fields_filters_by_model_ids(fresh_gateway: StorageGateway) -> None:
@@ -574,12 +585,12 @@ def test_fetch_fields_filters_by_model_ids(fresh_gateway: StorageGateway) -> Non
 
     # Fetch only for model_1 and model_2
     result = fetch_fields(fresh_gateway, "test/repo", "abc123", model_ids=["model_1", "model_2"])
-    assert len(result) == EXPECTED_COUNT_2
+    expect_length(result, EXPECTED_COUNT_2)
 
     model_ids = {f.model_id for f in result}
-    assert "model_1" in model_ids
-    assert "model_2" in model_ids
-    assert "model_3" not in model_ids
+    expect_in("model_1", model_ids)
+    expect_in("model_2", model_ids)
+    expect_not_in("model_3", model_ids)
 
 
 def test_fetch_fields_without_model_ids_returns_all(
@@ -615,7 +626,7 @@ def test_fetch_fields_without_model_ids_returns_all(
         )
 
     result = fetch_fields(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == EXPECTED_COUNT_2
+    expect_length(result, EXPECTED_COUNT_2)
 
 
 def test_fetch_fields_parses_constraints_json(fresh_gateway: StorageGateway) -> None:
@@ -649,7 +660,7 @@ def test_fetch_fields_parses_constraints_json(fresh_gateway: StorageGateway) -> 
 
     result = fetch_fields(fresh_gateway, "test/repo", "abc123")
     field = result[0]
-    assert field.constraints == {"pattern": "^.+@.+$", "max_length": 255}
+    expect_equal(field.constraints, {"pattern": "^.+@.+$", "max_length": 255})
 
 
 # =============================================================================
@@ -662,8 +673,8 @@ def test_fetch_relationships_returns_empty_list(
 ) -> None:
     """Verify fetch_relationships returns empty list when no data."""
     result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
-    assert isinstance(result, list)
-    assert len(result) == 0
+    expect_is_instance(result, list)
+    expect_length(result, 0)
 
 
 def test_fetch_relationships_parses_all_fields(
@@ -700,22 +711,22 @@ def test_fetch_relationships_parses_all_fields(
     )
 
     result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == 1
+    expect_length(result, 1)
 
     rel = result[0]
-    assert rel.repo == "test/repo"
-    assert rel.commit == "abc123"
-    assert rel.source_model_id == "model_1"
-    assert rel.target_model_id == "model_2"
-    assert rel.target_module == "target.module"
-    assert rel.target_model_name == "TargetModel"
-    assert rel.field_name == "items"
-    assert rel.relationship_kind == "has_many"
-    assert rel.multiplicity == "many"
-    assert rel.via == "foreign_key"
-    assert rel.evidence == {"confidence": 0.9}
-    assert rel.rel_path == "test/module.py"
-    assert rel.lineno == EXPECTED_LINENO_25
+    expect_equal(rel.repo, "test/repo")
+    expect_equal(rel.commit, "abc123")
+    expect_equal(rel.source_model_id, "model_1")
+    expect_equal(rel.target_model_id, "model_2")
+    expect_equal(rel.target_module, "target.module")
+    expect_equal(rel.target_model_name, "TargetModel")
+    expect_equal(rel.field_name, "items")
+    expect_equal(rel.relationship_kind, "has_many")
+    expect_equal(rel.multiplicity, "many")
+    expect_equal(rel.via, "foreign_key")
+    expect_equal(rel.evidence, {"confidence": 0.9})
+    expect_equal(rel.rel_path, "test/module.py")
+    expect_equal(rel.lineno, EXPECTED_LINENO_25)
 
 
 def test_fetch_relationships_filters_by_model_ids(
@@ -753,8 +764,8 @@ def test_fetch_relationships_filters_by_model_ids(
         )
 
     result = fetch_relationships(fresh_gateway, "test/repo", "abc123", model_ids=["model_1"])
-    assert len(result) == 1
-    assert result[0].source_model_id == "model_1"
+    expect_length(result, 1)
+    expect_equal(result[0].source_model_id, "model_1")
 
 
 def test_fetch_relationships_handles_nullable_fields(
@@ -792,12 +803,12 @@ def test_fetch_relationships_handles_nullable_fields(
 
     result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
     rel = result[0]
-    assert rel.target_module is None
-    assert rel.target_model_name is None
-    assert rel.field_name == "field_ref"
-    assert rel.multiplicity is None
-    assert rel.via is None
-    assert rel.lineno is None
+    expect_is_none(rel.target_module)
+    expect_is_none(rel.target_model_name)
+    expect_equal(rel.field_name, "field_ref")
+    expect_is_none(rel.multiplicity)
+    expect_is_none(rel.via)
+    expect_is_none(rel.lineno)
 
 
 # =============================================================================
@@ -810,8 +821,8 @@ def test_fetch_models_normalized_returns_empty_list(
 ) -> None:
     """Verify fetch_models_normalized returns empty list when no data."""
     result = fetch_models_normalized(fresh_gateway, "test/repo", "abc123")
-    assert isinstance(result, list)
-    assert len(result) == 0
+    expect_is_instance(result, list)
+    expect_length(result, 0)
 
 
 def test_fetch_models_normalized_joins_data(fresh_gateway: StorageGateway) -> None:
@@ -896,15 +907,15 @@ def test_fetch_models_normalized_joins_data(fresh_gateway: StorageGateway) -> No
     )
 
     result = fetch_models_normalized(fresh_gateway, "test/repo", "abc123")
-    assert len(result) == 1
+    expect_length(result, 1)
 
     model = result[0]
-    assert model.model_id == "model_1"
-    assert model.model_name == "TestModel"
-    assert len(model.fields) == 1
-    assert model.fields[0].name == "name"
-    assert len(model.relationships) == 1
-    assert model.relationships[0].target_model_id == "model_2"
+    expect_equal(model.model_id, "model_1")
+    expect_equal(model.model_name, "TestModel")
+    expect_length(model.fields, 1)
+    expect_equal(model.fields[0].name, "name")
+    expect_length(model.relationships, 1)
+    expect_equal(model.relationships[0].target_model_id, "model_2")
 
 
 def test_fetch_models_normalized_filters_by_model_ids(
@@ -941,9 +952,9 @@ def test_fetch_models_normalized_filters_by_model_ids(
     result = fetch_models_normalized(
         fresh_gateway, "test/repo", "abc123", model_ids=["model_0", "model_1"]
     )
-    assert len(result) == EXPECTED_COUNT_2
+    expect_length(result, EXPECTED_COUNT_2)
 
     model_ids = {m.model_id for m in result}
-    assert "model_0" in model_ids
-    assert "model_1" in model_ids
-    assert "model_2" not in model_ids
+    expect_in("model_0", model_ids)
+    expect_in("model_1", model_ids)
+    expect_not_in("model_2", model_ids)

@@ -6,9 +6,10 @@ from pathlib import Path
 
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
-from tests._helpers.context import create_test_context
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+from tests._helpers.assertions import expect_true
+from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta
+from tests.analytics.conftest import PluginTestHarness
 
 
 def _seed_dependency_sources(ctx_repo_root: Path) -> None:
@@ -81,25 +82,17 @@ def _catalog_for_dependencies(repo: str, commit: str) -> FunctionCatalogService:
     return FunctionCatalogService(catalog)
 
 
-def test_external_deps_plugin_builds_dependency_rows(tmp_path: Path) -> None:
+def test_external_deps_plugin_builds_dependency_rows(plugin_harness: PluginTestHarness) -> None:
     """ExternalDepsPlugin should populate dependency tables from imports."""
-    ctx = create_test_context(tmp_path)
-    _seed_dependency_sources(ctx.repo_root)
-    catalog_provider = _catalog_for_dependencies(ctx.repo, ctx.commit)
+    _seed_dependency_sources(plugin_harness.ctx.repo_root)
+    catalog_provider = _catalog_for_dependencies(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    plugin_ctx.resources.catalog = catalog_provider
+    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
 
-    result = execute_target_plugin(ExternalDepsPlugin(), plugin_ctx)
-    assert result.success
+    result = execute_target_plugin(ExternalDepsPlugin(), plugin_harness.plugin_ctx)
+    expect_true(result.success)
 
-    calls_count = ctx.query_count("analytics.external_dependency_calls")
-    deps_count = ctx.query_count("analytics.external_dependencies")
-    assert calls_count >= 1
-    assert deps_count >= 1
-
-    ctx.close()
+    calls_count = plugin_harness.ctx.query_count("analytics.external_dependency_calls")
+    deps_count = plugin_harness.ctx.query_count("analytics.external_dependencies")
+    expect_true(calls_count >= 1)
+    expect_true(deps_count >= 1)

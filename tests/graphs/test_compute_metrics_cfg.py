@@ -20,7 +20,15 @@ from codeintel.graphs.compute.metrics.cfg import (
     compute_dominator_tree,
     find_natural_loop_headers,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
+    expect_length,
+    expect_true,
+)
 from tests._helpers.fakes.networkx_graphs import chain_graph, cyclic_graph, diamond_graph
 
 # ---------------------------------------------------------------------------
@@ -46,14 +54,14 @@ def test_dominator_tree_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_dominator_tree(graph, entry="A")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominator_tree_entry_not_in_graph_returns_empty() -> None:
     """Entry node not in graph returns empty dict."""
     graph = nx.DiGraph([("A", "B"), ("B", "C")])
     result = compute_dominator_tree(graph, entry="X")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominator_tree_single_node() -> None:
@@ -64,7 +72,7 @@ def test_dominator_tree_single_node() -> None:
     graph = nx.DiGraph()
     graph.add_node("A")
     result = compute_dominator_tree(graph, entry="A")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominator_tree_chain_graph() -> None:
@@ -76,11 +84,11 @@ def test_dominator_tree_chain_graph() -> None:
     result = compute_dominator_tree(graph, entry="A")
 
     # Entry node 'A' is not in the result - only dominated nodes
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
-    assert "A" not in result
-    assert result["B"] == "A"
-    assert result["C"] == "B"
-    assert result["D"] == "C"
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
+    expect_false("A" in result)
+    expect_equal(result["B"], "A")
+    expect_equal(result["C"], "B")
+    expect_equal(result["D"], "C")
 
 
 def test_dominator_tree_diamond_graph() -> None:
@@ -92,12 +100,12 @@ def test_dominator_tree_diamond_graph() -> None:
     result = compute_dominator_tree(graph, entry="A")
 
     # Entry node 'A' is not in the result - only dominated nodes
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
-    assert "A" not in result
-    assert result["B"] == "A"
-    assert result["C"] == "A"
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
+    expect_false("A" in result)
+    expect_equal(result["B"], "A")
+    expect_equal(result["C"], "A")
     # D is dominated by A (the only common dominator of B and C)
-    assert result["D"] == "A"
+    expect_equal(result["D"], "A")
 
 
 def test_dominator_tree_multiple_paths() -> None:
@@ -112,10 +120,10 @@ def test_dominator_tree_multiple_paths() -> None:
     graph.add_edges_from([("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")])
     result = compute_dominator_tree(graph, entry="A")
 
-    assert "A" not in result  # Entry node not in result
-    assert result["B"] == "A"
-    assert result["C"] == "A"
-    assert result["D"] == "A"  # A is the immediate dominator of D
+    expect_false("A" in result)  # Entry node not in result
+    expect_equal(result["B"], "A")
+    expect_equal(result["C"], "A")
+    expect_equal(result["D"], "A")  # A is the immediate dominator of D
 
 
 # ===========================================================================
@@ -127,14 +135,14 @@ def test_dominance_frontier_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_dominance_frontier(graph, entry="A")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominance_frontier_entry_not_in_graph_returns_empty() -> None:
     """Entry node not in graph returns empty dict."""
     graph = nx.DiGraph([("A", "B")])
     result = compute_dominance_frontier(graph, entry="X")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominance_frontier_chain_graph_empty_frontiers() -> None:
@@ -142,9 +150,9 @@ def test_dominance_frontier_chain_graph_empty_frontiers() -> None:
     graph = chain_graph(4)
     result = compute_dominance_frontier(graph, entry="A")
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
     for node_frontier in result.values():
-        assert node_frontier == frozenset()
+        expect_equal(node_frontier, frozenset())
 
 
 def test_dominance_frontier_diamond_graph() -> None:
@@ -152,12 +160,12 @@ def test_dominance_frontier_diamond_graph() -> None:
     graph = diamond_graph()
     result = compute_dominance_frontier(graph, entry="A")
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
     # B and C have D in their frontier (join point)
-    assert "D" in result["B"]
-    assert "D" in result["C"]
+    expect_in("D", result["B"])
+    expect_in("D", result["C"])
     # A dominates everything, has empty frontier
-    assert result["A"] == frozenset()
+    expect_equal(result["A"], frozenset())
 
 
 def test_dominance_frontier_if_then_else() -> None:
@@ -177,8 +185,8 @@ def test_dominance_frontier_if_then_else() -> None:
     result = compute_dominance_frontier(graph, entry="entry")
 
     # Then and else have join in their frontier
-    assert "join" in result["then"]
-    assert "join" in result["else"]
+    expect_in("join", result["then"])
+    expect_in("join", result["else"])
 
 
 # ===========================================================================
@@ -189,14 +197,14 @@ def test_dominance_frontier_if_then_else() -> None:
 def test_dominator_depths_empty_returns_empty() -> None:
     """Empty idoms returns empty depths."""
     result = compute_dominator_depths({})
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_dominator_depths_single_root() -> None:
     """Single root node has depth 0."""
     idoms: dict[str, str | None] = {"A": None}
     result = compute_dominator_depths(idoms)
-    assert result == {"A": EXPECTED_DEPTH_ZERO}
+    expect_equal(result, {"A": EXPECTED_DEPTH_ZERO})
 
 
 def test_dominator_depths_chain() -> None:
@@ -209,10 +217,10 @@ def test_dominator_depths_chain() -> None:
     }
     result = compute_dominator_depths(idoms)
 
-    assert result["A"] == EXPECTED_DEPTH_ZERO
-    assert result["B"] == EXPECTED_DEPTH_ONE
-    assert result["C"] == EXPECTED_DEPTH_TWO
-    assert result["D"] == EXPECTED_DEPTH_THREE
+    expect_equal(result["A"], EXPECTED_DEPTH_ZERO)
+    expect_equal(result["B"], EXPECTED_DEPTH_ONE)
+    expect_equal(result["C"], EXPECTED_DEPTH_TWO)
+    expect_equal(result["D"], EXPECTED_DEPTH_THREE)
 
 
 def test_dominator_depths_tree() -> None:
@@ -226,10 +234,10 @@ def test_dominator_depths_tree() -> None:
     }
     result = compute_dominator_depths(idoms)
 
-    assert result["A"] == EXPECTED_DEPTH_ZERO
-    assert result["B"] == EXPECTED_DEPTH_ONE
-    assert result["C"] == EXPECTED_DEPTH_ONE
-    assert result["D"] == EXPECTED_DEPTH_TWO
+    expect_equal(result["A"], EXPECTED_DEPTH_ZERO)
+    expect_equal(result["B"], EXPECTED_DEPTH_ONE)
+    expect_equal(result["C"], EXPECTED_DEPTH_ONE)
+    expect_equal(result["D"], EXPECTED_DEPTH_TWO)
 
 
 def test_dominator_depths_from_chain_graph() -> None:
@@ -238,10 +246,10 @@ def test_dominator_depths_from_chain_graph() -> None:
     idoms = compute_dominator_tree(graph, entry="A")
     result = compute_dominator_depths(idoms)
 
-    assert result["A"] == EXPECTED_DEPTH_ZERO
-    assert result["B"] == EXPECTED_DEPTH_ONE
-    assert result["C"] == EXPECTED_DEPTH_TWO
-    assert result["D"] == EXPECTED_DEPTH_THREE
+    expect_equal(result["A"], EXPECTED_DEPTH_ZERO)
+    expect_equal(result["B"], EXPECTED_DEPTH_ONE)
+    expect_equal(result["C"], EXPECTED_DEPTH_TWO)
+    expect_equal(result["D"], EXPECTED_DEPTH_THREE)
 
 
 # ===========================================================================
@@ -253,21 +261,21 @@ def test_loop_headers_empty_graph_returns_empty() -> None:
     """Empty graph returns empty set."""
     graph = nx.DiGraph()
     result = find_natural_loop_headers(graph, entry="A")
-    assert result == set()
+    expect_equal(result, set())
 
 
 def test_loop_headers_entry_not_in_graph_returns_empty() -> None:
     """Entry not in graph returns empty set."""
     graph = nx.DiGraph([("A", "B")])
     result = find_natural_loop_headers(graph, entry="X")
-    assert result == set()
+    expect_equal(result, set())
 
 
 def test_loop_headers_dag_has_no_loops() -> None:
     """DAG has no loop headers."""
     graph = chain_graph(5)
     result = find_natural_loop_headers(graph, entry="A")
-    assert result == set()
+    expect_equal(result, set())
 
 
 def test_loop_headers_simple_cycle() -> None:
@@ -276,7 +284,7 @@ def test_loop_headers_simple_cycle() -> None:
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is the loop header (back edge from C to A)
-    assert "A" in result
+    expect_in("A", result)
 
 
 def test_loop_headers_self_loop() -> None:
@@ -286,7 +294,7 @@ def test_loop_headers_self_loop() -> None:
     graph.add_edge("B", "B")  # Self-loop
     result = find_natural_loop_headers(graph, entry="A")
 
-    assert "B" in result
+    expect_in("B", result)
 
 
 def test_loop_headers_nested_loops() -> None:
@@ -306,8 +314,8 @@ def test_loop_headers_nested_loops() -> None:
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is outer loop header, B is inner loop header
-    assert "A" in result
-    assert "B" in result
+    expect_in("A", result)
+    expect_in("B", result)
 
 
 def test_loop_headers_while_loop_pattern() -> None:
@@ -325,7 +333,7 @@ def test_loop_headers_while_loop_pattern() -> None:
     )
     result = find_natural_loop_headers(graph, entry="entry")
 
-    assert "condition" in result
+    expect_in("condition", result)
 
 
 # ===========================================================================
@@ -337,7 +345,7 @@ def test_longest_path_empty_graph_returns_zero() -> None:
     """Empty graph returns 0."""
     graph = nx.DiGraph()
     result = compute_cfg_longest_path(graph)
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_longest_path_single_node_returns_zero() -> None:
@@ -345,21 +353,21 @@ def test_longest_path_single_node_returns_zero() -> None:
     graph = nx.DiGraph()
     graph.add_node("A")
     result = compute_cfg_longest_path(graph)
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_longest_path_chain_graph() -> None:
     """Chain graph longest path equals number of edges."""
     graph = chain_graph(4)  # A -> B -> C -> D (3 edges)
     result = compute_cfg_longest_path(graph)
-    assert result == EXPECTED_PATH_LENGTH_THREE
+    expect_equal(result, EXPECTED_PATH_LENGTH_THREE)
 
 
 def test_longest_path_diamond_graph() -> None:
     """Diamond graph longest path is 2 (A -> B -> D or A -> C -> D)."""
     graph = diamond_graph()
     result = compute_cfg_longest_path(graph)
-    assert result == EXPECTED_PATH_LENGTH_TWO
+    expect_equal(result, EXPECTED_PATH_LENGTH_TWO)
 
 
 def test_longest_path_cyclic_graph_uses_condensation() -> None:
@@ -368,7 +376,7 @@ def test_longest_path_cyclic_graph_uses_condensation() -> None:
     result = compute_cfg_longest_path(graph)
 
     # Condensation of a single SCC is a single node, so path length is 0
-    assert result == 0
+    expect_equal(result, 0)
 
 
 def test_longest_path_mixed_dag_and_cycle() -> None:
@@ -389,7 +397,7 @@ def test_longest_path_mixed_dag_and_cycle() -> None:
 
     # Condensation has: entry -> SCC(A,B,C) -> exit
     # Path length is 2 edges
-    assert result == EXPECTED_PATH_LENGTH_TWO
+    expect_equal(result, EXPECTED_PATH_LENGTH_TWO)
 
 
 # ===========================================================================
@@ -401,7 +409,7 @@ def test_all_dominance_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_all_dominance(graph, entry="A")
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_all_dominance_returns_dataclass() -> None:
@@ -409,12 +417,12 @@ def test_all_dominance_returns_dataclass() -> None:
     graph = chain_graph(3)
     result = compute_all_dominance(graph, entry="A")
 
-    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    expect_length(result, EXPECTED_NODE_COUNT_THREE)
     for metrics in result.values():
-        assert isinstance(metrics, DominanceMetrics)
-        assert hasattr(metrics, "depth")
-        assert hasattr(metrics, "frontier_size")
-        assert hasattr(metrics, "is_loop_header")
+        expect_is_instance(metrics, DominanceMetrics)
+        expect_true(hasattr(metrics, "depth"))
+        expect_true(hasattr(metrics, "frontier_size"))
+        expect_true(hasattr(metrics, "is_loop_header"))
 
 
 def test_all_dominance_chain_graph() -> None:
@@ -422,15 +430,15 @@ def test_all_dominance_chain_graph() -> None:
     graph = chain_graph(4)
     result = compute_all_dominance(graph, entry="A")
 
-    assert result["A"].depth == EXPECTED_DEPTH_ZERO
-    assert result["B"].depth == EXPECTED_DEPTH_ONE
-    assert result["C"].depth == EXPECTED_DEPTH_TWO
-    assert result["D"].depth == EXPECTED_DEPTH_THREE
+    expect_equal(result["A"].depth, EXPECTED_DEPTH_ZERO)
+    expect_equal(result["B"].depth, EXPECTED_DEPTH_ONE)
+    expect_equal(result["C"].depth, EXPECTED_DEPTH_TWO)
+    expect_equal(result["D"].depth, EXPECTED_DEPTH_THREE)
 
     # No join points, so all frontiers are 0
     for metrics in result.values():
-        assert metrics.frontier_size == 0
-        assert metrics.is_loop_header is False
+        expect_equal(metrics.frontier_size, 0)
+        expect_false(metrics.is_loop_header)
 
 
 def test_all_dominance_diamond_graph() -> None:
@@ -439,11 +447,11 @@ def test_all_dominance_diamond_graph() -> None:
     result = compute_all_dominance(graph, entry="A")
 
     # B and C have D in frontier
-    assert result["B"].frontier_size == 1
-    assert result["C"].frontier_size == 1
+    expect_equal(result["B"].frontier_size, 1)
+    expect_equal(result["C"].frontier_size, 1)
     # A and D have empty frontiers
-    assert result["A"].frontier_size == 0
-    assert result["D"].frontier_size == 0
+    expect_equal(result["A"].frontier_size, 0)
+    expect_equal(result["D"].frontier_size, 0)
 
 
 def test_all_dominance_cyclic_graph_identifies_headers() -> None:
@@ -452,7 +460,7 @@ def test_all_dominance_cyclic_graph_identifies_headers() -> None:
     result = compute_all_dominance(graph, entry="A")
 
     # A should be marked as loop header
-    assert result["A"].is_loop_header is True
+    expect_true(result["A"].is_loop_header)
 
 
 def test_all_dominance_complex_cfg() -> None:
@@ -478,10 +486,10 @@ def test_all_dominance_complex_cfg() -> None:
     result = compute_all_dominance(graph, entry="entry")
 
     # Loop is a loop header due to back edge from body
-    assert result["loop"].is_loop_header is True
+    expect_true(result["loop"].is_loop_header)
     # If branches join at join node - then/else have join in frontier
-    assert result["then"].frontier_size >= 1
-    assert result["else"].frontier_size >= 1
+    expect_true(result["then"].frontier_size >= 1)
+    expect_true(result["else"].frontier_size >= 1)
 
 
 # ===========================================================================
@@ -520,7 +528,7 @@ def test_chain_graph_depths_parametrized(node_count: int, expected_max_depth: in
     depths = compute_dominator_depths(idoms)
 
     max_depth = max(depths.values())
-    assert max_depth == expected_max_depth
+    expect_equal(max_depth, expected_max_depth)
 
 
 @pytest.mark.parametrize(
@@ -532,4 +540,4 @@ def test_cycle_graphs_have_loop_headers(cycle_size: int) -> None:
     graph = cyclic_graph(cycle_size)
     result = find_natural_loop_headers(graph, entry="A")
 
-    assert len(result) > 0
+    expect_true(len(result) > 0)

@@ -7,7 +7,6 @@ the public compute_function_contracts API and the ConditionContext dataclass.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -20,10 +19,10 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import expect_equal, expect_is_none, expect_true
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.contracts import count_rows
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import gateway_with_macros
 
 # Test constants (non-repo/commit)
 CONFIDENCE_FULL = 0.9
@@ -31,22 +30,6 @@ CONFIDENCE_TYPES_ONLY = 0.3
 CONTEXT_LINE = 5
 CONTEXT_LIMIT = 10
 MULTI_FUNC_COUNT = 3
-
-
-@pytest.fixture
-def memory_gateway() -> Iterator[StorageGateway]:
-    """Provide an in-memory DuckDB gateway for testing.
-
-    Yields
-    ------
-    StorageGateway
-        Configured gateway with schema applied.
-    """
-    gateway = gateway_with_macros()
-    try:
-        yield gateway
-    finally:
-        gateway.con.close()
 
 
 @pytest.fixture
@@ -121,10 +104,10 @@ def test_condition_context_creation() -> None:
         line=CONTEXT_LINE,
         limit=CONTEXT_LIMIT,
     )
-    assert ctx.params == {"a", "b"}
-    assert ctx.rel_path == "test.py"
-    assert ctx.line == CONTEXT_LINE
-    assert ctx.limit == CONTEXT_LIMIT
+    expect_equal(ctx.params, {"a", "b"})
+    expect_equal(ctx.rel_path, "test.py")
+    expect_equal(ctx.line, CONTEXT_LINE)
+    expect_equal(ctx.limit, CONTEXT_LIMIT)
 
 
 def test_condition_context_immutable() -> None:
@@ -146,7 +129,7 @@ def test_condition_context_with_none_line() -> None:
         line=None,
         limit=5,
     )
-    assert ctx.line is None
+    expect_is_none(ctx.line)
 
 
 def test_compute_function_contracts_empty_catalog(
@@ -166,7 +149,7 @@ def test_compute_function_contracts_empty_catalog(
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
         [DEFAULT_REPO, DEFAULT_COMMIT],
     )
-    assert total == 0
+    expect_equal(total, 0)
 
 
 def test_compute_function_contracts_with_simple_function(
@@ -204,7 +187,7 @@ def test_compute_function_contracts_with_simple_function(
     ).fetchone()
 
     # With no catalog, no rows written for the function
-    assert result is None
+    expect_is_none(result)
 
 
 def test_compute_function_contracts_with_assert_guard(
@@ -239,7 +222,7 @@ def test_compute_function_contracts_with_assert_guard(
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
         [DEFAULT_REPO, DEFAULT_COMMIT],
     )
-    assert total == 0
+    expect_equal(total, 0)
 
 
 def test_compute_function_contracts_with_raise(
@@ -271,7 +254,7 @@ def test_compute_function_contracts_with_raise(
 
     # Verify table exists and is accessible
     result = count_rows(memory_gateway.con, "SELECT COUNT(*) FROM analytics.function_contracts", [])
-    assert result >= 0
+    expect_true(result >= 0)
 
 
 def test_compute_function_contracts_with_isinstance_check(
@@ -305,7 +288,7 @@ def test_compute_function_contracts_with_isinstance_check(
         "SELECT name FROM (SHOW TABLES) WHERE name = 'function_contracts'"
     ).fetchall()
 
-    assert len(tables) >= 0  # Table exists
+    expect_true(len(tables) >= 0)  # Table exists
 
 
 def test_compute_function_contracts_with_len_guard(
@@ -335,7 +318,7 @@ def test_compute_function_contracts_with_len_guard(
     )
 
     # Basic verification that function runs without error
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_multiple_functions(
@@ -370,7 +353,7 @@ def test_compute_function_contracts_multiple_functions(
     )
 
     # Verify function completed
-    assert len(ast_map) == MULTI_FUNC_COUNT
+    expect_equal(len(ast_map), MULTI_FUNC_COUNT)
 
 
 def test_compute_function_contracts_async_function(
@@ -400,7 +383,7 @@ def test_compute_function_contracts_async_function(
     )
 
     # Verify no exception raised
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_table_exists(
@@ -421,7 +404,7 @@ def test_compute_function_contracts_table_exists(
         "SELECT COUNT(*) FROM analytics.function_contracts",
         [],
     )
-    assert total == 0
+    expect_equal(total, 0)
 
 
 def test_compute_function_contracts_typed_function(
@@ -451,7 +434,7 @@ def test_compute_function_contracts_typed_function(
     )
 
     # Function runs without error for typed functions
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_nullable_return(
@@ -482,7 +465,7 @@ def test_compute_function_contracts_nullable_return(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_numeric_guards(
@@ -513,7 +496,7 @@ def test_compute_function_contracts_numeric_guards(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_varargs(
@@ -542,7 +525,7 @@ def test_compute_function_contracts_varargs(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_keyword_only_params(
@@ -571,7 +554,7 @@ def test_compute_function_contracts_keyword_only_params(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_chained_exceptions(
@@ -603,7 +586,7 @@ def test_compute_function_contracts_chained_exceptions(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_complex_guards(
@@ -638,7 +621,7 @@ def test_compute_function_contracts_complex_guards(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_nested_conditions(
@@ -670,7 +653,7 @@ def test_compute_function_contracts_nested_conditions(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_bool_predicate_name(
@@ -699,7 +682,7 @@ def test_compute_function_contracts_bool_predicate_name(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_method_with_self(
@@ -729,7 +712,7 @@ def test_compute_function_contracts_method_with_self(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_classmethod_with_cls(
@@ -759,7 +742,7 @@ def test_compute_function_contracts_classmethod_with_cls(
     )
 
     # Verify completes successfully
-    assert True
+    expect_equal(len(ast_map), 1)
 
 
 def test_compute_function_contracts_idempotent(
@@ -801,7 +784,7 @@ def test_compute_function_contracts_idempotent(
         "SELECT COUNT(*) FROM analytics.function_contracts",
         [],
     )
-    assert total >= 0
+    expect_true(total >= 0)
 
 
 def test_compute_function_contracts_complex_assertions(
@@ -833,4 +816,4 @@ def test_compute_function_contracts_complex_assertions(
     )
 
     # Function executed without error
-    assert True
+    expect_equal(len(ast_map), 1)

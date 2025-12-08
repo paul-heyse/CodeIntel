@@ -21,6 +21,22 @@ from codeintel.core.execution.telemetry import (
     get_runtime_telemetry,
 )
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_not_equal,
+    expect_true,
+)
+
+MIN_ELAPSED_NS = 10_000_000
+MIN_ELAPSED_MS = 10.0
+MIN_ELAPSED_S = 0.05
+MS_TOLERANCE = 1.0
+S_TOLERANCE = 0.001
+BUCKET_MIN_THRESHOLD = 0.1
+BUCKET_MAX_THRESHOLD = 5.0
+MIN_SHORT_SPAN_DURATION_S = 0.01
+MIN_LONG_SPAN_DURATION_S = 0.02
 
 # =============================================================================
 # PluginSpan Tests
@@ -35,9 +51,9 @@ def test_plugin_span_construction() -> None:
         start_time_ns=time.perf_counter_ns(),
     )
 
-    assert span.plugin_name == "test.plugin"
-    assert span.run_id == "run-123"
-    assert span.start_time_ns > 0
+    expect_equal(span.plugin_name, "test.plugin")
+    expect_equal(span.run_id, "run-123")
+    expect_true(span.start_time_ns > 0)
 
 
 def test_plugin_span_attributes_default_empty() -> None:
@@ -48,8 +64,8 @@ def test_plugin_span_attributes_default_empty() -> None:
         start_time_ns=time.perf_counter_ns(),
     )
 
-    assert span.attributes == {}
-    assert span.context_data == {}
+    expect_equal(span.attributes, {})
+    expect_equal(span.context_data, {})
 
 
 def test_plugin_span_with_attributes() -> None:
@@ -61,8 +77,8 @@ def test_plugin_span_with_attributes() -> None:
         attributes={"key": "value", "count": 42},
     )
 
-    assert span.attributes["key"] == "value"
-    assert span.attributes["count"] == 42
+    expect_equal(span.attributes["key"], "value")
+    expect_equal(span.attributes["count"], 42)
 
 
 def test_plugin_span_elapsed_ns() -> None:
@@ -78,7 +94,7 @@ def test_plugin_span_elapsed_ns() -> None:
     elapsed = span.elapsed_ns
 
     # Should be at least 10ms = 10,000,000 ns
-    assert elapsed >= 10_000_000
+    expect_true(elapsed >= MIN_ELAPSED_NS)
 
 
 def test_plugin_span_elapsed_ms() -> None:
@@ -93,7 +109,7 @@ def test_plugin_span_elapsed_ms() -> None:
     elapsed = span.elapsed_ms
 
     # Should be at least 10ms
-    assert elapsed >= 10.0
+    expect_true(elapsed >= MIN_ELAPSED_MS)
 
 
 def test_plugin_span_elapsed_s() -> None:
@@ -108,7 +124,7 @@ def test_plugin_span_elapsed_s() -> None:
     elapsed = span.elapsed_s
 
     # Should be at least 0.05s
-    assert elapsed >= 0.05
+    expect_true(elapsed >= MIN_ELAPSED_S)
 
 
 def test_plugin_span_elapsed_consistency() -> None:
@@ -127,8 +143,8 @@ def test_plugin_span_elapsed_consistency() -> None:
     s = span.elapsed_s
 
     # Check conversions are approximately correct
-    assert abs(ms - ns / 1_000_000) < 1.0  # Within 1ms
-    assert abs(s - ns / 1_000_000_000) < 0.001  # Within 1ms
+    expect_true(abs(ms - ns / 1_000_000) < MS_TOLERANCE)  # Within 1ms
+    expect_true(abs(s - ns / 1_000_000_000) < S_TOLERANCE)  # Within 1ms
 
 
 # =============================================================================
@@ -140,10 +156,10 @@ def test_telemetry_config_defaults() -> None:
     """Verify TelemetryConfig has sensible defaults."""
     config = TelemetryConfig()
 
-    assert config.service_name == "codeintel"
-    assert config.enable_tracing is True
-    assert config.enable_metrics is True
-    assert config.histogram_buckets == DEFAULT_DURATION_BUCKETS
+    expect_equal(config.service_name, "codeintel")
+    expect_true(config.enable_tracing)
+    expect_true(config.enable_metrics)
+    expect_equal(config.histogram_buckets, DEFAULT_DURATION_BUCKETS)
 
 
 def test_telemetry_config_custom() -> None:
@@ -155,10 +171,10 @@ def test_telemetry_config_custom() -> None:
         histogram_buckets=(0.1, 0.5, 1.0),
     )
 
-    assert config.service_name == "my-service"
-    assert config.enable_tracing is False
-    assert config.enable_metrics is False
-    assert config.histogram_buckets == (0.1, 0.5, 1.0)
+    expect_equal(config.service_name, "my-service")
+    expect_true(not config.enable_tracing)
+    expect_true(not config.enable_metrics)
+    expect_equal(config.histogram_buckets, (0.1, 0.5, 1.0))
 
 
 def test_telemetry_config_is_frozen() -> None:
@@ -175,21 +191,21 @@ def test_telemetry_config_is_frozen() -> None:
 
 def test_default_duration_buckets() -> None:
     """Verify DEFAULT_DURATION_BUCKETS is a tuple of floats."""
-    assert isinstance(DEFAULT_DURATION_BUCKETS, tuple)
-    assert all(isinstance(b, float) for b in DEFAULT_DURATION_BUCKETS)
+    expect_is_instance(DEFAULT_DURATION_BUCKETS, tuple)
+    expect_true(all(isinstance(b, float) for b in DEFAULT_DURATION_BUCKETS))
 
 
 def test_default_duration_buckets_sorted() -> None:
     """Verify DEFAULT_DURATION_BUCKETS are in ascending order."""
     buckets = list(DEFAULT_DURATION_BUCKETS)
-    assert buckets == sorted(buckets)
+    expect_equal(buckets, sorted(buckets))
 
 
 def test_default_duration_buckets_range() -> None:
     """Verify DEFAULT_DURATION_BUCKETS cover a reasonable range."""
-    assert min(DEFAULT_DURATION_BUCKETS) > 0  # All positive
-    assert min(DEFAULT_DURATION_BUCKETS) < 0.1  # Sub-100ms start
-    assert max(DEFAULT_DURATION_BUCKETS) >= 5.0  # At least 5s end
+    expect_true(min(DEFAULT_DURATION_BUCKETS) > 0)  # All positive
+    expect_true(min(DEFAULT_DURATION_BUCKETS) < BUCKET_MIN_THRESHOLD)  # Sub-100ms start
+    expect_true(max(DEFAULT_DURATION_BUCKETS) >= BUCKET_MAX_THRESHOLD)  # At least 5s end
 
 
 # =============================================================================
@@ -201,8 +217,8 @@ def test_runtime_telemetry_initialization() -> None:
     """Verify RuntimeTelemetry can be initialized."""
     telemetry = RuntimeTelemetry()
 
-    assert telemetry is not None
-    assert telemetry.service_name == "codeintel"
+    expect_true(telemetry is not None)
+    expect_equal(telemetry.service_name, "codeintel")
 
 
 def test_runtime_telemetry_with_config() -> None:
@@ -210,7 +226,7 @@ def test_runtime_telemetry_with_config() -> None:
     config = TelemetryConfig(service_name="custom-service")
     telemetry = RuntimeTelemetry(config)
 
-    assert telemetry.service_name == "custom-service"
+    expect_equal(telemetry.service_name, "custom-service")
 
 
 def test_runtime_telemetry_config_properties() -> None:
@@ -218,8 +234,8 @@ def test_runtime_telemetry_config_properties() -> None:
     config = TelemetryConfig(enable_tracing=False, enable_metrics=False)
     telemetry = RuntimeTelemetry(config)
 
-    assert telemetry.config_tracing_enabled is False
-    assert telemetry.config_metrics_enabled is False
+    expect_true(not telemetry.config_tracing_enabled)
+    expect_true(not telemetry.config_metrics_enabled)
 
 
 def test_runtime_telemetry_start_span() -> None:
@@ -228,9 +244,9 @@ def test_runtime_telemetry_start_span() -> None:
 
     span = telemetry.start_span("test.plugin", "run-123")
 
-    assert isinstance(span, PluginSpan)
-    assert span.plugin_name == "test.plugin"
-    assert span.run_id == "run-123"
+    expect_is_instance(span, PluginSpan)
+    expect_equal(span.plugin_name, "test.plugin")
+    expect_equal(span.run_id, "run-123")
 
 
 def test_runtime_telemetry_start_span_with_attributes() -> None:
@@ -243,7 +259,7 @@ def test_runtime_telemetry_start_span_with_attributes() -> None:
         attributes={"custom": "value"},
     )
 
-    assert span.attributes["custom"] == "value"
+    expect_equal(span.attributes["custom"], "value")
 
 
 def test_runtime_telemetry_end_span_success() -> None:
@@ -255,7 +271,7 @@ def test_runtime_telemetry_end_span_success() -> None:
 
     duration = telemetry.end_span(span, success=True, rows_written=100)
 
-    assert duration >= 0.01  # At least 10ms
+    expect_true(duration >= MIN_SHORT_SPAN_DURATION_S)  # At least 10ms
 
 
 def test_runtime_telemetry_end_span_failure() -> None:
@@ -269,7 +285,7 @@ def test_runtime_telemetry_end_span_failure() -> None:
         error="Something went wrong",
     )
 
-    assert duration >= 0
+    expect_true(duration >= 0)
 
 
 def test_runtime_telemetry_end_span_returns_duration() -> None:
@@ -281,7 +297,7 @@ def test_runtime_telemetry_end_span_returns_duration() -> None:
 
     duration = telemetry.end_span(span, success=True)
 
-    assert duration >= 0.02  # At least 20ms in seconds
+    expect_true(duration >= MIN_LONG_SPAN_DURATION_S)  # At least 20ms in seconds
 
 
 def test_runtime_telemetry_record_run_metrics() -> None:
@@ -304,12 +320,12 @@ def test_runtime_telemetry_record_run_metrics() -> None:
 
 def test_otel_available_is_bool() -> None:
     """Verify OTEL_AVAILABLE is a boolean."""
-    assert isinstance(OTEL_AVAILABLE, bool)
+    expect_is_instance(OTEL_AVAILABLE, bool)
 
 
 def test_prometheus_available_is_bool() -> None:
     """Verify PROMETHEUS_AVAILABLE is a boolean."""
-    assert isinstance(PROMETHEUS_AVAILABLE, bool)
+    expect_is_instance(PROMETHEUS_AVAILABLE, bool)
 
 
 def test_telemetry_works_without_otel() -> None:
@@ -320,7 +336,7 @@ def test_telemetry_works_without_otel() -> None:
     span = telemetry.start_span("test", "run")
     duration = telemetry.end_span(span, success=True)
 
-    assert duration >= 0
+    expect_true(duration >= 0)
 
 
 def test_telemetry_disabled_tracing() -> None:
@@ -331,7 +347,7 @@ def test_telemetry_disabled_tracing() -> None:
     span = telemetry.start_span("test", "run")
     duration = telemetry.end_span(span, success=True)
 
-    assert duration >= 0
+    expect_true(duration >= 0)
     # OTel span should not be in context_data when tracing disabled
     # (unless OTEL is available and tracer was still created)
 
@@ -344,7 +360,7 @@ def test_telemetry_disabled_metrics() -> None:
     span = telemetry.start_span("test", "run")
     duration = telemetry.end_span(span, success=True)
 
-    assert duration >= 0
+    expect_true(duration >= 0)
 
 
 # =============================================================================
@@ -356,7 +372,7 @@ def test_get_runtime_telemetry_returns_instance() -> None:
     """Verify get_runtime_telemetry returns a RuntimeTelemetry."""
     telemetry = get_runtime_telemetry()
 
-    assert isinstance(telemetry, RuntimeTelemetry)
+    expect_is_instance(telemetry, RuntimeTelemetry)
 
 
 def test_get_runtime_telemetry_is_singleton() -> None:
@@ -364,7 +380,7 @@ def test_get_runtime_telemetry_is_singleton() -> None:
     telemetry1 = get_runtime_telemetry()
     telemetry2 = get_runtime_telemetry()
 
-    assert telemetry1 is telemetry2
+    expect_true(telemetry1 is telemetry2)
 
 
 # =============================================================================
@@ -383,9 +399,9 @@ def test_full_span_lifecycle() -> None:
         attributes={"test_type": "integration"},
     )
 
-    assert span.plugin_name == "integration.test"
-    assert span.run_id == "run-456"
-    assert span.attributes["test_type"] == "integration"
+    expect_equal(span.plugin_name, "integration.test")
+    expect_equal(span.run_id, "run-456")
+    expect_equal(span.attributes["test_type"], "integration")
 
     # Do some work
     time.sleep(0.01)
@@ -393,7 +409,7 @@ def test_full_span_lifecycle() -> None:
     # End span with success
     duration = telemetry.end_span(span, success=True, rows_written=50)
 
-    assert duration >= 0.01
+    expect_true(duration >= MIN_SHORT_SPAN_DURATION_S)
 
 
 def test_multiple_spans() -> None:
@@ -408,6 +424,6 @@ def test_multiple_spans() -> None:
     duration1 = telemetry.end_span(span1, success=True)
     duration2 = telemetry.end_span(span2, success=False, error="Test error")
 
-    assert duration1 >= 0
-    assert duration2 >= 0
-    assert span1.plugin_name != span2.plugin_name
+    expect_true(duration1 >= 0)
+    expect_true(duration2 >= 0)
+    expect_not_equal(span1.plugin_name, span2.plugin_name)

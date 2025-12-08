@@ -20,7 +20,13 @@ from codeintel.graphs.compute.symbols import (
     build_def_map,
     build_use_edges,
 )
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_is_none,
+    expect_length,
+    expect_true,
+)
 
 # Constants - SCIP Role Bitmasks
 ROLE_DEFINITION: Final = 1
@@ -44,8 +50,8 @@ def test_symbol_occurrence_is_definition() -> None:
         roles=ROLE_DEFINITION,
     )
 
-    assert occ.is_definition
-    assert not occ.is_reference
+    expect_true(occ.is_definition)
+    expect_true(not occ.is_reference)
 
 
 def test_symbol_occurrence_is_reference() -> None:
@@ -57,8 +63,8 @@ def test_symbol_occurrence_is_reference() -> None:
         roles=ROLE_REFERENCE,
     )
 
-    assert not occ.is_definition
-    assert occ.is_reference
+    expect_true(not occ.is_definition)
+    expect_true(occ.is_reference)
 
 
 def test_symbol_occurrence_is_call() -> None:
@@ -70,8 +76,8 @@ def test_symbol_occurrence_is_call() -> None:
         roles=ROLE_CALL,
     )
 
-    assert not occ.is_definition
-    assert occ.is_reference
+    expect_true(not occ.is_definition)
+    expect_true(occ.is_reference)
 
 
 def test_symbol_occurrence_is_import() -> None:
@@ -83,7 +89,7 @@ def test_symbol_occurrence_is_import() -> None:
         roles=ROLE_IMPORT,
     )
 
-    assert occ.is_reference
+    expect_true(occ.is_reference)
 
 
 def test_symbol_occurrence_combined_roles() -> None:
@@ -95,8 +101,8 @@ def test_symbol_occurrence_combined_roles() -> None:
         roles=ROLE_DEFINITION | ROLE_IMPORT,
     )
 
-    assert occ.is_definition
-    assert occ.is_reference
+    expect_true(occ.is_definition)
+    expect_true(occ.is_reference)
 
 
 def test_symbol_occurrence_no_roles() -> None:
@@ -108,8 +114,8 @@ def test_symbol_occurrence_no_roles() -> None:
         roles=0,
     )
 
-    assert not occ.is_definition
-    assert not occ.is_reference
+    expect_true(not occ.is_definition)
+    expect_true(not occ.is_reference)
 
 
 def test_symbol_occurrence_frozen() -> None:
@@ -134,9 +140,9 @@ def test_build_def_map_simple() -> None:
 
     def_map = build_def_map(occurrences)
 
-    assert def_map["ClassA"] == "src/a.py"
-    assert def_map["ClassB"] == "src/b.py"
-    assert len(def_map) == DEF_MAP_EXPECTED_COUNT  # Only definitions
+    expect_equal(def_map["ClassA"], "src/a.py")
+    expect_equal(def_map["ClassB"], "src/b.py")
+    expect_length(def_map, DEF_MAP_EXPECTED_COUNT)  # Only definitions
 
 
 def test_build_def_map_first_definition_wins() -> None:
@@ -148,7 +154,7 @@ def test_build_def_map_first_definition_wins() -> None:
 
     def_map = build_def_map(occurrences)
 
-    assert def_map["Symbol"] == "first.py"
+    expect_equal(def_map["Symbol"], "first.py")
 
 
 def test_build_def_map_ignores_references() -> None:
@@ -160,14 +166,14 @@ def test_build_def_map_ignores_references() -> None:
 
     def_map = build_def_map(occurrences)
 
-    assert def_map == {}
+    expect_equal(def_map, {})
 
 
 def test_build_def_map_empty() -> None:
     """Definition map from empty occurrences is empty."""
     def_map = build_def_map([])
 
-    assert def_map == {}
+    expect_equal(def_map, {})
 
 
 def test_build_use_edges_simple() -> None:
@@ -184,13 +190,13 @@ def test_build_use_edges_simple() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == 1
+    expect_length(edges, 1)
     edge = edges[0]
-    assert edge.symbol == "func"
-    assert edge.def_path == "src/def.py"
-    assert edge.use_path == "src/use.py"
-    assert not edge.same_file
-    assert not edge.same_module
+    expect_equal(edge.symbol, "func")
+    expect_equal(edge.def_path, "src/def.py")
+    expect_equal(edge.use_path, "src/use.py")
+    expect_true(not edge.same_file)
+    expect_true(not edge.same_module)
 
 
 def test_build_use_edges_same_file() -> None:
@@ -204,8 +210,8 @@ def test_build_use_edges_same_file() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == 1
-    assert edges[0].same_file
+    expect_length(edges, 1)
+    expect_true(edges[0].same_file)
 
 
 def test_build_use_edges_same_module() -> None:
@@ -222,8 +228,8 @@ def test_build_use_edges_same_module() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == 1
-    assert edges[0].same_module
+    expect_length(edges, 1)
+    expect_true(edges[0].same_module)
 
 
 def test_build_use_edges_no_definition_skipped() -> None:
@@ -236,7 +242,7 @@ def test_build_use_edges_no_definition_skipped() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert edges == []
+    expect_equal(edges, [])
 
 
 def test_build_use_edges_multiple_uses() -> None:
@@ -257,16 +263,16 @@ def test_build_use_edges_multiple_uses() -> None:
 
     edges = build_use_edges(occurrences, def_map, module_by_path)
 
-    assert len(edges) == USE_EDGE_COUNT
+    expect_length(edges, USE_EDGE_COUNT)
     use_paths = {e.use_path for e in edges}
-    assert use_paths == {"src/a.py", "src/b.py", "src/c.py"}
+    expect_equal(use_paths, {"src/a.py", "src/b.py", "src/c.py"})
 
 
 def test_build_use_edges_empty() -> None:
     """Empty occurrences produce no edges."""
     edges = build_use_edges([], {}, {})
 
-    assert edges == []
+    expect_equal(edges, [])
 
 
 def test_symbol_use_edge_attributes() -> None:
@@ -281,13 +287,13 @@ def test_symbol_use_edge_attributes() -> None:
         use_goid=SYMBOL_USE_GOID,
     )
 
-    assert edge.symbol == "MyClass"
-    assert edge.def_path == "src/model.py"
-    assert edge.use_path == "src/service.py"
-    assert not edge.same_file
-    assert edge.same_module
-    assert edge.def_goid == SYMBOL_DEF_GOID
-    assert edge.use_goid == SYMBOL_USE_GOID
+    expect_equal(edge.symbol, "MyClass")
+    expect_equal(edge.def_path, "src/model.py")
+    expect_equal(edge.use_path, "src/service.py")
+    expect_true(not edge.same_file)
+    expect_true(edge.same_module)
+    expect_equal(edge.def_goid, SYMBOL_DEF_GOID)
+    expect_equal(edge.use_goid, SYMBOL_USE_GOID)
 
 
 def test_symbol_use_edge_optional_goids() -> None:
@@ -300,8 +306,8 @@ def test_symbol_use_edge_optional_goids() -> None:
         same_module=False,
     )
 
-    assert edge.def_goid is None
-    assert edge.use_goid is None
+    expect_is_none(edge.def_goid)
+    expect_is_none(edge.use_goid)
 
 
 def test_symbol_use_edge_frozen() -> None:
@@ -329,9 +335,9 @@ def test_symbol_use_row_attributes() -> None:
         use_goid_h128=ROW_USE_GOID,
     )
 
-    assert row.symbol == "helper"
-    assert row.def_goid_h128 == ROW_DEF_GOID
-    assert row.use_goid_h128 == ROW_USE_GOID
+    expect_equal(row.symbol, "helper")
+    expect_equal(row.def_goid_h128, ROW_DEF_GOID)
+    expect_equal(row.use_goid_h128, ROW_USE_GOID)
 
 
 def test_symbol_use_row_frozen() -> None:

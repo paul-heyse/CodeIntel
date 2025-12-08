@@ -17,7 +17,12 @@ from codeintel.ingestion.infrastructure import (
     resolve_scip_inputs,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.assertions import (
+    assert_cannot_setattr,
+    expect_equal,
+    expect_is_none,
+    expect_true,
+)
 
 # Test constants for magic values
 EXPECTED_START_LINE = 5
@@ -45,14 +50,14 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
         modules=[],
     )
 
-    assert config.repo == "test-org/test-repo"
-    assert config.commit == "abc123"
-    assert config.repo_root == repo_root
-    assert config.build_dir == build_dir
-    assert config.document_output_dir == doc_dir
-    assert config.scip_python_bin is None
-    assert config.scip_bin is None
-    assert config.modules == []
+    expect_equal(config.repo, "test-org/test-repo")
+    expect_equal(config.commit, "abc123")
+    expect_equal(config.repo_root, repo_root)
+    expect_equal(config.build_dir, build_dir)
+    expect_equal(config.document_output_dir, doc_dir)
+    expect_is_none(config.scip_python_bin)
+    expect_is_none(config.scip_bin)
+    expect_equal(config.modules, [])
 
 
 def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
@@ -79,10 +84,10 @@ def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
         modules=[module],
     )
 
-    assert len(config.modules) == 1
-    assert config.modules[0].module_name == "src.main"
-    assert config.scip_python_bin == "/usr/bin/scip-python"
-    assert config.scip_bin == "/usr/bin/scip"
+    expect_equal(len(config.modules), 1)
+    expect_equal(config.modules[0].module_name, "src.main")
+    expect_equal(config.scip_python_bin, "/usr/bin/scip-python")
+    expect_equal(config.scip_bin, "/usr/bin/scip")
 
 
 def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
@@ -108,14 +113,14 @@ def test_scip_resolver_input_create_empty() -> None:
     """Test creating ScipResolverInput with all defaults."""
     inputs = ScipResolverInput()
 
-    assert inputs.repo is None
-    assert inputs.commit is None
-    assert inputs.repo_root is None
-    assert inputs.build_dir is None
-    assert inputs.document_output_dir is None
-    assert inputs.scip_python_bin is None
-    assert inputs.scip_bin is None
-    assert inputs.modules is None
+    expect_is_none(inputs.repo)
+    expect_is_none(inputs.commit)
+    expect_is_none(inputs.repo_root)
+    expect_is_none(inputs.build_dir)
+    expect_is_none(inputs.document_output_dir)
+    expect_is_none(inputs.scip_python_bin)
+    expect_is_none(inputs.scip_bin)
+    expect_is_none(inputs.modules)
 
 
 def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None:
@@ -134,13 +139,13 @@ def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None
         scip_bin="/usr/bin/scip",
     )
 
-    assert inputs.repo == "test-org/test-repo"
-    assert inputs.commit == "abc123"
-    assert inputs.repo_root == repo_root
-    assert inputs.build_dir == build_dir
-    assert inputs.document_output_dir == doc_dir
-    assert inputs.scip_python_bin == "/usr/bin/scip-python"
-    assert inputs.scip_bin == "/usr/bin/scip"
+    expect_equal(inputs.repo, "test-org/test-repo")
+    expect_equal(inputs.commit, "abc123")
+    expect_equal(inputs.repo_root, repo_root)
+    expect_equal(inputs.build_dir, build_dir)
+    expect_equal(inputs.document_output_dir, doc_dir)
+    expect_equal(inputs.scip_python_bin, "/usr/bin/scip-python")
+    expect_equal(inputs.scip_bin, "/usr/bin/scip")
 
 
 def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
@@ -162,9 +167,12 @@ def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
         modules=[module],
     )
 
-    assert inputs.modules is not None
-    assert len(inputs.modules) == 1
-    assert inputs.modules[0].module_name == "main"
+    modules = inputs.modules
+    if modules is None:
+        pytest.fail("Expected modules to be populated")
+
+    expect_equal(len(modules), 1)
+    expect_equal(modules[0].module_name, "main")
 
 
 def test_scip_resolver_input_frozen_dataclass() -> None:
@@ -197,12 +205,12 @@ def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
         ),
     )
 
-    assert isinstance(result, ResolvedScipConfig)
-    assert result.repo == "test-org/test-repo"
-    assert result.commit == "abc123"
-    assert result.repo_root == repo_root
-    assert result.build_dir == build_dir
-    assert result.document_output_dir == doc_dir
+    expect_true(isinstance(result, ResolvedScipConfig))
+    expect_equal(result.repo, "test-org/test-repo")
+    expect_equal(result.commit, "abc123")
+    expect_equal(result.repo_root, repo_root)
+    expect_equal(result.build_dir, build_dir)
+    expect_equal(result.document_output_dir, doc_dir)
 
 
 def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
@@ -224,10 +232,10 @@ def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
 
     result = resolve_scip_inputs([], inputs)
 
-    assert result.repo == "test-org/test-repo"
-    assert result.commit == "def456"
-    assert result.scip_python_bin == "/usr/bin/scip-python"
-    assert result.scip_bin == "/usr/bin/scip"
+    expect_equal(result.repo, "test-org/test-repo")
+    expect_equal(result.commit, "def456")
+    expect_equal(result.scip_python_bin, "/usr/bin/scip-python")
+    expect_equal(result.scip_bin, "/usr/bin/scip")
 
 
 def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
@@ -256,8 +264,8 @@ def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
         ),
     )
 
-    assert len(result.modules) == 1
-    assert result.modules[0].module_name == "main"
+    expect_equal(len(result.modules), 1)
+    expect_equal(result.modules[0].module_name, "main")
 
 
 def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
@@ -287,8 +295,8 @@ def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
         ),
     )
 
-    assert len(result.modules) == 1
-    assert result.modules[0].module_name == "util"
+    expect_equal(len(result.modules), 1)
+    expect_equal(result.modules[0].module_name, "util")
 
 
 def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> None:
@@ -386,8 +394,8 @@ def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
 
     result = resolve_scip_inputs([], inputs)
 
-    assert result.repo == "inputs-repo"
-    assert result.commit == "inputs-commit"
+    expect_equal(result.repo, "inputs-repo")
+    expect_equal(result.commit, "inputs-commit")
 
 
 # --- ModuleRecord Tests ---
@@ -405,11 +413,11 @@ def test_module_record_create(tmp_path: Path) -> None:
         total=EXPECTED_END_LINE,
     )
 
-    assert record.rel_path == "src/module.py"
-    assert record.module_name == "src.module"
-    assert record.file_path == file_path
-    assert record.index == EXPECTED_START_LINE
-    assert record.total == EXPECTED_END_LINE
+    expect_equal(record.rel_path, "src/module.py")
+    expect_equal(record.module_name, "src.module")
+    expect_equal(record.file_path, file_path)
+    expect_equal(record.index, EXPECTED_START_LINE)
+    expect_equal(record.total, EXPECTED_END_LINE)
 
 
 def test_module_record_frozen(tmp_path: Path) -> None:

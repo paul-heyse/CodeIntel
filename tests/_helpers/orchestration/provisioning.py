@@ -16,7 +16,7 @@ from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.build.context import ContextResources
 from codeintel.config import ConfigBuilder
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
 from codeintel.ingestion import (
     CoverageIngestStep,
@@ -251,13 +251,15 @@ def _build_provisioning_setup(
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
     build_paths = BuildPaths.from_explicit(
         build_dir=ctx.build_dir,
-        db_path=ctx.db_path,
-        document_output_dir=ctx.document_output_dir,
-        coverage_json=repo_root / ".coverage",
-        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
-        scip_dir=ctx.build_dir / "scip",
-        tool_cache=ctx.build_dir / ".tool_cache",
-        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
+        overrides=BuildPathOverrides(
+            db_path=ctx.db_path,
+            document_output_dir=ctx.document_output_dir,
+            coverage_json=repo_root / ".coverage",
+            pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
+            scip_dir=ctx.build_dir / "scip",
+            tool_cache=ctx.build_dir / ".tool_cache",
+            log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
+        ),
     )
     coverage_file = build_paths.coverage_json
 

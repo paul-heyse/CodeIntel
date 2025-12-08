@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/resources/registry.py
+# hypothesis_version: 6.148.7
+
+['K', 'RESOURCE_NAME', 'ResourceEntry', 'ResourceRegistry', 'T', 'T | None']

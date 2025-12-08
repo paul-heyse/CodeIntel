@@ -20,6 +20,7 @@ import pytest
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -36,13 +37,13 @@ def test_storage_resource_init(graph_gateway: StorageGateway, tmp_path: Path) ->
     """StorageResource initializes with gateway and path."""
     resource = StorageResource(graph_gateway, tmp_path)
 
-    assert resource.gateway is graph_gateway
-    assert resource.repo_root == tmp_path
+    expect_true(resource.gateway is graph_gateway)
+    expect_equal(resource.repo_root, tmp_path)
 
 
 def test_storage_resource_resource_name() -> None:
     """StorageResource has correct RESOURCE_NAME."""
-    assert StorageResource.RESOURCE_NAME == RESOURCE_NAME
+    expect_equal(StorageResource.RESOURCE_NAME, RESOURCE_NAME)
 
 
 def test_storage_resource_gateway_access(graph_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -50,8 +51,9 @@ def test_storage_resource_gateway_access(graph_gateway: StorageGateway, tmp_path
     resource = StorageResource(graph_gateway, tmp_path)
 
     # Gateway should be accessible
-    assert resource.gateway is not None
-    assert resource.gateway.con is not None
+    expect_true(resource.gateway is not None)
+    if resource.gateway is not None:
+        expect_true(resource.gateway.con is not None)
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +68,7 @@ def test_storage_resource_registration(graph_gateway: StorageGateway, tmp_path: 
 
     registry.register_provider(resource)
 
-    assert registry.has_by_name(StorageResource.RESOURCE_NAME)
+    expect_true(registry.has_by_name(StorageResource.RESOURCE_NAME))
 
 
 def test_storage_resource_retrieval(graph_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -77,8 +79,8 @@ def test_storage_resource_retrieval(graph_gateway: StorageGateway, tmp_path: Pat
 
     retrieved = typing.cast("StorageResource", registry.get_by_name(StorageResource.RESOURCE_NAME))
 
-    assert retrieved is resource
-    assert retrieved.gateway is graph_gateway
+    expect_true(retrieved is resource)
+    expect_true(retrieved.gateway is graph_gateway)
 
 
 def test_storage_resource_require(graph_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -89,7 +91,7 @@ def test_storage_resource_require(graph_gateway: StorageGateway, tmp_path: Path)
 
     required = registry.require_by_name(StorageResource.RESOURCE_NAME)
 
-    assert required is resource
+    expect_true(required is resource)
 
 
 def test_storage_resource_not_registered() -> None:
@@ -117,14 +119,14 @@ def test_storage_resource_path_absolute(graph_gateway: StorageGateway, tmp_path:
     """StorageResource handles absolute paths."""
     resource = StorageResource(graph_gateway, tmp_path)
 
-    assert resource.repo_root.is_absolute()
+    expect_true(resource.repo_root.is_absolute())
 
 
 def test_storage_resource_path_is_pathlib(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource repo_root is pathlib.Path."""
     resource = StorageResource(graph_gateway, tmp_path)
 
-    assert isinstance(resource.repo_root, Path)
+    expect_is_instance(resource.repo_root, Path)
 
 
 def test_storage_resource_different_paths(graph_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -137,8 +139,8 @@ def test_storage_resource_different_paths(graph_gateway: StorageGateway, tmp_pat
     resource1 = StorageResource(graph_gateway, path1)
     resource2 = StorageResource(graph_gateway, path2)
 
-    assert resource1.repo_root != resource2.repo_root
-    assert resource1.gateway is resource2.gateway  # Same gateway
+    expect_true(resource1.repo_root != resource2.repo_root)
+    expect_true(resource1.gateway is resource2.gateway)  # Same gateway
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +155,9 @@ def test_storage_resource_connection_usable(graph_gateway: StorageGateway, tmp_p
     # Should be able to execute a simple query
     result = resource.gateway.con.execute("SELECT 1 AS value").fetchone()
 
-    assert result is not None
-    assert result[0] == 1
+    expect_true(result is not None)
+    if result is not None:
+        expect_equal(result[0], 1)
 
 
 def test_storage_resource_multiple_resources_same_gateway(
@@ -165,4 +168,4 @@ def test_storage_resource_multiple_resources_same_gateway(
     resource2 = StorageResource(graph_gateway, tmp_path / "b")
 
     # Both should reference same connection
-    assert resource1.gateway.con is resource2.gateway.con
+    expect_true(resource1.gateway.con is resource2.gateway.con)

@@ -15,6 +15,11 @@ import pytest
 from codeintel.core.config.accessor import ConfigAccessor
 from codeintel.core.config.registry import ConfigRegistry
 from codeintel.core.plugins.execution.context import ConfigProvider
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 
 # =============================================================================
 # Test Configuration Classes
@@ -44,28 +49,28 @@ def test_config_provider_implements_accessor() -> None:
     """Verify that ConfigProvider implements ConfigAccessor protocol."""
     provider = ConfigProvider()
 
-    assert isinstance(provider, ConfigAccessor)
+    expect_is_instance(provider, ConfigAccessor)
 
 
 def test_config_registry_implements_accessor() -> None:
     """Verify that ConfigRegistry implements ConfigAccessor protocol."""
     registry = ConfigRegistry()
 
-    assert isinstance(registry, ConfigAccessor)
+    expect_is_instance(registry, ConfigAccessor)
 
 
 def test_config_accessor_is_runtime_checkable() -> None:
     """Verify that ConfigAccessor is a runtime_checkable protocol."""
     # The protocol should be checkable at runtime
-    assert hasattr(ConfigAccessor, "__protocol_attrs__") or hasattr(
-        ConfigAccessor, "__subclasshook__"
+    expect_true(
+        hasattr(ConfigAccessor, "__protocol_attrs__") or hasattr(ConfigAccessor, "__subclasshook__")
     )
 
     # Non-conforming classes should not pass isinstance check
     class NotAnAccessor:
         pass
 
-    assert not isinstance(NotAnAccessor(), ConfigAccessor)
+    expect_true(not isinstance(NotAnAccessor(), ConfigAccessor))
 
 
 # =============================================================================
@@ -80,7 +85,7 @@ def test_config_provider_get_registered(config_provider: ConfigProvider) -> None
 
     result = config_provider.get(TestConfig)
 
-    assert result is config
+    expect_true(result is config)
 
 
 def test_config_provider_get_raises_for_missing() -> None:
@@ -99,7 +104,7 @@ def test_config_provider_get_optional_returns_config() -> None:
 
     result = provider.get_optional(TestConfig)
 
-    assert result is config
+    expect_true(result is config)
 
 
 def test_config_provider_get_optional_returns_none() -> None:
@@ -108,7 +113,7 @@ def test_config_provider_get_optional_returns_none() -> None:
 
     result = provider.get_optional(TestConfig)
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_config_provider_has_returns_true() -> None:
@@ -116,14 +121,14 @@ def test_config_provider_has_returns_true() -> None:
     provider = ConfigProvider()
     provider.register(TestConfig, TestConfig(value="test"))
 
-    assert provider.has(TestConfig)
+    expect_true(provider.has(TestConfig))
 
 
 def test_config_provider_has_returns_false() -> None:
     """Verify that ConfigProvider.has() returns False for unregistered config."""
     provider = ConfigProvider()
 
-    assert not provider.has(TestConfig)
+    expect_true(not provider.has(TestConfig))
 
 
 def test_config_provider_register_adds_config() -> None:
@@ -133,8 +138,8 @@ def test_config_provider_register_adds_config() -> None:
 
     provider.register(TestConfig, config)
 
-    assert provider.has(TestConfig)
-    assert provider.get(TestConfig) is config
+    expect_true(provider.has(TestConfig))
+    expect_true(provider.get(TestConfig) is config)
 
 
 def test_config_provider_initialized_with_configs() -> None:
@@ -149,8 +154,8 @@ def test_config_provider_initialized_with_configs() -> None:
         }
     )
 
-    assert provider.get(TestConfig) is config
-    assert provider.get(AnotherConfig) is another
+    expect_true(provider.get(TestConfig) is config)
+    expect_true(provider.get(AnotherConfig) is another)
 
 
 # =============================================================================
@@ -168,7 +173,7 @@ def test_config_registry_get_as_accessor() -> None:
     accessor: ConfigAccessor = registry
     result = accessor.get(TestConfig)
 
-    assert result is config
+    expect_true(result is config)
 
 
 def test_config_registry_get_optional_as_accessor() -> None:
@@ -178,7 +183,7 @@ def test_config_registry_get_optional_as_accessor() -> None:
     accessor: ConfigAccessor = registry
     result = accessor.get_optional(TestConfig)
 
-    assert result is None
+    expect_true(result is None)
 
 
 def test_config_registry_has_as_accessor() -> None:
@@ -188,8 +193,8 @@ def test_config_registry_has_as_accessor() -> None:
 
     accessor: ConfigAccessor = registry
 
-    assert accessor.has(TestConfig)
-    assert not accessor.has(AnotherConfig)
+    expect_true(accessor.has(TestConfig))
+    expect_true(not accessor.has(AnotherConfig))
 
 
 def test_config_registry_register_as_accessor() -> None:
@@ -200,7 +205,7 @@ def test_config_registry_register_as_accessor() -> None:
     accessor: ConfigAccessor = registry
     accessor.register(TestConfig, config)
 
-    assert accessor.has(TestConfig)
+    expect_true(accessor.has(TestConfig))
 
 
 # =============================================================================
@@ -219,7 +224,7 @@ def test_function_accepting_accessor_with_provider() -> None:
 
     result = get_config_value(provider)
 
-    assert result == "from_provider"
+    expect_equal(result, "from_provider")
 
 
 def test_function_accepting_accessor_with_registry() -> None:
@@ -234,7 +239,7 @@ def test_function_accepting_accessor_with_registry() -> None:
 
     result = get_config_value(registry)
 
-    assert result == "from_registry"
+    expect_equal(result, "from_registry")
 
 
 def test_optional_config_retrieval_polymorphic() -> None:
@@ -246,18 +251,18 @@ def test_optional_config_retrieval_polymorphic() -> None:
 
     # With provider that has the config
     provider_with = ConfigProvider({AnotherConfig: AnotherConfig(number=42)})
-    assert get_optional_number(provider_with) == 42
+    expect_equal(get_optional_number(provider_with), 42)
 
     # With provider that doesn't have the config
     provider_without = ConfigProvider()
-    assert get_optional_number(provider_without) is None
+    expect_true(get_optional_number(provider_without) is None)
 
     # With registry
     registry = ConfigRegistry()
-    assert get_optional_number(registry) is None
+    expect_true(get_optional_number(registry) is None)
 
     registry.register(AnotherConfig, AnotherConfig(number=100))
-    assert get_optional_number(registry) == 100
+    expect_equal(get_optional_number(registry), 100)
 
 
 def test_config_presence_check_polymorphic() -> None:
@@ -269,11 +274,11 @@ def test_config_presence_check_polymorphic() -> None:
     provider = ConfigProvider()
     registry = ConfigRegistry()
 
-    assert not has_test_config(provider)
-    assert not has_test_config(registry)
+    expect_true(not has_test_config(provider))
+    expect_true(not has_test_config(registry))
 
     provider.register(TestConfig, TestConfig(value="p"))
     registry.register(TestConfig, TestConfig(value="r"))
 
-    assert has_test_config(provider)
-    assert has_test_config(registry)
+    expect_true(has_test_config(provider))
+    expect_true(has_test_config(registry))

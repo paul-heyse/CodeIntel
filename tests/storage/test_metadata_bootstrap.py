@@ -17,6 +17,13 @@ from codeintel.storage.metadata import (
     validate_normalized_macro_schemas,
 )
 from codeintel.storage.repositories import DataflowRepository
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_not_empty,
+    expect_true,
+)
 from tests._helpers.gateway import gateway_with_macros
 
 
@@ -35,7 +42,7 @@ def test_metadata_bootstrap_populates_catalog() -> None:
     if count_row is None:
         pytest.fail("metadata.datasets count missing")
         return
-    _require(int(count_row[0]) > 0, "metadata.datasets is empty")
+    expect_true(int(count_row[0]) > 0, message="metadata.datasets is empty")
 
     registry = load_dataset_registry(con)
     dataset = registry.by_name.get("function_validation")
@@ -89,12 +96,12 @@ def test_load_dataset_schema_registry(fresh_gateway: StorageGateway) -> None:
 
     registry = load_dataset_schema_registry(con)
 
-    assert isinstance(registry, dict)
-    assert len(registry) > 0
+    expect_is_instance(registry, dict)
+    expect_not_empty(registry)
 
     for key, value in registry.items():
-        assert "." in key
-        assert isinstance(value, str)
+        expect_in(".", key)
+        expect_is_instance(value, str)
 
 
 def test_load_macro_registry(fresh_gateway: StorageGateway) -> None:
@@ -110,22 +117,22 @@ def test_load_macro_registry(fresh_gateway: StorageGateway) -> None:
 
     registry = load_macro_registry(con)
 
-    assert isinstance(registry, dict)
-    assert len(registry) > 0
-    assert "test_macro" in registry
+    expect_is_instance(registry, dict)
+    expect_not_empty(registry)
+    expect_in("test_macro", registry)
 
     table_key, ddl_hash, schema_hash = registry["test_macro"]
-    assert table_key == "core.test"
-    assert ddl_hash == "hash123"
-    assert schema_hash == "schemahash456"
+    expect_equal(table_key, "core.test")
+    expect_equal(ddl_hash, "hash123")
+    expect_equal(schema_hash, "schemahash456")
 
 
 def test_dataset_rows_only_entries_returns_list() -> None:
     """Verify dataset_rows_only_entries returns sorted list of allowed datasets."""
     entries = dataset_rows_only_entries()
 
-    assert isinstance(entries, list)
-    assert entries == sorted(entries)
+    expect_is_instance(entries, list)
+    expect_equal(entries, sorted(entries))
 
 
 def test_validate_macro_registry_success(fresh_gateway: StorageGateway) -> None:
@@ -156,11 +163,11 @@ def test_ingest_macro_coverage_returns_present_and_missing(
     missing, present = ingest_macro_coverage(con)
 
     # Both should be lists
-    assert isinstance(missing, list)
-    assert isinstance(present, list)
+    expect_is_instance(missing, list)
+    expect_is_instance(present, list)
 
     # On a bootstrapped DB, most/all macros should be present
-    assert len(present) > 0
+    expect_not_empty(present)
 
 
 def test_validate_dataset_schema_registry_success(

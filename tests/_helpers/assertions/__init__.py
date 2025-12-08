@@ -22,11 +22,21 @@ from tests._helpers.assertions.common import (
 from tests._helpers.assertions.coverage_assertions import assert_single_edge
 from tests._helpers.assertions.dataclass_assertions import assert_cannot_setattr
 from tests._helpers.assertions.expectation_assertions import (
+    expect_empty,
     expect_equal,
+    expect_false,
     expect_in,
     expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
     expect_length,
+    expect_not_empty,
+    expect_not_equal,
+    expect_not_in,
     expect_true,
+    require_row,
+    require_rows,
+    unwrap_optional,
 )
 from tests._helpers.assertions.schema_assertions import (
     assert_mapping_list,
@@ -55,10 +65,20 @@ __all__ = [
     "assert_table_has_rows",
     "assert_valid",
     "assert_validation_error",
+    "expect_empty",
     "expect_equal",
+    "expect_false",
     "expect_in",
     "expect_is_instance",
+    "expect_is_none",
+    "expect_is_not_none",
     "expect_length",
+    "expect_not_empty",
+    "expect_not_equal",
+    "expect_not_in",
     "expect_true",
     "format_assertion_message",
+    "require_row",
+    "require_rows",
+    "unwrap_optional",
 ]

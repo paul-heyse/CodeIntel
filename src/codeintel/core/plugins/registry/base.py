@@ -15,7 +15,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, cast, runtime_checkable
+from typing import Protocol, TypeGuard, TypeVar, runtime_checkable
 
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.plugins.registry.sorting import (
@@ -25,6 +25,35 @@ from codeintel.core.plugins.registry.sorting import (
 from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
+
+P = TypeVar("P", bound="RegistrablePlugin")
+P_co = TypeVar("P_co", bound="RegistrablePlugin", covariant=True)
+
+
+# =============================================================================
+# Hooks Protocol
+# =============================================================================
+
+
+class RegistryHooks(Protocol[P_co]):
+    """Hook contract for registry-specific behaviors."""
+
+    @property
+    def entrypoint_group(self) -> str:
+        """Entrypoint group name for discovery."""
+        ...
+
+    def load_builtins(self) -> None:
+        """Load built-in plugins into the registry context."""
+        ...
+
+    def resolve_entrypoint(self, loaded: object) -> P_co | None:
+        """Convert a loaded entrypoint object into a plugin instance."""
+        ...
+
+    def is_valid_plugin(self, obj: object) -> TypeGuard[P_co]:
+        """Validate a plugin instance."""
+        ...
 
 
 # =============================================================================
@@ -50,6 +79,261 @@ class RegistrablePlugin(Protocol):
             Metadata describing the plugin.
         """
         ...
+
+
+# =============================================================================
+# Default Hooks
+# =============================================================================
+
+
+class DefaultRegistryHooks(RegistryHooks[P]):
+    """Default hooks implementation for generic plugin registries."""
+
+    def __init__(self, entrypoint_group: str = "codeintel.plugins") -> None:
+        """Initialize default hooks."""
+        self._entrypoint_group = entrypoint_group
+
+    @property
+    def entrypoint_group(self) -> str:
+        """Return default entry point group name."""
+        return self._entrypoint_group
+
+    def load_builtins(self) -> None:
+        """Perform no-op builtins load for generic registries."""
+        _ = self._entrypoint_group
+
+    def resolve_entrypoint(self, loaded: object) -> P | None:
+        """Return the loaded object if it is a valid plugin.
+
+        Returns
+        -------
+        P | None
+            Validated plugin instance or None if invalid.
+        """
+        if self.is_valid_plugin(loaded):
+            return loaded
+        return None
+
+    def is_valid_plugin(self, obj: object) -> TypeGuard[P]:
+        """Validate plugin using the RegistrablePlugin protocol.
+
+        Returns
+        -------
+        TypeGuard[P]
+            True when the object satisfies the plugin protocol.
+        """
+        _ = self._entrypoint_group
+        return isinstance(obj, RegistrablePlugin)
+
+
+# =============================================================================
+# Registry Entries and Provider Index
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class RegistryEntry[P: RegistrablePlugin]:
+    """Typed registry entry capturing plugin and metadata."""
+
+    name: str
+    plugin: P
+    metadata: PluginMetadata
+
+
+class _ProviderRegistry[P: RegistrablePlugin]:
+    """Internal provider registry with indexing."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, RegistryEntry[P]] = {}
+        self._by_capability: dict[str, set[str]] = {}
+        self._by_stage: dict[str, set[str]] = {}
+        self._by_kind: dict[str, set[str]] = {}
+        self._by_table: dict[str, set[str]] = {}
+
+    def register(self, plugin: P) -> RegistryEntry[P]:
+        """Register plugin and index metadata.
+
+        Parameters
+        ----------
+        plugin
+            Plugin to register.
+
+        Returns
+        -------
+        RegistryEntry[P]
+            Created registry entry.
+
+        Raises
+        ------
+        ValueError
+            If the plugin name is already registered.
+        """
+        meta = plugin.metadata
+        if meta.name in self._entries:
+            message = f"Duplicate plugin name: {meta.name}"
+            raise ValueError(message)
+        entry = RegistryEntry(name=meta.name, plugin=plugin, metadata=meta)
+        self._entries[meta.name] = entry
+        self._index(entry)
+        return entry
+
+    def unregister(self, name: str) -> RegistryEntry[P] | None:
+        """Unregister plugin and remove indexes.
+
+        Parameters
+        ----------
+        name
+            Plugin name to remove.
+
+        Returns
+        -------
+        RegistryEntry[P] | None
+            Removed entry, or None if not present.
+        """
+        entry = self._entries.pop(name, None)
+        if entry is None:
+            return None
+        self._unindex(entry)
+        return entry
+
+    def contains(self, name: str) -> bool:
+        """Return True if plugin is registered.
+
+        Returns
+        -------
+        bool
+            True when a plugin with the given name is present.
+        """
+        return name in self._entries
+
+    def get_entry(self, name: str) -> RegistryEntry[P]:
+        """Get registry entry by name.
+
+        Parameters
+        ----------
+        name
+            Plugin name.
+
+        Returns
+        -------
+        RegistryEntry[P]
+            Registry entry containing plugin and metadata.
+
+        Raises
+        ------
+        KeyError
+            If the plugin is not registered.
+        """
+        if name not in self._entries:
+            message = f"Unknown plugin: {name}"
+            raise KeyError(message)
+        return self._entries[name]
+
+    def list_plugins(self) -> tuple[P, ...]:
+        """List all registered plugins.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Plugins in registration order.
+        """
+        return tuple(entry.plugin for entry in self._entries.values())
+
+    def list_names(self) -> tuple[str, ...]:
+        """List registered plugin names.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Plugin names in registration order.
+        """
+        return tuple(self._entries.keys())
+
+    def list_by_stage(self, stage: str) -> tuple[P, ...]:
+        """List plugins for a stage.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Plugins that belong to the stage.
+        """
+        names = self._by_stage.get(stage, set())
+        return tuple(self._entries[name].plugin for name in names if name in self._entries)
+
+    def list_by_kind(self, kind: str) -> tuple[P, ...]:
+        """List plugins for a kind.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Plugins of the requested kind.
+        """
+        names = self._by_kind.get(kind, set())
+        return tuple(self._entries[name].plugin for name in names if name in self._entries)
+
+    def list_providing(self, capability: str) -> tuple[P, ...]:
+        """List plugins providing a capability.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Plugins that declare the capability.
+        """
+        names = self._by_capability.get(capability, set())
+        return tuple(self._entries[name].plugin for name in names if name in self._entries)
+
+    def list_by_table(self, table_key: str) -> tuple[P, ...]:
+        """List plugins producing a table.
+
+        Returns
+        -------
+        tuple[P, ...]
+            Plugins that produce the table key.
+        """
+        names = self._by_table.get(table_key, set())
+        return tuple(self._entries[name].plugin for name in names if name in self._entries)
+
+    def dependency_graph(self) -> dict[str, tuple[str, ...]]:
+        """Dependency graph keyed by plugin name.
+
+        Returns
+        -------
+        dict[str, tuple[str, ...]]
+            Map of plugin name to its direct dependencies.
+        """
+        return {name: entry.metadata.depends_on for name, entry in self._entries.items()}
+
+    def metadata_for(self, name: str) -> PluginMetadata:
+        """Metadata for a registered plugin.
+
+        Returns
+        -------
+        PluginMetadata
+            Metadata associated with the plugin.
+        """
+        return self.get_entry(name).metadata
+
+    def _index(self, entry: RegistryEntry[P]) -> None:
+        meta = entry.metadata
+        for cap in meta.provides:
+            self._by_capability.setdefault(cap, set()).add(meta.name)
+        self._by_stage.setdefault(meta.stage, set()).add(meta.name)
+        self._by_kind.setdefault(meta.kind, set()).add(meta.name)
+        for table in meta.produces_tables:
+            self._by_table.setdefault(table, set()).add(meta.name)
+
+    def _unindex(self, entry: RegistryEntry[P]) -> None:
+        meta = entry.metadata
+        for cap in meta.provides:
+            if cap in self._by_capability:
+                self._by_capability[cap].discard(meta.name)
+        if meta.stage in self._by_stage:
+            self._by_stage[meta.stage].discard(meta.name)
+        if meta.kind in self._by_kind:
+            self._by_kind[meta.kind].discard(meta.name)
+        for table in meta.produces_tables:
+            if table in self._by_table:
+                self._by_table[table].discard(meta.name)
 
 
 # =============================================================================
@@ -129,13 +413,10 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         The plugin protocol type this registry manages.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, hooks: RegistryHooks[P] | None = None) -> None:
         """Initialize an empty registry."""
-        self._plugins: dict[str, P] = {}
-        self._by_capability: dict[str, set[str]] = {}
-        self._by_stage: dict[str, set[str]] = {}
-        self._by_kind: dict[str, set[str]] = {}
-        self._by_table: dict[str, set[str]] = {}
+        self._hooks: RegistryHooks[P] = hooks or DefaultRegistryHooks[P]()
+        self._providers: _ProviderRegistry[P] = _ProviderRegistry()
         self._entrypoints_loaded: bool = False
         self._builtins_loaded: bool = False
 
@@ -143,27 +424,22 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
     # Registration
     # -------------------------------------------------------------------------
 
-    def register(self, plugin: P) -> None:
+    def register(self, plugin: P) -> RegistryEntry[P]:
         """Register a plugin instance.
 
-        Parameters
-        ----------
-        plugin
-            Plugin instance implementing the plugin protocol.
-
-        Raises
-        ------
-        ValueError
-            If a plugin with the same name is already registered.
+        Returns
+        -------
+        RegistryEntry[P]
+            Registry entry created for the plugin.
         """
-        meta = plugin.metadata
-        if meta.name in self._plugins:
-            message = f"Duplicate plugin name: {meta.name}"
-            raise ValueError(message)
-
-        self._plugins[meta.name] = plugin
-        self._index_plugin(meta)
-        log.debug("Registered plugin %s (kind=%s, stage=%s)", meta.name, meta.kind, meta.stage)
+        entry = self._providers.register(plugin)
+        log.debug(
+            "Registered plugin %s (kind=%s, stage=%s)",
+            entry.name,
+            entry.metadata.kind,
+            entry.metadata.stage,
+        )
+        return entry
 
     def unregister(self, name: str) -> None:
         """Remove a plugin from the registry.
@@ -173,44 +449,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         name
             Plugin name to remove.
         """
-        plugin = self._plugins.pop(name, None)
-        if plugin is None:
-            return
-        self._unindex_plugin(plugin.metadata)
-
-    def _index_plugin(self, meta: PluginMetadata) -> None:
-        """Index plugin by capabilities, stage, kind, and tables.
-
-        Parameters
-        ----------
-        meta
-            Plugin metadata to index.
-        """
-        for cap in meta.provides:
-            self._by_capability.setdefault(cap, set()).add(meta.name)
-        self._by_stage.setdefault(meta.stage, set()).add(meta.name)
-        self._by_kind.setdefault(meta.kind, set()).add(meta.name)
-        for table in meta.produces_tables:
-            self._by_table.setdefault(table, set()).add(meta.name)
-
-    def _unindex_plugin(self, meta: PluginMetadata) -> None:
-        """Remove plugin from indices.
-
-        Parameters
-        ----------
-        meta
-            Plugin metadata to unindex.
-        """
-        for cap in meta.provides:
-            if cap in self._by_capability:
-                self._by_capability[cap].discard(meta.name)
-        if meta.stage in self._by_stage:
-            self._by_stage[meta.stage].discard(meta.name)
-        if meta.kind in self._by_kind:
-            self._by_kind[meta.kind].discard(meta.name)
-        for table in meta.produces_tables:
-            if table in self._by_table:
-                self._by_table[table].discard(meta.name)
+        self._providers.unregister(name)
 
     # -------------------------------------------------------------------------
     # Lookup
@@ -235,10 +474,10 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             If no plugin is registered with the given name.
         """
         self._ensure_loaded()
-        if name not in self._plugins:
-            message = f"Unknown plugin: {name}"
-            raise KeyError(message)
-        return self._plugins[name]
+        try:
+            return self._providers.get_entry(name).plugin
+        except KeyError as exc:
+            raise KeyError(str(exc)) from exc
 
     def contains(self, name: str) -> bool:
         """Check if a plugin is registered.
@@ -254,7 +493,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             True if registered.
         """
         self._ensure_loaded()
-        return name in self._plugins
+        return self._providers.contains(name)
 
     def list_all(self) -> tuple[P, ...]:
         """Return all registered plugins.
@@ -265,7 +504,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             All registered plugins in registration order.
         """
         self._ensure_loaded()
-        return tuple(self._plugins.values())
+        return self._providers.list_plugins()
 
     def list_names(self) -> tuple[str, ...]:
         """Return names of all registered plugins.
@@ -276,7 +515,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugin names in registration order.
         """
         self._ensure_loaded()
-        return tuple(self._plugins.keys())
+        return self._providers.list_names()
 
     def list_by_stage(self, stage: str) -> tuple[P, ...]:
         """Return plugins belonging to a specific stage.
@@ -292,8 +531,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugins in the specified stage.
         """
         self._ensure_loaded()
-        names = self._by_stage.get(stage, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
+        return self._providers.list_by_stage(stage)
 
     def list_by_kind(self, kind: str) -> tuple[P, ...]:
         """Return plugins of a specific kind.
@@ -309,8 +547,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugins of the specified kind.
         """
         self._ensure_loaded()
-        names = self._by_kind.get(kind, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
+        return self._providers.list_by_kind(kind)
 
     def list_providing(self, capability: str) -> tuple[P, ...]:
         """Return plugins that provide a specific capability.
@@ -326,8 +563,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugins providing the capability.
         """
         self._ensure_loaded()
-        names = self._by_capability.get(capability, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
+        return self._providers.list_providing(capability)
 
     def list_by_table(self, table_key: str) -> tuple[P, ...]:
         """Return plugins that produce a specific table.
@@ -343,8 +579,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugins producing the table.
         """
         self._ensure_loaded()
-        names = self._by_table.get(table_key, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
+        return self._providers.list_by_table(table_key)
 
     def metadata_for(self, name: str) -> PluginMetadata:
         """Return metadata for a plugin.
@@ -359,7 +594,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         PluginMetadata
             Plugin metadata.
         """
-        return self.get(name).metadata
+        return self._providers.metadata_for(name)
 
     def dependency_graph(self) -> dict[str, tuple[str, ...]]:
         """Return mapping of plugin name to direct dependencies.
@@ -370,7 +605,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Direct dependency map keyed by plugin name.
         """
         self._ensure_loaded()
-        return {name: plugin.metadata.depends_on for name, plugin in self._plugins.items()}
+        return self._providers.dependency_graph()
 
     # -------------------------------------------------------------------------
     # Planning Utilities
@@ -575,10 +810,12 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         self._ensure_builtins_loaded()
         self._ensure_entrypoints_loaded()
 
-    @abstractmethod
     def _ensure_builtins_loaded(self) -> None:
         """Load built-in plugins if not already done."""
-        ...
+        if self._builtins_loaded:
+            return
+        self._hooks.load_builtins()
+        self._builtins_loaded = True
 
     def _ensure_entrypoints_loaded(self) -> None:
         """Load plugins from entry points if not already done."""
@@ -590,19 +827,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
     # Entry Point Discovery
     # -------------------------------------------------------------------------
 
-    @property
-    def _default_entrypoint_group(self) -> str:
-        """Return the default entry point group for this registry.
-
-        Override in subclasses to specify a domain-specific group.
-
-        Returns
-        -------
-        str
-            Entry point group name.
-        """
-        return "codeintel.plugins"
-
     def load_from_entrypoints(
         self,
         *,
@@ -612,13 +836,12 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         """Discover and register plugins from entry points.
 
         This method loads plugins from Python entry points, resolving each
-        entry point through `_resolve_entrypoint()` which subclasses can
-        override for domain-specific resolution logic.
+        entry point through the configured hooks for domain-specific resolution.
 
         Parameters
         ----------
         group
-            Entry point group to load from. Defaults to `_default_entrypoint_group`.
+            Entry point group to load from. Defaults to hooks.entrypoint_group.
         force
             Whether to reload even if already loaded.
 
@@ -630,7 +853,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         if self._entrypoints_loaded and not force:
             return ()
 
-        effective_group = group or self._default_entrypoint_group
+        effective_group = group or self._hooks.entrypoint_group
         discovered: list[P] = []
         eps = importlib.metadata.entry_points()
         selected = eps.select(group=effective_group)
@@ -638,7 +861,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         for entry_point in selected:
             try:
                 loaded = entry_point.load()
-                plugin = self._resolve_entrypoint(loaded)
+                plugin = self._hooks.resolve_entrypoint(loaded)
                 if plugin is not None:
                     self.register(plugin)
                     discovered.append(plugin)
@@ -658,49 +881,13 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         self._entrypoints_loaded = True
         return tuple(discovered)
 
-    def _resolve_entrypoint(self, loaded: object) -> P | None:
-        """Resolve an entry point object to a plugin instance.
-
-        Override in subclasses for domain-specific resolution logic
-        (e.g., handling callable factories).
-
-        Parameters
-        ----------
-        loaded
-            The object loaded from the entry point.
-
-        Returns
-        -------
-        P | None
-            A valid plugin instance, or None if resolution failed.
-        """
-        if self._is_valid_plugin(loaded):
-            return cast("P", loaded)
-        return None
-
-    def _is_valid_plugin(self, obj: object) -> bool:
-        """Check if an object is a valid plugin for this registry.
-
-        Override in subclasses for domain-specific validation.
-
-        Parameters
-        ----------
-        obj
-            Object to validate.
-
-        Returns
-        -------
-        bool
-            True if the object is a valid plugin.
-        """
-        # Access self to satisfy PLR6301 while also checking for RegistrablePlugin
-        _ = self._entrypoints_loaded  # Ensure registry state is accessible
-        return isinstance(obj, RegistrablePlugin)
-
 
 __all__ = [
     "BasePluginRegistry",
+    "DefaultRegistryHooks",
     "PluginPlan",
     "PluginSkip",
     "RegistrablePlugin",
+    "RegistryEntry",
+    "RegistryHooks",
 ]

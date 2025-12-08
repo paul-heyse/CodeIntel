@@ -13,6 +13,13 @@ from codeintel.storage.tracking import (
     PipelineStepRecord,
     StepCompletionParams,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_none,
+    expect_is_not_none,
+    expect_length,
+)
 from tests._helpers.factories import make_snapshot
 
 
@@ -29,9 +36,9 @@ def test_pipeline_run_record_stores_fields() -> None:
         started_at=now,
     )
 
-    assert record.run_id == "run-123"
-    assert record.repo == "test/repo"
-    assert record.status == "running"
+    expect_equal(record.run_id, "run-123")
+    expect_equal(record.repo, "test/repo")
+    expect_equal(record.status, "running")
 
 
 def test_pipeline_step_record_stores_fields() -> None:
@@ -46,9 +53,9 @@ def test_pipeline_step_record_stores_fields() -> None:
         started_at=now,
     )
 
-    assert record.run_id == "run-123"
-    assert record.module == "ingestion"
-    assert record.status == "succeeded"
+    expect_equal(record.run_id, "run-123")
+    expect_equal(record.module, "ingestion")
+    expect_equal(record.status, "succeeded")
 
 
 def test_step_completion_params_to_record() -> None:
@@ -66,10 +73,10 @@ def test_step_completion_params_to_record() -> None:
 
     record = params.to_record()
 
-    assert isinstance(record, PipelineStepRecord)
-    assert record.run_id == "run-123"
-    assert record.status == "succeeded"
-    assert record.completed_at is not None
+    expect_is_instance(record, PipelineStepRecord)
+    expect_equal(record.run_id, "run-123")
+    expect_equal(record.status, "succeeded")
+    expect_is_not_none(record.completed_at)
 
 
 def _make_run_context(run_id: str, tmp_path: Path) -> RunContext:
@@ -110,7 +117,7 @@ def test_start_run_inserts_record(fresh_gateway: StorageGateway, tmp_path: Path)
         ["run-test-1"],
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_complete_run_updates_status(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -127,8 +134,8 @@ def test_complete_run_updates_status(fresh_gateway: StorageGateway, tmp_path: Pa
         ["run-test-2"],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "succeeded"
+    row = expect_is_not_none(result)
+    expect_equal(row[0], "succeeded")
 
 
 def test_complete_run_with_error_summary(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -145,8 +152,8 @@ def test_complete_run_with_error_summary(fresh_gateway: StorageGateway, tmp_path
         ["run-test-3"],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "Test error occurred"
+    row = expect_is_not_none(result)
+    expect_equal(row[0], "Test error occurred")
 
 
 def test_fetch_run_returns_record(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -157,11 +164,10 @@ def test_fetch_run_returns_record(fresh_gateway: StorageGateway, tmp_path: Path)
 
     tracking.start_run(ctx, pipeline_name="Fetch Test")
 
-    record = tracking.fetch_run("run-test-4")
+    record = expect_is_not_none(tracking.fetch_run("run-test-4"))
 
-    assert record is not None
-    assert isinstance(record, PipelineRunRecord)
-    assert record.run_id == "run-test-4"
+    expect_is_instance(record, PipelineRunRecord)
+    expect_equal(record.run_id, "run-test-4")
 
 
 def test_fetch_run_returns_none_for_missing(
@@ -173,7 +179,7 @@ def test_fetch_run_returns_none_for_missing(
 
     record = tracking.fetch_run("nonexistent-run")
 
-    assert record is None
+    expect_is_none(record)
 
 
 def test_record_step_inserts_step(fresh_gateway: StorageGateway) -> None:
@@ -205,7 +211,7 @@ def test_record_step_inserts_step(fresh_gateway: StorageGateway) -> None:
         ["run-step-1", "file_scanner"],
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)
 
 
 def test_fetch_steps_returns_list(fresh_gateway: StorageGateway) -> None:
@@ -236,9 +242,9 @@ def test_fetch_steps_returns_list(fresh_gateway: StorageGateway) -> None:
 
     steps = tracking.fetch_steps("run-fetch-steps")
 
-    assert isinstance(steps, list)
+    expect_is_instance(steps, list)
     expected_step_count = 2
-    assert len(steps) == expected_step_count
+    expect_length(steps, expected_step_count)
 
 
 def test_fetch_steps_orders_by_module_stage_name(
@@ -271,7 +277,7 @@ def test_fetch_steps_orders_by_module_stage_name(
 
     steps = tracking.fetch_steps("run-order-test")
 
-    assert steps[0].module == "analytics"
+    expect_equal(steps[0].module, "analytics")
 
 
 def test_start_step_returns_timestamp(fresh_gateway: StorageGateway) -> None:
@@ -286,8 +292,8 @@ def test_start_step_returns_timestamp(fresh_gateway: StorageGateway) -> None:
         name="graph_builder",
     )
 
-    assert isinstance(started_at, datetime)
-    assert started_at.tzinfo is not None
+    expect_is_instance(started_at, datetime)
+    expect_is_not_none(started_at.tzinfo)
 
 
 def test_complete_step_updates_step(fresh_gateway: StorageGateway) -> None:
@@ -323,8 +329,8 @@ def test_complete_step_updates_step(fresh_gateway: StorageGateway) -> None:
         ["run-complete-step", "test_plugin"],
     ).fetchone()
 
-    assert result is not None
-    assert result[0] == "succeeded"
+    row = expect_is_not_none(result)
+    expect_equal(row[0], "succeeded")
 
 
 def test_record_step_with_none_row_counts(
@@ -353,4 +359,4 @@ def test_record_step_with_none_row_counts(
         ["run-none-counts"],
     ).fetchone()
 
-    assert result is not None
+    expect_is_not_none(result)

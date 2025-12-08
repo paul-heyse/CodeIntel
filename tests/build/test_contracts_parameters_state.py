@@ -22,6 +22,13 @@ from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.build import sample_manifest
 
 
@@ -102,41 +109,41 @@ def test_output_contract_accessors_and_validation() -> None:
     artifact = ArtifactSpec(name="index", path_template="{build_dir}/index.scip")
     contract = OutputContract(tables=(table,), artifacts=(artifact,))
 
-    assert contract.table_keys == ("core.items",)
-    assert contract.artifact_names == ("index",)
-    assert contract.get_table("core.items") is table
-    assert contract.get_table("core.missing") is None
-    assert contract.get_artifact("index") is artifact
-    assert contract.get_artifact("missing") is None
-    assert contract.validate() == []
+    expect_equal(contract.table_keys, ("core.items",))
+    expect_equal(contract.artifact_names, ("index",))
+    expect_true(contract.get_table("core.items") is table)
+    expect_is_none(contract.get_table("core.missing"))
+    expect_true(contract.get_artifact("index") is artifact)
+    expect_is_none(contract.get_artifact("missing"))
+    expect_equal(contract.validate(), [])
 
     duplicate = OutputContract(
         tables=(table, table),
         artifacts=(artifact, ArtifactSpec(name="index", path_template="path")),
     )
     errors = duplicate.validate()
-    assert "Duplicate table key" in errors[0]
-    assert any("Duplicate artifact name" in err for err in errors)
+    expect_true("Duplicate table key" in errors[0])
+    expect_true(any("Duplicate artifact name" in err for err in errors))
 
     empty_columns = OutputContract(tables=(TableSchema(schema="core", name="empty", columns=[]),))
     empty_errors = empty_columns.validate()
-    assert any("has no columns" in err for err in empty_errors)
+    expect_true(any("has no columns" in err for err in empty_errors))
 
 
 def test_target_parameters_access_and_merge() -> None:
     """TargetParameters enforces types and supports merging."""
     params = TargetParameters({"count": 5, "name": "test"})
-    assert params.get("count", int) == 5
-    assert params.get("name", str) == "test"
-    assert params.get("missing", str, default="fallback") == "fallback"
-    assert params.get_optional("missing", int) is None
-    assert params.has("count") is True
+    expect_equal(params.get("count", int), 5)
+    expect_equal(params.get("name", str), "test")
+    expect_equal(params.get("missing", str, default="fallback"), "fallback")
+    expect_is_none(params.get_optional("missing", int))
+    expect_true(params.has("count"))
 
     other = TargetParameters({"count": 10, "flag": True})
     merged = params.merge(other)
-    assert merged.get("count", int) == 10
-    assert merged.get("flag", bool) is True
-    assert params.get("count", int) == 5  # original unchanged
+    expect_equal(merged.get("count", int), 10)
+    expect_true(merged.get("flag", bool))
+    expect_equal(params.get("count", int), 5)  # original unchanged
 
     with pytest.raises(ParameterError):
         params.get("missing", int)
@@ -149,8 +156,8 @@ def test_target_parameters_access_and_merge() -> None:
 def test_target_parameters_empty_singleton() -> None:
     """EMPTY_PARAMETERS creates an empty parameter set."""
     empty = TargetParameters.empty()
-    assert empty.keys() == frozenset()
-    assert empty.has("anything") is False
+    expect_equal(empty.keys(), frozenset())
+    expect_false(empty.has("anything"))
 
 
 def test_state_validator_missing_and_computed() -> None:
@@ -166,16 +173,16 @@ def test_state_validator_missing_and_computed() -> None:
     validator = StateValidator(graph, gateway, snapshot)
 
     state = validator.validate().get("single")
-    assert state.status == "computed"
-    assert state.manifest is manifest
-    assert state.blocking_deps == ()
-    assert state.staleness_reason is None
+    expect_equal(state.status, "computed")
+    expect_true(state.manifest is manifest)
+    expect_equal(state.blocking_deps, ())
+    expect_is_none(state.staleness_reason)
 
     # Missing manifest path
     missing_validator = StateValidator(graph, _make_gateway({}), snapshot)
     missing_state = missing_validator.validate().get("single")
-    assert missing_state.status == "missing"
-    assert missing_state.staleness_reason is None
+    expect_equal(missing_state.status, "missing")
+    expect_is_none(missing_state.staleness_reason)
 
 
 def test_state_validator_stale_and_blocked_propagation() -> None:
@@ -195,11 +202,11 @@ def test_state_validator_stale_and_blocked_propagation() -> None:
     root_state = result.get("root")
     leaf_state = result.get("leaf")
 
-    assert root_state.status == "stale"
-    assert root_state.staleness_reason is not None
-    assert leaf_state.status == "blocked"
-    assert leaf_state.blocking_deps == ("root",)
-    assert leaf_state.staleness_reason is not None
+    expect_equal(root_state.status, "stale")
+    expect_is_not_none(root_state.staleness_reason)
+    expect_equal(leaf_state.status, "blocked")
+    expect_equal(leaf_state.blocking_deps, ("root",))
+    expect_is_not_none(leaf_state.staleness_reason)
 
 
 def test_database_state_helpers() -> None:
@@ -235,12 +242,12 @@ def test_database_state_helpers() -> None:
     }
     db_state = DatabaseState(repo="r", commit="c", targets=states)
 
-    assert db_state.missing_targets() == ("missing",)
-    assert db_state.stale_targets() == ("stale",)
-    assert db_state.computed_targets() == ("computed",)
-    assert db_state.blocked_targets() == ()
-    assert db_state.is_target_current("computed") is True
-    assert db_state.is_target_current("absent") is False
+    expect_equal(db_state.missing_targets(), ("missing",))
+    expect_equal(db_state.stale_targets(), ("stale",))
+    expect_equal(db_state.computed_targets(), ("computed",))
+    expect_equal(db_state.blocked_targets(), ())
+    expect_true(db_state.is_target_current("computed"))
+    expect_false(db_state.is_target_current("absent"))
 
     with pytest.raises(KeyError):
         db_state.get("absent")

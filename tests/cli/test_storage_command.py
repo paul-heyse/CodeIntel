@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pytest
 from click.testing import Result
 
+from tests._helpers.assertions import expect_equal, expect_is_not_none
 from tests._helpers.cli import assert_exit, assert_success
 from tests._helpers.cli_project import CLIProjectContext
 
@@ -30,11 +31,11 @@ def test_storage_validate_macros_failure(
     """Validation error should exit with code 1 when macros are missing."""
     db_path = cli_project_ctx.db_path
     gateway = cli_project_ctx.gateway
-    assert gateway is not None
-    gateway.con.execute("DELETE FROM metadata.macro_registry")
-    row = gateway.con.execute("SELECT COUNT(*) FROM metadata.macro_registry").fetchone()
-    assert row is not None
-    assert row[0] == 0
+    con = expect_is_not_none(gateway, message="Expected gateway to be provisioned").con
+    con.execute("DELETE FROM metadata.macro_registry")
+    row = con.execute("SELECT COUNT(*) FROM metadata.macro_registry").fetchone()
+    row = expect_is_not_none(row, message="Expected macro_registry count row")
+    expect_equal(row[0], 0)
 
     def _fail_validation(_con: object) -> None:
         raise RuntimeError

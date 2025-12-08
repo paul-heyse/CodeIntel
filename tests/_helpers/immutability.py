@@ -1,7 +1,7 @@
 """Immutability testing utilities for frozen dataclasses.
 
 This module provides helpers for testing that frozen dataclass fields
-cannot be modified, without requiring type suppressions.
+cannot be modified, without resorting to type suppressions.
 
 The utilities use `setattr` to test runtime immutability of frozen dataclasses.
 """
@@ -14,8 +14,7 @@ import pytest
 def assert_frozen(obj: object, attr: str, new_value: object) -> None:
     """Assert that a frozen dataclass field cannot be modified.
 
-    Use this helper to test frozen dataclass immutability without
-    requiring `# type: ignore[misc]` suppressions.
+    Use this helper to test frozen dataclass immutability without type suppressions.
 
     Parameters
     ----------

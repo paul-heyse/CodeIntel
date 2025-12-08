@@ -20,6 +20,15 @@ from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers import make_snapshot, sample_target_graph
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+    expect_not_equal,
+    expect_true,
+)
 
 
 @dataclass
@@ -60,25 +69,25 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
     hash1 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
     hash2 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
     # Deterministic and includes both dependency states
-    assert hash1 == hash2
+    expect_equal(hash1, hash2)
     combined = b"demo:c1|main|dep:out-hash,missing:MISSING|opts"
-    assert hash1 == hashlib.sha256(combined).hexdigest()[:16]
+    expect_equal(hash1, hashlib.sha256(combined).hexdigest()[:16])
 
 
 def test_compute_options_hash_json_and_fallback() -> None:
     """Options hash handles JSON-able and non-JSON objects."""
     options_hash = compute_options_hash({"a": 1, "b": [2, 3]})
-    assert options_hash is not None
-    assert len(options_hash) == 16
+    expect_is_not_none(options_hash)
+    expect_equal(len(options_hash or ""), 16)
 
     class Unserializable:
         def __str__(self) -> str:
             return "repr"
 
     fallback_hash = compute_options_hash(Unserializable())
-    assert fallback_hash is not None
-    assert fallback_hash != options_hash
-    assert compute_options_hash(None) is None
+    expect_is_not_none(fallback_hash)
+    expect_not_equal(fallback_hash, options_hash)
+    expect_is_none(compute_options_hash(None))
 
 
 def test_build_run_record_to_dict_handles_none_fields() -> None:
@@ -94,8 +103,8 @@ def test_build_run_record_to_dict_handles_none_fields() -> None:
         status="running",
     )
     payload = record.to_dict()
-    assert payload["completed_at"] is None
-    assert payload["error_summary"] is None
+    expect_is_none(payload["completed_at"])
+    expect_is_none(payload["error_summary"])
 
 
 def test_build_plan_summary_and_formatting() -> None:
@@ -120,13 +129,13 @@ def test_build_plan_summary_and_formatting() -> None:
         blocked_targets=("graphs",),
     )
     summary = plan.format_summary()
-    assert "Build Plan for: modules" in summary
-    assert "Skipped: 1 targets" in summary
-    assert "Blocked: 1 targets" in summary
+    expect_in("Build Plan for: modules", summary)
+    expect_in("Skipped: 1 targets", summary)
+    expect_in("Blocked: 1 targets", summary)
 
-    assert format_duration(500) == ", ~500ms"
-    assert format_duration(2000) == ", ~2s"
-    assert not format_duration(None)
+    expect_equal(format_duration(500), ", ~500ms")
+    expect_equal(format_duration(2000), ", ~2s")
+    expect_false(bool(format_duration(None)))
 
 
 def test_plan_generator_warns_on_missing_reason(caplog: pytest.LogCaptureFixture) -> None:
@@ -141,8 +150,8 @@ def test_plan_generator_warns_on_missing_reason(caplog: pytest.LogCaptureFixture
     )
     caplog.set_level("WARNING")
     plan = PlanGenerator(graph).generate(resolution)
-    assert plan.total_steps == 1
-    assert any("has no resolution reason" in rec.message for rec in caplog.records)
+    expect_equal(plan.total_steps, 1)
+    expect_true(any("has no resolution reason" in rec.message for rec in caplog.records))
 
 
 def test_target_graph_validation_and_topology() -> None:
@@ -155,7 +164,7 @@ def test_target_graph_validation_and_topology() -> None:
     )
 
     errors = graph.validate()
-    assert "missing" in errors[0]
+    expect_in("missing", errors[0])
 
     graph_valid = TargetGraph()
     graph_valid.register(OutputTarget(name="a", module="ingestion", plugin="p"))
@@ -164,7 +173,7 @@ def test_target_graph_validation_and_topology() -> None:
         OutputTarget(name="c", module="analytics", plugin="p", dependencies=("b",))
     )
     order = graph_valid.topological_order(("c",))
-    assert order[0] == "a"
+    expect_equal(order[0], "a")
 
     cyclic_graph = TargetGraph()
     cyclic_graph.register(
@@ -174,7 +183,7 @@ def test_target_graph_validation_and_topology() -> None:
         OutputTarget(name="cycle2", module="export", plugin="p", dependencies=("cycle1",))
     )
     errors_cycle = cyclic_graph.validate()
-    assert any("Cycle detected" in err for err in errors_cycle)
+    expect_true(any("Cycle detected" in err for err in errors_cycle))
     with pytest.raises(ValueError, match="Cycle detected"):
         cyclic_graph.topological_order(("cycle1",))
 
@@ -201,9 +210,9 @@ def test_target_table_keys_and_execution_duration() -> None:
         plugin="p",
         tables=("core.legacy",),
     )
-    assert contract_target.table_keys == ("core.t",)
-    assert legacy_target.table_keys == ("core.legacy",)
-    assert legacy_target.estimated_duration_ms >= 0
+    expect_equal(contract_target.table_keys, ("core.t",))
+    expect_equal(legacy_target.table_keys, ("core.legacy",))
+    expect_true(legacy_target.estimated_duration_ms >= 0)
 
 
 def test_operations_resolve_missing_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,8 +236,8 @@ def test_operations_resolve_missing_mapping(monkeypatch: pytest.MonkeyPatch) -> 
         )
     )
 
-    assert not unresolved_datasets.data_targets
-    assert not unresolved_datasets.graph_targets
+    expect_false(bool(unresolved_datasets.data_targets))
+    expect_false(bool(unresolved_datasets.graph_targets))
 
 
 def test_operations_targets_dataclass_repr() -> None:
@@ -239,4 +248,4 @@ def test_operations_targets_dataclass_repr() -> None:
         graph_targets=frozenset({"a"}),
         data_targets=frozenset({"b"}),
     )
-    assert "op" in repr(targets)
+    expect_in("op", repr(targets))

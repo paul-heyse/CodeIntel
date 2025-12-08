@@ -15,7 +15,12 @@ from codeintel.analytics.dependencies.core import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
-from tests._helpers.assertions import assert_mapping_list
+from tests._helpers.assertions import (
+    assert_mapping_list,
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.builders import ConfigValueRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.gateway import GatewayFactory
@@ -128,19 +133,19 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
                 [snapshot.repo, snapshot.commit],
             ).fetchall()
         }
-        assert len(rows_by_library) == 2
+        expect_equal(len(rows_by_library), 2)
         requests_row = rows_by_library["requests"]
         httpx_row = rows_by_library["httpx"]
 
-        assert _as_list(requests_row[1]) == ["read"]
+        expect_equal(_as_list(requests_row[1]), ["read"])
         evidence_data = requests_row[2]
         if isinstance(evidence_data, str):
             evidence_data = json.loads(evidence_data)
-        assert assert_mapping_list({"samples": evidence_data}, "samples")
-        assert requests_row[3] == 1
-        assert requests_row[4] == func_ast.rel_path
+        expect_true(assert_mapping_list({"samples": evidence_data}, "samples"))
+        expect_equal(requests_row[3], 1)
+        expect_equal(requests_row[4], func_ast.rel_path)
 
-        assert _as_list(httpx_row[1]) == ["write"]
+        expect_equal(_as_list(httpx_row[1]), ["write"])
 
         insert_rows(
             gateway,
@@ -172,19 +177,19 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
                 [snapshot.repo, snapshot.commit],
             ).fetchall()
         }
-        assert len(deps_by_library) == 2
+        expect_equal(len(deps_by_library), 2)
         requests_dep = deps_by_library["requests"]
         httpx_dep = deps_by_library["httpx"]
 
-        assert _as_list(requests_dep[1]) == ["read"]
-        assert _as_list(requests_dep[2]) == ["API_TOKEN"]
-        assert requests_dep[3] == "medium"
-        assert requests_dep[4] == 1
-        assert requests_dep[5] == 1
+        expect_equal(_as_list(requests_dep[1]), ["read"])
+        expect_equal(_as_list(requests_dep[2]), ["API_TOKEN"])
+        expect_equal(requests_dep[3], "medium")
+        expect_equal(requests_dep[4], 1)
+        expect_equal(requests_dep[5], 1)
 
-        assert _as_list(httpx_dep[1]) == ["write"]
-        assert _as_list(httpx_dep[2]) == ["API_TOKEN"]
-        assert httpx_dep[3] == "high"
+        expect_equal(_as_list(httpx_dep[1]), ["write"])
+        expect_equal(_as_list(httpx_dep[2]), ["API_TOKEN"])
+        expect_equal(httpx_dep[3], "high")
     finally:
         gateway.close()
 
@@ -265,7 +270,8 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
             """,
             [snapshot.repo, snapshot.commit],
         ).fetchone()
-        assert rows is not None
-        assert rows[0] == 0
+        expect_is_not_none(rows)
+        if rows is not None:
+            expect_equal(rows[0], 0)
     finally:
         gateway.close()

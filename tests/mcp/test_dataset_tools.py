@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -13,6 +14,11 @@ from codeintel.serving.mcp import dataset_tools, models
 from codeintel.serving.mcp.dataset_tools import register_dataset_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.mcp import RecordingMcp
 
 if TYPE_CHECKING:
@@ -63,18 +69,23 @@ class _Backend:
         return ["one", "two"]
 
     def list_models(self, **_: object) -> list[_Dumpable]:
+        self.calls.append("list_models")
         return [_Dumpable("a"), _Dumpable("b")]
 
     def list_raw(self, **_: object) -> list[dict[str, object]]:
+        self.calls.append("list_raw")
         return [{"id": "d1"}, {"id": "d2"}]
 
     def validate_one(self, **_: object) -> str:
+        self.calls.append("validate_one")
         return "hello"
 
     def raw_payload(self, **_: object) -> dict[str, object]:
+        self.calls.append("raw_payload")
         return {"id": "raw"}
 
     def raise_error(self, **_: object) -> list[str]:
+        self.calls.append("raise_error")
         message = "boom"
         raise RuntimeError(message)
 
@@ -110,12 +121,12 @@ def test_register_dataset_tools_registers_and_executes(monkeypatch: pytest.Monke
     typed_backend = cast("QueryBackendOrService", backend)
     mcp = RecordingMcp()
     register_dataset_tools(cast("FastMCP", mcp), typed_backend, config=None)
-    assert [reg.name for reg in mcp.registrations.calls] == ["datasets_list"]
+    expect_equal([reg.name for reg in mcp.registrations.calls], ["datasets_list"])
     # Execute registered tool
-    tool_func = mcp.registry["datasets_list"]
+    tool_func = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_list"])
     result = tool_func()
-    assert isinstance(result, list)
-    assert result[0] == {"value": "one"}
+    expect_is_instance(result, list)
+    expect_equal(result[0], {"value": "one"})
 
 
 def test_serialize_list_payload_prefers_model_dump_when_no_model_cls(
@@ -148,8 +159,8 @@ def test_serialize_list_payload_prefers_model_dump_when_no_model_cls(
     register_dataset_tools(
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
-    result = mcp.registry["datasets_models"]()
-    assert result == [{"value": "a"}, {"value": "b"}]
+    result = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_models"])()
+    expect_equal(result, [{"value": "a"}, {"value": "b"}])
 
 
 def test_serialize_payload_uses_validator_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,8 +192,8 @@ def test_serialize_payload_uses_validator_fallback(monkeypatch: pytest.MonkeyPat
     register_dataset_tools(
         cast("FastMCP", mcp), cast("QueryBackendOrService", backend), config=None
     )
-    result = mcp.registry["datasets_validate"]()
-    assert result == {"value": "hello"}
+    result = cast("Callable[[], dict[str, object]]", mcp.registry["datasets_validate"])()
+    expect_equal(result, {"value": "hello"})
 
 
 def test_dataset_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -216,7 +227,7 @@ def test_dataset_tool_resets_context_on_error(monkeypatch: pytest.MonkeyPatch) -
     )
     with pytest.raises(RuntimeError):
         mcp.registry["datasets_error"](dataset_name="d1")
-    assert get_current_request_context() is None
+    expect_true(get_current_request_context() is None)
 
 
 def test_dataset_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -261,8 +272,8 @@ def test_dataset_tool_invokes_auto_pipeline(monkeypatch: pytest.MonkeyPatch) -> 
         backend,
         config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
     )
-    mcp.registry["datasets_list"]()
-    assert calls == ["datasets.list"]
+    cast("Callable[[], object]", mcp.registry["datasets_list"])()
+    expect_equal(calls, ["datasets.list"])
     monkeypatch.delenv("CODEINTEL_AUTO_PIPELINE", raising=False)
 
 
@@ -298,7 +309,9 @@ def test_serialize_payload_passes_through_raw_dict_when_no_model(
         cast("QueryBackendOrService", backend),
         config=None,
     )
-    assert mcp.registry["datasets_raw"]() == {"id": "raw"}
+    expect_equal(
+        cast("Callable[[], dict[str, object]]", mcp.registry["datasets_raw"])(), {"id": "raw"}
+    )
 
 
 def test_serialize_list_payload_passes_through_raw_dicts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -331,4 +344,7 @@ def test_serialize_list_payload_passes_through_raw_dicts(monkeypatch: pytest.Mon
         cast("QueryBackendOrService", backend),
         config=None,
     )
-    assert mcp.registry["datasets_raw_list"]() == [{"id": "d1"}, {"id": "d2"}]
+    expect_equal(
+        cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_raw_list"])(),
+        [{"id": "d1"}, {"id": "d2"}],
+    )

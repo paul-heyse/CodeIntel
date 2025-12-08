@@ -19,10 +19,20 @@ from codeintel.core.plugins.execution.context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
-from codeintel.core.plugins.execution.executor import BasePluginExecutor
+from codeintel.core.plugins.execution.executor import (
+    BasePluginExecutor,
+    DefaultPluginExecutionStrategy,
+    ExecutionOptions,
+    ExecutionReportContext,
+    ExecutionStrategy,
+    ExecutionStrategyContext,
+    PluginExecutionStrategy,
+)
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.core.plugins.execution.tracking import (
+    FatalHandling,
+    TrackingOptions,
     complete_run_from_records,
     record_plugin_steps,
 )
@@ -30,9 +40,12 @@ from codeintel.core.plugins.execution.tracking import (
 # Registry
 from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
+    DefaultRegistryHooks,
     PluginPlan,
     PluginSkip,
     RegistrablePlugin,
+    RegistryEntry,
+    RegistryHooks,
 )
 from codeintel.core.plugins.registry.sorting import (
     CapabilityProvider,
@@ -76,27 +89,30 @@ from codeintel.core.resources.registry import (
 )
 
 __all__ = [
-    # Execution
     "BaseExecutionPolicy",
-    # Types - Report
     "BaseExecutionReport",
     "BaseExecutorContext",
-    # Types - Result
     "BasePluginExecutionRecord",
     "BasePluginExecutor",
-    # Registry
     "BasePluginRegistry",
     "BasePluginResult",
-    # Types - Protocol
     "CapabilityKind",
     "CapabilityProvider",
     "ConfigProvider",
+    "DefaultPluginExecutionStrategy",
+    "DefaultRegistryHooks",
+    "ExecutionOptions",
+    "ExecutionReportContext",
     "ExecutionStatus",
+    "ExecutionStrategy",
+    "ExecutionStrategyContext",
+    "FatalHandling",
     "InputSource",
     "PluginCapability",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
     "PluginExecutionRecord",
+    "PluginExecutionStrategy",
     "PluginInputSpec",
     "PluginIsolation",
     "PluginKind",
@@ -112,8 +128,11 @@ __all__ = [
     "PluginStage",
     "PluginStatus",
     "RegistrablePlugin",
+    "RegistryEntry",
+    "RegistryHooks",
     "ResourceNotFoundError",
     "ResourceRegistry",
+    "TrackingOptions",
     "ValidationResult",
     "build_provider_index",
     "build_provider_index_from_metadata",

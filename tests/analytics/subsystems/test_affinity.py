@@ -27,6 +27,14 @@ from codeintel.analytics.subsystems.affinity import (
     reassign_small_clusters,
     seed_labels_from_tags,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_not_in,
+    expect_true,
+)
 
 # Test constants
 DEFAULT_WEIGHT = 1.0
@@ -45,49 +53,49 @@ def test_parse_tags_none() -> None:
     """parse_tags returns empty list for None."""
     result = parse_tags(None)
 
-    assert result == []
+    expect_equal(result, [])
 
 
 def test_parse_tags_json_list() -> None:
     """parse_tags parses JSON list string."""
     result = parse_tags('["tag1", "tag2", "tag3"]')
 
-    assert result == ["tag1", "tag2", "tag3"]
+    expect_equal(result, ["tag1", "tag2", "tag3"])
 
 
 def test_parse_tags_json_single_value() -> None:
     """parse_tags parses JSON single value."""
     result = parse_tags('"single_tag"')
 
-    assert result == ["single_tag"]
+    expect_equal(result, ["single_tag"])
 
 
 def test_parse_tags_plain_string() -> None:
     """parse_tags handles plain string."""
     result = parse_tags("not_json_tag")
 
-    assert result == ["not_json_tag"]
+    expect_equal(result, ["not_json_tag"])
 
 
 def test_parse_tags_list() -> None:
     """parse_tags handles Python list."""
     result = parse_tags(["a", "b", "c"])
 
-    assert result == ["a", "b", "c"]
+    expect_equal(result, ["a", "b", "c"])
 
 
 def test_parse_tags_other_type() -> None:
     """parse_tags converts other types to string."""
     result = parse_tags(123)
 
-    assert result == ["123"]
+    expect_equal(result, ["123"])
 
 
 def test_parse_tags_mixed_list() -> None:
     """parse_tags converts mixed list elements to strings."""
     result = parse_tags([1, "two", 3.0])
 
-    assert result == ["1", "two", "3.0"]
+    expect_equal(result, ["1", "two", "3.0"])
 
 
 # =============================================================================
@@ -102,8 +110,8 @@ def test_add_graph_weight_new_edge() -> None:
 
     add_graph_weight(graph, "A", "B", CUSTOM_WEIGHT)
 
-    assert graph.has_edge("A", "B")
-    assert graph["A"]["B"]["weight"] == CUSTOM_WEIGHT
+    expect_true(graph.has_edge("A", "B"))
+    expect_equal(graph["A"]["B"]["weight"], CUSTOM_WEIGHT)
 
 
 def test_add_graph_weight_accumulates() -> None:
@@ -114,7 +122,7 @@ def test_add_graph_weight_accumulates() -> None:
     add_graph_weight(graph, "A", "B", CUSTOM_WEIGHT)
 
     expected = DEFAULT_WEIGHT + CUSTOM_WEIGHT
-    assert graph["A"]["B"]["weight"] == expected
+    expect_equal(graph["A"]["B"]["weight"], expected)
 
 
 def test_add_graph_weight_ignores_self_loop() -> None:
@@ -124,7 +132,7 @@ def test_add_graph_weight_ignores_self_loop() -> None:
 
     add_graph_weight(graph, "A", "A", CUSTOM_WEIGHT)
 
-    assert not graph.has_edge("A", "A")
+    expect_false(graph.has_edge("A", "A"))
 
 
 def test_add_graph_weight_ignores_zero_weight() -> None:
@@ -134,7 +142,7 @@ def test_add_graph_weight_ignores_zero_weight() -> None:
 
     add_graph_weight(graph, "A", "B", 0.0)
 
-    assert not graph.has_edge("A", "B")
+    expect_false(graph.has_edge("A", "B"))
 
 
 def test_add_graph_weight_ignores_negative_weight() -> None:
@@ -144,7 +152,7 @@ def test_add_graph_weight_ignores_negative_weight() -> None:
 
     add_graph_weight(graph, "A", "B", -1.0)
 
-    assert not graph.has_edge("A", "B")
+    expect_false(graph.has_edge("A", "B"))
 
 
 # =============================================================================
@@ -158,7 +166,7 @@ def test_graph_to_adjacency_empty() -> None:
 
     result = graph_to_adjacency(graph)
 
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_graph_to_adjacency_single_edge() -> None:
@@ -168,8 +176,8 @@ def test_graph_to_adjacency_single_edge() -> None:
 
     result = graph_to_adjacency(graph)
 
-    assert result["A"]["B"] == CUSTOM_WEIGHT
-    assert result["B"]["A"] == CUSTOM_WEIGHT
+    expect_equal(result["A"]["B"], CUSTOM_WEIGHT)
+    expect_equal(result["B"]["A"], CUSTOM_WEIGHT)
 
 
 def test_graph_to_adjacency_multiple_edges() -> None:
@@ -184,7 +192,7 @@ def test_graph_to_adjacency_multiple_edges() -> None:
     expected_edges = 3
     # Each undirected edge creates 2 entries in adjacency
     total_entries = sum(len(neighbors) for neighbors in result.values())
-    assert total_entries == expected_edges * 2
+    expect_equal(total_entries, expected_edges * 2)
 
 
 def test_graph_to_adjacency_default_weight() -> None:
@@ -194,7 +202,7 @@ def test_graph_to_adjacency_default_weight() -> None:
 
     result = graph_to_adjacency(graph)
 
-    assert result["A"]["B"] == DEFAULT_WEIGHT
+    expect_equal(result["A"]["B"], DEFAULT_WEIGHT)
 
 
 # =============================================================================
@@ -206,7 +214,7 @@ def test_seed_labels_from_tags_empty() -> None:
     """seed_labels_from_tags returns empty dict for empty input."""
     result = seed_labels_from_tags({})
 
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_seed_labels_from_tags_basic() -> None:
@@ -218,8 +226,8 @@ def test_seed_labels_from_tags_basic() -> None:
 
     result = seed_labels_from_tags(tags)
 
-    assert result["module.a"] == "taga"
-    assert result["module.b"] == "tagb"
+    expect_equal(result["module.a"], "taga")
+    expect_equal(result["module.b"], "tagb")
 
 
 def test_seed_labels_from_tags_empty_tags_skipped() -> None:
@@ -231,8 +239,8 @@ def test_seed_labels_from_tags_empty_tags_skipped() -> None:
 
     result = seed_labels_from_tags(tags)
 
-    assert "module.a" in result
-    assert "module.b" not in result
+    expect_in("module.a", result)
+    expect_not_in("module.b", result)
 
 
 def test_seed_labels_from_tags_none_first_tag_skipped() -> None:
@@ -244,7 +252,7 @@ def test_seed_labels_from_tags_none_first_tag_skipped() -> None:
 
     result = seed_labels_from_tags(tags)
 
-    assert "module.a" not in result
+    expect_not_in("module.a", result)
 
 
 # =============================================================================
@@ -260,7 +268,7 @@ def test_label_propagation_nx_preserves_seeds() -> None:
 
     result = label_propagation_nx(graph, seed_labels)
 
-    assert result["A"] == "cluster1"
+    expect_equal(result["A"], "cluster1")
 
 
 def test_label_propagation_nx_propagates_to_neighbors() -> None:
@@ -273,7 +281,7 @@ def test_label_propagation_nx_propagates_to_neighbors() -> None:
     result = label_propagation_nx(graph, seed_labels)
 
     # B and C should adopt A's label through propagation
-    assert result["A"] == "group"
+    expect_equal(result["A"], "group")
 
 
 def test_label_propagation_nx_selects_heaviest_neighbor() -> None:
@@ -286,7 +294,7 @@ def test_label_propagation_nx_selects_heaviest_neighbor() -> None:
     result = label_propagation_nx(graph, seed_labels)
 
     # A should adopt C's label due to heavier weight
-    assert result["A"] == "heavy"
+    expect_equal(result["A"], "heavy")
 
 
 def test_label_propagation_nx_isolated_nodes_keep_fallback() -> None:
@@ -296,7 +304,7 @@ def test_label_propagation_nx_isolated_nodes_keep_fallback() -> None:
 
     result = label_propagation_nx(graph, {})
 
-    assert result["isolated"] == "isolated"
+    expect_equal(result["isolated"], "isolated")
 
 
 # =============================================================================
@@ -311,7 +319,7 @@ def test_reassign_small_clusters_no_change_when_all_large() -> None:
 
     result = reassign_small_clusters(labels, adjacency, min_size=MIN_CLUSTER_SIZE)
 
-    assert result == labels
+    expect_equal(result, labels)
 
 
 def test_reassign_small_clusters_min_size_one_no_change() -> None:
@@ -321,7 +329,7 @@ def test_reassign_small_clusters_min_size_one_no_change() -> None:
 
     result = reassign_small_clusters(labels, adjacency, min_size=1)
 
-    assert result == labels
+    expect_equal(result, labels)
 
 
 def test_reassign_small_clusters_reassigns_small() -> None:
@@ -333,7 +341,7 @@ def test_reassign_small_clusters_reassigns_small() -> None:
     result = reassign_small_clusters(labels, adjacency, min_size=MIN_CLUSTER_SIZE)
 
     # D should be reassigned to c1 since it's the only stable cluster
-    assert result["D"] == "c1"
+    expect_equal(result["D"], "c1")
 
 
 # =============================================================================
@@ -349,7 +357,7 @@ def test_best_neighbor_label_no_neighbors() -> None:
 
     result = best_neighbor_label("B", adjacency, labels, allowed)
 
-    assert result is None
+    expect_is_none(result)
 
 
 def test_best_neighbor_label_selects_allowed() -> None:
@@ -360,7 +368,7 @@ def test_best_neighbor_label_selects_allowed() -> None:
 
     result = best_neighbor_label("A", adjacency, labels, allowed)
 
-    assert result == "allowed"
+    expect_equal(result, "allowed")
 
 
 def test_best_neighbor_label_selects_heaviest() -> None:
@@ -371,7 +379,7 @@ def test_best_neighbor_label_selects_heaviest() -> None:
 
     result = best_neighbor_label("A", adjacency, labels, allowed)
 
-    assert result == "heavy"
+    expect_equal(result, "heavy")
 
 
 # =============================================================================
@@ -383,7 +391,7 @@ def test_cluster_sizes_map_empty() -> None:
     """cluster_sizes_map returns empty dict for empty labels."""
     result = cluster_sizes_map({})
 
-    assert result == {}
+    expect_equal(result, {})
 
 
 def test_cluster_sizes_map_counts_clusters() -> None:
@@ -392,5 +400,5 @@ def test_cluster_sizes_map_counts_clusters() -> None:
 
     result = cluster_sizes_map(labels)
 
-    assert result["c1"] == CLUSTER_SIZE_TWO
-    assert result["c2"] == CLUSTER_SIZE_THREE
+    expect_equal(result["c1"], CLUSTER_SIZE_TWO)
+    expect_equal(result["c2"], CLUSTER_SIZE_THREE)

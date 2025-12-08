@@ -19,6 +19,12 @@ from codeintel.core.execution.timing import (
     measure_duration_ms,
     timed,
 )
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 
 # Test constants
 MS_10_IN_NS = 10_000_000  # 10ms in nanoseconds
@@ -47,8 +53,8 @@ def test_timing_result_construction() -> None:
     """Verify TimingResult can be constructed."""
     result = TimingResult()
 
-    assert result.start_ns > 0
-    assert result.end_ns is None
+    expect_true(result.start_ns > 0)
+    expect_true(result.end_ns is None)
 
 
 def test_timing_result_custom_start() -> None:
@@ -56,18 +62,18 @@ def test_timing_result_custom_start() -> None:
     custom_start = 1000000000
     result = TimingResult(start_ns=custom_start)
 
-    assert result.start_ns == custom_start
+    expect_equal(result.start_ns, custom_start)
 
 
 def test_timing_result_stop() -> None:
     """Verify TimingResult.stop() records end time."""
     result = TimingResult()
-    assert result.end_ns is None
+    expect_true(result.end_ns is None)
 
     result.stop()
 
-    assert result.end_ns is not None
-    assert result.end_ns >= result.start_ns
+    expect_is_not_none(result.end_ns)
+    expect_true(expect_is_not_none(result.end_ns) >= result.start_ns)
 
 
 def test_timing_result_stop_idempotent() -> None:
@@ -79,20 +85,20 @@ def test_timing_result_stop_idempotent() -> None:
     time.sleep(0.01)
     result.stop()  # Second call
 
-    assert result.end_ns == first_end  # Should not change
+    expect_equal(result.end_ns, first_end)  # Should not change
 
 
 def test_timing_result_is_stopped_false() -> None:
     """Verify is_stopped returns False before stop()."""
     result = TimingResult()
-    assert result.is_stopped is False
+    expect_true(result.is_stopped is False)
 
 
 def test_timing_result_is_stopped_true() -> None:
     """Verify is_stopped returns True after stop()."""
     result = TimingResult()
     result.stop()
-    assert result.is_stopped is True
+    expect_true(result.is_stopped is True)
 
 
 def test_timing_result_elapsed_ns() -> None:
@@ -102,7 +108,7 @@ def test_timing_result_elapsed_ns() -> None:
     result.stop()
 
     # Should be at least 10ms = 10,000,000 ns
-    assert result.elapsed_ns >= MS_10_IN_NS
+    expect_true(result.elapsed_ns >= MS_10_IN_NS)
 
 
 def test_timing_result_elapsed_ns_before_stop() -> None:
@@ -111,7 +117,7 @@ def test_timing_result_elapsed_ns_before_stop() -> None:
     time.sleep(0.01)  # 10ms
 
     # Should still return elapsed time (up to now)
-    assert result.elapsed_ns >= MS_10_IN_NS
+    expect_true(result.elapsed_ns >= MS_10_IN_NS)
 
 
 def test_timing_result_elapsed_ms() -> None:
@@ -121,7 +127,7 @@ def test_timing_result_elapsed_ms() -> None:
     result.stop()
 
     # Should be at least 10ms
-    assert result.elapsed_ms >= MS_10
+    expect_true(result.elapsed_ms >= MS_10)
 
 
 def test_timing_result_elapsed_s() -> None:
@@ -131,7 +137,7 @@ def test_timing_result_elapsed_s() -> None:
     result.stop()
 
     # Should be at least 0.05s
-    assert result.elapsed_s >= S_0_05
+    expect_true(result.elapsed_s >= S_0_05)
 
 
 def test_timing_result_elapsed_consistency() -> None:
@@ -145,8 +151,8 @@ def test_timing_result_elapsed_consistency() -> None:
     s = result.elapsed_s
 
     # Conversions should be accurate
-    assert abs(ms - ns / 1_000_000) < MS_TOLERANCE
-    assert abs(s - ns / 1_000_000_000) < S_TOLERANCE
+    expect_true(abs(ms - ns / 1_000_000) < MS_TOLERANCE)
+    expect_true(abs(s - ns / 1_000_000_000) < S_TOLERANCE)
 
 
 def test_timing_result_elapsed_frozen_after_stop() -> None:
@@ -158,7 +164,7 @@ def test_timing_result_elapsed_frozen_after_stop() -> None:
     time.sleep(0.01)  # Wait a bit
 
     # Should be the same (frozen at stop time)
-    assert result.elapsed_ns == elapsed_after_stop
+    expect_equal(result.elapsed_ns, elapsed_after_stop)
 
 
 # =============================================================================
@@ -169,14 +175,14 @@ def test_timing_result_elapsed_frozen_after_stop() -> None:
 def test_timed_yields_timing_result() -> None:
     """Verify timed() yields a TimingResult."""
     with timed() as t:
-        assert isinstance(t, TimingResult)
+        expect_is_instance(t, TimingResult)
 
 
 def test_timed_starts_timing() -> None:
     """Verify timed() starts timing on entry."""
     with timed() as t:
-        assert t.start_ns > 0
-        assert t.is_stopped is False
+        expect_true(t.start_ns > 0)
+        expect_true(t.is_stopped is False)
 
 
 def test_timed_stops_on_exit() -> None:
@@ -184,8 +190,8 @@ def test_timed_stops_on_exit() -> None:
     with timed() as t:
         time.sleep(0.01)
 
-    assert t.is_stopped is True
-    assert t.elapsed_ms >= MS_10
+    expect_true(t.is_stopped is True)
+    expect_true(t.elapsed_ms >= MS_10)
 
 
 def test_timed_stops_on_exception() -> None:
@@ -203,8 +209,8 @@ def test_timed_stops_on_exception() -> None:
     with pytest.raises(ValueError, match=err_msg):
         raise_after_timing()
 
-    assert timing_result is not None
-    assert timing_result.is_stopped is True
+    expect_is_not_none(timing_result)
+    expect_true(expect_is_not_none(timing_result).is_stopped is True)
 
 
 def test_timed_measures_work() -> None:
@@ -212,8 +218,8 @@ def test_timed_measures_work() -> None:
     with timed() as t:
         time.sleep(0.02)  # 20ms of "work"
 
-    assert t.elapsed_ms >= MS_20
-    assert t.elapsed_s >= S_0_02
+    expect_true(t.elapsed_ms >= MS_20)
+    expect_true(t.elapsed_s >= S_0_02)
 
 
 def test_timed_nested() -> None:
@@ -224,8 +230,8 @@ def test_timed_nested() -> None:
             time.sleep(0.01)
         time.sleep(0.01)
 
-    assert outer.elapsed_ms >= MS_30  # All three sleeps
-    assert inner.elapsed_ms >= MS_10  # Just inner sleep
+    expect_true(outer.elapsed_ms >= MS_30)  # All three sleeps
+    expect_true(inner.elapsed_ms >= MS_10)  # Just inner sleep
 
 
 # =============================================================================
@@ -240,7 +246,7 @@ def test_measure_duration_returns_result() -> None:
         return "result"
 
     result, _ = measure_duration(simple_fn)
-    assert result == "result"
+    expect_equal(result, "result")
 
 
 def test_measure_duration_returns_timing() -> None:
@@ -252,9 +258,9 @@ def test_measure_duration_returns_timing() -> None:
 
     _, timing = measure_duration(simple_fn)
 
-    assert isinstance(timing, TimingResult)
-    assert timing.is_stopped is True
-    assert timing.elapsed_ms >= MS_10
+    expect_is_instance(timing, TimingResult)
+    expect_true(timing.is_stopped is True)
+    expect_true(timing.elapsed_ms >= MS_10)
 
 
 def test_measure_duration_with_args() -> None:
@@ -264,7 +270,7 @@ def test_measure_duration_with_args() -> None:
         return a + b
 
     result, _ = measure_duration(add, 2, 3)
-    assert result == EXPECTED_5
+    expect_equal(result, EXPECTED_5)
 
 
 def test_measure_duration_with_kwargs() -> None:
@@ -274,7 +280,7 @@ def test_measure_duration_with_kwargs() -> None:
         return f"{greeting}, {name}!"
 
     result, _ = measure_duration(greet, "World", greeting="Hi")
-    assert result == "Hi, World!"
+    expect_equal(result, "Hi, World!")
 
 
 def test_measure_duration_measures_work() -> None:
@@ -286,8 +292,8 @@ def test_measure_duration_measures_work() -> None:
 
     result, timing = measure_duration(slow_fn)
 
-    assert result == "done"
-    assert timing.elapsed_ms >= MS_20
+    expect_equal(result, "done")
+    expect_true(timing.elapsed_ms >= MS_20)
 
 
 def test_measure_duration_with_exception() -> None:
@@ -314,7 +320,7 @@ def test_measure_duration_ms_returns_result() -> None:
         return "ms_result"
 
     result, _ = measure_duration_ms(simple_fn)
-    assert result == "ms_result"
+    expect_equal(result, "ms_result")
 
 
 def test_measure_duration_ms_returns_float() -> None:
@@ -326,8 +332,8 @@ def test_measure_duration_ms_returns_float() -> None:
 
     _, duration_ms = measure_duration_ms(simple_fn)
 
-    assert isinstance(duration_ms, float)
-    assert duration_ms >= MS_10
+    expect_is_instance(duration_ms, float)
+    expect_true(duration_ms >= MS_10)
 
 
 def test_measure_duration_ms_with_args() -> None:
@@ -337,7 +343,7 @@ def test_measure_duration_ms_with_args() -> None:
         return a * b
 
     result, _ = measure_duration_ms(multiply, 4, 5)
-    assert result == EXPECTED_20
+    expect_equal(result, EXPECTED_20)
 
 
 def test_measure_duration_ms_with_kwargs() -> None:
@@ -347,7 +353,7 @@ def test_measure_duration_ms_with_kwargs() -> None:
         return base**exponent
 
     result, _ = measure_duration_ms(power, 3, exponent=3)
-    assert result == EXPECTED_27
+    expect_equal(result, EXPECTED_27)
 
 
 def test_measure_duration_ms_accuracy() -> None:
@@ -359,10 +365,10 @@ def test_measure_duration_ms_accuracy() -> None:
 
     result, duration = measure_duration_ms(timed_work)
 
-    assert result == EXPECTED_42
-    assert duration >= MS_15
+    expect_equal(result, EXPECTED_42)
+    expect_true(duration >= MS_15)
     # Should be close to 15ms (allowing some overhead)
-    assert duration < MS_50  # Generous upper bound
+    expect_true(duration < MS_50)  # Generous upper bound
 
 
 # =============================================================================
@@ -380,10 +386,10 @@ def test_timing_result_in_loop() -> None:
         timings.append(t.elapsed_ms)
 
     # Each timing should be independent and increasing
-    assert timings[0] >= TIMING_5_MS
-    assert timings[1] >= MS_10
-    assert timings[2] >= MS_15
-    assert timings[2] > timings[1] > timings[0]
+    expect_true(timings[0] >= TIMING_5_MS)
+    expect_true(timings[1] >= MS_10)
+    expect_true(timings[2] >= MS_15)
+    expect_true(timings[2] > timings[1] > timings[0])
 
 
 def test_measure_duration_vs_timed_equivalence() -> None:
@@ -402,8 +408,9 @@ def test_measure_duration_vs_timed_equivalence() -> None:
         result2 = work()
 
     # Both should succeed
-    assert result1 == result2 == "done"
+    expect_equal(result1, "done")
+    expect_equal(result2, "done")
 
     # Both should measure approximately the same duration
-    assert timing1.elapsed_ms >= work_duration_ms
-    assert timing2.elapsed_ms >= work_duration_ms
+    expect_true(timing1.elapsed_ms >= work_duration_ms)
+    expect_true(timing2.elapsed_ms >= work_duration_ms)

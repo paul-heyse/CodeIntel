@@ -21,6 +21,7 @@ from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
@@ -152,9 +153,9 @@ def test_list_subsystems_endpoint(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "subsystems" in data
+    expect_in("subsystems", data)
 
 
 def test_list_subsystems_with_limit(
@@ -171,9 +172,9 @@ def test_list_subsystems_with_limit(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems?limit=5")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "subsystems" in data
+    expect_in("subsystems", data)
 
 
 def test_list_subsystems_with_role_filter(
@@ -190,9 +191,9 @@ def test_list_subsystems_with_role_filter(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems?role=test_role")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "subsystems" in data
+    expect_in("subsystems", data)
 
 
 def test_list_subsystems_with_query_filter(
@@ -209,9 +210,9 @@ def test_list_subsystems_with_query_filter(
     with TestClient(app) as client:
         response = client.get("/architecture/subsystems?q=test")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    assert "subsystems" in data
+    expect_in("subsystems", data)
 
 
 # =============================================================================
@@ -242,7 +243,7 @@ def test_module_subsystems_endpoint(
         response = client.get(f"/architecture/module-subsystems?module={module}")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_module_subsystems_missing_module(
@@ -260,7 +261,7 @@ def test_module_subsystems_missing_module(
         response = client.get("/architecture/module-subsystems")
 
     # Should return 422 validation error (missing required param)
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 # =============================================================================
@@ -293,7 +294,7 @@ def test_subsystem_detail_endpoint(
         response = client.get(f"/architecture/subsystem?subsystem_id={subsystem_id}")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_subsystem_detail_with_module_limit(
@@ -320,7 +321,7 @@ def test_subsystem_detail_with_module_limit(
         response = client.get(f"/architecture/subsystem?subsystem_id={subsystem_id}&module_limit=5")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_subsystem_detail_nonexistent(
@@ -338,7 +339,7 @@ def test_subsystem_detail_nonexistent(
         response = client.get("/architecture/subsystem?subsystem_id=nonexistent_subsystem_xyz")
 
     # Should return 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -370,7 +371,7 @@ def test_subsystem_profiles_endpoint(
         response = client.get(f"/subsystems/{subsystem_id}/profiles")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_subsystem_profiles_with_limit(
@@ -397,7 +398,7 @@ def test_subsystem_profiles_with_limit(
         response = client.get(f"/subsystems/{subsystem_id}/profiles?limit=5")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -429,7 +430,7 @@ def test_subsystem_coverage_endpoint(
         response = client.get(f"/subsystems/{subsystem_id}/coverage")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 def test_subsystem_coverage_with_limit(
@@ -456,7 +457,7 @@ def test_subsystem_coverage_with_limit(
         response = client.get(f"/subsystems/{subsystem_id}/coverage?limit=5")
 
     # May return 200 or 404
-    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
 # =============================================================================
@@ -516,16 +517,16 @@ def test_router_with_auto_pipeline(
     with TestClient(app) as client:
         response = client.get("/subsystems")
 
-    assert response.status_code == status.HTTP_200_OK
+    expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_router_options_default() -> None:
     """Verify RouterOptions defaults to auto_pipeline=False."""
     options = RouterOptions()
-    assert options.auto_pipeline is False
+    expect_false(options.auto_pipeline)
 
 
 def test_router_options_with_auto_pipeline() -> None:
     """Verify RouterOptions accepts auto_pipeline=True."""
     options = RouterOptions(auto_pipeline=True)
-    assert options.auto_pipeline is True
+    expect_true(options.auto_pipeline)

@@ -46,7 +46,15 @@ from codeintel.core.plugins.execution.context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
-from codeintel.core.plugins.execution.executor import BasePluginExecutor
+from codeintel.core.plugins.execution.executor import (
+    BasePluginExecutor,
+    DefaultPluginExecutionStrategy,
+    ExecutionOptions,
+    ExecutionReportContext,
+    ExecutionStrategy,
+    ExecutionStrategyContext,
+    PluginExecutionStrategy,
+)
 from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
 from codeintel.core.plugins.execution.manifest import (
     InputHashPayload,
@@ -65,6 +73,8 @@ from codeintel.core.plugins.execution.settings import (
     build_plugin_settings_from_policy,
 )
 from codeintel.core.plugins.execution.tracking import (
+    FatalHandling,
+    TrackingOptions,
     complete_run_from_records,
     record_plugin_steps,
 )
@@ -74,14 +84,22 @@ __all__ = [
     "BaseExecutorContext",
     "BasePluginExecutor",
     "ConfigProvider",
+    "DefaultPluginExecutionStrategy",
+    "ExecutionOptions",
+    "ExecutionReportContext",
+    "ExecutionStrategy",
+    "ExecutionStrategyContext",
+    "FatalHandling",
     "InputHashPayload",
     "ManifestState",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
     "PluginExecutionManifest",
     "PluginExecutionSettings",
+    "PluginExecutionStrategy",
     "PluginScratch",
     "PluginSeverity",
+    "TrackingOptions",
     "build_manifest_entry",
     "build_plugin_settings_from_policy",
     "complete_run_from_records",

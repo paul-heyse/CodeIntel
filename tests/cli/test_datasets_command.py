@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import Result
 
+from tests._helpers.assertions import expect_in, expect_true
 from tests._helpers.cli import assert_exit, assert_success
 
 
@@ -18,8 +19,8 @@ def test_datasets_list(
     """Datasets list should print dataset names from registry."""
     result = cli_project_runner(["datasets", "list"])
     assert_success(result)
-    assert "ast_nodes" in result.stdout
-    assert "docstrings" in result.stdout
+    expect_in("ast_nodes", result.stdout)
+    expect_in("docstrings", result.stdout)
 
 
 @pytest.mark.usefixtures("cli_project_ctx")
@@ -32,8 +33,8 @@ def test_datasets_snapshot_to_file(
 
     result = cli_project_runner(["datasets", "snapshot", "--output", str(target_path)])
     assert_success(result)
-    assert target_path.is_file()
-    assert '"ast_nodes"' in target_path.read_text(encoding="utf-8")
+    expect_true(target_path.is_file())
+    expect_in('"ast_nodes"', target_path.read_text(encoding="utf-8"))
 
 
 @pytest.mark.usefixtures("cli_project_ctx")

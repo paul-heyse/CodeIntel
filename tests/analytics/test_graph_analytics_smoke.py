@@ -11,6 +11,7 @@ import pytest
 from codeintel.analytics.graphs import compute_graph_metrics, compute_graph_stats
 from codeintel.config import ConfigBuilder
 from tests._helpers import TestContext
+from tests._helpers.assertions import expect_equal
 from tests._helpers.seeds import GRAPH_PACK
 
 # Expected row count constant for graph metrics
@@ -51,6 +52,8 @@ def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
         f"repo = '{graph_ctx.repo}' AND commit = '{graph_ctx.commit}'",
     )
 
-    assert row_count == EXPECTED_GRAPH_METRICS_ROWS, (
-        f"Expected {EXPECTED_GRAPH_METRICS_ROWS} function metric rows, got {row_count}"
+    expect_equal(
+        row_count,
+        EXPECTED_GRAPH_METRICS_ROWS,
+        label=f"Expected {EXPECTED_GRAPH_METRICS_ROWS} function metric rows, got {row_count}",
     )
