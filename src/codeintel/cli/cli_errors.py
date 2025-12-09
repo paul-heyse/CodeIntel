@@ -15,7 +15,18 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
 
 from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
+from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.errors import CLI_EXIT_SUCCESS, CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
+from codeintel.storage.exceptions import (
+    QueryError as StorageQueryError,
+)
+from codeintel.storage.exceptions import (
+    SchemaError as StorageSchemaError,
+)
+from codeintel.storage.exceptions import (
+    StorageConnectionError,
+    StorageError,
+)
 
 if TYPE_CHECKING:
     from codeintel.cli.cyclopts_common import RuntimeCLI
@@ -39,13 +50,7 @@ class ErrorType(Enum):
     UNKNOWN_OPTION = f"{ERROR_TYPE_BASE}/unknown-option"
     RUNTIME = f"{ERROR_TYPE_BASE}/runtime"
     INTERNAL = f"{ERROR_TYPE_BASE}/internal"
-
-
-class OutputFormat(Enum):
-    """Output format for CLI responses."""
-
-    TEXT = "text"
-    JSON = "json"
+    STORAGE = f"{ERROR_TYPE_BASE}/storage"
 
 
 @dataclass(frozen=True)
@@ -422,6 +427,10 @@ __all__ = [
     "ErrorType",
     "OutputFormat",
     "ProblemDetail",
+    "StorageConnectionError",
+    "StorageError",
+    "StorageQueryError",
+    "StorageSchemaError",
     "UnknownCommandCliError",
     "UnknownOptionCliError",
     "ValidationError",

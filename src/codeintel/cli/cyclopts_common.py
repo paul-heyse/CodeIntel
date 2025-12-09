@@ -24,12 +24,8 @@ from typing import Annotated, Any, cast
 from cyclopts import App, Parameter
 from cyclopts import config as cyclopts_config
 
-from codeintel.cli.common_handlers import (
-    BackendFlags,
-    OutputFormat,
-    RuntimeCliOptions,
-    build_config_from_options,
-)
+from codeintel.cli.cli_types import BackendFlags, OutputFormat
+from codeintel.cli.common_handlers import RuntimeCliOptions, build_config_from_options
 from codeintel.cli.project import (
     ProjectConfig,
     ProjectNotFoundError,

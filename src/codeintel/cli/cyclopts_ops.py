@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import sys
 import types
 from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, make_dataclass
@@ -24,7 +25,8 @@ from typing import (
 from cyclopts import App, Group, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cli_middleware import get_middleware_stack
+from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
@@ -35,6 +37,7 @@ from codeintel.cli.cyclopts_common import (
     runtime_field,
 )
 from codeintel.cli.cyclopts_help import _AppCallKwargs
+from codeintel.cli.dry_run import plan_dry_run, render_dry_run
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
@@ -51,9 +54,12 @@ from codeintel.cli.ops_handlers import (
     serve_http_handler,
     serve_mcp_handler,
 )
+from codeintel.cli.output import OutputEnvelope, iter_stdin_records, merge_stdin_with_args
 from codeintel.cli.project import ProjectRuntime
 from codeintel.serving.auto_pipeline import run_operation_prereqs
+from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.operations.catalog import (
+    get_operation,
     register_test_operation,
     unregister_test_operation,
 )
@@ -223,6 +229,8 @@ class OperationCliArgs(Protocol):
 
     runtime: RuntimeCLI
     skip_prereqs: bool
+    from_stdin: bool
+    dry_run: bool
 
 
 # -----------------------------------------------------------------------------
@@ -556,7 +564,38 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
         ],
         False,
     )
-    field_definitions = [*required_fields, *optional_fields, runtime_field_def, skip_field]
+    from_stdin_field = (
+        "from_stdin",
+        Annotated[
+            bool,
+            Parameter(
+                name="--from-stdin",
+                help="Read input records from stdin (JSON or JSONL).",
+                negative=(),
+            ),
+        ],
+        False,
+    )
+    dry_run_field = (
+        "dry_run",
+        Annotated[
+            bool,
+            Parameter(
+                name="--dry-run",
+                help="Show execution plan without running.",
+                negative=(),
+            ),
+        ],
+        False,
+    )
+    field_definitions = [
+        *required_fields,
+        *optional_fields,
+        runtime_field_def,
+        skip_field,
+        from_stdin_field,
+        dry_run_field,
+    ]
 
     cls_name = f"{metadata.cli_name.replace('-', '_').title().replace('_', '')}OpCli"
     params_cls = make_dataclass(
@@ -599,6 +638,62 @@ def _invoke_operation_with_prereqs(
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    middleware = get_middleware_stack()
+
+    with middleware.wrap(op_id, params):
+        if not skip_prereqs:
+            run_operation_prereqs(
+                op_id=op_id,
+                gateway=runtime.gateway,
+                snapshot=runtime.snapshot,
+                paths=runtime.paths,
+                tools=runtime.tools,
+            )
+
+        invoke_operation(op_id, params, runtime)
+
+
+def _invoke_operation_for_result(
+    op_id: str,
+    params: dict[str, Any],
+    runtime: ProjectRuntime,
+    *,
+    skip_prereqs: bool = False,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """Invoke an operation and return the result as a dictionary.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    params
+        Operation parameters.
+    runtime
+        Project runtime context.
+    skip_prereqs
+        Whether to skip prerequisite execution.
+    verbose
+        Whether to emit verbose output.
+
+    Returns
+    -------
+    dict[str, Any]
+        The operation result.
+
+    Raises
+    ------
+    ValidationError
+        When the operation fails.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    op = get_operation(op_id)
+    if op is None:
+        message = f"Unknown operation: {op_id}"
+        raise ValidationError(message)
+
     if not skip_prereqs:
         run_operation_prereqs(
             op_id=op_id,
@@ -608,7 +703,83 @@ def _invoke_operation_with_prereqs(
             tools=runtime.tools,
         )
 
-    invoke_operation(op_id, params, runtime)
+    stack = build_service_stack(runtime.serving, gateway=runtime.gateway)
+    try:
+        method = getattr(stack.service, op.backend_method, None)
+        if method is None:
+            message = f"Backend method not found: {op.backend_method}"
+            raise ValidationError(message)
+
+        result = method(**params)
+
+        # Convert result to dict
+        if hasattr(result, "model_dump"):
+            return result.model_dump(mode="json")
+        if hasattr(result, "__dict__"):
+            return dict(result.__dict__)
+        return {"value": result}
+    finally:
+        stack.close()
+
+
+def _execute_from_stdin(
+    metadata: OperationCliMetadata,
+    cfg: OperationCliArgs,
+    runtime: ProjectRuntime,
+    *,
+    verbose: bool,
+) -> None:
+    """Execute operation for each record from stdin.
+
+    Parameters
+    ----------
+    metadata
+        Operation CLI metadata.
+    cfg
+        CLI configuration with explicit arguments.
+    runtime
+        Project runtime context.
+    verbose
+        Whether to emit verbose output.
+    """
+    cli_args = _build_params_dict(cfg, metadata.params)
+
+    # Read all records first to get count for progress (if needed later)
+    records = list(iter_stdin_records())
+    results: list[dict[str, object]] = []
+
+    for stdin_record in records:
+        # CLI args override stdin values
+        merged_params = merge_stdin_with_args(stdin_record, cli_args)
+
+        try:
+            result = _invoke_operation_for_result(
+                metadata.operation.id,
+                merged_params,
+                runtime,
+                skip_prereqs=cfg.skip_prereqs,
+                verbose=verbose,
+            )
+            results.append({"input": stdin_record, "result": result, "success": True})
+        except Exception as exc:  # noqa: BLE001
+            results.append(
+                {
+                    "input": stdin_record,
+                    "error": str(exc),
+                    "success": False,
+                }
+            )
+
+    # Output all results as JSON array
+    output_format = get_output_format(
+        getattr(cfg, "output", None) or OutputFormatCLI(),
+        default=OutputFormat.JSON,
+    )
+    envelope = OutputEnvelope(
+        data=results,
+        metadata={"operation": metadata.operation.id, "count": len(results)},
+    )
+    envelope.write(output_format, sys.stdout)
 
 
 def _build_params_dict(cfg: OperationCliArgs, specs: tuple[CliParamSpec, ...]) -> dict[str, Any]:
@@ -646,14 +817,37 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
             raise ValidationError(message)
         typed_cfg = cfg
         runtime_cli = typed_cfg.runtime
-        runtime = _runtime_from_cli(runtime_cli)
+        verbose = bool(get_verbose(runtime_cli))
         params = _build_params_dict(typed_cfg, metadata.params)
+
+        # Handle dry-run mode
+        if typed_cfg.dry_run:
+            plan = plan_dry_run(
+                metadata.operation.id,
+                params,
+                skip_prereqs=typed_cfg.skip_prereqs,
+            )
+            output_format = get_output_format(
+                getattr(typed_cfg, "output", None) or OutputFormatCLI(),
+                default=OutputFormat.TEXT,
+            )
+            render_dry_run(plan, output_format)
+            return
+
+        runtime = _runtime_from_cli(runtime_cli)
+
+        # Handle stdin input for pipeable composition
+        if typed_cfg.from_stdin:
+            _execute_from_stdin(metadata, typed_cfg, runtime, verbose=verbose)
+            return
+
+        # Normal execution
         _invoke_operation_with_prereqs(
             metadata.operation.id,
             params,
             runtime,
             skip_prereqs=typed_cfg.skip_prereqs,
-            verbose=bool(get_verbose(runtime_cli)),
+            verbose=verbose,
         )
 
     dynamic_op.__annotations__["cfg"] = cfg_annotation

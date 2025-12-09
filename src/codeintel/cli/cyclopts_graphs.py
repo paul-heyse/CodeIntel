@@ -7,7 +7,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     get_output_format,

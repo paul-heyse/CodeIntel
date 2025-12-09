@@ -19,12 +19,19 @@ from typing import Any
 import uvicorn
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
     build_project_runtime,
 )
+from codeintel.cli.result_types import (
+    DatasetDescribeResult,
+    DatasetListResult,
+    DatasetVerifyResult,
+    OperationListResult,
+)
+from codeintel.cli.results import CliResult
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
@@ -366,14 +373,162 @@ def serve_mcp_handler(
     sys.exit(run_mcp_server())
 
 
+# -----------------------------------------------------------------------------
+# Structured Handlers (CliResult pattern)
+# -----------------------------------------------------------------------------
+
+
+def op_list_structured(
+    *,
+    category: str | None,
+) -> CliResult[OperationListResult]:
+    """List available serving operations (structured).
+
+    Parameters
+    ----------
+    category
+        Optional category filter.
+
+    Returns
+    -------
+    CliResult[OperationListResult]
+        List of operations matching the filter.
+    """
+    operations = list(iter_operations())
+    if category:
+        operations = [op for op in operations if op.category == category]
+
+    operation_dicts = [
+        {
+            "id": op.id,
+            "category": op.category,
+            "summary": op.summary,
+            "http_path": op.http_path,
+            "tool_name": op.tool_name,
+        }
+        for op in sorted(operations, key=lambda o: o.id)
+    ]
+
+    return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
+
+
+def dataset_list_structured(
+    *,
+    runtime: ProjectRuntime,
+) -> CliResult[DatasetListResult]:
+    """List datasets from the registry (structured).
+
+    Parameters
+    ----------
+    runtime
+        Project runtime context.
+
+    Returns
+    -------
+    CliResult[DatasetListResult]
+        List of datasets.
+    """
+    registry = runtime.gateway.datasets
+    meta = registry.meta or {}
+
+    dataset_dicts = [
+        {
+            "name": name,
+            "table_key": contract.table_key,
+            "is_view": str(contract.is_view),
+            "owner_package": contract.owner_package,
+        }
+        for name, contract in sorted(meta.items())
+    ]
+
+    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
+
+
+def dataset_describe_structured(
+    *,
+    table_key: str,
+) -> CliResult[DatasetDescribeResult]:
+    """Show contract details for a dataset (structured).
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+
+    Returns
+    -------
+    CliResult[DatasetDescribeResult]
+        Dataset details.
+
+    Raises
+    ------
+    ValidationError
+        When the dataset is not found.
+    """
+    contracts = get_dataset_contracts_by_table_key()
+    contract = contracts.get(table_key)
+    if contract is None:
+        error = f"Dataset not found: {table_key}"
+        raise ValidationError(error)
+
+    columns = contract.schema.columns if contract.schema else []
+
+    column_dicts: list[dict[str, str | bool]] = [
+        {"name": col.name, "type": col.type, "nullable": col.nullable} for col in columns
+    ]
+
+    return CliResult.ok(
+        DatasetDescribeResult(
+            table_key=contract.table_key,
+            name=contract.name,
+            description=contract.description,
+            owner_package=contract.owner_package,
+            columns=column_dicts,
+            row_count=None,
+            upstream_dependencies=list(contract.upstream_dependencies),
+        )
+    )
+
+
+def dataset_verify_structured(
+    *,
+    table_key: str | None,
+    runtime: ProjectRuntime,
+) -> CliResult[DatasetVerifyResult]:
+    """Verify dataset contracts against actual data (structured).
+
+    Parameters
+    ----------
+    table_key
+        Optional dataset table key filter.
+    runtime
+        Project runtime context.
+
+    Returns
+    -------
+    CliResult[DatasetVerifyResult]
+        Verification result.
+    """
+    issues = collect_contract_issues(runtime.gateway.con)
+
+    if table_key:
+        issues = [issue for issue in issues if table_key in issue]
+
+    return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
+
+
 __all__ = [
     "AUTO_PIPELINE_ENV",
     "dataset_describe_handler",
+    "dataset_describe_structured",
     "dataset_list_handler",
+    "dataset_list_structured",
     "dataset_verify_handler",
+    "dataset_verify_structured",
     "invoke_operation",
     "op_call_handler",
     "op_list_handler",
+    "op_list_structured",
     "serve_http_handler",
     "serve_mcp_handler",
 ]
