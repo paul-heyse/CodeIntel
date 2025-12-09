@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_jobs.py
+# hypothesis_version: 6.148.7
+
+['--format', 'Background Jobs', 'Created', 'Filter by status', 'Job ID', 'Maximum age in days', 'Maximum jobs to show', 'No jobs found\n', 'No output available\n', 'Operation', 'Output format', 'Status', 'blue', 'cancel', 'cancelled', 'cleanup', 'completed', 'cyan', 'dim', 'failed', 'green', 'jobs', 'jobs_app', 'json', 'list', 'output', 'pending', 'red', 'running', 'status', 'text', 'yellow']

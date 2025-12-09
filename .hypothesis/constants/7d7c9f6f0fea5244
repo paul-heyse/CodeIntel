@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/plugins.py
+# hypothesis_version: 6.148.7
+
+['*.py', '.codeintel', 'DEFAULT_PLUGIN_DIRS', 'PluginInfo', 'PluginManager', 'PluginProtocol', '_', 'create_plugin', 'description', 'enabled', 'get_plugin_manager', 'initialize_plugins', 'name', 'operations', 'path', 'plugins', 'version']

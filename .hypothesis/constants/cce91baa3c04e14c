@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cli_resilience.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 30.0, 60.0, 'CircuitBreaker', 'CircuitOpenError', 'CircuitState', 'Max retries exceeded', 'P', 'RetryContext', 'RetryMiddleware', 'RetryPolicy', 'RetryableError', 'Retrying after error', 'T', 'attempt', 'attempts', 'closed', 'delay', 'error', 'half_open', 'max_attempts', 'open', 'start_time', 'with_retry']

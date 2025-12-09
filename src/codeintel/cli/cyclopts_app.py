@@ -14,12 +14,27 @@ from codeintel.cli.cyclopts_config import config_app
 from codeintel.cli.cyclopts_datasets import datasets_ext_app
 from codeintel.cli.cyclopts_docs import docs_app
 from codeintel.cli.cyclopts_graphs import graphs_app
+from codeintel.cli.cyclopts_health import health_app
 from codeintel.cli.cyclopts_help import build_patched_app
+from codeintel.cli.cyclopts_help_commands import help_commands_app
 from codeintel.cli.cyclopts_history import history_app
 from codeintel.cli.cyclopts_ide import ide_app
+from codeintel.cli.cyclopts_jobs import jobs_app
 from codeintel.cli.cyclopts_ops import dataset_app, op_app, serve_app, set_root_app
+from codeintel.cli.cyclopts_plugins import plugins_app
 from codeintel.cli.cyclopts_storage import storage_app
 from codeintel.cli.cyclopts_subsystem import subsystem_app
+
+# Optional imports for initialization - may not be available during packaging
+try:
+    from codeintel.cli import operations as _operations_module
+except ImportError:
+    _operations_module = None  # type: ignore[assignment]
+
+try:
+    from codeintel.cli.plugins import initialize_plugins as _init_plugins
+except ImportError:
+    _init_plugins = None  # type: ignore[assignment]
 
 app: App = build_patched_app(make_root_app)
 set_root_app(app)
@@ -47,6 +62,10 @@ app.command(subsystem_app, name="subsystem")
 
 # Utilities
 app.command(config_app, name="config")
+app.command(health_app, name="health")
+app.command(jobs_app, name="jobs")
+app.command(plugins_app, name="plugins")
+app.command(help_commands_app, name="help-ops")
 
 
 def _detect_output_format() -> OutputFormat:
@@ -78,6 +97,20 @@ def _detect_output_format() -> OutputFormat:
     return OutputFormat.TEXT
 
 
+def _initialize_cli() -> None:
+    """Initialize CLI infrastructure.
+
+    Register operations and load plugins before running commands.
+    """
+    # Operations module import triggers registration via module-level code
+    # The import at top-level already triggered this if available
+    _ = _operations_module  # Reference to confirm import happened
+
+    # Load plugins from plugin directories
+    if _init_plugins is not None:
+        _init_plugins()
+
+
 def main() -> None:
     """Entry point used by console_scripts.
 
@@ -87,6 +120,10 @@ def main() -> None:
         Propagated with normalized CLI exit codes on failure.
     """
     output_format = _detect_output_format()
+
+    # Initialize CLI infrastructure
+    _initialize_cli()
+
     try:
         app()
     except BaseException as exc:
@@ -101,8 +138,12 @@ __all__ = [
     "datasets_ext_app",
     "docs_app",
     "graphs_app",
+    "health_app",
+    "help_commands_app",
     "history_app",
+    "jobs_app",
     "op_app",
+    "plugins_app",
     "serve_app",
     "storage_app",
 ]

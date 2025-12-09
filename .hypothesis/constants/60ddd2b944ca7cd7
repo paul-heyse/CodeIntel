@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/operations/graph_operations.py
+# hypothesis_version: 6.148.7
+
+[0.0, 100, 'Execute graph query', 'GRAPH_PLUGINS_SPEC', 'GRAPH_QUERY_SPEC', 'GRAPH_STATS_SPEC', 'List graph plugins', 'call', 'graph.plugins', 'graph.query', 'graph.stats']

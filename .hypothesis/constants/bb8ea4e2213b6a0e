@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/resilience_middleware.py
+# hypothesis_version: 6.148.7
+
+[0.0, 60.0, '.', 'CircuitBreakerStatus', 'ResilienceConfig', 'ResilienceMiddleware', '_failure_count', '_last_failure_time', 'category', 'configure_resilience', 'execute_with_retry', 'get_breaker_registry', 'is_retryable', 'start_time']

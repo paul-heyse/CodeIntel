@@ -7,6 +7,547 @@
 
 ---
 
+## Prior Work & Context
+
+This section provides essential context about the CLI infrastructure built in Phases 2-4. Understanding these components is critical for implementing Phase 5, which **activates and extends** this infrastructure.
+
+### Overall CLI Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         User / Command Line                                   │
+└─────────────────────────────────────────────────────────────┬───────────────┘
+                                                              │
+                                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Cyclopts Command Layer                                   │
+│            cyclopts_build.py | cyclopts_ops.py | cyclopts_*.py               │
+│                        (Parameter parsing via Cyclopts)                       │
+└─────────────────────────────────────────────────────────────┬───────────────┘
+                                                              │
+                                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      OperationExecutor (Phase 4)                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  Validation  │→ │  Middleware  │→ │   Handler    │→ │   Render     │     │
+│  │              │  │    Stack     │  │  Execution   │  │   Output     │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │
+│        │                │                  │                  │              │
+│        ▼                ▼                  ▼                  ▼              │
+│  ValidationSchema  TracingMiddleware  CliResult[T]     OutputRenderer       │
+│  error_taxonomy    LoggingMiddleware  ProblemDetail    RichConsole          │
+│  cli_validation    MetricsMiddleware  result_types     PlaintextRenderer    │
+│                    cli_progress                        JsonRenderer         │
+│                    cli_resilience                                           │
+└─────────────────────────────────────────────────────────────┬───────────────┘
+                                                              │
+                                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      OperationRegistry (Phase 4)                              │
+│                 (Central registry for OperationSpec instances)               │
+└─────────────────────────────────────────────────────────────┬───────────────┘
+                                                              │
+                                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Introspection API (Phase 4)                              │
+│        get_operation_info() | get_operation_schema() | search_operations()   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Phase 2 Summary: Foundational Building Blocks
+
+Phase 2 created the foundational infrastructure components:
+
+#### 1. Unified Type Definitions (`cli_types.py`)
+
+Single source of truth for CLI types:
+
+| Type | Purpose |
+|------|---------|
+| `OutputFormat` | Enum for TEXT/JSON output modes |
+| `BackendFlags` | GPU/backend preferences |
+| `RuntimeOptions` | Unified runtime discovery options |
+| `PathSelection` | Repository path inputs |
+| `RepoSelection` | Repository identification |
+| `HelpLevel` | Brief/full help levels |
+
+#### 2. CliResult Pattern (`results.py`)
+
+Structured result protocol for all handlers:
+
+```python
+@dataclass
+class CliResult[T]:
+    success: bool
+    data: T | None = None
+    error: ProblemDetail | None = None
+    warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, object] = field(default_factory=dict)
+
+    @classmethod
+    def ok(cls, data: T, *, metadata: dict | None = None) -> CliResult[T]: ...
+
+    @classmethod
+    def fail(cls, error: ProblemDetail, *, warnings: list[str] | None = None) -> CliResult[T]: ...
+
+    def to_json(self, *, indent: int | None = 2) -> str: ...
+    def render(self, output_format: OutputFormat, writer: TextIO = sys.stdout, ...) -> None: ...
+```
+
+#### 3. Middleware Pattern (`cli_middleware.py`)
+
+Composable cross-cutting concerns:
+
+```python
+class OperationMiddleware(ABC):
+    @abstractmethod
+    def before_invoke(self, op_id: str, params: dict[str, Any]) -> dict[str, Any]: ...
+    @abstractmethod
+    def after_invoke(self, op_id: str, result: object, context: dict[str, Any]) -> None: ...
+    @abstractmethod
+    def on_error(self, op_id: str, exc: Exception, context: dict[str, Any]) -> None: ...
+
+# Built-in middleware:
+# - LoggingMiddleware — logs operation start/completion/error
+# - MetricsMiddleware — tracks counts, errors, durations
+
+class MiddlewareStack:
+    def add(self, mw: OperationMiddleware) -> None: ...
+
+    @contextmanager
+    def wrap(self, op_id: str, params: dict[str, Any]) -> Iterator[None]: ...
+```
+
+#### 4. Progress Tracking (`cli_progress.py`)
+
+Rich progress bars for long operations:
+
+```python
+class ProgressTracker:
+    def add_task(self, description: str, total: float | None = None) -> TaskID: ...
+    def update(self, task_id: TaskID, **fields: float | str | bool) -> None: ...
+    def complete(self, task_id: TaskID) -> None: ...
+
+    def __enter__(self) -> ProgressTracker: ...
+    def __exit__(self, ...) -> None: ...
+
+# Helpers:
+def progress_context(description: str, total: float | None = None) -> Iterator[ProgressTracker]: ...
+def iter_with_progress(items: Iterable[T], description: str, ...) -> Iterator[T]: ...
+```
+
+#### 5. Input Validation (`cli_validation.py`)
+
+Composable validators with structured errors:
+
+```python
+@dataclass(frozen=True)
+class ValidationError:
+    field: str
+    message: str
+    code: str
+    value: str | None = None
+
+@dataclass
+class ValidationResult[T]:
+    value: T | None = None
+    errors: list[ValidationError] = field(default_factory=list)
+
+    @property
+    def is_valid(self) -> bool: ...
+
+# Validators:
+class StringValidator(Validator[str]):     # min/max length, pattern, allowed_values
+class PathValidator(Validator[Path]):      # must_exist, must_be_file, must_be_dir
+class IntValidator(Validator[int]):        # min/max value
+
+# Schema for multi-field validation:
+class ValidationSchema:
+    validators: dict[str, Validator[Any]]
+    def add[T](self, field_name: str, validator: Validator[T]) -> ValidationSchema: ...
+    def validate(self, data: dict[str, object]) -> ValidationResult[dict[str, object]]: ...
+
+# Pre-built validators:
+OPERATION_ID_VALIDATOR, TABLE_KEY_VALIDATOR, PATH_VALIDATOR, EXISTING_PATH_VALIDATOR
+```
+
+#### 6. Stdin Support & Dry-Run Mode
+
+- `--from-stdin` flag for piping JSON/JSONL records
+- `--dry-run` flag for execution planning without side effects
+
+---
+
+### Phase 3 Summary: Rendering, Configuration, Resilience
+
+Phase 3 extended the infrastructure with:
+
+#### 1. Unified Output Rendering (`cli_render.py`)
+
+```python
+class OutputRenderer(Protocol):
+    def render_table(self, rows: Sequence[dict[str, object]], spec: TableSpec) -> None: ...
+    def render_object(self, obj: object) -> None: ...
+    def render_error(self, error: ProblemDetail) -> None: ...
+    def render_message(self, message: str, *, style: str | None = None) -> None: ...
+
+# Implementations:
+class RichConsoleRenderer(OutputRenderer):  # Rich tables, colors, formatting
+class PlaintextRenderer(OutputRenderer):    # Plain text, no colors
+class JsonRenderer(OutputRenderer):          # JSON output
+
+# Helper:
+def render_cli_result[T](result: CliResult[T], renderer: OutputRenderer) -> None: ...
+```
+
+#### 2. Result Types (`result_types.py`)
+
+Structured result types for all handler domains:
+
+```python
+@dataclass
+class OperationListResult:
+    operations: list[dict[str, str | None]]
+    count: int
+
+@dataclass
+class DatasetListResult:
+    datasets: list[dict[str, str | None]]
+    count: int
+
+@dataclass
+class BuildPlanResult:
+    stale: list[str]
+    missing: list[str]
+    up_to_date: list[str]
+    ...
+
+# Plus: DatasetDescribeResult, DatasetVerifyResult, BuildHistoryListResult,
+#       BuildHistoryDetailResult, GraphPluginPlanResult, GraphPluginListResult
+```
+
+#### 3. Configuration Schema (`cli_config_schema.py`)
+
+```python
+@dataclass
+class CliConfig:
+    output_format: str = "text"
+    color: bool = True
+    progress: bool = True
+    log_level: str = "WARNING"
+    ...
+
+class CliConfigLoader:
+    @staticmethod
+    def load_file(path: Path) -> dict[str, Any]: ...
+    @staticmethod
+    def load_env() -> dict[str, Any]: ...
+```
+
+#### 4. Resilience Layer (`cli_resilience.py`)
+
+```python
+@dataclass
+class RetryPolicy:
+    max_attempts: int = 3
+    initial_delay: float = 1.0
+    max_delay: float = 30.0
+    backoff_factor: float = 2.0
+    jitter: float = 0.1
+    retryable_exceptions: tuple[type[Exception], ...] = (RetryableError,)
+
+    def calculate_delay(self, attempt: int) -> float: ...
+
+@dataclass
+class CircuitBreaker:
+    failure_threshold: int = 5
+    recovery_timeout: float = 60.0
+
+    @property
+    def state(self) -> CircuitState: ...  # CLOSED, OPEN, HALF_OPEN
+    def record_success(self) -> None: ...
+    def record_failure(self) -> None: ...
+    def allow_request(self) -> bool: ...
+
+# Decorator:
+def with_retry(
+    policy: RetryPolicy | None = None,
+    circuit_breaker: CircuitBreaker | None = None,
+    on_retry: Callable[[RetryContext], None] | None = None,
+) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+
+# Middleware:
+class RetryMiddleware:
+    def before_invoke(self, op_id: str, params: dict[str, Any]) -> dict[str, Any]: ...
+    def after_invoke(self, op_id: str, result: object, context: dict[str, Any]) -> None: ...
+    def on_error(self, op_id: str, exc: Exception, context: dict[str, Any]) -> None: ...
+```
+
+#### 5. Shell Completion (`cli_completions.py`)
+
+Dynamic completion generation for Bash, Zsh, Fish.
+
+#### 6. Test Infrastructure (`tests/cli/_doubles/`)
+
+Test doubles compliant with testing charter (no monkeypatch):
+
+```python
+# tests/cli/_doubles/__init__.py
+class MockCliResult[T]: ...
+class CliTestContext: ...
+class CliRunner: ...
+class CliCommandFactory: ...
+
+# tests/cli/_doubles/contexts.py
+class MockStorageClient: ...
+class MockStorageGateway: ...
+class MockBuildGateway: ...
+class MockSnapshot: ...
+class MockProjectRuntime: ...
+class MockDatabaseState: ...
+```
+
+---
+
+### Phase 4 Summary: Integration & Maturation
+
+Phase 4 connected all components into a cohesive system:
+
+#### 1. Operation Executor (`executor.py`)
+
+Unified execution pipeline:
+
+```python
+class OperationCategory(Enum):
+    READ = "read"       # Fast, read-only operations
+    WRITE = "write"     # Mutating operations
+    COMPUTE = "compute" # Long-running computations
+    NETWORK = "network" # External service calls
+    BUILD = "build"     # Build system operations
+
+@dataclass(frozen=True)
+class OperationSpec[T]:
+    operation_id: str                                    # e.g., "build.status"
+    handler: Callable[..., CliResult[T]]                # The handler function
+    category: OperationCategory = OperationCategory.READ
+    param_schema: ValidationSchema | None = None         # Validation schema
+    requires_progress: bool = False                      # Show progress bar
+    estimated_duration: float | None = None              # For progress estimation
+    retryable: bool = False                              # Retry on failure
+    timeout: float | None = None                         # Max execution time
+    description: str = ""                                # Human-readable description
+
+@dataclass
+class ExecutionContext:
+    operation_id: str
+    params: dict[str, Any]
+    output_format: OutputFormat
+    start_time: float = field(default_factory=time.monotonic)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def elapsed_seconds(self) -> float: ...
+
+@dataclass
+class ExecutionResult[T]:
+    result: CliResult[T]
+    duration_seconds: float
+    validation_errors: list[str] = field(default_factory=list)
+    retries: int = 0
+
+class OperationExecutor:
+    def execute[T](
+        self,
+        spec: OperationSpec[T],
+        params: dict[str, Any],
+        *,
+        output_format: OutputFormat = OutputFormat.TEXT,
+        render: bool = True,
+    ) -> ExecutionResult[T]:
+        """Execute through: Validation → Middleware → Handler → Render"""
+        ...
+
+# Global access:
+def get_executor() -> OperationExecutor: ...
+def configure_executor(...) -> OperationExecutor: ...
+```
+
+#### 2. Operation Registry (`operation_registry.py`)
+
+Central registration for operations:
+
+```python
+@dataclass
+class OperationRegistry:
+    operations: dict[str, OperationSpec[Any]] = field(default_factory=dict)
+
+    def register(self, spec: OperationSpec[T]) -> OperationSpec[T]: ...
+    def get(self, operation_id: str) -> OperationSpec[Any] | None: ...
+    def list_operations(self, *, category: OperationCategory | None = None) -> list[OperationSpec[Any]]: ...
+    def unregister(self, operation_id: str) -> bool: ...
+
+# Global access:
+def get_operation_registry() -> OperationRegistry: ...
+def register_operation(spec: OperationSpec[T]) -> OperationSpec[T]: ...
+```
+
+#### 3. Error Taxonomy (`error_taxonomy.py`)
+
+URN-based error types with RFC 9457 factory functions:
+
+```
+urn:codeintel:cli:
+├── validation-error:missing-required  (400)
+├── validation-error:invalid-type      (400)
+├── validation-error:invalid-format    (400)
+├── validation-error:out-of-range      (400)
+├── operation-error:not-found          (404)
+├── operation-error:timeout            (504)
+├── operation-error:dependency-failed  (424)
+├── operation-error:internal-error     (500)
+├── storage-error:connection-failed    (503)
+├── storage-error:query-failed         (500)
+├── storage-error:schema-mismatch      (500)
+├── config-error:file-not-found        (404)
+├── config-error:parse-error           (400)
+├── config-error:invalid-value         (400)
+├── service-error:unavailable          (503)
+├── service-error:rate-limited         (429)
+└── service-error:authentication-failed (401)
+```
+
+Factory functions:
+- `validation_error(code, field_name, message, value=, suggestion=) -> ProblemDetail`
+- `operation_error(code, operation_id, message, cause=, debug_info=) -> ProblemDetail`
+- `storage_error(code, message, query=, table=) -> ProblemDetail`
+- `config_error(code, message, path=, key=) -> ProblemDetail`
+- `service_error(code, service, message, retry_after=) -> ProblemDetail`
+
+`ErrorContext` dataclass for debug mode:
+- `debug_mode: bool` — Include stack traces
+- `correlation_id: str | None` — Request tracing
+- `wrap_exception(exc, operation_id=) -> ProblemDetail`
+
+#### 4. OpenTelemetry Integration (`telemetry.py`)
+
+Full observability stack:
+
+```python
+@dataclass
+class TelemetryConfig:
+    enabled: bool = True
+    service_name: str = "codeintel-cli"
+    export_traces: bool = True
+    export_metrics: bool = True
+    console_export: bool = False
+    otlp_endpoint: str | None = None
+
+    @classmethod
+    def from_env(cls) -> TelemetryConfig: ...
+
+class TelemetryProvider:
+    @property
+    def tracer(self) -> Tracer | None: ...
+
+    @contextmanager
+    def span(self, name: str, *, attributes: dict[str, object] | None = None) -> Iterator[Span | None]: ...
+
+@dataclass
+class OperationMetrics:
+    operation_counts: dict[str, dict[str, int]]    # {op_id: {"success": N, "error": N}}
+    operation_durations: dict[str, list[float]]    # {op_id: [durations]}
+
+    def record_operation(self, operation_id: str, *, success: bool, duration_seconds: float) -> None: ...
+    def get_summary(self) -> dict[str, dict[str, object]]: ...
+
+class TracingMiddleware:
+    def before_invoke(self, op_id: str, params: dict[str, object]) -> dict[str, object]: ...
+    def after_invoke(self, op_id: str, result: object, context: dict[str, object]) -> None: ...
+    def on_error(self, op_id: str, exc: Exception, context: dict[str, object]) -> None: ...
+
+# Global access:
+def get_telemetry_provider() -> TelemetryProvider: ...
+def get_operation_metrics() -> OperationMetrics: ...
+```
+
+#### 5. Introspection API (`introspection.py`)
+
+Runtime operation discovery:
+
+```python
+@dataclass(frozen=True)
+class OperationInfo:
+    operation_id: str
+    category: str
+    description: str
+    parameters: list[dict[str, object]]
+    examples: list[str]
+    requires_progress: bool
+    retryable: bool
+
+    def to_dict(self) -> dict[str, object]: ...
+
+def get_operation_info(operation_id: str) -> OperationInfo | None: ...
+def get_operation_schema(operation_id: str) -> dict[str, object] | None: ...  # JSON Schema
+def list_operations_by_category() -> dict[str, list[str]]: ...
+def list_all_operations() -> list[OperationInfo]: ...
+def search_operations(query: str) -> list[OperationInfo]: ...
+```
+
+---
+
+### Key File Reference
+
+| File | Purpose | Phase |
+|------|---------|-------|
+| `cli_types.py` | Canonical type definitions | 2 |
+| `results.py` | CliResult[T] protocol | 2 |
+| `result_types.py` | Domain-specific result types | 3 |
+| `cli_middleware.py` | Middleware pattern & stack | 2 |
+| `cli_progress.py` | Progress tracking (rich) | 2 |
+| `cli_validation.py` | Input validation layer | 2 |
+| `cli_render.py` | Output rendering system | 3 |
+| `cli_config_schema.py` | Configuration schema | 3 |
+| `cli_resilience.py` | Retry & circuit breaker | 3 |
+| `cli_completions.py` | Shell completion generation | 3 |
+| `executor.py` | OperationExecutor | 4 |
+| `operation_registry.py` | OperationRegistry | 4 |
+| `error_taxonomy.py` | URN error types | 4 |
+| `telemetry.py` | OpenTelemetry integration | 4 |
+| `introspection.py` | Runtime discovery | 4 |
+| `tests/cli/_doubles/` | Test doubles | 3 |
+
+---
+
+### Key Patterns & Conventions
+
+1. **Handlers return `CliResult[T]`** — All handlers should return structured results, not print directly
+2. **Errors use `ProblemDetail`** — RFC 9457 structure with URN types from error_taxonomy
+3. **Validation before execution** — Use `ValidationSchema` in `OperationSpec.param_schema`
+4. **Progress for long ops** — Set `requires_progress=True` in `OperationSpec`
+5. **Global singletons with getters** — `get_executor()`, `get_operation_registry()`, `get_telemetry_provider()`
+6. **Middleware wraps handlers** — Automatic via `OperationExecutor`
+7. **Test without monkeypatch** — Use test doubles from `tests/cli/_doubles/`
+
+---
+
+### What Phase 4 Enabled (Current State)
+
+| Component | Status | Usage |
+|-----------|--------|-------|
+| OperationExecutor | **Defined** | Not yet used by commands |
+| OperationRegistry | **Defined** | Empty (no operations registered) |
+| Middleware | **Defined** | Manual wiring only |
+| Telemetry | **Defined** | Opt-in only |
+| cli_config_schema | **Defined** | Not loaded at startup |
+| Introspection | **Defined** | Available but no operations to discover |
+
+**Phase 5 Goal**: Wire everything together so these components are actively used.
+
+---
+
 ## Executive Summary
 
 Phase 5 represents the **activation and extension** of the CLI infrastructure built in Phases 2-4. While previous phases created foundational components (types, validation, middleware, executor, telemetry, introspection), Phase 5 connects these into a fully operational system and extends it with new capabilities.
@@ -37,6 +578,7 @@ Without Phase 5, we have excellent infrastructure that isn't fully utilized:
 
 ## Table of Contents
 
+0. [Prior Work & Context](#prior-work--context)
 1. [Phase 5.1: Full Handler & Command Migration](#phase-51-full-handler--command-migration)
 2. [Phase 5.2: Configuration System Activation](#phase-52-configuration-system-activation)
 3. [Phase 5.3: Help System Enhancement](#phase-53-help-system-enhancement)
