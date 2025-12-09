@@ -26,13 +26,16 @@ from cyclopts import App, Group, Parameter
 from codeintel.cli.cli_errors import ValidationError
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
+    OUTPUT_PARAM_FIELD,
+    RUNTIME_PARAM_FIELD,
     OutputParam,
     RuntimeCLI,
     RuntimeCliError,
     RuntimeParam,
     build_runtime_from_cli,
-    resolve_output_format,
+    get_output_format,
+    get_verbose,
+    runtime_field,
 )
 from codeintel.cli.cyclopts_help import _AppCallKwargs
 from codeintel.cli.op_params import (
@@ -78,29 +81,84 @@ def set_root_app(root: App) -> None:
     _ROOT_APP_HOLDER["app"] = root
 
 
-# Provide a thin proxy to the root app for tests that want parse-only behavior
-def app(
-    tokens: str | Iterable[str] | None = None, **call_kwargs: Unpack[_AppCallKwargs]
-) -> types.SimpleNamespace:
-    """
-    Invoke the root Cyclopts app from within the ops module.
+def get_app() -> App:
+    """Return the root Cyclopts app for embedding and testing.
+
+    This function provides access to the root application instance after
+    it has been initialized by ``cyclopts_app.py``. Use this for
+    programmatic invocation or test scenarios.
 
     Returns
     -------
-    types.SimpleNamespace
-        Parsed namespace for parse-only flows when result_action="return_value".
+    App
+        The root Cyclopts application instance.
 
     Raises
     ------
     RuntimeError
-        If the root app reference has not been set.
+        If the root app has not been initialized via ``set_root_app()``.
     """
-    root_app = _ROOT_APP_HOLDER["app"]
-    if root_app is None:
-        message = "Root app not initialized"
+    root = _ROOT_APP_HOLDER["app"]
+    if root is None:
+        message = "Root app not initialized. Import cyclopts_app to initialize."
         raise RuntimeError(message)
+    return root
+
+
+def app_proxy(
+    tokens: str | Iterable[str] | None = None, **call_kwargs: Unpack[_AppCallKwargs]
+) -> types.SimpleNamespace:
+    """Invoke the root Cyclopts app with typed kwargs for embedding and tests.
+
+    This function provides a parse-only or execute-and-return interface
+    to the CLI. Use it when you need to invoke CLI commands programmatically
+    and retrieve parsed arguments or results.
+
+    Parameters
+    ----------
+    tokens
+        Command tokens to parse (e.g., ``["op", "list", "--category", "core"]``).
+    **call_kwargs
+        Typed keyword arguments for ``App.__call__``. Common options:
+        - ``result_action``: Set to ``"return_value"`` for parse-only flows.
+        - ``exit_on_error``: Set to ``False`` to raise exceptions instead of exiting.
+        - ``print_error``: Set to ``False`` to suppress error output.
+
+    Returns
+    -------
+    types.SimpleNamespace
+        Parsed namespace when ``result_action`` includes ``"return_value"``.
+
+    Examples
+    --------
+    Parse-only invocation returning kwargs:
+
+    >>> ns = app_proxy(["op", "list"], result_action="return_value")
+    >>> category = ns.kwargs.get("category")  # Access parsed values
+
+    See Also
+    --------
+    get_app : Returns the root app; raises RuntimeError if not initialized.
+    """
+    root_app = get_app()
     result = root_app(tokens, **call_kwargs)
     return cast("types.SimpleNamespace", result)
+
+
+# Keep backward-compatible alias
+def app(
+    tokens: str | Iterable[str] | None = None, **call_kwargs: Unpack[_AppCallKwargs]
+) -> types.SimpleNamespace:
+    """Backward-compatible alias for ``app_proxy``.
+
+    Use ``app_proxy`` for new code.
+
+    Returns
+    -------
+    types.SimpleNamespace
+        Parsed namespace (delegated to ``app_proxy``).
+    """
+    return app_proxy(tokens, **call_kwargs)
 
 
 # Track dynamically registered operation command names to avoid duplicates
@@ -145,7 +203,7 @@ class OpListCli:
             help="Filter by operation category.",
         ),
     ] = None
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
 
 @op_app.command(name="list")
@@ -156,11 +214,7 @@ class OpListCommand:
     cfg: Annotated[OpListCli, Parameter(name="*")] = field(default_factory=OpListCli)
 
     def __call__(self) -> None:
-        output_format = resolve_output_format(
-            json_flag=self.cfg.output.json,
-            explicit=self.cfg.output.output_format,
-            default=OutputFormat.TEXT,
-        )
+        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
         op_list_handler(
             category=self.cfg.category,
             output_format=output_format,
@@ -175,8 +229,9 @@ class OpCallCli:
         str,
         Parameter(
             help="Operation ID to invoke.",
+            required=True,
         ),
-    ] = ""
+    ]
     params: Annotated[
         list[str] | None,
         Parameter(
@@ -184,7 +239,7 @@ class OpCallCli:
             help="Operation parameters as key=value pairs.",
         ),
     ] = None
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
     skip_prereqs: Annotated[
         bool,
         Parameter(
@@ -200,12 +255,9 @@ class OpCallCli:
 class OpCallCommand:
     """Invoke a serving operation end-to-end."""
 
-    cfg: Annotated[OpCallCli, Parameter(name="*")] = field(default_factory=OpCallCli)
+    cfg: Annotated[OpCallCli, Parameter(name="*")]
 
     def __call__(self) -> None:
-        if not self.cfg.op_id:
-            message = "Operation ID is required."
-            raise ValidationError(message)
         runtime = self.cfg.runtime
         project_runtime = _runtime_from_cli(runtime)
         op_call_handler(
@@ -213,7 +265,7 @@ class OpCallCommand:
             params=self.cfg.params,
             runtime=project_runtime,
             skip_prereqs=self.cfg.skip_prereqs,
-            verbose=bool(runtime.verbose),
+            verbose=bool(get_verbose(runtime)),
         )
 
 
@@ -450,7 +502,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
         else:
             optional_fields.append(field_def)
 
-    runtime_field = ("runtime", RuntimeParam, field(default_factory=RuntimeCLI))
+    runtime_field_def = ("runtime", RuntimeParam, runtime_field())
     skip_field = (
         "skip_prereqs",
         Annotated[
@@ -463,7 +515,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
         ],
         False,
     )
-    field_definitions = [*required_fields, *optional_fields, runtime_field, skip_field]
+    field_definitions = [*required_fields, *optional_fields, runtime_field_def, skip_field]
 
     cls_name = f"{metadata.cli_name.replace('-', '_').title().replace('_', '')}OpCli"
     params_cls = make_dataclass(
@@ -475,7 +527,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
     return params_cls
 
 
-def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
+def _runtime_from_cli(cli: RuntimeParam) -> ProjectRuntime:
     """Build a runtime from CLI flags with Cyclopts-native error handling.
 
     Returns
@@ -556,7 +608,7 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
             params,
             runtime,
             skip_prereqs=typed_cfg.skip_prereqs,
-            verbose=bool(runtime_cli.verbose),
+            verbose=bool(get_verbose(runtime_cli)),
         )
 
     dynamic_op.__annotations__["cfg"] = cfg_annotation
@@ -598,6 +650,45 @@ def path_defaults_and_validator(
     return _path_defaults_and_validator(spec)
 
 
+def path_validator(
+    *,
+    require_exists: bool = True,
+    require_dir: bool | None = None,
+) -> Callable[[type[Any], Path], None]:
+    """Build a path validator for Cyclopts Parameter validation.
+
+    Use this to create validators for path parameters in CLI commands.
+
+    Parameters
+    ----------
+    require_exists
+        When True, path must exist. When False, parent must exist but file can be missing.
+    require_dir
+        When True, path must be directory. When False, path must be file.
+        When None, no shape constraint is applied.
+
+    Returns
+    -------
+    Callable[[type[Any], Path], None]
+        Validator function suitable for Cyclopts Parameter(validator=...).
+
+    Examples
+    --------
+    Required existing path:
+
+    >>> validator = path_validator(require_exists=True)
+
+    Output path (parent must exist):
+
+    >>> validator = path_validator(require_exists=False)
+
+    Required directory:
+
+    >>> validator = path_validator(require_exists=True, require_dir=True)
+    """
+    return _path_validator(require_exists=require_exists, require_dir=require_dir)
+
+
 def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None:
     """Register a dynamic operation command for testing purposes."""
     _register_dynamic_operation(metadata)
@@ -612,8 +703,8 @@ def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None
 class DatasetListCli:
     """CLI surface for `codeintel dataset list`."""
 
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
 
 @dataset_app.command(name="list")
@@ -625,11 +716,7 @@ class DatasetListCommand:
 
     def __call__(self) -> None:
         runtime = _runtime_from_cli(self.cfg.runtime)
-        output_format = resolve_output_format(
-            json_flag=self.cfg.output.json,
-            explicit=self.cfg.output.output_format,
-            default=OutputFormat.TEXT,
-        )
+        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
         dataset_list_handler(
             runtime=runtime,
             output_format=output_format,
@@ -644,9 +731,10 @@ class DatasetDescribeCli:
         str,
         Parameter(
             help="Dataset table key (e.g., 'core.goids').",
+            required=True,
         ),
-    ] = ""
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    ]
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
 
 @dataset_app.command(name="describe")
@@ -654,19 +742,10 @@ class DatasetDescribeCli:
 class DatasetDescribeCommand:
     """Show contract details for a dataset."""
 
-    cfg: Annotated[DatasetDescribeCli, Parameter(name="*")] = field(
-        default_factory=DatasetDescribeCli
-    )
+    cfg: Annotated[DatasetDescribeCli, Parameter(name="*")]
 
     def __call__(self) -> None:
-        if not self.cfg.table_key:
-            message = "Dataset key is required."
-            raise ValidationError(message)
-        output_format = resolve_output_format(
-            json_flag=self.cfg.output.json,
-            explicit=self.cfg.output.output_format,
-            default=OutputFormat.TEXT,
-        )
+        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
         dataset_describe_handler(table_key=self.cfg.table_key, output_format=output_format)
 
 
@@ -681,7 +760,7 @@ class DatasetVerifyCli:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
 
 
 @dataset_app.command(name="verify")
@@ -736,7 +815,7 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
 
     def __call__(self) -> None:
         runtime_obj = _runtime_from_cli(self.runtime)
@@ -762,7 +841,7 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
 
     def __call__(self) -> None:
         runtime_obj = _runtime_from_cli(self.runtime)
@@ -778,10 +857,13 @@ register_dynamic_operations()
 __all__ = [
     "SimpleNamespace",
     "app",
+    "app_proxy",
     "build_param_field_for_spec",
     "dataset_app",
+    "get_app",
     "op_app",
     "path_defaults_and_validator",
+    "path_validator",
     "register_dynamic_operation_for_tests",
     "register_dynamic_operations",
     "serve_app",

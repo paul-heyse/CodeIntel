@@ -261,7 +261,7 @@ def test_module_subsystems_missing_module(
         response = client.get("/architecture/module-subsystems")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 # =============================================================================

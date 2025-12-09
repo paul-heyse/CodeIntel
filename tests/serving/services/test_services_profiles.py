@@ -168,7 +168,7 @@ def test_get_function_profile_missing_goid_h128(
         response = client.get("/profiles/function")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_function_profile_invalid_goid_h128(
@@ -237,7 +237,7 @@ def test_get_file_profile_missing_rel_path(
         response = client.get("/profiles/file")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_file_profile_nonexistent_file(
@@ -305,7 +305,7 @@ def test_get_module_profile_missing_module(
         response = client.get("/profiles/module")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_module_profile_nonexistent_module(
@@ -373,7 +373,7 @@ def test_get_function_architecture_missing_goid_h128(
         response = client.get("/architecture/function")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_function_architecture_invalid_goid_h128(
@@ -441,7 +441,7 @@ def test_get_module_architecture_missing_module(
         response = client.get("/architecture/module")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_module_architecture_nonexistent_module(

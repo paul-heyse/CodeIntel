@@ -105,7 +105,12 @@ def run_cli(
         sys.argv = ["codeintel", *argv]
         with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
             try:
-                app(argv, result_action="return_value", exit_on_error=False, print_error=False)
+                app(
+                    argv,
+                    result_action=["call_if_callable", "return_value"],
+                    exit_on_error=False,
+                    print_error=False,
+                )
                 exit_code = 0
             except BaseException as exc:  # noqa: BLE001 - map CLI errors to codes
                 exit_code = handle_cli_error(exc, stderr_buf)

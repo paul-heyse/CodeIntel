@@ -797,6 +797,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             and now - self.last_failure_ts < self.circuit_cooldown_s
         ):
             message = "HTTP circuit open; retry later"
+            LOG.warning(message)
             raise errors.backend_failure(message)
 
         attempt_error: Exception | None = None
@@ -816,6 +817,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
                     payload = response.json()
                     problem = ProblemDetailModel.model_validate(payload).to_domain()
                     attempt_error = errors.McpError(detail=problem)
+                    LOG.warning("HTTP backend error: %s", problem.detail or problem.title)
                     if response.status_code < RETRYABLE_MIN_STATUS:
                         raise attempt_error
                 else:

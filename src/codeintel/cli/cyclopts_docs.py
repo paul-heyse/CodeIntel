@@ -11,12 +11,11 @@ from cyclopts import App, Parameter
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
+    OUTPUT_PARAM_FIELD,
+    RUNTIME_PARAM_FIELD,
     OutputParam,
-    RuntimeCLI,
     RuntimeParam,
-    resolve_output_format,
-    runtime_cli_to_options,
+    make_handler_context,
 )
 from codeintel.cli.docs_handlers import (
     BackendOptions,
@@ -115,7 +114,7 @@ class DocsExportCli:
             help="Dataset name to export (repeatable).",
         ),
     ] = None
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    output: OutputParam = OUTPUT_PARAM_FIELD
     run_mode: Annotated[
         DryRunMode | None,
         Parameter(
@@ -158,7 +157,7 @@ DEFAULT_EXPORT = DocsExportCli()
 class DocsCli:
     """Grouped CLI surface for docs export."""
 
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
     backend: Annotated[DocsBackendCli, Parameter(name="*")] = field(default_factory=DocsBackendCli)
     export: Annotated[DocsExportCli, Parameter(name="*")] = field(default_factory=DocsExportCli)
 
@@ -219,11 +218,8 @@ class DocsExportCommand:
         if prereq_mode is None:
             prereq_mode = PrereqMode.SKIP if export_cfg.skip_prereqs else PrereqMode.RUN
 
-        runtime_opts = runtime_cli_to_options(project_cfg)
-        output_format = resolve_output_format(
-            json_flag=export_cfg.output.json,
-            explicit=export_cfg.output.output_format,
-            default=OutputFormat.TEXT,
+        runtime_opts, verbose, output_format = make_handler_context(
+            project_cfg, export_cfg.output, default_output=OutputFormat.TEXT
         )
 
         cli_kwargs = {
@@ -243,7 +239,7 @@ class DocsExportCommand:
             "output_format": output_format,
             "run_mode": run_mode,
             "prereq_mode": prereq_mode,
-            "verbose": project_cfg.verbose,
+            "verbose": verbose,
         }
         try:
             bundled_mapping = bundle_docs_export(cli_kwargs)

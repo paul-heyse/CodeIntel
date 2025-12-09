@@ -5,12 +5,14 @@ This module tests the dataset browsing MCP tools registered from Operation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.errors import McpError
@@ -18,13 +20,16 @@ from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.dataset_factories import make_descriptor
 from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
+from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -171,64 +176,75 @@ def test_register_dataset_tools_on_multiple_servers(
 
 def test_dataset_tools_serialize_unicode_payloads() -> None:
     """Dataset tools serialize multi-row unicode/nullable payloads."""
+    payload = [
+        make_descriptor(
+            name="datasets.alpha",
+            table="core.alpha",
+            description="データセット alpha",
+        )[1],
+        make_descriptor(
+            name="datasets.delta",
+            table="docs.δelta",
+            description="Docs delta",
+            options=None,
+        )[1],
+    ]
 
-    class _FakeDatasetBackend:
-        def __init__(self) -> None:
-            self._payload = [
-                DatasetSpecDescriptor(
-                    name="datasets.alpha",
-                    table_key="core.alpha",
-                    family="core",
-                    is_view=False,
-                    schema_columns=["col1"],
-                    jsonl_filename=None,
-                    parquet_filename=None,
-                    has_row_binding=False,
-                    json_schema_id="alpha",
-                    description="データセット alpha",
-                    owner=None,
-                    validation_profile="lenient",
-                    stable_id="alpha-1",
-                ),
-                DatasetSpecDescriptor(
-                    name="datasets.delta",
-                    table_key="docs.δelta",
-                    family="docs",
-                    is_view=True,
-                    schema_columns=["node", "value"],
-                    jsonl_filename="δ.jsonl",
-                    parquet_filename=None,
-                    has_row_binding=True,
-                    json_schema_id=None,
-                    description=None,
-                    owner="team-δ",
-                    validation_profile="strict",
-                    upstream_dependencies=["datasets.alpha"],
-                ),
-            ]
-
-        def list_datasets(self) -> list[DatasetSpecDescriptor]:
-            return self._payload
+    backend = LocalQueryService(
+        query=HookedDuckDBQueryApi(
+            hooks={"dataset_hooks": {"list_datasets": lambda: payload}},
+        ),
+    )
 
     registrar = RecordingMcpRegistrar("dataset-recorder")
     ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]
     register_dataset_tools(
         registrar,
-        _FakeDatasetBackend(),
+        backend,
         options=DatasetToolOptions(operations=ops),
     )
 
     tool = registrar.registry["list_datasets"]
-    result = tool()
+    result = cast("list[dict[str, object]]", tool())
     expect_is_instance(result, list)
     expect_equal(len(result), 2)
     expect_true(any(row["owner"] is None for row in result))
     expect_true(
         any(
-            ("δ" in row.get("table_key", "")) or ("δ" in (row.get("jsonl_filename") or ""))
+            ("δ" in str(row.get("table", ""))) or ("δ" in str(row.get("jsonl_filename") or ""))
             for row in result
         )
     )
+
+
+def test_dataset_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> None:
+    """Dataset tools emit ProblemDetail payloads and warning logs on failure."""
+
+    class _FailingService(LocalQueryService):
+        def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
+            self.calls.append("list_datasets")
+            message = "list failed"
+            raise errors.backend_failure(message)
+
+    failing_backend = _FailingService(query=HookedDuckDBQueryApi())
+
+    registrar = RecordingMcpRegistrar("dataset-errors")
+    ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]
+    register_dataset_tools(
+        registrar,
+        failing_backend,
+        options=DatasetToolOptions(operations=ops),
+    )
+
+    with caplog.at_level("WARNING"):
+        result_dict: dict[str, object] = cast(
+            "dict[str, object]", registrar.registry["list_datasets"]()
+        )
+
+    expect_true("error" in result_dict)
+    error_payload = cast("dict[str, object]", result_dict["error"])
+    expect_equal(error_payload["title"], "Backend failure")
+    assert_logged(caplog.records, level="WARNING", containing="MCP tool error: list failed")
 
 
 # =============================================================================

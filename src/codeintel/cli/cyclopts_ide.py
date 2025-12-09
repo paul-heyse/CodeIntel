@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import (
+    RUNTIME_PARAM_FIELD,
+    RuntimeParam,
+    get_verbose,
+    runtime_cli_to_options,
+)
 from codeintel.cli.ide_handlers import IdeHintsOptions, RuntimeCliOptions, ide_hints_handler
 
 ide_app = App(
@@ -29,14 +34,15 @@ class IdeHintsCommand:
             help="File path relative to repo root (e.g., pkg/module.py).",
         ),
     ] = ""
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
 
     def __call__(self) -> None:
         cli_opts = runtime_cli_to_options(self.runtime)
+        verbose = get_verbose(self.runtime)
         options = IdeHintsOptions(
             rel_path=self.rel_path,
             runtime_options=RuntimeCliOptions(project_root=cli_opts.project_root),
-            verbose=self.runtime.verbose,
+            verbose=verbose,
         )
         run_handler(ide_hints_handler, options)
 

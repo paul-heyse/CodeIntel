@@ -797,7 +797,7 @@ def test_read_dataset_rows_with_negative_limit(
             status.HTTP_200_OK,
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_404_NOT_FOUND,
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         }
     )
 
@@ -839,7 +839,7 @@ def test_read_dataset_rows_with_negative_offset(
             status.HTTP_200_OK,
             status.HTTP_400_BAD_REQUEST,
             status.HTTP_404_NOT_FOUND,
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
         }
     )
 

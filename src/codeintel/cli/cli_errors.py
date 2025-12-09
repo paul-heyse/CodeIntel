@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from typing import ParamSpec, TextIO
+from typing import TYPE_CHECKING, ParamSpec, TextIO
 
 from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
 from codeintel.cli.errors import CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
+
+if TYPE_CHECKING:
+    from codeintel.cli.cyclopts_common import RuntimeCLI
 
 _HandlerP = ParamSpec("_HandlerP")
 
@@ -47,6 +50,52 @@ class ValidationError(CliError):
 
 class DocsValidationError(ValidationError):
     """Validation error specific to docs export operations."""
+
+
+def runtime_required(
+    cli_runtime: RuntimeCLI,
+    context: str,
+    *,
+    require_repo: bool = True,
+    require_commit: bool = True,
+    require_db_path: bool = False,
+) -> None:
+    """Raise ValidationError when required runtime fields are absent.
+
+    Use this helper for commands that require certain fields like repo/commit/db_path
+    but may not have a project config to fall back on.
+
+    Parameters
+    ----------
+    cli_runtime
+        RuntimeCLI instance with parsed CLI flags.
+    context
+        Human-readable description of the command/operation for error messages.
+    require_repo
+        Whether --repo is required.
+    require_commit
+        Whether --commit is required.
+    require_db_path
+        Whether --db-path is required.
+
+    Raises
+    ------
+    ValidationError
+        If any required field is absent.
+    """
+    missing: list[str] = []
+
+    if require_repo and cli_runtime.repo is None:
+        missing.append("--repo")
+    if require_commit and cli_runtime.commit is None:
+        missing.append("--commit")
+    if require_db_path and cli_runtime.db_path is None:
+        missing.append("--db-path")
+
+    if missing:
+        fields = ", ".join(missing)
+        message = f"{context} requires {fields} when no project config is available."
+        raise ValidationError(message)
 
 
 def run_handler(
@@ -151,4 +200,5 @@ __all__ = [
     "ValidationError",
     "handle_cli_error",
     "run_handler",
+    "runtime_required",
 ]

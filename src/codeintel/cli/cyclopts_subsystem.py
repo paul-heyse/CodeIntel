@@ -6,7 +6,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
 from codeintel.cli.subsystem_handlers import (
     RuntimeCliOptions,
     SubsystemCoverageOptions,
@@ -38,7 +38,7 @@ def _runtime(cli: RuntimeCLI) -> SubsystemRuntime:
 
 @subsystem_app.command(name="list")
 def list_subsystems(
-    runtime: RuntimeParam | None = None,
+    runtime: RuntimeCLI | None = None,
     role: Annotated[
         str | None,
         Parameter(
@@ -81,7 +81,7 @@ def show_subsystem(
             help="Subsystem identifier.",
         ),
     ],
-    runtime: RuntimeParam | None = None,
+    runtime: RuntimeCLI | None = None,
 ) -> None:
     """Show subsystem detail and modules."""
     cfg = runtime or RuntimeCLI()
@@ -94,7 +94,7 @@ def show_subsystem(
 
 @subsystem_app.command(name="profiles")
 def list_profiles(
-    runtime: RuntimeParam | None = None,
+    runtime: RuntimeCLI | None = None,
     limit: Annotated[
         int | None,
         Parameter(
@@ -111,7 +111,7 @@ def list_profiles(
 
 @subsystem_app.command(name="coverage")
 def list_coverage(
-    runtime: RuntimeParam | None = None,
+    runtime: RuntimeCLI | None = None,
     limit: Annotated[
         int | None,
         Parameter(
@@ -135,7 +135,7 @@ def module_memberships(
             help="Module name (e.g., pkg.mod).",
         ),
     ],
-    runtime: RuntimeParam | None = None,
+    runtime: RuntimeCLI | None = None,
 ) -> None:
     """List subsystem memberships for a module."""
     cfg = runtime or RuntimeCLI()

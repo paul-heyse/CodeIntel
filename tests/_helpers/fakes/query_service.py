@@ -10,7 +10,14 @@ from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.domain_models import DatasetRows, DatasetSchema, ResponseMeta
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.serving_stubs import (
+    HookedDatasetQueries,
+    HookedFunctionQueries,
+    HookedProfileQueries,
+    HookedSubsystemQueries,
+)
 
 
 @dataclass
@@ -141,13 +148,13 @@ class DummyDuckDBQueryApi(DuckDBQueryApi):
     def __init__(self) -> None:
         self._gateway = GatewayFactory().with_macros().open()
         self._limits = BackendLimits()
-        self._functions = self
-        self._modules = self
-        self._subsystems = self
-        self._datasets = self
+        self._functions = HookedFunctionQueries()
+        self._modules = HookedProfileQueries()
+        self._subsystems = HookedSubsystemQueries()
+        self._datasets = HookedDatasetQueries()
 
     @property
-    def gateway(self) -> object:
+    def gateway(self) -> StorageGateway:
         return self._gateway
 
     @property
@@ -155,19 +162,19 @@ class DummyDuckDBQueryApi(DuckDBQueryApi):
         return self._limits
 
     @property
-    def functions(self) -> DuckDBQueryApi:
+    def functions(self) -> HookedFunctionQueries:
         return self._functions
 
     @property
-    def modules(self) -> DuckDBQueryApi:
+    def modules(self) -> HookedProfileQueries:
         return self._modules
 
     @property
-    def subsystems(self) -> DuckDBQueryApi:
+    def subsystems(self) -> HookedSubsystemQueries:
         return self._subsystems
 
     @property
-    def datasets(self) -> DuckDBQueryApi:
+    def datasets(self) -> HookedDatasetQueries:
         return self._datasets
 
     def __getattr__(self, name: str) -> object:
