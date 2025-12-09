@@ -30,6 +30,9 @@ from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gatewa
 if TYPE_CHECKING:
     from codeintel.config.models import CodeIntelConfig
 
+# Import consolidated setup_logging from handlers.base
+from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
+
 LOG = logging.getLogger(__name__)
 
 
@@ -37,26 +40,8 @@ LOG = logging.getLogger(__name__)
 # Logging Configuration
 # -----------------------------------------------------------------------------
 
-
-def setup_logging(verbosity: int) -> None:
-    """Configure logging based on verbosity level.
-
-    Parameters
-    ----------
-    verbosity
-        Verbosity level (0=WARNING, 1=INFO, 2+=DEBUG).
-    """
-    if verbosity <= 0:
-        level = logging.WARNING
-    elif verbosity == 1:
-        level = logging.INFO
-    else:
-        level = logging.DEBUG
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+# Use consolidated setup_logging from handlers.base
+setup_logging = _setup_logging_impl
 
 
 # -----------------------------------------------------------------------------

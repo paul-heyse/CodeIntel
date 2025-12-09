@@ -67,6 +67,7 @@ def _get_resilience_module() -> types.ModuleType:
         _RESILIENCE_MODULE = importlib.import_module("codeintel.cli.resilience")
     return _RESILIENCE_MODULE
 
+
 LOG = logging.getLogger(__name__)
 
 
