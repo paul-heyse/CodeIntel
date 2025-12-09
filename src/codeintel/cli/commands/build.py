@@ -565,7 +565,13 @@ def _execute_build(
 
 
 def build_status_handler(options: BuildStatusOptions) -> None:
-    """Show current state of all build targets."""
+    """Show current state of all build targets.
+
+    Raises
+    ------
+    typer.Exit
+        If module selection is invalid.
+    """
     setup_logging(options.verbose)
 
     runtime = build_runtime_or_exit(options.runtime_options)
@@ -642,11 +648,6 @@ def build_status(
     Output as JSON:
 
         codeintel build status --json
-
-    Raises
-    ------
-    typer.Exit
-        If module selection is invalid or state resolution fails.
     """
     options = BuildStatusOptions(
         module=module,

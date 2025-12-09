@@ -335,19 +335,6 @@ _HISTORY_PARAMETERS = [
     ),
 ]
 
-history_timeseries.__signature__ = inspect.Signature(_HISTORY_PARAMETERS)
-history_timeseries.__annotations__ = {
-    "repo": str,
-    "commits": list[str],
-    "repo_root": Path,
-    "db_dir": Path,
-    "output_db": Path,
-    "entity_kind": str,
-    "max_entities": int,
-    "selection_strategy": str,
-    "verbose": int,
-}
-
 history_timeseries = history_app.command("timeseries")(history_timeseries)
 
 

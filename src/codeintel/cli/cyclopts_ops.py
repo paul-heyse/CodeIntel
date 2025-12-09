@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 from cyclopts import App, Parameter
 
-from codeintel.cli import main as legacy
+import codeintel.cli.main as legacy
 from codeintel.cli.cyclopts_common import ProjectRoot
 
 op_app = App(

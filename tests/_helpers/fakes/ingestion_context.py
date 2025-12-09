@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.targets import OutputTarget
 from tests._helpers.env import DEFAULT_COMMIT, DEFAULT_REPO, create_test_env
@@ -56,14 +56,7 @@ class RecordingContext:
 def make_target_context(
     repo_root: Path,
     overrides: TargetContextOverrides | None = None,
-    *,
-    modules: Sequence[str] | None = None,
-    snapshot: tuple[str, str] | None = None,
-    type_checker: object | None = None,
-    gateway: StorageGateway | RecordingGateway | None = None,
-    use_real_gateway: bool | None = None,
-    tmp_path: Path | None = None,
-    options: TargetContextOverrides | None = None,
+    **kwargs: object,
 ) -> RecordingContext:
     """Construct a recording context matching plugin expectations.
 
@@ -77,20 +70,9 @@ def make_target_context(
         Repository root directory.
     overrides
         Optional overrides bundle (dataclass style API).
-    modules
-        Module paths to include in resources (keyword style).
-    snapshot
-        Tuple of (repo, commit) identifiers.
-    type_checker
-        Type checker instance for resources.
-    gateway
-        Pre-existing gateway to use.
-    use_real_gateway
-        Whether to create a real gateway (True) or stub (False).
-    tmp_path
-        Temporary path for gateway setup.
-    options
-        Alias for `overrides` (for backward compatibility).
+    **kwargs
+        Optional keyword overrides (modules, snapshot, type_checker, gateway,
+        use_real_gateway, tmp_path, or legacy ``options`` alias).
 
     Returns
     -------
@@ -100,31 +82,44 @@ def make_target_context(
     Raises
     ------
     ValueError
-        If both `overrides` and keyword overrides are provided.
+        If an unsupported override key is provided.
     """
-    # Check for mixed API usage
-    has_kwargs = any(
-        v is not None
-        for v in [modules, snapshot, type_checker, gateway, use_real_gateway, tmp_path]
-    )
-    opts_arg = overrides or options
-
-    if opts_arg is not None and has_kwargs:
-        message = "Use either options/overrides OR keyword arguments, not both"
+    opts_arg = overrides or kwargs.pop("options", None)
+    recognized = {
+        "modules",
+        "snapshot",
+        "type_checker",
+        "gateway",
+        "use_real_gateway",
+        "tmp_path",
+    }
+    unknown_keys = set(kwargs) - recognized
+    if unknown_keys:
+        message = f"Unsupported override keys: {sorted(unknown_keys)}"
         raise ValueError(message)
 
-    # Build overrides from kwargs if no dataclass provided
-    if opts_arg is None and has_kwargs:
+    if opts_arg is None and kwargs:
+        modules_val = kwargs.get("modules")
+        use_real_gateway_val = kwargs.get("use_real_gateway")
         opts = TargetContextOverrides(
-            modules=tuple(modules) if modules else (),
-            snapshot=snapshot if snapshot else (DEFAULT_REPO, DEFAULT_COMMIT),
-            type_checker=type_checker,
-            gateway=gateway,
-            use_real_gateway=use_real_gateway if use_real_gateway is not None else True,
-            tmp_path=tmp_path,
+            modules=tuple(cast("Sequence[str]", modules_val)) if modules_val is not None else (),
+            snapshot=cast(
+                "tuple[str, str] | None",
+                kwargs.get("snapshot"),
+            )
+            or (DEFAULT_REPO, DEFAULT_COMMIT),
+            type_checker=kwargs.get("type_checker"),
+            gateway=cast(
+                "StorageGateway | RecordingGateway | None",
+                kwargs.get("gateway"),
+            ),
+            use_real_gateway=bool(use_real_gateway_val)
+            if use_real_gateway_val is not None
+            else True,
+            tmp_path=cast("Path | None", kwargs.get("tmp_path")),
         )
     else:
-        opts = opts_arg or TargetContextOverrides()
+        opts = cast("TargetContextOverrides", opts_arg or TargetContextOverrides())
 
     repo, commit = opts.snapshot
     gateway_obj = opts.gateway

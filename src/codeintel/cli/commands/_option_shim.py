@@ -13,7 +13,6 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from typer.models import ArgumentInfo, OptionInfo
 
@@ -23,8 +22,8 @@ class OptionSpec:
     """Describe a single Typer-exposed parameter."""
 
     name: str
-    annotation: Any
-    default: Any
+    annotation: object
+    default: object
 
 
 def wrap_command(
@@ -60,21 +59,13 @@ def wrap_command(
         A wrapper function with a custom signature Typer can inspect.
     """
 
-    def _normalized_annotation(annotation: Any, default: Any) -> Any:
+    def _normalized_annotation(annotation: object, default: object) -> object:
         if isinstance(annotation, (OptionInfo, ArgumentInfo)):
             if isinstance(default, (OptionInfo, ArgumentInfo)):
-                if default.default not in (
-                    inspect._empty,
-                    ...,
-                    None,  # type: ignore[comparison-overlap]
-                ):
+                if default.default not in {inspect.Signature.empty, ..., None}:  # type: ignore[comparison-overlap]
                     return type(default.default)
                 return str
-            if default not in (
-                inspect._empty,
-                ...,
-                None,  # type: ignore[comparison-overlap]
-            ):
+            if default not in {inspect.Signature.empty, ..., None}:  # type: ignore[comparison-overlap]
                 return type(default)
             return str
         return annotation
@@ -100,7 +91,9 @@ def wrap_command(
     return command_wrapper
 
 
-def option_specs_from_kwargs(kwargs: Mapping[str, Any]) -> Iterable[OptionSpec]:
+def option_specs_from_kwargs(
+    kwargs: Mapping[str, tuple[object, object]],
+) -> Iterable[OptionSpec]:
     """Build OptionSpec objects from a mapping of (annotation, default) pairs.
 
     Returns
