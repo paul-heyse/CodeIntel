@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_plugins.py
+# hypothesis_version: 6.148.7
+
+['\nNext steps:\n', ', ', '--format', '--output', 'Available plugins:\n', 'Description', 'Installed Plugins', 'Manage CLI plugins', 'Name', 'No plugins found\n', 'Operations', 'Output directory', 'Output format', 'Plugin directories:\n', 'Plugin directory', 'Plugin name', 'Version', '^[a-z][a-z0-9_-]*$', 'cyan', 'discover', 'info', 'json', 'list', 'new', 'paths', 'plugin.json', 'plugins', 'plugins_app', 'right', 'test', 'text', 'validate', '○ available', '✓', '✓ Manifest is valid\n', '✓ loaded', '✗']

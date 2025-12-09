@@ -149,10 +149,7 @@ class SandboxedImporter:
         ImportError
             Always raised to block import.
         """
-        msg = (
-            f"Plugin '{self._manifest.name}' cannot import '{name}': "
-            f"missing required capability"
-        )
+        msg = f"Plugin '{self._manifest.name}' cannot import '{name}': missing required capability"
         raise ImportError(msg)
 
 

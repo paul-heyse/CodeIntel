@@ -185,8 +185,7 @@ class PluginsNewCommand:
         # Validate name
         if not _PLUGIN_NAME_PATTERN.match(self.name):
             sys.stderr.write(
-                "Error: Plugin name must be lowercase alphanumeric "
-                "with hyphens/underscores\n",
+                "Error: Plugin name must be lowercase alphanumeric with hyphens/underscores\n",
             )
             raise SystemExit(1)
 
