@@ -10,9 +10,12 @@ import typer
 from cyclopts import App, Parameter
 
 from codeintel.cli.commands.docs import (
+    BackendOptions,
+    DocsExportOptions,
     DryRunMode,
     NxGpuMode,
     OutputFormat,
+    ProjectOptions,
     _bundle_docs_export,
     docs_export_handler,
 )
@@ -148,6 +151,16 @@ class DocsExportCli:
     verbose: Verbose = 0
 
 
+@dataclass(frozen=True)
+class DocsExportBundle:
+    """Typed bundle returned by docs export option normalization."""
+
+    project: ProjectOptions
+    backend: BackendOptions
+    export_options: DocsExportOptions
+    verbose: int
+
+
 @docs_app.command(name="export")
 def docs_export(
     project: Annotated[DocsProjectCli, Parameter(name="*")] | None = None,
@@ -187,13 +200,19 @@ def docs_export(
         "run_mode": DryRunMode.DRY_RUN if export_cfg.dry_run else DryRunMode.EXECUTE,
         "prereq_mode": export_cfg.skip_prereqs,
     }
-    bundled = _bundle_docs_export(cli_kwargs)
+    bundled_mapping = _bundle_docs_export(cli_kwargs)
+    bundle = DocsExportBundle(
+        project=bundled_mapping["project"],
+        backend=bundled_mapping["backend"],
+        export_options=bundled_mapping["export_options"],
+        verbose=bundled_mapping["verbose"],
+    )
     try:
         docs_export_handler(
-            bundled["project"],
-            bundled["backend"],
-            bundled["export_options"],
-            export_cfg.verbose,
+            bundle.project,
+            bundle.backend,
+            bundle.export_options,
+            bundle.verbose,
         )
     except typer.Exit as exc:
         raise SystemExit(exc.exit_code) from exc

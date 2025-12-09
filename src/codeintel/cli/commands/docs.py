@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, TypedDict, cast
 
 import typer
 
@@ -177,6 +177,15 @@ class DocsExecutionOptions:
     output_format: OutputFormat
     run_mode: DryRunMode
     prereq_mode: PrereqMode
+
+
+class DocsExportBundleMapping(TypedDict):
+    """Typed bundle returned by CLI option normalization."""
+
+    project: ProjectOptions
+    backend: BackendOptions
+    export_options: DocsExportOptions
+    verbose: int
 
 
 docs_app = typer.Typer(
@@ -726,7 +735,7 @@ def docs_export_handler(
         raise typer.Exit(code=CLI_EXIT_VALIDATION) from exc
 
 
-def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> Mapping[str, object]:
+def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> DocsExportBundleMapping:
     project = _project_options(
         RepoSelection(
             project_root=cast("Path | None", cli_kwargs.get("project_root")),

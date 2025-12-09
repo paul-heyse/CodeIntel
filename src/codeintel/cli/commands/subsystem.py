@@ -17,21 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from pathlib import Path
-from typing import Annotated
+from dataclasses import dataclass
 
 import typer
 
 from codeintel.cli.commands._common import (
-    BuildDirOpt,
-    CommitOpt,
-    DbPathOpt,
-    LimitOpt,
-    ProjectRootOpt,
-    RepoOpt,
-    RepoRootOpt,
     RuntimeCliOptions,
-    VerboseOpt,
     build_graph_runtime,
     build_runtime_or_exit,
     open_gateway_from_config,
@@ -48,98 +39,87 @@ from codeintel.serving.mcp.models import (
 
 LOG = logging.getLogger(__name__)
 
-subsystem_app = typer.Typer(
-    name="subsystem",
-    help="Subsystem exploration commands.",
-    no_args_is_help=True,
-)
-
 
 # -----------------------------------------------------------------------------
 # Option Type Aliases
 # -----------------------------------------------------------------------------
 
-RoleOpt = Annotated[
-    str | None,
-    typer.Option("--role", help="Filter subsystems by role tag"),
-]
 
-QueryOpt = Annotated[
-    str | None,
-    typer.Option("--q", help="Search substring on name/description"),
-]
+@dataclass(frozen=True)
+class SubsystemRuntime:
+    """Runtime inputs shared by subsystem commands."""
 
-SubsystemIdArg = Annotated[
-    str,
-    typer.Argument(help="Subsystem identifier"),
-]
-
-ModuleArg = Annotated[
-    str,
-    typer.Argument(help="Module name (e.g., pkg.mod)"),
-]
+    runtime_options: RuntimeCliOptions
+    verbose: int = 0
 
 
-# -----------------------------------------------------------------------------
-# Helper Functions
-# -----------------------------------------------------------------------------
+@dataclass(frozen=True)
+class SubsystemListOptions:
+    """Options for listing subsystems."""
+
+    runtime: SubsystemRuntime
+    role: str | None = None
+    query: str | None = None
+    limit: int | None = None
 
 
-def _build_backend(
-    project_root: Path | None,
-    repo: RepoOpt,
-    commit: CommitOpt,
-    db_path: DbPathOpt,
-    build_dir: BuildDirOpt,
-    repo_root: RepoRootOpt,
-    verbose: int = VerboseOpt,
-) -> DuckDBBackend:
-    """Build a DuckDBBackend from CLI options.
+@dataclass(frozen=True)
+class SubsystemIdOptions:
+    """Options for subsystem detail commands."""
 
-    Parameters
-    ----------
-    project_root
-        Project root path.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    db_path
-        Database path.
-    build_dir
-        Build directory.
-    repo_root
-        Repository root.
-    verbose
-        Verbosity level.
+    runtime: SubsystemRuntime
+    subsystem_id: str
+
+
+@dataclass(frozen=True)
+class SubsystemProfilesOptions:
+    """Options for subsystem profile listing."""
+
+    runtime: SubsystemRuntime
+    limit: int | None = None
+
+
+@dataclass(frozen=True)
+class SubsystemCoverageOptions:
+    """Options for subsystem coverage listing."""
+
+    runtime: SubsystemRuntime
+    limit: int | None = None
+
+
+@dataclass(frozen=True)
+class SubsystemMembershipOptions:
+    """Options for module membership queries."""
+
+    runtime: SubsystemRuntime
+    module: str
+
+
+def _build_backend(runtime: SubsystemRuntime) -> DuckDBBackend:
+    """Build a DuckDBBackend from runtime options.
 
     Returns
     -------
     DuckDBBackend
-        Constructed backend.
+        Constructed backend instance.
+
+    Raises
+    ------
+    TypeError
+        If the resolved backend is not a DuckDBBackend.
     """
-    setup_logging(verbose)
+    setup_logging(runtime.verbose)
 
-    runtime_options = RuntimeCliOptions(
-        project_root=project_root,
-        repo=repo,
-        commit=commit,
-        db_path=db_path,
-        build_dir=build_dir,
-        repo_root=repo_root,
-    )
-    runtime = build_runtime_or_exit(runtime_options)
-
-    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
-    graph_runtime = build_graph_runtime(runtime.cfg, gateway)
+    runtime_cfg = build_runtime_or_exit(runtime.runtime_options)
+    gateway = open_gateway_from_config(runtime_cfg.cfg, read_only=True)
+    graph_runtime = build_graph_runtime(runtime_cfg.cfg, gateway)
 
     resource = build_backend_resource(
-        runtime.serving,
+        runtime_cfg.serving,
         gateway=gateway,
         options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
 
-    # The backend is guaranteed to be DuckDBBackend for local_db mode
     backend = resource.backend
     if not isinstance(backend, DuckDBBackend):
         msg = "Expected DuckDBBackend for local_db mode"
@@ -152,42 +132,13 @@ def _build_backend(
 # -----------------------------------------------------------------------------
 
 
-@subsystem_app.command("list")
-def subsystem_list(
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    repo_root: RepoRootOpt = None,
-    role: RoleOpt = None,
-    q: QueryOpt = None,
-    limit: LimitOpt = None,
-    verbose: int = VerboseOpt,
-) -> None:
-    """List inferred subsystems with role/risk metadata.
-
-    Shows subsystems from cached docs views with optional filtering
-    by role and search query.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # List all subsystems
-        codeintel subsystem list
-
-        # Filter by role
-        codeintel subsystem list --role core
-
-        # Search by name
-        codeintel subsystem list --q analytics
-    """
-    backend = _build_backend(project_root, repo, commit, db_path, build_dir, repo_root, verbose)
+def subsystem_list_handler(options: SubsystemListOptions) -> None:
+    """List inferred subsystems with role/risk metadata."""
+    backend = _build_backend(options.runtime)
     response = backend.list_subsystems(
-        limit=limit,
-        role=role,
-        q=q,
+        limit=options.limit,
+        role=options.role,
+        q=options.query,
     )
     payload = {
         "subsystems": [row.model_dump() for row in response.subsystems],
@@ -197,35 +148,24 @@ def subsystem_list(
     sys.stdout.write("\n")
 
 
-@subsystem_app.command("show")
-def subsystem_show(
-    subsystem_id: SubsystemIdArg,
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    repo_root: RepoRootOpt = None,
-    verbose: int = VerboseOpt,
-) -> None:
+def subsystem_show_handler(options: SubsystemIdOptions) -> None:
     """Show subsystem detail and modules.
 
-    Displays detailed information about a specific subsystem including
-    its member modules.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Show subsystem details
-        codeintel subsystem show analytics_core
+    Raises
+    ------
+    typer.Exit
+        If the subsystem cannot be found.
     """
-    backend = _build_backend(project_root, repo, commit, db_path, build_dir, repo_root, verbose)
-    response = backend.get_subsystem_modules(subsystem_id=subsystem_id)
+    backend = _build_backend(options.runtime)
+    response = backend.get_subsystem_modules(subsystem_id=options.subsystem_id)
 
     if not response.found or response.subsystem is None:
-        LOG.error("Subsystem not found: %s", subsystem_id)
-        typer.secho(f"Subsystem not found: {subsystem_id}", fg=typer.colors.RED, err=True)
+        LOG.error("Subsystem not found: %s", options.subsystem_id)
+        typer.secho(
+            f"Subsystem not found: {options.subsystem_id}",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     payload = {
@@ -237,33 +177,10 @@ def subsystem_show(
     sys.stdout.write("\n")
 
 
-@subsystem_app.command("profiles")
-def subsystem_profiles(
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    repo_root: RepoRootOpt = None,
-    limit: LimitOpt = None,
-    verbose: int = VerboseOpt,
-) -> None:
-    """List subsystem profiles from docs.v_subsystem_profile.
-
-    Shows subsystem profile data from read-only docs views.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # List profiles
-        codeintel subsystem profiles
-
-        # Limit results
-        codeintel subsystem profiles --limit 10
-    """
-    backend = _build_backend(project_root, repo, commit, db_path, build_dir, repo_root, verbose)
-    response = backend.service.list_subsystem_profiles(limit=limit)
+def subsystem_profiles_handler(options: SubsystemProfilesOptions) -> None:
+    """List subsystem profiles from docs.v_subsystem_profile."""
+    backend = _build_backend(options.runtime)
+    response = backend.service.list_subsystem_profiles(limit=options.limit)
     profile_response = (
         response
         if isinstance(response, SubsystemProfileResponse)
@@ -281,33 +198,10 @@ def subsystem_profiles(
     sys.stdout.write("\n")
 
 
-@subsystem_app.command("coverage")
-def subsystem_coverage(
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    repo_root: RepoRootOpt = None,
-    limit: LimitOpt = None,
-    verbose: int = VerboseOpt,
-) -> None:
-    """List subsystem coverage rollups from docs.v_subsystem_coverage.
-
-    Shows subsystem coverage data from read-only docs views.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # List coverage
-        codeintel subsystem coverage
-
-        # Limit results
-        codeintel subsystem coverage --limit 10
-    """
-    backend = _build_backend(project_root, repo, commit, db_path, build_dir, repo_root, verbose)
-    response = backend.service.list_subsystem_coverage(limit=limit)
+def subsystem_coverage_handler(options: SubsystemCoverageOptions) -> None:
+    """List subsystem coverage rollups from docs.v_subsystem_coverage."""
+    backend = _build_backend(options.runtime)
+    response = backend.service.list_subsystem_coverage(limit=options.limit)
     coverage_response = (
         response
         if isinstance(response, SubsystemCoverageResponse)
@@ -325,30 +219,10 @@ def subsystem_coverage(
     sys.stdout.write("\n")
 
 
-@subsystem_app.command("module-memberships")
-def subsystem_module_memberships(
-    module: ModuleArg,
-    project_root: Path | None = ProjectRootOpt,
-    repo: RepoOpt = None,
-    commit: CommitOpt = None,
-    db_path: DbPathOpt = None,
-    build_dir: BuildDirOpt = None,
-    repo_root: RepoRootOpt = None,
-    verbose: int = VerboseOpt,
-) -> None:
-    """List subsystem memberships for a module.
-
-    Shows which subsystems a given module belongs to.
-
-    Examples
-    --------
-    .. code-block:: bash
-
-        # Get memberships for a module
-        codeintel subsystem module-memberships pkg.mod
-    """
-    backend = _build_backend(project_root, repo, commit, db_path, build_dir, repo_root, verbose)
-    response = backend.get_module_subsystems(module=module)
+def subsystem_module_memberships_handler(options: SubsystemMembershipOptions) -> None:
+    """List subsystem memberships for a module."""
+    backend = _build_backend(options.runtime)
+    response = backend.get_module_subsystems(module=options.module)
     payload = {
         "found": response.found,
         "memberships": [row.model_dump() for row in response.memberships],
@@ -358,4 +232,16 @@ def subsystem_module_memberships(
     sys.stdout.write("\n")
 
 
-__all__ = ["subsystem_app"]
+__all__ = [
+    "SubsystemCoverageOptions",
+    "SubsystemIdOptions",
+    "SubsystemListOptions",
+    "SubsystemMembershipOptions",
+    "SubsystemProfilesOptions",
+    "SubsystemRuntime",
+    "subsystem_coverage_handler",
+    "subsystem_list_handler",
+    "subsystem_module_memberships_handler",
+    "subsystem_profiles_handler",
+    "subsystem_show_handler",
+]

@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-08T23:20:08.469366+00:00",
-  "overall_status": "failed",
-  "duration_seconds": 10.349546,
+  "generated_at": "2025-12-09T00:37:15.236084+00:00",
+  "overall_status": "passed",
+  "duration_seconds": 10.851375,
   "results": [
     {
       "name": "ruff_check",
@@ -13,50 +13,13 @@
         "check",
         "--fix"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-08T23:19:58.119674+00:00",
-      "ended_at": "2025-12-08T23:19:58.143404+00:00",
-      "duration_seconds": 0.02373,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-09T00:37:04.384546+00:00",
+      "ended_at": "2025-12-09T00:37:04.410478+00:00",
+      "duration_seconds": 0.025932,
       "stdout": [
-        "\u001b[4msrc/codeintel/cli/commands/_option_shim.py\u001b[0m:",
-        "  63\u001b[36m:\u001b[0m44 \u001b[1;31mANN401\u001b[0m Dynamically typed expressions (typing.Any) are disallowed in `annotation`",
-        "  63\u001b[36m:\u001b[0m58 \u001b[1;31mANN401\u001b[0m Dynamically typed expressions (typing.Any) are disallowed in `default`",
-        "  63\u001b[36m:\u001b[0m66 \u001b[1;31mANN401\u001b[0m Dynamically typed expressions (typing.Any) are disallowed in `_normalized_annotation`",
-        "  66\u001b[36m:\u001b[0m43 \u001b[1;31mPLR6201\u001b[0m Use a set literal when testing for membership",
-        "  67\u001b[36m:\u001b[0m21 \u001b[1;31mSLF001\u001b[0m Private member accessed: `_empty`",
-        "  73\u001b[36m:\u001b[0m31 \u001b[1;31mPLR6201\u001b[0m Use a set literal when testing for membership",
-        "  74\u001b[36m:\u001b[0m17 \u001b[1;31mSLF001\u001b[0m Private member accessed: `_empty`",
-        "",
-        "\u001b[4msrc/codeintel/cli/commands/ide.py\u001b[0m:",
-        "  62\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
-        "  62\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
-        "  72\u001b[36m:\u001b[0m5 \u001b[1;31mDOC501\u001b[0m Raised exception `Exit` missing from docstring",
-        "",
-        "\u001b[4msrc/codeintel/cli/commands/subsystem.py\u001b[0m:",
-        "   88\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (7 > 5)",
-        "   88\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (7/5)",
-        "   97\u001b[36m:\u001b[0m5 \u001b[1;31mDOC501\u001b[0m Raised exception `TypeError` missing from docstring",
-        "  156\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (10 > 5)",
-        "  156\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (10/5)",
-        "  201\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
-        "  201\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
-        "  211\u001b[36m:\u001b[0m5 \u001b[1;31mDOC501\u001b[0m Raised exception `Exit` missing from docstring",
-        "  241\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
-        "  241\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
-        "  285\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
-        "  285\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
-        "  329\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
-        "  329\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
-        "",
-        "\u001b[4mtests/_helpers/configs/provisioning_config.py\u001b[0m:",
-        "  87\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (6 > 5)",
-        "",
-        "\u001b[4mtests/_helpers/fakes/ingestion_context.py\u001b[0m:",
-        "  56\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (9 > 5)",
-        "",
-        "Found 26 errors.",
-        "No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -71,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-08T23:19:58.143419+00:00",
-      "ended_at": "2025-12-08T23:20:07.954334+00:00",
-      "duration_seconds": 9.810915,
+      "started_at": "2025-12-09T00:37:04.410500+00:00",
+      "ended_at": "2025-12-09T00:37:14.730496+00:00",
+      "duration_seconds": 10.319996,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -87,22 +50,15 @@
         "pyrefly",
         "check"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-08T23:20:07.954353+00:00",
-      "ended_at": "2025-12-08T23:20:08.469220+00:00",
-      "duration_seconds": 0.514867,
-      "stdout": [
-        "ERROR Object of class `FunctionType` has no attribute `__signature__` [missing-attribute]",
-        "   --> src/codeintel/cli/commands/history.py:338:1",
-        "    |",
-        "338 | history_timeseries.__signature__ = inspect.Signature(_HISTORY_PARAMETERS)",
-        "    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-        "    |"
-      ],
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-09T00:37:14.730514+00:00",
+      "ended_at": "2025-12-09T00:37:15.235921+00:00",
+      "duration_seconds": 0.505407,
+      "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 1 error (9 suppressed)"
+        " INFO 0 errors (9 suppressed)"
       ]
     }
   ],

@@ -84,14 +84,21 @@ class ProvisionOptions:
     include_seed_goid: bool = True
 
 
+@dataclass
+class ProvisioningGatewayOverrides:
+    """Overrides for gateway provisioning defaults."""
+
+    db_path: Path | None = None
+    apply_schema: bool = True
+    ensure_views: bool = True
+    validate_schema: bool = True
+    file_backed: bool = True
+    strict_schema: bool = True
+
+
 def provisioning_gateway_options(
-    *,
-    db_path: Path | None = None,
-    apply_schema: bool = True,
-    ensure_views: bool = True,
-    validate_schema: bool = True,
-    file_backed: bool = True,
-    strict_schema: bool = True,
+    overrides: ProvisioningGatewayOverrides | None = None,
+    **kwargs: object,
 ) -> GatewayOptions:
     """Create GatewayOptions with provisioning defaults (file_backed=True).
 
@@ -100,31 +107,35 @@ def provisioning_gateway_options(
 
     Parameters
     ----------
-    db_path
-        Path to the database file.
-    apply_schema
-        Whether to apply database schema on creation.
-    ensure_views
-        Whether to ensure views are created.
-    validate_schema
-        Whether to validate the schema after creation.
-    file_backed
-        Whether to use a file-backed database (default True for provisioning).
-    strict_schema
-        Whether to enforce strict schema mode.
+    overrides
+        Optional overrides bundle for gateway settings.
+    **kwargs
+        Backwards-compatible override values (e.g., apply_schema=False).
 
     Returns
     -------
     GatewayOptions
         Configured options for gateway creation.
+
+    Raises
+    ------
+    ValueError
+        If an unknown override key is provided.
     """
+    settings = overrides or ProvisioningGatewayOverrides()
+    for key, value in kwargs.items():
+        if not hasattr(settings, key):
+            message = f"Unknown provisioning override: {key}"
+            raise ValueError(message)
+        setattr(settings, key, value)
+
     return GatewayOptions(
-        db_path=db_path,
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
-        file_backed=file_backed,
-        strict_schema=strict_schema,
+        db_path=settings.db_path,
+        apply_schema=settings.apply_schema,
+        ensure_views=settings.ensure_views,
+        validate_schema=settings.validate_schema,
+        file_backed=settings.file_backed,
+        strict_schema=settings.strict_schema,
     )
 
 
@@ -195,6 +206,7 @@ __all__ = [
     "ProvisionOptions",
     "ProvisionedGateway",
     "ProvisioningConfig",
+    "ProvisioningGatewayOverrides",
     "ProvisioningSetup",
     "RepoContext",
     "provisioning_gateway_options",
