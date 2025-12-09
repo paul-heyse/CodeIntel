@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_datasets.py
+# hypothesis_version: 6.148.7
+
+['*', '--against-ref', '--baseline', '--baseline-path', '--bootstrap', '--check-registry', '--dataset', '--docs-view', '--dry-run', '--freshness-sla', '--jsonl-filename', '--kind', '--macro-requirement', '--max-description', '--output', '--output-dir', '--output-format', '--overwrite-policy', '--owner', '--parquet-filename', '--read-only', '--registry-check', '--retention-policy', '--sample-rows', '--sample-rows-count', '--sample-rows-strict', '--sample-size', '--schema', '--schema-dir', '--schema-id', '--schema-version', '--specs-snapshot', '--stable-id', '--table-key', '--validation', '--validation-profile', '1', 'build/catalog', 'catalog', 'conformance', 'datasets', 'datasets_ext_app', 'diff', 'exclude', 'generate-schemas', 'include', 'lint', 'list', 'only', 'scaffold', 'snapshot', 'strict', 'table']

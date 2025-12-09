@@ -21,10 +21,8 @@ from codeintel.cli.build_handlers import (
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OUTPUT_PARAM_FIELD,
-    RUNTIME_PARAM_FIELD,
-    OutputParam,
-    RuntimeParam,
+    OutputFormatCLI,
+    RuntimeCLI,
     make_handler_context,
 )
 
@@ -105,8 +103,8 @@ class BuildRunCli:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
         if self.module is not None and self.module not in MODULE_CHOICES:
@@ -115,7 +113,9 @@ class BuildRunCli:
             raise ValidationError(message)
         _validate_build_run_selection(self.targets, self.module, all_targets=self.all_targets)
         runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime, self.output, default_output=OutputFormat.TEXT
+            self.runtime or RuntimeCLI(),
+            self.output or OutputFormatCLI(),
+            default_output=OutputFormat.TEXT,
         )
         options = BuildRunOptions(
             targets=self.targets,
@@ -145,8 +145,8 @@ class BuildStatusCli:
             show_choices=True,
         ),
     ] = None
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
         if self.module is not None and self.module not in MODULE_CHOICES:
@@ -154,7 +154,9 @@ class BuildStatusCli:
             message = f"Unknown module: {self.module}. Valid: {valid}"
             raise ValidationError(message)
         runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime, self.output, default_output=OutputFormat.TEXT
+            self.runtime or RuntimeCLI(),
+            self.output or OutputFormatCLI(),
+            default_output=OutputFormat.TEXT,
         )
         options = BuildStatusOptions(
             module=self.module,
@@ -184,12 +186,14 @@ class BuildHistoryCli:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
         runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime, self.output, default_output=OutputFormat.TEXT
+            self.runtime or RuntimeCLI(),
+            self.output or OutputFormatCLI(),
+            default_output=OutputFormat.TEXT,
         )
         options = BuildHistoryOptions(
             run_id=self.run_id,

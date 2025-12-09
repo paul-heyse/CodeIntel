@@ -45,3 +45,12 @@ def test_datasets_scaffold_existing_name(
         ["datasets", "scaffold", "ast_nodes", "--check-registry", "--dry-run"]
     )
     assert_exit(result, 1)
+
+
+@pytest.mark.usefixtures("cli_project_ctx")
+def test_dataset_describe_unknown_returns_nonzero(
+    cli_project_runner: Callable[[list[str]], CliResult],
+) -> None:
+    """Dataset describe with unknown key should exit non-zero."""
+    result = cli_project_runner(["dataset", "describe", "nonexistent.table.key"])
+    assert_exit(result, 1)

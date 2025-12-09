@@ -213,23 +213,23 @@ class RuntimeCLI:
 RuntimeParam = RuntimeCLI
 
 
+RUNTIME_PARAM_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
+"""Metadata for RuntimeCLI fields to enable Cyclopts nested parameter flattening."""
+
+
 def runtime_field() -> RuntimeCLI:
     """Reusable runtime field with shared Cyclopts parameter metadata.
 
     This function returns a dataclass ``field()`` configured for nested
-    runtime CLI flags. The return type is ``RuntimeCLI`` rather than
-    ``Field[RuntimeCLI]`` to match standard dataclass typing conventions
-    (the dataclass decorator replaces fields with actual values at runtime).
+    runtime CLI flags. Use this for dynamically created dataclasses.
+    For static dataclasses, use ``field(default_factory=RuntimeCLI, metadata=RUNTIME_PARAM_METADATA)``.
 
     Returns
     -------
     RuntimeCLI
         Dataclass field (typed as RuntimeCLI for type checker compatibility).
     """
-    return field(default_factory=RuntimeCLI, metadata={"parameter": Parameter(name="*")})
-
-
-RUNTIME_PARAM_FIELD = runtime_field()
+    return field(default_factory=RuntimeCLI, metadata=RUNTIME_PARAM_METADATA)
 
 
 @dataclass
@@ -253,23 +253,23 @@ class OutputFormatCLI:
 OutputParam = OutputFormatCLI
 
 
+OUTPUT_PARAM_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
+"""Metadata for OutputFormatCLI fields to enable Cyclopts nested parameter flattening."""
+
+
 def output_field() -> OutputFormatCLI:
     """Reusable output-format field with shared Cyclopts parameter metadata.
 
     This function returns a dataclass ``field()`` configured for nested
-    output format flags. The return type is ``OutputFormatCLI`` rather than
-    ``Field[OutputFormatCLI]`` to match standard dataclass typing conventions
-    (the dataclass decorator replaces fields with actual values at runtime).
+    output format flags. Use this for dynamically created dataclasses.
+    For static dataclasses, use ``field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)``.
 
     Returns
     -------
     OutputFormatCLI
         Dataclass field (typed as OutputFormatCLI for type checker compatibility).
     """
-    return field(default_factory=OutputFormatCLI, metadata={"parameter": Parameter(name="*")})
-
-
-OUTPUT_PARAM_FIELD = output_field()
+    return field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)
 
 
 def resolve_output_format(
@@ -462,8 +462,8 @@ def make_handler_context(
 
 
 __all__ = [
-    "OUTPUT_PARAM_FIELD",
-    "RUNTIME_PARAM_FIELD",
+    "OUTPUT_PARAM_METADATA",
+    "RUNTIME_PARAM_METADATA",
     "BackendFlags",
     "ExistingDir",
     "ExistingPath",
@@ -490,4 +490,5 @@ __all__ = [
     "output_field",
     "resolve_output_format",
     "runtime_cli_to_options",
+    "runtime_field",
 ]

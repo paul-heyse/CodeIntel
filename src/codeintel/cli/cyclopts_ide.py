@@ -9,8 +9,7 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
 from codeintel.cli.cyclopts_common import (
-    RUNTIME_PARAM_FIELD,
-    RuntimeParam,
+    RuntimeCLI,
     get_verbose,
     runtime_cli_to_options,
 )
@@ -34,11 +33,12 @@ class IdeHintsCommand:
             help="File path relative to repo root (e.g., pkg/module.py).",
         ),
     ] = ""
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        cli_opts = runtime_cli_to_options(self.runtime)
-        verbose = get_verbose(self.runtime)
+        runtime = self.runtime or RuntimeCLI()
+        cli_opts = runtime_cli_to_options(runtime)
+        verbose = get_verbose(runtime)
         options = IdeHintsOptions(
             rel_path=self.rel_path,
             runtime_options=RuntimeCliOptions(project_root=cli_opts.project_root),

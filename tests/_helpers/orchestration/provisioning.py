@@ -236,6 +236,8 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             factory = factory.with_views()
         if not effective_validate_schema:
             factory = factory.without_validation()
+        if not opts.strict_schema:
+            factory = factory.relaxed()
         factory = factory.with_snapshot(ctx.repo, ctx.commit)
         gateway = factory.open()
     _assert_ingest_macros_present(gateway.con)

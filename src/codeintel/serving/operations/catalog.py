@@ -756,9 +756,19 @@ OPERATIONS_BY_ID: dict[str, Operation] = {
     )
 }
 
+# =============================================================================
+# Test Operation Registry
+# =============================================================================
+# Separate registry for test operations that can be registered/unregistered
+# without polluting the canonical catalog. Used by CLI dynamic operation tests.
+
+_TEST_OPERATIONS: dict[str, Operation] = {}
+
 
 def get_operation(op_id: str) -> Operation | None:
     """Look up a single operation by id.
+
+    Check both the canonical catalog and the test operation registry.
 
     Parameters
     ----------
@@ -770,18 +780,77 @@ def get_operation(op_id: str) -> Operation | None:
     Operation | None
         The operation if found, otherwise None.
     """
+    # Check test operations first to allow overrides in tests
+    if op_id in _TEST_OPERATIONS:
+        return _TEST_OPERATIONS[op_id]
     return OPERATIONS_BY_ID.get(op_id)
+
+
+def register_test_operation(operation: Operation) -> None:
+    """Register a test operation in the test registry.
+
+    Use this to register synthetic operations for CLI or integration tests.
+    The registered operation will be discoverable via `get_operation()`.
+
+    Parameters
+    ----------
+    operation
+        Operation instance to register. Its `id` field is used as the key.
+
+    Notes
+    -----
+    Test operations are stored in a separate registry and do not pollute
+    the canonical operation catalog. Always call `unregister_test_operation()`
+    to clean up after tests.
+    """
+    _TEST_OPERATIONS[operation.id] = operation
+
+
+def unregister_test_operation(op_id: str) -> bool:
+    """Remove a test operation from the test registry.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier to remove.
+
+    Returns
+    -------
+    bool
+        True if the operation was found and removed, False otherwise.
+    """
+    if op_id in _TEST_OPERATIONS:
+        del _TEST_OPERATIONS[op_id]
+        return True
+    return False
+
+
+def clear_test_operations() -> int:
+    """Remove all test operations from the test registry.
+
+    Returns
+    -------
+    int
+        Number of test operations that were removed.
+    """
+    count = len(_TEST_OPERATIONS)
+    _TEST_OPERATIONS.clear()
+    return count
 
 
 def iter_operations() -> Iterable[Operation]:
     """Iterate over all registered operations.
 
+    Include both canonical and test operations.
+
     Returns
     -------
     Iterable[Operation]
-        All operations in the catalog.
+        All operations in the catalog and test registry.
     """
-    return OPERATIONS_BY_ID.values()
+    # Test operations may override canonical ones, so build a combined view
+    combined = {**OPERATIONS_BY_ID, **_TEST_OPERATIONS}
+    return combined.values()
 
 
 # =============================================================================
@@ -1074,6 +1143,7 @@ __all__ = [
     "Operation",
     "build_dataset_meta",
     "build_serving_dataflow_graph",
+    "clear_test_operations",
     "get_operation",
     "get_registry_operation",
     "iter_graph_nodes",
@@ -1082,4 +1152,6 @@ __all__ = [
     "iter_operation_nodes",
     "iter_operations",
     "iter_registry_operations",
+    "register_test_operation",
+    "unregister_test_operation",
 ]

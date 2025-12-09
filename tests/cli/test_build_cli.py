@@ -101,7 +101,7 @@ class TestBuildRunValidation:
 
         expect_equal(result.exit_code, 1, label="exit_code")
         combined = (result.stdout + (result.output or "")).lower()
-        has_targets_error = "specify targets" in combined
+        has_targets_error = "provide exactly one of targets" in combined
         has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
         expect_true(
             has_targets_error or has_project_error,

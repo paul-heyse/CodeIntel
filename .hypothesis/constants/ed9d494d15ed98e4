@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/centrality.py
+# hypothesis_version: 6.148.7
+
+['centrality_directed', 'neighbor_stats', 'weight']

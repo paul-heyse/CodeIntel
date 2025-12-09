@@ -9,8 +9,7 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OUTPUT_PARAM_FIELD,
-    OutputParam,
+    OutputFormatCLI,
     get_output_format,
 )
 from codeintel.cli.graphs_handlers import (
@@ -84,7 +83,7 @@ class GraphPluginsCli:
             negative=(),
         ),
     ] = False
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
 
 @graphs_app.command(name="plugins")
@@ -93,7 +92,7 @@ def plugins(
 ) -> None:
     """List registered graph plugins or display an execution plan."""
     cfg = cfg or GraphPluginsCli()
-    output_format = get_output_format(cfg.output, default=OutputFormat.TEXT)
+    output_format = get_output_format(cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT)
 
     options = GraphPluginsOptions(
         mode=PlanMode.PLAN if cfg.plan else PlanMode.LIST,
