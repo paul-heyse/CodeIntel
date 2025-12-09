@@ -1,7 +1,7 @@
-"""Type definitions for async handler support.
+"""Unified type definitions for CLI execution pipeline.
 
-Define type aliases and protocols for async CLI operations,
-including sync and async handlers, progress events, and streaming.
+Provide type aliases and dataclasses for handlers, progress events,
+and streaming results that work across sync and async execution modes.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ T = TypeVar("T")
 
 
 class ProgressState(Enum):
-    """Progress state for async operations.
+    """Progress state for operations.
 
     Values
     ------
@@ -48,7 +48,9 @@ class ProgressState(Enum):
 
 @dataclass(frozen=True)
 class ProgressEvent:
-    """Progress update from an async operation.
+    """Progress update from an operation.
+
+    Works for both sync (via callbacks) and async (via generators).
 
     Parameters
     ----------
@@ -79,6 +81,19 @@ class ProgressEvent:
     items_completed: int | None = None
     items_total: int | None = None
 
+    @property
+    def percentage(self) -> float:
+        """Get progress percentage.
+
+        Returns
+        -------
+        float
+            Progress as percentage (0-100), or 0 if indeterminate.
+        """
+        if self.progress is None:
+            return 0.0
+        return self.progress * 100.0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization.
 
@@ -96,6 +111,7 @@ class ProgressEvent:
             "timestamp": self.timestamp.isoformat(),
             "items_completed": self.items_completed,
             "items_total": self.items_total,
+            "percentage": self.percentage,
         }
 
 
@@ -103,7 +119,7 @@ class ProgressEvent:
 class StreamingResult[T]:
     """Result container for streaming operations.
 
-    Encapsulates either progress events or the final result.
+    Encapsulate either progress events or the final result.
 
     Parameters
     ----------
@@ -139,18 +155,42 @@ class StreamingResult[T]:
         return self.result is not None
 
 
+@dataclass
+class ProgressConfig:
+    """Configuration for progress reporting.
+
+    Parameters
+    ----------
+    enabled
+        Whether progress reporting is enabled.
+    show_spinner
+        Whether to show spinner for indeterminate progress.
+    update_interval
+        Minimum interval between updates in seconds.
+    format_string
+        Format string for progress display.
+    """
+
+    enabled: bool = True
+    show_spinner: bool = True
+    update_interval: float = 0.1
+    format_string: str = "{message} [{current}/{total}]"
+
+
 # Type aliases for handlers
-SyncHandler = Callable[..., CliResult[T]]
+# Note: These are defined as string annotations to avoid runtime evaluation issues
+# with generic type subscripting. Use them in type hints, not as runtime values.
+type SyncHandler[T] = Callable[..., CliResult[T]]
 """Synchronous handler type."""
 
-AsyncHandler = Callable[..., Awaitable[CliResult[T]]]
+type AsyncHandler[T] = Callable[..., Awaitable[CliResult[T]]]
 """Asynchronous handler type."""
 
-StreamingHandler = Callable[..., AsyncGenerator[StreamingResult[T]]]
+type StreamingHandler[T] = Callable[..., AsyncGenerator[StreamingResult[T]]]
 """Streaming handler that yields progress events and final result."""
 
-AnyHandler = SyncHandler[T] | AsyncHandler[T]
-"""Union of sync and async handler types."""
+type AnyHandler[T] = SyncHandler[T] | AsyncHandler[T] | StreamingHandler[T]
+"""Union of all handler types."""
 
 
 def is_async_handler(handler: object) -> bool:
@@ -170,7 +210,6 @@ def is_async_handler(handler: object) -> bool:
         return True
 
     # For callable objects, check if their type's __call__ is async
-    # All callable objects have __call__ on their type by definition
     if callable(handler):
         call_method = type(handler).__call__
         return asyncio.iscoroutinefunction(call_method)
@@ -195,7 +234,6 @@ def is_streaming_handler(handler: object) -> bool:
         return True
 
     # For callable objects, check if their type's __call__ is an async generator
-    # All callable objects have __call__ on their type by definition
     if callable(handler):
         call_method = type(handler).__call__
         return inspect.isasyncgenfunction(call_method)
@@ -226,6 +264,7 @@ def get_handler_type(handler: object) -> str:
 __all__ = [
     "AnyHandler",
     "AsyncHandler",
+    "ProgressConfig",
     "ProgressEvent",
     "ProgressState",
     "StreamingHandler",

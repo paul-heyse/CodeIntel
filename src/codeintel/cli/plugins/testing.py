@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from codeintel.cli.plugin_manifest import PluginCapability, PluginManifest
-from codeintel.cli.plugin_sandbox import PluginSandbox, SandboxConfig
+from codeintel.cli.plugins.manifest import PluginCapability, PluginManifest
+from codeintel.cli.plugins.sandbox import PluginSandbox, SandboxConfig
 
 
 @runtime_checkable
@@ -338,7 +338,7 @@ Main module for {name} plugin.
 
 from __future__ import annotations
 
-from codeintel.cli.executor import OperationCategory, OperationSpec
+from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.results import CliResult
 
 
@@ -382,8 +382,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.plugin_manifest import PluginManifest
-from codeintel.cli.plugin_testing import PluginTestHarness
+from codeintel.cli.plugins import PluginManifest, PluginTestHarness
 
 
 @pytest.fixture
@@ -448,6 +447,7 @@ pytest tests/
 
 
 __all__ = [
+    "OperationSpecProtocol",
     "PluginTestHarness",
     "PluginTestResult",
     "create_plugin_scaffold",

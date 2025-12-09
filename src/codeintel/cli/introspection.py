@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from codeintel.cli.executor import OperationSpec
+from codeintel.cli.execution import OperationSpec
 from codeintel.cli.operation_registry import get_operation_registry
 
 

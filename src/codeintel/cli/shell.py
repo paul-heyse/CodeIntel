@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from codeintel.cli.executor import get_executor
+from codeintel.cli.execution import get_executor
 from codeintel.cli.introspection import list_all_operations, search_operations
 from codeintel.cli.operation_registry import get_operation_registry
 

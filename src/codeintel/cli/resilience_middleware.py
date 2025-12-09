@@ -22,8 +22,7 @@ from codeintel.cli.resilience import (
 )
 
 warnings.warn(
-    "codeintel.cli.resilience_middleware is deprecated, "
-    "use codeintel.cli.resilience instead",
+    "codeintel.cli.resilience_middleware is deprecated, use codeintel.cli.resilience instead",
     DeprecationWarning,
     stacklevel=2,
 )

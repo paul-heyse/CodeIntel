@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Self
 
-from codeintel.cli.plugin_manifest import PluginCapability, PluginManifest
+from codeintel.cli.plugins.manifest import PluginCapability, PluginManifest
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ ALLOWED_MODULES: frozenset[str] = frozenset(
         "re",
         "typing",
         "codeintel.cli.results",
-        "codeintel.cli.executor",
+        "codeintel.cli.execution",
     },
 )
 

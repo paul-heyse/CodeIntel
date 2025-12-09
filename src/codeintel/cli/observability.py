@@ -12,7 +12,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from codeintel.cli.cli_middleware import OperationMiddleware
+from codeintel.cli.execution import ExecutionContext, Middleware
+from codeintel.cli.results import CliResult
 from codeintel.cli.telemetry import (
     OperationMetrics,
     TelemetryProvider,
@@ -60,7 +61,7 @@ class ObservabilityConfig:
     log_results: bool = False
 
 
-class ObservabilityMiddleware(OperationMiddleware):
+class ObservabilityMiddleware(Middleware):
     """Middleware that adds comprehensive observability.
 
     Parameters
@@ -86,17 +87,14 @@ class ObservabilityMiddleware(OperationMiddleware):
 
     def before_invoke(
         self,
-        op_id: str,
-        params: dict[str, Any],
+        ctx: ExecutionContext,
     ) -> dict[str, Any]:
         """Start observability context.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
-        params
-            Operation parameters.
+        ctx
+            Execution context with operation_id and params.
 
         Returns
         -------
@@ -105,63 +103,68 @@ class ObservabilityMiddleware(OperationMiddleware):
         """
         context: dict[str, Any] = {
             "start_time": time.monotonic(),
-            "operation_id": op_id,
+            "operation_id": ctx.operation_id,
         }
 
         # Start trace span
         if self._config.tracing_enabled:
-            span = self._start_span(op_id, params)
+            span = self._start_span(ctx.operation_id, ctx.params)
             context["span"] = span
 
         # Log operation start
         if self._config.structured_logging:
-            extra: dict[str, Any] = {"operation_id": op_id}
+            extra: dict[str, Any] = {"operation_id": ctx.operation_id}
             if self._config.log_params:
-                extra["params"] = _sanitize_params(params)
+                extra["params"] = _sanitize_params(ctx.params)
             LOG.info("Operation started", extra=extra)
 
         return context
 
     def after_invoke(
         self,
-        op_id: str,
-        result: object,
-        context: dict[str, Any],
-    ) -> None:
+        ctx: ExecutionContext,
+        result: CliResult[Any],
+        mw_context: dict[str, Any],
+    ) -> CliResult[Any]:
         """Complete observability context.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         result
             Operation result.
-        context
+        mw_context
             Context from before_invoke.
+
+        Returns
+        -------
+        CliResult[Any]
+            Unmodified result.
         """
-        start_time = context.get("start_time")
+        start_time = mw_context.get("start_time")
         if not isinstance(start_time, float):
-            return
+            return result
 
         duration = time.monotonic() - start_time
 
         # Record metrics
         if self._config.metrics_enabled:
             self._metrics.record_operation(
-                op_id,
+                ctx.operation_id,
                 success=True,
                 duration_seconds=duration,
             )
 
         # End trace span
-        span = context.get("span")
+        span = mw_context.get("span")
         if span is not None:
             _end_span(span, success=True, duration=duration)
 
         # Log completion
         if self._config.structured_logging:
             extra: dict[str, Any] = {
-                "operation_id": op_id,
+                "operation_id": ctx.operation_id,
                 "duration_ms": duration * 1000,
                 "success": True,
             }
@@ -169,51 +172,60 @@ class ObservabilityMiddleware(OperationMiddleware):
                 extra["result_type"] = type(result).__name__
             LOG.info("Operation completed", extra=extra)
 
+        return result
+
     def on_error(
         self,
-        op_id: str,
+        ctx: ExecutionContext,
         exc: Exception,
-        context: dict[str, Any],
-    ) -> None:
+        mw_context: dict[str, Any],
+    ) -> Exception | None:
         """Record error in observability context.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         exc
             Exception that occurred.
-        context
+        mw_context
             Context from before_invoke.
+
+        Returns
+        -------
+        Exception
+            The original exception.
         """
-        start_time = context.get("start_time")
+        start_time = mw_context.get("start_time")
         if not isinstance(start_time, float):
-            return
+            return exc
 
         duration = time.monotonic() - start_time
 
         # Record metrics
         if self._config.metrics_enabled:
             self._metrics.record_operation(
-                op_id,
+                ctx.operation_id,
                 success=False,
                 duration_seconds=duration,
             )
 
         # End trace span with error
-        span = context.get("span")
+        span = mw_context.get("span")
         if span is not None:
             _end_span(span, success=False, duration=duration, error=exc)
 
         # Log error
         if self._config.structured_logging:
             extra: dict[str, Any] = {
-                "operation_id": op_id,
+                "operation_id": ctx.operation_id,
                 "duration_ms": duration * 1000,
                 "success": False,
                 "error_type": type(exc).__name__,
             }
             LOG.error("Operation failed", extra=extra, exc_info=exc)
+
+        return exc
 
     def _start_span(
         self,

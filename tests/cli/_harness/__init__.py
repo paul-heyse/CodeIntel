@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.cli.cyclopts_app import app as cli_app
-from codeintel.cli.executor import get_executor
+from codeintel.cli.execution import get_executor
 from codeintel.cli.operation_registry import get_operation_registry
 
 

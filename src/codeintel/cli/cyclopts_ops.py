@@ -25,7 +25,6 @@ from typing import (
 from cyclopts import App, Group, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.cli_middleware import get_middleware_stack
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
@@ -38,6 +37,7 @@ from codeintel.cli.cyclopts_common import (
 )
 from codeintel.cli.cyclopts_help import _AppCallKwargs
 from codeintel.cli.dry_run import plan_dry_run, render_dry_run
+from codeintel.cli.execution import ExecutionContext, get_middleware_stack
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
@@ -639,8 +639,9 @@ def _invoke_operation_with_prereqs(
         logging.basicConfig(level=logging.DEBUG)
 
     middleware = get_middleware_stack()
+    ctx = ExecutionContext.for_sync(op_id, params)
 
-    with middleware.wrap(op_id, params):
+    with middleware.wrap(ctx):
         if not skip_prereqs:
             run_operation_prereqs(
                 op_id=op_id,
