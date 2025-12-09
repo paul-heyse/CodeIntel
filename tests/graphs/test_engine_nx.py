@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
+from typing import Final
 
 import networkx as nx
 import pytest
@@ -10,10 +12,19 @@ import pytest
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
-from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions import expect_equal, expect_is_none, expect_true
+from tests._helpers.builders import (
+    CallGraphNodeRow,
+    ConfigValueRow,
+    ModuleRow,
+    SymbolUseEdgeRow,
+    insert_rows,
+)
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
+
+ISOLATED_NODE: Final[int] = 3
 
 
 def _node_payload(graph: nx.Graph) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
@@ -177,3 +188,251 @@ def test_cache_invalidate_with_missing_key_is_noop() -> None:
 
     # Should not raise
     cache.invalidate(GraphKind.CALL_GRAPH)
+
+
+# ===========================================================================
+# nx_views Helper and Loader Tests
+# ===========================================================================
+
+
+def test_numeric_normalizers() -> None:
+    """_as_int and _normalize_decimal handle varied inputs."""
+    expect_equal(nx_views.as_int(5), 5)
+    expect_equal(nx_views.as_int(Decimal("7")), 7)
+    expect_equal(nx_views.as_int(b"9"), 9)
+    expect_equal(nx_views.as_int(bytearray(b"11")), 11)
+    expect_is_none(nx_views.as_int("bad"))
+    expect_is_none(nx_views.as_int(b"bad"))
+    expect_is_none(nx_views.as_int(None))
+
+    expect_equal(nx_views.normalize_decimal(Decimal("10")), 10)
+    expect_equal(nx_views.normalize_decimal(b"12"), 12)
+    expect_equal(nx_views.normalize_decimal("14"), 14)
+    expect_true(nx_views.normalize_decimal(None) is None)
+    expect_true(nx_views.normalize_decimal(object()) is None)
+
+
+def test_module_attrs_from_row_coerces_values() -> None:
+    """_module_attrs_from_row only sets attrs that coerce to int."""
+    name, attrs = nx_views.module_attrs_from_row("mod", "1", Decimal("2"), b"3", "bad")
+    expect_equal(name, "mod")
+    expect_equal(attrs["scc_id"], 1)
+    expect_equal(attrs["component_size"], 2)
+    expect_equal(attrs["layer"], 3)
+    expect_true("cycle_group" not in attrs)
+
+
+def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> None:
+    """load_call_graph aggregates weights, skips malformed edges, and keeps isolated nodes."""
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM graph.call_graph_edges")
+    con.execute("DELETE FROM graph.call_graph_nodes")
+
+    # Two identical edges (weight aggregation) and one malformed with None callee skipped
+    con.executemany(
+        """
+        INSERT INTO graph.call_graph_edges
+            (repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json)
+        VALUES (?, ?, ?, ?, 'a.py', 1, 0, 'python', 'call', 'static', 1.0, '{}')
+        """,
+        [
+            (repo, commit, 1, 2),
+            (repo, commit, 1, 2),
+            (repo, commit, 1, None),
+        ],
+    )
+    # Isolated node
+    insert_rows(
+        test_ctx.gateway,
+        [
+            CallGraphNodeRow(
+                goid_h128=3,
+                language="python",
+                kind="function",
+                arity=0,
+                is_public=False,
+                rel_path="b.py",
+            )
+        ],
+    )
+
+    graph = nx_views.load_call_graph(test_ctx.gateway, repo, commit)
+
+    expect_true(graph.has_edge(1, 2))
+    expect_equal(graph[1][2]["weight"], 2)
+    expect_true(ISOLATED_NODE in graph.nodes)
+
+
+def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) -> None:
+    """load_import_graph falls back to module_layer data when import_modules missing."""
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM graph.import_graph_edges")
+
+    con.executemany(
+        """
+        INSERT INTO graph.import_graph_edges (repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group, module_layer)
+        VALUES (?, ?, ?, ?, 0, 0, 0, ?)
+        """,
+        [
+            (repo, commit, "a", "b", 1),
+            (repo, commit, "a", "b", 1),
+            (repo, commit, "b", "c", 2),
+        ],
+    )
+    # Remove import_modules to trigger DuckDBError path
+    con.execute("DROP TABLE IF EXISTS graph.import_modules")
+
+    graph = nx_views.load_import_graph(test_ctx.gateway, repo, commit)
+
+    expect_equal(graph["a"]["b"]["weight"], 2)
+    expect_true("a" in graph.nodes)
+    expect_equal(graph.nodes["a"]["layer"], 1)
+
+
+def test_load_test_function_bipartite_weights(test_ctx: TestContext) -> None:
+    """load_test_function_bipartite accumulates weights and skips null IDs."""
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM analytics.test_coverage_edges")
+    con.executemany(
+        """
+        INSERT INTO analytics.test_coverage_edges (repo, commit, test_id, function_goid_h128, coverage_ratio)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (repo, commit, "t1", 1, 0.5),
+            (repo, commit, "t1", 1, 0.25),
+            (repo, commit, None, 2, 0.5),
+        ],
+    )
+
+    graph = nx_views.load_test_function_bipartite(test_ctx.gateway, repo, commit)
+
+    test_node = ("t", "t1")
+    func_node = ("f", 1)
+    expect_true(graph.has_node(test_node))
+    expect_true(graph.has_node(func_node))
+    expect_equal(graph[test_node][func_node]["weight"], 0.75)
+
+
+def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> None:
+    """_parse_reference_modules filters and load_config_module_bipartite keeps raw when filter drops all."""
+    expect_equal(nx_views.parse_reference_modules(["a", "b"], {"a"}), ["a"])
+    expect_equal(nx_views.parse_reference_modules('["a","b"]', set()), ["a", "b"])
+    expect_equal(nx_views.parse_reference_modules("bad json", {"a"}), [])
+
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM analytics.config_values")
+    con.execute("DELETE FROM core.modules")
+
+    insert_rows(
+        test_ctx.gateway,
+        [
+            ModuleRow(module="allowed", path="pkg/allowed.py", repo=repo, commit=commit),
+        ],
+    )
+    insert_rows(
+        test_ctx.gateway,
+        [
+            ConfigValueRow(
+                repo=repo,
+                commit=commit,
+                config_path="cfg1",
+                format="json",
+                key="k1",
+                reference_paths=[],
+                reference_modules=["missing.mod"],
+                reference_count=1,
+            ),
+            ConfigValueRow(
+                repo=repo,
+                commit=commit,
+                config_path="cfg2",
+                format="json",
+                key="k2",
+                reference_paths=[],
+                reference_modules=["allowed"],
+                reference_count=1,
+            ),
+        ],
+    )
+
+    graph = nx_views.load_config_module_bipartite(test_ctx.gateway, repo, commit)
+
+    expect_true(("c", "k1") in graph.nodes)  # key node
+    expect_true(("m", "missing.mod") in graph.nodes)  # retained raw
+    expect_true(graph.has_edge(("c", "k2"), ("m", "allowed")))
+
+
+def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
+    """load_symbol_module_graph skips self-edges and increments weights."""
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM graph.symbol_use_edges")
+    con.execute("DELETE FROM core.modules")
+
+    insert_rows(
+        test_ctx.gateway,
+        [
+            ModuleRow(module="m_a", path="a.py", repo=repo, commit=commit),
+            ModuleRow(module="m_b", path="b.py", repo=repo, commit=commit),
+        ],
+    )
+    insert_rows(
+        test_ctx.gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="s", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+            ),
+            SymbolUseEdgeRow(
+                symbol="t", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+            ),
+            SymbolUseEdgeRow(
+                symbol="self", def_path="a.py", use_path="a.py", same_file=True, same_module=True
+            ),
+        ],
+    )
+
+    graph = nx_views.load_symbol_module_graph(test_ctx.gateway, repo, commit)
+
+    expect_true(graph.has_edge("m_b", "m_a"))
+    expect_equal(graph["m_b"]["m_a"]["weight"], 2)
+
+
+def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
+    test_ctx: TestContext,
+) -> None:
+    """load_symbol_function_graph returns empty on DuckDBError and normalizes decimals."""
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    con = test_ctx.gateway.con
+    con.execute("DELETE FROM graph.symbol_use_edges")
+
+    test_ctx.gateway.graph.insert_symbol_use_edges(
+        [
+            (
+                "s1",
+                "a.py",
+                "b.py",
+                False,
+                False,
+                Decimal("10"),
+                20,
+            ),
+        ]
+    )
+
+    graph = nx_views.load_symbol_function_graph(test_ctx.gateway, repo, commit)
+    expect_true(graph.has_edge(10, 20))
+
+    con.execute("DROP TABLE IF EXISTS graph.symbol_use_edges")
+    empty_graph = nx_views.load_symbol_function_graph(test_ctx.gateway, repo, commit)
+    expect_equal(empty_graph.number_of_nodes(), 0)

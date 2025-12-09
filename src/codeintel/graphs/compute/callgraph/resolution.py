@@ -188,7 +188,7 @@ def build_callee_map(spans: Sequence[FunctionSpanData]) -> dict[str, int]:
 # =============================================================================
 
 
-def _attr_to_str(node: cst.CSTNode) -> str:
+def attr_to_str(node: cst.CSTNode) -> str:
     """Render a LibCST Name/Attribute into a dotted string.
 
     Returns
@@ -214,7 +214,7 @@ def _attr_to_str(node: cst.CSTNode) -> str:
     return ""
 
 
-def _resolve_base_module(current_module: str, node: cst.ImportFrom) -> str | None:
+def resolve_base_module(current_module: str, node: cst.ImportFrom) -> str | None:
     """Resolve the base module for an ImportFrom, handling relative imports.
 
     Returns
@@ -222,7 +222,7 @@ def _resolve_base_module(current_module: str, node: cst.ImportFrom) -> str | Non
     str | None
         Dotted base module or None when it cannot be resolved.
     """
-    module_part = _attr_to_str(node.module) if node.module is not None else ""
+    module_part = attr_to_str(node.module) if node.module is not None else ""
     level = len(node.relative) if node.relative else 0
 
     if level == 0:
@@ -246,13 +246,13 @@ def _resolve_base_module(current_module: str, node: cst.ImportFrom) -> str | Non
     return ".".join(package_parts)
 
 
-def _record_import_aliases(node: cst.Import, alias_map: dict[str, str]) -> None:
+def record_import_aliases(node: cst.Import, alias_map: dict[str, str]) -> None:
     """Populate alias_map with aliases from an Import statement."""
     for alias in node.names:
-        target = _attr_to_str(cast("cst.CSTNode", alias.name))
+        target = attr_to_str(cast("cst.CSTNode", alias.name))
         asname_node = alias.asname.name if alias.asname else None
         asname = (
-            _attr_to_str(cast("cst.CSTNode", asname_node))
+            attr_to_str(cast("cst.CSTNode", asname_node))
             if asname_node is not None
             else target.split(".")[-1]
         )
@@ -260,7 +260,7 @@ def _record_import_aliases(node: cst.Import, alias_map: dict[str, str]) -> None:
             alias_map[asname] = target
 
 
-def _record_import_from_aliases(
+def record_import_from_aliases(
     node: cst.ImportFrom,
     alias_map: dict[str, str],
     current_module: str | None = None,
@@ -270,22 +270,22 @@ def _record_import_from_aliases(
     if current_module is None:
         if node.module is None:
             return
-        module_name = _attr_to_str(node.module)
+        module_name = attr_to_str(node.module)
         base_module = module_name or None
     else:
-        base_module = _resolve_base_module(current_module, node)
+        base_module = resolve_base_module(current_module, node)
     if not base_module:
         return
     names = node.names
     if isinstance(names, cst.ImportStar):
         return
     for alias in cast("list[cst.ImportAlias]", names):
-        target = f"{base_module}.{_attr_to_str(cast('cst.CSTNode', alias.name))}"
+        target = f"{base_module}.{attr_to_str(cast('cst.CSTNode', alias.name))}"
         asname_node = alias.asname.name if alias.asname else None
         asname = (
-            _attr_to_str(cast("cst.CSTNode", asname_node))
+            attr_to_str(cast("cst.CSTNode", asname_node))
             if asname_node is not None
-            else _attr_to_str(cast("cst.CSTNode", alias.name))
+            else attr_to_str(cast("cst.CSTNode", alias.name))
         )
         alias_map[asname] = target
 
@@ -314,9 +314,9 @@ def collect_aliases(module: cst.Module, current_module: str | None = None) -> di
 
         def on_visit(self, node: cst.CSTNode) -> bool:
             if isinstance(node, cst.Import):
-                _record_import_aliases(node, self.alias_map)
+                record_import_aliases(node, self.alias_map)
             elif isinstance(node, cst.ImportFrom):
-                _record_import_from_aliases(node, self.alias_map, self.module_name)
+                record_import_from_aliases(node, self.alias_map, self.module_name)
             return True
 
     module.visit(_AliasVisitor(aliases, current_module))
@@ -364,7 +364,7 @@ def _collect_imports(current_module: str, module: cst.Module, edges: set[tuple[s
 def handle_import(node: cst.Import, current_module: str, edges: set[tuple[str, str]]) -> None:
     """Handle standard import statements."""
     for name in node.names:
-        module_str = _attr_to_str(name.name)
+        module_str = attr_to_str(name.name)
         if module_str:
             edges.add((current_module, module_str))
 
@@ -375,7 +375,7 @@ def handle_import_from(
     edges: set[tuple[str, str]],
 ) -> None:
     """Handle import-from statements including relative imports."""
-    base = _resolve_base_module(current_module, node)
+    base = resolve_base_module(current_module, node)
     if base is None:
         return
     edges.add((current_module, base))
@@ -384,18 +384,28 @@ def handle_import_from(
         return
     if node.module is None:
         for alias in cast("list[cst.ImportAlias]", names):
-            target = _attr_to_str(cast("cst.CSTNode", alias.name))
+            target = attr_to_str(cast("cst.CSTNode", alias.name))
             if target:
                 edges.add((current_module, f"{base}.{target}"))
 
 
 __all__ = [
+    "attr_to_str",
     "build_callee_map",
     "build_evidence",
     "collect_aliases",
     "collect_import_edges",
     "handle_import",
     "handle_import_from",
+    "record_import_aliases",
+    "record_import_from_aliases",
+    "resolve_base_module",
     "resolve_callee",
     "resolve_via_scip",
 ]
+
+# Backwards compatibility aliases for previously private helpers
+_attr_to_str = attr_to_str
+_record_import_aliases = record_import_aliases
+_record_import_from_aliases = record_import_from_aliases
+_resolve_base_module = resolve_base_module

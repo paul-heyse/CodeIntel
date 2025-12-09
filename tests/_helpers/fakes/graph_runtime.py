@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack
 import networkx as nx
 from duckdb import Error as DuckDBError
 
+from codeintel.analytics.resources.graphs import GraphRuntimeLike
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine.protocol import GraphEngine
 from codeintel.storage.gateway import StorageGateway
@@ -117,7 +118,7 @@ class GraphCallRecorder:
 
 
 @dataclass(init=False)
-class GraphRuntimeDouble:
+class GraphRuntimeDouble(GraphRuntimeLike):
     """Graph runtime/engine stand-in with DB-backed loading and call recording."""
 
     gateway: StorageGateway | None = None
@@ -202,7 +203,7 @@ class GraphRuntimeDouble:
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_call_graph_from_db()
             self.call_graph_obj = graph
-        return self._clone(graph) if graph is not None else None
+        return self._clone_graph(graph)
 
     @property
     def import_graph(self) -> nx.DiGraph | None:
@@ -211,7 +212,7 @@ class GraphRuntimeDouble:
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_import_graph_from_db()
             self.import_graph_obj = graph
-        return self._clone(graph) if graph is not None else None
+        return self._clone_graph(graph)
 
     @property
     def symbol_module_graph(self) -> nx.Graph | None:
@@ -220,33 +221,27 @@ class GraphRuntimeDouble:
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_symbol_graph_from_db()
             self.symbol_module_graph_obj = graph
-        return self._clone(graph) if graph is not None else None
+        return self._clone_graph(graph)
 
     @property
     def symbol_function_graph(self) -> nx.Graph | None:
         self._recorder.record("symbol_function_graph")
-        return (
-            self._clone(self.symbol_function_graph_obj) if self.symbol_function_graph_obj else None
-        )
+        return self._clone_graph(self.symbol_function_graph_obj)
 
     @property
     def config_module_bipartite(self) -> nx.Graph | None:
         self._recorder.record("config_module_bipartite")
-        return self._clone(self.config_bipartite_obj) if self.config_bipartite_obj else None
+        return self._clone_graph(self.config_bipartite_obj)
 
     @property
     def test_function_bipartite(self) -> nx.Graph | None:
         self._recorder.record("test_function_bipartite")
-        return (
-            self._clone(self.test_function_bipartite_obj)
-            if self.test_function_bipartite_obj
-            else None
-        )
+        return self._clone_graph(self.test_function_bipartite_obj)
 
     @property
-    def cfg_graph(self) -> nx.DiGraph | None:  # type: ignore[override]
+    def cfg_graph(self) -> nx.DiGraph | None:
         self._recorder.record("cfg_graph")
-        return self._clone(self._cfg_graph_internal) if self._cfg_graph_internal else None
+        return self._clone_graph(self._cfg_graph_internal)
 
     @cfg_graph.setter
     def cfg_graph(self, graph: nx.DiGraph | None) -> None:
@@ -348,15 +343,14 @@ class GraphRuntimeDouble:
             graph = loader()
         if graph is None and return_default_on_missing:
             graph = default_type()
+        return self._clone_graph(graph)
+
+    def _clone_graph(self, graph: _GraphT | None) -> _GraphT | None:
         if graph is None:
             return None
-        return self._clone(graph)
-
-    def _clone(self, graph: _GraphT) -> _GraphT:
-        if graph is None:
-            return None  # type: ignore[return-value]
         if self.copy_graphs and hasattr(graph, "copy"):
-            return graph.copy()  # type: ignore[return-value]
+            copied = graph.copy()
+            return copied
         return graph
 
     def _load_call_graph_from_db(self) -> nx.DiGraph | None:

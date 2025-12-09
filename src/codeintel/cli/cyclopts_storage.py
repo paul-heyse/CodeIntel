@@ -10,7 +10,7 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import invoke_with_typer_translation
 from codeintel.cli.commands.storage import MacroRequirement, storage_validate_macros
-from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
 
 storage_app = App(
     name="storage",
@@ -22,12 +22,13 @@ storage_app = App(
 class ValidateMacrosCli:
     """CLI surface for `codeintel storage validate-macros`."""
 
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     macros: Annotated[
         MacroRequirement,
         Parameter(
             name="--macros",
             help="Ingest macro requirement policy.",
+            show_choices=True,
         ),
     ] = MacroRequirement.REQUIRE
 

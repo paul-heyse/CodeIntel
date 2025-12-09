@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import invoke_with_typer_translation
+from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
 from codeintel.cli.commands.docs import (
     BackendOptions,
     DocsExportOptions,
     DryRunMode,
+    ExportValidationMode,
+    MacroRequirement,
     NxGpuMode,
     OutputFormat,
+    PrereqMode,
     ProjectOptions,
     _bundle_docs_export,
     docs_export_handler,
@@ -21,6 +25,7 @@ from codeintel.cli.commands.docs import (
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
+    RuntimeParam,
     resolve_output_format,
     runtime_cli_to_options,
 )
@@ -35,20 +40,28 @@ docs_app = App(
 class DocsProjectCli:
     """Project and storage selection for docs export."""
 
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
 
 
 @dataclass
 class DocsBackendCli:
     """Graph backend selection."""
 
+    class NxBackend(Enum):
+        """NetworkX backend selection."""
+
+        AUTO = "auto"
+        CPU = "cpu"
+        NX_CUGRAPH = "nx-cugraph"
+
     nx_backend: Annotated[
-        str,
+        NxBackend,
         Parameter(
             name="--nx-backend",
             help="NetworkX backend selection: auto, cpu, or nx-cugraph.",
+            show_choices=True,
         ),
-    ] = "auto"
+    ] = NxBackend.AUTO
     nx_gpu_mode: Annotated[
         NxGpuMode,
         Parameter(
@@ -62,6 +75,14 @@ class DocsBackendCli:
 class DocsExportCli:
     """Export and validation options."""
 
+    validation_mode: Annotated[
+        ExportValidationMode | None,
+        Parameter(
+            name="--validation-mode",
+            help="Validation strategy: required or skip.",
+            show_choices=True,
+        ),
+    ] = None
     validate: Annotated[
         bool,
         Parameter(
@@ -70,6 +91,14 @@ class DocsExportCli:
             negative=(),
         ),
     ] = False
+    macro_requirement: Annotated[
+        MacroRequirement | None,
+        Parameter(
+            name="--macro-requirement",
+            help="Normalized macro requirement policy: require_normalized or allow_partial.",
+            show_choices=True,
+        ),
+    ] = None
     require_normalized_macros: Annotated[
         bool,
         Parameter(
@@ -93,6 +122,14 @@ class DocsExportCli:
         ),
     ] = None
     output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    run_mode: Annotated[
+        DryRunMode | None,
+        Parameter(
+            name="--run-mode",
+            help="Execution mode for docs export.",
+            show_choices=True,
+        ),
+    ] = None
     dry_run: Annotated[
         bool,
         Parameter(
@@ -101,6 +138,14 @@ class DocsExportCli:
             negative=(),
         ),
     ] = False
+    prereq_mode: Annotated[
+        PrereqMode | None,
+        Parameter(
+            name="--prereq-mode",
+            help="Prerequisite execution mode.",
+            show_choices=True,
+        ),
+    ] = None
     skip_prereqs: Annotated[
         bool,
         Parameter(
@@ -123,14 +168,38 @@ class DocsExportBundle:
 
 @docs_app.command(name="export")
 def docs_export(
-    project: Annotated[DocsProjectCli, Parameter(name="*")] | None = None,
+    project: Annotated[DocsProjectCli, Parameter(name="*")] = DocsProjectCli(),
     backend: Annotated[DocsBackendCli, Parameter(name="*")] | None = None,
     export: Annotated[DocsExportCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Export datasets to Document Output/."""
-    project_cfg = project or DocsProjectCli()
+    """Export datasets to Document Output/.
+
+    Raises
+    ------
+    ValidationError
+        If option values are invalid.
+    """
+    project_cfg = project
     backend_cfg = backend or DocsBackendCli()
     export_cfg = export or DocsExportCli()
+    validation_mode = export_cfg.validation_mode
+    if validation_mode is None:
+        validation_mode = (
+            ExportValidationMode.REQUIRED if export_cfg.validate else ExportValidationMode.SKIP
+        )
+    macro_requirement = export_cfg.macro_requirement
+    if macro_requirement is None:
+        macro_requirement = (
+            MacroRequirement.REQUIRE_NORMALIZED
+            if export_cfg.require_normalized_macros
+            else MacroRequirement.ALLOW_PARTIAL
+        )
+    run_mode = export_cfg.run_mode
+    if run_mode is None:
+        run_mode = DryRunMode.DRY_RUN if export_cfg.dry_run else DryRunMode.EXECUTE
+    prereq_mode = export_cfg.prereq_mode
+    if prereq_mode is None:
+        prereq_mode = PrereqMode.SKIP if export_cfg.skip_prereqs else PrereqMode.RUN
 
     runtime = runtime_cli_to_options(project_cfg.runtime)
     output_format = resolve_output_format(
@@ -147,18 +216,21 @@ def docs_export(
         "db_path": runtime.db_path,
         "build_dir": runtime.build_dir,
         "document_output_dir": runtime.document_output_dir,
-        "nx_backend": backend_cfg.nx_backend,
+        "nx_backend": backend_cfg.nx_backend.value,
         "nx_gpu_mode": backend_cfg.nx_gpu_mode,
-        "validation": export_cfg.validate,
-        "macro_requirement": export_cfg.require_normalized_macros,
+        "validation": validation_mode,
+        "macro_requirement": macro_requirement,
         "schemas": export_cfg.schemas,
         "datasets": export_cfg.datasets,
         "output_format": output_format,
-        "run_mode": DryRunMode.DRY_RUN if export_cfg.dry_run else DryRunMode.EXECUTE,
-        "prereq_mode": export_cfg.skip_prereqs,
+        "run_mode": run_mode,
+        "prereq_mode": prereq_mode,
         "verbose": project_cfg.runtime.verbose,
     }
-    bundled_mapping = _bundle_docs_export(cli_kwargs)
+    try:
+        bundled_mapping = _bundle_docs_export(cli_kwargs)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
     bundle = DocsExportBundle(
         project=bundled_mapping["project"],
         backend=bundled_mapping["backend"],

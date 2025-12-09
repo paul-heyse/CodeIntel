@@ -12,6 +12,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar
 
+import duckdb
+
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
@@ -171,7 +173,7 @@ class RepoScanPlugin(TargetPlugin):
                     [ctx.repo, ctx.commit],
                 ).fetchone()
                 row_counts[table_key] = int(count[0]) if count else 0
-            except (RuntimeError, OSError):
+            except (RuntimeError, OSError, duckdb.CatalogException):
                 row_counts[table_key] = 0
         return row_counts
 

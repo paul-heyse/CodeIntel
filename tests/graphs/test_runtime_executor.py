@@ -17,16 +17,25 @@ from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Final
 
-from codeintel.config.steps_graphs import GraphPluginPolicy
+import pytest
+
+from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.core.execution.errors import PluginFatalError
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
+from codeintel.core.resources import ResourceNotFoundError
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
+from codeintel.graphs.core.context import (
+    GraphPluginExecutionContext,
+    GraphPluginExecutionContextBuilder,
+)
 from codeintel.graphs.core.protocol import (
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
+from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.runtime import graph_executor
 from codeintel.graphs.runtime.graph_executor import (
     GraphExecutorContext,
@@ -45,6 +54,34 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
+
+
+class _MockFunctionCatalogProvider(FunctionCatalogProvider):
+    """Minimal provider satisfying FunctionCatalogProvider protocol for tests."""
+
+    def __init__(self) -> None:
+        self._catalog = FunctionCatalog(functions=(), module_by_path={})
+
+    def catalog(self) -> FunctionCatalog:
+        return self._catalog
+
+    @staticmethod
+    def urn_for_goid(goid: int) -> str | None:  # pragma: no cover - protocol stub
+        del goid
+        return None
+
+    @staticmethod
+    def module_for_path(rel_path: str) -> str | None:  # pragma: no cover - protocol stub
+        del rel_path
+        return None
+
+    @staticmethod
+    def lookup_goid(
+        rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+    ) -> int | None:  # pragma: no cover - protocol stub
+        del rel_path, start_line, end_line, qualname
+        return None
+
 
 # Constants
 STATUS_SUCCESS_COUNT: Final = 2
@@ -251,7 +288,76 @@ def test_graph_plugin_executor_dry_run_skips_execution(
         expect_equal(report.skip_count, 1)
         expect_equal(report.success_count, 0)
         expect_true(report.records)
-        expect_equal(report.records[0].meta.get("skipped_reason"), "dry_run")
+    expect_equal(report.records[0].meta.get("skipped_reason"), "dry_run")
+
+
+def test_graph_plugin_execution_context_require_graphs_by_type_and_name(
+    graph_executor_env: GraphTestEnv,
+) -> None:
+    """require_graphs resolves resources by type and name; errors when missing."""
+    engine = NxGraphEngine(gateway=graph_executor_env.gateway, snapshot=graph_executor_env.snapshot)
+    engine_resource = GraphResource(engine=engine)
+    base_builder = GraphPluginExecutionContextBuilder(
+        gateway=graph_executor_env.gateway,
+        snapshot=graph_executor_env.snapshot,
+        run_id="run",
+    )
+    ctx_missing = base_builder.build_graph_context()
+    with pytest.raises(RuntimeError, match="No GraphResource"):
+        ctx_missing.require_graphs()
+
+    ctx = base_builder.build_graph_context()
+
+    # Register by type
+    ctx.resources.register(GraphResource, engine_resource)
+    expect_true(ctx.has_resource(GraphResource))
+    expect_true(ctx.require_graphs() is engine_resource)
+
+    # Register by name only and ensure fallback works
+    ctx.resources.register_provider(engine_resource)
+    expect_true(ctx.has_graph_resource(GraphResource.RESOURCE_NAME))
+    expect_true(ctx.require_graphs() is engine_resource)
+
+
+def test_graph_plugin_execution_context_require_graph_resource_by_name(
+    graph_executor_env: GraphTestEnv,
+) -> None:
+    """require_graph_resource_by_name raises ResourceNotFoundError when missing."""
+    builder = GraphPluginExecutionContextBuilder(
+        gateway=graph_executor_env.gateway,
+        snapshot=graph_executor_env.snapshot,
+        run_id="run",
+    )
+    ctx = builder.build_graph_context()
+
+    with pytest.raises(ResourceNotFoundError):
+        ctx.require_graph_resource_by_name("missing")
+
+
+def test_graph_plugin_execution_context_builder_wiring(graph_executor_env: GraphTestEnv) -> None:
+    """Builder should propagate scope, catalog provider, and registered resources."""
+    scope = GraphRunScope(paths=("a.py",))
+    catalog_provider = _MockFunctionCatalogProvider()
+    engine = NxGraphEngine(gateway=graph_executor_env.gateway, snapshot=graph_executor_env.snapshot)
+    resource = GraphResource(engine=engine)
+
+    builder = GraphPluginExecutionContextBuilder(
+        gateway=graph_executor_env.gateway,
+        snapshot=graph_executor_env.snapshot,
+        run_id="builder-run",
+    )
+    builder = (
+        builder.with_scope(scope)
+        .with_catalog_provider(catalog_provider)
+        .register_graph_resource(resource)
+        .with_resource(GraphResource, resource)
+    )
+    ctx = builder.build_graph_context()
+
+    expect_true(ctx.scope is scope)
+    expect_true(ctx.catalog_provider is catalog_provider)
+    expect_true(ctx.has_resource(GraphResource))
+    expect_true(ctx.require_graphs() is resource)
 
 
 def test_graph_plugin_executor_skip_on_unchanged(

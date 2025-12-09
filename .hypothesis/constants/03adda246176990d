@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_docs.py
+# hypothesis_version: 6.148.7
+
+['*', '--dataset', '--dry-run', '--nx-backend', '--nx-gpu-mode', '--schema', '--skip-prereqs', '--validate', 'auto', 'backend', 'build_dir', 'commit', 'cpu', 'datasets', 'db_path', 'docs', 'docs_app', 'document_output_dir', 'export', 'export_options', 'macro_requirement', 'nx-cugraph', 'nx_backend', 'nx_gpu_mode', 'output_format', 'prereq_mode', 'project', 'project_root', 'repo', 'repo_root', 'run_mode', 'schemas', 'validation', 'verbose']

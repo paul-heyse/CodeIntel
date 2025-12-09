@@ -7,7 +7,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import invoke_with_typer_translation
+from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
 from codeintel.cli.commands._common import OutputFormat
 from codeintel.cli.commands.build import (
     BuildHistoryOptions,
@@ -31,6 +31,8 @@ build_app = App(
     name="build",
     help="Build system commands for minimal-work target computation.",
 )
+
+MODULE_CHOICES = ("ingestion", "graphs", "analytics")
 
 
 @dataclass
@@ -82,8 +84,18 @@ class BuildRunCli:
 def build_run(
     cfg: Annotated[BuildRunCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Build targets with automatic dependency resolution."""
+    """Build targets with automatic dependency resolution.
+
+    Raises
+    ------
+    ValidationError
+        If an unknown module value is provided.
+    """
     cfg = cfg or BuildRunCli()
+    if cfg.module is not None and cfg.module not in MODULE_CHOICES:
+        valid = ", ".join(MODULE_CHOICES)
+        message = f"Unknown module: {cfg.module}. Valid: {valid}"
+        raise ValidationError(message)
     runtime_opts = runtime_cli_to_options(cfg.runtime)
     output_format = resolve_output_format(
         json_flag=cfg.output.json,
@@ -125,8 +137,18 @@ class BuildStatusCli:
 def build_status(
     cfg: Annotated[BuildStatusCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Show current state of build targets."""
+    """Show current state of build targets.
+
+    Raises
+    ------
+    ValidationError
+        If an unknown module value is provided.
+    """
     cfg = cfg or BuildStatusCli()
+    if cfg.module is not None and cfg.module not in MODULE_CHOICES:
+        valid = ", ".join(MODULE_CHOICES)
+        message = f"Unknown module: {cfg.module}. Valid: {valid}"
+        raise ValidationError(message)
     runtime_opts = runtime_cli_to_options(cfg.runtime)
     output_format = resolve_output_format(
         json_flag=cfg.output.json,

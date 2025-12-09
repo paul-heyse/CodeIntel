@@ -14,7 +14,11 @@ from codeintel.cli.commands.graphs import (
     SelectionPolicy,
     graph_plugins_handler,
 )
-from codeintel.cli.cyclopts_common import OutputFormat, OutputFormatCLI, resolve_output_format
+from codeintel.cli.cyclopts_common import (
+    OutputFormat,
+    OutputFormatCLI,
+    resolve_output_format,
+)
 
 graphs_app = App(
     name="graph",

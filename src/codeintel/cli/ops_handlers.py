@@ -19,6 +19,7 @@ from typing import Any
 import uvicorn
 
 from codeintel.cli.cli_errors import ValidationError
+from codeintel.cli.commands._common import OutputFormat
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -58,7 +59,13 @@ def _build_runtime_or_error(project_root: Path | None) -> ProjectRuntime:
 
 
 def _parse_param_value(value: str) -> str | int | float | bool:
-    """Parse CLI parameter text into a primitive Python type."""
+    """Parse CLI parameter text into a primitive Python type.
+
+    Returns
+    -------
+    str | int | float | bool
+        Parsed value coerced to bool/int/float when possible, otherwise the original string.
+    """
     if value.lower() in {"true", "false"}:
         return value.lower() == "true"
     with contextlib.suppress(ValueError):
@@ -71,21 +78,15 @@ def _parse_param_value(value: str) -> str | int | float | bool:
 def op_list_handler(
     *,
     category: str | None,
-    json_output: bool,
+    output_format: OutputFormat,
 ) -> None:
-    """List available serving operations.
-
-    Returns
-    -------
-    None
-        Output is written directly to stdout.
-    """
+    """List available serving operations."""
     stdout = sys.stdout
     operations = list(iter_operations())
     if category:
         operations = [op for op in operations if op.category == category]
 
-    if json_output:
+    if output_format is OutputFormat.JSON:
         output = [
             {
                 "id": op.id,
@@ -98,11 +99,10 @@ def op_list_handler(
         ]
         stdout.write(json.dumps(output, indent=2))
         stdout.write("\n")
-        return
-
-    stdout.write(f"Available operations ({len(operations)}):\n")
-    for op in sorted(operations, key=lambda o: o.id):
-        stdout.write(f"  {op.id:<35} {op.summary}\n")
+    else:
+        stdout.write(f"Available operations ({len(operations)}):\n")
+        for op in sorted(operations, key=lambda o: o.id):
+            stdout.write(f"  {op.id:<35} {op.summary}\n")
 
 
 def invoke_operation(
@@ -197,14 +197,14 @@ def op_call_handler(
 def dataset_list_handler(
     *,
     runtime: ProjectRuntime,
-    json_output: bool,
+    output_format: OutputFormat,
 ) -> None:
     """List datasets from the registry."""
     stdout = sys.stdout
     registry = runtime.gateway.datasets
     meta = registry.meta or {}
 
-    if json_output:
+    if output_format is OutputFormat.JSON:
         output = [
             {
                 "name": name,
@@ -228,7 +228,7 @@ def dataset_list_handler(
 def dataset_describe_handler(
     *,
     table_key: str,
-    json_output: bool,
+    output_format: OutputFormat,
 ) -> None:
     """Show contract details for a dataset.
 
@@ -246,7 +246,7 @@ def dataset_describe_handler(
 
     columns = contract.schema.columns if contract.schema else []
 
-    if json_output:
+    if output_format is OutputFormat.JSON:
         output = {
             "name": contract.name,
             "table_key": contract.table_key,

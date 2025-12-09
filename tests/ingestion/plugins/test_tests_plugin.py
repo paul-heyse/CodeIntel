@@ -1,0 +1,157 @@
+"""Tests for TestsIngestPlugin behavior and fallbacks."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+import pytest
+
+from codeintel.ingestion.plugins.tests_plugin import (
+    TestsIngestPlugin,
+    get_module_paths,
+    resolve_report_file,
+)
+from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.fakes.contexts import TargetResourceOverrides
+from tests._helpers.fakes.recording_gateways import FailingGateway
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_target_context_for_plugin,
+    write_pytest_report,
+)
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+
+EXPECTED_TEST_ROWS = 2
+TRUNCATED_LONGREPR_LENGTH = 1000
+
+
+def test_get_module_paths_uses_resources(tmp_path: Path) -> None:
+    """resources.modules should be returned directly."""
+    plugin = TestsIngestPlugin()
+    overrides = TargetResourceOverrides(modules=("pkg/mod.py",))
+    ctx = build_target_context_for_plugin(
+        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
+    )
+    ctx.gateway.con.execute("DELETE FROM core.modules")
+
+    paths = get_module_paths(ctx)
+
+    expect_equal(paths, ["pkg/mod.py"])
+
+
+def test_get_module_paths_reads_database(tmp_path: Path) -> None:
+    """Database rows are used when resources are empty."""
+    plugin = TestsIngestPlugin()
+    ctx = build_target_context_for_plugin(plugin, tmp_path)
+    ctx.gateway.con.execute(
+        "INSERT INTO core.modules (module, path, repo, commit) VALUES (?, ?, ?, ?)",
+        ["pkg.mod", "pkg/mod.py", DEFAULT_REPO, DEFAULT_COMMIT],
+    )
+
+    paths = get_module_paths(ctx)
+
+    expect_equal(paths, ["pkg/mod.py"])
+
+
+def test_get_module_paths_handles_gateway_error(tmp_path: Path) -> None:
+    """Gateway failures should return an empty list."""
+    plugin = TestsIngestPlugin()
+    failing_gateway = FailingGateway("db down")
+    ctx = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(
+            gateway=cast("StorageGateway", failing_gateway),
+            resources=TargetResourceOverrides(modules=()),
+        ),
+    )
+
+    paths = get_module_paths(ctx)
+
+    expect_equal(paths, [])
+
+
+def test_resolve_report_file_prefers_build_dir(tmp_path: Path) -> None:
+    """Resolution favors build/test-results/pytest-report.json first."""
+    plugin = TestsIngestPlugin()
+    ctx = build_target_context_for_plugin(plugin, tmp_path)
+    write_pytest_report(ctx.repo_root, filename="pytest-report.json")
+    build_report = write_pytest_report(ctx.build_dir, filename="pytest-report.json")
+
+    resolved = resolve_report_file(ctx)
+
+    expect_equal(resolved, build_report)
+
+
+@pytest.mark.anyio
+async def test_execute_ingests_test_results_and_summary(tmp_path: Path) -> None:
+    """Happy path: test results and summary rows are written."""
+    plugin = TestsIngestPlugin()
+    overrides = TargetResourceOverrides(modules=("pkg/mod.py",))
+    ctx = build_target_context_for_plugin(
+        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
+    )
+    longrepr = "x" * 1500
+    report = write_pytest_report(
+        ctx.build_dir,
+        tests=[
+            {"nodeid": "tests/pkg/mod.py::test_ok", "outcome": "passed", "duration": 0.1},
+            {
+                "nodeid": "tests/pkg/mod.py::test_fail",
+                "outcome": "failed",
+                "duration": 0.2,
+                "longrepr": longrepr,
+            },
+        ],
+        summary={"passed": 1, "failed": 1, "skipped": 0, "error": 0, "duration": 0.3},
+    )
+
+    result = await plugin.execute(ctx)
+
+    expect_true(result.success is True)
+    expect_equal(result.row_counts.get("core.test_results"), EXPECTED_TEST_ROWS)
+    rows = ctx.gateway.con.execute(
+        "SELECT longrepr FROM core.test_results WHERE repo = ? AND commit = ? ORDER BY nodeid",
+        [ctx.repo, ctx.commit],
+    ).fetchall()
+    longreprs = [row[0] for row in rows if row[0] is not None]
+    expect_equal(len(longreprs), 1)
+    expect_equal(len(longreprs[0]), TRUNCATED_LONGREPR_LENGTH)
+    summary_row = ctx.gateway.con.execute(
+        "SELECT passed, failed, skipped, error "
+        "FROM core.test_summary WHERE repo = ? AND commit = ?",
+        [ctx.repo, ctx.commit],
+    ).fetchone()
+    expect_equal(summary_row, (1, 1, 0, 0))
+    expect_true(report.exists())
+
+
+@pytest.mark.anyio
+async def test_execute_handles_missing_report(tmp_path: Path) -> None:
+    """No report should yield success with empty row_counts."""
+    plugin = TestsIngestPlugin()
+    ctx = build_target_context_for_plugin(plugin, tmp_path)
+
+    result = await plugin.execute(ctx)
+
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {})
+
+
+@pytest.mark.anyio
+async def test_execute_fails_on_malformed_report(tmp_path: Path) -> None:
+    """Malformed JSON should produce a failed result."""
+    plugin = TestsIngestPlugin()
+    ctx = build_target_context_for_plugin(plugin, tmp_path)
+    bad_path = ctx.build_dir / "test-results" / "pytest-report.json"
+    bad_path.parent.mkdir(parents=True, exist_ok=True)
+    bad_path.write_text("{", encoding="utf-8")
+
+    result = await plugin.execute(ctx)
+
+    expect_true(result.success is False)
+    expect_true("Failed to read test report" in (result.error_message or ""))
