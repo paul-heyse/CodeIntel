@@ -1,0 +1,7 @@
+Error: Validation failed
+Type: validation_error
+Code: MISSING_REQUIRED
+
+Field: required_field
+Message: Required field is missing
+

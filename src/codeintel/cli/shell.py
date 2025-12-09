@@ -11,11 +11,14 @@ import json
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.executor import get_executor
 from codeintel.cli.introspection import list_all_operations, search_operations
 from codeintel.cli.operation_registry import get_operation_registry
+
+if TYPE_CHECKING:
+    from typing import TextIO
 
 # Optional readline import for tab completion
 try:
@@ -43,7 +46,7 @@ class ShellSession:
 
     history: list[str] = field(default_factory=list)
     variables: dict[str, Any] = field(default_factory=dict)
-    last_result: dict[str, Any] | None = None
+    last_result: Any = None
 
 
 class ShellCompleter:
@@ -52,19 +55,40 @@ class ShellCompleter:
     Parameters
     ----------
     session
-        Shell session.
+        Shell session (optional).
+
+    Attributes
+    ----------
+    commands
+        List of available shell commands.
+    operations
+        List of registered operation IDs.
     """
 
-    def __init__(self, session: ShellSession) -> None:
-        """Initialize completer."""
-        self._session = session
-        self._operations: list[str] = []
-        self._refresh_operations()
+    #: Available shell commands
+    commands: ClassVar[list[str]] = [
+        "call",
+        "list",
+        "search",
+        "help",
+        "history",
+        "set",
+        "get",
+        "export",
+        "quit",
+        "exit",
+    ]
 
-    def _refresh_operations(self) -> None:
-        """Refresh operation list."""
+    def __init__(self, session: ShellSession | None = None) -> None:
+        """Initialize completer."""
+        self._session = session or ShellSession()
+        self.operations: list[str] = []
+        self.refresh_operations()
+
+    def refresh_operations(self) -> None:
+        """Refresh operation list from registry."""
         registry = get_operation_registry()
-        self._operations = [spec.operation_id for spec in registry.list_operations()]
+        self.operations = [spec.operation_id for spec in registry.list_operations()]
 
     def complete(self, text: str, state: int) -> str | None:
         """Complete text.
@@ -86,22 +110,10 @@ class ShellCompleter:
 
         if not parts or (len(parts) == 1 and not buffer.endswith(" ")):
             # Complete command
-            commands = [
-                "call",
-                "list",
-                "search",
-                "help",
-                "history",
-                "set",
-                "get",
-                "export",
-                "quit",
-                "exit",
-            ]
-            matches = [c for c in commands if c.startswith(text)]
+            matches = [c for c in self.commands if c.startswith(text)]
         elif parts[0] == "call":
             # Complete operation ID
-            matches = [op for op in self._operations if op.startswith(text)]
+            matches = [op for op in self.operations if op.startswith(text)]
         else:
             matches = []
 
@@ -117,12 +129,19 @@ class InteractiveShell:
     ----------
     session
         Shell session state.
+
+    Attributes
+    ----------
+    session
+        Shell session state.
+    completer
+        Tab completion provider.
     """
 
     def __init__(self, session: ShellSession | None = None) -> None:
         """Initialize shell."""
-        self._session = session or ShellSession()
-        self._completer = ShellCompleter(self._session)
+        self.session = session or ShellSession()
+        self.completer = ShellCompleter(self.session)
         self._running = False
 
     def run(self) -> None:
@@ -135,7 +154,9 @@ class InteractiveShell:
             try:
                 line = input("codeintel> ").strip()
                 if line:
-                    self._execute_command(line)
+                    should_exit = self.execute_command(line)
+                    if should_exit:
+                        break
             except EOFError:
                 print()  # noqa: T201
                 break
@@ -147,7 +168,7 @@ class InteractiveShell:
         if not _READLINE_AVAILABLE or _readline is None:
             return
 
-        _readline.set_completer(self._completer.complete)
+        _readline.set_completer(self.completer.complete)
         _readline.parse_and_bind("tab: complete")
 
         history_file = Path.home() / ".codeintel" / "shell_history"
@@ -162,24 +183,31 @@ class InteractiveShell:
         print("Type 'help' for commands, 'quit' to exit")  # noqa: T201
         print()  # noqa: T201
 
-    def _execute_command(self, line: str) -> None:
+    def execute_command(self, line: str, output: TextIO | None = None) -> bool:
         """Execute shell command.
 
         Parameters
         ----------
         line
-            Command line.
+            Command line to execute.
+        output
+            Optional output stream (defaults to stdout).
+
+        Returns
+        -------
+        bool
+            True if shell should exit, False otherwise.
         """
-        self._session.history.append(line)
+        self.session.history.append(line)
 
         try:
             parts = shlex.split(line)
         except ValueError as e:
-            print(f"Parse error: {e}")  # noqa: T201
-            return
+            self._print(f"Parse error: {e}", output)
+            return False
 
         if not parts:
-            return
+            return False
 
         cmd = parts[0]
         args = parts[1:]
@@ -199,88 +227,143 @@ class InteractiveShell:
 
         handler = handlers.get(cmd)
         if handler:
-            handler(args)
-        else:
-            print(f"Unknown command: {cmd}")  # noqa: T201
-            print("Type 'help' for available commands")  # noqa: T201
+            return handler(args, output)
+        self._print(f"Unknown command: {cmd}", output)
+        self._print("Type 'help' for available commands", output)
+        return False
 
-    def _cmd_call(self, args: list[str]) -> None:
-        """Execute operation."""
+    @staticmethod
+    def _print(msg: str, output: TextIO | None = None) -> None:
+        """Print message to output stream.
+
+        Parameters
+        ----------
+        msg
+            Message to print.
+        output
+            Optional output stream.
+        """
+        if output is not None:
+            output.write(msg + "\n")
+        else:
+            print(msg)  # noqa: T201
+
+    def _cmd_call(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Execute operation.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         if not args:
-            print("Usage: call <operation_id> [--param=value ...]")  # noqa: T201
-            return
+            self._print("Usage: call <operation_id> [--param=value ...]", output)
+            return False
 
         operation_id = args[0]
-        params = self._parse_params(args[1:])
+        params = self.parse_params(" ".join(args[1:]))
 
         registry = get_operation_registry()
         spec = registry.get(operation_id)
 
         if spec is None:
-            print(f"Unknown operation: {operation_id}")  # noqa: T201
-            return
+            self._print(f"Unknown operation: {operation_id}", output)
+            return False
 
         executor = get_executor()
         result = executor.execute(spec, params, render=False)
 
         if result.result.success and result.result.data is not None:
             data = result.result.data
-            self._session.last_result = data if isinstance(data, dict) else None
-            print(json.dumps(data, indent=2, default=str))  # noqa: T201
+            self.session.last_result = data if isinstance(data, dict) else None
+            self._print(json.dumps(data, indent=2, default=str), output)
         elif result.result.error:
             error_msg = result.result.error.detail if result.result.error else "Unknown error"
-            print(f"Error: {error_msg}")  # noqa: T201
+            self._print(f"Error: {error_msg}", output)
+        return False
 
-    @staticmethod
-    def _cmd_list(args: list[str]) -> None:
-        """List operations."""
+    def _cmd_list(self, args: list[str], output: TextIO | None = None) -> bool:
+        """List operations.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         _ = args  # Unused
         operations = list_all_operations()
         for info in sorted(operations, key=lambda x: x.operation_id):
-            print(f"  {info.operation_id:30} {info.description}")  # noqa: T201
+            self._print(f"  {info.operation_id:30} {info.description}", output)
+        return False
 
-    @staticmethod
-    def _cmd_search(args: list[str]) -> None:
-        """Search operations."""
+    def _cmd_search(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Search operations.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         if not args:
-            print("Usage: search <query>")  # noqa: T201
-            return
+            self._print("Usage: search <query>", output)
+            return False
 
         query = " ".join(args)
         results = search_operations(query)
         if not results:
-            print(f"No operations matching: {query}")  # noqa: T201
-            return
+            self._print(f"No operations matching: {query}", output)
+            return False
 
         for info in results:
-            print(f"  {info.operation_id}: {info.description}")  # noqa: T201
+            self._print(f"  {info.operation_id}: {info.description}", output)
+        return False
 
-    @staticmethod
-    def _cmd_help(args: list[str]) -> None:
-        """Show help."""
+    def _cmd_help(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Show help.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         _ = args  # Unused
-        print("Commands:")  # noqa: T201
-        print("  call <operation> [params]  Execute operation")  # noqa: T201
-        print("  list                       List all operations")  # noqa: T201
-        print("  search <query>             Search operations")  # noqa: T201
-        print("  set <name> <value>         Set session variable")  # noqa: T201
-        print("  get <name>                 Get session variable")  # noqa: T201
-        print("  history                    Show command history")  # noqa: T201
-        print("  export [file]              Export session as script")  # noqa: T201
-        print("  help                       Show this help")  # noqa: T201
-        print("  quit                       Exit shell")  # noqa: T201
+        self._print("Available commands:", output)
+        self._print("  call <operation> [params]  Execute operation", output)
+        self._print("  list                       List all operations", output)
+        self._print("  search <query>             Search operations", output)
+        self._print("  set <name> <value>         Set session variable", output)
+        self._print("  get <name>                 Get session variable", output)
+        self._print("  history                    Show command history", output)
+        self._print("  export [file]              Export session as script", output)
+        self._print("  help                       Show this help", output)
+        self._print("  quit                       Exit shell", output)
+        return False
 
-    def _cmd_history(self, args: list[str]) -> None:
-        """Show history."""
+    def _cmd_history(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Show history.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         _ = args  # Unused
-        for i, cmd in enumerate(self._session.history[-20:], 1):
-            print(f"  {i:3d}  {cmd}")  # noqa: T201
+        for i, cmd in enumerate(self.session.history[-20:], 1):
+            self._print(f"  {i:3d}  {cmd}", output)
+        return False
 
-    def _cmd_set(self, args: list[str]) -> None:
-        """Set session variable."""
-        if len(args) < 2:  # noqa: PLR2004
-            print("Usage: set <name> <value>")  # noqa: T201
-            return
+    def _cmd_set(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Set session variable.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
+        min_set_args = 2
+        if len(args) < min_set_args:
+            self._print("Usage: set <name> <value>", output)
+            return False
 
         name = args[0]
         value_str = " ".join(args[1:])
@@ -291,32 +374,47 @@ class InteractiveShell:
         except json.JSONDecodeError:
             value = value_str
 
-        self._session.variables[name] = value
-        print(f"Set {name} = {value!r}")  # noqa: T201
+        self.session.variables[name] = value
+        self._print(f"Set {name} = {value!r}", output)
+        return False
 
-    def _cmd_get(self, args: list[str]) -> None:
-        """Get session variable."""
+    def _cmd_get(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Get session variable.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         if not args:
             # Show all variables
-            for name, value in self._session.variables.items():
-                print(f"  {name} = {value!r}")  # noqa: T201
-            return
+            for name, value in self.session.variables.items():
+                self._print(f"  {name} = {value!r}", output)
+            return False
 
         name = args[0]
-        value = self._session.variables.get(name)
+        value = self.session.variables.get(name)
         if value is not None:
-            print(f"{name} = {value!r}")  # noqa: T201
+            self._print(f"{name} = {value!r}", output)
         else:
-            print(f"Variable not set: {name}")  # noqa: T201
+            self._print(f"Variable '{name}' not set", output)
+        return False
 
-    def _cmd_export(self, args: list[str]) -> None:
-        """Export session as script."""
+    def _cmd_export(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Export session as script.
+
+        Returns
+        -------
+        bool
+            Always False (continue shell).
+        """
         lines = ["#!/usr/bin/env bash", "# Exported from codeintel shell", ""]
 
-        for cmd in self._session.history:
+        min_call_parts = 2
+        for cmd in self.session.history:
             if cmd.startswith("call "):
                 parts = shlex.split(cmd)
-                if len(parts) >= 2:  # noqa: PLR2004
+                if len(parts) >= min_call_parts:
                     lines.append(f"codeintel op call {' '.join(parts[1:])}")
 
         script = "\n".join(lines)
@@ -324,22 +422,31 @@ class InteractiveShell:
         if args:
             path = Path(args[0])
             path.write_text(script, encoding="utf-8")
-            print(f"Exported to {path}")  # noqa: T201
+            self._print(f"Exported to {path}", output)
         else:
-            print(script)  # noqa: T201
+            self._print(script, output)
+        return False
 
-    def _cmd_quit(self, args: list[str]) -> None:
-        """Exit shell."""
+    def _cmd_quit(self, args: list[str], output: TextIO | None = None) -> bool:
+        """Exit shell.
+
+        Returns
+        -------
+        bool
+            Always True (exit shell).
+        """
         _ = args  # Unused
+        _ = output  # Unused
         self._running = False
+        return True
 
-    def _parse_params(self, args: list[str]) -> dict[str, Any]:
-        """Parse parameters from command line.
+    def parse_params(self, arg_string: str) -> dict[str, Any]:
+        """Parse parameters from command line string.
 
         Parameters
         ----------
-        args
-            Parameter arguments.
+        arg_string
+            Parameter string (e.g., "--key=value --other=test").
 
         Returns
         -------
@@ -347,6 +454,11 @@ class InteractiveShell:
             Parsed parameters.
         """
         params: dict[str, Any] = {}
+
+        try:
+            args = shlex.split(arg_string)
+        except ValueError:
+            return params
 
         for arg in args:
             if "=" in arg:
@@ -360,13 +472,17 @@ class InteractiveShell:
                     value = value_str
 
                 params[key] = value
+            elif arg.startswith("--"):
+                # Flag without value
+                key = arg.lstrip("-")
+                params[key] = "true"
 
         # Substitute session variables
         for key, value in list(params.items()):
             if isinstance(value, str) and value.startswith("$"):
                 var_name = value[1:]
-                if var_name in self._session.variables:
-                    params[key] = self._session.variables[var_name]
+                if var_name in self.session.variables:
+                    params[key] = self.session.variables[var_name]
 
         return params
 

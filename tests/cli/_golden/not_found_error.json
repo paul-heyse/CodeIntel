@@ -1,0 +1,8 @@
+{
+  "type": "https://codeintel.dev/problems/not-found",
+  "title": "Resource Not Found",
+  "status": 404,
+  "detail": "The requested resource does not exist",
+  "instance": "/api/v1/resource/unknown-id"
+}
+

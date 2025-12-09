@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "status": "unknown",
+    "total_files": 0,
+    "indexed_files": 0,
+    "stale_files": 0,
+    "fresh_count": 0,
+    "last_build": null,
+    "index_path": null
+  },
+  "error": null
+}
+

@@ -58,6 +58,46 @@ class CliInvocationResult:
         """
         return self.exit_code == 0
 
+    @property
+    def output(self) -> str:
+        """Get combined stdout and stderr.
+
+        Returns
+        -------
+        str
+            Combined output.
+        """
+        return self.stdout + self.stderr
+
+    @property
+    def data(self) -> dict[str, object] | None:
+        """Get parsed JSON data from stdout.
+
+        Returns
+        -------
+        dict[str, object] | None
+            Parsed JSON data or None if not valid JSON.
+        """
+        try:
+            return json.loads(self.stdout)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+    @property
+    def error(self) -> str | None:
+        """Get error message.
+
+        Returns
+        -------
+        str | None
+            Error message from stderr or exception.
+        """
+        if self.exception:
+            return str(self.exception)
+        if self.stderr:
+            return self.stderr
+        return None
+
     def json(self) -> dict[str, object]:
         """Parse stdout as JSON.
 
@@ -284,6 +324,56 @@ class GoldenFileAssertion:
     golden_dir: Path
     update_mode: bool = False
 
+    @staticmethod
+    def normalize_text(text: str) -> str:
+        """Normalize whitespace in text.
+
+        Parameters
+        ----------
+        text
+            Text to normalize.
+
+        Returns
+        -------
+        str
+            Normalized text.
+        """
+        return " ".join(text.split())
+
+    @staticmethod
+    def filter_json(
+        obj: object,
+        ignore_keys: set[str],
+    ) -> dict[str, object]:
+        """Filter JSON object by removing specified keys.
+
+        Parameters
+        ----------
+        obj
+            JSON object (must be a dict).
+        ignore_keys
+            Keys to remove.
+
+        Returns
+        -------
+        dict[str, object]
+            Filtered object.
+        """
+        if not isinstance(obj, dict):
+            return {}
+
+        def remove_keys(item: object) -> object:
+            if isinstance(item, dict):
+                return {k: remove_keys(v) for k, v in item.items() if k not in ignore_keys}
+            if isinstance(item, list):
+                return [remove_keys(i) for i in item]
+            return item
+
+        result = remove_keys(obj)
+        if isinstance(result, dict):
+            return result
+        return {}
+
     def assert_matches(
         self,
         name: str,
@@ -365,9 +455,7 @@ class GoldenFileAssertion:
 
             def remove_keys(obj: object) -> object:
                 if isinstance(obj, dict):
-                    return {
-                        k: remove_keys(v) for k, v in obj.items() if k not in keys_to_ignore
-                    }
+                    return {k: remove_keys(v) for k, v in obj.items() if k not in keys_to_ignore}
                 if isinstance(obj, list):
                     return [remove_keys(item) for item in obj]
                 return obj

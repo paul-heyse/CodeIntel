@@ -10,6 +10,7 @@ from cyclopts import App
 from codeintel.cli.cli_errors import OutputFormat, handle_cli_error
 from codeintel.cli.cyclopts_build import build_app
 from codeintel.cli.cyclopts_common import make_root_app
+from codeintel.cli.cyclopts_completions import completions_app
 from codeintel.cli.cyclopts_config import config_app
 from codeintel.cli.cyclopts_datasets import datasets_ext_app
 from codeintel.cli.cyclopts_docs import docs_app
@@ -65,6 +66,7 @@ app.command(config_app, name="config")
 app.command(health_app, name="health")
 app.command(jobs_app, name="jobs")
 app.command(plugins_app, name="plugins")
+app.command(completions_app, name="completions")
 app.command(help_commands_app, name="help-ops")
 
 
@@ -134,6 +136,7 @@ def main() -> None:
 __all__ = [
     "app",
     "build_app",
+    "completions_app",
     "dataset_app",
     "datasets_ext_app",
     "docs_app",
