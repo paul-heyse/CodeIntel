@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_ops.py
+# hypothesis_version: 6.148.7
+
+[8000, '*', '--auto-pipeline', '--category', '--host', '--port', '--reload', '--skip-prereqs', '-c', '-h', '-p', '.venv', '127.0.0.1', 'Advanced Options', 'Filtering Options', 'Host to bind to.', 'Port to bind to.', 'SimpleNamespace', 'Target Selection', '_env', 'advanced', 'app', 'app_proxy', 'call', 'cfg', 'cg', 'cn', 'dataset', 'dataset_app', 'describe', 'dest', 'destination', 'env', 'file', 'file-summary', 'filter', 'fp', 'fs', 'function-summary', 'functions-high-risk', 'get_app', 'graph-call-neighbors', 'hr', 'http', 'ib', 'list', 'mcp', 'mp', 'op', 'op_app', 'output', 'path_validator', 'profiles-function', 'profiles-module', 'runtime', 'sd', 'selector', 'serve', 'serve_app', 'set_root_app', 'skip_prereqs', 'sl', 'ss', 'subsystems-detail', 'subsystems-list', 'subsystems-search', 'venv', 'verify']

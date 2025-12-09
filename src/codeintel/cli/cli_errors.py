@@ -1,19 +1,198 @@
-"""Shared CLI error normalization utilities."""
+"""Shared CLI error normalization utilities.
+
+This module provides RFC 9457 Problem Details support for structured JSON
+error output, along with standard CLI error handling.
+"""
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING, ParamSpec, TextIO
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
 
 from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
-from codeintel.cli.errors import CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
+from codeintel.cli.errors import CLI_EXIT_SUCCESS, CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
 
 if TYPE_CHECKING:
     from codeintel.cli.cyclopts_common import RuntimeCLI
+    from codeintel.cli.results import CliResult
 
 _HandlerP = ParamSpec("_HandlerP")
+
+# -----------------------------------------------------------------------------
+# RFC 9457 Problem Details
+# -----------------------------------------------------------------------------
+
+ERROR_TYPE_BASE = "https://codeintel.dev/errors"
+
+
+class ErrorType(Enum):
+    """Standard error type URIs following RFC 9457."""
+
+    VALIDATION = f"{ERROR_TYPE_BASE}/validation"
+    USAGE = f"{ERROR_TYPE_BASE}/usage"
+    UNKNOWN_COMMAND = f"{ERROR_TYPE_BASE}/unknown-command"
+    UNKNOWN_OPTION = f"{ERROR_TYPE_BASE}/unknown-option"
+    RUNTIME = f"{ERROR_TYPE_BASE}/runtime"
+    INTERNAL = f"{ERROR_TYPE_BASE}/internal"
+
+
+class OutputFormat(Enum):
+    """Output format for CLI responses."""
+
+    TEXT = "text"
+    JSON = "json"
+
+
+@dataclass(frozen=True)
+class ProblemDetail:
+    """RFC 9457 Problem Details for CLI errors.
+
+    Provides structured error information that can be rendered as JSON
+    for machine consumption or as human-readable text.
+
+    Parameters
+    ----------
+    type
+        URI identifying the error type.
+    title
+        Short, human-readable summary of the problem.
+    status
+        Exit code corresponding to this error.
+    detail
+        Human-readable explanation specific to this occurrence.
+    instance
+        URI reference for this specific occurrence (optional).
+    extensions
+        Additional problem-specific fields.
+    """
+
+    type: str
+    title: str
+    status: int
+    detail: str | None = None
+    instance: str | None = None
+    extensions: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation excluding None values and empty extensions.
+        """
+        result: dict[str, Any] = {
+            "type": self.type,
+            "title": self.title,
+            "status": self.status,
+        }
+        if self.detail is not None:
+            result["detail"] = self.detail
+        if self.instance is not None:
+            result["instance"] = self.instance
+        if self.extensions:
+            result.update(self.extensions)
+        return result
+
+    def to_json(self, *, indent: int | None = 2) -> str:
+        """Serialize to JSON string.
+
+        Parameters
+        ----------
+        indent
+            JSON indentation level (None for compact output).
+
+        Returns
+        -------
+        str
+            JSON representation of the problem detail.
+        """
+        return json.dumps(self.to_dict(), indent=indent)
+
+    def to_text(self) -> str:
+        """Render as human-readable text.
+
+        Returns
+        -------
+        str
+            Text representation suitable for stderr.
+        """
+        if self.detail:
+            return f"Error: {self.detail}\n"
+        return f"Error: {self.title}\n"
+
+
+def _exception_to_problem(exc: BaseException) -> ProblemDetail:
+    """Convert an exception to RFC 9457 Problem Details.
+
+    Parameters
+    ----------
+    exc
+        Exception to convert.
+
+    Returns
+    -------
+    ProblemDetail
+        Structured problem representation.
+    """
+    if isinstance(exc, CliError):
+        error_type = ErrorType.VALIDATION
+        if isinstance(exc, UnknownOptionCliError):
+            error_type = ErrorType.UNKNOWN_OPTION
+        elif isinstance(exc, UnknownCommandCliError):
+            error_type = ErrorType.UNKNOWN_COMMAND
+        return ProblemDetail(
+            type=error_type.value,
+            title=error_type.name.replace("_", " ").title(),
+            status=exc.exit_code,
+            detail=exc.message,
+        )
+
+    if isinstance(exc, UnknownOptionError):
+        message = _format_unknown_option(exc)
+        return ProblemDetail(
+            type=ErrorType.UNKNOWN_OPTION.value,
+            title="Unknown Option",
+            status=CLI_EXIT_USAGE,
+            detail=message,
+        )
+
+    if isinstance(exc, UnknownCommandError):
+        message = _format_unknown_command(exc)
+        return ProblemDetail(
+            type=ErrorType.UNKNOWN_COMMAND.value,
+            title="Unknown Command",
+            status=CLI_EXIT_USAGE,
+            detail=message,
+        )
+
+    if isinstance(exc, SystemExit):
+        exit_code = exc.code if isinstance(exc.code, int) else CLI_EXIT_VALIDATION
+        message = str(exc) if str(exc) else None
+        return ProblemDetail(
+            type=ErrorType.RUNTIME.value,
+            title="System Exit",
+            status=exit_code,
+            detail=message,
+        )
+
+    return ProblemDetail(
+        type=ErrorType.INTERNAL.value,
+        title="Internal Error",
+        status=CLI_EXIT_VALIDATION,
+        detail=str(exc) if str(exc) else None,
+        extensions={"exception_type": type(exc).__name__},
+    )
+
+
+# -----------------------------------------------------------------------------
+# CLI Error Classes
+# -----------------------------------------------------------------------------
 
 
 class CliError(Exception):
@@ -133,8 +312,65 @@ def run_handler(
         raise SystemExit(CLI_EXIT_VALIDATION) from exc
 
 
-def handle_cli_error(exc: BaseException, stderr_writer: TextIO) -> int:
+def run_structured_handler[ResultT](
+    handler: Callable[..., CliResult[ResultT]],
+    *args: object,
+    output_format: OutputFormat = OutputFormat.TEXT,
+    **kwargs: object,
+) -> None:
+    """Execute a handler that returns CliResult with structured output.
+
+    This is the preferred pattern for new handlers. It supports structured
+    JSON output and enables composition of CLI operations.
+
+    Parameters
+    ----------
+    handler
+        Handler function returning CliResult.
+    *args
+        Positional arguments for the handler.
+    output_format
+        Output format (TEXT or JSON).
+    **kwargs
+        Keyword arguments for the handler.
+
+    Raises
+    ------
+    SystemExit
+        With appropriate exit code based on result success.
+    """
+    try:
+        result: CliResult[ResultT] = handler(*args, **kwargs)
+        result.render(output_format, sys.stdout)
+        if not result.success:
+            raise SystemExit(CLI_EXIT_VALIDATION)
+    except ValidationError as exc:
+        problem = _exception_to_problem(exc)
+        if output_format == OutputFormat.JSON:
+            sys.stderr.write(problem.to_json())
+            sys.stderr.write("\n")
+        else:
+            sys.stderr.write(problem.to_text())
+        raise SystemExit(exc.exit_code) from exc
+    except RuntimeError as exc:
+        problem = _exception_to_problem(exc)
+        if output_format == OutputFormat.JSON:
+            sys.stderr.write(problem.to_json())
+            sys.stderr.write("\n")
+        else:
+            sys.stderr.write(problem.to_text())
+        raise SystemExit(CLI_EXIT_VALIDATION) from exc
+
+
+def handle_cli_error(
+    exc: BaseException,
+    stderr_writer: TextIO,
+    *,
+    output_format: OutputFormat = OutputFormat.TEXT,
+) -> int:
     """Normalize CLI exceptions to exit codes and stderr messages.
+
+    Supports both plain text and RFC 9457 JSON Problem Details output.
 
     Parameters
     ----------
@@ -142,38 +378,23 @@ def handle_cli_error(exc: BaseException, stderr_writer: TextIO) -> int:
         Exception raised by the CLI invocation.
     stderr_writer
         Writer to receive normalized error messages.
+    output_format
+        Output format (TEXT for human-readable, JSON for Problem Details).
 
     Returns
     -------
     int
         Exit code corresponding to the error.
     """
-    if isinstance(exc, CliError):
-        if exc.message:
-            stderr_writer.write(exc.message)
-        return exc.exit_code
+    problem = _exception_to_problem(exc)
 
-    if isinstance(exc, UnknownOptionError):
-        message = _format_unknown_option(exc)
-        stderr_writer.write(message)
-        return CLI_EXIT_USAGE
+    if output_format == OutputFormat.JSON:
+        stderr_writer.write(problem.to_json())
+        stderr_writer.write("\n")
+    else:
+        stderr_writer.write(problem.to_text())
 
-    if isinstance(exc, UnknownCommandError):
-        message = _format_unknown_command(exc)
-        stderr_writer.write(message)
-        return CLI_EXIT_USAGE
-
-    if isinstance(exc, SystemExit):
-        exit_code = exc.code if isinstance(exc.code, int) else CLI_EXIT_VALIDATION
-        message = str(exc)
-        if message:
-            stderr_writer.write(message)
-        return exit_code
-
-    message = str(exc)
-    if message:
-        stderr_writer.write(message)
-    return CLI_EXIT_VALIDATION
+    return problem.status
 
 
 def _format_unknown_option(exc: UnknownOptionError) -> str:
@@ -193,12 +414,19 @@ def _format_unknown_command(exc: UnknownCommandError) -> str:
 
 
 __all__ = [
+    "CLI_EXIT_SUCCESS",
+    "CLI_EXIT_USAGE",
+    "CLI_EXIT_VALIDATION",
     "CliError",
     "DocsValidationError",
+    "ErrorType",
+    "OutputFormat",
+    "ProblemDetail",
     "UnknownCommandCliError",
     "UnknownOptionCliError",
     "ValidationError",
     "handle_cli_error",
     "run_handler",
+    "run_structured_handler",
     "runtime_required",
 ]

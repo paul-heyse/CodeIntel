@@ -68,6 +68,42 @@ dataset_app = App(
     help="Dataset inspection commands.",
 )
 
+# -----------------------------------------------------------------------------
+# Operation Aliases for Progressive Disclosure
+# -----------------------------------------------------------------------------
+
+# Short aliases for frequently used operations.
+# Maps short alias to full CLI command name.
+OPERATION_ALIASES: dict[str, str] = {
+    "hr": "functions-high-risk",
+    "fs": "function-summary",
+    "cg": "graph-call-neighbors",
+    "cn": "graph-call-neighborhood",
+    "ib": "graph-import-boundary",
+    "file": "file-summary",
+    "fp": "profiles-function",
+    "mp": "profiles-module",
+    "sl": "subsystems-list",
+    "sd": "subsystems-detail",
+    "ss": "subsystems-search",
+}
+
+
+def _get_aliases_for_operation(cli_name: str) -> list[str]:
+    """Get all aliases for an operation CLI name.
+
+    Parameters
+    ----------
+    cli_name
+        The full CLI command name (e.g., 'functions-high_risk').
+
+    Returns
+    -------
+    list[str]
+        List of short aliases for this operation.
+    """
+    return [alias for alias, name in OPERATION_ALIASES.items() if name == cli_name]
+
 serve_app = App(
     name="serve",
     help="HTTP and MCP server commands.",
@@ -591,7 +627,11 @@ def _build_params_dict(cfg: OperationCliArgs, specs: tuple[CliParamSpec, ...]) -
 
 
 def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
-    """Register a dynamic subcommand for an operation."""
+    """Register a dynamic subcommand for an operation.
+
+    If the operation has registered aliases, they are added as alternative
+    command names for progressive disclosure.
+    """
     command_name = metadata.cli_name
     if command_name in _REGISTERED_OP_COMMANDS:
         return
@@ -616,8 +656,13 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
         )
 
     dynamic_op.__annotations__["cfg"] = cfg_annotation
+
+    # Get aliases for this operation (if any)
+    aliases = _get_aliases_for_operation(command_name)
+
     op_app.command(
         name=command_name,
+        alias=aliases if aliases else None,
         help=metadata.operation.summary or metadata.operation.id,
     )(dynamic_op)
     _REGISTERED_OP_COMMANDS.add(command_name)

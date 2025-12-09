@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast
 
 import attrs
 import cyclopts.help.help as help_mod
@@ -187,43 +187,27 @@ def apply_help_patch() -> None:
     help_module.create_parameter_help_panel = create_parameter_help_panel
 
 
+_HELP_PATCH_APPLIED = False
+
+
 def build_patched_app(make_app: Callable[[], App]) -> App:
-    """Construct an App with help rendering patched only for that instance.
+    """Construct an App with help rendering hardened globally.
+
+    This function applies the help rendering patch globally once (on first call)
+    rather than wrapping each invocation with a proxy. This is simpler and avoids
+    the complexity of the PatchedAppProxy pattern.
 
     Returns
     -------
     App
-        Application instance whose help rendering is wrapped safely.
+        Application instance with global help rendering hardening applied.
     """
-    base_app = make_app()
+    global _HELP_PATCH_APPLIED  # noqa: PLW0603
+    if not _HELP_PATCH_APPLIED:
+        apply_help_patch()
+        _HELP_PATCH_APPLIED = True
 
-    class PatchedAppProxy:
-        """Proxy that wraps help rendering with the patched renderer."""
-
-        def __init__(self, inner: App) -> None:
-            self._inner = inner
-
-        def __call__(
-            self,
-            tokens: str | Iterable[str] | None = None,
-            **call_kwargs: Unpack[_AppCallKwargs],
-        ) -> object:
-            with _patched_help_renderer():
-                return self._inner(tokens, **call_kwargs)
-
-        def help_print(
-            self,
-            tokens: str | Iterable[str] | None = None,
-            *,
-            console: Console | None = None,
-        ) -> object:
-            with _patched_help_renderer():
-                return self._inner.help_print(tokens, console=console)
-
-        def __getattr__(self, name: str) -> object:
-            return getattr(self._inner, name)
-
-    return PatchedAppProxy(base_app)  # type: ignore[return-value]
+    return make_app()
 
 
-__all__ = ["apply_help_patch", "build_patched_app"]
+__all__ = ["_AppCallKwargs", "apply_help_patch", "build_patched_app"]

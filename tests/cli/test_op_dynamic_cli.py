@@ -54,6 +54,7 @@ def _cleanup_test_operations() -> Generator[None]:
     yield
     clear_test_operations()
 
+
 # -----------------------------------------------------------------------------
 # Parameter Classification Tests
 # -----------------------------------------------------------------------------
@@ -874,9 +875,7 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    output_default, output_validator = cyclopts_ops.path_defaults_and_validator(
-        output_spec
-    )
+    output_default, output_validator = cyclopts_ops.path_defaults_and_validator(output_spec)
 
     # Output paths should have no default (uses spec default)
     expect_equal(output_default, None)
@@ -905,9 +904,7 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
         help_panel="Selection Options",
         is_optional=False,
     )
-    input_default, input_validator = cyclopts_ops.path_defaults_and_validator(
-        input_spec
-    )
+    input_default, input_validator = cyclopts_ops.path_defaults_and_validator(input_spec)
 
     # Input paths should have no default
     expect_equal(input_default, inspect.Parameter.empty)

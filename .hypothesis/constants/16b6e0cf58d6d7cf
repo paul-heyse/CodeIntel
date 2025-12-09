@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cli_errors.py
+# hypothesis_version: 6.148.7
+
+[', ', '--commit', '--db-path', '--repo', 'CLI_EXIT_SUCCESS', 'CLI_EXIT_USAGE', 'CLI_EXIT_VALIDATION', 'CliError', 'DocsValidationError', 'ErrorType', 'Internal Error', 'No such command', 'No such option', 'OutputFormat', 'ProblemDetail', 'System Exit', 'Unknown Command', 'Unknown Option', 'ValidationError', '_', '_HandlerP', 'detail', 'exception_type', 'handle_cli_error', 'instance', 'json', 'run_handler', 'runtime_required', 'status', 'text', 'title', 'token', 'type', 'unused_tokens', 'value']
