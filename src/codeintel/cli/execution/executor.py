@@ -25,11 +25,11 @@ from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cli_validation import ValidationSchema
 from codeintel.cli.execution.context import ExecutionContext, ExecutionResult
 from codeintel.cli.execution.middleware import (
-    UnifiedMiddlewareStack,
+    MiddlewareStack,
     get_middleware_stack,
 )
 from codeintel.cli.execution.progress import (
-    UnifiedProgressTracker,
+    ProgressTracker,
     get_progress_tracker,
 )
 from codeintel.cli.execution.types import (
@@ -137,7 +137,7 @@ class OperationSpec[T]:
             object.__setattr__(self, "is_streaming", handler_type == "streaming")
 
 
-class UnifiedOperationExecutor:
+class OperationExecutor:
     """Execute operations with middleware, resilience, and progress.
 
     Handle sync, async, and streaming handlers transparently through
@@ -157,8 +157,8 @@ class UnifiedOperationExecutor:
 
     def __init__(
         self,
-        middleware_stack: UnifiedMiddlewareStack | None = None,
-        progress_tracker: UnifiedProgressTracker | None = None,
+        middleware_stack: MiddlewareStack | None = None,
+        progress_tracker: ProgressTracker | None = None,
         default_renderer: OutputRenderer | None = None,
         resilience_config: ResilienceConfig | None = None,
     ) -> None:
@@ -686,30 +686,30 @@ class UnifiedOperationExecutor:
 
 
 # Global executor instance
-_EXECUTOR: UnifiedOperationExecutor | None = None
+_EXECUTOR: OperationExecutor | None = None
 
 
-def get_executor() -> UnifiedOperationExecutor:
+def get_executor() -> OperationExecutor:
     """Get the global operation executor.
 
     Returns
     -------
-    UnifiedOperationExecutor
+    OperationExecutor
         Global executor instance.
     """
     global _EXECUTOR  # noqa: PLW0603
     if _EXECUTOR is None:
-        _EXECUTOR = UnifiedOperationExecutor()
+        _EXECUTOR = OperationExecutor()
     return _EXECUTOR
 
 
 def configure_executor(
     *,
-    middleware_stack: UnifiedMiddlewareStack | None = None,
-    progress_tracker: UnifiedProgressTracker | None = None,
+    middleware_stack: MiddlewareStack | None = None,
+    progress_tracker: ProgressTracker | None = None,
     default_renderer: OutputRenderer | None = None,
     resilience_config: ResilienceConfig | None = None,
-) -> UnifiedOperationExecutor:
+) -> OperationExecutor:
     """Configure the global executor.
 
     Parameters
@@ -725,11 +725,11 @@ def configure_executor(
 
     Returns
     -------
-    UnifiedOperationExecutor
+    OperationExecutor
         Configured executor.
     """
     global _EXECUTOR  # noqa: PLW0603
-    _EXECUTOR = UnifiedOperationExecutor(
+    _EXECUTOR = OperationExecutor(
         middleware_stack=middleware_stack,
         progress_tracker=progress_tracker,
         default_renderer=default_renderer,
@@ -792,8 +792,8 @@ def run_sync[T](
 
 __all__ = [
     "OperationCategory",
+    "OperationExecutor",
     "OperationSpec",
-    "UnifiedOperationExecutor",
     "configure_executor",
     "get_executor",
     "run_async_operation",

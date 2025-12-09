@@ -923,10 +923,6 @@ def configure_default_middleware() -> None:
         stack.add(LoggingMiddleware())
 
 
-# Backward-compatible aliases (temporary, for transition)
-UnifiedMiddleware = Middleware
-UnifiedMiddlewareStack = MiddlewareStack
-
 __all__ = [
     "LoggingMiddleware",
     "MetricsMiddleware",
@@ -935,8 +931,6 @@ __all__ = [
     "ProgressMiddleware",
     "TimingMiddleware",
     "TracingMiddleware",
-    "UnifiedMiddleware",  # Alias for Middleware
-    "UnifiedMiddlewareStack",  # Alias for MiddlewareStack
     "configure_default_middleware",
     "get_middleware_stack",
 ]

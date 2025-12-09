@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.cli.execution import OperationCategory, OperationSpec, UnifiedOperationExecutor
+from codeintel.cli.execution import OperationCategory, OperationExecutor, OperationSpec
 from codeintel.cli.operation_registry import get_operation_registry
 from codeintel.cli.results import CliResult
 from tests._helpers.assertions import expect_true
@@ -147,7 +147,7 @@ def test_middleware_overhead_acceptable() -> None:
         category=OperationCategory.READ,
     )
 
-    executor = UnifiedOperationExecutor()
+    executor = OperationExecutor()
 
     # Warm up
     executor.execute(spec, {}, render=False)
@@ -202,7 +202,7 @@ def test_executor_cleanup() -> None:
 
     # Create and destroy many executors
     for _ in range(EXECUTOR_CLEANUP_ITERATIONS):
-        executor = UnifiedOperationExecutor()
+        executor = OperationExecutor()
         executor.execute(spec, {}, render=False)
         del executor
 

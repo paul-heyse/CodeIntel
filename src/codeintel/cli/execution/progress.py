@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 
 
 @dataclass
-class UnifiedProgressTracker:
+class ProgressTracker:
     """Progress tracker supporting sync callbacks and async generators.
 
     Use for both sync (via callbacks) and async (via stream) modes.
@@ -687,20 +687,20 @@ async def progress_generator[T](
 
 
 # Global progress tracker
-_PROGRESS_TRACKER: UnifiedProgressTracker | None = None
+_PROGRESS_TRACKER: ProgressTracker | None = None
 
 
-def get_progress_tracker() -> UnifiedProgressTracker:
+def get_progress_tracker() -> ProgressTracker:
     """Get the global progress tracker.
 
     Returns
     -------
-    UnifiedProgressTracker
+    ProgressTracker
         Global progress tracker instance.
     """
     global _PROGRESS_TRACKER  # noqa: PLW0603
     if _PROGRESS_TRACKER is None:
-        _PROGRESS_TRACKER = UnifiedProgressTracker()
+        _PROGRESS_TRACKER = ProgressTracker()
     return _PROGRESS_TRACKER
 
 
@@ -722,7 +722,7 @@ def configure_progress(
         Minimum update interval in seconds.
     """
     global _PROGRESS_TRACKER  # noqa: PLW0603
-    _PROGRESS_TRACKER = UnifiedProgressTracker(
+    _PROGRESS_TRACKER = ProgressTracker(
         config=ProgressConfig(
             enabled=enabled,
             show_spinner=show_spinner,
@@ -800,7 +800,7 @@ def iter_with_progress[T](
 __all__ = [
     "ProgressRenderer",
     "ProgressStreamConfig",
-    "UnifiedProgressTracker",
+    "ProgressTracker",
     "configure_progress",
     "get_progress_tracker",
     "iter_with_progress",
