@@ -162,9 +162,7 @@ def _render_config(
         Output writer.
     """
     raw_sources = config.pop("_sources", {})
-    sources: dict[str, list[str]] = (
-        raw_sources if isinstance(raw_sources, dict) else {}
-    )
+    sources: dict[str, list[str]] = raw_sources if isinstance(raw_sources, dict) else {}
 
     if source_filter and source_filter != "all":
         filtered_keys = sources.get(source_filter, [])

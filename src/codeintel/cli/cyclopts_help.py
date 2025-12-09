@@ -6,8 +6,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 import attrs
 import cyclopts.help.help as help_mod
@@ -33,14 +32,84 @@ class _AppCallKwargs(TypedDict, total=False):
     result_action: ResultAction | None
 
 
-class _HelpModule(Protocol):
-    create_parameter_help_panel: Callable[..., HelpPanel]
-
-
 _ORIGINAL_CREATE_PARAMETER_HELP_PANEL = help_mod.create_parameter_help_panel
 _GROUP_INDEX = 0
 _ARGUMENT_COLLECTION_INDEX = 1
 _FORMAT_INDEX = 2
+
+
+class _DisplayDefault:
+    """A sentinel object that displays a human-readable default in help.
+
+    This class is used to replace None and other defaults with objects that:
+    1. Have a ``.name`` attribute for Cyclopts Enum handling
+    2. Have ``__repr__`` returning just the display name (not ``namespace(...)``)
+    3. Are falsy like None for boolean contexts
+    """
+
+    __slots__ = ("name",)
+    __hash__ = None  # type: ignore[assignment]  # Unhashable due to mutable-like equality
+
+    def __init__(self, name: str) -> None:
+        """Initialize with the display name.
+
+        Parameters
+        ----------
+        name
+            Human-readable representation for help output.
+        """
+        self.name = name
+
+    def __repr__(self) -> str:
+        """Return clean display name for help rendering.
+
+        Returns
+        -------
+        str
+            The display name without wrapper text.
+        """
+        return self.name
+
+    def __str__(self) -> str:
+        """Return clean display name for string conversion.
+
+        Returns
+        -------
+        str
+            The display name.
+        """
+        return self.name
+
+    def __bool__(self) -> bool:
+        """Return False to be falsy like None.
+
+        Returns
+        -------
+        bool
+            Always False.
+        """
+        return False
+
+    def __eq__(self, other: object) -> bool:
+        """Compare to other DisplayDefault instances.
+
+        Note: We intentionally do NOT equal None, because Cyclopts checks
+        ``default not in (None, empty)`` to decide whether to show defaults.
+        If we equaled None, this check would fail and defaults wouldn't show.
+
+        Parameters
+        ----------
+        other
+            Object to compare with.
+
+        Returns
+        -------
+        bool
+            True if other is a matching DisplayDefault.
+        """
+        if isinstance(other, _DisplayDefault):
+            return self.name == other.name
+        return False
 
 
 def _safe_default(argument: Argument) -> object:
@@ -53,11 +122,11 @@ def _safe_default(argument: Argument) -> object:
         human-friendly ``name`` for help output.
     """
     default = argument.field_info.default
-    if hasattr(default, "name"):
+    if default is not None and hasattr(default, "name"):
         return default
 
     name = _format_default_value(default, argument_name=str(argument.name))
-    return SimpleNamespace(name=name)
+    return _DisplayDefault(name)
 
 
 def _format_default_value(default: object, *, argument_name: str) -> str:
@@ -182,9 +251,15 @@ def _patched_help_renderer() -> Iterator[None]:
 
 
 def apply_help_patch() -> None:
-    """Install the hardened help renderer globally for Cyclopts."""
-    help_module = cast("_HelpModule", help_mod)
-    help_module.create_parameter_help_panel = create_parameter_help_panel
+    """Install the hardened help renderer globally for Cyclopts.
+
+    This patches ALL locations where ``create_parameter_help_panel`` is imported
+    to ensure the patch is effective regardless of how Cyclopts accesses it.
+    Without patching all locations, Python's import aliasing means some code
+    paths will still use the unpatched original function.
+    """
+    for module, attr in _iter_patch_targets():
+        setattr(module, attr, create_parameter_help_panel)
 
 
 _HELP_PATCH_APPLIED = False
@@ -210,4 +285,4 @@ def build_patched_app(make_app: Callable[[], App]) -> App:
     return make_app()
 
 
-__all__ = ["_AppCallKwargs", "apply_help_patch", "build_patched_app"]
+__all__ = ["_AppCallKwargs", "_DisplayDefault", "apply_help_patch", "build_patched_app"]

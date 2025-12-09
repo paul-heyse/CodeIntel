@@ -104,6 +104,7 @@ def _get_aliases_for_operation(cli_name: str) -> list[str]:
     """
     return [alias for alias, name in OPERATION_ALIASES.items() if name == cli_name]
 
+
 serve_app = App(
     name="serve",
     help="HTTP and MCP server commands.",

@@ -8,9 +8,16 @@ from enum import Enum
 from io import StringIO
 from typing import Annotated
 
+import cyclopts.help as help_pkg
+import cyclopts.help.help as help_mod
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_help import build_patched_app
+from codeintel.cli.cyclopts_help import (
+    _DisplayDefault,  # noqa: PLC2701 - testing internal implementation
+    apply_help_patch,
+    build_patched_app,
+    create_parameter_help_panel,
+)
 from tests._helpers.assertions.expectation_assertions import expect_in, expect_not_in
 
 
@@ -166,3 +173,67 @@ def test_argument_collection_type_preserved() -> None:
     output = stdout.getvalue().lower()
     expect_in("usage", output)
     expect_not_in("simplenamespace", output)
+
+
+# ============================================================================
+# Regression Tests for Cyclopts Patch
+# ============================================================================
+
+
+def test_all_cyclopts_locations_are_patched() -> None:
+    """Verify the help patch covers all Cyclopts import locations.
+
+    This test ensures that our patch is applied to all locations where
+    Cyclopts imports ``create_parameter_help_panel``, preventing the
+    Python import aliasing issue where some code paths would use the
+    unpatched original function.
+    """
+    # Apply patch (idempotent if already applied)
+    apply_help_patch()
+
+    # Verify all locations point to our function
+    assert help_mod.create_parameter_help_panel is create_parameter_help_panel
+    assert help_pkg.create_parameter_help_panel is create_parameter_help_panel
+
+
+def test_display_default_repr_is_clean() -> None:
+    """Verify _DisplayDefault produces clean repr output.
+
+    The ``_DisplayDefault`` class replaces ``SimpleNamespace`` for rendering
+    defaults in help output. It must produce clean repr/str output without
+    wrapper text like ``namespace(name='...')``.
+    """
+    none_default = _DisplayDefault("(none)")
+
+    # Clean repr for help output
+    assert repr(none_default) == "(none)"
+    assert str(none_default) == "(none)"
+    assert none_default.name == "(none)"
+
+    # Falsy like None (for boolean contexts)
+    assert not bool(none_default)
+
+    # NOT equal to None (important for Cyclopts show_default logic)
+    # Cyclopts checks: default not in (None, empty)
+    # If we equaled None, defaults wouldn't be shown
+    assert none_default != None  # noqa: E711
+    # Note: Use tuple not set because _DisplayDefault is unhashable
+    assert none_default not in (None, "empty")  # noqa: PLR6201
+
+
+def test_display_default_equality() -> None:
+    """Verify _DisplayDefault equality semantics."""
+    dd1 = _DisplayDefault("(none)")
+    dd2 = _DisplayDefault("(none)")
+    dd3 = _DisplayDefault("other")
+
+    # Same name means equal
+    assert dd1 == dd2
+
+    # Different names are not equal
+    assert dd1 != dd3
+
+    # Not equal to arbitrary objects
+    assert dd1 != "some string"
+    arbitrary_int = 123
+    assert dd1 != arbitrary_int

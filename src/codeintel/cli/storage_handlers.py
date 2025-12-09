@@ -6,9 +6,7 @@ import logging
 from enum import Enum
 from pathlib import Path
 
-import duckdb
-
-from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
 from codeintel.storage.macros.generation import RenderedMacro, render_macro
 from codeintel.storage.metadata import (
@@ -60,7 +58,7 @@ def storage_validate_macros(
 
     try:
         gateway = open_gateway(StorageConfig.for_readonly(db_path))
-    except duckdb.Error as exc:
+    except StorageConnectionError as exc:
         LOG.warning("Falling back to existing database attachment: %s", exc)
         return
     connection = gateway.con
