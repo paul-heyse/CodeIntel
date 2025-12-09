@@ -7,12 +7,11 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from click.testing import Result
 
 from codeintel.storage import gateway as gateway_pkg
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway_cache import close_gateways
-from tests._helpers.cli import CLIContext, run_cli, temp_repo_context
+from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
 from tests._helpers.cli_project import CLIProjectContext, create_cli_project
 
 _GATEWAY_CACHE: dict[Path, StorageGateway] = {}
@@ -32,16 +31,16 @@ def cli_ctx(tmp_path: Path) -> Iterator[CLIContext]:
 
 
 @pytest.fixture
-def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], Result]:
+def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], CliResult]:
     """Fixture returning a CLI runner bound to the temp repo.
 
     Returns
     -------
-    Callable[[list[str]], Result]
+    Callable[[list[str]], CliResult]
         Function that executes CLI arguments in the prepared environment.
     """
 
-    def _run(args: list[str]) -> Result:
+    def _run(args: list[str]) -> CliResult:
         return run_cli(args, env=cli_ctx.env, cwd=cli_ctx.repo_root)
 
     return _run
@@ -68,16 +67,16 @@ def cli_project_ctx(
 
 
 @pytest.fixture
-def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str]], Result]:
+def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str]], CliResult]:
     """Fixture returning a CLI runner bound to the project layout.
 
     Returns
     -------
-    Callable[[list[str]], Result]
+    Callable[[list[str]], CliResult]
         Runner that executes CLI commands from the project root.
     """
 
-    def _run(args: list[str]) -> Result:
+    def _run(args: list[str]) -> CliResult:
         return run_cli(args, env=cli_project_ctx.env, cwd=cli_project_ctx.repo_root)
 
     return _run

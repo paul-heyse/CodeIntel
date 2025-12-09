@@ -43,7 +43,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.graph_contexts import GraphExecutorTestEnv
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
 
 # Constants
@@ -212,7 +212,7 @@ def test_status_counts_empty_records() -> None:
 
 
 def test_graph_plugin_executor_dry_run_skips_execution(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Dry run mode skips actual plugin execution."""
     plugin = _make_test_plugin("dry_run_plugin", succeed=True)
@@ -255,7 +255,7 @@ def test_graph_plugin_executor_dry_run_skips_execution(
 
 
 def test_graph_plugin_executor_skip_on_unchanged(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Plugin skipped when manifest shows inputs unchanged."""
     plugin = _make_test_plugin("unchanged_plugin", succeed=True)
@@ -325,7 +325,7 @@ def test_graph_plugin_executor_skip_on_unchanged(
 
 
 def test_graph_plugin_executor_builds_manifest(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Successful plugin execution populates manifest in report."""
     plugin = _make_test_plugin("manifest_build_plugin", succeed=True)
@@ -364,7 +364,7 @@ def test_graph_plugin_executor_builds_manifest(
 
 
 def test_graph_plugin_executor_fatal_stops_remaining(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Fatal plugin error stops execution of remaining plugins."""
     fatal_plugin = _make_test_plugin("fatal_first", raise_exception=RuntimeError)
@@ -462,7 +462,7 @@ def test_plugin_fatal_error_preserves_context() -> None:
 
 
 def test_graph_plugin_executor_batch_executes_multiple(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Batch execution runs multiple plugins and reports results."""
     plugins = [
@@ -489,7 +489,7 @@ def test_graph_plugin_executor_batch_executes_multiple(
 
 
 def test_graph_plugin_executor_batch_with_mixed_results(
-    graph_executor_env: GraphExecutorTestEnv,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Batch execution handles mixed success and failure results."""
     plugins = [

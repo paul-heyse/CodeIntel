@@ -7,7 +7,6 @@ correctly generates typed commands for serving operations.
 from __future__ import annotations
 
 import pytest
-from typer.testing import CliRunner
 
 from codeintel.cli.op_params import (
     OperationCliMetadata,
@@ -25,9 +24,6 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-
-runner = CliRunner()
-
 
 # -----------------------------------------------------------------------------
 # Parameter Classification Tests

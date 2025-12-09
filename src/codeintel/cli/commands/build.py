@@ -173,6 +173,27 @@ class BuildRunContext:
     output_format: OutputFormat
 
 
+@dataclass(frozen=True)
+class BuildStatusOptions:
+    """Options for the build status command."""
+
+    module: str | None
+    runtime_options: RuntimeCliOptions
+    output_format: OutputFormat
+    verbose: int
+
+
+@dataclass(frozen=True)
+class BuildHistoryOptions:
+    """Options for the build history command."""
+
+    run_id: str | None
+    limit: int
+    runtime_options: RuntimeCliOptions
+    output_format: OutputFormat
+    verbose: int
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -543,6 +564,54 @@ def _execute_build(
     return result, plan
 
 
+def build_status_handler(options: BuildStatusOptions) -> None:
+    """Show current state of all build targets."""
+    setup_logging(options.verbose)
+
+    runtime = build_runtime_or_exit(options.runtime_options)
+    graph = get_target_graph()
+
+    LOG.info(
+        "build.status repo=%s commit=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+    )
+
+    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
+    state = validator.validate()
+
+    if options.module:
+        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
+        if options.module not in valid_modules:
+            typer.secho(
+                f"Error: Unknown module: {options.module}. Valid: {', '.join(valid_modules)}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        module_targets = graph.targets_for_module(options.module)  # type: ignore[arg-type]
+        module_names = {t.name for t in module_targets}
+        filtered_targets = {
+            name: target_state
+            for name, target_state in state.targets.items()
+            if name in module_names
+        }
+        state = DatabaseState(
+            repo=state.repo,
+            commit=state.commit,
+            targets=filtered_targets,
+        )
+
+    if options.output_format is OutputFormat.JSON:
+        output = _format_status_json(state)
+        typer.echo(json.dumps(output, indent=2))
+        return
+
+    text = _format_status_text(state, runtime.snapshot.repo, runtime.snapshot.commit)
+    typer.echo(text)
+
+
 # =============================================================================
 # CLI Commands
 # =============================================================================
@@ -579,52 +648,13 @@ def build_status(
     typer.Exit
         If module selection is invalid or state resolution fails.
     """
-    setup_logging(verbose)
-
-    runtime = build_runtime_or_exit(RuntimeCliOptions(project_root=project_root))
-    graph = get_target_graph()
-
-    LOG.info(
-        "build.status repo=%s commit=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
+    options = BuildStatusOptions(
+        module=module,
+        runtime_options=RuntimeCliOptions(project_root=project_root),
+        output_format=output_format,
+        verbose=verbose,
     )
-
-    # Validate state
-    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
-    state = validator.validate()
-
-    # Filter by module if specified
-    if module:
-        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
-        if module not in valid_modules:
-            typer.secho(
-                f"Error: Unknown module: {module}. Valid: {', '.join(valid_modules)}",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        module_targets = graph.targets_for_module(module)  # type: ignore[arg-type]
-        module_names = {t.name for t in module_targets}
-        filtered_targets = {
-            name: target_state
-            for name, target_state in state.targets.items()
-            if name in module_names
-        }
-        state = DatabaseState(
-            repo=state.repo,
-            commit=state.commit,
-            targets=filtered_targets,
-        )
-
-    # Output
-    if output_format is OutputFormat.JSON:
-        output = _format_status_json(state)
-        typer.echo(json.dumps(output, indent=2))
-    else:
-        text = _format_status_text(state, runtime.snapshot.repo, runtime.snapshot.commit)
-        typer.echo(text)
+    build_status_handler(options)
 
 
 def build_run_handler(
@@ -943,6 +973,34 @@ def _get_status_color(status: str) -> str:
     return typer.colors.YELLOW
 
 
+def build_history_handler(options: BuildHistoryOptions) -> None:
+    """Show build run history and details."""
+    setup_logging(options.verbose)
+    runtime = build_runtime_or_exit(options.runtime_options)
+
+    if options.run_id:
+        record = _lookup_run_by_id(runtime, options.run_id)
+        if options.output_format is OutputFormat.JSON:
+            typer.echo(json.dumps(record.to_dict(), indent=2))
+            return
+        typer.echo(_format_run_detail(record))
+        return
+
+    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=options.limit)
+
+    if not runs:
+        typer.echo("No build runs found.")
+        return
+
+    if options.output_format is OutputFormat.JSON:
+        typer.echo(json.dumps([r.to_dict() for r in runs], indent=2))
+        return
+
+    typer.echo(f"Recent build runs (showing {len(runs)}):\n")
+    for record in runs:
+        typer.secho(_format_run_summary(record), fg=_get_status_color(record.status))
+
+
 @build_app.command("history")
 def build_history(
     run_id: RunIdOpt = None,
@@ -973,35 +1031,26 @@ def build_history(
         # Output as JSON
         codeintel build history --json
     """
-    setup_logging(verbose)
-    runtime = build_runtime_or_exit(RuntimeCliOptions(project_root=project_root))
-
-    if run_id:
-        record = _lookup_run_by_id(runtime, run_id)
-        if output_format is OutputFormat.JSON:
-            typer.echo(json.dumps(record.to_dict(), indent=2))
-        else:
-            typer.echo(_format_run_detail(record))
-        return
-
-    # List recent runs
-    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
-
-    if not runs:
-        typer.echo("No build runs found.")
-        return
-
-    if output_format is OutputFormat.JSON:
-        typer.echo(json.dumps([r.to_dict() for r in runs], indent=2))
-    else:
-        typer.echo(f"Recent build runs (showing {len(runs)}):\n")
-        for record in runs:
-            typer.secho(_format_run_summary(record), fg=_get_status_color(record.status))
+    options = BuildHistoryOptions(
+        run_id=run_id,
+        limit=limit,
+        runtime_options=RuntimeCliOptions(project_root=project_root),
+        output_format=output_format,
+        verbose=verbose,
+    )
+    build_history_handler(options)
 
 
 __all__ = [
+    "BuildHistoryOptions",
+    "BuildRunContext",
+    "BuildRunOptions",
+    "BuildStatusOptions",
     "build_app",
     "build_history",
+    "build_history_handler",
     "build_run",
+    "build_run_handler",
     "build_status",
+    "build_status_handler",
 ]

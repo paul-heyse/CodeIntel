@@ -5,16 +5,13 @@ from __future__ import annotations
 import json
 
 import pytest
-from typer.testing import CliRunner
 
-from codeintel.cli import app
-
-runner = CliRunner()
+from tests._helpers.cli import run_cli
 
 
 def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
     """Plan output should include isolation and scope metadata fields."""
-    result = runner.invoke(app, ["graph", "plugins", "--plan", "--json"])
+    result = run_cli(["graph", "plugins", "--plan", "--json"])
     if result.exit_code != 0:
         message = f"CLI plan command should exit successfully: {result.output}"
         pytest.fail(message)
@@ -31,7 +28,7 @@ def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
 
 def test_cli_plugins_json_includes_enriched_metadata() -> None:
     """Graph plugins JSON listing should expose enriched metadata fields."""
-    result = runner.invoke(app, ["graph", "plugins", "--json"])
+    result = run_cli(["graph", "plugins", "--json"])
     if result.exit_code != 0:
         message = f"CLI plugins command should exit successfully: {result.output}"
         pytest.fail(message)

@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 
-from click.testing import Result
-from typer.testing import CliRunner
+from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
 from codeintel.cli import app
 
@@ -25,6 +25,16 @@ class CLIContext:
     repo_root: Path
     build_dir: Path
     env: dict[str, str]
+
+
+@dataclass
+class CliResult:
+    """Lightweight result object mirroring click.testing.Result."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+    output: str
 
 
 @contextmanager
@@ -61,7 +71,7 @@ def run_cli(
     *,
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
-) -> Result:
+) -> CliResult:
     """Execute the CLI entrypoint with provided arguments.
 
     Parameters
@@ -75,23 +85,48 @@ def run_cli(
 
     Returns
     -------
-    subprocess.CompletedProcess[str]
+    CliResult
         Captured process result with stdout/stderr decoded as text.
     """
     merged_env = os.environ.copy()
     if env is not None:
         merged_env.update(env)
-    runner = CliRunner()
+
+    stdout_buf = StringIO()
+    stderr_buf = StringIO()
+    original_env = os.environ.copy()
     original_cwd = Path.cwd()
     try:
+        os.environ.clear()
+        os.environ.update(merged_env)
         if cwd is not None:
             os.chdir(cwd)
-        return runner.invoke(app, argv, env=merged_env, catch_exceptions=False, obj=None)
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            try:
+                app(argv, result_action="return_value", exit_on_error=False, print_error=False)
+                exit_code = 0
+            except SystemExit as exc:
+                exit_code = exc.code if isinstance(exc.code, int) else 1
+            except UnknownOptionError as exc:
+                token = getattr(exc, "token", None)
+                value = getattr(token, "value", None)
+                message = f"No such option: {value}" if value else "No such option"
+                stderr_buf.write(message)
+                exit_code = 2
+            except UnknownCommandError as exc:
+                stderr_buf.write(str(exc))
+                exit_code = 2
     finally:
+        os.environ.clear()
+        os.environ.update(original_env)
         os.chdir(original_cwd)
 
+    stdout = stdout_buf.getvalue()
+    stderr = stderr_buf.getvalue()
+    return CliResult(exit_code=exit_code, stdout=stdout, stderr=stderr, output=stdout + stderr)
 
-def assert_success(result: Result) -> None:
+
+def assert_success(result: CliResult) -> None:
     """Assert that a CLI invocation succeeded.
 
     Raises
@@ -104,7 +139,7 @@ def assert_success(result: Result) -> None:
         raise AssertionError(message)
 
 
-def assert_exit(result: Result, code: int) -> None:
+def assert_exit(result: CliResult, code: int) -> None:
     """Assert that a CLI invocation exited with the expected code.
 
     Raises
@@ -117,7 +152,7 @@ def assert_exit(result: Result, code: int) -> None:
         raise AssertionError(message)
 
 
-def assert_help(result: Result) -> None:
+def assert_help(result: CliResult) -> None:
     """Assert that a CLI help command succeeded and printed usage.
 
     Raises
@@ -133,6 +168,7 @@ def assert_help(result: Result) -> None:
 
 __all__ = [
     "CLIContext",
+    "CliResult",
     "assert_exit",
     "assert_help",
     "assert_success",

@@ -6,7 +6,7 @@ for tests that need deterministic config behavior.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,7 +36,7 @@ from tests._helpers.constants import (
 
 
 def create_test_snapshot(
-    tmp_path: Path | None = None,
+    tmp_path: Path,
     *,
     repo: str = DEFAULT_TEST_REPO,
     commit: str = DEFAULT_TEST_COMMIT,
@@ -46,7 +46,7 @@ def create_test_snapshot(
     Parameters
     ----------
     tmp_path
-        Temporary path for repo_root. If None, uses a default mock path.
+        Temporary path for repo_root (required for test isolation).
     repo
         Repository identifier.
     commit
@@ -57,28 +57,26 @@ def create_test_snapshot(
     SnapshotRef
         Configured snapshot reference.
     """
-    repo_root = tmp_path if tmp_path is not None else Path("/mock/test-repo")
-    return SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    return SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path)
 
 
 def create_test_build_paths(
-    tmp_path: Path | None = None,
+    tmp_path: Path,
 ) -> BuildPaths:
     """Create a real BuildPaths for testing.
 
     Parameters
     ----------
     tmp_path
-        Temporary path for build directory. If None, uses a default mock path.
+        Temporary path for build directory (required for test isolation).
 
     Returns
     -------
     BuildPaths
         Configured build paths.
     """
-    build_dir = tmp_path if tmp_path is not None else Path("/mock/build")
-    repo_root = build_dir.parent if tmp_path is not None else Path("/mock/repo")
-    return BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
+    repo_root = tmp_path.parent
+    return BuildPaths.from_repo_root(repo_root, build_dir=tmp_path)
 
 
 def create_test_run_context(
@@ -126,6 +124,9 @@ class TestPluginContext:
     Provide a minimal context with real SnapshotRef and BuildPaths types
     for proper static analysis.
 
+    Use `TestPluginContext.from_tmp_path(tmp_path)` to create an instance
+    with properly isolated paths.
+
     Attributes
     ----------
     snapshot : SnapshotRef
@@ -144,24 +145,49 @@ class TestPluginContext:
         Optional config scan profile.
     """
 
-    snapshot: SnapshotRef = field(default_factory=create_test_snapshot)
-    paths: BuildPaths = field(default_factory=create_test_build_paths)
+    snapshot: SnapshotRef
+    paths: BuildPaths
     tools: ToolsConfig | None = None
     tracker: object | None = None
     tool_service: ToolService | None = None
     code_profile: object | None = None
     config_profile: object | None = None
 
+    @classmethod
+    def from_tmp_path(
+        cls,
+        tmp_path: Path,
+        *,
+        repo: str = DEFAULT_TEST_REPO,
+        commit: str = DEFAULT_TEST_COMMIT,
+    ) -> TestPluginContext:
+        """Create a TestPluginContext with isolated paths.
 
-# Backward compatibility alias
-FakePluginContext = TestPluginContext
+        Parameters
+        ----------
+        tmp_path
+            Temporary directory for test isolation.
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+
+        Returns
+        -------
+        TestPluginContext
+            Context with paths rooted under tmp_path.
+        """
+        snapshot = create_test_snapshot(tmp_path, repo=repo, commit=commit)
+        build_dir = tmp_path / "build"
+        build_dir.mkdir(parents=True, exist_ok=True)
+        paths = create_test_build_paths(build_dir)
+        return cls(snapshot=snapshot, paths=paths)
 
 
 __all__ = [
     "DEFAULT_TEST_COMMIT",
     "DEFAULT_TEST_REPO",
     "DEFAULT_TEST_RUN_ID",
-    "FakePluginContext",  # Backward compatibility alias
     "TestPluginContext",
     "create_test_build_paths",
     "create_test_run_context",

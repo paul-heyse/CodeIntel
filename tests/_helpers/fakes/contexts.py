@@ -45,7 +45,18 @@ class SqlCall:
 
 
 class RecordingGateway:
-    """Thin wrapper that records execute calls while delegating to the real gateway."""
+    """Thin wrapper that records execute calls while delegating to the real gateway.
+
+    This is the canonical recording gateway implementation that wraps a real
+    StorageGateway and records all SQL executions for test assertions.
+
+    Attributes
+    ----------
+    records : list[SqlCall]
+        List of recorded SQL executions (preferred).
+    executions : list[tuple[str, list[object]]]
+        Legacy-compatible list of (sql, params) tuples.
+    """
 
     def __init__(self, gateway: StorageGateway) -> None:
         self._gateway = gateway
@@ -61,6 +72,20 @@ class RecordingGateway:
             Underlying DuckDB connection.
         """
         return self._gateway.con
+
+    @property
+    def executions(self) -> list[tuple[str, list[object]]]:
+        """Provide legacy-compatible access to recorded SQL.
+
+        This property converts the internal `records` list to the legacy
+        (sql, params_list) format for backward compatibility.
+
+        Returns
+        -------
+        list[tuple[str, list[object]]]
+            List of (sql, params) tuples.
+        """
+        return [(r.sql, list(r.params)) for r in self.records]
 
     def close(self) -> None:
         """Close the underlying gateway."""
@@ -159,11 +184,20 @@ class ExecutionContextBuilder:
     @classmethod
     def create(
         cls,
-        tmp_path: Path | None = None,
+        tmp_path: Path,
         options: BuilderOptions | None = None,
         env_overrides: EnvOverrides | None = None,
     ) -> Self:
         """Create a builder with a fresh gateway and snapshot.
+
+        Parameters
+        ----------
+        tmp_path
+            Temporary directory for test artifacts (required for test isolation).
+        options
+            Builder options for repo/commit/file_backed configuration.
+        env_overrides
+            Optional environment overrides for gateway/snapshot.
 
         Returns
         -------
@@ -172,7 +206,7 @@ class ExecutionContextBuilder:
         """
         opts = options or BuilderOptions()
         overrides = env_overrides or EnvOverrides()
-        base_path = overrides.tmp_path or tmp_path or Path("/mock/repo")
+        base_path = overrides.tmp_path or tmp_path
         repo, commit = overrides.snapshot or (opts.repo, opts.commit)
         gateway = overrides.gateway
         snapshot = None
@@ -342,13 +376,24 @@ class ExecutionContextBuilder:
 
 
 def build_plugin_execution_context(
+    tmp_path: Path,
     *,
-    tmp_path: Path | None = None,
     options: BuilderOptions | None = None,
     configs: dict[type[Any], object] | None = None,
     resources: dict[type[Any], object] | None = None,
 ) -> PluginExecutionContext:
     """Build a production PluginExecutionContext.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test isolation (required).
+    options
+        Optional builder configuration.
+    configs
+        Optional config objects to register.
+    resources
+        Optional resource providers to register.
 
     Returns
     -------
@@ -370,13 +415,26 @@ def build_plugin_execution_context(
 
 def build_target_execution_context(
     target: OutputTarget,
+    tmp_path: Path,
     *,
-    tmp_path: Path | None = None,
     options: BuilderOptions | None = None,
     parameters: TargetParameters | None = None,
     resources: TargetResourceOverrides | None = None,
 ) -> TargetExecutionContext:
     """Build a production TargetExecutionContext.
+
+    Parameters
+    ----------
+    target
+        Output target for the context.
+    tmp_path
+        Temporary directory for test isolation (required).
+    options
+        Optional builder configuration.
+    parameters
+        Optional target parameters.
+    resources
+        Optional resource overrides.
 
     Returns
     -------

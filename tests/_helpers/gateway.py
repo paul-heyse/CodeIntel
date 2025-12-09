@@ -30,6 +30,7 @@ from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gatewa
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
 from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata import INGEST_MACROS
+from tests._helpers.env_options import GatewayOptions
 from tests._helpers.fakes.serving import ScopeRecordingQuery
 
 # Type alias for DuckDB connections (originally from duckdb.py)
@@ -55,6 +56,7 @@ class GatewayFactory:
     -------
     >>> gateway = GatewayFactory().with_macros().open()
     >>> gateway = GatewayFactory().file_backed(db_path).with_schema().open()
+    >>> gateway = GatewayFactory.from_options(opts).open()
     """
 
     def __init__(self) -> None:
@@ -68,6 +70,31 @@ class GatewayFactory:
         self._db_path: Path | None = None
         self._repo: str | None = None
         self._commit: str | None = None
+
+    @classmethod
+    def from_options(cls, options: GatewayOptions) -> GatewayFactory:
+        """Create a factory configured from a GatewayOptions dataclass.
+
+        Parameters
+        ----------
+        options
+            Gateway configuration options.
+
+        Returns
+        -------
+        GatewayFactory
+            Factory configured with the provided options.
+        """
+        factory = cls()
+        factory._apply_schema = options.apply_schema
+        factory._ensure_views = options.ensure_views
+        factory._validate_schema = options.validate_schema
+        factory._strict_schema = options.strict_schema
+        factory._file_backed = options.file_backed
+        factory._db_path = options.db_path
+        factory._repo = options.repo
+        factory._commit = options.commit
+        return factory
 
     def with_schema(self) -> GatewayFactory:
         """Enable schema application (default).

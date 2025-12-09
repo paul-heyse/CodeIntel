@@ -1,8 +1,4 @@
-"""Tests for the Typer-based CLI.
-
-These tests use Typer's CliRunner to test the CLI commands without spawning
-subprocesses, following the project's testing charter.
-"""
+"""Tests for the CLI entrypoint using the shared run_cli helper."""
 
 from __future__ import annotations
 
@@ -10,9 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from codeintel.cli import app
 from codeintel.cli.project import (
     PROJECT_FILE,
     ProjectConfig,
@@ -26,9 +20,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-
-runner = CliRunner()
-
+from tests._helpers.cli import run_cli
 
 # -----------------------------------------------------------------------------
 # Fixtures
@@ -98,7 +90,7 @@ def test_load_project_config_parses_yaml(temp_project: Path) -> None:
 
 def test_op_list_shows_operations() -> None:
     """Verify op list shows available operations."""
-    result = runner.invoke(app, ["op", "list"])
+    result = run_cli(["op", "list"])
 
     expect_equal(result.exit_code, 0)
     expect_in("Available operations", result.stdout)
@@ -108,7 +100,7 @@ def test_op_list_shows_operations() -> None:
 
 def test_op_list_json_output() -> None:
     """Verify op list --json produces valid JSON."""
-    result = runner.invoke(app, ["op", "list", "--json"])
+    result = run_cli(["op", "list", "--json"])
 
     expect_equal(result.exit_code, 0)
     data = json.loads(result.stdout)
@@ -121,7 +113,7 @@ def test_op_list_json_output() -> None:
 
 def test_op_list_filter_by_category() -> None:
     """Verify op list --category filters operations."""
-    result = runner.invoke(app, ["op", "list", "--category", "functions"])
+    result = run_cli(["op", "list", "--category", "functions"])
 
     expect_equal(result.exit_code, 0)
     expect_in("function.summary", result.stdout)
@@ -134,7 +126,7 @@ def test_op_list_filter_by_category() -> None:
 
 def test_dataset_describe_known_dataset() -> None:
     """Verify dataset describe shows contract details."""
-    result = runner.invoke(app, ["dataset", "describe", "core.goids"])
+    result = run_cli(["dataset", "describe", "core.goids"])
 
     expect_equal(result.exit_code, 0)
     expect_in("Dataset:", result.stdout)
@@ -143,7 +135,7 @@ def test_dataset_describe_known_dataset() -> None:
 
 def test_dataset_describe_unknown_dataset() -> None:
     """Verify dataset describe fails for unknown dataset."""
-    result = runner.invoke(app, ["dataset", "describe", "nonexistent.table"])
+    result = run_cli(["dataset", "describe", "nonexistent.table"])
 
     expect_equal(result.exit_code, 1)
     # Error message may be in stdout, stderr, or combined output
@@ -158,7 +150,7 @@ def test_dataset_describe_unknown_dataset() -> None:
 
 def test_serve_http_help() -> None:
     """Verify serve http --help shows options."""
-    result = runner.invoke(app, ["serve", "http", "--help"])
+    result = run_cli(["serve", "http", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("--host", result.stdout)
@@ -168,7 +160,7 @@ def test_serve_http_help() -> None:
 
 def test_serve_mcp_help() -> None:
     """Verify serve mcp --help shows options."""
-    result = runner.invoke(app, ["serve", "mcp", "--help"])
+    result = run_cli(["serve", "mcp", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("--auto-pipeline", result.stdout)
@@ -181,7 +173,7 @@ def test_serve_mcp_help() -> None:
 
 def test_main_help() -> None:
     """Verify main help shows all command groups."""
-    result = runner.invoke(app, ["--help"])
+    result = run_cli(["--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("build", result.stdout)
@@ -193,7 +185,7 @@ def test_main_help() -> None:
 
 def test_pipeline_removed() -> None:
     """Verify pipeline command has been removed (replaced by build)."""
-    result = runner.invoke(app, ["pipeline"])
+    result = run_cli(["pipeline"])
 
     # pipeline command should not exist anymore
     expect_equal(result.exit_code, 2)  # Typer returns 2 for unknown command
@@ -202,7 +194,7 @@ def test_pipeline_removed() -> None:
 
 def test_op_help() -> None:
     """Verify op group help shows subcommands."""
-    result = runner.invoke(app, ["op", "--help"])
+    result = run_cli(["op", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("list", result.stdout)
@@ -211,7 +203,7 @@ def test_op_help() -> None:
 
 def test_dataset_help() -> None:
     """Verify dataset group help shows subcommands."""
-    result = runner.invoke(app, ["dataset", "--help"])
+    result = run_cli(["dataset", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("list", result.stdout)
@@ -226,7 +218,7 @@ def test_dataset_help() -> None:
 
 def test_build_help() -> None:
     """Verify build group help shows subcommands."""
-    result = runner.invoke(app, ["build", "--help"])
+    result = run_cli(["build", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("run", result.stdout)
@@ -236,7 +228,7 @@ def test_build_help() -> None:
 
 def test_build_run_help() -> None:
     """Verify build run --help shows all options."""
-    result = runner.invoke(app, ["build", "run", "--help"])
+    result = run_cli(["build", "run", "--help"])
 
     expect_equal(result.exit_code, 0)
     expect_in("--module", result.stdout)
@@ -247,7 +239,7 @@ def test_build_run_help() -> None:
 
 def test_build_run_all_requires_project() -> None:
     """Verify build run --all fails without project context."""
-    result = runner.invoke(app, ["build", "run", "--all", "--root", "/nonexistent/path"])
+    result = run_cli(["build", "run", "--all", "--root", "/nonexistent/path"])
 
     expect_equal(result.exit_code, 1)
     output = result.output or result.stdout
@@ -256,7 +248,7 @@ def test_build_run_all_requires_project() -> None:
 
 def test_build_status_requires_project() -> None:
     """Verify build status fails without project context."""
-    result = runner.invoke(app, ["build", "status", "--root", "/nonexistent/path"])
+    result = run_cli(["build", "status", "--root", "/nonexistent/path"])
 
     expect_equal(result.exit_code, 1)
     output = result.output or result.stdout

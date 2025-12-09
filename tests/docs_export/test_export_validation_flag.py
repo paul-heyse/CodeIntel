@@ -6,14 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from codeintel.cli import app
 from codeintel.cli.errors import CLI_EXIT_USAGE
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_rows
-
-runner = CliRunner()
+from tests._helpers.cli import run_cli
 
 
 def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
@@ -126,7 +123,7 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         "--skip-prereqs",
         "--validate",
     ]
-    result = runner.invoke(app, args_validate)
+    result = run_cli(args_validate)
     if result.exit_code != 1:
         pytest.fail(f"Expected validation failure exit code 1, got {result.exit_code}")
     if "Validation failed" not in result.stderr:
@@ -150,7 +147,7 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         str(output_dir_no_validate),
         "--skip-prereqs",
     ]
-    result_no_validate = runner.invoke(app, args_no_validate)
+    result_no_validate = run_cli(args_no_validate)
     if result_no_validate.exit_code != 0:
         pytest.fail(
             f"Expected success exit code 0 without validation, got {result_no_validate.exit_code}"
@@ -159,8 +156,7 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
 
 def test_docs_export_usage_error_exit_code(tmp_path: Path) -> None:
     """Unknown flags should produce a usage error exit code 2."""
-    result = runner.invoke(
-        app,
+    result = run_cli(
         [
             "docs",
             "export",

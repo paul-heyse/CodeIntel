@@ -33,10 +33,7 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
-from tests._helpers.fakes.graph_contexts import (
-    GraphExecutorTestEnv,
-    create_graph_executor_env,
-)
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtimes import (
     MockGraphRuntime,
     create_mock_runtime_all_graphs,
@@ -105,7 +102,7 @@ def graph_snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 @pytest.fixture
-def graph_executor_env(tmp_path: Path) -> Iterator[GraphExecutorTestEnv]:
+def graph_executor_env(tmp_path: Path) -> Iterator[GraphTestEnv]:
     """Provide a combined gateway + snapshot environment for executor tests.
 
     This fixture handles all setup and cleanup, eliminating try/finally blocks
@@ -116,10 +113,10 @@ def graph_executor_env(tmp_path: Path) -> Iterator[GraphExecutorTestEnv]:
 
     Yields
     ------
-    GraphExecutorTestEnv
+    GraphTestEnv
         Environment with gateway and snapshot; automatically closed.
     """
-    env = create_graph_executor_env(tmp_path)
+    env = GraphTestEnv.create(tmp_path)
     try:
         yield env
     finally:
