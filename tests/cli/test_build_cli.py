@@ -1,32 +1,19 @@
-"""Tests for build CLI commands.
-
-This module tests the build command group including:
-- build status: Display current target status
-- build run: Build targets with dependency resolution
-"""
+"""Tests for build CLI commands."""
 
 from __future__ import annotations
 
 import json
 
 import pytest
-from typer.testing import CliRunner
 
 from codeintel.build.targets import TargetModule
-from codeintel.cli import app
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_instance,
     expect_true,
 )
-
-runner = CliRunner()
-
-
-# =============================================================================
-# Build Status Command Tests
-# =============================================================================
+from tests._helpers.cli import run_cli
 
 
 class TestBuildStatusHelp:
@@ -35,7 +22,7 @@ class TestBuildStatusHelp:
     @staticmethod
     def test_status_help_shows_description() -> None:
         """Help text describes the status command."""
-        result = runner.invoke(app, ["build", "status", "--help"])
+        result = run_cli(["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("current state", result.stdout.lower(), label="description present")
@@ -43,7 +30,7 @@ class TestBuildStatusHelp:
     @staticmethod
     def test_status_help_shows_options() -> None:
         """Help text shows available options."""
-        result = runner.invoke(app, ["build", "status", "--help"])
+        result = run_cli(["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--module", result.stdout, label="module option")
@@ -56,10 +43,8 @@ class TestBuildStatusCommand:
     @staticmethod
     def test_status_json_output_structure() -> None:
         """JSON output has expected structure."""
-        result = runner.invoke(app, ["build", "status", "--json"])
+        result = run_cli(["build", "status", "--json"])
 
-        # Command should succeed (even without project file it may return empty)
-        # Check that if it succeeds, the JSON structure is correct
         if result.exit_code == 0:
             data = json.loads(result.stdout)
             expect_is_instance(data, dict, label="payload type")
@@ -71,11 +56,9 @@ class TestBuildStatusCommand:
     @staticmethod
     def test_status_invalid_module() -> None:
         """Invalid module name produces error or requires project context."""
-        result = runner.invoke(app, ["build", "status", "--module", "invalid_module"])
+        result = run_cli(["build", "status", "--module", "invalid_module"])
 
-        # Should fail - either because module is invalid or no project context
         expect_equal(result.exit_code, 1, label="exit_code")
-        # Error message may be about invalid module or missing project
         combined = (result.stdout + (result.output or "")).lower()
         has_module_error = "unknown module" in combined
         has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
@@ -85,18 +68,13 @@ class TestBuildStatusCommand:
         )
 
 
-# =============================================================================
-# Build Run Command Tests
-# =============================================================================
-
-
 class TestBuildRunHelp:
     """Tests for build run --help."""
 
     @staticmethod
     def test_run_help_shows_description() -> None:
         """Help text describes the run command."""
-        result = runner.invoke(app, ["build", "run", "--help"])
+        result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("dependency resolution", result.stdout.lower(), label="description present")
@@ -104,7 +82,7 @@ class TestBuildRunHelp:
     @staticmethod
     def test_run_help_shows_options() -> None:
         """Help text shows available options."""
-        result = runner.invoke(app, ["build", "run", "--help"])
+        result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--module", result.stdout, label="module option")
@@ -119,11 +97,9 @@ class TestBuildRunValidation:
     @staticmethod
     def test_run_no_targets_no_module_error() -> None:
         """Running without targets or module produces error or requires project context."""
-        result = runner.invoke(app, ["build", "run"])
+        result = run_cli(["build", "run"])
 
-        # Should fail - either because no targets/module or no project context
         expect_equal(result.exit_code, 1, label="exit_code")
-        # Error message may be about missing targets or missing project
         combined = (result.stdout + (result.output or "")).lower()
         has_targets_error = "specify targets" in combined
         has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
@@ -135,11 +111,9 @@ class TestBuildRunValidation:
     @staticmethod
     def test_run_invalid_module() -> None:
         """Invalid module name produces error or requires project context."""
-        result = runner.invoke(app, ["build", "run", "--module", "invalid_module"])
+        result = run_cli(["build", "run", "--module", "invalid_module"])
 
-        # Should fail - either because module is invalid or no project context
         expect_equal(result.exit_code, 1, label="exit_code")
-        # Error message may be about invalid module or missing project
         combined = (result.stdout + (result.output or "")).lower()
         has_module_error = "unknown module" in combined
         has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
@@ -151,11 +125,9 @@ class TestBuildRunValidation:
     @staticmethod
     def test_run_unknown_target() -> None:
         """Unknown target name produces error or requires project context."""
-        result = runner.invoke(app, ["build", "run", "nonexistent_target_xyz"])
+        result = run_cli(["build", "run", "nonexistent_target_xyz"])
 
-        # Should fail - either because target is unknown or no project context
         expect_equal(result.exit_code, 1, label="exit_code")
-        # Error message may be about unknown target or missing project
         combined = (result.stdout + (result.output or "")).lower()
         has_target_error = "unknown target" in combined
         has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
@@ -165,18 +137,13 @@ class TestBuildRunValidation:
         )
 
 
-# =============================================================================
-# Build App Structure Tests
-# =============================================================================
-
-
 class TestBuildAppStructure:
     """Tests for build app registration and structure."""
 
     @staticmethod
     def test_build_help_shows_commands() -> None:
         """Build help shows available subcommands."""
-        result = runner.invoke(app, ["build", "--help"])
+        result = run_cli(["build", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("run", result.stdout, label="run command")
@@ -185,16 +152,10 @@ class TestBuildAppStructure:
     @staticmethod
     def test_build_no_args_shows_help() -> None:
         """Build with no args shows help."""
-        result = runner.invoke(app, ["build"])
+        result = run_cli(["build"])
 
-        # Should show help or error about missing command
         expect_in("run", result.stdout, label="run mentioned")
         expect_in("status", result.stdout, label="status mentioned")
-
-
-# =============================================================================
-# Module Option Tests
-# =============================================================================
 
 
 class TestModuleOption:
@@ -204,20 +165,13 @@ class TestModuleOption:
     @staticmethod
     def test_valid_module_names(module: TargetModule) -> None:
         """Valid module names are accepted."""
-        # Dry-run with valid module should not error on module validation
-        result = runner.invoke(app, ["build", "run", "--module", module, "--dry-run"])
+        result = run_cli(["build", "run", "--module", module, "--dry-run"])
 
-        # If it fails, it should not be due to invalid module
         if result.exit_code != 0:
             expect_true(
                 "unknown module" not in result.stdout.lower(),
                 message=f"Module {module} should be valid",
             )
-
-
-# =============================================================================
-# Dry Run Tests
-# =============================================================================
 
 
 class TestDryRun:
@@ -226,16 +180,11 @@ class TestDryRun:
     @staticmethod
     def test_dry_run_flag_recognized() -> None:
         """Dry run flag is recognized."""
-        result = runner.invoke(app, ["build", "run", "--help"])
+        result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--dry-run", result.stdout, label="dry-run option recognized")
         expect_in("-n", result.stdout, label="short flag recognized")
-
-
-# =============================================================================
-# Force Option Tests
-# =============================================================================
 
 
 class TestForceOption:
@@ -244,16 +193,11 @@ class TestForceOption:
     @staticmethod
     def test_force_flag_recognized() -> None:
         """Force flag is recognized."""
-        result = runner.invoke(app, ["build", "run", "--help"])
+        result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--force", result.stdout, label="force option recognized")
         expect_in("-f", result.stdout, label="short flag recognized")
-
-
-# =============================================================================
-# JSON Output Tests
-# =============================================================================
 
 
 class TestJsonOutput:
@@ -262,7 +206,7 @@ class TestJsonOutput:
     @staticmethod
     def test_json_flag_recognized_on_status() -> None:
         """JSON flag is recognized on status command."""
-        result = runner.invoke(app, ["build", "status", "--help"])
+        result = run_cli(["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--json", result.stdout, label="json option recognized")
@@ -270,7 +214,7 @@ class TestJsonOutput:
     @staticmethod
     def test_json_flag_recognized_on_run() -> None:
         """JSON flag is recognized on run command."""
-        result = runner.invoke(app, ["build", "run", "--help"])
+        result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--json", result.stdout, label="json option recognized")

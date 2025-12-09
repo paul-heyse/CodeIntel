@@ -40,23 +40,39 @@ def make_snapshot(
 ) -> SnapshotRef:
     """Create a SnapshotRef with sensible defaults.
 
+    Parameters
+    ----------
+    tmp_path
+        Temporary path for repo_root. If None, uses current directory.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+
     Returns
     -------
     SnapshotRef
         Snapshot reference configured for tests.
     """
-    return create_test_snapshot(tmp_path=tmp_path, repo=repo, commit=commit)
+    effective_path = tmp_path if tmp_path is not None else Path.cwd()
+    return create_test_snapshot(effective_path, repo=repo, commit=commit)
 
 
 def make_build_paths(tmp_path: Path | None = None) -> BuildPaths:
-    """Create BuildPaths rooted at tmp_path (or a mock default).
+    """Create BuildPaths rooted at tmp_path (or current directory).
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary path for build directory. If None, uses current directory.
 
     Returns
     -------
     BuildPaths
         Build paths configured for tests.
     """
-    return create_test_build_paths(tmp_path=tmp_path)
+    effective_path = tmp_path if tmp_path is not None else Path.cwd()
+    return create_test_build_paths(effective_path)
 
 
 def make_build_config(

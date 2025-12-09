@@ -5,18 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from click.testing import Result
 
 from codeintel.build.executor import BuildErrorCollection, BuildExecutor, BuildResult
 from codeintel.build.plan import BuildPlan
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
-from tests._helpers.cli import assert_exit, assert_success
+from tests._helpers.cli import CliResult, assert_exit, assert_success
 
 
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_build_run_success(
     monkeypatch: pytest.MonkeyPatch,
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Build run should emit success text when executor succeeds."""
     captured_plan: list[BuildPlan] = []
@@ -45,7 +44,7 @@ def test_build_run_success(
 
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_build_run_dry_run(
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Dry-run should output plan summary without executing targets."""
     result = cli_project_runner(["build", "run", "ast", "--dry-run"])
@@ -55,7 +54,7 @@ def test_build_run_dry_run(
 
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_build_run_unknown_target(
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Unknown targets should exit with code 1."""
     result = cli_project_runner(["build", "run", "unknown-target"])

@@ -32,6 +32,7 @@ from codeintel.ingestion import (
     TypingIngestStep,
 )
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner
+from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
@@ -57,6 +58,7 @@ from tests._helpers.configs import (
     ProvisioningSetup,
     ProvisionOptions,
     RepoContext,
+    provisioning_gateway_options,
 )
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
@@ -141,23 +143,35 @@ def _generate_coverage_payload(
 ) -> None:
     """Execute coverage run; on failure, write an empty coverage database."""
     driver_path = write_coverage_driver(repo_root, files)
-    result = runner.run(
-        ToolName.COVERAGE,
-        ["run", "--data-file", str(coverage_file), str(driver_path)],
-        cwd=repo_root,
-    )
-    if not result.ok:
-        log = logging.getLogger(__name__)
+    log = logging.getLogger(__name__)
+    try:
+        result = runner.run(
+            ToolName.COVERAGE,
+            ["run", "--data-file", str(coverage_file), str(driver_path)],
+            cwd=repo_root,
+        )
+    except ToolNotFoundError as exc:
+        log.warning(
+            "coverage binary missing (%s); writing empty coverage data",
+            exc,
+        )
+        result = None
+
+    if result is not None and result.ok:
+        return
+
+    if result is not None:
         log.warning(
             "coverage run failed: code=%s stderr=%s; writing empty coverage data",
             result.returncode,
             result.stderr,
         )
-        coverage_file.parent.mkdir(parents=True, exist_ok=True)
-        cov = Coverage(data_file=str(coverage_file))
-        cov.start()
-        cov.stop()
-        cov.save()
+
+    coverage_file.parent.mkdir(parents=True, exist_ok=True)
+    cov = Coverage(data_file=str(coverage_file))
+    cov.start()
+    cov.stop()
+    cov.save()
 
 
 def _make_runner(
@@ -560,7 +574,7 @@ def provision_gateway_with_repo(
     ProvisionedGateway
         Provisioned gateway with filesystem context.
     """
-    opts = options or GatewayOptions()
+    opts = options or provisioning_gateway_options()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
     coverage_file = repo_root / ".coverage"

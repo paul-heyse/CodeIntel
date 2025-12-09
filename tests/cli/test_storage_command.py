@@ -5,15 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from click.testing import Result
 
 from tests._helpers.assertions import expect_equal, expect_is_not_none
-from tests._helpers.cli import assert_exit, assert_success
+from tests._helpers.cli import CliResult, assert_exit, assert_success
 from tests._helpers.cli_project import CLIProjectContext
 
 
 def test_storage_validate_macros_success(
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
     cli_project_ctx: CLIProjectContext,
 ) -> None:
     """validate-macros should succeed when validators pass."""
@@ -25,7 +24,7 @@ def test_storage_validate_macros_success(
 
 def test_storage_validate_macros_failure(
     monkeypatch: pytest.MonkeyPatch,
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
     cli_project_ctx: CLIProjectContext,
 ) -> None:
     """Validation error should exit with code 1 when macros are missing."""

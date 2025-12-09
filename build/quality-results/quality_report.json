@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-08T22:20:23.239900+00:00",
+  "generated_at": "2025-12-08T23:20:08.469366+00:00",
   "overall_status": "failed",
-  "duration_seconds": 10.239803,
+  "duration_seconds": 10.349546,
   "results": [
     {
       "name": "ruff_check",
@@ -15,9 +15,9 @@
       ],
       "status": "failed",
       "return_code": 1,
-      "started_at": "2025-12-08T22:20:12.999953+00:00",
-      "ended_at": "2025-12-08T22:20:13.024351+00:00",
-      "duration_seconds": 0.024398,
+      "started_at": "2025-12-08T23:19:58.119674+00:00",
+      "ended_at": "2025-12-08T23:19:58.143404+00:00",
+      "duration_seconds": 0.02373,
       "stdout": [
         "\u001b[4msrc/codeintel/cli/commands/_option_shim.py\u001b[0m:",
         "  63\u001b[36m:\u001b[0m44 \u001b[1;31mANN401\u001b[0m Dynamically typed expressions (typing.Any) are disallowed in `annotation`",
@@ -49,9 +49,11 @@
         "  329\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
         "  329\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0917\u001b[0m Too many positional arguments (8/5)",
         "",
+        "\u001b[4mtests/_helpers/configs/provisioning_config.py\u001b[0m:",
+        "  87\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (6 > 5)",
+        "",
         "\u001b[4mtests/_helpers/fakes/ingestion_context.py\u001b[0m:",
-        "  116\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (9 > 5)",
-        "  214\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (8 > 5)",
+        "  56\u001b[36m:\u001b[0m5 \u001b[1;31mPLR0913\u001b[0m Too many arguments in function definition (9 > 5)",
         "",
         "Found 26 errors.",
         "No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option)."
@@ -69,9 +71,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-08T22:20:13.024367+00:00",
-      "ended_at": "2025-12-08T22:20:22.709965+00:00",
-      "duration_seconds": 9.685598,
+      "started_at": "2025-12-08T23:19:58.143419+00:00",
+      "ended_at": "2025-12-08T23:20:07.954334+00:00",
+      "duration_seconds": 9.810915,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -87,9 +89,9 @@
       ],
       "status": "failed",
       "return_code": 1,
-      "started_at": "2025-12-08T22:20:22.709983+00:00",
-      "ended_at": "2025-12-08T22:20:23.239756+00:00",
-      "duration_seconds": 0.529773,
+      "started_at": "2025-12-08T23:20:07.954353+00:00",
+      "ended_at": "2025-12-08T23:20:08.469220+00:00",
+      "duration_seconds": 0.514867,
       "stdout": [
         "ERROR Object of class `FunctionType` has no attribute `__signature__` [missing-attribute]",
         "   --> src/codeintel/cli/commands/history.py:338:1",
@@ -100,7 +102,7 @@
       ],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 1 error (10 suppressed)"
+        " INFO 1 error (9 suppressed)"
       ]
     }
   ],

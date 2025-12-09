@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 # Import constants from central module
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
+# Import canonical GatewayOptions from env_options
+from tests._helpers.env_options import GatewayOptions
+
 
 @dataclass(frozen=True)
 class ProvisionedGateway:
@@ -81,16 +84,48 @@ class ProvisionOptions:
     include_seed_goid: bool = True
 
 
-@dataclass(frozen=True)
-class GatewayOptions:
-    """Options controlling gateway setup without ingestion."""
+def provisioning_gateway_options(
+    *,
+    db_path: Path | None = None,
+    apply_schema: bool = True,
+    ensure_views: bool = True,
+    validate_schema: bool = True,
+    file_backed: bool = True,
+    strict_schema: bool = True,
+) -> GatewayOptions:
+    """Create GatewayOptions with provisioning defaults (file_backed=True).
 
-    db_path: Path | None = None
-    apply_schema: bool = True
-    ensure_views: bool = True
-    validate_schema: bool = True
-    file_backed: bool = True
-    strict_schema: bool = True
+    This factory provides the default options used by provisioning functions,
+    which typically use file-backed databases for persistence across steps.
+
+    Parameters
+    ----------
+    db_path
+        Path to the database file.
+    apply_schema
+        Whether to apply database schema on creation.
+    ensure_views
+        Whether to ensure views are created.
+    validate_schema
+        Whether to validate the schema after creation.
+    file_backed
+        Whether to use a file-backed database (default True for provisioning).
+    strict_schema
+        Whether to enforce strict schema mode.
+
+    Returns
+    -------
+    GatewayOptions
+        Configured options for gateway creation.
+    """
+    return GatewayOptions(
+        db_path=db_path,
+        apply_schema=apply_schema,
+        ensure_views=ensure_views,
+        validate_schema=validate_schema,
+        file_backed=file_backed,
+        strict_schema=strict_schema,
+    )
 
 
 @dataclass
@@ -162,4 +197,5 @@ __all__ = [
     "ProvisioningConfig",
     "ProvisioningSetup",
     "RepoContext",
+    "provisioning_gateway_options",
 ]

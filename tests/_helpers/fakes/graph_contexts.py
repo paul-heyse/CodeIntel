@@ -6,10 +6,10 @@ setup code and ensure proper cleanup in graph tests.
 
 Example
 -------
->>> from tests._helpers.fakes.graph_contexts import create_graph_executor_env
+>>> from tests._helpers.fakes.graph_contexts import GraphTestEnv
 >>>
 >>> def test_executor(tmp_path: Path) -> None:
-...     env = create_graph_executor_env(tmp_path)
+...     env = GraphTestEnv.create(tmp_path)
 ...     try:
 ...         # Use env.gateway and env.snapshot
 ...         pass
@@ -19,7 +19,7 @@ Example
 Or use the context manager pattern:
 
 >>> def test_executor(tmp_path: Path) -> None:
-...     with create_graph_executor_env(tmp_path) as env:
+...     with GraphTestEnv.create(tmp_path) as env:
 ...         # Use env.gateway and env.snapshot
 ...         pass
 """
@@ -54,11 +54,11 @@ DEFAULT_PLUGIN_NAME = "test_plugin"
 
 
 @dataclass
-class GraphExecutorTestEnv:
-    """Test environment for graph executor tests.
+class GraphTestEnv:
+    """Unified test environment for graph tests.
 
-    Provides a gateway and snapshot with automatic cleanup support.
-    Can be used as a context manager or with explicit close().
+    Provides gateway, snapshot, and optional plugin context with automatic
+    cleanup support. Can be used as a context manager or with explicit close().
 
     Attributes
     ----------
@@ -66,67 +66,36 @@ class GraphExecutorTestEnv:
         In-memory gateway with full schema and macros.
     snapshot : SnapshotRef
         Standard test snapshot reference.
+    plugin_context : GraphPluginExecutionContext | None
+        Optional plugin context for telemetry/span tests.
     """
 
     gateway: StorageGateway
     snapshot: SnapshotRef
-
-    def close(self) -> None:
-        """Close the gateway connection."""
-        self.gateway.close()
-
-    def __enter__(self) -> Self:
-        """Enter context manager scope.
-
-        Returns
-        -------
-        Self
-            Self for use in with block.
-        """
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
-    ) -> None:
-        """Exit context manager and close gateway."""
-        self.close()
-
-
-@dataclass
-class GraphTelemetryTestEnv:
-    """Test environment for graph telemetry and span tests.
-
-    Provides a full GraphPluginExecutionContext with gateway access
-    and automatic cleanup support.
-
-    Attributes
-    ----------
-    context : GraphPluginExecutionContext
-        Fully configured execution context for testing.
-    gateway : StorageGateway
-        In-memory gateway (also accessible via context.gateway).
-    """
-
-    context: GraphPluginExecutionContext
-    gateway: StorageGateway
+    plugin_context: GraphPluginExecutionContext | None = None
 
     @property
-    def snapshot(self) -> SnapshotRef:
-        """Get the snapshot reference from the context.
+    def context(self) -> GraphPluginExecutionContext:
+        """Get the plugin execution context.
 
         Returns
         -------
-        SnapshotRef
-            Snapshot reference from the execution context.
+        GraphPluginExecutionContext
+            The plugin context if created.
+
+        Raises
+        ------
+        ValueError
+            If no plugin context was created for this environment.
         """
-        return self.context.snapshot
+        if self.plugin_context is None:
+            message = "No plugin context; create with with_plugin_context=True"
+            raise ValueError(message)
+        return self.plugin_context
 
     @property
     def scratch(self) -> PluginScratch:
-        """Get the scratch store from the context.
+        """Get the scratch store from the plugin context.
 
         Returns
         -------
@@ -135,46 +104,48 @@ class GraphTelemetryTestEnv:
         """
         return self.context.scratch
 
-    def close(self) -> None:
-        """Close the gateway connection."""
-        self.gateway.close()
+    @classmethod
+    def create(
+        cls,
+        tmp_path: Path,
+        *,
+        repo: str = DEFAULT_REPO,
+        commit: str = DEFAULT_COMMIT,
+        with_plugin_context: bool = False,
+    ) -> GraphTestEnv:
+        """Create a graph test environment.
 
-    def __enter__(self) -> Self:
-        """Enter context manager scope.
+        Parameters
+        ----------
+        tmp_path
+            Temporary directory for test data.
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+        with_plugin_context
+            Whether to create a GraphPluginExecutionContext.
 
         Returns
         -------
-        Self
-            Self for use in with block.
+        GraphTestEnv
+            Configured environment.
         """
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
-    ) -> None:
-        """Exit context manager and close gateway."""
-        self.close()
-
-
-@dataclass
-class GraphPlanningTestEnv:
-    """Test environment for graph planning tests.
-
-    Provides gateway, snapshot, and planning-specific configuration.
-
-    Attributes
-    ----------
-    gateway : StorageGateway
-        In-memory gateway with full schema and macros.
-    snapshot : SnapshotRef
-        Standard test snapshot reference.
-    """
-
-    gateway: StorageGateway
-    snapshot: SnapshotRef
+        env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
+        plugin_ctx = None
+        if with_plugin_context:
+            plugin_ctx = GraphPluginExecutionContext(
+                snapshot=env_ctx.snapshot,
+                gateway=env_ctx.gateway,
+                scratch=PluginScratch(),
+                plugin_name=DEFAULT_PLUGIN_NAME,
+                run_id=DEFAULT_RUN_ID,
+            )
+        return cls(
+            gateway=env_ctx.gateway,
+            snapshot=env_ctx.snapshot,
+            plugin_context=plugin_ctx,
+        )
 
     def close(self) -> None:
         """Close the gateway connection."""
@@ -246,101 +217,6 @@ def create_graph_snapshot(
     return SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
 
 
-def create_graph_executor_env(
-    tmp_path: Path,
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-) -> GraphExecutorTestEnv:
-    """Create a test environment for graph executor tests.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory for test data.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-
-    Returns
-    -------
-    GraphExecutorTestEnv
-        Environment with gateway and snapshot.
-        Caller is responsible for calling close() or using as context manager.
-    """
-    env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
-    return GraphExecutorTestEnv(gateway=env_ctx.gateway, snapshot=env_ctx.snapshot)
-
-
-def create_graph_telemetry_env(
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-    repo_root: Path | None = None,
-    plugin_name: str = DEFAULT_PLUGIN_NAME,
-    run_id: str = DEFAULT_RUN_ID,
-) -> GraphTelemetryTestEnv:
-    """Create a test environment for telemetry and span tests.
-
-    Parameters
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    repo_root
-        Repository root path. Defaults to current directory.
-    plugin_name
-        Name of the plugin for context.
-    run_id
-        Run identifier for context.
-
-    Returns
-    -------
-    GraphTelemetryTestEnv
-        Environment with context and gateway.
-        Caller is responsible for calling close() or using as context manager.
-    """
-    root = repo_root or Path()
-    env_ctx = create_test_env(root, repo=repo, commit=commit, repo_root=root)
-    context = GraphPluginExecutionContext(
-        snapshot=env_ctx.snapshot,
-        gateway=env_ctx.gateway,
-        scratch=PluginScratch(),
-        plugin_name=plugin_name,
-        run_id=run_id,
-    )
-    return GraphTelemetryTestEnv(context=context, gateway=env_ctx.gateway)
-
-
-def create_graph_planning_env(
-    tmp_path: Path,
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-) -> GraphPlanningTestEnv:
-    """Create a test environment for graph planning tests.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory for test data.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-
-    Returns
-    -------
-    GraphPlanningTestEnv
-        Environment with gateway and snapshot.
-        Caller is responsible for calling close() or using as context manager.
-    """
-    env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
-    return GraphPlanningTestEnv(gateway=env_ctx.gateway, snapshot=env_ctx.snapshot)
-
-
 def create_graph_plugin_context(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -380,13 +256,8 @@ __all__ = [
     "DEFAULT_PLUGIN_NAME",
     "DEFAULT_REPO",
     "DEFAULT_RUN_ID",
-    "GraphExecutorTestEnv",
-    "GraphPlanningTestEnv",
-    "GraphTelemetryTestEnv",
-    "create_graph_executor_env",
+    "GraphTestEnv",
     "create_graph_gateway",
-    "create_graph_planning_env",
     "create_graph_plugin_context",
     "create_graph_snapshot",
-    "create_graph_telemetry_env",
 ]

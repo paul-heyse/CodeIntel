@@ -18,6 +18,7 @@ from tests._helpers.configs.provisioning_config import (
     ProvisioningSetup,
     ProvisionOptions,
     RepoContext,
+    provisioning_gateway_options,
 )
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
@@ -38,4 +39,5 @@ __all__ = [
     "SnapshotSpec",
     "SpanSnapshot",
     "SpanTestEnv",
+    "provisioning_gateway_options",
 ]

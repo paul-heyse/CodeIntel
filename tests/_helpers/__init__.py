@@ -2,13 +2,40 @@
 
 This package provides standardized test infrastructure including:
 
+Canonical Environment Types
+---------------------------
 - `TestContext`: Unified test environment for hexagonal architecture
-- `TestScenario`: Declarative scenario builder
+- `GraphTestEnv`: Unified graph test environment (replaces separate Env classes)
+- `ExecutionContextBuilder`: Fluent builder for plugin/target execution contexts
+
+Context Creation (require tmp_path for isolation)
+-------------------------------------------------
+- `create_test_env(tmp_path, ...)`: Create a TestContext with gateway and snapshot
+- `create_test_context(tmp_path, ...)`: Lower-level TestContext creation
+- `GraphTestEnv.create(tmp_path, ...)`: Create graph test environments
+
+Scenario Building
+-----------------
+- `TestScenario`: Declarative scenario builder with seed pack composition
+- `minimal_context`, `graph_context`, etc.: Convenience factories
+
+Recording/Test Doubles
+----------------------
+- `RecordingGateway`: Wraps real gateway, records SQL (canonical)
+- `RecordingContext`, `RecordingResources`: Ingestion test doubles
+
+Gateway Configuration
+---------------------
+- `GatewayOptions`: Canonical gateway configuration dataclass
+- `provisioning_gateway_options()`: Factory for provisioning defaults (file_backed=True)
+
+Additional Utilities
+--------------------
 - `GraphPluginBuilder`: Fluent builder for graph test plugins
 - `plugin_registrar`: Context manager for scoped plugin registration
-- Seed packs for composable test data
-- Provisioning utilities for gateway setup
+- Seed packs for composable test data (CORE_PACK, GRAPH_PACK, etc.)
 - Standard NetworkX graph fixtures
+- Provisioning utilities for gateway setup
 - Various assertion helpers and test utilities
 """
 
@@ -33,6 +60,7 @@ from tests._helpers.configs.provisioning_config import (
     GraphMetricsGatewayOptions,
     ProvisionedGateway,
     ProvisioningConfig,
+    provisioning_gateway_options,
 )
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.context import (
@@ -48,6 +76,7 @@ from tests._helpers.fakes.contexts import (
     build_plugin_execution_context,
     build_target_execution_context,
 )
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_plugins import (
     GraphPluginBuilder,
     make_functional_plugin,
@@ -128,6 +157,7 @@ __all__ = [
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",
+    "GraphTestEnv",
     "ManifestParams",
     "ModelLike",
     "ProvisionedGateway",
@@ -178,6 +208,7 @@ __all__ = [
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",
     "provisioned_gateway",
+    "provisioning_gateway_options",
     "sample_build_plan",
     "sample_manifest",
     "sample_target_graph",

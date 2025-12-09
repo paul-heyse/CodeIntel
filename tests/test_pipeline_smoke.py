@@ -6,12 +6,9 @@ import os
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from codeintel.cli import app
 from codeintel.storage.gateway import StorageConfig, open_gateway
-
-runner = CliRunner()
+from tests._helpers.cli import run_cli
 
 
 def test_build_export_smoke(tmp_path: Path) -> None:
@@ -35,8 +32,7 @@ def test_build_export_smoke(tmp_path: Path) -> None:
 
     os.environ["CODEINTEL_SKIP_SCIP"] = "true"
     pytest.xfail("Build smoke test currently fails in function_effects catalog integration")
-    result = runner.invoke(
-        app,
+    result = run_cli(
         [
             "build",
             "run",

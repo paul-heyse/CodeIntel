@@ -6,15 +6,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from click.testing import Result
 
 from tests._helpers.assertions import expect_in, expect_true
-from tests._helpers.cli import assert_exit, assert_success
+from tests._helpers.cli import CliResult, assert_exit, assert_success
 
 
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_datasets_list(
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Datasets list should print dataset names from registry."""
     result = cli_project_runner(["datasets", "list"])
@@ -26,7 +25,7 @@ def test_datasets_list(
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_datasets_snapshot_to_file(
     tmp_path: Path,
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Datasets snapshot should write JSON to the requested path."""
     target_path = tmp_path / "snapshot.json"
@@ -39,7 +38,7 @@ def test_datasets_snapshot_to_file(
 
 @pytest.mark.usefixtures("cli_project_ctx")
 def test_datasets_scaffold_existing_name(
-    cli_project_runner: Callable[[list[str]], Result],
+    cli_project_runner: Callable[[list[str]], CliResult],
 ) -> None:
     """Scaffold should fail when dataset already exists in registry."""
     result = cli_project_runner(

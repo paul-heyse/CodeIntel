@@ -4,17 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
-
-from codeintel.cli import app
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.cli import run_cli
 from tests._helpers.configs.history_config import SnapshotSpec
 from tests._helpers.orchestration.history import create_snapshot_db
 
 EXPECTED_HISTORY_ROW_COUNT = 2
-
-runner = CliRunner()
 
 
 def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
@@ -46,8 +42,7 @@ def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
         ),
     )
     output_db = tmp_path / "out.duckdb"
-    result = runner.invoke(
-        app,
+    result = run_cli(
         [
             "history",
             "timeseries",
@@ -79,8 +74,7 @@ def test_history_timeseries_cli_missing_snapshot(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     output_db = tmp_path / "out.duckdb"
-    result = runner.invoke(
-        app,
+    result = run_cli(
         [
             "history",
             "timeseries",

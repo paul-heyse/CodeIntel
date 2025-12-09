@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_ops.py
+# hypothesis_version: 6.148.7
+
+[8000, '*', '--auto-pipeline', '--category', '--host', '--json', '--port', '--reload', '--skip-prereqs', '--verbose', '-c', '-h', '-p', '-v', '127.0.0.1', 'Host to bind to.', 'Output as JSON.', 'Port to bind to.', 'call', 'dataset', 'dataset_app', 'describe', 'http', 'list', 'mcp', 'op', 'op_app', 'serve', 'serve_app', 'verify']
