@@ -12,7 +12,7 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.context import TestContext
-from tests._helpers.plugin_execution import execute_target_plugin
+from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests.analytics.conftest import PluginTestHarness
 
@@ -98,9 +98,8 @@ def test_semantic_roles_plugin_classifies_tests(plugin_harness: PluginTestHarnes
     _insert_function_metrics(plugin_harness.ctx, now)
     _insert_module_row(plugin_harness.ctx)
 
-    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
-
-    result = execute_target_plugin(SemanticRolesPlugin(), plugin_harness.plugin_ctx)
+    resources = TargetResourceOverrides(catalog=catalog_provider)
+    result = plugin_harness.execute_plugin(SemanticRolesPlugin(), resources=resources)
     expect_true(result.success)
 
     role_row = plugin_harness.ctx.query(

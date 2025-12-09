@@ -7,7 +7,7 @@ from pathlib import Path
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_true
-from tests._helpers.plugin_execution import execute_target_plugin
+from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.rows import function_meta
 from tests.analytics.conftest import PluginTestHarness
 
@@ -87,9 +87,8 @@ def test_external_deps_plugin_builds_dependency_rows(plugin_harness: PluginTestH
     _seed_dependency_sources(plugin_harness.ctx.repo_root)
     catalog_provider = _catalog_for_dependencies(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
-
-    result = execute_target_plugin(ExternalDepsPlugin(), plugin_harness.plugin_ctx)
+    resources = TargetResourceOverrides(catalog=catalog_provider)
+    result = plugin_harness.execute_plugin(ExternalDepsPlugin(), resources=resources)
     expect_true(result.success)
 
     calls_count = plugin_harness.ctx.query_count("analytics.external_dependency_calls")

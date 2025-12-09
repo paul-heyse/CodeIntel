@@ -49,6 +49,7 @@ Verbose = Annotated[
     Parameter(
         name=["--verbose", "-v"],
         help="Increase verbosity (0=warnings, 1=info, 2=debug).",
+        count=True,
     ),
 ]
 
@@ -83,8 +84,108 @@ class RuntimeCliError(Exception):
     """Raised when CLI runtime resolution fails."""
 
 
+@dataclass
+class RuntimeCLI:
+    """Shared runtime selection flags for Cyclopts commands."""
+
+    project_root: ProjectRoot = None
+    repo: Annotated[
+        str | None,
+        Parameter(
+            name="--repo",
+            help="Repository slug (e.g., 'org/repo'). Uses project config if omitted.",
+        ),
+    ] = None
+    commit: Annotated[
+        str | None,
+        Parameter(
+            name="--commit",
+            help="Commit SHA. Uses project config if omitted.",
+        ),
+    ] = None
+    db_path: Annotated[
+        Path | None,
+        Parameter(
+            name="--db-path",
+            help="Path to DuckDB database. Uses project config if omitted.",
+        ),
+    ] = None
+    build_dir: Annotated[
+        Path | None,
+        Parameter(
+            name="--build-dir",
+            help="Build directory (default: build/).",
+        ),
+    ] = None
+    repo_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--repo-root",
+            help="Path to repository root (default: current directory).",
+        ),
+    ] = None
+    document_output_dir: Annotated[
+        Path | None,
+        Parameter(
+            name="--document-output-dir",
+            help="Override Document Output/ directory.",
+        ),
+    ] = None
+    verbose: Verbose = 0
+
+
+@dataclass
+class OutputFormatCLI:
+    """Shared output format toggles for commands supporting JSON output."""
+
+    output_format: OutputFmt = OutputFormat.TEXT
+    json: JsonFlag = False
+
+
+def resolve_output_format(
+    *,
+    json_flag: bool,
+    explicit: OutputFormat | None,
+    default: OutputFormat = OutputFormat.TEXT,
+) -> OutputFormat:
+    """Resolve output format with consistent precedence.
+
+    Returns
+    -------
+    OutputFormat
+        Effective output format after applying overrides.
+    """
+    if explicit is not None:
+        return explicit
+    if json_flag:
+        return OutputFormat.JSON
+    return default
+
+
+def runtime_cli_to_options(
+    cli: RuntimeCLI, *, backend: BackendFlags | None = None
+) -> RuntimeCliOptions:
+    """Convert a RuntimeCLI dataclass to RuntimeCliOptions.
+
+    Returns
+    -------
+    RuntimeCliOptions
+        Options object suitable for runtime construction.
+    """
+    return RuntimeCliOptions(
+        project_root=cli.project_root,
+        repo=cli.repo,
+        commit=cli.commit,
+        db_path=cli.db_path,
+        build_dir=cli.build_dir,
+        repo_root=cli.repo_root,
+        document_output_dir=cli.document_output_dir,
+        backend=backend or BackendFlags(),
+    )
+
+
 def build_runtime_from_cli(
-    options: RuntimeCliOptions,
+    options: RuntimeCliOptions | RuntimeCLI,
     *,
     allow_fallback: bool = True,
 ) -> ProjectRuntime:
@@ -100,6 +201,9 @@ def build_runtime_from_cli(
     RuntimeCliError
         If a project cannot be resolved from the provided options.
     """
+    if isinstance(options, RuntimeCLI):
+        options = runtime_cli_to_options(options)
+
     try:
         return build_project_runtime(options.project_root)
     except ProjectNotFoundError:
@@ -182,11 +286,15 @@ __all__ = [
     "JsonFlag",
     "OutputFmt",
     "OutputFormat",
+    "OutputFormatCLI",
     "ProjectRoot",
+    "RuntimeCLI",
     "RuntimeCliError",
     "RuntimeCliOptions",
     "RuntimeWithFormat",
     "Verbose",
     "build_runtime_from_cli",
     "make_root_app",
+    "resolve_output_format",
+    "runtime_cli_to_options",
 ]

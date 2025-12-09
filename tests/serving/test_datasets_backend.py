@@ -29,7 +29,7 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -61,7 +61,7 @@ def gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway instance for test use.
     """
-    gw = gateway_with_macros(repo="test/repo", commit="abc123")
+    gw = GatewayFactory().with_snapshot("test/repo", "abc123").open()
     try:
         yield gw
     finally:
@@ -372,7 +372,7 @@ def test_validate_dataset_registry_with_minimal_gateway(gateway: StorageGateway)
 
 def test_validate_dataset_registry_error_contains_details() -> None:
     """Verify validate_dataset_registry includes specific details in errors."""
-    gw = gateway_with_macros(repo="test/repo", commit="abc123")
+    gw = GatewayFactory().with_snapshot("test/repo", "abc123").open()
     try:
         try:
             validate_dataset_registry(gw)

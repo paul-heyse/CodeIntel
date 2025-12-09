@@ -188,8 +188,8 @@ def test_pipeline_removed() -> None:
     result = run_cli(["pipeline"])
 
     # pipeline command should not exist anymore
-    expect_equal(result.exit_code, 2)  # Typer returns 2 for unknown command
-    expect_true("No such command" in result.stdout or "pipeline" not in result.stdout)
+    expect_equal(result.exit_code, 2)
+    expect_true("No such command" in result.stderr)
 
 
 def test_op_help() -> None:

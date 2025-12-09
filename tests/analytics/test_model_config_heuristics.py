@@ -28,7 +28,7 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.gateway import GatewayFactory
 
 REPO = "test/repo"
 COMMIT = "deadbeef"
@@ -36,7 +36,7 @@ COMMIT = "deadbeef"
 
 @contextmanager
 def _gateway_with_schema() -> Iterator[StorageGateway]:
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = GatewayFactory().with_views().open()
     try:
         yield gateway
     finally:

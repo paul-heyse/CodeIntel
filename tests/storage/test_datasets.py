@@ -37,7 +37,7 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 
 def _sample_registry() -> DatasetRegistry:
@@ -348,7 +348,7 @@ def _stub_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
 
 def test_json_schema_ids_attached_to_datasets() -> None:
     """Datasets loaded from DuckDB should include JSON Schema identifiers when present."""
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     try:
         registry = load_dataset_registry(gateway.con)
         names_with_schema = set(registry.datasets_with_json_schema())
@@ -429,7 +429,7 @@ def test_describe_dataset_shape_with_json_schema() -> None:
 def test_json_schema_datasets_have_row_bindings() -> None:
     """Datasets with JSON Schemas should expose row bindings where supported."""
     allow_missing = {"data_model_fields", "data_model_relationships"}
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     try:
         registry = load_dataset_registry(gateway.con)
         for dataset_name in JSON_SCHEMA_BY_DATASET_NAME:

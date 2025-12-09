@@ -12,7 +12,7 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.execution import RunContext, new_run_context
 from codeintel.storage.tracking import PipelineStepRecord
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -91,12 +91,7 @@ def gateway() -> StorageGateway:
     StorageGateway
         In-memory gateway configured for integration tests.
     """
-    return open_ingestion_gateway_with_macros(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=False,  # Allow missing tables in tests
-        strict_schema=False,
-    )
+    return GatewayFactory().with_views().without_validation().relaxed().open()
 
 
 @pytest.fixture

@@ -31,7 +31,7 @@ from tests._helpers.coverage import (
     seed_goid,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -100,7 +100,7 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway backed by in-memory DuckDB with full schema.
     """
-    gw = gateway_with_macros()
+    gw = GatewayFactory().open()
     try:
         yield gw
     finally:

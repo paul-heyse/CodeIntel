@@ -17,7 +17,7 @@ from codeintel.config.datasets import (
     GraphMetricsFunctionsRow,
 )
 from tests._helpers.contracts import count_rows
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 TABLE_QUERIES: dict[str, str] = {
     "analytics.function_metrics": """
@@ -67,7 +67,7 @@ def _assert_fk_graph_metrics_functions(con: DuckDBPyConnection) -> None:
 
 def test_function_metrics_insertion_is_idempotent() -> None:
     """Inserting the same function_metrics rows twice should be idempotent."""
-    gateway = gateway_with_macros()
+    gateway = GatewayFactory().open()
     repo = "demo/repo"
     commit = "abc123"
     now = datetime.now(UTC)
@@ -125,7 +125,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
 
 def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
     """graph_metrics_functions insert should be idempotent and FK clean."""
-    gateway = gateway_with_macros()
+    gateway = GatewayFactory().open()
     repo = "demo/repo"
     commit = "deadbeef"
     now = datetime.now(UTC)

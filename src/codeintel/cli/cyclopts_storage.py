@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
-import typer
 from cyclopts import App, Parameter
 
+from codeintel.cli.cli_errors import invoke_with_typer_translation
 from codeintel.cli.commands.storage import MacroRequirement, storage_validate_macros
-from codeintel.cli.cyclopts_common import Verbose
+from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
 
 storage_app = App(
     name="storage",
@@ -22,13 +22,7 @@ storage_app = App(
 class ValidateMacrosCli:
     """CLI surface for `codeintel storage validate-macros`."""
 
-    db_path: Annotated[
-        Path,
-        Parameter(
-            name="--db-path",
-            help="Path to the DuckDB database to validate.",
-        ),
-    ] = Path("build/db/codeintel.duckdb")
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
     macros: Annotated[
         MacroRequirement,
         Parameter(
@@ -36,25 +30,22 @@ class ValidateMacrosCli:
             help="Ingest macro requirement policy.",
         ),
     ] = MacroRequirement.REQUIRE
-    verbose: Verbose = 0
 
 
 @storage_app.command(name="validate-macros")
 def validate_macros(
     cfg: Annotated[ValidateMacrosCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Validate macro registry hashes and normalized macro schemas.
-
-    Raises
-    ------
-    SystemExit
-        When validation fails or the handler requests exit.
-    """
+    """Validate macro registry hashes and normalized macro schemas."""
     cfg = cfg or ValidateMacrosCli()
-    try:
-        storage_validate_macros(cfg.db_path, cfg.macros, cfg.verbose)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    runtime_options = runtime_cli_to_options(cfg.runtime)
+    db_path = runtime_options.db_path or Path("build/db/codeintel.duckdb")
+    invoke_with_typer_translation(
+        storage_validate_macros,
+        db_path,
+        cfg.macros,
+        cfg.runtime.verbose,
+    )
 
 
 __all__ = ["storage_app"]

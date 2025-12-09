@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import cast
 
 import pytest
 
@@ -15,164 +15,25 @@ from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
 from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
 from codeintel.ingestion.ports.storage import IngestStoragePort
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree, make_target_context
+from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.env import create_test_env
+from tests._helpers.fakes.contexts import (
+    EnvOverrides,
+    ExecutionContextBuilder,
+    TargetResourceOverrides,
+    make_test_output_target,
+)
 from tests._helpers.fakes.ingestion_plugins import (
     RecordingDiscoveryAdapter,
     RecordingStep,
     RecordingStorageAdapter,
     StepCallCapture,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
-
-    from codeintel.storage.gateway import DuckDBConnection
-
-
-class _RecordingConnection:
-    """Connection wrapper that records executions and delegates to real connection."""
-
-    def __init__(
-        self,
-        real_con: DuckDBConnection,
-        executions: list[tuple[str, list[object]]],
-    ) -> None:
-        self._real_con = real_con
-        self._executions = executions
-
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> _RecordingConnection:
-        """Record and forward SQL execution.
-
-        Parameters
-        ----------
-        sql
-            SQL query to execute.
-        params
-            Query parameters.
-
-        Returns
-        -------
-        _RecordingConnection
-            Self for chaining.
-        """
-        self._executions.append((sql, list(params or [])))
-        self._real_con.execute(sql, params)
-        return self
-
-    def fetchall(self) -> list[tuple[Any, ...]]:
-        """Fetch all results from the underlying connection.
-
-        Returns
-        -------
-        list[tuple[Any, ...]]
-            All rows from the query.
-        """
-        return self._real_con.fetchall()
-
-    def __getattr__(self, item: str) -> object:
-        """Delegate unknown attributes to the real connection.
-
-        Returns
-        -------
-        object
-            Attribute from the underlying connection.
-        """
-        return getattr(self._real_con, item)
-
-
-class ConnectionRecordingGateway:
-    """Gateway wrapper that records con.execute() calls.
-
-    This wrapper intercepts calls through the `con` property to record
-    SQL executions that go through `gateway.con.execute()`.
-    """
-
-    def __init__(self, gateway: StorageGateway) -> None:
-        self._gateway = gateway
-        self.executions: list[tuple[str, list[object]]] = []
-        self._recording_con = _RecordingConnection(gateway.con, self.executions)
-
-    @property
-    def con(self) -> DuckDBConnection:
-        """Return the recording connection wrapper.
-
-        Returns
-        -------
-        DuckDBConnection
-            Recording connection that tracks executions.
-        """
-        return cast("DuckDBConnection", self._recording_con)
-
-    def close(self) -> None:
-        """Close the underlying gateway."""
-        self._gateway.close()
-
-    def __getattr__(self, item: str) -> object:
-        """Delegate unknown attributes to the real gateway.
-
-        Returns
-        -------
-        object
-            Attribute from the underlying gateway.
-        """
-        return getattr(self._gateway, item)
-
-
-class FailingGateway:
-    """Gateway that raises on execute for testing error recovery.
-
-    This is a proper test double that implements the gateway interface
-    but raises RuntimeError on execute to simulate database failures.
-    """
-
-    def __init__(self, error_message: str = "db down") -> None:
-        self._error_message = error_message
-        self.records: list[tuple[str, tuple[object, ...]]] = []
-
-    @property
-    def con(self) -> DuckDBConnection:
-        """Return a failing connection proxy.
-
-        Returns
-        -------
-        DuckDBConnection
-            A proxy that fails on execute.
-        """
-        return cast("DuckDBConnection", _FailingConnectionProxy(self._error_message))
-
-    def execute(self, sql: str, params: Iterable[object] | None = None) -> DuckDBConnection:
-        """Record and raise on SQL execution.
-
-        Raises
-        ------
-        RuntimeError
-            Always raises to simulate database failure.
-        """
-        self.records.append((sql, tuple(params or ())))
-        raise RuntimeError(self._error_message)
-
-    def close(self) -> None:
-        """No-op close."""
-
-
-class _FailingConnectionProxy:
-    """Connection proxy that fails on execute."""
-
-    def __init__(self, error_message: str) -> None:
-        self._error_message = error_message
-
-    def execute(self, sql: str, params: object = None) -> _FailingConnectionProxy:
-        """Raise RuntimeError to simulate database failure.
-
-        Raises
-        ------
-        RuntimeError
-            Always raises to simulate database failure.
-        """
-        _ = sql, params
-        raise RuntimeError(self._error_message)
+from tests._helpers.fakes.recording_gateways import (
+    ConnectionRecordingGateway,
+    FailingGateway,
+)
 
 
 def _make_plugin(
@@ -181,6 +42,22 @@ def _make_plugin(
     table_key: str = "core.ast_nodes",
     result: StepResult | None = None,
 ) -> AstExtractPlugin:
+    """Create an AstExtractPlugin with recording adapters.
+
+    Parameters
+    ----------
+    capture
+        Capture object to record adapter and step calls.
+    table_key
+        Table key to use in the step.
+    result
+        Optional custom result to return from the step.
+
+    Returns
+    -------
+    AstExtractPlugin
+        Configured plugin instance.
+    """
     return AstExtractPlugin(
         storage_adapter_factory=lambda gateway: RecordingStorageAdapter(gateway, capture=capture),
         discovery_adapter_factory=lambda repo_root: RecordingDiscoveryAdapter(
@@ -206,6 +83,23 @@ def _build_step_factory(
     ],
     AstExtractStep,
 ]:
+    """Build a step factory that creates recording steps.
+
+    Parameters
+    ----------
+    capture
+        Capture object to record step calls.
+    table_key
+        Table key for the step.
+    result
+        Optional custom result.
+
+    Returns
+    -------
+    Callable
+        Factory function for creating recording steps.
+    """
+
     def _factory(storage: IngestStoragePort, discovery: ModuleDiscoveryPort) -> AstExtractStep:
         return cast(
             "AstExtractStep",
@@ -221,14 +115,67 @@ def _build_step_factory(
     return _factory
 
 
+def _build_target_context(
+    tmp_path: Path,
+    plugin: AstExtractPlugin,
+    *,
+    repo_root: Path,
+    modules: tuple[str, ...] = (),
+    gateway: StorageGateway | ConnectionRecordingGateway | FailingGateway | None = None,
+) -> TargetExecutionContext:
+    """Build a TargetExecutionContext for ingestion plugin testing.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test isolation.
+    plugin
+        Plugin to build context for.
+    repo_root
+        Repository root directory.
+    modules
+        Module paths to include in resources.
+    gateway
+        Optional custom gateway (recording or failing).
+
+    Returns
+    -------
+    TargetExecutionContext
+        Configured context for plugin execution.
+    """
+    if gateway is None:
+        env = create_test_env(tmp_path, repo_root=repo_root)
+        gateway = env.gateway
+
+    # Use repo_root for the snapshot, not tmp_path
+    builder = ExecutionContextBuilder.create(
+        repo_root,
+        env_overrides=EnvOverrides(
+            gateway=cast("StorageGateway", gateway),
+            snapshot=(DEFAULT_REPO, DEFAULT_COMMIT),
+        ),
+    )
+    target = make_test_output_target(plugin)
+    return builder.build_target_context(
+        target,
+        resources=TargetResourceOverrides(modules=modules),
+    )
+
+
 @pytest.mark.anyio
 async def test_execute_invokes_step_and_returns_row_counts(tmp_path: Path) -> None:
     """Happy path: modules from resources flow through adapters to the step."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
-    ctx = make_target_context(repo_root=repo_root, modules=("pkg/mod.py",))
     captured = StepCallCapture()
+    plugin = _make_plugin(captured)
 
-    result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
+    ctx = _build_target_context(
+        tmp_path,
+        plugin,
+        repo_root=repo_root,
+        modules=("pkg/mod.py",),
+    )
+    result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {"core.ast_nodes": 1})
@@ -256,14 +203,18 @@ async def test_execute_queries_gateway_when_modules_missing(tmp_path: Path) -> N
 
     # Wrap with ConnectionRecordingGateway to track con.execute() calls
     recording_gateway = ConnectionRecordingGateway(env.gateway)
-
-    ctx = make_target_context(
-        repo_root=repo_root, modules=(), gateway=cast("StorageGateway", recording_gateway)
-    )
     captured = StepCallCapture()
+    plugin = _make_plugin(captured)
 
     try:
-        result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
+        ctx = _build_target_context(
+            tmp_path,
+            plugin,
+            repo_root=repo_root,
+            modules=(),
+            gateway=recording_gateway,
+        )
+        result = await plugin.execute(ctx)
 
         expect_equal(result.row_counts, {"core.ast_nodes": 1})
         # Verify the SQL query was made
@@ -285,12 +236,17 @@ async def test_execute_recovers_from_gateway_errors(tmp_path: Path) -> None:
     repo_root = build_repo_tree(tmp_path / "repo", {})
     # Use a FailingGateway that raises RuntimeError on execute
     gateway = FailingGateway(error_message="db down")
-    ctx = make_target_context(
-        repo_root=repo_root, modules=(), gateway=cast("StorageGateway", gateway)
-    )
     captured = StepCallCapture()
+    plugin = _make_plugin(captured)
 
-    result = await _make_plugin(captured).execute(cast("TargetExecutionContext", ctx))
+    ctx = _build_target_context(
+        tmp_path,
+        plugin,
+        repo_root=repo_root,
+        modules=(),
+        gateway=gateway,
+    )
+    result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(captured.modules, [])

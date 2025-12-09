@@ -24,6 +24,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.cli import run_cli
 
 # -----------------------------------------------------------------------------
 # Parameter Classification Tests
@@ -168,6 +169,23 @@ def test_operation_has_required_datasets() -> None:
     expect_true(hasattr(op, "required_datasets"))
     # required_datasets should be a tuple
     expect_is_instance(op.required_datasets, tuple)
+
+
+# -----------------------------------------------------------------------------
+# Dynamic subcommand registration (Cyclopts)
+# -----------------------------------------------------------------------------
+
+
+def test_dynamic_op_help_available() -> None:
+    """Dynamic subcommands should be registered and expose help."""
+    op = next(iter_operations())
+    command_name = op.id.replace(".", "-")
+
+    result = run_cli(["op", command_name, "--help"])
+
+    expect_equal(result.exit_code, 0)
+    if op.summary:
+        expect_in(op.summary.split()[0].lower(), result.stdout.lower())
 
 
 # -----------------------------------------------------------------------------

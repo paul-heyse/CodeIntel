@@ -24,7 +24,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 
 def _require(condition: object, message: str) -> None:
@@ -35,7 +35,7 @@ def _require(condition: object, message: str) -> None:
 
 def test_metadata_bootstrap_populates_catalog() -> None:
     """Bootstrap should create catalog rows and expose registry mappings."""
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     con = gateway.con
 
     count_row = con.execute("SELECT COUNT(*) FROM metadata.datasets").fetchone()
@@ -72,10 +72,11 @@ def test_metadata_bootstrap_populates_catalog() -> None:
 
 def test_dataflow_metadata_populated() -> None:
     """bootstrap_metadata_datasets should populate dataset_dataflow_* tables and repositories."""
-    gateway = gateway_with_macros(
-        validate_schema=False,
-        repo="test/repo",
-        commit="deadbeef",
+    gateway = (
+        GatewayFactory()
+        .without_validation()
+        .with_snapshot("test/repo", "deadbeef")
+        .open()
     )
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)

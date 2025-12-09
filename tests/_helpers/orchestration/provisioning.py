@@ -17,7 +17,6 @@ from coverage import Coverage
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.build.context import ContextResources
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.plugins.builders.callgraph import CallGraphPlugin
@@ -62,6 +61,7 @@ from tests._helpers.configs import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
+from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.gateway import gateway_with_macros
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
@@ -72,7 +72,6 @@ from tests._helpers.orchestration.repo_writers import (
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -950,15 +949,13 @@ def build_callgraph_fixture_repo(
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
-    resources = ContextResources(gateway=gateway)
-    test_ctx = PluginTestContext(
+    builder = ExecutionContextBuilder(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
-        resources=resources,
     )
 
-    result = execute_target_plugin(CallGraphPlugin(), test_ctx)
+    result = builder.execute_plugin(CallGraphPlugin())
     if not result.success:
         msg = f"CallGraphPlugin failed: {result.error_message}"
         raise RuntimeError(msg)

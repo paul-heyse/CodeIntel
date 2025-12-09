@@ -50,7 +50,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
+from tests._helpers.gateway import GatewayFactory, build_duckdb_backend
 
 # -----------------------------------------------------------------------------
 # is_auto_pipeline_enabled Tests
@@ -151,7 +151,7 @@ def pipeline_run_tracking() -> Iterator[PipelineRunTracking]:
     PipelineRunTracking
         Run tracking instance for test use.
     """
-    gateway = gateway_with_macros(repo="test/repo", commit="abc123")
+    gateway = GatewayFactory().with_snapshot("test/repo", "abc123").open()
     try:
         yield gateway.runs
     finally:
@@ -167,7 +167,7 @@ def duckdb_backend() -> Iterator[DuckDBBackend]:
     DuckDBBackend
         Backend instance backed by an in-memory gateway.
     """
-    gateway = gateway_with_macros(repo="test/repo", commit="abc123")
+    gateway = GatewayFactory().with_snapshot("test/repo", "abc123").open()
     backend: DuckDBBackend = build_duckdb_backend(gateway, repo="test/repo", commit="abc123")
     try:
         yield backend
@@ -776,7 +776,7 @@ def auto_pipeline_test_env(
     os.environ[AUTO_PIPELINE_ENV] = "1"
 
     # Create gateway with schema
-    gateway = gateway_with_macros(repo="test/repo", commit="abc123")
+    gateway = GatewayFactory().with_snapshot("test/repo", "abc123").open()
 
     # Create backend
     backend: DuckDBBackend = build_duckdb_backend(gateway, repo="test/repo", commit="abc123")

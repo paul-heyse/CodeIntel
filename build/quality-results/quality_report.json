@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-09T00:37:15.236084+00:00",
-  "overall_status": "passed",
-  "duration_seconds": 10.851375,
+  "generated_at": "2025-12-09T00:58:41.886365+00:00",
+  "overall_status": "failed",
+  "duration_seconds": 11.060953,
   "results": [
     {
       "name": "ruff_check",
@@ -13,13 +13,26 @@
         "check",
         "--fix"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2025-12-09T00:37:04.384546+00:00",
-      "ended_at": "2025-12-09T00:37:04.410478+00:00",
-      "duration_seconds": 0.025932,
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2025-12-09T00:58:30.825258+00:00",
+      "ended_at": "2025-12-09T00:58:30.851528+00:00",
+      "duration_seconds": 0.02627,
       "stdout": [
-        "All checks passed!"
+        "\u001b[4msrc/codeintel/cli/cli_errors.py\u001b[0m:",
+        "   95\u001b[36m:\u001b[0m5  \u001b[1;31mUP047\u001b[0m Generic function `invoke_with_typer_translation` should use type parameters",
+        "  100\u001b[36m:\u001b[0m5  \u001b[1;31mDOC201\u001b[0m `return` is not documented in docstring",
+        "  100\u001b[36m:\u001b[0m5  \u001b[1;31mDOC501\u001b[0m Raised exception `SystemExit` missing from docstring",
+        "  111\u001b[36m:\u001b[0m5  \u001b[1;31mDOC201\u001b[0m `return` is not documented in docstring",
+        "  111\u001b[36m:\u001b[0m5  \u001b[1;31mDOC501\u001b[0m Raised exception `TypeError` missing from docstring",
+        "  114\u001b[36m:\u001b[0m15 \u001b[1;31mTRY003\u001b[0m Avoid specifying long messages outside the exception class",
+        "  114\u001b[36m:\u001b[0m25 \u001b[1;31mEM101\u001b[0m Exception must not use a string literal, assign to variable first",
+        "  156\u001b[36m:\u001b[0m9  \u001b[1;31mPLC0415\u001b[0m `import` should be at the top-level of a file",
+        "  156\u001b[36m:\u001b[0m23 \u001b[1;31mPGH003\u001b[0m Use specific rule codes when ignoring type issues",
+        "  157\u001b[36m:\u001b[0m12 \u001b[1;31mBLE001\u001b[0m Do not catch blind exception: `Exception`",
+        "",
+        "Found 15 errors (5 fixed, 10 remaining).",
+        "No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option)."
       ],
       "stderr": []
     },
@@ -34,9 +47,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-09T00:37:04.410500+00:00",
-      "ended_at": "2025-12-09T00:37:14.730496+00:00",
-      "duration_seconds": 10.319996,
+      "started_at": "2025-12-09T00:58:30.851547+00:00",
+      "ended_at": "2025-12-09T00:58:41.325848+00:00",
+      "duration_seconds": 10.474301,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -50,15 +63,36 @@
         "pyrefly",
         "check"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2025-12-09T00:37:14.730514+00:00",
-      "ended_at": "2025-12-09T00:37:15.235921+00:00",
-      "duration_seconds": 0.505407,
-      "stdout": [],
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2025-12-09T00:58:41.325868+00:00",
+      "ended_at": "2025-12-09T00:58:41.886211+00:00",
+      "duration_seconds": 0.560343,
+      "stdout": [
+        "ERROR Could not find import of `codeintel.cli.cyclopts_history` [missing-import]",
+        "  --> src/codeintel/cli/__init__.py:10:1",
+        "   |",
+        "10 | from codeintel.cli.cyclopts_history import history_app",
+        "   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "   |",
+        "  Looked in these locations (from config in `/home/paul/CodeIntel/pyrefly.toml`):",
+        "  Search path (from config file): [\"/home/paul/CodeIntel/src\", \"/home/paul/CodeIntel\"]",
+        "  Import root (inferred from project layout): \"/home/paul/CodeIntel/src\"",
+        "  Site package path queried from interpreter: [\"/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13\", \"/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/lib-dynload\", \"/home/paul/CodeIntel/.venv/lib/python3.13/site-packages\", \"/home/paul/CodeIntel/src\"]",
+        "ERROR Could not find import of `codeintel.cli.cyclopts_history` [missing-import]",
+        "  --> src/codeintel/cli/cyclopts_app.py:12:1",
+        "   |",
+        "12 | from codeintel.cli.cyclopts_history import history_app",
+        "   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "   |",
+        "  Looked in these locations (from config in `/home/paul/CodeIntel/pyrefly.toml`):",
+        "  Search path (from config file): [\"/home/paul/CodeIntel/src\", \"/home/paul/CodeIntel\"]",
+        "  Import root (inferred from project layout): \"/home/paul/CodeIntel/src\"",
+        "  Site package path queried from interpreter: [\"/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13\", \"/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/lib-dynload\", \"/home/paul/CodeIntel/.venv/lib/python3.13/site-packages\", \"/home/paul/CodeIntel/src\"]"
+      ],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 0 errors (9 suppressed)"
+        " INFO 2 errors (9 suppressed)"
       ]
     }
   ],

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
-import typer
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormat, RuntimeCliOptions
+from codeintel.cli.cli_errors import invoke_with_typer_translation
+from codeintel.cli.commands._common import OutputFormat
 from codeintel.cli.commands.build import (
     BuildHistoryOptions,
     BuildRunContext,
@@ -20,7 +20,12 @@ from codeintel.cli.commands.build import (
     build_run_handler,
     build_status_handler,
 )
-from codeintel.cli.cyclopts_common import JsonFlag, OutputFmt, ProjectRoot, Verbose
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    resolve_output_format,
+    runtime_cli_to_options,
+)
 
 build_app = App(
     name="build",
@@ -69,27 +74,22 @@ class BuildRunCli:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    project_root: ProjectRoot = None
-    verbose: Verbose = 0
-    output_format: OutputFmt = OutputFormat.TEXT
-    json: JsonFlag = False
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="run")
 def build_run(
     cfg: Annotated[BuildRunCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Build targets with automatic dependency resolution.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
+    """Build targets with automatic dependency resolution."""
     cfg = cfg or BuildRunCli()
-    output_format = cfg.output_format
-    if cfg.json:
-        output_format = OutputFormat.JSON
+    runtime_opts = runtime_cli_to_options(cfg.runtime)
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
 
     options = BuildRunOptions(
         targets=cfg.targets,
@@ -99,15 +99,11 @@ def build_run(
         force=cfg.force,
     )
     ctx_opts = BuildRunContext(
-        runtime_options=RuntimeCliOptions(project_root=cfg.project_root),
-        verbose=cfg.verbose,
+        runtime_options=runtime_opts,
+        verbose=cfg.runtime.verbose,
         output_format=output_format,
     )
-
-    try:
-        build_run_handler(options, ctx_opts)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(build_run_handler, options, ctx_opts)
 
 
 @dataclass
@@ -121,38 +117,30 @@ class BuildStatusCli:
             help="Filter status to a specific module (ingestion, graphs, analytics).",
         ),
     ] = None
-    project_root: ProjectRoot = None
-    output_format: OutputFmt = OutputFormat.TEXT
-    json: JsonFlag = False
-    verbose: Verbose = 0
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="status")
 def build_status(
     cfg: Annotated[BuildStatusCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Show current state of build targets.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
+    """Show current state of build targets."""
     cfg = cfg or BuildStatusCli()
-    output_format = cfg.output_format
-    if cfg.json:
-        output_format = OutputFormat.JSON
+    runtime_opts = runtime_cli_to_options(cfg.runtime)
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
 
     options = BuildStatusOptions(
         module=cfg.module,
-        runtime_options=RuntimeCliOptions(project_root=cfg.project_root),
+        runtime_options=runtime_opts,
         output_format=output_format,
-        verbose=cfg.verbose,
+        verbose=cfg.runtime.verbose,
     )
-    try:
-        build_status_handler(options)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(build_status_handler, options)
 
 
 @dataclass
@@ -173,40 +161,31 @@ class BuildHistoryCli:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    project_root: ProjectRoot = None
-    output_format: OutputFmt = OutputFormat.TEXT
-    json: JsonFlag = False
-    verbose: Verbose = 0
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="history")
 def build_history(
     cfg: Annotated[BuildHistoryCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Show build run history and details.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
+    """Show build run history and details."""
     cfg = cfg or BuildHistoryCli()
-    output_format = cfg.output_format
-    if cfg.json:
-        output_format = OutputFormat.JSON
+    runtime_opts = runtime_cli_to_options(cfg.runtime)
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
 
     options = BuildHistoryOptions(
         run_id=cfg.run_id,
         limit=cfg.limit,
-        runtime_options=RuntimeCliOptions(project_root=cfg.project_root),
+        runtime_options=runtime_opts,
         output_format=output_format,
-        verbose=cfg.verbose,
+        verbose=cfg.runtime.verbose,
     )
-
-    try:
-        build_history_handler(options)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(build_history_handler, options)
 
 
 __all__ = ["build_app"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -14,7 +14,7 @@ from codeintel.cli.commands.graphs import (
     SelectionPolicy,
     graph_plugins_handler,
 )
-from codeintel.cli.cyclopts_common import JsonFlag, OutputFmt, OutputFormat
+from codeintel.cli.cyclopts_common import OutputFormat, OutputFormatCLI, resolve_output_format
 
 graphs_app = App(
     name="graph",
@@ -79,8 +79,7 @@ class GraphPluginsCli:
             negative=(),
         ),
     ] = False
-    output_format: OutputFmt = OutputFormat.TEXT
-    json: JsonFlag = False
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @graphs_app.command(name="plugins")
@@ -89,9 +88,11 @@ def plugins(
 ) -> None:
     """List registered graph plugins or display an execution plan."""
     cfg = cfg or GraphPluginsCli()
-    output_format = cfg.output_format
-    if cfg.json:
-        output_format = OutputFormat.JSON
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
 
     options = GraphPluginsOptions(
         mode=PlanMode.PLAN if cfg.plan else PlanMode.LIST,

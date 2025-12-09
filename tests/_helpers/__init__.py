@@ -4,35 +4,44 @@ This package provides standardized test infrastructure including:
 
 Canonical Environment Types
 ---------------------------
-- `TestContext`: Unified test environment for hexagonal architecture
-- `GraphTestEnv`: Unified graph test environment (replaces separate Env classes)
-- `ExecutionContextBuilder`: Fluent builder for plugin/target execution contexts
+- ``TestContext``: Unified test environment for hexagonal architecture
+- ``GraphTestEnv``: Unified graph test environment
+- ``ExecutionContextBuilder``: Fluent builder for plugin/target execution contexts
 
 Context Creation (require tmp_path for isolation)
 -------------------------------------------------
-- `create_test_env(tmp_path, ...)`: Create a TestContext with gateway and snapshot
-- `create_test_context(tmp_path, ...)`: Lower-level TestContext creation
-- `GraphTestEnv.create(tmp_path, ...)`: Create graph test environments
+- ``create_test_env(tmp_path, ...)``: Create a TestContext with gateway and snapshot
+- ``create_test_context(tmp_path, ...)``: Lower-level TestContext creation
+- ``GraphTestEnv.create(tmp_path, ...)``: Create graph test environments
+
+Execution Context Building
+--------------------------
+- ``ExecutionContextBuilder``: Fluent builder for PluginExecutionContext and
+  TargetExecutionContext
+- ``build_plugin_execution_context(...)``: Convenience function for plugin contexts
+- ``build_target_execution_context(...)``: Convenience function for target contexts
 
 Scenario Building
 -----------------
-- `TestScenario`: Declarative scenario builder with seed pack composition
-- `minimal_context`, `graph_context`, etc.: Convenience factories
+- ``TestScenario``: Declarative scenario builder with seed pack composition
+- ``minimal_context``, ``graph_context``, etc.: Convenience factories
 
 Recording/Test Doubles
 ----------------------
-- `RecordingGateway`: Wraps real gateway, records SQL (canonical)
-- `RecordingContext`, `RecordingResources`: Ingestion test doubles
+- ``RecordingGateway``: Wraps real gateway, records SQL (canonical implementation
+  from ``fakes.contexts``)
 
 Gateway Configuration
 ---------------------
-- `GatewayOptions`: Canonical gateway configuration dataclass
-- `provisioning_gateway_options()`: Factory for provisioning defaults (file_backed=True)
+- ``GatewayOptions``: Canonical gateway configuration dataclass
+- ``GatewayFactory``: Fluent factory for creating test gateways
+- ``provisioning_gateway_options()``: Factory for provisioning defaults
 
 Additional Utilities
 --------------------
-- `GraphPluginBuilder`: Fluent builder for graph test plugins
-- `plugin_registrar`: Context manager for scoped plugin registration
+- ``GraphPluginBuilder``: Fluent builder for graph test plugins
+- ``plugin_registrar``: Context manager for scoped plugin registration
+- ``build_repo_tree``: Write test files to a temp directory
 - Seed packs for composable test data (CORE_PACK, GRAPH_PACK, etc.)
 - Standard NetworkX graph fixtures
 - Provisioning utilities for gateway setup
@@ -73,6 +82,7 @@ from tests._helpers.coverage import build_fake_coverage, seed_coverage_pack
 from tests._helpers.env import build_test_gateway, create_test_env
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
+    RecordingGateway,
     build_plugin_execution_context,
     build_target_execution_context,
 )
@@ -83,13 +93,7 @@ from tests._helpers.fakes.graph_plugins import (
     plugin_registrar,
 )
 from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
-from tests._helpers.fakes.ingestion_context import (
-    RecordingContext,
-    RecordingGateway,
-    RecordingResources,
-    build_repo_tree,
-    make_target_context,
-)
+from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     complete_digraph,
@@ -164,12 +168,10 @@ __all__ = [
     "ProvisioningConfig",
     "QueryRow",
     "RecordingAsyncClient",
-    "RecordingContext",
     "RecordingExecutor",
     "RecordingGateway",
     "RecordingPlugin",
     "RecordingProviders",
-    "RecordingResources",
     "ScenarioConfig",
     "SeedPack",
     "TestContext",
@@ -200,7 +202,6 @@ __all__ = [
     "make_build_paths",
     "make_functional_plugin",
     "make_snapshot",
-    "make_target_context",
     "minimal_context",
     "module_row",
     "plugin_registrar",

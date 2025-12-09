@@ -9,7 +9,6 @@ from pathlib import Path
 
 import duckdb
 
-from codeintel.build.context import ContextResources
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
@@ -23,8 +22,8 @@ from tests._helpers.configs.graph_config import (
     SpanSnapshot,
     SpanTestEnv,
 )
+from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
-from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:
@@ -117,26 +116,24 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
-    resources = ContextResources(gateway=env.gateway)
-    test_ctx = PluginTestContext(
+    builder = ExecutionContextBuilder(
         gateway=env.gateway,
         snapshot=snapshot,
         paths=paths,
-        resources=resources,
     )
 
     # Execute graph plugins
-    call_graph_result = execute_target_plugin(CallGraphPlugin(), test_ctx)
+    call_graph_result = builder.execute_plugin(CallGraphPlugin())
     if not call_graph_result.success:
         msg = f"CallGraphPlugin failed: {call_graph_result.error_message}"
         raise RuntimeError(msg)
 
-    cfg_dfg_result = execute_target_plugin(CfgDfgPlugin(), test_ctx)
+    cfg_dfg_result = builder.execute_plugin(CfgDfgPlugin())
     if not cfg_dfg_result.success:
         msg = f"CfgDfgPlugin failed: {cfg_dfg_result.error_message}"
         raise RuntimeError(msg)
 
-    symbol_uses_result = execute_target_plugin(SymbolUsesPlugin(), test_ctx)
+    symbol_uses_result = builder.execute_plugin(SymbolUsesPlugin())
     if not symbol_uses_result.success:
         msg = f"SymbolUsesPlugin failed: {symbol_uses_result.error_message}"
         raise RuntimeError(msg)
