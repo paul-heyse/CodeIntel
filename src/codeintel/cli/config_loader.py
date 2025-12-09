@@ -19,7 +19,7 @@ from typing import Any
 import yaml
 
 from codeintel.cli.cli_config_schema import validate_with_json_schema
-from codeintel.cli.cli_resilience import RetryPolicy
+from codeintel.cli.resilience import RetryPolicy
 
 LOG = logging.getLogger(__name__)
 

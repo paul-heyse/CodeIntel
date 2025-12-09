@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.async_types import ProgressEvent, ProgressState, get_handler_type
 from codeintel.cli.cli_errors import ProblemDetail
+from codeintel.cli.resilience import RetryPolicy
 from codeintel.cli.results import CliResult
 
 if TYPE_CHECKING:
@@ -178,54 +179,11 @@ class AsyncTracingMiddleware(AsyncOperationMiddleware):
         return result
 
 
-@dataclass(frozen=True)
-class AsyncRetryPolicy:
-    """Retry policy for async operations.
-
-    Parameters
-    ----------
-    max_attempts
-        Maximum retry attempts (including first try).
-    initial_delay
-        Initial delay between retries in seconds.
-    max_delay
-        Maximum delay between retries in seconds.
-    exponential_base
-        Exponential backoff base.
-    retryable_errors
-        Exception types to retry.
-    """
-
-    max_attempts: int = 3
-    initial_delay: float = 0.1
-    max_delay: float = 10.0
-    exponential_base: float = 2.0
-    retryable_errors: tuple[type[Exception], ...] = (
-        TimeoutError,
-        ConnectionError,
-    )
-
-    def get_delay(self, attempt: int) -> float:
-        """Get delay for retry attempt.
-
-        Parameters
-        ----------
-        attempt
-            Current attempt number (0-indexed).
-
-        Returns
-        -------
-        float
-            Delay in seconds.
-        """
-        delay = self.initial_delay * (self.exponential_base**attempt)
-        return min(delay, self.max_delay)
-
-
 class AsyncResilienceMiddleware(AsyncOperationMiddleware):
     """Middleware for async retry handling.
 
     Apply retry policy with exponential backoff for async operations.
+    Uses the unified RetryPolicy from the resilience module.
 
     Parameters
     ----------
@@ -233,9 +191,9 @@ class AsyncResilienceMiddleware(AsyncOperationMiddleware):
         Retry policy to apply.
     """
 
-    def __init__(self, policy: AsyncRetryPolicy | None = None) -> None:
+    def __init__(self, policy: RetryPolicy | None = None) -> None:
         """Initialize resilience middleware."""
-        self._policy = policy or AsyncRetryPolicy()
+        self._policy = policy or RetryPolicy()
 
     async def before(self, ctx: AsyncMiddlewareContext) -> AsyncMiddlewareContext:
         """Add retry state to context.
@@ -280,14 +238,14 @@ class AsyncResilienceMiddleware(AsyncOperationMiddleware):
         if error is None:
             return result
 
-        policy: AsyncRetryPolicy = ctx.metadata.get("retry_policy", self._policy)
+        policy: RetryPolicy = ctx.metadata.get("retry_policy", self._policy)
         attempt: int = ctx.metadata.get("retry_attempt", 0)
 
         # Check if we should retry
         if attempt >= policy.max_attempts:
             return result
 
-        if not isinstance(error, policy.retryable_errors):
+        if not policy.is_retryable(error):
             return result
 
         # Update attempt count for next middleware call
@@ -486,7 +444,6 @@ __all__ = [
     "AsyncOperationMiddleware",
     "AsyncProgressMiddleware",
     "AsyncResilienceMiddleware",
-    "AsyncRetryPolicy",
     "AsyncTracingMiddleware",
     "async_middleware_context",
     "run_with_middleware",

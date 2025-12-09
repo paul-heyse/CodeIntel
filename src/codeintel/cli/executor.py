@@ -18,14 +18,15 @@ from codeintel.cli.cli_errors import ProblemDetail
 from codeintel.cli.cli_middleware import MiddlewareStack, get_middleware_stack
 from codeintel.cli.cli_progress import ProgressTracker, get_progress_tracker
 from codeintel.cli.cli_render import OutputRenderer, get_renderer, render_cli_result
-from codeintel.cli.cli_resilience import RetryPolicy
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cli_validation import ValidationSchema
-from codeintel.cli.resilience_middleware import (
+from codeintel.cli.resilience import (
     CircuitBreakerRegistry,
     ResilienceConfig,
     ResilienceMiddleware,
-    execute_with_retry,
+    RetryOptions,
+    RetryPolicy,
+    execute_cli_with_retry,
 )
 from codeintel.cli.results import CliResult
 
@@ -356,11 +357,12 @@ class OperationExecutor:
 
         # Execute with retry if policy is available
         if retry_policy is not None:
-            return execute_with_retry(
+            options = RetryOptions(operation_id=spec.operation_id)
+            return execute_cli_with_retry(
                 spec.handler,
                 ctx.params,
                 retry_policy,
-                operation_id=spec.operation_id,
+                options,
             )
         return spec.handler(**ctx.params)
 

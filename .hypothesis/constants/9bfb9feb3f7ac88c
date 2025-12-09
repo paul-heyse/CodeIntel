@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/completions/bash_generator.py
+# hypothesis_version: 6.148.7
+
+['        ;;', '    *)', '    esac', '    local commands="', '"', '}']

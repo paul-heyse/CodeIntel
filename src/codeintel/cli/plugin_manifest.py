@@ -224,9 +224,7 @@ class PluginManifest:
         PluginManifest
             Parsed manifest.
         """
-        capabilities = [
-            PluginCapability(cap) for cap in data.get("capabilities", [])
-        ]
+        capabilities = [PluginCapability(cap) for cap in data.get("capabilities", [])]
         dependencies = [
             PluginDependency(
                 name=dep["name"],
