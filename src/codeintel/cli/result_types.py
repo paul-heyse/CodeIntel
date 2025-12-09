@@ -648,6 +648,328 @@ class GraphPlanResult:
         }
 
 
+@dataclass(frozen=True)
+class DocsStatusResult:
+    """Result from docs status command.
+
+    Parameters
+    ----------
+    generated_count
+        Number of generated documentation files.
+    pending_count
+        Number of pending documentation files.
+    stale_count
+        Number of stale documentation files.
+    last_generated
+        Timestamp of last generation.
+    """
+
+    generated_count: int
+    pending_count: int
+    stale_count: int
+    last_generated: str | None
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "generated_count": self.generated_count,
+            "pending_count": self.pending_count,
+            "stale_count": self.stale_count,
+            "last_generated": self.last_generated,
+        }
+
+
+@dataclass(frozen=True)
+class DocsGenerateResult:
+    """Result from docs generate command.
+
+    Parameters
+    ----------
+    generated
+        List of generated file paths.
+    skipped
+        List of skipped file paths.
+    errors
+        List of error messages.
+    """
+
+    generated: list[str]
+    skipped: list[str]
+    errors: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "generated": self.generated,
+            "skipped": self.skipped,
+            "errors": self.errors,
+            "generated_count": len(self.generated),
+            "error_count": len(self.errors),
+        }
+
+
+@dataclass(frozen=True)
+class HistoryListResult:
+    """Result from history list command.
+
+    Parameters
+    ----------
+    entries
+        List of history entries.
+    count
+        Total number of entries.
+    """
+
+    entries: list[dict[str, Any]]
+    count: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {"entries": self.entries, "count": self.count}
+
+
+@dataclass(frozen=True)
+class HistoryDetailResult:
+    """Result from history detail command.
+
+    Parameters
+    ----------
+    entry_id
+        Entry identifier.
+    timestamp
+        Entry timestamp.
+    operation
+        Operation name.
+    status
+        Operation status.
+    duration_seconds
+        Duration in seconds.
+    details
+        Additional details.
+    """
+
+    entry_id: str
+    timestamp: str
+    operation: str
+    status: str
+    duration_seconds: float
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "entry_id": self.entry_id,
+            "timestamp": self.timestamp,
+            "operation": self.operation,
+            "status": self.status,
+            "duration_seconds": self.duration_seconds,
+            "details": self.details,
+        }
+
+
+@dataclass(frozen=True)
+class IdeStatusResult:
+    """Result from ide status command.
+
+    Parameters
+    ----------
+    connected
+        Whether IDE is connected.
+    ide_type
+        Type of IDE (vscode, cursor, etc).
+    workspace_path
+        Current workspace path.
+    extensions
+        List of relevant extensions.
+    """
+
+    connected: bool
+    ide_type: str | None
+    workspace_path: str | None
+    extensions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "connected": self.connected,
+            "ide_type": self.ide_type,
+            "workspace_path": self.workspace_path,
+            "extensions": self.extensions,
+        }
+
+
+@dataclass(frozen=True)
+class IdeConfigResult:
+    """Result from ide config command.
+
+    Parameters
+    ----------
+    settings
+        IDE settings dictionary.
+    path
+        Settings file path.
+    """
+
+    settings: dict[str, Any]
+    path: str | None
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {"settings": self.settings, "path": self.path}
+
+
+@dataclass(frozen=True)
+class SubsystemDetailResult:
+    """Result from subsystem detail command.
+
+    Parameters
+    ----------
+    name
+        Subsystem name.
+    description
+        Subsystem description.
+    modules
+        List of modules in the subsystem.
+    dependencies
+        List of dependency subsystems.
+    metrics
+        Subsystem metrics.
+    """
+
+    name: str
+    description: str | None
+    modules: list[str]
+    dependencies: list[str]
+    metrics: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "modules": self.modules,
+            "dependencies": self.dependencies,
+            "metrics": self.metrics,
+            "module_count": len(self.modules),
+        }
+
+
+@dataclass(frozen=True)
+class StorageStatusResult:
+    """Result from storage status command.
+
+    Parameters
+    ----------
+    connected
+        Whether storage is connected.
+    database_path
+        Path to the database.
+    table_count
+        Number of tables.
+    size_bytes
+        Database size in bytes.
+    """
+
+    connected: bool
+    database_path: str | None
+    table_count: int
+    size_bytes: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "connected": self.connected,
+            "database_path": self.database_path,
+            "table_count": self.table_count,
+            "size_bytes": self.size_bytes,
+        }
+
+
+@dataclass(frozen=True)
+class StorageQueryResult:
+    """Result from storage query command.
+
+    Parameters
+    ----------
+    rows
+        Query result rows.
+    columns
+        Column names.
+    row_count
+        Number of rows returned.
+    execution_time_ms
+        Query execution time in milliseconds.
+    """
+
+    rows: list[dict[str, Any]]
+    columns: list[str]
+    row_count: int
+    execution_time_ms: float
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "rows": self.rows,
+            "columns": self.columns,
+            "row_count": self.row_count,
+            "execution_time_ms": self.execution_time_ms,
+        }
+
+
 __all__ = [
     "BuildExecutionResult",
     "BuildHistoryResult",
@@ -658,6 +980,8 @@ __all__ = [
     "DatasetDescribeResult",
     "DatasetListResult",
     "DatasetVerifyResult",
+    "DocsGenerateResult",
+    "DocsStatusResult",
     "DryRunResult",
     "DryRunStep",
     "GraphPlanResult",
@@ -665,7 +989,14 @@ __all__ = [
     "GraphPluginsResult",
     "GraphQueryResult",
     "GraphStatsResult",
+    "HistoryDetailResult",
+    "HistoryListResult",
+    "IdeConfigResult",
+    "IdeStatusResult",
     "OperationCallResult",
     "OperationListResult",
+    "StorageQueryResult",
+    "StorageStatusResult",
+    "SubsystemDetailResult",
     "SubsystemListResult",
 ]

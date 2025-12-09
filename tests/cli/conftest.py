@@ -1,7 +1,13 @@
-"""CLI test fixtures."""
+"""CLI test fixtures.
+
+This module provides fixtures for CLI testing following the Testing Charter.
+It includes both legacy fixtures for backward compatibility and new harness-based
+fixtures for charter-compliant testing.
+"""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
 from contextlib import suppress
 from pathlib import Path
@@ -13,6 +19,7 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway_cache import close_gateways
 from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
 from tests._helpers.cli_project import CLIProjectContext, create_cli_project
+from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
 
 _GATEWAY_CACHE: dict[Path, StorageGateway] = {}
 
@@ -82,7 +89,109 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
     return _run
 
 
-__all__ = ["cli_ctx", "cli_project_ctx", "cli_project_runner", "cli_runner"]
+__all__ = [
+    "cli",
+    "cli_ctx",
+    "cli_project_ctx",
+    "cli_project_runner",
+    "cli_runner",
+    "cli_with_json",
+    "golden",
+    "isolated_config",
+    "op_harness",
+]
+
+
+# ============================================================================
+# New Harness-Based Fixtures (Charter-Compliant)
+# ============================================================================
+
+
+@pytest.fixture
+def cli() -> CliTestHarness:
+    """Provide CLI test harness.
+
+    Returns
+    -------
+    CliTestHarness
+        Harness for invoking CLI commands.
+    """
+    return CliTestHarness()
+
+
+@pytest.fixture
+def cli_with_json(cli: CliTestHarness) -> CliTestHarness:
+    """Provide CLI harness configured for JSON output.
+
+    Parameters
+    ----------
+    cli
+        Base CLI harness.
+
+    Returns
+    -------
+    CliTestHarness
+        Harness with JSON output format.
+    """
+    return cli.with_env(CODEINTEL_OUTPUT_FORMAT="json")
+
+
+@pytest.fixture
+def golden(request: pytest.FixtureRequest) -> GoldenFileAssertion:
+    """Provide golden file assertion helper.
+
+    Parameters
+    ----------
+    request
+        Pytest fixture request.
+
+    Returns
+    -------
+    GoldenFileAssertion
+        Helper for golden file testing.
+    """
+    test_dir = request.path.parent
+    golden_dir = test_dir / "_golden"
+    update_mode = os.environ.get("UPDATE_GOLDEN", "").lower() in {"1", "true"}
+    return GoldenFileAssertion(golden_dir=golden_dir, update_mode=update_mode)
+
+
+@pytest.fixture
+def isolated_config(tmp_path: Path) -> Iterator[Path]:
+    """Provide isolated config directory.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path.
+
+    Yields
+    ------
+    Path
+        Isolated config directory.
+    """
+    config_dir = tmp_path / ".codeintel"
+    config_dir.mkdir()
+
+    old_home = os.environ.get("HOME")
+    os.environ["HOME"] = str(tmp_path)
+
+    yield config_dir
+
+    if old_home:
+        os.environ["HOME"] = old_home
+
+
+@pytest.fixture
+def op_harness() -> OperationTestHarness:
+    """Provide operation test harness.
+
+    Returns
+    -------
+    OperationTestHarness
+        Harness for testing operations directly.
+    """
+    return OperationTestHarness(render=False)
 
 
 @pytest.fixture(autouse=True)

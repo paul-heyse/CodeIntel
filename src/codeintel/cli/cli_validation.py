@@ -416,6 +416,81 @@ class IntValidator(Validator[int]):
         return ValidationResult.ok(int_value)
 
 
+class FloatValidator(Validator[float]):
+    """Validate float inputs.
+
+    Parameters
+    ----------
+    min_value
+        Minimum value (None for no minimum).
+    max_value
+        Maximum value (None for no maximum).
+    """
+
+    def __init__(
+        self,
+        *,
+        min_value: float | None = None,
+        max_value: float | None = None,
+    ) -> None:
+        """Initialize float validator."""
+        self._min_value = min_value
+        self._max_value = max_value
+
+    def validate(self, value: object, field_name: str) -> ValidationResult[float]:
+        """Validate a float value.
+
+        Parameters
+        ----------
+        value
+            Value to validate.
+        field_name
+            Name of the field being validated.
+
+        Returns
+        -------
+        ValidationResult[float]
+            Validation result.
+        """
+        errors: list[ValidationError] = []
+
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            errors.append(
+                ValidationError(
+                    field=field_name,
+                    message=f"Expected number, got {type(value).__name__}",
+                    code="invalid_type",
+                ),
+            )
+            return ValidationResult.fail(errors)
+
+        float_value: float = float(value)
+
+        if self._min_value is not None and float_value < self._min_value:
+            errors.append(
+                ValidationError(
+                    field=field_name,
+                    message=f"Value must be at least {self._min_value}",
+                    code="min_value",
+                    value=str(float_value),
+                ),
+            )
+
+        if self._max_value is not None and float_value > self._max_value:
+            errors.append(
+                ValidationError(
+                    field=field_name,
+                    message=f"Value must be at most {self._max_value}",
+                    code="max_value",
+                    value=str(float_value),
+                ),
+            )
+
+        if errors:
+            return ValidationResult.fail(errors)
+        return ValidationResult.ok(float_value)
+
+
 @dataclass
 class ValidationSchema:
     """Schema for validating multiple fields.
@@ -578,6 +653,7 @@ __all__ = [
     "OPERATION_ID_VALIDATOR",
     "PATH_VALIDATOR",
     "TABLE_KEY_VALIDATOR",
+    "FloatValidator",
     "IntValidator",
     "PathValidator",
     "StringValidator",

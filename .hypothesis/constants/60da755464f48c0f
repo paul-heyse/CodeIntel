@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/operations/ide_operations.py
+# hypothesis_version: 6.148.7
+
+['IDE_CONFIG_SPEC', 'IDE_STATUS_SPEC', 'ide.config', 'ide.status']

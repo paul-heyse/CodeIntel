@@ -2,7 +2,7 @@
 
 This module provides the OperationExecutor that orchestrates the complete
 lifecycle of CLI operation execution, integrating validation, middleware,
-progress tracking, and rendering.
+progress tracking, rendering, and resilience patterns.
 """
 
 from __future__ import annotations
@@ -18,8 +18,15 @@ from codeintel.cli.cli_errors import ProblemDetail
 from codeintel.cli.cli_middleware import MiddlewareStack, get_middleware_stack
 from codeintel.cli.cli_progress import ProgressTracker, get_progress_tracker
 from codeintel.cli.cli_render import OutputRenderer, get_renderer, render_cli_result
+from codeintel.cli.cli_resilience import RetryPolicy
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cli_validation import ValidationSchema
+from codeintel.cli.resilience_middleware import (
+    CircuitBreakerRegistry,
+    ResilienceConfig,
+    ResilienceMiddleware,
+    execute_with_retry,
+)
 from codeintel.cli.results import CliResult
 
 LOG = logging.getLogger(__name__)
@@ -55,6 +62,8 @@ class OperationSpec[T]:
         Estimated duration in seconds (for progress).
     retryable
         Whether the operation can be retried on failure.
+    retry_policy
+        Custom retry policy (uses default if retryable=True and not set).
     timeout
         Maximum execution time in seconds.
     description
@@ -68,6 +77,7 @@ class OperationSpec[T]:
     requires_progress: bool = False
     estimated_duration: float | None = None
     retryable: bool = False
+    retry_policy: RetryPolicy | None = None
     timeout: float | None = None
     description: str = ""
 
@@ -134,7 +144,7 @@ class OperationExecutor:
     """Orchestrate the complete operation execution pipeline.
 
     This class integrates validation, middleware, progress tracking,
-    and rendering into a single, consistent execution flow.
+    rendering, and resilience patterns into a single, consistent execution flow.
 
     Parameters
     ----------
@@ -144,6 +154,8 @@ class OperationExecutor:
         Progress tracker for long operations.
     default_renderer
         Default output renderer.
+    resilience_config
+        Configuration for retry and circuit breaker behavior.
     """
 
     def __init__(
@@ -151,11 +163,31 @@ class OperationExecutor:
         middleware_stack: MiddlewareStack | None = None,
         progress_tracker: ProgressTracker | None = None,
         default_renderer: OutputRenderer | None = None,
+        resilience_config: ResilienceConfig | None = None,
     ) -> None:
         """Initialize the executor."""
         self._middleware = middleware_stack or get_middleware_stack()
         self._progress = progress_tracker or get_progress_tracker()
         self._default_renderer = default_renderer
+        self._resilience_config = resilience_config
+        self._default_retry_policy: RetryPolicy | None = None
+
+        # Configure resilience middleware if enabled
+        if resilience_config is not None:
+            self._configure_resilience(resilience_config)
+
+    def _configure_resilience(self, config: ResilienceConfig) -> None:
+        """Configure resilience middleware.
+
+        Parameters
+        ----------
+        config
+            Resilience configuration.
+        """
+        self._default_retry_policy = config.default_retry_policy
+        registry = CircuitBreakerRegistry(config)
+        resilience_mw = ResilienceMiddleware(config=config, breaker_registry=registry)
+        self._middleware.add(resilience_mw)
 
     def execute[T](
         self,
@@ -296,7 +328,41 @@ class OperationExecutor:
         with self._middleware.wrap(spec.operation_id, ctx.params):
             if spec.requires_progress:
                 return self._execute_with_progress(spec, ctx)
-            return spec.handler(**ctx.params)
+            return self._execute_handler(spec, ctx)
+
+    def _execute_handler[T](
+        self,
+        spec: OperationSpec[T],
+        ctx: ExecutionContext,
+    ) -> CliResult[T]:
+        """Execute handler with optional retry logic.
+
+        Parameters
+        ----------
+        spec
+            Operation specification.
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        CliResult[T]
+            Handler result.
+        """
+        # Get retry policy
+        retry_policy = spec.retry_policy
+        if retry_policy is None and spec.retryable and self._default_retry_policy:
+            retry_policy = self._default_retry_policy
+
+        # Execute with retry if policy is available
+        if retry_policy is not None:
+            return execute_with_retry(
+                spec.handler,
+                ctx.params,
+                retry_policy,
+                operation_id=spec.operation_id,
+            )
+        return spec.handler(**ctx.params)
 
     def _execute_with_progress[T](
         self,
@@ -323,7 +389,7 @@ class OperationExecutor:
                 total=spec.estimated_duration,
             )
             try:
-                result = spec.handler(**ctx.params)
+                result = self._execute_handler(spec, ctx)
             except Exception:
                 self._progress.update(task_id, description="[red]Failed[/red]")
                 raise
@@ -372,6 +438,7 @@ def configure_executor(
     middleware_stack: MiddlewareStack | None = None,
     progress_tracker: ProgressTracker | None = None,
     default_renderer: OutputRenderer | None = None,
+    resilience_config: ResilienceConfig | None = None,
 ) -> OperationExecutor:
     """Configure the global executor.
 
@@ -383,6 +450,8 @@ def configure_executor(
         Custom progress tracker.
     default_renderer
         Custom default renderer.
+    resilience_config
+        Resilience configuration for retry and circuit breaker.
 
     Returns
     -------
@@ -394,6 +463,7 @@ def configure_executor(
         middleware_stack=middleware_stack,
         progress_tracker=progress_tracker,
         default_renderer=default_renderer,
+        resilience_config=resilience_config,
     )
     return _EXECUTOR
 

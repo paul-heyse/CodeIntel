@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Annotated, Literal, TextIO
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.config_loader import DEFAULT_CONFIG_PATHS
+
 if TYPE_CHECKING:
     from codeintel.cli.cyclopts_common import RuntimeCLI
 
@@ -323,6 +325,98 @@ class ConfigEnvCommand:
                     writer.write(f"{CONFIG_ENV_PREFIX}{key.upper()}: {value}\n")
             else:
                 writer.write("No CODEINTEL_* environment variables set.\n")
+
+
+@config_app.command(name="init")
+@dataclass
+class ConfigInitCommand:
+    """Create a default configuration file.
+
+    Generate a configuration file with default values and documentation
+    at the specified path or default location.
+    """
+
+    target: Annotated[
+        Path | None,
+        Parameter(help="Target path for config file."),
+    ] = None
+
+    def __call__(self) -> None:
+        """Execute the config init command.
+
+        Raises
+        ------
+        SystemExit
+            If the config file already exists.
+        """
+        target = self.target or (Path.home() / ".codeintel" / "config.yaml")
+        writer = sys.stdout
+
+        if target.exists():
+            writer.write(f"Config file already exists: {target}\n")
+            writer.write("Use --target to specify a different path.\n")
+            raise SystemExit(1)
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        default_config = """# CodeIntel CLI Configuration
+# https://codeintel.dev/docs/cli/configuration
+
+# Output settings
+output_format: text  # text, json
+color: true
+progress: true
+progress_threshold: 2.0  # seconds before showing progress
+
+# Telemetry
+telemetry_enabled: true
+
+# Logging
+log_level: WARNING  # DEBUG, INFO, WARNING, ERROR
+
+# Retry policy
+retry:
+  max_attempts: 3
+  initial_delay: 0.5
+  backoff_factor: 2.0
+
+# Project defaults (optional)
+# project_root: /path/to/project
+"""
+
+        target.write_text(default_config)
+        writer.write(f"Created configuration file: {target}\n")
+
+
+@config_app.command(name="paths")
+@dataclass
+class ConfigPathsCommand:
+    """Show configuration file search paths.
+
+    Display all paths where configuration files are searched,
+    with indicators for which paths exist.
+    """
+
+    def __call__(self) -> None:
+        """Execute the config paths command."""
+        writer = sys.stdout
+        writer.write("Configuration File Search Paths:\n")
+        writer.write("-" * 40 + "\n")
+
+        # Also include the TOML config path
+        toml_path = _resolve_config_path()
+
+        all_paths = [toml_path, *DEFAULT_CONFIG_PATHS]
+        seen: set[str] = set()
+
+        for path in all_paths:
+            path_str = str(path.absolute())
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+
+            exists = "✓" if path.exists() else "✗"
+            writer.write(f"  {exists} {path}\n")
 
 
 __all__ = [
