@@ -12,8 +12,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar
 
-import duckdb
-
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import (
@@ -25,6 +23,7 @@ from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
+from codeintel.storage.gateway.protocol import DuckDBCatalogException
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -173,7 +172,7 @@ class RepoScanPlugin(TargetPlugin):
                     [ctx.repo, ctx.commit],
                 ).fetchone()
                 row_counts[table_key] = int(count[0]) if count else 0
-            except (RuntimeError, OSError, duckdb.CatalogException) as exc:
+            except (RuntimeError, OSError, DuckDBCatalogException) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0
         return row_counts

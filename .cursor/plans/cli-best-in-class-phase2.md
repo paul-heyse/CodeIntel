@@ -75,6 +75,7 @@ Eliminate duplicate type definitions across CLI modules to establish a single so
 - `OutputFormat` defined in both `cli_errors.py` and `common_handlers.py`
 - Multiple `RuntimeCliOptions` variations in `common_handlers.py`, `datasets_handlers.py`, `subsystem_handlers.py`
 - Inconsistent imports across modules
+- Storage exceptions (`StorageError`, `StorageConnectionError`, etc.) defined in storage layer but not re-exported for CLI convenience
 
 ### Implementation
 
@@ -229,7 +230,55 @@ from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cli_types import OutputFormat
 ```
 
-#### 1.5 Verification
+#### 1.5 Re-export Storage Exceptions
+
+Add storage exception re-exports to `cli_errors.py` for convenient access from handlers:
+
+```python
+# In cli_errors.py - add to imports section
+from codeintel.storage.exceptions import (
+    QueryError as StorageQueryError,
+    SchemaError as StorageSchemaError,
+    StorageConnectionError,
+    StorageError,
+)
+
+# Update __all__ to include storage exceptions
+__all__ = [
+    # ... existing exports ...
+    "StorageConnectionError",
+    "StorageError",
+    "StorageQueryError",
+    "StorageSchemaError",
+]
+```
+
+This provides handlers with a single import location for all error types:
+
+```python
+# Handlers can now do:
+from codeintel.cli.cli_errors import (
+    ProblemDetail,
+    StorageConnectionError,
+    ValidationError,
+)
+
+# Instead of importing from multiple locations
+```
+
+The storage exceptions integrate with RFC 9457 Problem Details:
+
+```python
+# In handler error handling:
+except StorageConnectionError as exc:
+    return CliResult.fail(ProblemDetail(
+        type=ErrorType.STORAGE,
+        title="Storage connection failed",
+        detail=str(exc),
+    ))
+```
+
+#### 1.6 Verification
 
 Run quality checks:
 ```bash
@@ -241,6 +290,7 @@ uv run pytest tests/cli/ -v
 ### Deliverables
 - [ ] `src/codeintel/cli/cli_types.py` created
 - [ ] `cli_errors.py` updated to import from `cli_types`
+- [ ] `cli_errors.py` updated to re-export storage exceptions
 - [ ] `common_handlers.py` updated to import from `cli_types`
 - [ ] All handler modules updated
 - [ ] All tests pass

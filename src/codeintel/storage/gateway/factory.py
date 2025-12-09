@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import duckdb
+
 from codeintel.storage.datasets.registry import load_dataset_registry
+from codeintel.storage.exceptions import StorageConnectionError
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.connection import (
@@ -24,8 +27,7 @@ __all__ = [
 
 
 def open_gateway(config: StorageConfig) -> StorageGateway:
-    """
-    Create a StorageGateway bound to a DuckDB database.
+    """Create a StorageGateway bound to a DuckDB database.
 
     Parameters
     ----------
@@ -36,15 +38,23 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     -------
     StorageGateway
         Gateway exposing typed accessors and dataset registry.
+
+    Raises
+    ------
+    StorageConnectionError
+        If the database connection cannot be established.
     """
-    con = connect(config)
-    if not config.read_only:
-        _apply_schema_and_views(con, config)
-        _ensure_macros_and_schema(con, config)
-        bootstrap_metadata_datasets(con)
-    datasets = load_dataset_registry(con)
-    validate_contract_or_raise(con)
-    return DuckDBGateway(config=config, datasets=datasets, con=con)
+    try:
+        con = connect(config)
+        if not config.read_only:
+            _apply_schema_and_views(con, config)
+            _ensure_macros_and_schema(con, config)
+            bootstrap_metadata_datasets(con)
+        datasets = load_dataset_registry(con)
+        validate_contract_or_raise(con)
+        return DuckDBGateway(config=config, datasets=datasets, con=con)
+    except duckdb.Error as exc:
+        raise StorageConnectionError(str(exc)) from exc
 
 
 def build_snapshot_gateway_resolver(

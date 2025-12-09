@@ -34,6 +34,16 @@ The accessor classes provide:
 
 from __future__ import annotations
 
+from codeintel.storage.exceptions import (
+    QueryError as StorageQueryError,
+)
+from codeintel.storage.exceptions import (
+    SchemaError as StorageSchemaError,
+)
+from codeintel.storage.exceptions import (
+    StorageConnectionError,
+    StorageError,
+)
 from codeintel.storage.gateway.accessors import (
     AnalyticsTables,
     BaseTableAccessor,
@@ -79,7 +89,11 @@ __all__ = [
     "GraphTables",
     "SnapshotGatewayResolver",
     "StorageConfig",
+    "StorageConnectionError",
+    "StorageError",
     "StorageGateway",
+    "StorageQueryError",
+    "StorageSchemaError",
     "build_snapshot_gateway_resolver",
     "open_gateway",
     "open_memory_gateway",
