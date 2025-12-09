@@ -25,10 +25,12 @@ from tests._helpers.builders import (
     ModuleRow,
     RepoMapRow,
     RiskFactorRow,
-    SymbolUseEdgeRow,
+    SymbolEdgeOptions,
     TestCatalogRow,
     TestCoverageEdgeRow,
     insert_rows,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
 )
 
 if TYPE_CHECKING:
@@ -305,17 +307,19 @@ class DocsExportPack:
     def _seed_symbol_use_edges(ctx: TestContext, goid: int) -> None:
         """Seed the graph.symbol_use_edges table."""
         rows = [
-            SymbolUseEdgeRow(
-                symbol="sym",
-                def_path=DEFAULT_PATH,
-                use_path=DEFAULT_PATH,
-                same_file=True,
-                same_module=True,
-                def_goid_h128=goid,
-                use_goid_h128=goid,
+            make_symbol_use_edge_row(
+                "sym",
+                DEFAULT_PATH,
+                DEFAULT_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=True,
+                    same_module=True,
+                    def_goid_h128=goid,
+                    use_goid_h128=goid,
+                ),
             )
         ]
-        insert_rows(ctx.gateway, rows)
+        insert_symbol_use_edges(ctx.gateway, rows)
 
     @staticmethod
     def _seed_docstrings(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:

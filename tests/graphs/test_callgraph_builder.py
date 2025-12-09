@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
+from tests._helpers.builders import insert_symbol_use_edges
 
 
 def _normalize_callee(value: object) -> int | None:
@@ -104,7 +105,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     )
     gateway = ctx.gateway
     con = gateway.con
-    gateway.graph.insert_symbol_use_edges([("sym", "pkg/a.py", "pkg/b.py", False, False)])
+    insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])
     # Populate evidence_json for unresolved edges when missing or missing scip candidates.
     rows = con.execute(
         """

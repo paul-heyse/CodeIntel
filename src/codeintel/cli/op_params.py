@@ -972,7 +972,7 @@ def build_dynamic_command(
     cmd.__name__ = f"op_{op.id.replace('.', '_')}"
 
     # Attach the synthetic signature so Typer sees explicit parameters
-    cmd.__signature__ = inspect.Signature(sig_params)  # type: ignore[attr-defined]
+    cmd.__signature__ = inspect.Signature(sig_params)
 
     return cmd
 

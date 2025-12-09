@@ -38,6 +38,7 @@ from tests._helpers.assertions.expectation_assertions import (
     require_rows,
     unwrap_optional,
 )
+from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.assertions.schema_assertions import (
     assert_mapping_list,
     assert_mapping_value,
@@ -55,6 +56,7 @@ __all__ = [
     "assert_failure",
     "assert_has_error",
     "assert_invalid",
+    "assert_logged",
     "assert_mapping_list",
     "assert_mapping_value",
     "assert_meta_contains",

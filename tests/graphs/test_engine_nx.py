@@ -19,6 +19,7 @@ from tests._helpers.builders import (
     ModuleRow,
     SymbolUseEdgeRow,
     insert_rows,
+    insert_symbol_use_edges,
 )
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
@@ -416,7 +417,8 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     con = test_ctx.gateway.con
     con.execute("DELETE FROM graph.symbol_use_edges")
 
-    test_ctx.gateway.graph.insert_symbol_use_edges(
+    insert_symbol_use_edges(
+        test_ctx.gateway,
         [
             (
                 "s1",
@@ -427,7 +429,7 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
                 Decimal("10"),
                 20,
             ),
-        ]
+        ],
     )
 
     graph = nx_views.load_symbol_function_graph(test_ctx.gateway, repo, commit)

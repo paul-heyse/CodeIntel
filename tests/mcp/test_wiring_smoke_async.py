@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import cast
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_true
-from tests._helpers.mcp_registrar import AsyncRecordingMcpRegistrar as AsyncRecordingMcp
+from tests._helpers.mcp_registrar import (
+    AsyncRecordingMcpRegistrar as AsyncRecordingMcp,
+)
+from tests._helpers.mcp_registrar import (
+    ToolRegistrar,
+)
 
 
 def test_mcp_wiring_smoke_async_registrar() -> None:
@@ -27,19 +33,24 @@ def test_mcp_wiring_smoke_async_registrar() -> None:
             close=_close,
         )
 
-    def _register_tools_fn(registrar: object, svc: object, cfg: ServingConfig | None) -> None:
+    def _register_tools_fn(
+        registrar: ToolRegistrar, svc: object, cfg: ServingConfig | None
+    ) -> None:
         _ = svc
         _ = cfg
         nonlocal called
         called = True
-        registrar.tool("async_tool")(lambda: None)  # type: ignore[attr-defined]
+        registrar.tool("async_tool")(lambda: None)
 
     cfg = ServingConfig(mode="remote_api", api_base_url="https://api.invalid")
     mcp, close = server.create_mcp_server(
         cfg=cfg,
         backend_factory=cast("server.BackendFactory", _backend_factory),
         gateway=cast("server.StorageGateway", SimpleNamespace()),
-        register_tools_fn=_register_tools_fn,
+        register_tools_fn=cast(
+            "Callable[[object, object, ServingConfig | None], None]",
+            _register_tools_fn,
+        ),
         mcp_factory=lambda _name: AsyncRecordingMcp(),
     )
 

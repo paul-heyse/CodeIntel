@@ -12,7 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import SymbolUseEdgeRow, insert_rows
+from tests._helpers.builders import (
+    SymbolEdgeOptions,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
+)
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -91,57 +95,65 @@ class SymbolPack:
 
         rows = [
             # func_b used in mod_a (cross-module)
-            SymbolUseEdgeRow(
-                symbol="func_b",
-                def_path=MOD_B_PATH,
-                use_path=MOD_A_PATH,
-                same_file=False,
-                same_module=False,
-                def_goid_h128=GOID_FUNC_B if self.include_goids else None,
-                use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+            make_symbol_use_edge_row(
+                "func_b",
+                MOD_B_PATH,
+                MOD_A_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                    def_goid_h128=GOID_FUNC_B if self.include_goids else None,
+                    use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+                ),
             ),
             # func_c used in mod_b (cross-module)
-            SymbolUseEdgeRow(
-                symbol="func_c",
-                def_path=MOD_C_PATH,
-                use_path=MOD_B_PATH,
-                same_file=False,
-                same_module=False,
-                def_goid_h128=GOID_FUNC_C if self.include_goids else None,
-                use_goid_h128=GOID_FUNC_B if self.include_goids else None,
+            make_symbol_use_edge_row(
+                "func_c",
+                MOD_C_PATH,
+                MOD_B_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                    def_goid_h128=GOID_FUNC_C if self.include_goids else None,
+                    use_goid_h128=GOID_FUNC_B if self.include_goids else None,
+                ),
             ),
             # helper used in mod_a (cross-module)
-            SymbolUseEdgeRow(
-                symbol="helper",
-                def_path=MOD_UTIL_PATH,
-                use_path=MOD_A_PATH,
-                same_file=False,
-                same_module=False,
-                def_goid_h128=GOID_HELPER if self.include_goids else None,
-                use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+            make_symbol_use_edge_row(
+                "helper",
+                MOD_UTIL_PATH,
+                MOD_A_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                    def_goid_h128=GOID_HELPER if self.include_goids else None,
+                    use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+                ),
             ),
             # Internal symbol reference within mod_a
-            SymbolUseEdgeRow(
-                symbol="_internal_a",
-                def_path=MOD_A_PATH,
-                use_path=MOD_A_PATH,
-                same_file=True,
-                same_module=True,
-                def_goid_h128=None,
-                use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+            make_symbol_use_edge_row(
+                "_internal_a",
+                MOD_A_PATH,
+                MOD_A_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=True,
+                    same_module=True,
+                    use_goid_h128=GOID_FUNC_A if self.include_goids else None,
+                ),
             ),
             # Cross-file but same package reference
-            SymbolUseEdgeRow(
-                symbol="MOD_CONSTANT",
-                def_path=MOD_UTIL_PATH,
-                use_path=MOD_B_PATH,
-                same_file=False,
-                same_module=False,
-                def_goid_h128=None,
-                use_goid_h128=GOID_FUNC_B if self.include_goids else None,
+            make_symbol_use_edge_row(
+                "MOD_CONSTANT",
+                MOD_UTIL_PATH,
+                MOD_B_PATH,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                    use_goid_h128=GOID_FUNC_B if self.include_goids else None,
+                ),
             ),
         ]
-        insert_rows(ctx.gateway, rows)
+        insert_symbol_use_edges(ctx.gateway, rows)
 
 
 # Default instance for common usage

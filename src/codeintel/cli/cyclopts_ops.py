@@ -351,7 +351,7 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
     params_cls = _make_operation_params_dataclass(metadata)
     cfg_annotation = Annotated[params_cls, Parameter(name="*")]
 
-    def dynamic_op(cfg: OperationCliArgs | None = None) -> None:  # type: ignore[unused-ignore]
+    def dynamic_op(cfg: OperationCliArgs | None = None) -> None:
         if cfg is None:
             message = "Operation parameters are required."
             raise ValidationError(message)
@@ -400,7 +400,7 @@ def dataset_list(
     cfg: Annotated[DatasetListCli, Parameter(name="*")] | None = None,
 ) -> None:
     """List datasets from the registry."""
-    cfg = cfg or DatasetListCli()  # type: ignore[call-arg]
+    cfg = cfg or DatasetListCli()
     runtime = _runtime_from_cli(cfg.runtime)
     output_format = resolve_output_format(
         json_flag=cfg.output.json,
@@ -468,7 +468,7 @@ def dataset_verify(
     cfg: Annotated[DatasetVerifyCli, Parameter(name="*")] | None = None,
 ) -> None:
     """Verify dataset contracts against actual data."""
-    cfg = cfg or DatasetVerifyCli()  # type: ignore[call-arg]
+    cfg = cfg or DatasetVerifyCli()
     runtime = _runtime_from_cli(cfg.runtime)
     dataset_verify_handler(table_key=cfg.table_key, runtime=runtime)
 

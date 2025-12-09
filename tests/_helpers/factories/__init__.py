@@ -35,6 +35,11 @@ from tests._helpers.factories.row_factories import (
     blank_function_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
+    sample_behavioral_coverage_rows,
+    sample_file_profile_rows,
+    sample_function_profile_rows,
+    sample_module_profile_rows,
+    sample_test_profile_rows,
 )
 from tests._helpers.factories.step_config_factories import make_step_config
 
@@ -62,4 +67,9 @@ __all__ = [
     "make_graph_runtime_options",
     "make_snapshot",
     "make_step_config",
+    "sample_behavioral_coverage_rows",
+    "sample_file_profile_rows",
+    "sample_function_profile_rows",
+    "sample_module_profile_rows",
+    "sample_test_profile_rows",
 ]

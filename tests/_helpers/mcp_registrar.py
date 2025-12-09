@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from mcp.server.fastmcp import FastMCP
 
@@ -21,6 +21,27 @@ class ToolRegistration:
 
     name: str
     options: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ToolDescriptor:
+    """Typed tool descriptor payload returned by registrars."""
+
+    name: str
+    options: dict[str, object]
+
+
+@runtime_checkable
+class ToolRegistrar(Protocol):
+    """Protocol for MCP registrars used in tests."""
+
+    def tool(
+        self,
+        name: str | None = None,
+        **options: object,
+    ) -> Callable[[Callable[..., object]], Callable[..., object]]: ...
+
+    def list_tools(self) -> list[ToolDescriptor]: ...
 
 
 class McpRegistrationRecorder:
@@ -46,7 +67,7 @@ class McpRegistrationRecorder:
         return sum(1 for call in self.calls if call.name == name)
 
 
-class RecordingMcpRegistrar:
+class RecordingMcpRegistrar(ToolRegistrar):
     """Recording registrar providing sync decorator API."""
 
     def __init__(self, app_name: str = "recorder") -> None:
@@ -78,21 +99,30 @@ class RecordingMcpRegistrar:
 
         return _decorator
 
-    def list_tools(self) -> list[dict[str, object]]:
+    def list_tools(self) -> list[ToolDescriptor]:
         """Return registered tools in FastMCP-compatible shape.
 
         Returns
         -------
-        list[dict[str, object]]
+        list[ToolDescriptor]
             Serialized tool metadata.
         """
-        return [{"name": reg.name, **reg.options} for reg in self._registrations]
+        return [
+            ToolDescriptor(name=reg.name, options=dict(reg.options)) for reg in self._registrations
+        ]
 
 
 class AsyncRecordingMcpRegistrar(RecordingMcpRegistrar):
     """Async-compatible registrar exposing async list_tools."""
 
-    async def list_tools(self) -> list[dict[str, object]]:  # type: ignore[override]
+    def list_tools(self) -> list[ToolDescriptor]:
+        """Return registered tools as sync API for compatibility.
+
+        Returns
+        -------
+        list[ToolDescriptor]
+            Tool descriptors recorded on the registrar.
+        """
         return super().list_tools()
 
 

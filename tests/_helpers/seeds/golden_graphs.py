@@ -30,6 +30,7 @@ from tests._helpers.builders import (
     ModuleRow,
     SymbolUseEdgeRow,
     insert_rows,
+    insert_symbol_use_edges,
 )
 
 if TYPE_CHECKING:
@@ -710,7 +711,7 @@ def seed_golden_graphs(
     insert_rows(gateway, call_nodes)
     insert_rows(gateway, call_edges)
     insert_rows(gateway, import_edges)
-    insert_rows(gateway, symbol_edges)
+    insert_symbol_use_edges(gateway, symbol_edges)
     insert_rows(gateway, config_values)
 
     return GoldenGraphStats(

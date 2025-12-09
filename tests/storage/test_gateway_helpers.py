@@ -19,6 +19,7 @@ from codeintel.storage.gateway.rows.analytics import (
     AnalyticsTestCatalogRow,
     AnalyticsTestCoverageEdgesRow,
 )
+from tests._helpers.builders import insert_symbol_use_edges
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
 
@@ -116,7 +117,8 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
             }
         ]
     )
-    gateway.graph.insert_symbol_use_edges(
+    insert_symbol_use_edges(
+        gateway,
         [
             {
                 "symbol": "sym",
@@ -127,7 +129,7 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
                 "def_goid_h128": None,
                 "use_goid_h128": None,
             }
-        ]
+        ],
     )
     gateway.graph.insert_cfg_blocks([(1, 0, "b0", "entry", "m.py", 1, 2, "entry", "[]", 0, 1)])
     gateway.graph.insert_cfg_edges([(1, "b0", "b0", "fallthrough")])

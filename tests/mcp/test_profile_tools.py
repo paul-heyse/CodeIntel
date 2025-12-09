@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from types import SimpleNamespace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from codeintel.serving.mcp import errors
@@ -16,6 +16,21 @@ from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+
+
+class _BackendGateway:
+    """Minimal gateway stub to satisfy profile backend usage."""
+
+    @staticmethod
+    def close() -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class _ServingConfigStub:
+    """Minimal ServingConfig stub for tests."""
+
+    mode: str
 
 
 class _ProfileModel:
@@ -36,7 +51,7 @@ class _ProfileModel:
 
 class _Backend:
     def __init__(self) -> None:
-        self.gateway = SimpleNamespace()
+        self.gateway = _BackendGateway()
         self.calls: list[str] = []
 
     def get_function_profile(self, *, goid_h128: int) -> str:
@@ -59,6 +74,25 @@ class _ExplodingBackend(_Backend):
         _ = (self, goid_h128)
         message = "fail"
         raise errors.backend_failure(message)
+
+
+class _BackendWithoutGateway:
+    """Backend variant without a gateway attribute to test auto-pipeline guard."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def get_function_profile(self, *, goid_h128: int) -> dict[str, object]:
+        self.calls.append(f"fn:{goid_h128}")
+        return {"value": f"fn-{goid_h128}"}
+
+    def get_file_profile(self, *, rel_path: str) -> dict[str, object]:
+        self.calls.append(f"file:{rel_path}")
+        return {"value": f"file-{rel_path}"}
+
+    def get_module_profile(self, *, module: str) -> dict[str, object]:
+        self.calls.append(f"mod:{module}")
+        return {"value": f"mod-{module}"}
 
 
 def _profile_operations() -> tuple[Operation, Operation, Operation]:
@@ -149,7 +183,7 @@ def test_register_profile_tools_registers_and_serializes() -> None:
         register_profile_tools(
             mcp,
             cast("QueryBackendOrService", backend),
-            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            config=cast("ServingConfig", _ServingConfigStub(mode="local_db")),
             options=ProfileToolOptions(
                 operations=_profile_operations(),
                 model_resolver=_resolve_profile_model,
@@ -208,11 +242,7 @@ def test_profile_tools_skip_auto_pipeline_without_gateway() -> None:
     """Auto-pipeline should not run when backend lacks gateway attribute."""
     previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
     os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
-    backend = SimpleNamespace(  # type: ignore[assignment]
-        get_file_profile=lambda rel_path: {"value": rel_path},
-        get_function_profile=lambda goid_h128: {"value": goid_h128},
-        get_module_profile=lambda module: {"value": module},
-    )
+    backend = _BackendWithoutGateway()
     calls: list[str] = []
 
     def _record(op_id: str, config: object, backend: object) -> None:
@@ -225,7 +255,7 @@ def test_profile_tools_skip_auto_pipeline_without_gateway() -> None:
         register_profile_tools(
             mcp,
             cast("QueryBackendOrService", backend),
-            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            config=cast("ServingConfig", _ServingConfigStub(mode="local_db")),
             options=ProfileToolOptions(
                 operations=_profile_operations(),
                 model_resolver=_resolve_profile_model,
