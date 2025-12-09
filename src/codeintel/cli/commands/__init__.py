@@ -1,18 +1,18 @@
-"""CLI command modules for the unified CodeIntel CLI.
+"""CLI commands package (deprecated - use handler modules directly).
 
-This package contains Typer command groups organized by functional area.
+This package previously contained Typer-based command groups. The CLI has been
+migrated to Cyclopts; handlers are now located in the parent ``cli`` package:
 
-Command Groups
---------------
-- **ingest**: Recipe-based ingestion plugin orchestration
-- **graphs**: Graph analytics plugin management
-- **docs**: Document export with validation
-- **storage**: Storage validation utilities
-- **history**: Multi-commit history timeseries
-- **ide**: IDE integration hints
-- **subsystem**: Subsystem exploration commands
-- **datasets**: Extended dataset management
-- **pipeline**: Pipeline orchestration with scope filtering
+- ``build_handlers.py`` - Build system handlers
+- ``docs_handlers.py`` - Document export handlers
+- ``datasets_handlers.py`` - Dataset management handlers
+- ``graphs_handlers.py`` - Graph plugin handlers
+- ``history_handlers.py`` - History timeseries handlers
+- ``ide_handlers.py`` - IDE integration handlers
+- ``subsystem_handlers.py`` - Subsystem exploration handlers
+- ``storage_handlers.py`` - Storage validation handlers
+- ``ops_handlers.py`` - Operation and serve handlers
+- ``common_handlers.py`` - Shared utilities
 """
 
 from __future__ import annotations

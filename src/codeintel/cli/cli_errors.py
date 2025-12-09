@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import importlib
 import sys
 from collections.abc import Callable
-from types import ModuleType
-from typing import ParamSpec, TextIO, TypeVar
+from typing import ParamSpec, TextIO
 
 from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
 from codeintel.cli.errors import CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
 
-P = ParamSpec("P")
-_T = TypeVar("_T")
 _HandlerP = ParamSpec("_HandlerP")
 
 
@@ -27,7 +23,7 @@ class CliError(Exception):
 
 
 class UnknownOptionCliError(CliError):
-    """Wrap unknown option errors with Typer-compatible messaging."""
+    """Wrap unknown option errors with standardized messaging."""
 
     def __init__(self, flag: str | None) -> None:
         message = f"No such option: {flag}" if flag else "No such option"
@@ -35,7 +31,7 @@ class UnknownOptionCliError(CliError):
 
 
 class UnknownCommandCliError(CliError):
-    """Wrap unknown command errors with Typer-compatible messaging."""
+    """Wrap unknown command errors with standardized messaging."""
 
     def __init__(self, command: str | None) -> None:
         message = f"No such command: {command}" if command else "No such command"
@@ -61,7 +57,7 @@ def run_handler(
     """Execute a handler with CLI-appropriate error handling.
 
     Convert ValidationError and RuntimeError to SystemExit with
-    appropriate exit codes. This function bridges Typer-free handlers
+    appropriate exit codes. This function bridges handlers
     to the Cyclopts CLI layer.
 
     Parameters
@@ -118,10 +114,6 @@ def handle_cli_error(exc: BaseException, stderr_writer: TextIO) -> int:
         stderr_writer.write(message)
         return CLI_EXIT_USAGE
 
-    typer_exit = _translate_typer_exit_or_none(exc)
-    if typer_exit is not None:
-        return typer_exit
-
     if isinstance(exc, SystemExit):
         exit_code = exc.code if isinstance(exc.code, int) else CLI_EXIT_VALIDATION
         message = str(exc)
@@ -133,72 +125,6 @@ def handle_cli_error(exc: BaseException, stderr_writer: TextIO) -> int:
     if message:
         stderr_writer.write(message)
     return CLI_EXIT_VALIDATION
-
-
-def invoke_with_typer_translation(
-    func: Callable[P, _T],
-    *args: P.args,
-    **kwargs: P.kwargs,
-) -> _T:
-    """Invoke a callable and translate Typer exits into ``SystemExit``.
-
-    Returns
-    -------
-    _T
-        The callable result when no Typer exit is raised.
-
-    Raises
-    ------
-    SystemExit
-        When a Typer exit is encountered.
-    """
-    try:
-        return func(*args, **kwargs)
-    except BaseException as exc:
-        translated = _translate_typer_exit_or_none(exc)
-        if translated is not None:
-            raise SystemExit(translated) from exc
-        raise
-
-
-def translate_typer_exit(exc: BaseException) -> SystemExit:
-    """Convert a Typer ``Exit`` to ``SystemExit`` while preserving the code.
-
-    Returns
-    -------
-    SystemExit
-        SystemExit instance carrying the original exit code.
-
-    Raises
-    ------
-    TypeError
-        If the provided exception is not a Typer exit.
-    """
-    translated = _translate_typer_exit_or_none(exc)
-    if translated is None:
-        message = "Expected typer.Exit"
-        raise TypeError(message) from exc
-    return SystemExit(translated)
-
-
-def _translate_typer_exit_or_none(exc: BaseException) -> int | None:
-    typer_module = _load_typer_exit()
-    if typer_module is None:
-        return None
-    typer_exit = typer_module.Exit
-    if isinstance(exc, typer_exit):
-        return _extract_exit_code(exc, CLI_EXIT_VALIDATION)
-    return None
-
-
-def _extract_exit_code(exc: BaseException, default: int) -> int:
-    code = getattr(exc, "exit_code", None)
-    if isinstance(code, int):
-        return code
-    code = getattr(exc, "code", None)
-    if isinstance(code, int):
-        return code
-    return default
 
 
 def _format_unknown_option(exc: UnknownOptionError) -> str:
@@ -217,14 +143,6 @@ def _format_unknown_command(exc: UnknownCommandError) -> str:
     return f"No such command: {command}" if command else "No such command"
 
 
-def _load_typer_exit() -> ModuleType | None:
-    try:
-        module = importlib.import_module("typer")
-    except ImportError:
-        return None
-    return module
-
-
 __all__ = [
     "CliError",
     "DocsValidationError",
@@ -232,7 +150,5 @@ __all__ = [
     "UnknownOptionCliError",
     "ValidationError",
     "handle_cli_error",
-    "invoke_with_typer_translation",
     "run_handler",
-    "translate_typer_exit",
 ]

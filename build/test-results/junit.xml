@@ -1,98 +1,66 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="6.205" timestamp="2025-12-09T00:58:22.240872-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.cli.test_graph_cli_policies" name="test_cli_validation_mode_enforces_strict_policy" time="0.020"><failure message="AssertionError: 'Failed to compute plan; showing available plugins' not found in ''">capsys = &lt;_pytest.capture.CaptureFixture object at 0x7745950d5940&gt;
-
-    def test_cli_validation_mode_enforces_strict_policy(capsys: pytest.CaptureFixture[str]) -&gt; None:
-        """Validation mode should enforce strict selection/dependency and avoid stubs."""
-        options = GraphPluginsOptions(
-            mode=PlanMode.PLAN,
-            names=("nonexistent_plugin",),
-            enable=None,
-            disable=(),
-            selection_policy=SelectionPolicy.LENIENT,
-            dependency_policy=DependencyPolicy.SKIP,
-            validation_mode=True,
-            output_format=OutputFormat.TEXT,
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="9.882" timestamp="2025-12-09T01:02:01.744527-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.serving.mcp.test_mcp_backend_comprehensive" name="test_http_backend_retry_and_circuit_breaker" time="0.004"><failure message="AttributeError: 'HttpBackend' object has no attribute 'request_json'">def test_http_backend_retry_and_circuit_breaker() -&gt; None:
+        """Cover retry path and circuit-open guard."""
+        backend = make_http_backend_with_responses(
+            [
+                (200, {"ok": True}),  # health
+                (
+                    500,
+                    {
+                        "type": "about:blank",
+                        "title": "retry",
+                        "detail": "server error",
+                        "status": 500,
+                    },
+                ),
+                (200, {"ok": True}),
+            ],
+            retry_attempts=2,
+            backoff=0.0,
+            circuit_threshold=1,
+            circuit_cooldown_s=100.0,
         )
     
-        graph_plugins_handler(options)
-        captured = capsys.readouterr().out
-&gt;       expect_in("Failed to compute plan; showing available plugins", captured)
+&gt;       payload = backend.request_json("/functions/high-risk", {})
+                  ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'HttpBackend' object has no attribute 'request_json'
 
-tests/cli/test_graph_cli_policies.py:111: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-value = 'Failed to compute plan; showing available plugins', container = ''
-
-    def expect_in(value: object, container: Iterable[object], *, label: str | None = None) -&gt; None:
-        """Raise AssertionError when a value is not present in a container.
-    
-        Parameters
-        ----------
-        value
-            Item expected to be present.
-        container
-            Container to inspect for membership.
-        label
-            Optional label prefix for the failure message.
-    
-        Raises
-        ------
-        AssertionError
-            If the value is missing from the container.
-        """
-        if value in container:
-            return
-        failure_message = f"{_prefix(label)}{value!r} not found in {container!r}"
-&gt;       raise AssertionError(failure_message)
-E       AssertionError: 'Failed to compute plan; showing available plugins' not found in ''
-
-tests/_helpers/assertions/expectation_assertions.py:106: AssertionError</failure></testcase><testcase classname="tests.cli.test_graph_cli_policies" name="test_cli_strict_selection_falls_back_on_unknown_plugin" time="0.020"><failure message="AssertionError: 'Failed to compute plan; showing available plugins' not found in '- repo_scan [goid]\n    Stub plugin for dependency resolution\n- ast_extract [goid]\n    Stub plugin for dependency resolution\n- scip_ingest [goid]\n    Stub plugin for dependency resolution\n- goid_builder [goid]\n    Stub plugin for dependency resolution\n'">capsys = &lt;_pytest.capture.CaptureFixture object at 0x7f5d33025940&gt;
-
-    def test_cli_strict_selection_falls_back_on_unknown_plugin(
-        capsys: pytest.CaptureFixture[str],
-    ) -&gt; None:
-        """Strict selection should fail planning and trigger fallback output."""
-        options = GraphPluginsOptions(
-            mode=PlanMode.PLAN,
-            names=("nonexistent_plugin",),
-            enable=None,
-            disable=(),
-            selection_policy=SelectionPolicy.STRICT,
-            dependency_policy=DependencyPolicy.STRICT,
-            validation_mode=False,
-            output_format=OutputFormat.TEXT,
+tests/serving/mcp/test_mcp_backend_comprehensive.py:1764: AttributeError</failure></testcase><testcase classname="tests.serving.mcp.test_mcp_backend_comprehensive" name="test_http_backend_health_and_request_success" time="0.002"><failure message="TypeError: '&gt;=' not supported between instances of 'int' and 'NoneType'">def test_http_backend_health_and_request_success() -&gt; None:
+        """Verify HttpBackend health check and successful JSON request."""
+&gt;       backend = make_http_backend_with_responses(
+            [
+                (200, {"ok": True}),
+                (200, {"ok": True}),
+            ]
         )
-    
-        graph_plugins_handler(options)
-        captured = capsys.readouterr().out
-&gt;       expect_in("Failed to compute plan; showing available plugins", captured)
 
-tests/cli/test_graph_cli_policies.py:66: 
+tests/serving/mcp/test_mcp_backend_comprehensive.py:1731: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_helpers/http_backend.py:37: in make_http_backend_with_responses
+    return HttpBackend(
+&lt;string&gt;:15: in __init__
+    ???
+src/codeintel/serving/mcp/backend.py:762: in __post_init__
+    self._verify_health()
+src/codeintel/serving/mcp/backend.py:843: in _verify_health
+    _ = self._request_json("/health", {})
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-value = 'Failed to compute plan; showing available plugins'
-container = '- repo_scan [goid]\n    Stub plugin for dependency resolution\n- ast_extract [goid]\n    Stub plugin for dependency r... [goid]\n    Stub plugin for dependency resolution\n- goid_builder [goid]\n    Stub plugin for dependency resolution\n'
+self = &lt;[AttributeError("'HttpBackend' object has no attribute 'service'") raised in repr()] HttpBackend object at 0x76e7f8bf9a90&gt;
+path = '/health', params = {}
 
-    def expect_in(value: object, container: Iterable[object], *, label: str | None = None) -&gt; None:
-        """Raise AssertionError when a value is not present in a container.
-    
-        Parameters
-        ----------
-        value
-            Item expected to be present.
-        container
-            Container to inspect for membership.
-        label
-            Optional label prefix for the failure message.
-    
-        Raises
-        ------
-        AssertionError
-            If the value is missing from the container.
-        """
-        if value in container:
-            return
-        failure_message = f"{_prefix(label)}{value!r} not found in {container!r}"
-&gt;       raise AssertionError(failure_message)
-E       AssertionError: 'Failed to compute plan; showing available plugins' not found in '- repo_scan [goid]\n    Stub plugin for dependency resolution\n- ast_extract [goid]\n    Stub plugin for dependency resolution\n- scip_ingest [goid]\n    Stub plugin for dependency resolution\n- goid_builder [goid]\n    Stub plugin for dependency resolution\n'
+    def _request_json(self, path: str, params: dict[str, object]) -&gt; object:
+        if self.client is None:
+            message = "HTTP client is not initialized"
+            raise errors.backend_failure(message)
+        filtered_params = {k: v for k, v in params.items() if v is not None}
+        normalized_params = {k: str(v) for k, v in filtered_params.items()}
+        now = time.monotonic()
+        if (
+&gt;           self.consecutive_failures &gt;= self.circuit_threshold
+            and self.last_failure_ts is not None
+            and now - self.last_failure_ts &lt; self.circuit_cooldown_s
+        ):
+E       TypeError: '&gt;=' not supported between instances of 'int' and 'NoneType'
 
-tests/_helpers/assertions/expectation_assertions.py:106: AssertionError</failure></testcase></testsuite></testsuites>
+src/codeintel/serving/mcp/backend.py:792: TypeError</failure></testcase></testsuite></testsuites>

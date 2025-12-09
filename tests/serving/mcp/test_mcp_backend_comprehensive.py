@@ -1726,42 +1726,22 @@ def test_duckdb_backend_domain_conversions(provisioned_repo: ProvisionedGateway)
 # =============================================================================
 
 
-def _make_client_with_responses(responses: list[tuple[int, Mapping[str, object]]]) -> httpx.Client:
-    queue = list(responses)
-
-    def _handler(request: httpx.Request) -> httpx.Response:
-        if not queue:
-            return httpx.Response(200, json={"ok": True})
-        status, payload = queue.pop(0)
-        return httpx.Response(status, json=payload)
-
-    return httpx.Client(base_url="http://test", transport=httpx.MockTransport(_handler))
-
-
 def test_http_backend_health_and_request_success() -> None:
     """Verify HttpBackend health check and successful JSON request."""
-    client = _make_client_with_responses(
+    backend = make_http_backend_with_responses(
         [
             (200, {"ok": True}),
             (200, {"ok": True}),
         ]
     )
-    backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(default_limit=5, max_rows_per_call=10),
-        client=client,
-    )
 
-    payload = backend._request_json("/health", {})
+    payload = backend.request_json("/health", {})
     expect_true(payload["ok"])
 
 
 def test_http_backend_retry_and_circuit_breaker() -> None:
     """Cover retry path and circuit-open guard."""
-    client = _make_client_with_responses(
+    backend = make_http_backend_with_responses(
         [
             (200, {"ok": True}),  # health
             (
@@ -1774,22 +1754,14 @@ def test_http_backend_retry_and_circuit_breaker() -> None:
                 },
             ),
             (200, {"ok": True}),
-        ]
-    )
-    backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(default_limit=5, max_rows_per_call=10),
-        client=client,
+        ],
         retry_attempts=2,
-        retry_backoff=0.0,
+        backoff=0.0,
         circuit_threshold=1,
         circuit_cooldown_s=100.0,
     )
 
-    payload = backend._request_json("/functions/high-risk", {})
+    payload = backend.request_json("/functions/high-risk", {})
     expect_true(payload["ok"])
     expect_equal(backend.last_retry_attempts, 2)
 
