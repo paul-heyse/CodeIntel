@@ -16,9 +16,12 @@ from cyclopts import App, Parameter
 from rich.console import Console
 from rich.table import Table
 
-from codeintel.cli.plugin_manifest import PluginManifest
-from codeintel.cli.plugin_testing import PluginTestHarness, create_plugin_scaffold
-from codeintel.cli.plugins import get_plugin_manager
+from codeintel.cli.plugins import (
+    PluginManifest,
+    PluginTestHarness,
+    create_plugin_scaffold,
+    get_plugin_manager,
+)
 
 # Plugin name validation pattern
 _PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")

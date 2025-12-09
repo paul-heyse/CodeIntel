@@ -345,6 +345,8 @@ class PluginManifest:
 
 __all__ = [
     "CLI_API_VERSION",
+    "PLUGIN_NAME_PATTERN",
+    "SEMVER_PATTERN",
     "PluginCapability",
     "PluginDependency",
     "PluginManifest",

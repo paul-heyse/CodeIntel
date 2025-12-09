@@ -7,7 +7,7 @@ list, describe, and verify commands.
 from __future__ import annotations
 
 from codeintel.cli.cli_validation import StringValidator, ValidationSchema
-from codeintel.cli.executor import OperationCategory, OperationSpec
+from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.operation_registry import register_operation
 from codeintel.cli.ops_handlers import dataset_describe_structured
 from codeintel.cli.result_types import DatasetDescribeResult, DatasetListResult

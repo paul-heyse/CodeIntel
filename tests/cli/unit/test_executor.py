@@ -1,4 +1,4 @@
-"""Unit tests for OperationExecutor."""
+"""Unit tests for UnifiedOperationExecutor."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import pytest
 from codeintel.cli.cli_errors import ProblemDetail
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.cli_validation import StringValidator, ValidationSchema
-from codeintel.cli.executor import (
+from codeintel.cli.execution import (
     ExecutionContext,
     ExecutionResult,
     OperationCategory,
-    OperationExecutor,
     OperationSpec,
+    UnifiedOperationExecutor,
 )
 from codeintel.cli.results import CliResult
 from tests._helpers.assertions.expectation_assertions import (
@@ -148,7 +148,7 @@ def test_execute_success() -> None:
         handler=_success_handler,
         category=OperationCategory.READ,
     )
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     result = executor.execute(spec, {"key": "value"}, render=False)
 
@@ -171,7 +171,7 @@ def test_execute_handler_error() -> None:
         handler=_error_handler,
         category=OperationCategory.READ,
     )
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     result = executor.execute(spec, {}, render=False)
 
@@ -188,7 +188,7 @@ def test_execute_raises_exception() -> None:
         handler=_raising_handler,
         category=OperationCategory.READ,
     )
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     with pytest.raises(RuntimeError, match="Handler exception"):
         executor.execute(spec, {}, render=False)
@@ -205,7 +205,7 @@ def test_execute_with_validation_success() -> None:
         category=OperationCategory.READ,
         param_schema=schema,
     )
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     result = executor.execute(spec, {"name": "test"}, render=False)
 
@@ -224,7 +224,7 @@ def test_execute_validation_failure() -> None:
         category=OperationCategory.READ,
         param_schema=schema,
     )
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     # Missing required param
     result = executor.execute(spec, {}, render=False)
@@ -243,7 +243,7 @@ def test_execute_different_categories() -> None:
         OperationCategory.BUILD,
     ]
 
-    executor = OperationExecutor()
+    executor = UnifiedOperationExecutor()
 
     for category in categories:
         spec: OperationSpec[dict[str, object]] = OperationSpec(

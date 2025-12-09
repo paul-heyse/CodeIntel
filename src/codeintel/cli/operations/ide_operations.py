@@ -6,7 +6,7 @@ status and config commands.
 
 from __future__ import annotations
 
-from codeintel.cli.executor import OperationCategory, OperationSpec
+from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.operation_registry import register_operation
 from codeintel.cli.result_types import IdeConfigResult, IdeStatusResult
 from codeintel.cli.results import CliResult

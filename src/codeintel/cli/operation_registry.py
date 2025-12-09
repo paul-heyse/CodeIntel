@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from codeintel.cli.executor import OperationCategory, OperationSpec
+from codeintel.cli.execution import OperationCategory, OperationSpec
 
 LOG = logging.getLogger(__name__)
 

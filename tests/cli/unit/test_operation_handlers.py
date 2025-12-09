@@ -5,7 +5,7 @@ Test individual operations through OperationTestHarness.
 
 from __future__ import annotations
 
-from codeintel.cli.executor import OperationCategory
+from codeintel.cli.execution import OperationCategory
 from codeintel.cli.operation_registry import get_operation_registry
 from tests._helpers.assertions import (
     expect_false,
@@ -119,5 +119,9 @@ def test_operations_have_required_fields() -> None:
 
     for spec in registry.list_operations():
         expect_is_not_none(spec)
-        expect_is_not_none(spec.handler)
+        # Handler is always present on valid specs (not optional)
+        expect_true(
+            spec.handler is not None,
+            message=f"Handler missing for {spec.operation_id}",
+        )
         expect_is_not_none(spec.category)

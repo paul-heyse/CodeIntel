@@ -6,7 +6,7 @@ status, run, and history commands.
 
 from __future__ import annotations
 
-from codeintel.cli.executor import OperationCategory, OperationSpec
+from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.operation_registry import register_operation
 from codeintel.cli.result_types import BuildHistoryResult, BuildStatusResult
 from codeintel.cli.results import CliResult

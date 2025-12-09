@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING, Any, TextIO
 import yaml
 
 from codeintel.cli.cli_errors import ProblemDetail
-from codeintel.cli.executor import get_executor
+from codeintel.cli.execution import get_executor
 from codeintel.cli.operation_registry import get_operation_registry
 from codeintel.cli.results import CliResult
 
 if TYPE_CHECKING:
-    from codeintel.cli.executor import ExecutionResult
+    from codeintel.cli.execution import ExecutionResult
 
 
 @dataclass

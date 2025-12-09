@@ -20,11 +20,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import Any, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from codeintel.cli.cli_errors import ProblemDetail
-from codeintel.cli.cli_middleware import OperationMiddleware
+from codeintel.cli.execution.middleware import Middleware
 from codeintel.cli.results import CliResult
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 
 LOG = logging.getLogger(__name__)
 
@@ -984,23 +987,20 @@ class ResilienceMiddlewareProtocol(ABC):
     """Protocol for resilience middleware.
 
     Define the interface for middleware that adds resilience
-    to operation execution.
+    to operation execution. Uses ExecutionContext for rich context.
     """
 
     @abstractmethod
     def before_invoke(
         self,
-        op_id: str,
-        params: dict[str, Any],
+        ctx: ExecutionContext,
     ) -> dict[str, Any]:
         """Execute before operation invocation.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
-        params
-            Operation parameters.
+        ctx
+            Execution context with operation_id, params, metadata.
 
         Returns
         -------
@@ -1012,45 +1012,55 @@ class ResilienceMiddlewareProtocol(ABC):
     @abstractmethod
     def after_invoke(
         self,
-        op_id: str,
-        result: object,
-        context: dict[str, Any],
-    ) -> None:
+        ctx: ExecutionContext,
+        result: CliResult[Any],
+        mw_context: dict[str, Any],
+    ) -> CliResult[Any]:
         """Execute after successful operation invocation.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         result
             Operation result.
-        context
+        mw_context
             Context from before_invoke.
+
+        Returns
+        -------
+        CliResult[Any]
+            Possibly modified result.
         """
         ...
 
     @abstractmethod
     def on_error(
         self,
-        op_id: str,
+        ctx: ExecutionContext,
         exc: Exception,
-        context: dict[str, Any],
-    ) -> None:
+        mw_context: dict[str, Any],
+    ) -> Exception | None:
         """Execute on operation error.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         exc
             Exception that occurred.
-        context
+        mw_context
             Context from before_invoke.
+
+        Returns
+        -------
+        Exception | None
+            Exception to raise, or None to suppress.
         """
         ...
 
 
-class ResilienceMiddleware(OperationMiddleware):
+class ResilienceMiddleware(Middleware):
     """Middleware that adds retry and circuit breaker behavior.
 
     This middleware integrates with operation executors to provide
@@ -1101,26 +1111,21 @@ class ResilienceMiddleware(OperationMiddleware):
 
     def before_invoke(
         self,
-        op_id: str,
-        params: dict[str, Any],
+        ctx: ExecutionContext,
     ) -> dict[str, Any]:
         """Check circuit breaker before invocation.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
-        params
-            Operation parameters.
+        ctx
+            Execution context with operation_id and params.
 
         Returns
         -------
         dict[str, Any]
             Context for after_invoke.
         """
-        _ = params
-
-        category = _get_category(op_id)
+        category = _get_category(ctx.operation_id)
         if self._config.circuit_breaker_enabled and category:
             breaker = self._breakers.get_breaker(category)
             breaker.allow_request()
@@ -1132,51 +1137,65 @@ class ResilienceMiddleware(OperationMiddleware):
 
     def after_invoke(
         self,
-        op_id: str,
-        result: object,
-        context: dict[str, Any],
-    ) -> None:
+        ctx: ExecutionContext,
+        result: CliResult[Any],
+        mw_context: dict[str, Any],
+    ) -> CliResult[Any]:
         """Record success for circuit breaker.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         result
             Operation result.
-        context
+        mw_context
             Context from before_invoke.
-        """
-        _ = op_id, result
 
-        category = context.get("category")
+        Returns
+        -------
+        CliResult[Any]
+            Unmodified result.
+        """
+        _ = ctx  # Unused but required by interface
+
+        category = mw_context.get("category")
         if category and self._config.circuit_breaker_enabled:
             breaker = self._breakers.get_breaker(category)
             breaker.record_success()
 
+        return result
+
     def on_error(
         self,
-        op_id: str,
+        ctx: ExecutionContext,
         exc: Exception,
-        context: dict[str, Any],
-    ) -> None:
+        mw_context: dict[str, Any],
+    ) -> Exception | None:
         """Record failure for circuit breaker.
 
         Parameters
         ----------
-        op_id
-            Operation identifier.
+        ctx
+            Execution context.
         exc
             Exception that occurred.
-        context
+        mw_context
             Context from before_invoke.
-        """
-        _ = op_id, exc
 
-        category = context.get("category")
+        Returns
+        -------
+        Exception
+            The original exception.
+        """
+        _ = ctx  # Unused but required by interface
+
+        category = mw_context.get("category")
         if category and self._config.circuit_breaker_enabled:
             breaker = self._breakers.get_breaker(category)
             breaker.record_failure()
+
+        return exc
 
 
 def _get_category(op_id: str) -> str | None:

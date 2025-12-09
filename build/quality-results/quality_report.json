@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-09T15:54:32.629674+00:00",
+  "generated_at": "2025-12-09T21:06:00.312494+00:00",
   "overall_status": "passed",
-  "duration_seconds": 10.852551,
+  "duration_seconds": 11.165086,
   "results": [
     {
       "name": "ruff_check",
@@ -15,11 +15,11 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-09T15:54:21.776979+00:00",
-      "ended_at": "2025-12-09T15:54:21.801413+00:00",
-      "duration_seconds": 0.024434,
+      "started_at": "2025-12-09T21:05:49.147254+00:00",
+      "ended_at": "2025-12-09T21:05:49.174349+00:00",
+      "duration_seconds": 0.027095,
       "stdout": [
-        "Found 3 errors (3 fixed, 0 remaining)."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -34,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-09T15:54:21.801433+00:00",
-      "ended_at": "2025-12-09T15:54:32.098077+00:00",
-      "duration_seconds": 10.296644,
+      "started_at": "2025-12-09T21:05:49.174366+00:00",
+      "ended_at": "2025-12-09T21:05:59.791452+00:00",
+      "duration_seconds": 10.617086,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -52,13 +52,13 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-09T15:54:32.098097+00:00",
-      "ended_at": "2025-12-09T15:54:32.629530+00:00",
-      "duration_seconds": 0.531433,
+      "started_at": "2025-12-09T21:05:59.791468+00:00",
+      "ended_at": "2025-12-09T21:06:00.312340+00:00",
+      "duration_seconds": 0.520872,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 0 errors (1 suppressed)"
+        " INFO 0 errors (8 suppressed)"
       ]
     }
   ],
