@@ -885,9 +885,7 @@ def _validate_object(
         if key in properties:
             errors.extend(_basic_json_schema_validate(val, properties[key], key_path))
         elif not additional:
-            errors.append(
-                JsonSchemaValidationError(path=key_path, message="Unknown property")
-            )
+            errors.append(JsonSchemaValidationError(path=key_path, message="Unknown property"))
 
     return errors
 
@@ -994,9 +992,15 @@ class RetryConfig:
 
         return ValidationResult.ok(
             cls(
-                max_attempts=int(max_attempts_val) if isinstance(max_attempts_val, (int, float)) else 3,
-                initial_delay=float(initial_delay_val) if isinstance(initial_delay_val, (int, float)) else 0.5,
-                backoff_factor=float(backoff_factor_val) if isinstance(backoff_factor_val, (int, float)) else 2.0,
+                max_attempts=int(max_attempts_val)
+                if isinstance(max_attempts_val, (int, float))
+                else 3,
+                initial_delay=float(initial_delay_val)
+                if isinstance(initial_delay_val, (int, float))
+                else 0.5,
+                backoff_factor=float(backoff_factor_val)
+                if isinstance(backoff_factor_val, (int, float))
+                else 2.0,
                 max_delay=float(max_delay_val) if isinstance(max_delay_val, (int, float)) else 30.0,
             ),
         )
