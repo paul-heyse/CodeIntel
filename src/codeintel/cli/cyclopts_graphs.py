@@ -7,17 +7,18 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands.graphs import (
+from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    OutputParam,
+    resolve_output_format,
+)
+from codeintel.cli.graphs_handlers import (
     DependencyPolicy,
     GraphPluginsOptions,
     PlanMode,
     SelectionPolicy,
     graph_plugins_handler,
-)
-from codeintel.cli.cyclopts_common import (
-    OutputFormat,
-    OutputFormatCLI,
-    resolve_output_format,
 )
 
 graphs_app = App(
@@ -83,7 +84,7 @@ class GraphPluginsCli:
             negative=(),
         ),
     ] = False
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @graphs_app.command(name="plugins")

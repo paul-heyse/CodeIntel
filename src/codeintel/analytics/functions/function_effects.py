@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import logging
 from collections import deque
 from collections.abc import Iterable
@@ -254,7 +255,7 @@ def _build_effect_rows(
                 analysis.spawns_threads_or_tasks,
                 bool(transitive_targets),
                 purity_confidence,
-                _effects_payload(analysis, transitive_targets),
+                json.dumps(_effects_payload(analysis, transitive_targets)),
                 now,
             )
         )

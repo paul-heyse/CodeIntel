@@ -8,7 +8,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import (
+from codeintel.cli.common_handlers import (
     BackendFlags,
     OutputFormat,
     RuntimeCliOptions,
@@ -144,12 +144,18 @@ class ProjectCLI:
     runtime: RuntimeParam = field(default_factory=RuntimeCLI)
 
 
+StorageCLI = ProjectCLI
+
+
 @dataclass
 class OutputFormatCLI:
     """Shared output format toggles for commands supporting JSON output."""
 
     output_format: OutputFmt = OutputFormat.TEXT
     json: JsonFlag = False
+
+
+OutputParam = Annotated[OutputFormatCLI, Parameter(name="*")]
 
 
 def resolve_output_format(
@@ -297,6 +303,7 @@ __all__ = [
     "OutputFmt",
     "OutputFormat",
     "OutputFormatCLI",
+    "OutputParam",
     "ProjectCLI",
     "ProjectRoot",
     "RuntimeCLI",
@@ -304,6 +311,7 @@ __all__ = [
     "RuntimeCliOptions",
     "RuntimeParam",
     "RuntimeWithFormat",
+    "StorageCLI",
     "Verbose",
     "build_runtime_from_cli",
     "make_root_app",

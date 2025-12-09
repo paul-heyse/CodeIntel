@@ -134,25 +134,27 @@ async def test_typing_plugin_skips_without_type_checker(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> None:
     """Happy path: adapters are constructed and async step is executed."""
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/typed.py": TYPED_SOURCE, "pkg/naïve.py": TYPED_SOURCE},
+    )
     # Use RecordingTypeChecker (a proper double) instead of object()
     checker = RecordingTypeChecker()
-    ctx = _build_target_context(repo_root, modules=("pkg/typed.py",))
+    ctx = _build_target_context(repo_root, modules=("pkg/typed.py", "pkg/naïve.py"))
     captured = StepCallCapture()
 
     # Pass the checker directly rather than via ctx.resources.type_checker
     result = await _make_plugin(captured, type_checker=checker).execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts, {"analytics.typedness": 1})
+    expect_equal(result.row_counts, {"analytics.typedness": 2})
     expect_true(captured.storage is not None)
     expect_equal(captured.repo_root, repo_root)
     expect_equal(captured.repo, DEFAULT_REPO)
     expect_equal(captured.commit, DEFAULT_COMMIT)
     expect_true(getattr(captured.tool_port, "_type_checker", None) is checker)
-    module_record = captured.modules[0]
-    expect_equal(module_record.rel_path, "pkg/typed.py")
-    expect_equal(module_record.file_path, repo_root / "pkg/typed.py")
+    recorded_paths = {record.rel_path for record in captured.modules}
+    expect_equal(recorded_paths, {"pkg/typed.py", "pkg/naïve.py"})
 
 
 @pytest.mark.anyio

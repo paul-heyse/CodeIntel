@@ -168,7 +168,10 @@ def _build_target_context(
 @pytest.mark.anyio
 async def test_execute_invokes_step_and_returns_row_counts(tmp_path: Path) -> None:
     """Happy path: modules from resources flow through adapters to the step."""
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/mod.py": "x = 1\n", "pkg/naive.py": "y = 2\n"},
+    )
     captured = StepCallCapture()
     plugin = _make_plugin(captured)
 
@@ -176,20 +179,19 @@ async def test_execute_invokes_step_and_returns_row_counts(tmp_path: Path) -> No
         tmp_path,
         plugin,
         repo_root=repo_root,
-        modules=("pkg/mod.py",),
+        modules=("pkg/mod.py", "pkg/naive.py"),
     )
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts, {"core.docstrings": 1})
+    expect_equal(result.row_counts, {"core.docstrings": 2})
     expect_true(captured.storage is not None)
     expect_true(isinstance(captured.storage, RecordingStorageAdapter))
     expect_equal(captured.repo_root, repo_root)
     expect_equal(captured.repo, DEFAULT_REPO)
     expect_equal(captured.commit, DEFAULT_COMMIT)
-    module_record = captured.modules[0]
-    expect_equal(module_record.rel_path, "pkg/mod.py")
-    expect_equal(module_record.file_path, repo_root / "pkg/mod.py")
+    recorded_paths = {record.rel_path for record in captured.modules}
+    expect_equal(recorded_paths, {"pkg/mod.py", "pkg/naive.py"})
 
 
 @pytest.mark.anyio

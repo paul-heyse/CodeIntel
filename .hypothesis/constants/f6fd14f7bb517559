@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_ops.py
+# hypothesis_version: 6.148.7
+
+[8000, '*', '--auto-pipeline', '--category', '--host', '--port', '--reload', '--skip-prereqs', '-c', '-h', '-p', '127.0.0.1', 'Host to bind to.', 'Port to bind to.', 'call', 'cfg', 'dataset', 'dataset_app', 'describe', 'help', 'http', 'list', 'mcp', 'name', 'negative', 'op', 'op_app', 'runtime', 'serve', 'serve_app', 'skip_prereqs', 'verify']

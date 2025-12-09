@@ -8,9 +8,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import invoke_with_typer_translation
-from codeintel.cli.commands.storage import MacroRequirement, storage_validate_macros
+from codeintel.cli.cli_errors import run_handler
 from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.storage_handlers import MacroRequirement, storage_validate_macros
 
 storage_app = App(
     name="storage",
@@ -41,7 +41,7 @@ def validate_macros(
     cfg = cfg or ValidateMacrosCli()
     runtime_options = runtime_cli_to_options(cfg.runtime)
     db_path = runtime_options.db_path or Path("build/db/codeintel.duckdb")
-    invoke_with_typer_translation(
+    run_handler(
         storage_validate_macros,
         db_path,
         cfg.macros,

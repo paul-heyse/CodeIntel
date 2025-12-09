@@ -17,7 +17,7 @@ from codeintel.ingestion.plugins.coverage_plugin import (
     resolve_coverage_file,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
+from tests._helpers import build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeCoverageCollector, FakeProviders
@@ -25,6 +25,7 @@ from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    seed_modules_and_repo_map,
     write_coverage_file,
 )
 
@@ -60,10 +61,7 @@ def test_get_module_paths_reads_database_when_missing(tmp_path: Path) -> None:
     """DB rows are used when resources.modules is empty."""
     plugin = CoverageIngestPlugin()
     ctx = build_target_context_for_plugin(plugin, tmp_path)
-    ctx.gateway.con.execute(
-        "INSERT INTO core.modules (module, path, repo, commit) VALUES (?, ?, ?, ?)",
-        ["pkg.mod", "pkg/mod.py", DEFAULT_REPO, DEFAULT_COMMIT],
-    )
+    seed_modules_and_repo_map(ctx, ["pkg/mod.py"])
 
     paths = get_module_paths(ctx)
 
@@ -99,8 +97,7 @@ def test_resolve_coverage_file_prefers_repo_dot_coverage(tmp_path: Path) -> None
         config=TargetContextConfig(repo_root=repo_root),
     )
     write_coverage_file(ctx.build_dir, filename="coverage.json", content="{}")
-    repo_cov = repo_root / ".coverage"
-    repo_cov.write_text("binary-ish", encoding="utf-8")
+    repo_cov = write_coverage_file(repo_root, filename=".coverage", content="binary-ish")
 
     resolved = resolve_coverage_file(ctx)
 
@@ -111,7 +108,10 @@ def test_resolve_coverage_file_prefers_repo_dot_coverage(tmp_path: Path) -> None
 async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> None:
     """Happy path: coverage rows are written using the fake collector."""
     plugin = CoverageIngestPlugin()
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/mod.py": "x = 1\n", "pkg/naïve.py": "y = 2\n"},
+    )
     coverage_file = write_coverage_file(repo_root, filename=".coverage", content="{}")
 
     fake_providers = FakeProviders()
@@ -120,11 +120,16 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
             path="pkg/mod.py",
             covered_lines=frozenset({1, 2}),
             missing_lines=frozenset({3}),
-        )
+        ),
+        "pkg/naïve.py": CoverageData(
+            path="pkg/naïve.py",
+            covered_lines=frozenset({1}),
+            missing_lines=frozenset({2, 3}),
+        ),
     }
     overrides = TargetResourceOverrides(
         providers=cast("Providers", fake_providers),
-        modules=("pkg/mod.py",),
+        modules=("pkg/mod.py", "pkg/naïve.py"),
     )
     ctx = build_target_context_for_plugin(
         plugin,
@@ -135,7 +140,7 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expected_rows = 3
+    expected_rows = 6
     expect_equal(result.row_counts.get("analytics.coverage_lines"), expected_rows)
     row = ctx.gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.coverage_lines WHERE repo = ? AND commit = ?",

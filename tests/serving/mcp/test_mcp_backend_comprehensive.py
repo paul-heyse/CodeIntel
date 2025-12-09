@@ -5,16 +5,23 @@ This module tests the DuckDBBackend using real gateways.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.bootstrap import build_backend_resource
-from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
 from codeintel.serving.mcp.errors import McpError
+from codeintel.serving.mcp.models import FunctionSummaryResponse, ResponseMeta
+from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail, ProblemError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
@@ -23,7 +30,12 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
+from tests._helpers.http_backend import make_http_backend_with_responses
+from tests._helpers.http_backend import make_http_backend_with_responses
+from tests._helpers.http_backend import make_http_backend_with_responses
+from tests._helpers.serving_stubs import HookedQueryService
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -1356,3 +1368,544 @@ def test_serving_config_remote_api_missing_url_raises(
             commit=provisioned_repo.commit,
             api_base_url=None,
         )
+
+
+# =============================================================================
+# DatasetBackendMixin normalization and error handling
+# =============================================================================
+
+
+@dataclass
+class _DataclassDescriptor:
+    name: str
+    table: str
+    description: str
+    owner: str | None = None
+
+
+class _ModelDumpDescriptor:
+    def __init__(self, name: str, table: str, description: str) -> None:
+        self._payload = {"name": name, "table": table, "description": description}
+
+    def model_dump(self) -> dict[str, object]:
+        return dict(self._payload)
+
+
+class _DictDescriptor:
+    def __init__(self, name: str, table: str, description: str) -> None:
+        self.name = name
+        self.table = table
+        self.description = description
+
+
+class _DatasetService(HookedQueryService):
+    def __init__(self) -> None:
+        super().__init__(hooks={})
+        self._rows_fail = False
+        self.hooks = {
+            "list_datasets": self._list_datasets,
+            "dataset_specs": self._dataset_specs,
+            "dataset_schema": self._dataset_schema,
+            "read_dataset_rows": self._read_dataset_rows,
+        }
+
+    def _list_datasets(self) -> list[object]:
+        return [
+            _DictDescriptor(
+                name="docs.functions",
+                table="docs.v_functions",
+                description="fn docs",
+            ),
+            _DataclassDescriptor(
+                name="docs.modules",
+                table="docs.v_modules",
+                description="module docs",
+            ),
+            _ModelDumpDescriptor(
+                name="docs.subsystems",
+                table="docs.v_subsystems",
+                description="subsystem docs",
+            ),
+        ]
+
+    def _dataset_specs(self) -> list[object]:
+        return [
+            {
+                "name": "docs.functions",
+                "table_key": "docs.v_functions",
+                "family": "docs",
+                "is_view": True,
+                "schema_columns": ["goid", "name"],
+            }
+        ]
+
+    def _dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+        meta = dm.ResponseMeta(
+            requested_limit=sample_limit,
+            applied_limit=sample_limit,
+            requested_offset=0,
+            applied_offset=0,
+            truncated=False,
+        )
+        return dm.DatasetSchema(
+            dataset_name=dataset_name,
+            table_key="docs.v_functions",
+            duckdb_schema=[{"name": "goid", "type": "BIGINT", "nullable": False}],
+            json_schema={"type": "object"},
+            sample_rows=[{"goid": 1, "name": "fn"}],
+            capabilities={"validation": True},
+            owner="analytics",
+            freshness_sla=None,
+            retention_policy=None,
+            schema_version="1",
+            stable_id="stable-1",
+            validation_profile="strict",
+            meta=meta,
+        )
+
+    def _read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dm.DatasetRows:
+        if self._rows_fail:
+            detail = ProblemDetail(
+                type="error",
+                title="fail",
+                detail="bad rows",
+                status=400,
+                code="bad",
+            )
+            raise DatasetNotFoundError(detail)
+        applied_limit = limit or BackendLimits().default_limit
+        meta = dm.ResponseMeta(
+            requested_limit=limit,
+            applied_limit=applied_limit,
+            requested_offset=offset,
+            applied_offset=offset,
+            truncated=False,
+        )
+        return dm.DatasetRows(
+            dataset_name=dataset_name,
+            limit=applied_limit,
+            offset=offset,
+            rows=[{"goid": 1, "name": "fn"}, {"goid": 2, "name": "fn2"}],
+            meta=meta,
+        )
+
+    def enable_rows_failure(self) -> None:
+        self._rows_fail = True
+
+
+def test_dataset_backend_normalization_variants() -> None:
+    """Cover DatasetBackendMixin normalization for dict, dataclass, and model_dump."""
+    service = _DatasetService()
+    backend_handle = build_serving_backend(service=service)
+    backend = DuckDBBackend(
+        service=service,
+        gateway=backend_handle.backend.gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    )
+
+    descriptors = backend.list_datasets()
+    expect_equal(len(descriptors), 3)
+    expect_true(all(isinstance(item.description, str) for item in descriptors))
+
+    specs = backend.dataset_specs()
+    expect_is_instance(specs, list)
+
+    schema = backend.dataset_schema(dataset_name="docs.functions")
+    expect_is_instance(schema.meta.applied_limit, int)
+
+    rows = backend.read_dataset_rows(dataset_name="docs.functions", limit=1, offset=0)
+    expect_equal(rows.meta.applied_limit, 1)
+
+    backend_handle.close()
+
+
+def test_dataset_backend_rows_error_translated_to_mcp() -> None:
+    """Ensure DatasetNotFoundError is translated to McpError."""
+    service = _DatasetService()
+    service.enable_rows_failure()
+    backend_handle = build_serving_backend(service=service)
+    backend = DuckDBBackend(
+        service=service,
+        gateway=backend_handle.backend.gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    )
+
+    with pytest.raises(McpError):
+        _ = backend.read_dataset_rows(dataset_name="missing", limit=1)
+
+    backend_handle.close()
+
+
+def test_dataset_backend_problem_error_translated() -> None:
+    """Ensure ProblemError is translated to McpError for dataset_schema."""
+
+    class _ProblemService(HookedQueryService):
+        def __init__(self) -> None:
+            super().__init__(
+                hooks={
+                    "dataset_schema": self._dataset_schema,
+                    "list_datasets": list,
+                    "dataset_specs": list,
+                    "read_dataset_rows": lambda **_: dm.DatasetRows(
+                        dataset_name="docs.functions",
+                        limit=1,
+                        offset=0,
+                        rows=[],
+                        meta=dm.ResponseMeta(),
+                    ),
+                }
+            )
+
+        def _dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+            detail = ProblemDetail(
+                type="about:blank",
+                title="oops",
+                detail="bad schema",
+                status=400,
+                code="bad",
+            )
+            raise ProblemError(detail)
+
+    service = _ProblemService()
+    backend_handle = build_serving_backend(service=service)
+    backend = DuckDBBackend(
+        service=service,
+        gateway=backend_handle.backend.gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    )
+
+    with pytest.raises(McpError):
+        _ = backend.dataset_schema(dataset_name="docs.functions")
+
+    backend_handle.close()
+
+
+# =============================================================================
+# Validation helpers
+# =============================================================================
+
+
+def test_duckdb_backend_identifier_validation(provisioned_repo: ProvisionedGateway) -> None:
+    """Ensure identifier validation errors are raised."""
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+    )
+
+    with pytest.raises(errors.McpError):
+        _ = backend.get_function_summary()
+
+    with pytest.raises(errors.McpError):
+        _ = backend.get_callgraph_neighbors(goid_h128=1, direction="sideways")
+
+
+# =============================================================================
+# Domain conversion coverage on real gateway
+# =============================================================================
+
+
+def test_duckdb_backend_domain_conversions(provisioned_repo: ProvisionedGateway) -> None:
+    """Exercise DuckDBBackend conversions using real gateway data."""
+    backend = build_duckdb_backend(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+    )
+
+    goid_row = provisioned_repo.gateway.con.execute(
+        "SELECT goid_h128 FROM core.goids LIMIT 1"
+    ).fetchone()
+    module_row = provisioned_repo.gateway.con.execute(
+        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
+    ).fetchone()
+    file_row = provisioned_repo.gateway.con.execute(
+        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
+    ).fetchone()
+    subsystem_row = provisioned_repo.gateway.con.execute(
+        "SELECT subsystem_id FROM analytics.subsystems LIMIT 1"
+    ).fetchone()
+
+    if goid_row is None or module_row is None or file_row is None or subsystem_row is None:
+        pytest.skip("Required seed data missing")
+
+    goid_h128 = goid_row[0]
+    module_name = module_row[0]
+    rel_path = file_row[0]
+    subsystem_id = subsystem_row[0]
+
+    expect_is_instance(
+        backend.list_high_risk_functions(min_risk=0.5),
+        dm.HighRiskFunctionsResult,
+    )
+    expect_is_instance(
+        backend.get_callgraph_neighbors(goid_h128=goid_h128),
+        dm.CallGraphNeighbors,
+    )
+    expect_is_instance(
+        backend.get_callgraph_neighborhood(goid_h128=goid_h128, radius=1),
+        dm.GraphNeighborhood,
+    )
+    expect_is_instance(
+        backend.get_import_boundary(subsystem_id=subsystem_id),
+        dm.ImportBoundary,
+    )
+    expect_is_instance(
+        backend.get_tests_for_function(goid_h128=goid_h128),
+        dm.TestsForFunctionResult,
+    )
+    expect_is_instance(
+        backend.get_file_summary(rel_path=rel_path),
+        dm.FileSummaryResult,
+    )
+    expect_is_instance(
+        backend.get_function_profile(goid_h128=goid_h128),
+        dm.FunctionProfileResult,
+    )
+    expect_is_instance(
+        backend.get_file_profile(rel_path=rel_path),
+        dm.FileProfileResult,
+    )
+    expect_is_instance(
+        backend.get_module_profile(module=module_name),
+        dm.ModuleProfileResult,
+    )
+    expect_is_instance(
+        backend.get_function_architecture(goid_h128=goid_h128),
+        dm.FunctionArchitectureResult,
+    )
+    expect_is_instance(
+        backend.get_module_architecture(module=module_name),
+        dm.ModuleArchitectureResult,
+    )
+    expect_is_instance(
+        backend.list_subsystems(),
+        dm.SubsystemSummaryResult,
+    )
+    expect_is_instance(
+        backend.get_module_subsystems(module=module_name),
+        dm.ModuleSubsystemResult,
+    )
+    expect_is_instance(
+        backend.get_subsystem_modules(subsystem_id=subsystem_id),
+        dm.SubsystemModulesResult,
+    )
+    expect_is_instance(
+        backend.search_subsystems(q=subsystem_id),
+        dm.SubsystemSearchResult,
+    )
+    expect_is_instance(
+        backend.summarize_subsystem(subsystem_id=subsystem_id),
+        dm.SubsystemModulesResult,
+    )
+    expect_is_instance(
+        backend.get_file_hints(rel_path=rel_path),
+        dm.FileHintsResult,
+    )
+    expect_is_instance(
+        backend.list_subsystem_profiles(),
+        dm.SubsystemProfileResult,
+    )
+    expect_is_instance(
+        backend.list_subsystem_coverage(),
+        dm.SubsystemCoverageResult,
+    )
+
+
+# =============================================================================
+# HttpBackend coverage
+# =============================================================================
+
+
+def _make_client_with_responses(responses: list[tuple[int, Mapping[str, object]]]) -> httpx.Client:
+    queue = list(responses)
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if not queue:
+            return httpx.Response(200, json={"ok": True})
+        status, payload = queue.pop(0)
+        return httpx.Response(status, json=payload)
+
+    return httpx.Client(base_url="http://test", transport=httpx.MockTransport(_handler))
+
+
+def test_http_backend_health_and_request_success() -> None:
+    """Verify HttpBackend health check and successful JSON request."""
+    client = _make_client_with_responses(
+        [
+            (200, {"ok": True}),
+            (200, {"ok": True}),
+        ]
+    )
+    backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(default_limit=5, max_rows_per_call=10),
+        client=client,
+    )
+
+    payload = backend._request_json("/health", {})
+    expect_true(payload["ok"])
+
+
+def test_http_backend_retry_and_circuit_breaker() -> None:
+    """Cover retry path and circuit-open guard."""
+    client = _make_client_with_responses(
+        [
+            (200, {"ok": True}),  # health
+            (
+                500,
+                {
+                    "type": "about:blank",
+                    "title": "retry",
+                    "detail": "server error",
+                    "status": 500,
+                },
+            ),
+            (200, {"ok": True}),
+        ]
+    )
+    backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(default_limit=5, max_rows_per_call=10),
+        client=client,
+        retry_attempts=2,
+        retry_backoff=0.0,
+        circuit_threshold=1,
+        circuit_cooldown_s=100.0,
+    )
+
+    payload = backend._request_json("/functions/high-risk", {})
+    expect_true(payload["ok"])
+    expect_equal(backend.last_retry_attempts, 2)
+
+    failing_client = _make_client_with_responses(
+        [
+            (200, {"ok": True}),  # health
+            (
+                500,
+                {
+                    "type": "about:blank",
+                    "title": "retry",
+                    "detail": "server error",
+                    "status": 500,
+                },
+            ),
+        ]
+    )
+    circuit_backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(),
+        client=failing_client,
+        retry_attempts=1,
+        retry_backoff=0.0,
+        circuit_threshold=1,
+        circuit_cooldown_s=100.0,
+    )
+
+    with pytest.raises(McpError):
+        _ = circuit_backend._request_json("/functions/high-risk", {})
+
+    with pytest.raises(McpError):
+        _ = circuit_backend._request_json("/functions/high-risk", {})
+
+
+def test_http_backend_problem_detail_response() -> None:
+    """Ensure 4xx responses raise McpError with ProblemDetail payload."""
+    client = _make_client_with_responses(
+        [
+            (200, {"ok": True}),  # health
+            (
+                404,
+                {
+                    "type": "about:blank",
+                    "title": "missing",
+                    "detail": "not found",
+                    "status": 404,
+                },
+            ),
+        ]
+    )
+    backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(),
+        client=client,
+    )
+
+    with pytest.raises(McpError):
+        _ = backend._request_json("/missing", {})
+
+
+def test_http_backend_async_close_when_owned() -> None:
+    """Ensure close handles async clients when owned."""
+    client = _make_client_with_responses([(200, {"ok": True})])
+    backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(),
+        client=client,
+    )
+    async_client = httpx.AsyncClient(
+        base_url="http://test",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"ok": True})),
+    )
+    backend.client = async_client
+    backend._owns_client = True
+    backend._async_client = True
+
+    backend.close()
+    expect_true(async_client.is_closed)
+
+
+def test_http_backend_service_override_normalization() -> None:
+    """Validate service_override is honored and normalization accepts response models."""
+
+    class _OverrideService:
+        def get_function_summary(
+            self,
+            *,
+            urn: str | None = None,
+            goid_h128: int | None = None,
+            rel_path: str | None = None,
+            qualname: str | None = None,
+            scope: object | None = None,
+        ) -> FunctionSummaryResponse:
+            _ = (urn, goid_h128, rel_path, qualname, scope)
+            return FunctionSummaryResponse(found=True, summary=None, meta=ResponseMeta())
+
+    client = _make_client_with_responses([(200, {"ok": True})])
+    service = _OverrideService()
+    backend = HttpBackend(
+        base_url="http://test",
+        repo="demo/repo",
+        commit="deadbeef",
+        timeout=1.0,
+        limits=BackendLimits(),
+        client=client,
+        service_override=service,
+    )
+
+    response = backend.get_function_summary(goid_h128=1)
+    expect_true(response.found)

@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.gateway import GatewayFactory, seed_repo_identity
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
 
 
 def test_create_mcp_server_requires_gateway_for_local_db() -> None:
@@ -25,24 +23,25 @@ def test_create_mcp_server_requires_gateway_for_local_db() -> None:
 
 def test_create_mcp_server_uses_register_tools_fn() -> None:
     """Server creation should delegate registration using service when present."""
-    cfg = ServingConfig(mode="remote_api", api_base_url="https://example.invalid")
+    cfg = ServingConfig(mode="local_db")
     close_called = False
     register_calls: list[tuple[Any, Any]] = []
 
-    class _Backend:
-        def __init__(self) -> None:
-            self.service = SimpleNamespace(name="service")
-
-    backend = _Backend()
+    gateway = GatewayFactory().with_macros().open()
+    seed_repo_identity(gateway, repo=cfg.repo, commit=cfg.commit)
+    backend_resource = build_backend_resource(cfg, gateway=gateway)
+    original_close = backend_resource.close
 
     def _mark_close() -> None:
         nonlocal close_called
         close_called = True
+        original_close()
 
-    def _backend_factory(*args: tuple[object, ...], **kwargs: object) -> SimpleNamespace:
-        _ = args
-        _ = kwargs
-        return SimpleNamespace(backend=backend, close=_mark_close)
+    backend_resource.close = _mark_close  # type: ignore[assignment]
+
+    def _backend_factory(*args: tuple[object, ...], **kwargs: object) -> BackendResource:
+        _ = (args, kwargs)
+        return backend_resource
 
     def _register_tools_fn(mcp: object, svc: object, cfg: ServingConfig | None) -> None:
         _ = cfg
@@ -50,13 +49,13 @@ def test_create_mcp_server_uses_register_tools_fn() -> None:
 
     srv, close = server.create_mcp_server(
         cfg=cfg,
-        backend_factory=cast("server.BackendFactory", _backend_factory),
-        gateway=cast("StorageGateway", SimpleNamespace()),
+        backend_factory=_backend_factory,
+        gateway=gateway,
         register_tools_fn=_register_tools_fn,
     )
 
     expect_true(bool(register_calls))
-    expect_true(register_calls[0][1] is backend.service)
+    expect_true(register_calls[0][1] is backend_resource.service)
     close()
     expect_true(close_called)
     expect_true(hasattr(srv, "run"))
@@ -73,26 +72,27 @@ def test_main_uses_register_tools_and_runs() -> None:
             nonlocal run_called
             run_called = True
 
-    def _backend_factory(_: ServingConfig, **__: object) -> object:
-        return SimpleNamespace(
-            backend=SimpleNamespace(service="svc", limits={"default_limit": 10}),
-            close=lambda: None,
-        )
+    cfg = ServingConfig(mode="local_db")
+    gateway = GatewayFactory().with_macros().open()
+    seed_repo_identity(gateway, repo=cfg.repo, commit=cfg.commit)
+    backend_resource = build_backend_resource(cfg, gateway=gateway)
 
     def _register_all_tools(mcp: object, backend: object, cfg: ServingConfig | None = None) -> None:
         register_calls.append((backend, cfg))
         _ = mcp
 
-    cfg = ServingConfig(mode="remote_api", api_base_url="https://api.invalid")
+    def _backend_factory(_: ServingConfig, **__: object) -> BackendResource:
+        return backend_resource
+
     srv, close = server.create_mcp_server(
         cfg=cfg,
-        backend_factory=cast("server.BackendFactory", _backend_factory),
-        gateway=cast("StorageGateway", SimpleNamespace()),
+        backend_factory=_backend_factory,
+        gateway=gateway,
         register_tools_fn=_register_all_tools,
         mcp_factory=lambda _name: _RecordingMcp(),
     )
     expect_true(bool(register_calls))
-    expect_equal(register_calls[0][0], "svc")
+    expect_equal(register_calls[0][0], backend_resource.service)
     cast("_RecordingMcp", srv).run()
     expect_true(run_called)
     close()

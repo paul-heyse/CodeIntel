@@ -6,8 +6,12 @@ import json
 
 import pytest
 
-from codeintel.cli.commands import graphs as graphs_cmd
-from codeintel.cli.commands.graphs import GraphPluginsOptions, PlanMode
+from codeintel.cli.graphs_handlers import (
+    GraphPluginsOptions,
+    OutputFormat,
+    PlanMode,
+    graph_plugins_handler,
+)
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     SelectionPolicy,
@@ -32,10 +36,10 @@ def test_cli_lenient_selection_skips_unknown_plugin(capsys: pytest.CaptureFixtur
         selection_policy=SelectionPolicy.LENIENT,
         dependency_policy=DependencyPolicy.STRICT,
         validation_mode=False,
-        output_format=graphs_cmd.OutputFormat.JSON,
+        output_format=OutputFormat.JSON,
     )
 
-    graphs_cmd.graph_plugins_handler(options)
+    graph_plugins_handler(options)
     captured = capsys.readouterr().out
     payload = json.loads(captured)
     skipped = {entry["name"]: entry["reason"] for entry in payload["skipped_plugins"]}
@@ -54,12 +58,12 @@ def test_cli_strict_selection_falls_back_on_unknown_plugin(
         selection_policy=SelectionPolicy.STRICT,
         dependency_policy=DependencyPolicy.STRICT,
         validation_mode=False,
-        output_format=graphs_cmd.OutputFormat.TEXT,
+        output_format=OutputFormat.TEXT,
     )
 
-    graphs_cmd.graph_plugins_handler(options)
-    captured = capsys.readouterr().out
-    expect_in("Failed to compute plan; showing available plugins", captured)
+    graph_plugins_handler(options)
+    captured = capsys.readouterr()
+    expect_in("Failed to compute plan; showing available plugins", captured.err)
 
 
 def test_cli_dependency_skip_records_missing_dependency(
@@ -78,9 +82,9 @@ def test_cli_dependency_skip_records_missing_dependency(
             selection_policy=SelectionPolicy.LENIENT,
             dependency_policy=DependencyPolicy.SKIP,
             validation_mode=False,
-            output_format=graphs_cmd.OutputFormat.JSON,
+            output_format=OutputFormat.JSON,
         )
-        graphs_cmd.graph_plugins_handler(options)
+        graph_plugins_handler(options)
 
     captured = capsys.readouterr().out
     payload = json.loads(captured)
@@ -99,9 +103,9 @@ def test_cli_validation_mode_enforces_strict_policy(capsys: pytest.CaptureFixtur
         selection_policy=SelectionPolicy.LENIENT,
         dependency_policy=DependencyPolicy.SKIP,
         validation_mode=True,
-        output_format=graphs_cmd.OutputFormat.TEXT,
+        output_format=OutputFormat.TEXT,
     )
 
-    graphs_cmd.graph_plugins_handler(options)
-    captured = capsys.readouterr().out
-    expect_in("Failed to compute plan; showing available plugins", captured)
+    graph_plugins_handler(options)
+    captured = capsys.readouterr()
+    expect_in("Failed to compute plan; showing available plugins", captured.err)

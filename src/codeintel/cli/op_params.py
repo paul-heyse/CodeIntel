@@ -1,23 +1,8 @@
-"""Dynamic CLI parameter introspection and command factory for serving operations.
+"""Dynamic CLI parameter introspection for serving operations.
 
-This module provides infrastructure for dynamically generating typed CLI commands
-for each serving operation by introspecting the Protocol method signatures from
-the query API layer.
-
-The key components:
-1. CliParamSpec - Typed specification for a CLI parameter with role classification
-2. Signature introspection - Extract parameter info from Protocol methods
-3. Role classification - Categorize parameters as selector/filter/advanced
-4. Command factory - Generate Typer commands with proper type annotations
-5. String tunnel pattern - Accept all params as Optional[str], coerce at runtime
-
-The "string tunnel" pattern is used because Typer does not support:
-- **kwargs in command functions
-- Union types with multiple non-None types (e.g., str | int | float)
-
-By accepting all parameters as Optional[str] and coercing to proper types at
-runtime, we get full Typer integration (help, autocomplete) while maintaining
-type safety.
+This module builds operation metadata and parameter specifications independent of
+any CLI framework. It is used by the Cyclopts CLI to generate dynamic
+subcommands and to coerce stringly CLI arguments into typed parameters.
 """
 
 from __future__ import annotations
@@ -25,22 +10,8 @@ from __future__ import annotations
 import inspect
 import logging
 import types
-from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Annotated,
-    Any,
-    Literal,
-    Protocol,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
-
-import typer
+from typing import TYPE_CHECKING, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from codeintel.serving.backend import query_api
 from codeintel.serving.operations.catalog import Operation, iter_operations
@@ -50,7 +21,6 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
 # Parameter Role Classification
 # -----------------------------------------------------------------------------
 
@@ -662,25 +632,6 @@ def _get_typer_type(spec: CliParamSpec) -> type[Any]:
 # -----------------------------------------------------------------------------
 
 
-@dataclass
-class DynamicCommandConfig:
-    """Configuration for dynamic command generation.
-
-    Attributes
-    ----------
-    skip_prereqs
-        If True, skip prerequisite pipeline execution.
-    verbose
-        If True, enable verbose output.
-    project_root
-        Optional explicit project root path.
-    """
-
-    skip_prereqs: bool = False
-    verbose: bool = False
-    project_root: str | None = None
-
-
 def get_operations_with_cli_support() -> list[Operation]:
     """Get all operations that support CLI invocation.
 
@@ -701,11 +652,6 @@ def get_operations_with_cli_support() -> list[Operation]:
                 continue
             operations.append(op)
     return operations
-
-
-# -----------------------------------------------------------------------------
-# String Tunnel: Runtime Type Coercion
-# -----------------------------------------------------------------------------
 
 
 def coerce_string_param(
@@ -789,239 +735,12 @@ def coerce_params_from_strings(
     return result
 
 
-# -----------------------------------------------------------------------------
-# Dynamic Command Factory
-# -----------------------------------------------------------------------------
-
-# Type aliases for common CLI options (Typer-compatible single-type unions)
-_ProjectRootOpt = Annotated[
-    Path | None,
-    typer.Option("--root", "-r", help="Explicit project root directory"),
-]
-_SkipPrereqsOpt = Annotated[
-    bool | None,
-    typer.Option("--skip-prereqs", help="Skip prerequisite pipeline", is_flag=True),
-]
-_VerboseOpt = Annotated[
-    bool | None,
-    typer.Option("--verbose", "-v", help="Enable verbose output", is_flag=True),
-]
-
-
-class OperationInvokeCallback(Protocol):
-    """Protocol for operation invocation callbacks.
-
-    This protocol defines the signature for callbacks that execute operations
-    from dynamically registered CLI commands. The boolean parameters are
-    keyword-only to satisfy lint rules about boolean positional arguments.
-    """
-
-    def __call__(
-        self,
-        op_id: str,
-        params: dict[str, Any],
-        project_root: Path | None,
-        *,
-        skip_prereqs: bool,
-        verbose: bool,
-    ) -> None:
-        """Invoke an operation.
-
-        Parameters
-        ----------
-        op_id
-            Operation identifier.
-        params
-            Operation parameters (coerced to proper types).
-        project_root
-            Optional project root path.
-        skip_prereqs
-            Whether to skip prerequisite pipeline execution.
-        verbose
-            Whether to enable verbose output.
-        """
-        ...
-
-
-def _make_typer_option(spec: CliParamSpec) -> typer.models.OptionInfo:
-    """Create a Typer Option for a parameter spec.
-
-    Parameters
-    ----------
-    spec
-        CLI parameter specification.
-
-    Returns
-    -------
-    typer.models.OptionInfo
-        Typer option configuration.
-    """
-    return typer.Option(
-        f"--{spec.cli_name}",
-        help=spec.help_text,
-        rich_help_panel=spec.help_panel,
-    )
-
-
-def build_dynamic_command(
-    metadata: OperationCliMetadata,
-    invoke_callback: OperationInvokeCallback,
-) -> Callable[..., None]:
-    """Build a dynamic Typer command for an operation.
-
-    Creates a command function with explicit parameters (not **kwargs) where
-    all operation-specific parameters are typed as Optional[str]. Type coercion
-    happens at runtime based on the parameter specifications.
-
-    Parameters
-    ----------
-    metadata
-        CLI metadata for the operation.
-    invoke_callback
-        Callback function to invoke the operation.
-        Signature: (op_id, params, project_root, skip_prereqs, verbose) -> None
-
-    Returns
-    -------
-    Callable[..., None]
-        Command function suitable for Typer registration.
-    """
-    op = metadata.operation
-    specs = metadata.params
-
-    # Build the parameter list for the signature
-    # Start with base parameters that every command has
-    sig_params: list[inspect.Parameter] = [
-        inspect.Parameter(
-            "project_root",
-            inspect.Parameter.KEYWORD_ONLY,
-            default=None,
-            annotation=_ProjectRootOpt,
-        ),
-        inspect.Parameter(
-            "skip_prereqs",
-            inspect.Parameter.KEYWORD_ONLY,
-            default=None,
-            annotation=_SkipPrereqsOpt,
-        ),
-        inspect.Parameter(
-            "verbose",
-            inspect.Parameter.KEYWORD_ONLY,
-            default=None,
-            annotation=_VerboseOpt,
-        ),
-    ]
-
-    # Add operation-specific parameters - ALL as Annotated[str | None, Option]
-    for spec in specs:
-        param_annotation = Annotated[
-            str | None,
-            typer.Option(
-                f"--{spec.cli_name}",
-                help=spec.help_text,
-                rich_help_panel=spec.help_panel,
-            ),
-        ]
-        sig_params.append(
-            inspect.Parameter(
-                spec.name,
-                inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=param_annotation,
-            )
-        )
-
-    # Create the actual command function
-    # Use a factory to capture specs and op in closure
-    def make_command() -> Callable[..., None]:
-        # Capture these in closure
-        captured_op_id = op.id
-        captured_specs = specs
-        captured_invoke = invoke_callback
-        captured_help = metadata.help_text
-
-        def command(
-            project_root: _ProjectRootOpt = None,
-            skip_prereqs: _SkipPrereqsOpt = None,
-            verbose: _VerboseOpt = None,
-            **op_params: str | None,
-        ) -> None:
-            # Extract operation-specific params from kwargs
-            # Coerce string values to proper types
-            coerced = coerce_params_from_strings(op_params, captured_specs)
-
-            # Resolve flags
-            skip_prereqs_flag = skip_prereqs if skip_prereqs is not None else False
-            verbose_flag = verbose if verbose is not None else False
-
-            # Invoke the operation
-            captured_invoke(
-                captured_op_id,
-                coerced,
-                project_root,
-                skip_prereqs=skip_prereqs_flag,
-                verbose=verbose_flag,
-            )
-
-        # Set the docstring
-        command.__doc__ = captured_help
-        return command
-
-    # Create and configure the command
-    cmd = make_command()
-    cmd.__name__ = f"op_{op.id.replace('.', '_')}"
-
-    # Attach the synthetic signature so Typer sees explicit parameters
-    cmd.__signature__ = inspect.Signature(sig_params)
-
-    return cmd
-
-
-def register_dynamic_commands(
-    app: typer.Typer,
-    invoke_callback: OperationInvokeCallback,
-) -> int:
-    """Register dynamic commands for all CLI-supported operations.
-
-    Parameters
-    ----------
-    app
-        Typer application to register commands on.
-    invoke_callback
-        Callback to invoke operations.
-        Signature: (op_id, params, project_root, skip_prereqs, verbose) -> None
-
-    Returns
-    -------
-    int
-        Number of commands registered.
-    """
-    operations = get_operations_with_cli_support()
-    count = 0
-
-    for op in operations:
-        metadata = build_operation_cli_metadata(op)
-        command = build_dynamic_command(metadata, invoke_callback)
-
-        # Register with Typer
-        app.command(
-            name=metadata.cli_name,
-            help=op.summary,
-        )(command)
-        count += 1
-
-    LOG.debug("Registered %d dynamic operation commands", count)
-    return count
-
-
 __all__ = [
     "CliParamSpec",
-    "DynamicCommandConfig",
     "OperationCliMetadata",
     "ParamRole",
     "build_cli_param_spec",
     "build_cli_param_specs_for_operation",
-    "build_dynamic_command",
     "build_operation_cli_metadata",
     "classify_param_role",
     "coerce_params_from_strings",
@@ -1029,5 +748,4 @@ __all__ = [
     "get_backend_signature_for_operation",
     "get_help_panel_for_role",
     "get_operations_with_cli_support",
-    "register_dynamic_commands",
 ]

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.contracts import OutputContract
+from codeintel.build.targets import OutputTarget
+from codeintel.config.datasets.primitives import TableSchema
 from codeintel.ingestion import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -20,6 +24,7 @@ from tests._helpers.fakes.contexts import (
     TargetResourceOverrides,
     make_test_output_target,
 )
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,11 +38,14 @@ if TYPE_CHECKING:
 __all__ = [
     "TargetContextConfig",
     "build_ingestion_adapters",
+    "build_repo_target",
     "build_target_context_for_plugin",
     "module_paths_from_context",
     "module_records_for_paths",
+    "seed_modules_and_repo_map",
     "write_coverage_file",
     "write_pytest_report",
+    "write_scip_index",
 ]
 
 
@@ -49,6 +57,7 @@ class TargetContextConfig:
     modules: tuple[str, ...] | None = None
     providers: Providers | None = None
     gateway: StorageGateway | None = None
+    gateway_factory: GatewayFactory | None = None
     resources: TargetResourceOverrides | None = None
 
 
@@ -57,6 +66,7 @@ def build_target_context_for_plugin(
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
+    target: OutputTarget | None = None,
 ) -> TargetExecutionContext:
     """Construct a TargetExecutionContext wired to real adapters.
 
@@ -69,14 +79,19 @@ def build_target_context_for_plugin(
     effective_repo_root = cfg.repo_root or (tmp_path / "repo")
     effective_repo_root.mkdir(parents=True, exist_ok=True)
 
-    overrides = EnvOverrides(tmp_path=effective_repo_root, gateway=cfg.gateway)
+    gateway = cfg.gateway
+    if gateway is None:
+        factory = cfg.gateway_factory or GatewayFactory().with_macros()
+        gateway = factory.open()
+
+    overrides = EnvOverrides(tmp_path=effective_repo_root, gateway=gateway)
     builder = ExecutionContextBuilder.create(tmp_path, env_overrides=overrides)
-    target = make_test_output_target(plugin)
+    effective_target = target or make_test_output_target(plugin)
     resource_overrides = cfg.resources or TargetResourceOverrides(
         providers=cfg.providers,
         modules=cfg.modules or (),
     )
-    return builder.build_target_context(target=target, resources=resource_overrides)
+    return builder.build_target_context(target=effective_target, resources=resource_overrides)
 
 
 def build_ingestion_adapters(
@@ -147,6 +162,36 @@ def write_pytest_report(
     return report_path
 
 
+def write_scip_index(
+    build_dir: Path,
+    documents: Sequence[dict[str, object]],
+    *,
+    filename: str = "index.json",
+) -> Path:
+    """
+    Write a SCIP index JSON artifact under ``build/scip``.
+
+    Parameters
+    ----------
+    build_dir
+        Base build directory for the target context.
+    documents
+        Iterable of SCIP document payloads.
+    filename
+        Optional filename override (defaults to ``index.json``).
+
+    Returns
+    -------
+    Path
+        Path to the written index file.
+    """
+    scip_dir = build_dir / "scip"
+    scip_dir.mkdir(parents=True, exist_ok=True)
+    index_path = scip_dir / filename
+    index_path.write_text(json.dumps({"documents": list(documents)}), encoding="utf-8")
+    return index_path
+
+
 def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:
     """Fetch module paths using the shared helper.
 
@@ -170,3 +215,80 @@ def module_records_for_paths(
         Module records containing module names and file paths.
     """
     return paths_to_modules(paths, repo_root)
+
+
+def seed_modules_and_repo_map(
+    ctx: TargetExecutionContext,
+    paths: Sequence[str],
+) -> None:
+    """
+    Insert module rows and a repo_map entry for the provided paths.
+
+    Parameters
+    ----------
+    ctx
+        Target execution context with gateway and repo metadata.
+    paths
+        Iterable of module-relative file paths to seed.
+    """
+    records = module_records_for_paths(paths, ctx.repo_root)
+    con = ctx.gateway.con
+    con.execute(
+        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+        [ctx.repo, ctx.commit],
+    )
+    con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [ctx.repo, ctx.commit],
+    )
+    con.executemany(
+        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+        """,
+        [
+            (
+                record.module_name,
+                record.file_path.relative_to(ctx.repo_root).as_posix(),
+                ctx.repo,
+                ctx.commit,
+            )
+            for record in records
+        ],
+    )
+    modules_json = {
+        record.module_name: record.file_path.relative_to(ctx.repo_root).as_posix()
+        for record in records
+    }
+    con.execute(
+        """
+        INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
+        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        """,
+        [ctx.repo, ctx.commit, json.dumps(modules_json)],
+    )
+
+
+def build_repo_target(plugin: TargetPlugin, tables: tuple[TableSchema, ...]) -> OutputTarget:
+    """
+    Construct an OutputTarget for repo-oriented plugins.
+
+    Parameters
+    ----------
+    plugin
+        Plugin instance providing name/description metadata.
+    tables
+        Contract tables expected to be produced.
+
+    Returns
+    -------
+    OutputTarget
+        Target wired with an OutputContract for the supplied tables.
+    """
+    return OutputTarget(
+        name=plugin.plugin_name,
+        module="ingestion",
+        plugin=plugin.plugin_name,
+        contract=OutputContract(tables=tables),
+        description=plugin.plugin_description,
+    )

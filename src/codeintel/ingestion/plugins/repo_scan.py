@@ -173,7 +173,8 @@ class RepoScanPlugin(TargetPlugin):
                     [ctx.repo, ctx.commit],
                 ).fetchone()
                 row_counts[table_key] = int(count[0]) if count else 0
-            except (RuntimeError, OSError, duckdb.CatalogException):
+            except (RuntimeError, OSError, duckdb.CatalogException) as exc:
+                log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0
         return row_counts
 

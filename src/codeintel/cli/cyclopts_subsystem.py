@@ -6,7 +6,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands.subsystem import (
+from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.subsystem_handlers import (
+    RuntimeCliOptions,
     SubsystemCoverageOptions,
     SubsystemIdOptions,
     SubsystemListOptions,
@@ -19,7 +21,6 @@ from codeintel.cli.commands.subsystem import (
     subsystem_profiles_handler,
     subsystem_show_handler,
 )
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
 
 subsystem_app = App(
     name="subsystem",
@@ -28,7 +29,11 @@ subsystem_app = App(
 
 
 def _runtime(cli: RuntimeCLI) -> SubsystemRuntime:
-    return SubsystemRuntime(runtime_options=runtime_cli_to_options(cli), verbose=cli.verbose)
+    cli_opts = runtime_cli_to_options(cli)
+    return SubsystemRuntime(
+        runtime_options=RuntimeCliOptions(project_root=cli_opts.project_root),
+        verbose=cli.verbose,
+    )
 
 
 @subsystem_app.command(name="list")

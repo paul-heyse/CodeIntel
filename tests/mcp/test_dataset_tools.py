@@ -5,11 +5,12 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
+from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
@@ -19,10 +20,8 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
-
-if TYPE_CHECKING:
-    from codeintel.config.serving_models import ServingConfig
 
 
 @dataclass
@@ -60,7 +59,10 @@ class _ValidatingModel:
 class _Backend:
     def __init__(self) -> None:
         self.calls: list[str] = []
-        self.gateway = SimpleNamespace()
+        self.gateway = GatewayFactory().with_macros().open()
+        self.limits = BackendLimits()
+        self.repo = self.gateway.config.repo or "demo/repo"
+        self.commit = self.gateway.config.commit or "deadbeef"
 
     def list_dataset(self, **_: object) -> list[str]:
         self.calls.append("list_dataset")
@@ -294,7 +296,7 @@ def test_dataset_tool_invokes_auto_pipeline() -> None:
         register_dataset_tools(
             mcp,
             backend,
-            config=cast("ServingConfig", SimpleNamespace(mode="local_db")),
+            config=ServingConfig(mode="local_db"),
             options=DatasetToolOptions(
                 operations=(spec,),
                 model_resolver=lambda name: _FromDomainModel

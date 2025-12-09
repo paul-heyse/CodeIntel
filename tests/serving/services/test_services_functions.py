@@ -6,6 +6,7 @@ through HTTP routes and direct LocalQueryService invocation, using real gateways
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,14 +15,18 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
+from codeintel.serving.context import RequestContext
+from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.mcp.models import GraphScopePayload
+from codeintel.serving.services.base import BaseFunctionQueries, BaseSubsystemQueries
+from codeintel.serving.services.errors import ProblemDetail, ProblemError
+from codeintel.serving.services.observability import ServiceCallMetrics, ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
+from codeintel.serving.services.transport import HttpTransport, LocalTransport
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_not_none, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -958,3 +963,304 @@ def test_import_boundary_missing_subsystem_id(
 
     # Should return 422 validation error (missing required param)
     expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+
+# =============================================================================
+# Base class coverage
+# =============================================================================
+
+
+class _RecordedFunctionQueries(BaseFunctionQueries):
+    """Concrete implementation capturing _execute inputs."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+        self.transport = LocalTransport(query=HookedDuckDBQueryApi(), limits=BackendLimits())
+
+    def _execute(
+        self,
+        operation: str,
+        executor: Callable[[], object],
+        *,
+        dataset: str | None = None,
+    ) -> object:
+        self.calls.append((operation, dataset))
+        return executor()
+
+    def get_function_summary(
+        self,
+        *,
+        urn: str | None = None,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+        scope: GraphScopePayload | None = None,
+    ) -> str:
+        _ = (urn, goid_h128, rel_path, qualname, scope)
+        return self._execute("get_function_summary", lambda: "summary", dataset="functions")
+
+    def list_high_risk_functions(
+        self,
+        *,
+        min_risk: float = 0.7,
+        limit: int | None = None,
+        tested_only: bool = False,
+        scope: GraphScopePayload | None = None,
+    ) -> str:
+        _ = (min_risk, limit, tested_only, scope)
+        return self._execute("list_high_risk_functions", lambda: "risk", dataset="functions")
+
+    def get_callgraph_neighbors(
+        self,
+        *,
+        goid_h128: int,
+        direction: str = "both",
+        limit: int | None = None,
+        scope: GraphScopePayload | None = None,
+    ) -> str:
+        _ = (goid_h128, direction, limit, scope)
+        return self._execute("get_callgraph_neighbors", lambda: "neighbors")
+
+    def get_tests_for_function(
+        self,
+        *,
+        goid_h128: int | None = None,
+        urn: str | None = None,
+        limit: int | None = None,
+        scope: GraphScopePayload | None = None,
+    ) -> str:
+        _ = (goid_h128, urn, limit, scope)
+        return self._execute("get_tests_for_function", lambda: "tests")
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> str:
+        _ = (goid_h128, radius, max_nodes)
+        return self._execute(
+            "get_callgraph_neighborhood",
+            lambda: "neighborhood",
+            dataset="call_graph_nodes",
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> str:
+        _ = (subsystem_id, max_edges)
+        return self._execute(
+            "get_import_boundary",
+            lambda: "boundary",
+            dataset="import_graph_edges",
+        )
+
+    def get_file_summary(
+        self,
+        *,
+        rel_path: str,
+        scope: GraphScopePayload | None = None,
+    ) -> str:
+        _ = (rel_path, scope)
+        return self._execute("get_file_summary", lambda: "file_summary")
+
+
+class _RecordedSubsystemQueries(BaseSubsystemQueries):
+    """Concrete subsystem implementation capturing datasets."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+        self.transport = LocalTransport(query=HookedDuckDBQueryApi(), limits=BackendLimits())
+
+    def _execute(
+        self,
+        operation: str,
+        executor: Callable[[], object],
+        *,
+        dataset: str | None = None,
+    ) -> object:
+        self.calls.append((operation, dataset))
+        return executor()
+
+    def list_subsystems(
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
+    ) -> str:
+        _ = (limit, role, q)
+        return self._execute("list_subsystems", lambda: "subs")
+
+    def get_module_subsystems(self, *, module: str) -> str:
+        _ = module
+        return self._execute("get_module_subsystems", lambda: "mods")
+
+    def get_subsystem_modules(
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> str:
+        _ = (subsystem_id, module_limit)
+        return self._execute("get_subsystem_modules", lambda: "subs_modules")
+
+    def search_subsystems(
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
+    ) -> str:
+        _ = (limit, role, q)
+        return self._execute("search_subsystems", lambda: "search")
+
+    def summarize_subsystem(
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> str:
+        _ = (subsystem_id, module_limit)
+        return self._execute("summarize_subsystem", lambda: "summary")
+
+    def list_subsystem_profiles(
+        self,
+        *,
+        limit: int | None = None,
+    ) -> str:
+        _ = limit
+        return self._execute(
+            "list_subsystem_profiles",
+            lambda: "profiles",
+            dataset="docs.v_subsystem_profile",
+        )
+
+    def list_subsystem_coverage(
+        self,
+        *,
+        limit: int | None = None,
+    ) -> str:
+        _ = limit
+        return self._execute(
+            "list_subsystem_coverage",
+            lambda: "coverage",
+            dataset="docs.v_subsystem_coverage",
+        )
+
+
+class _RecordingObservability(ServiceObservability):
+    """Observability stub that captures recorded metrics."""
+
+    def __init__(self) -> None:
+        super().__init__(enabled=True)
+        self.records: list[ServiceCallMetrics] = []
+
+    def record(
+        self,
+        metrics: ServiceCallMetrics,
+        context: RequestContext | None = None,
+    ) -> None:
+        _ = context
+        self.records.append(metrics)
+
+
+def test_base_function_queries_executes_and_records_dataset() -> None:
+    """Ensure BaseFunctionQueries subclasses execute and capture dataset context."""
+    queries = _RecordedFunctionQueries()
+
+    summary = queries.get_function_summary(urn="u", scope=GraphScopePayload())
+    risk = queries.list_high_risk_functions()
+    neighbors = queries.get_callgraph_neighborhood(goid_h128=1, radius=1)
+    boundary = queries.get_import_boundary(subsystem_id="s")
+
+    expect_equal(summary, "summary")
+    expect_equal(risk, "risk")
+    expect_equal(neighbors, "neighborhood")
+    expect_equal(boundary, "boundary")
+    expect_in(("get_function_summary", "functions"), queries.calls)
+    expect_in(("get_callgraph_neighborhood", "call_graph_nodes"), queries.calls)
+    expect_in(("get_import_boundary", "import_graph_edges"), queries.calls)
+
+
+def test_base_subsystem_queries_executes_and_records_dataset() -> None:
+    """Ensure BaseSubsystemQueries subclasses execute and capture dataset context."""
+    queries = _RecordedSubsystemQueries()
+
+    subs = queries.list_subsystems()
+    modules = queries.get_subsystem_modules(subsystem_id="a", module_limit=1)
+    profiles = queries.list_subsystem_profiles(limit=1)
+    coverage = queries.list_subsystem_coverage(limit=2)
+
+    expect_equal(subs, "subs")
+    expect_equal(modules, "subs_modules")
+    expect_equal(profiles, "profiles")
+    expect_equal(coverage, "coverage")
+    expect_in(("list_subsystem_profiles", "docs.v_subsystem_profile"), queries.calls)
+    expect_in(("list_subsystem_coverage", "docs.v_subsystem_coverage"), queries.calls)
+
+
+def test_local_transport_records_context_and_dataset() -> None:
+    """Ensure LocalTransport forwards context into observability metrics."""
+    observability = _RecordingObservability()
+    transport = LocalTransport(
+        query=HookedDuckDBQueryApi(),
+        observability=observability,
+        limits=BackendLimits(),
+    )
+
+    result = transport.call(
+        "run_query",
+        lambda: {"value": 1},
+        dataset="docs.v_test",
+        schema_version="v1",
+        retries=3,
+    )
+
+    expect_equal(result, {"value": 1})
+    expect_equal(len(observability.records), 1)
+    metrics = observability.records[0]
+    expect_equal(metrics.name, "run_query")
+    expect_equal(metrics.transport, "local")
+    expect_equal(metrics.dataset, "docs.v_test")
+    expect_equal(metrics.schema_version, "v1")
+    expect_equal(metrics.retries, 3)
+
+
+def test_http_transport_records_errors_and_retries() -> None:
+    """Ensure HttpTransport surfaces errors while emitting observability metrics."""
+    observability = _RecordingObservability()
+    transport = HttpTransport(
+        request_json=lambda _path, _params: None,
+        observability=observability,
+        limits=BackendLimits(),
+    )
+
+    def _raise_problem() -> None:
+        detail = ProblemDetail(
+            type="about:blank",
+            title="boom",
+            detail="failure",
+            status=400,
+        )
+        raise ProblemError(detail)
+
+    with pytest.raises(ProblemError):
+        transport.call(
+            "http_call",
+            _raise_problem,
+            dataset="docs.v_test",
+            schema_version="v2",
+            retries=2,
+        )
+
+    expect_equal(len(observability.records), 1)
+    metrics = observability.records[0]
+    expect_equal(metrics.error, "ProblemError")
+    expect_equal(metrics.transport, "http")
+    expect_equal(metrics.dataset, "docs.v_test")
+    expect_equal(metrics.retries, 2)

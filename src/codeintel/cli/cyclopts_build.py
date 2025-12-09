@@ -7,9 +7,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
-from codeintel.cli.commands._common import OutputFormat
-from codeintel.cli.commands.build import (
+from codeintel.cli.build_handlers import (
     BuildHistoryOptions,
     BuildRunContext,
     BuildRunOptions,
@@ -20,9 +18,13 @@ from codeintel.cli.commands.build import (
     build_run_handler,
     build_status_handler,
 )
+from codeintel.cli.cli_errors import ValidationError, run_handler
+from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
+    OutputParam,
     RuntimeCLI,
+    RuntimeParam,
     resolve_output_format,
     runtime_cli_to_options,
 )
@@ -76,8 +78,8 @@ class BuildRunCli:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="run")
@@ -115,7 +117,7 @@ def build_run(
         verbose=cfg.runtime.verbose,
         output_format=output_format,
     )
-    invoke_with_typer_translation(build_run_handler, options, ctx_opts)
+    run_handler(build_run_handler, options, ctx_opts)
 
 
 @dataclass
@@ -129,8 +131,8 @@ class BuildStatusCli:
             help="Filter status to a specific module (ingestion, graphs, analytics).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="status")
@@ -162,7 +164,7 @@ def build_status(
         output_format=output_format,
         verbose=cfg.runtime.verbose,
     )
-    invoke_with_typer_translation(build_status_handler, options)
+    run_handler(build_status_handler, options)
 
 
 @dataclass
@@ -183,8 +185,8 @@ class BuildHistoryCli:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @build_app.command(name="history")
@@ -207,7 +209,7 @@ def build_history(
         output_format=output_format,
         verbose=cfg.runtime.verbose,
     )
-    invoke_with_typer_translation(build_history_handler, options)
+    run_handler(build_history_handler, options)
 
 
 __all__ = ["build_app"]

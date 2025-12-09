@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.datasets import (
+from codeintel.cli.datasets_handlers import (
     BootstrapSnippet,
     DatasetScaffoldOptions,
     DryRunMode,

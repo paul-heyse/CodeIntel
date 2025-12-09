@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import Any, cast
 
 from codeintel.config.steps_graphs import GraphRunScope
@@ -16,7 +15,7 @@ from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService, ResponseMeta
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import open_memory_gateway
 
 
 @dataclass
@@ -34,12 +33,9 @@ class ScopeRecordingQuery:
 
     def __post_init__(self) -> None:
         """Set up fake gateway and query API attributes."""
-        self.gateway = cast(
-            "StorageGateway",
-            SimpleNamespace(datasets=SimpleNamespace(mapping={}), config={}, con=None),
-        )
-        self.repo = "demo/repo"
-        self.commit = "deadbeef"
+        self.gateway = open_memory_gateway(apply_schema=True, ensure_macros=True)
+        self.repo = self.gateway.config.repo
+        self.commit = self.gateway.config.commit
         self.limits = BackendLimits()
         self.graph_engine: Any | None = None
         self.functions = self

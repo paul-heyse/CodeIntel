@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any
 
+from codeintel.serving.backend.pagination import BackendLimits
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.domain_models import DatasetRows, DatasetSchema, ResponseMeta
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail
+from tests._helpers.gateway import GatewayFactory
 
 
 @dataclass
@@ -34,7 +36,7 @@ class FakeQueryService:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
-        self.limits = SimpleNamespace(default_limit=25, max_rows_per_call=100)
+        self.limits = BackendLimits(default_limit=25, max_rows_per_call=100)
         self._rows_fail: bool = False
 
     def list_datasets(self) -> list[object]:
@@ -133,4 +135,43 @@ class FakeQueryService:
         return ModelLike.from_domain(module)
 
 
-__all__ = ["FakeQueryService", "ModelLike"]
+class DummyDuckDBQueryApi(DuckDBQueryApi):
+    """Minimal DuckDBQueryApi implementation for service-layer tests."""
+
+    def __init__(self) -> None:
+        self._gateway = GatewayFactory().with_macros().open()
+        self._limits = BackendLimits()
+        self._functions = self
+        self._modules = self
+        self._subsystems = self
+        self._datasets = self
+
+    @property
+    def gateway(self) -> object:
+        return self._gateway
+
+    @property
+    def limits(self) -> BackendLimits:
+        return self._limits
+
+    @property
+    def functions(self) -> DuckDBQueryApi:
+        return self._functions
+
+    @property
+    def modules(self) -> DuckDBQueryApi:
+        return self._modules
+
+    @property
+    def subsystems(self) -> DuckDBQueryApi:
+        return self._subsystems
+
+    @property
+    def datasets(self) -> DuckDBQueryApi:
+        return self._datasets
+
+    def __getattr__(self, name: str) -> object:
+        raise AttributeError(name)
+
+
+__all__ = ["DummyDuckDBQueryApi", "FakeQueryService", "ModelLike"]

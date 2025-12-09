@@ -11,11 +11,13 @@ from typing import Annotated, Any, Protocol, Union, get_args, get_origin
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.commands._common import OutputFormat
+from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
+    OutputParam,
     RuntimeCLI,
     RuntimeCliError,
+    RuntimeParam,
     build_runtime_from_cli,
     resolve_output_format,
 )
@@ -81,7 +83,7 @@ class OpListCli:
             help="Filter by operation category.",
         ),
     ] = None
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @op_app.command(name="list")
@@ -118,7 +120,7 @@ class OpCallCli:
             help="Operation parameters as key=value pairs.",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     skip_prereqs: Annotated[
         bool,
         Parameter(
@@ -254,11 +256,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
         else:
             optional_fields.append(field_def)
 
-    runtime_field = (
-        "runtime",
-        Annotated[RuntimeCLI, Parameter(name="*")],
-        field(default_factory=RuntimeCLI),
-    )
+    runtime_field = ("runtime", RuntimeParam, field(default_factory=RuntimeCLI))
     skip_field = (
         "skip_prereqs",
         Annotated[
@@ -391,8 +389,8 @@ def register_dynamic_operations() -> None:
 class DatasetListCli:
     """CLI surface for `codeintel dataset list`."""
 
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @dataset_app.command(name="list")
@@ -423,7 +421,7 @@ class DatasetDescribeCli:
             help="Dataset table key (e.g., 'core.goids').",
         ),
     ] = ""
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
 
 
 @dataset_app.command(name="describe")
@@ -460,7 +458,7 @@ class DatasetVerifyCli:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
 
 
 @dataset_app.command(name="verify")
@@ -511,7 +509,7 @@ def serve_http(
             negative=(),
         ),
     ] = False,
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
+    runtime: RuntimeParam | None = None,
 ) -> None:
     """Start the HTTP server."""
     runtime_cfg = runtime or RuntimeCLI()
@@ -536,7 +534,7 @@ def serve_mcp(
             negative=(),
         ),
     ] = False,
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
+    runtime: RuntimeParam | None = None,
 ) -> None:
     """Start the MCP server."""
     runtime_cfg = runtime or RuntimeCLI()

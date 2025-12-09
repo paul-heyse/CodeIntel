@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp.tool_builder import (
     ToolRegistrationOptions,
@@ -19,6 +19,7 @@ from codeintel.serving.mcp.tool_builder import (
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.mcp_tools import make_mcp_context
 
 if TYPE_CHECKING:
@@ -42,7 +43,8 @@ class _Backend:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.repo = "demo/repo"
         self.commit = "deadbeef"
-        self.gateway = SimpleNamespace()  # marker for auto-pipeline branch
+        self.gateway = GatewayFactory().with_macros().open()
+        self.limits = BackendLimits()
 
     def do_echo(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(("do_echo", dict(kwargs)))
@@ -153,7 +155,7 @@ def test_build_tool_auto_pipeline_invokes_prereqs() -> None:
     previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
     os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
     try:
-        config = cast("ServingConfig", SimpleNamespace(repo="demo", commit="c"))
+        config = ServingConfig(repo="demo", commit="c")
         tool = build_tool_from_operation(
             spec,
             typed_backend,

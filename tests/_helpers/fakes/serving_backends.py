@@ -9,17 +9,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
 
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory
 
-ServiceT = TypeVar("ServiceT")
-
 
 @dataclass
-class ServingBackend(Generic[ServiceT]):
+class ServingBackend[ServiceT]:
     """Minimal backend wrapper carrying gateway, limits, and service."""
 
     gateway: StorageGateway
@@ -32,14 +29,14 @@ class ServingBackend(Generic[ServiceT]):
 
 
 @dataclass
-class BackendHandle(Generic[ServiceT]):
+class BackendHandle[ServiceT]:
     """Container matching backend factory expectations in serving/MCP tests."""
 
     backend: ServingBackend[ServiceT]
     close: Callable[[], None]
 
 
-def build_serving_backend(
+def build_serving_backend[ServiceT](
     *,
     factory: GatewayFactory | None = None,
     service: ServiceT,
