@@ -49,7 +49,7 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
     return graph
 
 
-def _as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None:
+def as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None:
     """
     Best-effort conversion to int for DuckDB numeric fields.
 
@@ -66,7 +66,7 @@ def _as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None
         return None
 
 
-def _normalize_decimal(value: object) -> int | None:
+def normalize_decimal(value: object) -> int | None:
     """
     Normalize DuckDB DECIMAL(38,0) values to Python ints.
 
@@ -100,7 +100,7 @@ def _normalize_decimal(value: object) -> int | None:
     return result
 
 
-def _module_attrs_from_row(
+def module_attrs_from_row(
     module: object,
     scc_id: int | Decimal | str | bytes | bytearray | None,
     component_size: int | Decimal | str | bytes | bytearray | None,
@@ -130,16 +130,16 @@ def _module_attrs_from_row(
     """
     module_name = str(module)
     attrs: dict[str, int] = {}
-    scc_value = _as_int(scc_id)
+    scc_value = as_int(scc_id)
     if scc_value is not None:
         attrs["scc_id"] = scc_value
-    comp_size_value = _as_int(component_size)
+    comp_size_value = as_int(component_size)
     if comp_size_value is not None:
         attrs["component_size"] = comp_size_value
-    layer_value = _as_int(layer)
+    layer_value = as_int(layer)
     if layer_value is not None:
         attrs["layer"] = layer_value
-    cycle_group_value = _as_int(cycle_group)
+    cycle_group_value = as_int(cycle_group)
     if cycle_group_value is not None:
         attrs["cycle_group"] = cycle_group_value
     return module_name, attrs
@@ -186,8 +186,8 @@ def load_call_graph(
 
     graph = nx.DiGraph()
     for caller_raw, callee_raw in rows:
-        caller = _normalize_decimal(caller_raw)
-        callee = _normalize_decimal(callee_raw)
+        caller = normalize_decimal(caller_raw)
+        callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
             continue
         if graph.has_edge(caller, callee):
@@ -203,7 +203,7 @@ def load_call_graph(
         """
     ).fetchall()
     for node_raw, kind in node_rows:
-        node = _normalize_decimal(node_raw)
+        node = normalize_decimal(node_raw)
         if node is None:
             continue
         if node in graph:
@@ -280,7 +280,7 @@ def load_import_graph(
         module_rows = []
     if module_rows:
         for module_row in module_rows:
-            module_name, attrs = _module_attrs_from_row(*module_row)
+            module_name, attrs = module_attrs_from_row(*module_row)
             graph.add_node(module_name, **attrs)
     elif fallback_layer_by_module:
         graph.add_nodes_from(
@@ -330,7 +330,7 @@ def load_test_function_bipartite(
 
     graph = nx.Graph()
     for test_id, goid_raw, coverage_ratio in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal(goid_raw)
         if test_id is None or goid is None:
             continue
         test_node = ("t", str(test_id))
@@ -347,7 +347,14 @@ def load_test_function_bipartite(
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
-def _parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> list[str]:
+def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> list[str]:
+    """Normalize reference modules input into a filtered list.
+
+    Returns
+    -------
+    list[str]
+        Allowed module names parsed from input.
+    """
     modules: list[str] = []
     if isinstance(ref_modules, list):
         modules = [str(mod) for mod in ref_modules]
@@ -424,7 +431,7 @@ def load_config_module_bipartite(
         if not graph.has_node(key_node):
             graph.add_node(key_node, bipartite=0)
 
-        raw_modules = _parse_reference_modules(ref_modules, set())
+        raw_modules = parse_reference_modules(ref_modules, set())
         parsed_modules += len(raw_modules)
         filtered_modules = (
             [module for module in raw_modules if module in allowed_modules]
@@ -565,8 +572,8 @@ def load_symbol_function_graph(
     for def_goid, use_goid in rows:
         if def_goid is None or use_goid is None:
             continue
-        left = _normalize_decimal(def_goid)
-        right = _normalize_decimal(use_goid)
+        left = normalize_decimal(def_goid)
+        right = normalize_decimal(use_goid)
         if left is None or right is None or left == right:
             continue
         if graph.has_edge(left, right):
@@ -577,10 +584,20 @@ def load_symbol_function_graph(
 
 
 __all__ = [
+    "as_int",
     "load_call_graph",
     "load_config_module_bipartite",
     "load_import_graph",
     "load_symbol_function_graph",
     "load_symbol_module_graph",
     "load_test_function_bipartite",
+    "module_attrs_from_row",
+    "normalize_decimal",
+    "parse_reference_modules",
 ]
+
+# Backwards compatibility aliases for previously private helpers
+_as_int = as_int
+_normalize_decimal = normalize_decimal
+_module_attrs_from_row = module_attrs_from_row
+_parse_reference_modules = parse_reference_modules

@@ -100,7 +100,7 @@ class LocalTypeTracker:
         self._variable_types.clear()
 
 
-def _extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
+def extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
     """Extract class name from a Call node's func (for instantiation).
 
     Parameters
@@ -127,6 +127,10 @@ def _extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
             parts.reverse()
             return ".".join(parts)
     return None
+
+
+# Backwards compatibility alias
+_extract_class_name_from_call = extract_class_name_from_call
 
 
 # =============================================================================
@@ -227,7 +231,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
 
         # Check if value is a Call (potential class instantiation)
         if isinstance(value, cst.Call):
-            class_name = _extract_class_name_from_call(value.func)
+            class_name = extract_class_name_from_call(value.func)
             if class_name:
                 self.type_tracker.record_instantiation(
                     var_name,
@@ -708,4 +712,5 @@ __all__ = [
     "dedupe_edges",
     "extract_callee_ast",
     "extract_callee_cst",
+    "extract_class_name_from_call",
 ]

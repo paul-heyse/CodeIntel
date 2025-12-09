@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.ingestion import (
-    BuildToolAdapter,
     CoverageIngestStep,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -20,21 +18,12 @@ from codeintel.ingestion import (
     TypingIngestStep,
 )
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import build_repo_tree
-from tests._helpers.fakes.contexts import (
-    EnvOverrides,
-    ExecutionContextBuilder,
-    TargetResourceOverrides,
-    make_test_output_target,
-)
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 
 if TYPE_CHECKING:
-    from codeintel.build.context import TargetExecutionContext
-    from codeintel.build.plugin import TargetPlugin
-    from codeintel.build.providers import Providers
+    from codeintel.storage.gateway import StorageGateway
 
 
 def build_repo_with_configs(
@@ -62,99 +51,6 @@ def build_repo_with_configs(
     repo_root = build_repo_tree(tmp_path / "repo", structure)
     modules = tuple(path for path in structure if path.endswith(".py"))
     return repo_root, modules
-
-
-def build_target_context_for_plugin(
-    plugin: TargetPlugin,
-    tmp_path: Path,
-    *,
-    repo_root: Path | None = None,
-    modules: tuple[str, ...] = (),
-    providers: Providers | None = None,
-) -> TargetExecutionContext:
-    """Construct a TargetExecutionContext wired to real adapters.
-
-    Returns
-    -------
-    TargetExecutionContext
-        Context with gateway, resources, and target metadata.
-    """
-    effective_repo_root = repo_root or (tmp_path / "repo")
-    effective_repo_root.mkdir(parents=True, exist_ok=True)
-
-    overrides = EnvOverrides(tmp_path=effective_repo_root)
-    builder = ExecutionContextBuilder.create(tmp_path, env_overrides=overrides)
-    target = make_test_output_target(plugin)
-    resources = TargetResourceOverrides(providers=providers, modules=modules)
-    return builder.build_target_context(target=target, resources=resources)
-
-
-def build_ingestion_adapters(
-    ctx: TargetExecutionContext,
-) -> tuple[
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-    BuildToolAdapter,
-]:
-    """Create ingestion adapters aligned with a target context.
-
-    Returns
-    -------
-    tuple[DuckDBStorageAdapter, FilesystemDiscoveryAdapter, HashChangeDetectionAdapter, BuildToolAdapter]
-        Initialized adapters for use in ingestion steps.
-    """
-    storage = DuckDBStorageAdapter(ctx.gateway)
-    discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    tools = BuildToolAdapter(
-        type_checker=ctx.resources.type_checker,
-        coverage_collector=ctx.resources.coverage_collector,
-        scip_indexer=ctx.resources.scip_indexer,
-        test_reporter=ctx.resources.test_reporter,
-    )
-    return storage, discovery, change_detection, tools
-
-
-def write_coverage_file(
-    build_dir: Path,
-    *,
-    filename: str = "coverage.json",
-    content: str | None = None,
-) -> Path:
-    """Write a coverage artifact into the build directory.
-
-    Returns
-    -------
-    Path
-        Path to the written coverage file.
-    """
-    coverage_path = build_dir / filename
-    coverage_path.parent.mkdir(parents=True, exist_ok=True)
-    coverage_path.write_text(content or "{}", encoding="utf-8")
-    return coverage_path
-
-
-def write_pytest_report(
-    build_dir: Path,
-    *,
-    tests: list[dict[str, object]] | None = None,
-    summary: dict[str, object] | None = None,
-    filename: str = "pytest-report.json",
-) -> Path:
-    """Render a pytest JSON report under the build/test-results directory.
-
-    Returns
-    -------
-    Path
-        Path to the written report file.
-    """
-    report_dir = build_dir / "test-results"
-    report_dir.mkdir(parents=True, exist_ok=True)
-    payload = {"tests": tests or [], "summary": summary or {}}
-    report_path = report_dir / filename
-    report_path.write_text(json.dumps(payload), encoding="utf-8")
-    return report_path
 
 
 def _setup_gateway() -> StorageGateway:

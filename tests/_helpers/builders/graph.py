@@ -176,6 +176,8 @@ class SymbolUseEdgeRow:
         "use_path",
         "same_file",
         "same_module",
+        "def_goid_h128",
+        "use_goid_h128",
     )
 
     symbol: str
@@ -200,6 +202,26 @@ class SymbolUseEdgeRow:
             self.use_path,
             self.same_file,
             self.same_module,
+        )
+
+    def to_full_tuple(
+        self,
+    ) -> tuple[str, str, str, bool, bool, int | None, int | None]:
+        """Return tuple with all columns, including optional GOID fields.
+
+        Returns
+        -------
+        tuple
+            Values including GOID fields in column order.
+        """
+        return (
+            self.symbol,
+            self.def_path,
+            self.use_path,
+            self.same_file,
+            self.same_module,
+            self.def_goid_h128,
+            self.use_goid_h128,
         )
 
     def to_basic_tuple(self) -> tuple[str, str, str, bool, bool]:

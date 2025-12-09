@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_graphs.py
+# hypothesis_version: 6.148.7
+
+['*', '--dependency-policy', '--disable', '--enable', '--names', '--plan', '--selection-policy', '--validate-plan', 'graph', 'graphs_app', 'plugins']

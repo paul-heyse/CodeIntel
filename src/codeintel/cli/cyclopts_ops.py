@@ -11,8 +11,14 @@ from typing import Annotated, Any, Protocol, Union, get_args, get_origin
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeCliError, build_runtime_from_cli
-from codeintel.cli.errors import CLI_EXIT_USAGE
+from codeintel.cli.commands._common import OutputFormat
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    RuntimeCliError,
+    build_runtime_from_cli,
+    resolve_output_format,
+)
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
@@ -75,14 +81,7 @@ class OpListCli:
             help="Filter by operation category.",
         ),
     ] = None
-    json_output: Annotated[
-        bool,
-        Parameter(
-            name="--json",
-            help="Output as JSON.",
-            negative=(),
-        ),
-    ] = False
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @op_app.command(name="list")
@@ -91,9 +90,14 @@ def op_list(
 ) -> None:
     """List available serving operations."""
     cfg = cfg or OpListCli()
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
     op_list_handler(
         category=cfg.category,
-        json_output=cfg.json_output,
+        output_format=output_format,
     )
 
 
@@ -133,12 +137,13 @@ def op_call(
 
     Raises
     ------
-    SystemExit
+    ValidationError
         If an operation ID is not provided.
     """
     cfg = cfg or OpCallCli()
     if not cfg.op_id:
-        raise SystemExit(CLI_EXIT_USAGE)
+        message = "Operation ID is required."
+        raise ValidationError(message)
     runtime = cfg.runtime
     project_runtime = _runtime_from_cli(runtime)
     op_call_handler(
@@ -387,14 +392,7 @@ class DatasetListCli:
     """CLI surface for `codeintel dataset list`."""
 
     runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
-    json_output: Annotated[
-        bool,
-        Parameter(
-            name="--json",
-            help="Output as JSON.",
-            negative=(),
-        ),
-    ] = False
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @dataset_app.command(name="list")
@@ -404,9 +402,14 @@ def dataset_list(
     """List datasets from the registry."""
     cfg = cfg or DatasetListCli()  # type: ignore[call-arg]
     runtime = _runtime_from_cli(cfg.runtime)
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
     dataset_list_handler(
         runtime=runtime,
-        json_output=cfg.json_output,
+        output_format=output_format,
     )
 
 
@@ -420,14 +423,7 @@ class DatasetDescribeCli:
             help="Dataset table key (e.g., 'core.goids').",
         ),
     ] = ""
-    json_output: Annotated[
-        bool,
-        Parameter(
-            name="--json",
-            help="Output as JSON.",
-            negative=(),
-        ),
-    ] = False
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
 
 
 @dataset_app.command(name="describe")
@@ -438,13 +434,19 @@ def dataset_describe(
 
     Raises
     ------
-    SystemExit
-        If the required dataset key is missing.
+    ValidationError
+        If the dataset key is missing.
     """
     cfg = cfg or DatasetDescribeCli()
     if not cfg.table_key:
-        raise SystemExit(2)
-    dataset_describe_handler(table_key=cfg.table_key, json_output=cfg.json_output)
+        message = "Dataset key is required."
+        raise ValidationError(message)
+    output_format = resolve_output_format(
+        json_flag=cfg.output.json,
+        explicit=cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
+    dataset_describe_handler(table_key=cfg.table_key, output_format=output_format)
 
 
 @dataclass

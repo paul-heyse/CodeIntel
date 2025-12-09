@@ -7,6 +7,7 @@ variables and temporary repository layout for integration-style tests.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
@@ -95,11 +96,13 @@ def run_cli(
     stderr_buf = StringIO()
     original_env = os.environ.copy()
     original_cwd = Path.cwd()
+    original_argv = sys.argv
     try:
         os.environ.clear()
         os.environ.update(merged_env)
         if cwd is not None:
             os.chdir(cwd)
+        sys.argv = ["codeintel", *argv]
         with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
             try:
                 app(argv, result_action="return_value", exit_on_error=False, print_error=False)
@@ -110,6 +113,7 @@ def run_cli(
         os.environ.clear()
         os.environ.update(original_env)
         os.chdir(original_cwd)
+        sys.argv = original_argv
 
     stdout = stdout_buf.getvalue()
     stderr = stderr_buf.getvalue()

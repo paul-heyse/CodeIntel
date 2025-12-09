@@ -14,7 +14,7 @@ from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -22,48 +22,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
-    """Convert string paths to ModuleRecord objects.
-
-    Returns
-    -------
-    list[ModuleRecord]
-        Module records with metadata.
-    """
-    total = len(paths)
-    return [
-        ModuleRecord(
-            rel_path=path,
-            module_name=path.replace("/", ".").removesuffix(".py"),
-            file_path=repo_root / path,
-            index=i + 1,
-            total=total,
-        )
-        for i, path in enumerate(paths)
-    ]
-
-
-def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
-    """Get module paths from context resources or database.
-
-    Returns
-    -------
-    list[str]
-        List of relative module paths.
-    """
-    if ctx.resources.modules:
-        return list(ctx.resources.modules)
-    try:
-        rows = ctx.gateway.con.execute(
-            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        ).fetchall()
-        return [str(row[0]) for row in rows]
-    except (RuntimeError, OSError):
-        return []
-
-
-def _resolve_coverage_file(ctx: TargetExecutionContext) -> Path | None:
+def resolve_coverage_file(ctx: TargetExecutionContext) -> Path | None:
     """Resolve the coverage data file.
 
     Returns
@@ -115,14 +74,14 @@ class CoverageIngestPlugin(TargetPlugin):
         _ = self  # Protocol method requires instance
 
         # Resolve coverage file
-        coverage_path = _resolve_coverage_file(ctx)
+        coverage_path = resolve_coverage_file(ctx)
         if coverage_path is None:
             log.info("No coverage file found, skipping coverage ingestion")
             return TargetResult.succeeded(row_counts={})
 
         # Get module paths and convert to ModuleRecord
-        paths = _get_module_paths(ctx)
-        modules = _paths_to_modules(paths, ctx.repo_root)
+        paths = get_module_paths(ctx)
+        modules = paths_to_modules(paths, ctx.repo_root)
 
         # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
@@ -147,4 +106,9 @@ class CoverageIngestPlugin(TargetPlugin):
         return TargetResult.succeeded(row_counts=result.table_counts or {})
 
 
-__all__ = ["CoverageIngestPlugin"]
+__all__ = [
+    "CoverageIngestPlugin",
+    "get_module_paths",
+    "paths_to_modules",
+    "resolve_coverage_file",
+]

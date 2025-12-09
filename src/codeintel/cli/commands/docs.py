@@ -735,6 +735,54 @@ def docs_export_handler(
         raise typer.Exit(code=CLI_EXIT_VALIDATION) from exc
 
 
+def _coerce_export_validation(value: object) -> ExportValidationMode:
+    if isinstance(value, ExportValidationMode):
+        return value
+    if isinstance(value, str):
+        try:
+            return ExportValidationMode(value)
+        except ValueError as exc:
+            message = f"Unknown validation mode: {value}"
+            raise ValueError(message) from exc
+    return ExportValidationMode.REQUIRED if bool(value) else ExportValidationMode.SKIP
+
+
+def _coerce_macro_requirement(value: object) -> MacroRequirement:
+    if isinstance(value, MacroRequirement):
+        return value
+    if isinstance(value, str):
+        try:
+            return MacroRequirement(value)
+        except ValueError as exc:
+            message = f"Unknown macro requirement: {value}"
+            raise ValueError(message) from exc
+    return MacroRequirement.REQUIRE_NORMALIZED if bool(value) else MacroRequirement.ALLOW_PARTIAL
+
+
+def _coerce_run_mode(value: object) -> DryRunMode:
+    if isinstance(value, DryRunMode):
+        return value
+    if isinstance(value, str):
+        try:
+            return DryRunMode(value)
+        except ValueError as exc:
+            message = f"Unknown run mode: {value}"
+            raise ValueError(message) from exc
+    return DryRunMode.DRY_RUN if bool(value) else DryRunMode.EXECUTE
+
+
+def _coerce_prereq_mode(value: object) -> PrereqMode:
+    if isinstance(value, PrereqMode):
+        return value
+    if isinstance(value, str):
+        try:
+            return PrereqMode(value)
+        except ValueError as exc:
+            message = f"Unknown prerequisite mode: {value}"
+            raise ValueError(message) from exc
+    return PrereqMode.SKIP if bool(value) else PrereqMode.RUN
+
+
 def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> DocsExportBundleMapping:
     project = _project_options(
         RepoSelection(
@@ -754,24 +802,8 @@ def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> DocsExportBundleMap
         nx_gpu_mode=cast("NxGpuMode", cli_kwargs.get("nx_gpu_mode", NxGpuMode.DISABLED)),
     )
     validation = _docs_validation_options(
-        validation=(
-            cast("ExportValidationMode", cli_kwargs["validation"])
-            if isinstance(cli_kwargs.get("validation"), ExportValidationMode)
-            else (
-                ExportValidationMode.REQUIRED
-                if bool(cli_kwargs.get("validation"))
-                else ExportValidationMode.SKIP
-            )
-        ),
-        macro_requirement=(
-            cast("MacroRequirement", cli_kwargs["macro_requirement"])
-            if isinstance(cli_kwargs.get("macro_requirement"), MacroRequirement)
-            else (
-                MacroRequirement.REQUIRE_NORMALIZED
-                if bool(cli_kwargs.get("macro_requirement"))
-                else MacroRequirement.ALLOW_PARTIAL
-            )
-        ),
+        validation=_coerce_export_validation(cli_kwargs.get("validation")),
+        macro_requirement=_coerce_macro_requirement(cli_kwargs.get("macro_requirement")),
     )
     selection = _docs_selection_options(
         schemas=cast("list[str] | None", cli_kwargs.get("schemas")),
@@ -779,10 +811,8 @@ def _bundle_docs_export(cli_kwargs: Mapping[str, object]) -> DocsExportBundleMap
     )
     execution = _docs_execution_options(
         output_format=cast("OutputFormat", cli_kwargs.get("output_format", OutputFormat.TEXT)),
-        run_mode=cast("DryRunMode", cli_kwargs.get("run_mode", DryRunMode.EXECUTE)),
-        prereq_mode=(
-            PrereqMode.SKIP if bool(cli_kwargs.get("prereq_mode", False)) else PrereqMode.RUN
-        ),
+        run_mode=_coerce_run_mode(cli_kwargs.get("run_mode")),
+        prereq_mode=_coerce_prereq_mode(cli_kwargs.get("prereq_mode")),
     )
     export_options = _docs_export_options(validation, selection, execution)
     return {

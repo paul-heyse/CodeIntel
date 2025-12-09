@@ -9,9 +9,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import invoke_with_typer_translation
+from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
 from codeintel.cli.commands.history import HistoryOptions, history_timeseries_handler
-from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
 
 history_app = App(
     name="history",
@@ -53,7 +53,7 @@ class HistoryTimeseriesCli:
             help="Commits to include in the timeseries (latest first).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     db_dir: Annotated[
         Path,
         Parameter(
@@ -99,12 +99,16 @@ def timeseries(
 
     Raises
     ------
-    SystemExit
-        If required arguments are missing or a delegated handler exits.
+    ValidationError
+        If required arguments are missing.
     """
     cfg = cfg or HistoryTimeseriesCli()  # type: ignore[call-arg]
     if not cfg.repo:
-        raise SystemExit(2)
+        message = "Repository slug is required."
+        raise ValidationError(message)
+    if cfg.commits is None or not list(cfg.commits):
+        message = "At least one commit is required."
+        raise ValidationError(message)
     runtime_options = runtime_cli_to_options(cfg.runtime)
     options = HistoryOptions(
         repo_root=runtime_options.repo_root or Path(),

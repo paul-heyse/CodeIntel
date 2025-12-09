@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
@@ -134,6 +134,16 @@ class RuntimeCLI:
     verbose: Verbose = 0
 
 
+RuntimeParam = Annotated[RuntimeCLI, Parameter(name="*")]
+
+
+@dataclass
+class ProjectCLI:
+    """Bundle runtime selection under a project alias."""
+
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+
+
 @dataclass
 class OutputFormatCLI:
     """Shared output format toggles for commands supporting JSON output."""
@@ -155,10 +165,10 @@ def resolve_output_format(
     OutputFormat
         Effective output format after applying overrides.
     """
-    if explicit is not None:
-        return explicit
     if json_flag:
         return OutputFormat.JSON
+    if explicit is not None:
+        return explicit
     return default
 
 
@@ -289,8 +299,10 @@ __all__ = [
     "OutputFormatCLI",
     "ProjectRoot",
     "RuntimeCLI",
+    "RuntimeParam",
     "RuntimeCliError",
     "RuntimeCliOptions",
+    "ProjectCLI",
     "RuntimeWithFormat",
     "Verbose",
     "build_runtime_from_cli",
