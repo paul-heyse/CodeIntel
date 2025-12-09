@@ -17,6 +17,7 @@ from codeintel.ingestion.plugins.scip_plugin import (
 )
 from tests._helpers import build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.factories.row_factories import sample_scip_documents
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.fakes.recording_gateways import FailingGateway
@@ -96,35 +97,7 @@ async def test_execute_raises_when_indexer_missing(tmp_path: Path) -> None:
 
 
 def _write_scip_json(target_dir: Path) -> Path:
-    docs = [
-        {
-            "relativePath": "pkg/a.py",
-            "symbols": [{"symbol": "pkg/a.py:func", "documentation": ["doc"]}],
-            "occurrences": [
-                {
-                    "symbol": "pkg/a.py:func",
-                    "range": [1, 0, 1, 4],
-                    "symbolRoles": 1,
-                }
-            ],
-        },
-        {
-            "relativePath": "pkg/naïve.py",
-            "symbols": [
-                {
-                    "symbol": "pkg/naïve.py:helper",
-                    "documentation": ["naïve helper"],
-                }
-            ],
-            "occurrences": [
-                {
-                    "symbol": "pkg/naïve.py:helper",
-                    "range": [2, 0, 2, 6],
-                    "symbolRoles": 1,
-                }
-            ],
-        },
-    ]
+    docs = sample_scip_documents()
     return write_scip_index(target_dir, docs)
 
 

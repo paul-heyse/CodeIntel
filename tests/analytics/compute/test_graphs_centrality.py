@@ -7,7 +7,11 @@ betweenness centrality on directed graphs using real NetworkX graphs.
 from __future__ import annotations
 
 import networkx as nx
+import pytest
+from networkx.exception import NetworkXAlgorithmError
 
+from codeintel.analytics.compute.graphs import centrality as centrality_module
+from codeintel.analytics.runtime.context import GraphContext
 from codeintel.graphs.compute.metrics.centrality import (
     CentralityMetrics,
     compute_betweenness,
@@ -15,6 +19,7 @@ from codeintel.graphs.compute.metrics.centrality import (
 )
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_in,
     expect_is_instance,
@@ -475,6 +480,19 @@ def test_betweenness_values_are_floats() -> None:
 # =============================================================================
 
 
+def _make_context(**overrides: object) -> GraphContext:
+    return GraphContext(
+        repo="repo",
+        commit="commit",
+        betweenness_sample=2,
+        eigen_max_iter=1,
+        seed=1,
+        pagerank_weight="weight",
+        betweenness_weight="weight",
+        **overrides,
+    )
+
+
 def test_both_metrics_same_nodes() -> None:
     """PageRank and betweenness produce results for same nodes."""
     graph = _make_call_graph_realistic()
@@ -514,3 +532,84 @@ def test_dense_graph_metrics() -> None:
     # Values should be relatively uniform in complete graph
     expect_true(pr_range < DENSE_GRAPH_RANGE_TOLERANCE)
     expect_true(bc_range < DENSE_GRAPH_RANGE_TOLERANCE)
+
+
+# =============================================================================
+# Warning handling
+# =============================================================================
+
+
+def test_centrality_directed_logs_eigen_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Eigenvector failures in directed centrality emit warnings."""
+    graph = _make_simple_chain()
+    caplog.set_level("WARNING", logger=centrality_module.__name__)
+
+    context = _make_context()
+    bundle = centrality_module.centrality_directed(
+        graph,
+        context,
+        include_eigen=True,
+        compute_overrides=centrality_module.CentralityComputations(
+            eigen_fn=lambda *_args, **_kwargs: {},
+        ),
+    )
+
+    expect_equal(bundle.eigenvector, {})
+    assert_logged(caplog.records, level="WARNING", containing="did not converge")
+
+
+def test_centrality_undirected_logs_eigen_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Eigenvector failures in undirected centrality emit warnings."""
+    graph = nx.Graph()
+    graph.add_edges_from([("a", "b"), ("b", "c")])
+    caplog.set_level("WARNING", logger=centrality_module.__name__)
+
+    context = _make_context()
+    bundle = centrality_module.centrality_undirected(
+        graph,
+        context,
+        compute_overrides=centrality_module.CentralityComputations(
+            eigen_fn=lambda *_args, **_kwargs: {},
+        ),
+    )
+
+    expect_equal(bundle.eigenvector, {})
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="Eigenvector centrality did not converge for undirected graph",
+    )
+
+
+def test_centrality_undirected_logs_structural_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Structural hole failures surface as warnings."""
+    graph = nx.Graph()
+    graph.add_edges_from([("x", "y"), ("y", "z")])
+    caplog.set_level("WARNING", logger=centrality_module.__name__)
+
+    def _raise_constraint(*_: object, **__: object) -> None:
+        error_message = "failed to converge"
+        raise NetworkXAlgorithmError(error_message)
+
+    context = _make_context()
+    bundle = centrality_module.centrality_undirected(
+        graph,
+        context,
+        include_structural=True,
+        compute_overrides=centrality_module.CentralityComputations(
+            constraint_fn=_raise_constraint,
+        ),
+    )
+
+    expect_length(bundle.pagerank, graph.number_of_nodes())
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="Structural holes calculation failed for graph",
+    )

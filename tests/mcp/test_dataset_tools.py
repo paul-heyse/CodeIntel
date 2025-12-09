@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dat
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_is_instance,
     expect_true,
@@ -23,37 +25,45 @@ from tests._helpers.assertions import (
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
+LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class _Dumpable:
-    value: str
+    id: str
+    name: str | None
+    description: str
 
     def model_dump(self) -> dict[str, object]:
-        return {"value": self.value}
+        return {"id": self.id, "name": self.name, "description": self.description}
 
 
 @dataclass
 class _FromDomainModel:
-    value: str
+    payload: object
 
     @classmethod
     def from_domain(cls, payload: object) -> _FromDomainModel:
-        return cls(value=str(payload))
+        return cls(payload=payload)
 
     def model_dump(self) -> dict[str, object]:
-        return {"value": self.value}
+        if isinstance(self.payload, dict):
+            return self.payload
+        return {"value": str(self.payload)}
 
 
 @dataclass
 class _ValidatingModel:
-    value: str
+    payload: object
 
     @classmethod
     def model_validate(cls, payload: object) -> _ValidatingModel:
-        return cls(value=str(payload))
+        return cls(payload=payload)
 
     def model_dump(self) -> dict[str, object]:
-        return {"value": self.value}
+        if isinstance(self.payload, dict):
+            return self.payload
+        return {"value": str(self.payload)}
 
 
 class _Backend:
@@ -64,29 +74,39 @@ class _Backend:
         self.repo = self.gateway.config.repo or "demo/repo"
         self.commit = self.gateway.config.commit or "deadbeef"
 
-    def list_dataset(self, **_: object) -> list[str]:
+    def list_dataset(self, **_: object) -> list[_Dumpable]:
         self.calls.append("list_dataset")
-        return ["one", "two"]
+        return [
+            _Dumpable(id="dataset-alpha", name="Alpha", description="primary dataset"),
+            _Dumpable(id="dataset-beta", name=None, description="beta description"),
+        ]
 
     def list_models(self, **_: object) -> list[_Dumpable]:
         self.calls.append("list_models")
-        return [_Dumpable("a"), _Dumpable("b")]
+        return [
+            _Dumpable(id="mdl-a", name="alpha-model", description="unicode check"),
+            _Dumpable(id="mdl-b", name=None, description="nullable owner"),
+        ]
 
     def list_raw(self, **_: object) -> list[dict[str, object]]:
         self.calls.append("list_raw")
-        return [{"id": "d1"}, {"id": "d2"}]
+        return [
+            {"id": "d1", "name": "dataset alpha", "description": None},
+            {"id": "d2", "name": "dataset beta", "description": "desc"},
+        ]
 
-    def validate_one(self, **_: object) -> str:
+    def validate_one(self, **_: object) -> dict[str, object]:
         self.calls.append("validate_one")
-        return "hello"
+        return {"status": "ok", "note": "naïve payload"}
 
     def raw_payload(self, **_: object) -> dict[str, object]:
         self.calls.append("raw_payload")
-        return {"id": "raw"}
+        return {"id": "raw", "name": "raw dataset", "description": None}
 
     def raise_error(self, **_: object) -> list[str]:
         self.calls.append("raise_error")
         message = "boom"
+        LOGGER.error("Dataset tool failure: %s", message)
         raise RuntimeError(message)
 
 
@@ -135,7 +155,13 @@ def test_register_dataset_tools_registers_and_executes() -> None:
     tool_func = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_list"])
     result = tool_func()
     expect_is_instance(result, list)
-    expect_equal(result[0], {"value": "one"})
+    expect_equal(
+        result,
+        [
+            {"id": "dataset-alpha", "name": "Alpha", "description": "primary dataset"},
+            {"id": "dataset-beta", "name": None, "description": "beta description"},
+        ],
+    )
 
 
 def test_serialize_list_payload_prefers_model_dump_when_no_model_cls() -> None:
@@ -169,7 +195,13 @@ def test_serialize_list_payload_prefers_model_dump_when_no_model_cls() -> None:
         options=DatasetToolOptions(operations=(spec,)),
     )
     result = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_models"])()
-    expect_equal(result, [{"value": "a"}, {"value": "b"}])
+    expect_equal(
+        result,
+        [
+            {"id": "mdl-a", "name": "alpha-model", "description": "unicode check"},
+            {"id": "mdl-b", "name": None, "description": "nullable owner"},
+        ],
+    )
 
 
 def test_serialize_payload_uses_validator_fallback() -> None:
@@ -212,11 +244,11 @@ def test_serialize_payload_uses_validator_fallback() -> None:
         ),
     )
     result = cast("Callable[[], dict[str, object]]", mcp.registry["datasets_validate"])()
-    expect_equal(result, {"value": "hello"})
+    expect_equal(result, {"status": "ok", "note": "naïve payload"})
 
 
-def test_dataset_tool_resets_context_on_error() -> None:
-    """Request context must reset even when backend raises."""
+def test_dataset_tool_resets_context_on_error(caplog: pytest.LogCaptureFixture) -> None:
+    """Request context must reset even when backend raises and errors are logged."""
     spec = Operation(
         id="datasets.error",
         category="datasets",
@@ -257,6 +289,7 @@ def test_dataset_tool_resets_context_on_error() -> None:
     with pytest.raises(RuntimeError):
         mcp.registry["datasets_error"](dataset_name="d1")
     expect_true(get_current_request_context() is None)
+    assert_logged(caplog.records, containing="Dataset tool failure: boom")
 
 
 def test_dataset_tool_invokes_auto_pipeline() -> None:
@@ -345,7 +378,8 @@ def test_serialize_payload_passes_through_raw_dict_when_no_model() -> None:
         options=DatasetToolOptions(operations=(spec,)),
     )
     expect_equal(
-        cast("Callable[[], dict[str, object]]", mcp.registry["datasets_raw"])(), {"id": "raw"}
+        cast("Callable[[], dict[str, object]]", mcp.registry["datasets_raw"])(),
+        {"id": "raw", "name": "raw dataset", "description": None},
     )
 
 
@@ -381,5 +415,8 @@ def test_serialize_list_payload_passes_through_raw_dicts() -> None:
     )
     expect_equal(
         cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_raw_list"])(),
-        [{"id": "d1"}, {"id": "d2"}],
+        [
+            {"id": "d1", "name": "dataset alpha", "description": None},
+            {"id": "d2", "name": "dataset beta", "description": "desc"},
+        ],
     )

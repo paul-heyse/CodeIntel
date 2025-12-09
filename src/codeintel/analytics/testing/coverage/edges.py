@@ -63,6 +63,32 @@ def _load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
     return cov
 
 
+def load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
+    """
+    Public wrapper for loading coverage data with logging on missing files.
+
+    Parameters
+    ----------
+    cfg
+        Coverage step configuration containing file location.
+
+    Returns
+    -------
+    Coverage | None
+        Coverage object when file exists, otherwise None.
+    """
+    return _load_coverage_data(cfg)
+
+
+__all__ = [
+    "EdgeContext",
+    "FunctionRow",
+    "backfill_test_goids_for_catalog",
+    "build_edges_for_file_for_tests",
+    "load_coverage_data",
+]
+
+
 def _functions_by_path(
     gateway: StorageGateway,
     cfg: TestCoverageStepConfig,

@@ -136,6 +136,14 @@ class TestBuildRunValidation:
             message="Expected target validation or project context error",
         )
 
+    @staticmethod
+    def test_run_conflicting_selection_flags() -> None:
+        """Providing multiple selection mechanisms fails fast."""
+        result = run_cli(["build", "run", "target_a", "--module", "ingestion", "--all"])
+
+        expect_equal(result.exit_code, 1, label="exit_code")
+        expect_in("Provide exactly one of targets, --module, or --all.", result.stderr)
+
 
 class TestBuildAppStructure:
     """Tests for build app registration and structure."""

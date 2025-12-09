@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from codeintel.serving.operations.catalog import (
     iter_registry_operations,
 )
 from codeintel.serving.services.query_service import QueryService
+
+logger = logging.getLogger(__name__)
 
 
 def _get_limits(backend: QueryBackendOrService) -> BackendLimits:
@@ -237,6 +240,7 @@ def _dataset_meta_payload(meta: DatasetMetaLike) -> DatasetMetaResponse:
         )
     except AttributeError as exc:
         message = f"Dataset meta missing expected attribute: {exc}"
+        logger.warning(message)
         raise errors.invalid_argument(message) from exc
 
 
@@ -260,6 +264,7 @@ def _operation_payload(spec: OperationLike, limits: BackendLimits) -> OperationM
         )
     except AttributeError as exc:
         message = f"Operation meta missing expected attribute: {exc}"
+        logger.warning(message)
         raise errors.invalid_argument(message) from exc
 
 
@@ -339,6 +344,7 @@ def _build_explain_dataset_tool(context: _MetaToolsContext) -> Callable[[str], o
         if node is None or node.kind not in {"table", "view"}:
             message = f"Unknown dataset/docs node_id: {node_id}"
             problem = errors.not_found(message)
+            logger.warning(message)
             raise errors.McpError(problem.detail)
 
         incoming_edges = [
@@ -383,6 +389,7 @@ def _build_explain_operation_tool(context: _MetaToolsContext) -> Callable[[str],
         if node is None or node.kind != "operation":
             message = f"Unknown operation id: {operation_id}"
             problem = errors.not_found(message)
+            logger.warning(message)
             raise errors.McpError(problem.detail)
 
         incoming_edges = [
@@ -421,10 +428,12 @@ def _build_explain_path_tool(context: _MetaToolsContext) -> Callable[[str, str, 
         if src_id not in context.node_by_id:
             message = f"Unknown src_id: {src_id}"
             problem = errors.not_found(message)
+            logger.warning(message)
             raise errors.McpError(problem.detail)
         if dst_id not in context.node_by_id:
             message = f"Unknown dst_id: {dst_id}"
             problem = errors.not_found(message)
+            logger.warning(message)
             raise errors.McpError(problem.detail)
         parent = _shortest_path(context.outgoing, src_id, dst_id, max_hops)
         if parent is None or dst_id not in parent:
@@ -479,12 +488,12 @@ def register_meta_tools(
     )
     dataset_meta = list(opts.dataset_meta_builder(context.service, context.limits))
     operations = list(opts.operations or iter_registry_operations())
-    mcp.tool()(_build_list_datasets_tool(dataset_meta))
-    mcp.tool()(_build_list_operations_tool(context, operations))
-    mcp.tool()(_build_list_dataflow_graph_tool(context))
-    mcp.tool()(_build_explain_dataset_tool(context))
-    mcp.tool()(_build_explain_operation_tool(context))
-    mcp.tool()(_build_explain_path_tool(context))
+    mcp.tool(name="meta.list_datasets")(_build_list_datasets_tool(dataset_meta))
+    mcp.tool(name="meta.list_operations")(_build_list_operations_tool(context, operations))
+    mcp.tool(name="meta.dataflow_graph")(_build_list_dataflow_graph_tool(context))
+    mcp.tool(name="meta.explain_dataset")(_build_explain_dataset_tool(context))
+    mcp.tool(name="meta.explain_operation")(_build_explain_operation_tool(context))
+    mcp.tool(name="meta.explain_path")(_build_explain_path_tool(context))
 
 
 __all__ = ["MetaToolOptions", "register_meta_tools"]

@@ -102,42 +102,67 @@ def _make_operation(op_id: str, tool_name: str) -> Operation:
     )
 
 
+_DATASET_META_FIXTURE: tuple[_DatasetMetaStub, _DatasetMetaStub] = (
+    _DatasetMetaStub(
+        id="d1",
+        name="Dataset One",
+        table_key="table1",
+        description="desc",
+        schema_version="1",
+        family="fam",
+        is_docs_view=True,
+        is_read_only=False,
+        default_limit=10,
+        max_limit=100,
+    ),
+    _DatasetMetaStub(
+        id="d2",
+        name="Δataset Two",
+        table_key="table2",
+        description="unicode Δ dataset",
+        schema_version=None,
+        family=None,
+        is_docs_view=False,
+        is_read_only=True,
+        default_limit=5,
+        max_limit=50,
+    ),
+)
+
+_OPERATIONS_FIXTURE: tuple[Operation, ...] = (_make_operation("op.one", "tool_one"),)
+
+_DATAFLOW_NODES: list[DataflowNode] = [
+    DataflowNode(
+        id="table1",
+        kind="table",
+        family="fam",
+        owner_package="analytics",
+        description="desc",
+    ),
+    DataflowNode(
+        id="table2",
+        kind="table",
+        family="core",
+        owner_package="analytics",
+        description="unicode Δ",
+    ),
+    DataflowNode(
+        id="op.one",
+        kind="operation",
+        family="fam",
+        owner_package="analytics",
+        description="op",
+    ),
+]
+
+_DATAFLOW_EDGES: list[DataflowEdge] = [
+    DataflowEdge(src="table1", dst="op.one", edge_type="reads"),
+    DataflowEdge(src="table2", dst="op.one", edge_type="reads"),
+]
+
+
 def test_register_meta_tools_registers_expected_tools() -> None:
     """Meta tools should register and return serialized payloads."""
-    dataset_meta = (
-        _DatasetMetaStub(
-            id="d1",
-            name="Dataset One",
-            table_key="table1",
-            description="desc",
-            schema_version="1",
-            family="fam",
-            is_docs_view=True,
-            is_read_only=False,
-            default_limit=10,
-            max_limit=100,
-        ),
-    )
-    operations = (_make_operation("op.one", "tool_one"),)
-
-    nodes = [
-        DataflowNode(
-            id="table1",
-            kind="table",
-            family="fam",
-            owner_package="analytics",
-            description="desc",
-        ),
-        DataflowNode(
-            id="op.one",
-            kind="operation",
-            family="fam",
-            owner_package="analytics",
-            description="op",
-        ),
-    ]
-    edges = [DataflowEdge(src="table1", dst="op.one", edge_type="reads")]
-
     backend_handle = build_serving_backend(service=object())
     backend = backend_handle.backend
     mcp = _RecordingMcp()
@@ -146,9 +171,9 @@ def test_register_meta_tools_registers_expected_tools() -> None:
         mcp,
         cast("QueryBackendOrService", backend),
         options=MetaToolOptions(
-            operations=operations,
-            dataflow_builder=lambda: (nodes, edges),
-            dataset_meta_builder=lambda _service, _limits: dataset_meta,
+            operations=_OPERATIONS_FIXTURE,
+            dataflow_builder=lambda: (_DATAFLOW_NODES, _DATAFLOW_EDGES),
+            dataset_meta_builder=lambda _service, _limits: _DATASET_META_FIXTURE,
         ),
     )
 
@@ -162,15 +187,20 @@ def test_register_meta_tools_registers_expected_tools() -> None:
         explain_path,
     ) = mcp.registry
 
-    expect_equal(cast("list[dict[str, object]]", list_datasets())[0]["id"], "d1")
+    datasets = cast("list[dict[str, object]]", list_datasets())
+    expect_equal(datasets[0]["id"], "d1")
+    expect_equal(datasets[1]["id"], "d2")
     expect_equal(cast("list[dict[str, object]]", list_operations())[0]["id"], "op.one")
-    expect_length(cast("list[_DataflowPayload]", list_dataflow())[0]["nodes"], 2)
+    expect_length(cast("list[_DataflowPayload]", list_dataflow())[0]["nodes"], 3)
     dataset_details = cast("list[_ExplainPayload]", explain_dataset("table1"))
     expect_equal(dataset_details[0]["node"]["id"], "table1")
     expect_equal(dataset_details[0]["incoming_edges"], [])
     expect_length(dataset_details[0]["outgoing_edges"], 1)
+    second_dataset_details = cast("list[_ExplainPayload]", explain_dataset("table2"))
+    expect_equal(second_dataset_details[0]["node"]["id"], "table2")
+    expect_length(second_dataset_details[0]["outgoing_edges"], 1)
     op_details = cast("list[_ExplainPayload]", explain_operation("op.one"))
-    expect_length(op_details[0]["incoming_edges"], 1)
+    expect_length(op_details[0]["incoming_edges"], 2)
     expect_equal(op_details[0]["outgoing_edges"], [])
     expect_true(
         bool(

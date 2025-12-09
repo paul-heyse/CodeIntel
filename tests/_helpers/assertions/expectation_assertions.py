@@ -134,6 +134,20 @@ def expect_not_in(
     raise AssertionError(failure_message)
 
 
+def expect_is_not(actual: object, unexpected: object, *, label: str | None = None) -> None:
+    """
+    Raise AssertionError when two references are unexpectedly identical.
+
+    Raises
+    ------
+    AssertionError
+        If `actual` is the same object as `unexpected`.
+    """
+    if actual is unexpected:
+        failure_message = f"{_prefix(label)}did not expect {unexpected!r} identity match"
+        raise AssertionError(failure_message)
+
+
 def expect_is_instance(
     value: object,
     expected_type: type[object],

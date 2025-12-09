@@ -37,9 +37,36 @@ build_app = App(
 MODULE_CHOICES = ("ingestion", "graphs", "analytics")
 
 
+def _validate_build_run_selection(
+    targets: list[str] | None, module: str | None, *, all_targets: bool
+) -> None:
+    """Enforce exactly one of targets/module/all_targets.
+
+    Raises
+    ------
+    ValidationError
+        If zero or multiple selection mechanisms are provided.
+    """
+    provided = [
+        bool(targets),
+        module is not None,
+        all_targets,
+    ]
+    if sum(provided) != 1:
+        message = "Provide exactly one of targets, --module, or --all."
+        raise ValidationError(message)
+
+
+@build_app.command(name="run")
 @dataclass
 class BuildRunCli:
-    """CLI surface for `codeintel build run`."""
+    """Build targets with automatic dependency resolution.
+
+    Raises
+    ------
+    ValidationError
+        If selection flags are invalid or module is unknown.
+    """
 
     targets: Annotated[
         list[str] | None,
@@ -53,6 +80,7 @@ class BuildRunCli:
         Parameter(
             name=["--module", "-m"],
             help="Build all targets in a module (ingestion, graphs, analytics).",
+            show_choices=True,
         ),
     ] = None
     all_targets: Annotated[
@@ -81,95 +109,73 @@ class BuildRunCli:
     runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     output: OutputParam = field(default_factory=OutputFormatCLI)
 
-
-@build_app.command(name="run")
-def build_run(
-    cfg: Annotated[BuildRunCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Build targets with automatic dependency resolution.
-
-    Raises
-    ------
-    ValidationError
-        If an unknown module value is provided.
-    """
-    cfg = cfg or BuildRunCli()
-    if cfg.module is not None and cfg.module not in MODULE_CHOICES:
-        valid = ", ".join(MODULE_CHOICES)
-        message = f"Unknown module: {cfg.module}. Valid: {valid}"
-        raise ValidationError(message)
-    runtime_opts = runtime_cli_to_options(cfg.runtime)
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
-    )
-
-    options = BuildRunOptions(
-        targets=cfg.targets,
-        module=cfg.module,
-        target_scope=TargetScope.ALL if cfg.all_targets else TargetScope.REQUESTED,
-        run_mode=RunMode.DRY_RUN if cfg.dry_run else RunMode.EXECUTE,
-        force=cfg.force,
-    )
-    ctx_opts = BuildRunContext(
-        runtime_options=runtime_opts,
-        verbose=cfg.runtime.verbose,
-        output_format=output_format,
-    )
-    run_handler(build_run_handler, options, ctx_opts)
+    def __call__(self) -> None:
+        if self.module is not None and self.module not in MODULE_CHOICES:
+            valid = ", ".join(MODULE_CHOICES)
+            message = f"Unknown module: {self.module}. Valid: {valid}"
+            raise ValidationError(message)
+        _validate_build_run_selection(self.targets, self.module, all_targets=self.all_targets)
+        runtime_opts = runtime_cli_to_options(self.runtime)
+        output_format = resolve_output_format(
+            json_flag=self.output.json,
+            explicit=self.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        options = BuildRunOptions(
+            targets=self.targets,
+            module=self.module,
+            target_scope=TargetScope.ALL if self.all_targets else TargetScope.REQUESTED,
+            run_mode=RunMode.DRY_RUN if self.dry_run else RunMode.EXECUTE,
+            force=self.force,
+        )
+        ctx_opts = BuildRunContext(
+            runtime_options=runtime_opts,
+            verbose=self.runtime.verbose,
+            output_format=output_format,
+        )
+        run_handler(build_run_handler, options, ctx_opts)
 
 
+@build_app.command(name="status")
 @dataclass
 class BuildStatusCli:
-    """CLI surface for `codeintel build status`."""
+    """Show current state of build targets."""
 
     module: Annotated[
         str | None,
         Parameter(
             name=["--module", "-m"],
             help="Filter status to a specific module (ingestion, graphs, analytics).",
+            show_choices=True,
         ),
     ] = None
     runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     output: OutputParam = field(default_factory=OutputFormatCLI)
 
-
-@build_app.command(name="status")
-def build_status(
-    cfg: Annotated[BuildStatusCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Show current state of build targets.
-
-    Raises
-    ------
-    ValidationError
-        If an unknown module value is provided.
-    """
-    cfg = cfg or BuildStatusCli()
-    if cfg.module is not None and cfg.module not in MODULE_CHOICES:
-        valid = ", ".join(MODULE_CHOICES)
-        message = f"Unknown module: {cfg.module}. Valid: {valid}"
-        raise ValidationError(message)
-    runtime_opts = runtime_cli_to_options(cfg.runtime)
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
-    )
-
-    options = BuildStatusOptions(
-        module=cfg.module,
-        runtime_options=runtime_opts,
-        output_format=output_format,
-        verbose=cfg.runtime.verbose,
-    )
-    run_handler(build_status_handler, options)
+    def __call__(self) -> None:
+        if self.module is not None and self.module not in MODULE_CHOICES:
+            valid = ", ".join(MODULE_CHOICES)
+            message = f"Unknown module: {self.module}. Valid: {valid}"
+            raise ValidationError(message)
+        runtime_opts = runtime_cli_to_options(self.runtime)
+        output_format = resolve_output_format(
+            json_flag=self.output.json,
+            explicit=self.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        options = BuildStatusOptions(
+            module=self.module,
+            runtime_options=runtime_opts,
+            output_format=output_format,
+            verbose=self.runtime.verbose,
+        )
+        run_handler(build_status_handler, options)
 
 
+@build_app.command(name="history")
 @dataclass
 class BuildHistoryCli:
-    """CLI surface for `codeintel build history`."""
+    """Show build run history and details."""
 
     run_id: Annotated[
         str | None,
@@ -188,28 +194,21 @@ class BuildHistoryCli:
     runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     output: OutputParam = field(default_factory=OutputFormatCLI)
 
-
-@build_app.command(name="history")
-def build_history(
-    cfg: Annotated[BuildHistoryCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Show build run history and details."""
-    cfg = cfg or BuildHistoryCli()
-    runtime_opts = runtime_cli_to_options(cfg.runtime)
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
-    )
-
-    options = BuildHistoryOptions(
-        run_id=cfg.run_id,
-        limit=cfg.limit,
-        runtime_options=runtime_opts,
-        output_format=output_format,
-        verbose=cfg.runtime.verbose,
-    )
-    run_handler(build_history_handler, options)
+    def __call__(self) -> None:
+        runtime_opts = runtime_cli_to_options(self.runtime)
+        output_format = resolve_output_format(
+            json_flag=self.output.json,
+            explicit=self.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        options = BuildHistoryOptions(
+            run_id=self.run_id,
+            limit=self.limit,
+            runtime_options=runtime_opts,
+            output_format=output_format,
+            verbose=self.runtime.verbose,
+        )
+        run_handler(build_history_handler, options)
 
 
 __all__ = ["build_app"]

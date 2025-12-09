@@ -10,6 +10,9 @@ Note: Uses shared analytics fixtures from analytics/conftest.py.
 
 from __future__ import annotations
 
+import networkx as nx
+import pytest
+
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.factory import (
@@ -34,6 +37,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.graphs import build_graph_engine_double
 
 # Test constants
@@ -185,6 +189,37 @@ def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: Sn
     expect_true(not registry.has(AstProvider))
     expect_true(not registry.has(FeaturesProvider))
     expect_true(not registry.has(ModuleMapProvider))
+
+
+class _BadRuntimeLike:
+    """Runtime double with invalid graph types to trigger warnings."""
+
+    def __init__(self) -> None:
+        self.call_graph = nx.Graph()  # should be DiGraph
+        self.import_graph = nx.Graph()
+        self.symbol_module_graph = nx.Graph()
+        self.symbol_function_graph = nx.Graph()
+        self.config_module_bipartite = nx.Graph()
+        self.test_function_bipartite = nx.Graph()
+        self.cfg_graph = nx.Graph()
+        self.backend = None
+        self.use_gpu = False
+
+
+def test_graph_provider_logs_when_graph_types_invalid(caplog: pytest.LogCaptureFixture) -> None:
+    """Non-DiGraph instances should log warnings and null out directed graphs."""
+    caplog.set_level("WARNING")
+    bad_runtime = _BadRuntimeLike()
+    provider = GraphProvider(runtime=bad_runtime)
+
+    resources = provider.get()
+
+    assert_logged(caplog.records, level="WARNING", containing="call_graph is not a DiGraph")
+    assert_logged(caplog.records, level="WARNING", containing="import_graph is not a DiGraph")
+    assert_logged(caplog.records, level="WARNING", containing="cfg_graph is not a DiGraph")
+    expect_true(resources.call_graph is None)
+    expect_true(resources.import_graph is None)
+    expect_true(resources.cfg_graph is None)
 
 
 def test_create_registry_no_graphs(

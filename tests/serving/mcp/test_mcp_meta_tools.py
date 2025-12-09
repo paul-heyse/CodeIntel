@@ -1,58 +1,66 @@
-"""Tests for MCP meta tools.
-
-This module tests the dataset and operation introspection MCP tools using real gateways.
-"""
+"""Tests for MCP meta tools."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pytest
+
+from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.mcp.meta_tools import register_meta_tools
-from codeintel.serving.operations.catalog import (
-    build_dataset_meta,
-    build_serving_dataflow_graph,
-    iter_registry_operations,
-)
+from codeintel.serving.mcp.meta_tools import MetaToolOptions, register_meta_tools
+from codeintel.serving.operations.catalog import iter_registry_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
+    expect_in,
     expect_is_instance,
-    expect_true,
+    expect_length,
 )
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_registrar import wrap_fastmcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
-
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
+@dataclass(frozen=True)
+class _DatasetMetaFake:
+    id: str
+    name: str
+    table_key: str
+    description: str
+    schema_version: str | None
+    family: str | None
+    is_docs_view: bool
+    is_read_only: bool
+    default_limit: int
+    max_limit: int
 
 
-def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing.
+@dataclass(frozen=True)
+class _OperationSpecFake:
+    id: str
+    category: str
+    summary: str
+    description: str | None
+    http_method: str | None
+    http_path: str | None
+    tool_name: str | None
+    output_model_name: str
+    required_datasets: tuple[str, ...]
+    required_graphs: tuple[str, ...]
+    default_limit: int | None
+    max_limit: int | None
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
 
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
+def _build_backend(provisioned_repo: ProvisionedGateway) -> LocalQueryService:
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -60,438 +68,244 @@ def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
         commit=provisioned_repo.commit,
         limits=limits,
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
-# =============================================================================
-# register_meta_tools Tests
-# =============================================================================
-
-
-def test_register_meta_tools_success(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify register_meta_tools registers tools successfully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Meta Tools")
-    backend = _build_backend(provisioned_repo)
-
-    # Should not raise
-    register_meta_tools(mcp, backend)
-
-    # Server should be configured
-    expect_equal(mcp.name, "Test Meta Tools")
-
-
-def test_register_meta_tools_different_backend(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify register_meta_tools works with different backend instances.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Different Backend")
-    backend = _build_backend(provisioned_repo)
-
-    # First registration
-    register_meta_tools(mcp, backend)
-
-    expect_equal(mcp.name, "Test Different Backend")
-
-
-def test_register_meta_tools_with_service_directly(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify register_meta_tools works with service directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Service Direct")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
+    return LocalQueryService(
         query=query,
         dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
     )
 
-    register_meta_tools(mcp, service)
 
-    expect_equal(mcp.name, "Test Service Direct")
-
-
-def test_register_meta_tools_with_local_query_service(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify register_meta_tools works with LocalQueryService directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Local Service")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
-    # Should work with service directly
-    register_meta_tools(mcp, service)
-
-    expect_equal(mcp.name, "Test Local Service")
+def _sample_dataset_meta() -> list[_DatasetMetaFake]:
+    return [
+        _DatasetMetaFake(
+            id="analytics.fn_metrics",
+            name="Function Metrics Δ",
+            table_key="analytics.fn_metrics",
+            description="Unicode-friendly metrics table",
+            schema_version="1.0.0",
+            family="analytics",
+            is_docs_view=False,
+            is_read_only=False,
+            default_limit=25,
+            max_limit=250,
+        ),
+        _DatasetMetaFake(
+            id="docs.fn_metrics_view",
+            name="Docs View",
+            table_key="docs.fn_metrics_view",
+            description="Docs view of metrics",
+            schema_version=None,
+            family=None,
+            is_docs_view=True,
+            is_read_only=True,
+            default_limit=10,
+            max_limit=50,
+        ),
+    ]
 
 
-# =============================================================================
-# Multiple Registration Tests
-# =============================================================================
+def _sample_operations() -> list[_OperationSpecFake]:
+    return [
+        _OperationSpecFake(
+            id="operation.summarize",
+            category="meta",
+            summary="Summarize datasets Δ",
+            description="Summarize analytics datasets with unicode",
+            http_method="GET",
+            http_path="/meta/summarize",
+            tool_name="meta.list_datasets",
+            output_model_name="DatasetMetaResponse",
+            required_datasets=("analytics.fn_metrics",),
+            required_graphs=("graph://functions",),
+            default_limit=None,
+            max_limit=50,
+        ),
+        _OperationSpecFake(
+            id="operation.graph",
+            category="meta",
+            summary="Build graph",
+            description=None,
+            http_method=None,
+            http_path=None,
+            tool_name="meta.dataflow_graph",
+            output_model_name="DataflowGraphResponse",
+            required_datasets=("analytics.fn_metrics", "docs.fn_metrics_view"),
+            required_graphs=(),
+            default_limit=5,
+            max_limit=None,
+        ),
+    ]
 
 
-def test_register_meta_tools_different_servers(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify tools can be registered on different servers.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    backend = _build_backend(provisioned_repo)
-
-    # Register on first server
-    mcp1 = wrap_fastmcp("Server One")
-    register_meta_tools(mcp1, backend)
-    expect_equal(mcp1.name, "Server One")
-
-    # Register on second server
-    mcp2 = wrap_fastmcp("Server Two")
-    register_meta_tools(mcp2, backend)
-    expect_equal(mcp2.name, "Server Two")
-
-
-# =============================================================================
-# Backend Variants Tests
-# =============================================================================
-
-
-def test_register_meta_tools_backend_with_limits(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify meta tools work with backend having custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Backend Limits")
-    backend = _build_backend(provisioned_repo)
-
-    register_meta_tools(mcp, backend)
-    expect_equal(mcp.name, "Test Backend Limits")
+def _dataflow_graph() -> tuple[list[DataflowNode], list[DataflowEdge]]:
+    nodes = [
+        DataflowNode(
+            id="analytics.fn_metrics",
+            kind="table",
+            family="analytics",
+            owner_package="analytics",
+            description="Function metrics table",
+        ),
+        DataflowNode(
+            id="docs.fn_metrics_view",
+            kind="view",
+            family="docs",
+            owner_package="docs",
+            description="Docs view",
+        ),
+        DataflowNode(
+            id="operation.summarize",
+            kind="operation",
+            family="analytics",
+            owner_package="analytics",
+            description="Summarize metrics",
+        ),
+    ]
+    edges = [
+        DataflowEdge(src="analytics.fn_metrics", dst="docs.fn_metrics_view", edge_type="builds"),
+        DataflowEdge(src="docs.fn_metrics_view", dst="operation.summarize", edge_type="reads"),
+    ]
+    return nodes, edges
 
 
-def test_register_meta_tools_backend_with_service(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify meta tools work with backend using provided service.
+def _meta_options() -> MetaToolOptions:
+    def _dataset_meta_builder(
+        _service: LocalQueryService, _limits: BackendLimits
+    ) -> tuple[_DatasetMetaStub, ...]:
+        return _sample_dataset_meta()
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test With Service")
-    backend = _build_backend(provisioned_repo)
-
-    # Backend was built with service
-    expect_true(backend.service is not None)
-
-    register_meta_tools(mcp, backend)
-    expect_equal(mcp.name, "Test With Service")
-
-
-# =============================================================================
-# Limits Tests
-# =============================================================================
-
-
-def test_register_meta_tools_custom_limits(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify meta tools work with custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    custom_limit = 50
-    custom_max = 500
-    limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
+    return MetaToolOptions(
+        operations=_sample_operations(),
+        dataflow_builder=_dataflow_graph,
+        dataset_meta_builder=_dataset_meta_builder,
     )
 
-    mcp = wrap_fastmcp("Test Custom Limits")
-    register_meta_tools(mcp, backend)
 
-    expect_equal(mcp.name, "Test Custom Limits")
-    expect_equal(backend.limits.default_limit, custom_limit)
-    expect_equal(backend.limits.max_rows_per_call, custom_max)
-
-
-# =============================================================================
-# Backend Type Tests
-# =============================================================================
+def _register_with_options(
+    backend: LocalQueryService, options: MetaToolOptions | None = None
+) -> RecordingMcpRegistrar:
+    registrar = RecordingMcpRegistrar("meta-tools")
+    register_meta_tools(registrar, backend, options=options or _meta_options())
+    return registrar
 
 
-def test_register_meta_tools_duckdb_backend(
-    provisioned_repo: ProvisionedGateway,
+@pytest.fixture
+def backend(provisioned_repo: ProvisionedGateway) -> LocalQueryService:
+    return _build_backend(provisioned_repo)
+
+
+def test_meta_tools_list_payloads_with_unicode(
+    backend: LocalQueryService,
 ) -> None:
-    """Verify register_meta_tools works with DuckDBBackend.
+    """Meta tools should surface unicode dataset metadata and limits."""
+    registrar = _register_with_options(backend)
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test DuckDB Backend")
-    backend = _build_backend(provisioned_repo)
+    tools = registrar.list_tools()
+    expect_length(tools, 6)
+    expect_in("meta.list_datasets", [tool.name for tool in tools])
+    expect_in("meta.explain_path", [tool.name for tool in tools])
 
-    # Verify backend is DuckDBBackend
-    expect_is_instance(backend, DuckDBBackend)
-
-    register_meta_tools(mcp, backend)
-    expect_equal(mcp.name, "Test DuckDB Backend")
-
-
-def test_register_meta_tools_preserves_backend_properties(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify registration doesn't alter backend properties.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Properties")
-    backend = _build_backend(provisioned_repo)
-
-    original_repo = backend.repo
-    original_commit = backend.commit
-    original_limits = backend.limits
-
-    register_meta_tools(mcp, backend)
-
-    # Backend properties should be unchanged
-    expect_equal(backend.repo, original_repo)
-    expect_equal(backend.commit, original_commit)
-    expect_equal(backend.limits, original_limits)
-
-
-# =============================================================================
-# Backend List Datasets via Service Tests
-# =============================================================================
-
-
-def test_backend_list_datasets(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify backend.list_datasets returns dataset descriptors.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
-
+    datasets = registrar.registry["meta.list_datasets"]()
     expect_is_instance(datasets, list)
+    expect_length(datasets, 2)
+    expect_equal(datasets[0]["name"], "Function Metrics Δ")
+    expect_equal(datasets[1]["schema_version"], None)
+    expect_equal(datasets[0]["max_limit"], 250)
+
+    operations = registrar.registry["meta.list_operations"]()
+    expect_length(operations, 2)
+    expect_equal(operations[0]["required_datasets"], ["analytics.fn_metrics"])
+    expect_equal(operations[0]["default_limit"], DEFAULT_LIMIT)
+    expect_equal(operations[1]["max_limit"], MAX_ROWS)
+
+    graph_payload = registrar.registry["meta.dataflow_graph"]()
+    expect_length(graph_payload, 1)
+    expect_length(graph_payload[0]["nodes"], 3)
+    expect_length(graph_payload[0]["edges"], 2)
 
 
-def test_backend_dataset_specs(
-    provisioned_repo: ProvisionedGateway,
+def test_explain_tools_return_edges_and_nodes(
+    backend: LocalQueryService,
 ) -> None:
-    """Verify backend.dataset_specs returns specs.
+    """Explain tools should return structured nodes/edges for datasets and ops."""
+    registrar = _register_with_options(backend)
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    backend = _build_backend(provisioned_repo)
+    dataset_payload = registrar.registry["meta.explain_dataset"]("docs.fn_metrics_view")
+    expect_length(dataset_payload, 1)
+    expect_length(dataset_payload[0]["incoming_edges"], 1)
+    expect_length(dataset_payload[0]["outgoing_edges"], 1)
 
-    specs = backend.dataset_specs()
+    operation_payload = registrar.registry["meta.explain_operation"]("operation.summarize")
+    expect_length(operation_payload, 1)
+    expect_length(operation_payload[0]["incoming_edges"], 1)
+    expect_length(operation_payload[0]["outgoing_edges"], 0)
 
-    expect_is_instance(specs, list)
-
-
-def test_service_list_datasets(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify service.list_datasets returns dataset descriptors.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
+    path_payload = registrar.registry["meta.explain_path"](
+        "analytics.fn_metrics",
+        "operation.summarize",
+        4,
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    expect_length(path_payload, 1)
+    expect_length(path_payload[0]["nodes"], 3)
+    expect_length(path_payload[0]["edges"], 2)
+
+
+def test_unknown_ids_return_problem_detail_and_log_warning(
+    backend: LocalQueryService, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Unknown IDs should yield problem details and log warnings."""
+    registrar = _register_with_options(backend)
+
+    with caplog.at_level("WARNING"):
+        dataset_error = registrar.registry["meta.explain_dataset"]("unknown.dataset")
+    expect_in("error", dataset_error)
+    expect_in("Unknown dataset/docs node_id", dataset_error["error"]["detail"])
+    assert_logged(caplog.records, level="WARNING", containing="Unknown dataset/docs node_id")
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        operation_error = registrar.registry["meta.explain_operation"]("unknown.operation")
+    expect_in("error", operation_error)
+    expect_in("Unknown operation id", operation_error["error"]["detail"])
+    assert_logged(caplog.records, level="WARNING", containing="Unknown operation id")
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        path_error = registrar.registry["meta.explain_path"]("unknown.src", "operation.summarize")
+    expect_in("error", path_error)
+    assert_logged(caplog.records, level="WARNING", containing="Unknown src_id")
+
+
+def test_invalid_payloads_return_problem_detail_and_log_warning(
+    backend: LocalQueryService, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Invalid payloads should yield problem details and log warnings."""
+
+    @dataclass
+    class _BrokenDatasetMeta:
+        id: str
+        name: str
+        table_key: str
+        description: str = "Broken"
+
+    def broken_meta_builder(service: LocalQueryService, limits: BackendLimits) -> Iterable[object]:
+        del service, limits
+        return [_BrokenDatasetMeta(id="broken", name="Broken", table_key="broken")]
+
+    registrar = _register_with_options(
+        backend,
+        options=MetaToolOptions(
+            operations=iter_registry_operations(),
+            dataflow_builder=_dataflow_graph,
+            dataset_meta_builder=broken_meta_builder,
+        ),
     )
 
-    datasets = service.list_datasets()
-
-    expect_is_instance(datasets, list)
-
-
-def test_service_dataset_specs(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify service.dataset_specs returns specs.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
+    with caplog.at_level("WARNING"):
+        error_payload = registrar.registry["meta.list_datasets"]()
+    expect_in("error", error_payload)
+    expect_in("Dataset meta missing expected attribute", error_payload["error"]["detail"])
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="Dataset meta missing expected attribute",
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
-    specs = service.dataset_specs()
-
-    expect_is_instance(specs, list)
-
-
-# =============================================================================
-# Registry Helper Tests (Public API)
-# =============================================================================
-
-
-def test_build_dataset_meta(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify build_dataset_meta returns metadata entries.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    backend = _build_backend(provisioned_repo)
-    limits = backend.limits
-    service = backend.service
-
-    metas = build_dataset_meta(service, limits)
-
-    expect_is_instance(metas, list)
-
-
-def test_build_serving_dataflow_graph() -> None:
-    """Verify build_serving_dataflow_graph returns nodes and edges."""
-    nodes, edges = build_serving_dataflow_graph()
-
-    expect_is_instance(nodes, list)
-    expect_is_instance(edges, list)
-
-
-def test_iter_registry_operations() -> None:
-    """Verify iter_registry_operations yields operations."""
-    operations = list(iter_registry_operations())
-
-    expect_is_instance(operations, list)
-    expect_true(len(operations) > 0)
-
-
-# =============================================================================
-# Registered Tools Integration Tests
-# =============================================================================
-
-
-def test_registered_tools_after_meta_registration(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify tools are callable after registration.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    mcp = wrap_fastmcp("Test Tools")
-    backend = _build_backend(provisioned_repo)
-
-    register_meta_tools(mcp, backend)
-
-    # MCP server should have tools registered
-    expect_equal(mcp.name, "Test Tools")

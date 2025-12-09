@@ -12,7 +12,7 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.mcp.dataset_tools import register_dataset_tools
+from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.operations import iter_operations
@@ -24,7 +24,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_registrar import wrap_fastmcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -167,6 +167,68 @@ def test_register_dataset_tools_on_multiple_servers(
     mcp2 = wrap_fastmcp("Server 2")
     register_dataset_tools(mcp2, backend)
     expect_equal(mcp2.name, "Server 2")
+
+
+def test_dataset_tools_serialize_unicode_payloads() -> None:
+    """Dataset tools serialize multi-row unicode/nullable payloads."""
+
+    class _FakeDatasetBackend:
+        def __init__(self) -> None:
+            self._payload = [
+                DatasetSpecDescriptor(
+                    name="datasets.alpha",
+                    table_key="core.alpha",
+                    family="core",
+                    is_view=False,
+                    schema_columns=["col1"],
+                    jsonl_filename=None,
+                    parquet_filename=None,
+                    has_row_binding=False,
+                    json_schema_id="alpha",
+                    description="データセット alpha",
+                    owner=None,
+                    validation_profile="lenient",
+                    stable_id="alpha-1",
+                ),
+                DatasetSpecDescriptor(
+                    name="datasets.delta",
+                    table_key="docs.δelta",
+                    family="docs",
+                    is_view=True,
+                    schema_columns=["node", "value"],
+                    jsonl_filename="δ.jsonl",
+                    parquet_filename=None,
+                    has_row_binding=True,
+                    json_schema_id=None,
+                    description=None,
+                    owner="team-δ",
+                    validation_profile="strict",
+                    upstream_dependencies=["datasets.alpha"],
+                ),
+            ]
+
+        def list_datasets(self) -> list[DatasetSpecDescriptor]:
+            return self._payload
+
+    registrar = RecordingMcpRegistrar("dataset-recorder")
+    ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]
+    register_dataset_tools(
+        registrar,
+        _FakeDatasetBackend(),
+        options=DatasetToolOptions(operations=ops),
+    )
+
+    tool = registrar.registry["list_datasets"]
+    result = tool()
+    expect_is_instance(result, list)
+    expect_equal(len(result), 2)
+    expect_true(any(row["owner"] is None for row in result))
+    expect_true(
+        any(
+            ("δ" in row.get("table_key", "")) or ("δ" in (row.get("jsonl_filename") or ""))
+            for row in result
+        )
+    )
 
 
 # =============================================================================

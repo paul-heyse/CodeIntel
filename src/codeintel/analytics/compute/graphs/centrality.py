@@ -8,6 +8,8 @@ in codeintel.graphs.compute.metrics.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import networkx as nx
@@ -27,6 +29,14 @@ if TYPE_CHECKING:
     from codeintel.analytics.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CentralityComputations:
+    """Optional computation overrides for centrality helpers."""
+
+    eigen_fn: Callable[[nx.Graph, int, str | None], dict[Any, float]] | None = None
+    constraint_fn: Callable[[nx.Graph, str | None], Any] | None = None
 
 
 def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:
@@ -93,6 +103,7 @@ def centrality_directed(
     *,
     weight: str | None = None,
     include_eigen: bool = False,
+    compute_overrides: CentralityComputations | None = None,
 ) -> CentralityBundle:
     """Compute centrality metrics on a directed graph with shared defaults.
 
@@ -106,6 +117,8 @@ def centrality_directed(
         Edge attribute storing the weight. Defaults to context betweenness/pagerank weight.
     include_eigen
         Whether to compute eigenvector centrality on an undirected view.
+    compute_overrides
+        Optional container for overriding eigenvector computation.
 
     Returns
     -------
@@ -127,8 +140,12 @@ def centrality_directed(
 
     eigenvector: dict[Any, float] = {}
     if include_eigen and graph.number_of_nodes() > 0:
-        eigenvector = compute_eigenvector_centrality(
-            graph, max_iter=ctx.eigen_max_iter, weight=weight
+        overrides = compute_overrides or CentralityComputations()
+        eigen_fn = overrides.eigen_fn or compute_eigenvector_centrality
+        eigenvector = eigen_fn(
+            graph,
+            max_iter=ctx.eigen_max_iter,
+            weight=weight,
         )
         if not eigenvector:
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)
@@ -148,6 +165,7 @@ def centrality_undirected(
     *,
     weight: str | None = None,
     include_structural: bool = False,
+    compute_overrides: CentralityComputations | None = None,
 ) -> CentralityBundle:
     """Compute centrality metrics on an undirected graph.
 
@@ -161,6 +179,8 @@ def centrality_undirected(
         Edge attribute storing the weight. Defaults to "weight".
     include_structural
         Whether to compute additional structural hole metrics.
+    compute_overrides
+        Optional container for overriding eigenvector and structural calculations.
 
     Returns
     -------
@@ -182,15 +202,21 @@ def centrality_undirected(
 
     eigenvector: dict[Any, float] = {}
     if graph.number_of_nodes() > 0:
-        eigenvector = compute_eigenvector_centrality(
-            graph, max_iter=ctx.eigen_max_iter, weight=pagerank_weight
+        overrides = compute_overrides or CentralityComputations()
+        eigen_fn = overrides.eigen_fn or compute_eigenvector_centrality
+        eigenvector = eigen_fn(
+            graph,
+            max_iter=ctx.eigen_max_iter,
+            weight=pagerank_weight,
         )
         if not eigenvector:
             log.warning("Eigenvector centrality did not converge for undirected graph=%s", graph)
 
     if include_structural and graph.number_of_nodes() > 0:
+        overrides = compute_overrides or CentralityComputations()
+        constraint_resolved = overrides.constraint_fn or structuralholes.constraint
         try:
-            _ = structuralholes.constraint(graph, weight=weight)
+            _ = constraint_resolved(graph, weight=weight)
         except NetworkXAlgorithmError:
             log.warning("Structural holes calculation failed for graph=%s", graph)
 
@@ -204,6 +230,7 @@ def centrality_undirected(
 
 
 __all__ = [
+    "CentralityComputations",
     "centrality_directed",
     "centrality_undirected",
     "neighbor_stats",

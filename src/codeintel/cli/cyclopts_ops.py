@@ -5,10 +5,23 @@ from __future__ import annotations
 import inspect
 import logging
 import types
+from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, field, make_dataclass
-from typing import Annotated, Any, Protocol, Union, get_args, get_origin
+from enum import Enum
+from pathlib import Path
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    Protocol,
+    Union,
+    Unpack,
+    cast,
+    get_args,
+    get_origin,
+)
 
-from cyclopts import App, Parameter
+from cyclopts import App, Group, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
 from codeintel.cli.common_handlers import OutputFormat
@@ -21,6 +34,7 @@ from codeintel.cli.cyclopts_common import (
     build_runtime_from_cli,
     resolve_output_format,
 )
+from codeintel.cli.cyclopts_help import _AppCallKwargs
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
@@ -55,8 +69,56 @@ serve_app = App(
     help="HTTP and MCP server commands.",
 )
 
+SimpleNamespace = types.SimpleNamespace
+_ROOT_APP_HOLDER: dict[str, App | None] = {"app": None}
+
+
+def set_root_app(root: App) -> None:
+    """Inject the root app for parse-only helpers without creating import cycles."""
+    _ROOT_APP_HOLDER["app"] = root
+
+
+# Provide a thin proxy to the root app for tests that want parse-only behavior
+def app(
+    tokens: str | Iterable[str] | None = None, **call_kwargs: Unpack[_AppCallKwargs]
+) -> types.SimpleNamespace:
+    """
+    Invoke the root Cyclopts app from within the ops module.
+
+    Returns
+    -------
+    types.SimpleNamespace
+        Parsed namespace for parse-only flows when result_action="return_value".
+
+    Raises
+    ------
+    RuntimeError
+        If the root app reference has not been set.
+    """
+    root_app = _ROOT_APP_HOLDER["app"]
+    if root_app is None:
+        message = "Root app not initialized"
+        raise RuntimeError(message)
+    result = root_app(tokens, **call_kwargs)
+    return cast("types.SimpleNamespace", result)
+
+
 # Track dynamically registered operation command names to avoid duplicates
 _REGISTERED_OP_COMMANDS: set[str] = set()
+_GROUPS_BY_ROLE: dict[str, Group] = {
+    "selector": Group(
+        "Target Selection",
+        default_parameter=Parameter(negative=()),
+    ),
+    "filter": Group(
+        "Filtering Options",
+        default_parameter=Parameter(negative=()),
+    ),
+    "advanced": Group(
+        "Advanced Options",
+        default_parameter=Parameter(negative=()),
+    ),
+}
 FieldDef = tuple[str, object, Any] | tuple[str, object]
 
 
@@ -87,20 +149,22 @@ class OpListCli:
 
 
 @op_app.command(name="list")
-def op_list(
-    cfg: Annotated[OpListCli, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class OpListCommand:
     """List available serving operations."""
-    cfg = cfg or OpListCli()
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
-    )
-    op_list_handler(
-        category=cfg.category,
-        output_format=output_format,
-    )
+
+    cfg: Annotated[OpListCli, Parameter(name="*")] = field(default_factory=OpListCli)
+
+    def __call__(self) -> None:
+        output_format = resolve_output_format(
+            json_flag=self.cfg.output.json,
+            explicit=self.cfg.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        op_list_handler(
+            category=self.cfg.category,
+            output_format=output_format,
+        )
 
 
 @dataclass
@@ -132,29 +196,25 @@ class OpCallCli:
 
 
 @op_app.command(name="call")
-def op_call(
-    cfg: Annotated[OpCallCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Invoke a serving operation end-to-end.
+@dataclass
+class OpCallCommand:
+    """Invoke a serving operation end-to-end."""
 
-    Raises
-    ------
-    ValidationError
-        If an operation ID is not provided.
-    """
-    cfg = cfg or OpCallCli()
-    if not cfg.op_id:
-        message = "Operation ID is required."
-        raise ValidationError(message)
-    runtime = cfg.runtime
-    project_runtime = _runtime_from_cli(runtime)
-    op_call_handler(
-        op_id=cfg.op_id,
-        params=cfg.params,
-        runtime=project_runtime,
-        skip_prereqs=cfg.skip_prereqs,
-        verbose=bool(runtime.verbose),
-    )
+    cfg: Annotated[OpCallCli, Parameter(name="*")] = field(default_factory=OpCallCli)
+
+    def __call__(self) -> None:
+        if not self.cfg.op_id:
+            message = "Operation ID is required."
+            raise ValidationError(message)
+        runtime = self.cfg.runtime
+        project_runtime = _runtime_from_cli(runtime)
+        op_call_handler(
+            op_id=self.cfg.op_id,
+            params=self.cfg.params,
+            runtime=project_runtime,
+            skip_prereqs=self.cfg.skip_prereqs,
+            verbose=bool(runtime.verbose),
+        )
 
 
 def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
@@ -192,7 +252,121 @@ def _cli_type_for_spec(spec: CliParamSpec) -> type[Any]:
         return str
     if base_type in {int, float, bool, str}:
         return base_type
+    if isinstance(base_type, type) and issubclass(base_type, Path):
+        return Path
+    if isinstance(base_type, type) and issubclass(base_type, Enum):
+        return base_type
     return str
+
+
+def _is_choice_type(type_hint: type[Any] | None) -> bool:
+    """Return True if the hint is an Enum or Literal[...] type.
+
+    Returns
+    -------
+    bool
+        True when the type maps to a finite choice set.
+    """
+    if type_hint is None:
+        return False
+    origin = get_origin(type_hint)
+    if origin is Literal:
+        return True
+    base_type = _extract_base_type(type_hint)
+    return isinstance(base_type, type) and issubclass(base_type, Enum)
+
+
+def _is_path_type(type_hint: type[Any] | None) -> bool:
+    """Return True if the hint resolves to a pathlib.Path.
+
+    Returns
+    -------
+    bool
+        True when the base type is Path.
+    """
+    base_type = _extract_base_type(type_hint)
+    return isinstance(base_type, type) and issubclass(base_type, Path)
+
+
+def _is_env_like(name: str) -> bool:
+    """Heuristic for environment/venv path parameters.
+
+    Returns
+    -------
+    bool
+        True if the name implies a virtualenv/environment path.
+    """
+    lowered = name.lower()
+    return "venv" in lowered or lowered.endswith(("_env", "env"))
+
+
+def _is_output_like(name: str) -> bool:
+    """Heuristic for output/destination path parameters.
+
+    Returns
+    -------
+    bool
+        True if the name implies an output/destination path.
+    """
+    lowered = name.lower()
+    return any(token in lowered for token in ("output", "dest", "destination"))
+
+
+def _path_validator(
+    *, require_exists: bool, require_dir: bool | None
+) -> Callable[[type[Any], Path], None]:
+    """Build a simple path validator.
+
+    Returns
+    -------
+    Callable[[type[Any], Path], None]
+        Validator enforcing existence and shape constraints.
+    """
+
+    def _validate(_type: type[Any], value: Path) -> None:
+        if require_exists and not value.exists():
+            msg = f"Path does not exist: {value}"
+            raise ValueError(msg)
+        if require_dir is True and not value.is_dir():
+            msg = f"Expected directory path: {value}"
+            raise ValueError(msg)
+        if require_dir is False and value.exists() and not value.is_file():
+            msg = f"Expected file path: {value}"
+            raise ValueError(msg)
+        if not require_exists:
+            parent = value.parent
+            if parent and not parent.exists():
+                msg = f"Parent directory does not exist: {parent}"
+                raise ValueError(msg)
+
+    return _validate
+
+
+def _path_defaults_and_validator(
+    spec: CliParamSpec,
+) -> tuple[object, Callable[[type[Any], Path], None] | None]:
+    """Infer a default and validator for path-like parameters.
+
+    Returns
+    -------
+    tuple[object, Callable[[type[Any], Path], None] | None]
+        (default, validator) tuple; validator may be None.
+    """
+    if not _is_path_type(spec.python_type):
+        return spec.default, None
+
+    validator: Callable[[type[Any], Path], None] | None = None
+    default_override: object = spec.default
+
+    if _is_env_like(spec.name) and spec.default is inspect.Parameter.empty:
+        default_override = Path(".venv")
+        validator = _path_validator(require_exists=True, require_dir=True)
+    elif _is_output_like(spec.name):
+        validator = _path_validator(require_exists=False, require_dir=None)
+    else:
+        validator = _path_validator(require_exists=True, require_dir=None)
+
+    return default_override, validator
 
 
 def _make_param_annotation(spec: CliParamSpec) -> tuple[type[Any], Any]:
@@ -222,16 +396,36 @@ def _make_param_field(spec: CliParamSpec) -> FieldDef:
     tuple[str, object, Any]
         Field definition for ``make_dataclass``.
     """
-    annotation, default = _make_param_annotation(spec)
+    default_override, path_validator = _path_defaults_and_validator(spec)
+    patched_spec = CliParamSpec(
+        name=spec.name,
+        cli_name=spec.cli_name,
+        python_type=spec.python_type,
+        default=default_override,
+        role=spec.role,
+        help_text=spec.help_text,
+        help_panel=spec.help_panel,
+        is_optional=spec.is_optional,
+    )
+
+    annotation, default = _make_param_annotation(patched_spec)
     cli_type = _cli_type_for_spec(spec)
-    parameter_kwargs = {
-        "name": [f"--{spec.cli_name}"],
-        "help": spec.help_text,
-    }
-    if cli_type is bool:
-        parameter_kwargs["negative"] = []
-    parameter = Parameter(**parameter_kwargs)
-    annotated_type = Annotated[annotation, parameter]
+    show_choices = True if _is_choice_type(spec.python_type) else None
+    converter: Callable[..., object] | str | None = None
+    if isinstance(cli_type, type) and issubclass(cli_type, Path):
+        converter = Path
+    parameter = Parameter(
+        name=[f"--{spec.cli_name}"],
+        help=spec.help_text,
+        show_choices=show_choices,
+        converter=converter,
+        validator=path_validator,
+    )
+    group = _GROUPS_BY_ROLE.get(spec.role)
+    if group is not None:
+        annotated_type = Annotated[annotation, group, parameter]
+    else:
+        annotated_type = Annotated[annotation, parameter]
     if default is MISSING:
         return (spec.name, annotated_type)
     return (spec.name, annotated_type, default)
@@ -380,6 +574,35 @@ def register_dynamic_operations() -> None:
         _register_dynamic_operation(metadata)
 
 
+def build_param_field_for_spec(spec: CliParamSpec) -> FieldDef:
+    """Public helper to construct a dataclass field tuple for a spec.
+
+    Returns
+    -------
+    FieldDef
+        Dataclass field definition including annotations/metadata.
+    """
+    return _make_param_field(spec)
+
+
+def path_defaults_and_validator(
+    spec: CliParamSpec,
+) -> tuple[object, Callable[[type[Any], Path], None] | None]:
+    """Public helper to infer path defaults/validators for a spec.
+
+    Returns
+    -------
+    tuple[object, Callable[[type[Any], Path], None] | None]
+        (default, validator) tuple; validator may be None.
+    """
+    return _path_defaults_and_validator(spec)
+
+
+def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None:
+    """Register a dynamic operation command for testing purposes."""
+    _register_dynamic_operation(metadata)
+
+
 # -----------------------------------------------------------------------------
 # dataset commands
 # -----------------------------------------------------------------------------
@@ -394,21 +617,23 @@ class DatasetListCli:
 
 
 @dataset_app.command(name="list")
-def dataset_list(
-    cfg: Annotated[DatasetListCli, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class DatasetListCommand:
     """List datasets from the registry."""
-    cfg = cfg or DatasetListCli()
-    runtime = _runtime_from_cli(cfg.runtime)
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
-    )
-    dataset_list_handler(
-        runtime=runtime,
-        output_format=output_format,
-    )
+
+    cfg: Annotated[DatasetListCli, Parameter(name="*")] = field(default_factory=DatasetListCli)
+
+    def __call__(self) -> None:
+        runtime = _runtime_from_cli(self.cfg.runtime)
+        output_format = resolve_output_format(
+            json_flag=self.cfg.output.json,
+            explicit=self.cfg.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        dataset_list_handler(
+            runtime=runtime,
+            output_format=output_format,
+        )
 
 
 @dataclass
@@ -425,26 +650,24 @@ class DatasetDescribeCli:
 
 
 @dataset_app.command(name="describe")
-def dataset_describe(
-    cfg: Annotated[DatasetDescribeCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Show contract details for a dataset.
+@dataclass
+class DatasetDescribeCommand:
+    """Show contract details for a dataset."""
 
-    Raises
-    ------
-    ValidationError
-        If the dataset key is missing.
-    """
-    cfg = cfg or DatasetDescribeCli()
-    if not cfg.table_key:
-        message = "Dataset key is required."
-        raise ValidationError(message)
-    output_format = resolve_output_format(
-        json_flag=cfg.output.json,
-        explicit=cfg.output.output_format,
-        default=OutputFormat.TEXT,
+    cfg: Annotated[DatasetDescribeCli, Parameter(name="*")] = field(
+        default_factory=DatasetDescribeCli
     )
-    dataset_describe_handler(table_key=cfg.table_key, output_format=output_format)
+
+    def __call__(self) -> None:
+        if not self.cfg.table_key:
+            message = "Dataset key is required."
+            raise ValidationError(message)
+        output_format = resolve_output_format(
+            json_flag=self.cfg.output.json,
+            explicit=self.cfg.output.output_format,
+            default=OutputFormat.TEXT,
+        )
+        dataset_describe_handler(table_key=self.cfg.table_key, output_format=output_format)
 
 
 @dataclass
@@ -462,13 +685,15 @@ class DatasetVerifyCli:
 
 
 @dataset_app.command(name="verify")
-def dataset_verify(
-    cfg: Annotated[DatasetVerifyCli, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class DatasetVerifyCommand:
     """Verify dataset contracts against actual data."""
-    cfg = cfg or DatasetVerifyCli()
-    runtime = _runtime_from_cli(cfg.runtime)
-    dataset_verify_handler(table_key=cfg.table_key, runtime=runtime)
+
+    cfg: Annotated[DatasetVerifyCli, Parameter(name="*")] = field(default_factory=DatasetVerifyCli)
+
+    def __call__(self) -> None:
+        runtime = _runtime_from_cli(self.cfg.runtime)
+        dataset_verify_handler(table_key=self.cfg.table_key, runtime=runtime)
 
 
 # -----------------------------------------------------------------------------
@@ -477,22 +702,24 @@ def dataset_verify(
 
 
 @serve_app.command(name="http")
-def serve_http(
+@dataclass
+class ServeHttpCommand:
+    """Start the HTTP server."""
+
     host: Annotated[
         str,
         Parameter(
             name=["--host", "-h"],
             help="Host to bind to.",
         ),
-    ] = "127.0.0.1",
+    ] = "127.0.0.1"
     port: Annotated[
         int,
         Parameter(
             name=["--port", "-p"],
             help="Port to bind to.",
         ),
-    ] = 8000,
-    *,
+    ] = 8000
     auto_pipeline: Annotated[
         bool,
         Parameter(
@@ -500,7 +727,7 @@ def serve_http(
             help="Enable automatic prerequisite pipeline execution.",
             negative=(),
         ),
-    ] = False,
+    ] = False
     reload: Annotated[
         bool,
         Parameter(
@@ -508,24 +735,25 @@ def serve_http(
             help="Enable auto-reload for development.",
             negative=(),
         ),
-    ] = False,
-    runtime: RuntimeParam | None = None,
-) -> None:
-    """Start the HTTP server."""
-    runtime_cfg = runtime or RuntimeCLI()
-    runtime_obj = _runtime_from_cli(runtime_cfg)
-    serve_http_handler(
-        host=host,
-        port=port,
-        auto_pipeline=auto_pipeline,
-        reload=reload,
-        runtime=runtime_obj,
-    )
+    ] = False
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+
+    def __call__(self) -> None:
+        runtime_obj = _runtime_from_cli(self.runtime)
+        serve_http_handler(
+            host=self.host,
+            port=self.port,
+            auto_pipeline=self.auto_pipeline,
+            reload=self.reload,
+            runtime=runtime_obj,
+        )
 
 
 @serve_app.command(name="mcp")
-def serve_mcp(
-    *,
+@dataclass
+class ServeMcpCommand:
+    """Start the MCP server."""
+
     auto_pipeline: Annotated[
         bool,
         Parameter(
@@ -533,24 +761,29 @@ def serve_mcp(
             help="Enable automatic prerequisite pipeline execution.",
             negative=(),
         ),
-    ] = False,
-    runtime: RuntimeParam | None = None,
-) -> None:
-    """Start the MCP server."""
-    runtime_cfg = runtime or RuntimeCLI()
-    runtime_obj = _runtime_from_cli(runtime_cfg)
-    serve_mcp_handler(
-        auto_pipeline=auto_pipeline,
-        runtime=runtime_obj,
-    )
+    ] = False
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+
+    def __call__(self) -> None:
+        runtime_obj = _runtime_from_cli(self.runtime)
+        serve_mcp_handler(
+            auto_pipeline=self.auto_pipeline,
+            runtime=runtime_obj,
+        )
 
 
 register_dynamic_operations()
 
 
 __all__ = [
+    "SimpleNamespace",
+    "app",
+    "build_param_field_for_spec",
     "dataset_app",
     "op_app",
+    "path_defaults_and_validator",
+    "register_dynamic_operation_for_tests",
     "register_dynamic_operations",
     "serve_app",
+    "set_root_app",
 ]

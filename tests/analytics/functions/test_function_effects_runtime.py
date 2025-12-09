@@ -267,4 +267,11 @@ def test_compute_function_effects_with_transitive_and_missing(
     parsed = effects_json if isinstance(effects_json, dict) else json.loads(effects_json)
     expect_equal(parsed["errors"][0]["details"]["kind"], "missing_ast")
 
+    assert_logged(caplog.records, level="WARNING", containing="Missing AST for 1 functions")
+    assert_logged(caplog.records, level="WARNING", containing=str(goids["missing"]))
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="Unresolved call edges detected for 1 functions",
+    )
     assert_logged(caplog.records, level="INFO", containing="function_effects populated")

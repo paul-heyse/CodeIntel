@@ -33,7 +33,7 @@ class ScopeRecordingQuery:
 
     def __post_init__(self) -> None:
         """Set up fake gateway and query API attributes."""
-        self.gateway = open_memory_gateway(apply_schema=True, ensure_macros=True)
+        self.gateway = open_memory_gateway(apply_schema=True, validate_schema=False)
         self.repo = self.gateway.config.repo
         self.commit = self.gateway.config.commit
         self.limits = BackendLimits()

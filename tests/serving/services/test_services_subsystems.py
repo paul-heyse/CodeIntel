@@ -26,13 +26,15 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
-from codeintel.serving.services.errors import ProblemDetail, ProblemError
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.serving.services.subsystems import _HttpSubsystemQueryMixin, _SubsystemQueryDelegates
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+from tests._helpers.http_payloads import (
+    RequestRecorder,
+    make_subsystem_http_responses,
+)
+from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDelegateHarness
 
 # =============================================================================
 # Subsystem Route Tests (covers service delegates)
@@ -357,82 +359,12 @@ def test_subsystem_profiles_endpoint(
 # =============================================================================
 
 
-class _SubsystemQueryHarness(_SubsystemQueryDelegates):
-    """Harness around _SubsystemQueryDelegates to test normalization."""
-
-    def __init__(self, payloads: dict[str, object]) -> None:
-        self.query = HookedDuckDBQueryApi(
-            subsystem_hooks={
-                "list_subsystems": lambda **_: payloads["list_subsystems"],
-                "get_module_subsystems": lambda **_: payloads["get_module_subsystems"],
-                "get_subsystem_modules": lambda **_: payloads["get_subsystem_modules"],
-                "search_subsystems": lambda **_: payloads["search_subsystems"],
-                "summarize_subsystem": lambda **_: payloads["get_subsystem_modules"],
-                "list_subsystem_profiles": lambda **_: payloads["list_subsystem_profiles"],
-                "list_subsystem_coverage": lambda **_: payloads["list_subsystem_coverage"],
-            },
-            profile_hooks={"get_file_hints": lambda **_: payloads["get_file_hints"]},
-        )
-        self.called: list[tuple[str, str | None]] = []
-
-    def _call(
-        self,
-        name: str,
-        func,
-        *,
-        dataset: str | None = None,
-        **_: object,
-    ) -> object:  # type: ignore[override]
-        self.called.append((name, dataset))
-        return func()
-
-
-class _Requester:
-    """HTTP request stub returning predefined responses or raising errors."""
-
-    def __init__(
-        self,
-        responses: dict[str, object],
-        error_paths: set[str] | None = None,
-    ) -> None:
-        self.responses = responses
-        self.error_paths = error_paths or set()
-        self.calls: list[str] = []
-
-    def __call__(self, path: str, params: dict[str, object]) -> object:
-        self.calls.append(path)
-        if path in self.error_paths:
-            detail = ProblemDetail(
-                type="about:blank",
-                title="missing",
-                detail="not found",
-                status=404,
-            )
-            raise ProblemError(detail)
-        return self.responses[path]
-
-
-class _HttpSubsystemHarness(_HttpSubsystemQueryMixin):
-    """Concrete HTTP mixin holder for subsystem APIs."""
-
-    def __init__(
-        self,
-        *,
-        responses: dict[str, object],
-        limits: BackendLimits,
-        requester: _Requester,
-    ) -> None:
-        self.limits = limits
-        self.observability = None
-        self.request_json = requester
-
-
 def test_subsystem_delegate_normalization_variants() -> None:
     """Ensure subsystem delegates normalize dict and response payloads to domain."""
     payloads: dict[str, object] = {
         "list_subsystems": {"subsystems": [], "meta": ResponseMeta().model_dump()},
         "get_module_subsystems": ModuleSubsystemResponse(
-            found=True, subsystems=[], meta=ResponseMeta()
+            found=True, memberships=[], meta=ResponseMeta()
         ),
         "get_file_hints": FileHintsResponse(
             found=True,
@@ -451,7 +383,7 @@ def test_subsystem_delegate_normalization_variants() -> None:
         "list_subsystem_profiles": SubsystemProfileResponse(profiles=[], meta=ResponseMeta()),
         "list_subsystem_coverage": SubsystemCoverageResponse(coverage=[], meta=ResponseMeta()),
     }
-    delegates = _SubsystemQueryHarness(payloads)
+    delegates = SubsystemDelegateHarness(payloads)
 
     subsystems = delegates.list_subsystems(limit=1)
     module_subs = delegates.get_module_subsystems(module="m")
@@ -482,7 +414,7 @@ def test_http_subsystem_mixin_clamp_and_problem_fallback() -> None:
             meta=ResponseMeta(),
         ),
         "/architecture/module-subsystems": ModuleSubsystemResponse(
-            found=True, subsystems=[], meta=ResponseMeta()
+            found=True, memberships=[], meta=ResponseMeta()
         ),
         "/ide/hints": FileHintsResponse(found=True, hints=[], meta=ResponseMeta()),
         "/architecture/subsystem": SubsystemModulesResponse(
@@ -499,9 +431,8 @@ def test_http_subsystem_mixin_clamp_and_problem_fallback() -> None:
             meta=ResponseMeta(),
         ),
     }
-    requester = _Requester(responses, error_paths={"/architecture/subsystem"})
-    http_subs = _HttpSubsystemHarness(
-        responses=responses,
+    requester = RequestRecorder(responses, error_paths={"/architecture/subsystem"})
+    http_subs = HttpSubsystemHarness(
         limits=BackendLimits(default_limit=1, max_rows_per_call=1),
         requester=requester,
     )
@@ -521,35 +452,9 @@ def test_http_subsystem_mixin_clamp_and_problem_fallback() -> None:
 
 def test_http_subsystem_mixin_normalization_paths() -> None:
     """Validate HTTP mixin normalizes module subsystems and hints payloads."""
-    responses: dict[str, object] = {
-        "/architecture/subsystems": {
-            "subsystems": [],
-            "meta": ResponseMeta().model_dump(),
-        },
-        "/architecture/module-subsystems": ModuleSubsystemResponse(
-            found=True, subsystems=[], meta=ResponseMeta()
-        ),
-        "/ide/hints": {
-            "found": True,
-            "hints": [],
-            "meta": ResponseMeta().model_dump(),
-        },
-        "/architecture/subsystem": {
-            "found": True,
-            "modules": [],
-            "meta": ResponseMeta().model_dump(),
-        },
-        "/architecture/subsystem-profiles": SubsystemProfileResponse(
-            profiles=[],
-            meta=ResponseMeta(),
-        ),
-        "/architecture/subsystem-coverage": SubsystemCoverageResponse(
-            coverage=[], meta=ResponseMeta()
-        ),
-    }
-    requester = _Requester(responses)
-    http_subs = _HttpSubsystemHarness(
-        responses=responses,
+    responses = make_subsystem_http_responses()
+    requester = RequestRecorder(responses)
+    http_subs = HttpSubsystemHarness(
         limits=BackendLimits(default_limit=5, max_rows_per_call=10),
         requester=requester,
     )
