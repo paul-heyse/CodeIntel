@@ -5,7 +5,7 @@ This module tests the DuckDBBackend using real gateways.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 import pytest
@@ -33,11 +33,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.dataset_factories import (
-    DescriptorOptions,
-    make_descriptor,
-    sample_dataset_specs,
-)
+from tests._helpers.dataset_factories import make_descriptor, sample_dataset_specs
 from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
@@ -1408,6 +1404,20 @@ class _DatasetService(LocalQueryService):
             observability=None,
         )
 
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
+        """
+        Return mixed descriptor variants to exercise normalization paths.
+
+        Returns
+        -------
+        list[dm.DatasetDescriptorDomain]
+            Dataset descriptors as domain, model, and dict variants.
+        """
+        return cast(
+            "list[dm.DatasetDescriptorDomain]",
+            self._call("list_datasets", self._list_datasets),
+        )
+
     @staticmethod
     def _list_datasets() -> list[object]:
         domain, model, payload, _meta = make_descriptor(
@@ -1487,27 +1497,19 @@ class _DatasetService(LocalQueryService):
         _ = rel_path
         return dm.FileHintsResult(found=False, hints=[], meta=dm.ResponseMeta())
 
-    @staticmethod
-    def list_datasets() -> list[dm.DatasetDescriptorDomain]:
-        domain, _, _payload, _meta = make_descriptor(
-            name="docs.functions",
-            table="docs.v_functions",
-            description="fn docs",
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        return cast(
+            "list[DatasetSpecDescriptor]",
+            self._call("dataset_specs", self._dataset_specs),
         )
-        unicode_domain, _, _payload2, _meta2 = make_descriptor(
-            name="docs.Δelta",
-            table="docs.delta",
-            description="Delta dataset",
-            options=DescriptorOptions(owner=None, schema_version="v2"),
-        )
-        return [domain, unicode_domain]
-
-    @staticmethod
-    def dataset_specs() -> list[DatasetSpecDescriptor]:
-        return sample_dataset_specs()
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
-        return self._dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
+        return self._call(
+            "dataset_schema",
+            lambda: self._dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit),
+            dataset=dataset_name,
+            schema_version="1",
+        )
 
     def read_dataset_rows(
         self,
@@ -1516,7 +1518,11 @@ class _DatasetService(LocalQueryService):
         limit: int | None = None,
         offset: int = 0,
     ) -> dm.DatasetRows:
-        return self._read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
+        return self._call(
+            "read_dataset_rows",
+            lambda: self._read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset),
+            dataset=dataset_name,
+        )
 
 
 def test_dataset_backend_normalization_variants() -> None:

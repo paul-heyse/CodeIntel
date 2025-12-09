@@ -11,10 +11,9 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.cyclopts_common import (
-    RUNTIME_PARAM_FIELD,
     ExistingDir,
     OutputPath,
-    RuntimeParam,
+    RuntimeCLI,
     get_verbose,
     runtime_cli_to_options,
 )
@@ -60,7 +59,7 @@ class HistoryTimeseriesCli:
             help="Commits to include in the timeseries (latest first).",
         ),
     ] = None
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
     db_dir: Annotated[
         ExistingDir,
         Parameter(
@@ -114,7 +113,8 @@ class HistoryTimeseriesCommand:
         if self.cfg.commits is None or not list(self.cfg.commits):
             message = "At least one commit is required."
             raise ValidationError(message)
-        runtime_options = runtime_cli_to_options(self.cfg.runtime)
+        runtime = self.cfg.runtime or RuntimeCLI()
+        runtime_options = runtime_cli_to_options(runtime)
         options = HistoryOptions(
             repo_root=runtime_options.repo_root or Path(),
             db_dir=self.cfg.db_dir,
@@ -124,7 +124,7 @@ class HistoryTimeseriesCommand:
             selection_strategy=self.cfg.selection_strategy.value,
         )
         commits = list(self.cfg.commits)
-        verbose = get_verbose(self.cfg.runtime)
+        verbose = get_verbose(runtime)
         run_handler(
             history_timeseries_handler,
             repo=self.cfg.repo,

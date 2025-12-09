@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated
 
@@ -11,10 +11,8 @@ from cyclopts import App, Parameter
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OUTPUT_PARAM_FIELD,
-    RUNTIME_PARAM_FIELD,
-    OutputParam,
-    RuntimeParam,
+    OutputFormatCLI,
+    RuntimeCLI,
     make_handler_context,
 )
 from codeintel.cli.docs_handlers import (
@@ -114,7 +112,7 @@ class DocsExportCli:
             help="Dataset name to export (repeatable).",
         ),
     ] = None
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
     run_mode: Annotated[
         DryRunMode | None,
         Parameter(
@@ -157,9 +155,9 @@ DEFAULT_EXPORT = DocsExportCli()
 class DocsCli:
     """Grouped CLI surface for docs export."""
 
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
-    backend: Annotated[DocsBackendCli, Parameter(name="*")] = field(default_factory=DocsBackendCli)
-    export: Annotated[DocsExportCli, Parameter(name="*")] = field(default_factory=DocsExportCli)
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    backend: Annotated[DocsBackendCli | None, Parameter(name="*")] = None
+    export: Annotated[DocsExportCli | None, Parameter(name="*")] = None
 
 
 @dataclass(frozen=True)
@@ -183,12 +181,15 @@ class DocsExportCommand:
     - prereq_mode vs --skip-prereqs
     """
 
-    cfg: Annotated[DocsCli, Parameter(name="*")] = field(default_factory=DocsCli)
+    cfg: Annotated[DocsCli | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        project_cfg = self.cfg.runtime
-        backend_cfg = self.cfg.backend
-        export_cfg = self.cfg.export
+        cfg = self.cfg
+        if cfg is None:
+            cfg = DocsCli()
+        project_cfg = cfg.runtime if cfg.runtime is not None else RuntimeCLI()
+        backend_cfg = cfg.backend if cfg.backend is not None else DocsBackendCli()
+        export_cfg = cfg.export if cfg.export is not None else DocsExportCli()
         if export_cfg.validation_mode is not None and export_cfg.validate:
             message = "Provide either --validation-mode or --validate, not both."
             raise ValidationError(message)
@@ -219,7 +220,7 @@ class DocsExportCommand:
             prereq_mode = PrereqMode.SKIP if export_cfg.skip_prereqs else PrereqMode.RUN
 
         runtime_opts, verbose, output_format = make_handler_context(
-            project_cfg, export_cfg.output, default_output=OutputFormat.TEXT
+            project_cfg, export_cfg.output or OutputFormatCLI(), default_output=OutputFormat.TEXT
         )
 
         cli_kwargs = {

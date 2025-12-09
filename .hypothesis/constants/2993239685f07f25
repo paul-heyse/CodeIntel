@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_ide.py
+# hypothesis_version: 6.148.7
+
+['IDE helper commands.', 'hints', 'ide', 'ide_app']

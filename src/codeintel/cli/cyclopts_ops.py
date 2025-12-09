@@ -6,7 +6,7 @@ import inspect
 import logging
 import types
 from collections.abc import Callable, Iterable
-from dataclasses import MISSING, dataclass, field, make_dataclass
+from dataclasses import MISSING, dataclass, make_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import (
@@ -26,12 +26,9 @@ from cyclopts import App, Group, Parameter
 from codeintel.cli.cli_errors import ValidationError
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OUTPUT_PARAM_FIELD,
-    RUNTIME_PARAM_FIELD,
-    OutputParam,
+    OutputFormatCLI,
     RuntimeCLI,
     RuntimeCliError,
-    RuntimeParam,
     build_runtime_from_cli,
     get_output_format,
     get_verbose,
@@ -56,6 +53,10 @@ from codeintel.cli.ops_handlers import (
 )
 from codeintel.cli.project import ProjectRuntime
 from codeintel.serving.auto_pipeline import run_operation_prereqs
+from codeintel.serving.operations.catalog import (
+    register_test_operation,
+    unregister_test_operation,
+)
 
 op_app = App(
     name="op",
@@ -203,7 +204,7 @@ class OpListCli:
             help="Filter by operation category.",
         ),
     ] = None
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
 
 @op_app.command(name="list")
@@ -211,12 +212,15 @@ class OpListCli:
 class OpListCommand:
     """List available serving operations."""
 
-    cfg: Annotated[OpListCli, Parameter(name="*")] = field(default_factory=OpListCli)
+    cfg: Annotated[OpListCli | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
+        cfg = self.cfg or OpListCli()
+        output_format = get_output_format(
+            cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
+        )
         op_list_handler(
-            category=self.cfg.category,
+            category=cfg.category,
             output_format=output_format,
         )
 
@@ -239,7 +243,7 @@ class OpCallCli:
             help="Operation parameters as key=value pairs.",
         ),
     ] = None
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
     skip_prereqs: Annotated[
         bool,
         Parameter(
@@ -258,7 +262,7 @@ class OpCallCommand:
     cfg: Annotated[OpCallCli, Parameter(name="*")]
 
     def __call__(self) -> None:
-        runtime = self.cfg.runtime
+        runtime = self.cfg.runtime or RuntimeCLI()
         project_runtime = _runtime_from_cli(runtime)
         op_call_handler(
             op_id=self.cfg.op_id,
@@ -502,7 +506,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
         else:
             optional_fields.append(field_def)
 
-    runtime_field_def = ("runtime", RuntimeParam, runtime_field())
+    runtime_field_def = ("runtime", RuntimeCLI, runtime_field())
     skip_field = (
         "skip_prereqs",
         Annotated[
@@ -527,7 +531,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
     return params_cls
 
 
-def _runtime_from_cli(cli: RuntimeParam) -> ProjectRuntime:
+def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
     """Build a runtime from CLI flags with Cyclopts-native error handling.
 
     Returns
@@ -690,8 +694,47 @@ def path_validator(
 
 
 def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None:
-    """Register a dynamic operation command for testing purposes."""
+    """Register a dynamic operation command for testing purposes.
+
+    Register both the Cyclopts CLI command and the underlying operation
+    in the operations catalog so that `get_operation()` will find it
+    during invocation.
+
+    Parameters
+    ----------
+    metadata
+        Operation CLI metadata including the Operation instance.
+
+    Notes
+    -----
+    Always call `unregister_dynamic_operation_for_tests()` to clean up
+    after tests to avoid polluting the catalog.
+    """
+    # Register in the operations catalog so get_operation() finds it
+    register_test_operation(metadata.operation)
+    # Register the Cyclopts CLI command
     _register_dynamic_operation(metadata)
+
+
+def unregister_dynamic_operation_for_tests(op_id: str) -> bool:
+    """Remove a test operation from both the CLI and catalog.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier to remove (e.g., "test.choice.op").
+
+    Returns
+    -------
+    bool
+        True if the operation was found and removed from the catalog.
+
+    Notes
+    -----
+    The Cyclopts command cannot be unregistered at runtime, but removing
+    from the catalog prevents `invoke_operation()` from executing it.
+    """
+    return unregister_test_operation(op_id)
 
 
 # -----------------------------------------------------------------------------
@@ -703,8 +746,8 @@ def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None
 class DatasetListCli:
     """CLI surface for `codeintel dataset list`."""
 
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
 
 @dataset_app.command(name="list")
@@ -712,11 +755,14 @@ class DatasetListCli:
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    cfg: Annotated[DatasetListCli, Parameter(name="*")] = field(default_factory=DatasetListCli)
+    cfg: Annotated[DatasetListCli | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime = _runtime_from_cli(self.cfg.runtime)
-        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
+        cfg = self.cfg or DatasetListCli()
+        runtime = _runtime_from_cli(cfg.runtime or RuntimeCLI())
+        output_format = get_output_format(
+            cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
+        )
         dataset_list_handler(
             runtime=runtime,
             output_format=output_format,
@@ -734,7 +780,7 @@ class DatasetDescribeCli:
             required=True,
         ),
     ]
-    output: OutputParam = OUTPUT_PARAM_FIELD
+    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
 
 
 @dataset_app.command(name="describe")
@@ -745,7 +791,9 @@ class DatasetDescribeCommand:
     cfg: Annotated[DatasetDescribeCli, Parameter(name="*")]
 
     def __call__(self) -> None:
-        output_format = get_output_format(self.cfg.output, default=OutputFormat.TEXT)
+        output_format = get_output_format(
+            self.cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
+        )
         dataset_describe_handler(table_key=self.cfg.table_key, output_format=output_format)
 
 
@@ -760,7 +808,7 @@ class DatasetVerifyCli:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
 
 
 @dataset_app.command(name="verify")
@@ -768,11 +816,12 @@ class DatasetVerifyCli:
 class DatasetVerifyCommand:
     """Verify dataset contracts against actual data."""
 
-    cfg: Annotated[DatasetVerifyCli, Parameter(name="*")] = field(default_factory=DatasetVerifyCli)
+    cfg: Annotated[DatasetVerifyCli | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime = _runtime_from_cli(self.cfg.runtime)
-        dataset_verify_handler(table_key=self.cfg.table_key, runtime=runtime)
+        cfg = self.cfg or DatasetVerifyCli()
+        runtime = _runtime_from_cli(cfg.runtime or RuntimeCLI())
+        dataset_verify_handler(table_key=cfg.table_key, runtime=runtime)
 
 
 # -----------------------------------------------------------------------------
@@ -815,10 +864,10 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_obj = _runtime_from_cli(self.runtime)
+        runtime_obj = _runtime_from_cli(self.runtime or RuntimeCLI())
         serve_http_handler(
             host=self.host,
             port=self.port,
@@ -841,10 +890,10 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_obj = _runtime_from_cli(self.runtime)
+        runtime_obj = _runtime_from_cli(self.runtime or RuntimeCLI())
         serve_mcp_handler(
             auto_pipeline=self.auto_pipeline,
             runtime=runtime_obj,
@@ -868,4 +917,5 @@ __all__ = [
     "register_dynamic_operations",
     "serve_app",
     "set_root_app",
+    "unregister_dynamic_operation_for_tests",
 ]

@@ -10,9 +10,8 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
 from codeintel.cli.cyclopts_common import (
-    RUNTIME_PARAM_FIELD,
     ExistingPath,
-    RuntimeParam,
+    RuntimeCLI,
     get_verbose,
     runtime_cli_to_options,
 )
@@ -28,7 +27,7 @@ storage_app = App(
 class ValidateMacrosCli:
     """CLI surface for `codeintel storage validate-macros`."""
 
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
     macros: Annotated[
         MacroRequirement,
         Parameter(
@@ -52,9 +51,10 @@ def validate_macros(
 ) -> None:
     """Validate macro registry hashes and normalized macro schemas."""
     cfg = cfg or ValidateMacrosCli()
-    runtime_options = runtime_cli_to_options(cfg.runtime)
+    runtime = cfg.runtime or RuntimeCLI()
+    runtime_options = runtime_cli_to_options(runtime)
     db_path = cfg.db_path or runtime_options.db_path or Path("build/db/codeintel.duckdb")
-    verbose = get_verbose(cfg.runtime)
+    verbose = get_verbose(runtime)
     run_handler(
         storage_validate_macros,
         db_path,

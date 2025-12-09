@@ -14,8 +14,8 @@ See Also
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from dataclasses import Field, asdict, dataclass, is_dataclass
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
@@ -41,6 +41,32 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import QueryBackend
 
 
+class DataclassLike(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
+
+
+def _is_dataclass_instance(value: object) -> bool:
+    """Return True only for dataclass instances (not classes).
+
+    Returns
+    -------
+    bool
+        True when ``value`` is a dataclass instance; otherwise False.
+    """
+    return is_dataclass(value) and not isinstance(value, type)
+
+
+def _asdict_dataclass(instance: DataclassLike) -> dict[str, object]:
+    """Typed wrapper around dataclasses.asdict for Pyright compatibility.
+
+    Returns
+    -------
+    dict[str, object]
+        Dataclass fields serialized to plain Python objects.
+    """
+    return cast("dict[str, object]", asdict(instance))
+
+
 def _serialize_payload(
     payload: object,
     model_cls: ResponseFactory | None,
@@ -48,11 +74,18 @@ def _serialize_payload(
     if hasattr(payload, "model_dump"):
         return cast("SupportsModelDump", payload).model_dump()
     if model_cls is not None:
+        if _is_dataclass_instance(payload):
+            validator = cast("SupportsModelValidate", model_cls).model_validate
+            dataclass_payload = cast("DataclassLike", payload)
+            return validator(_asdict_dataclass(dataclass_payload)).model_dump()
         if hasattr(model_cls, "from_domain"):
             from_domain = cast("SupportsFromDomain", model_cls).from_domain
             return from_domain(payload).model_dump()
         validator = cast("SupportsModelValidate", model_cls).model_validate
         return validator(payload).model_dump()
+    if _is_dataclass_instance(payload):
+        dataclass_payload = cast("DataclassLike", payload)
+        return _asdict_dataclass(dataclass_payload)
     return cast("dict[str, object]", payload)
 
 

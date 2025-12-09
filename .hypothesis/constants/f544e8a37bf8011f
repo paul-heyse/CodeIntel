@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cli_errors.py
+# hypothesis_version: 6.148.7
+
+[', ', '--commit', '--db-path', '--repo', 'CliError', 'DocsValidationError', 'No such command', 'No such option', 'ValidationError', '_HandlerP', 'handle_cli_error', 'run_handler', 'runtime_required', 'token', 'unused_tokens', 'value']

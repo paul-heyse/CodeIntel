@@ -10,11 +10,10 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
 from codeintel.cli.cyclopts_common import (
-    RUNTIME_PARAM_FIELD,
     ExistingDir,
     ExistingPath,
     OutputPath,
-    RuntimeParam,
+    RuntimeCLI,
     get_verbose,
     runtime_cli_to_options,
 )
@@ -67,7 +66,7 @@ datasets_ext_app = App(
 class DatasetRuntimeCli:
     """Runtime selection shared by all datasets commands."""
 
-    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
 
 
 def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
@@ -86,7 +85,7 @@ def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
 
 
 def _runtime_verbose(cli: DatasetRuntimeCli) -> int:
-    return get_verbose(cli.runtime)
+    return get_verbose(cli.runtime or RuntimeCLI())
 
 
 @dataclass
@@ -115,18 +114,18 @@ class LintCliOptions:
 class LintCommand:
     """Validate dataset contract health."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[LintCliOptions, Parameter(name="*")] = field(default_factory=LintCliOptions)
+    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
+    options: Annotated[LintCliOptions | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
+        rt = self.runtime or DatasetRuntimeCli()
+        opts = self.options or LintCliOptions()
+        runtime_opts = _runtime_from_cli(rt)
         lint_opts = LintOptions(
-            schema_dir=self.options.schema_dir,
-            sampling=(SamplingMode.ENABLED if self.options.sample_rows else SamplingMode.DISABLED),
+            schema_dir=opts.schema_dir,
+            sampling=(SamplingMode.ENABLED if opts.sample_rows else SamplingMode.DISABLED),
         )
-        run_handler(datasets_lint_handler, runtime_opts, lint_opts, _runtime_verbose(self.runtime))
+        run_handler(datasets_lint_handler, runtime_opts, lint_opts, _runtime_verbose(rt))
 
 
 DocsFilterMode = Literal["include", "only", "exclude"]
@@ -165,21 +164,19 @@ class ListCliFilters:
 class ListDatasetsCommand:
     """List datasets with capabilities and optional filters."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    filters: Annotated[ListCliFilters, Parameter(name="*")] = field(default_factory=ListCliFilters)
+    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
+    filters: Annotated[ListCliFilters | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
+        rt = self.runtime or DatasetRuntimeCli()
+        filters = self.filters or ListCliFilters()
+        runtime_opts = _runtime_from_cli(rt)
         filter_opts = ListFilters(
-            docs_view=self.filters.docs_view,
-            read_only=self.filters.read_only,
-            max_description=self.filters.max_description,
+            docs_view=filters.docs_view,
+            read_only=filters.read_only,
+            max_description=filters.max_description,
         )
-        run_handler(
-            datasets_list_handler, runtime_opts, filter_opts, _runtime_verbose(self.runtime)
-        )
+        run_handler(datasets_list_handler, runtime_opts, filter_opts, _runtime_verbose(rt))
 
 
 @dataclass
@@ -200,20 +197,18 @@ class SnapshotCliOptions:
 class SnapshotCommand:
     """Write current dataset specs to a JSON snapshot file."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[SnapshotCliOptions, Parameter(name="*")] = field(
-        default_factory=SnapshotCliOptions
-    )
+    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
+    options: Annotated[SnapshotCliOptions | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
+        rt = self.runtime or DatasetRuntimeCli()
+        opts = self.options or SnapshotCliOptions()
+        runtime_opts = _runtime_from_cli(rt)
         run_handler(
             datasets_snapshot_handler,
             runtime_opts,
-            self.options.output,
-            _runtime_verbose(self.runtime),
+            opts.output,
+            _runtime_verbose(rt),
         )
 
 
@@ -256,20 +251,20 @@ class DiffCliOptions:
 class DiffCommand:
     """Diff current dataset specs against a baseline."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[DiffCliOptions, Parameter(name="*")] = field(default_factory=DiffCliOptions)
+    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
+    options: Annotated[DiffCliOptions | None, Parameter(name="*")] = None
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
+        rt = self.runtime or DatasetRuntimeCli()
+        opts = self.options or DiffCliOptions()
+        runtime_opts = _runtime_from_cli(rt)
         diff_opts = DiffOptions(
-            baseline=self.options.baseline,
-            output=self.options.output,
-            against_ref=self.options.against_ref,
-            baseline_path=self.options.baseline_path,
+            baseline=opts.baseline,
+            output=opts.output,
+            against_ref=opts.against_ref,
+            baseline_path=opts.baseline_path,
         )
-        run_handler(datasets_diff_handler, runtime_opts, diff_opts, _runtime_verbose(self.runtime))
+        run_handler(datasets_diff_handler, runtime_opts, diff_opts, _runtime_verbose(rt))
 
 
 @dataclass

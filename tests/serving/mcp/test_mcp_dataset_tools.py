@@ -5,6 +5,7 @@ This module tests the dataset browsing MCP tools registered from Operation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -181,20 +182,24 @@ def test_dataset_tools_serialize_unicode_payloads() -> None:
             name="datasets.alpha",
             table="core.alpha",
             description="データセット alpha",
-        )[1],
+        )[0],
         make_descriptor(
             name="datasets.delta",
             table="docs.δelta",
             description="Docs delta",
             options=None,
-        )[1],
+        )[0],
     ]
 
-    backend = LocalQueryService(
-        query=HookedDuckDBQueryApi(
-            hooks={"dataset_hooks": {"list_datasets": lambda: payload}},
-        ),
-    )
+    class _ListDatasetService(LocalQueryService):
+        def __init__(self, dataset_payload: Sequence[dm.DatasetDescriptorDomain]) -> None:
+            super().__init__(query=HookedDuckDBQueryApi())
+            self._dataset_payload = dataset_payload
+
+        def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
+            return self._call("list_datasets", lambda: list(self._dataset_payload))
+
+    backend = _ListDatasetService(payload)
 
     registrar = RecordingMcpRegistrar("dataset-recorder")
     ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]

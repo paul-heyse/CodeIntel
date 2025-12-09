@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar, TypedDict, cast
 
@@ -496,8 +497,8 @@ def _coerce_goids(
     tuple[int | None, int | None]
         Definition and use GOIDs coerced to ints when numeric, otherwise None.
     """
-    def_val = int(def_goid_raw) if isinstance(def_goid_raw, (int, float)) else None
-    use_val = int(use_goid_raw) if isinstance(use_goid_raw, (int, float)) else None
+    def_val = int(def_goid_raw) if isinstance(def_goid_raw, (int, float, Decimal)) else None
+    use_val = int(use_goid_raw) if isinstance(use_goid_raw, (int, float, Decimal)) else None
     return def_val, use_val
 
 
