@@ -2,15 +2,35 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Annotated
+import inspect
+import logging
+import types
+from dataclasses import MISSING, dataclass, field, make_dataclass
+from typing import Annotated, Any, Protocol, Union, get_args, get_origin
 
 from cyclopts import App, Parameter
 
-import codeintel.cli.main as legacy
-from codeintel.cli.cli_errors import invoke_with_typer_translation
-from codeintel.cli.cyclopts_common import RuntimeCLI
-from codeintel.serving.operations.catalog import Operation, iter_operations
+from codeintel.cli.cli_errors import ValidationError
+from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeCliError, build_runtime_from_cli
+from codeintel.cli.errors import CLI_EXIT_USAGE
+from codeintel.cli.op_params import (
+    CliParamSpec,
+    OperationCliMetadata,
+    build_operation_cli_metadata,
+    get_operations_with_cli_support,
+)
+from codeintel.cli.ops_handlers import (
+    dataset_describe_handler,
+    dataset_list_handler,
+    dataset_verify_handler,
+    invoke_operation,
+    op_call_handler,
+    op_list_handler,
+    serve_http_handler,
+    serve_mcp_handler,
+)
+from codeintel.cli.project import ProjectRuntime
+from codeintel.serving.auto_pipeline import run_operation_prereqs
 
 op_app = App(
     name="op",
@@ -29,6 +49,15 @@ serve_app = App(
 
 # Track dynamically registered operation command names to avoid duplicates
 _REGISTERED_OP_COMMANDS: set[str] = set()
+FieldDef = tuple[str, object, Any] | tuple[str, object]
+
+
+class OperationCliArgs(Protocol):
+    """Attributes required for dynamic operation invocation."""
+
+    runtime: RuntimeCLI
+    skip_prereqs: bool
+
 
 # -----------------------------------------------------------------------------
 # op commands
@@ -62,8 +91,7 @@ def op_list(
 ) -> None:
     """List available serving operations."""
     cfg = cfg or OpListCli()
-    invoke_with_typer_translation(
-        legacy.op_list,
+    op_list_handler(
         category=cfg.category,
         json_output=cfg.json_output,
     )
@@ -110,72 +138,243 @@ def op_call(
     """
     cfg = cfg or OpCallCli()
     if not cfg.op_id:
-        raise SystemExit(2)
+        raise SystemExit(CLI_EXIT_USAGE)
     runtime = cfg.runtime
-    invoke_with_typer_translation(
-        legacy.op_call,
-        cfg.op_id,
+    project_runtime = _runtime_from_cli(runtime)
+    op_call_handler(
+        op_id=cfg.op_id,
         params=cfg.params,
-        project_root=runtime.project_root,
+        runtime=project_runtime,
         skip_prereqs=cfg.skip_prereqs,
         verbose=bool(runtime.verbose),
     )
 
 
-def _command_name_for_operation(op: Operation) -> str:
-    """Normalize operation ID into a CLI-friendly command name.
+def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
+    """Extract the underlying type from an optional or union hint.
 
     Returns
     -------
-    str
-        Operation identifier with dots replaced by hyphens.
+    type[Any] | None
+        Base concrete type with ``None`` and union wrappers removed.
     """
-    return op.id.replace(".", "-")
+    if type_hint is None:
+        return None
+    origin = get_origin(type_hint)
+    if origin is None:
+        return type_hint
+    if origin in {types.UnionType, Union}:
+        args = get_args(type_hint)
+        non_none = [arg for arg in args if arg is not types.NoneType]
+        if non_none:
+            return non_none[0]
+        return None
+    return type_hint
 
 
-def _register_dynamic_operation(op: Operation) -> None:
-    """Register a dynamic subcommand for an operation."""
-    command_name = _command_name_for_operation(op)
-    if command_name in _REGISTERED_OP_COMMANDS:
-        return
+def _cli_type_for_spec(spec: CliParamSpec) -> type[Any]:
+    """Map a backend type hint to a Cyclopts-friendly CLI type.
 
-    @op_app.command(name=command_name, help=op.summary or op.id)
-    def dynamic_op(  # type: ignore[unused-ignore]
-        params: Annotated[
-            list[str] | None,
-            Parameter(
-                name=None,
-                help="Operation parameters as key=value pairs.",
-            ),
-        ] = None,
-        *,
-        runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
-        skip_prereqs: Annotated[
+    Returns
+    -------
+    type[Any]
+        Primitive type accepted by Cyclopts for the parameter.
+    """
+    base_type = _extract_base_type(spec.python_type)
+    if base_type is None:
+        return str
+    if base_type in {int, float, bool, str}:
+        return base_type
+    return str
+
+
+def _make_param_annotation(spec: CliParamSpec) -> tuple[type[Any], Any]:
+    """Return the annotation and default for a CLI parameter.
+
+    Returns
+    -------
+    tuple[type[Any], Any]
+        Annotation and default resolved for Cyclopts.
+    """
+    cli_type = _cli_type_for_spec(spec)
+    default = spec.default
+    if default is inspect.Parameter.empty:
+        default = MISSING if spec.is_required else None
+
+    annotation: type[Any] | Any = cli_type
+    if default is None and spec.is_optional:
+        annotation = cli_type | None
+    return annotation, default
+
+
+def _make_param_field(spec: CliParamSpec) -> FieldDef:
+    """Construct a dataclass field tuple for dynamic CLI params.
+
+    Returns
+    -------
+    tuple[str, object, Any]
+        Field definition for ``make_dataclass``.
+    """
+    annotation, default = _make_param_annotation(spec)
+    cli_type = _cli_type_for_spec(spec)
+    parameter_kwargs = {
+        "name": [f"--{spec.cli_name}"],
+        "help": spec.help_text,
+    }
+    if cli_type is bool:
+        parameter_kwargs["negative"] = []
+    parameter = Parameter(**parameter_kwargs)
+    annotated_type = Annotated[annotation, parameter]
+    if default is MISSING:
+        return (spec.name, annotated_type)
+    return (spec.name, annotated_type, default)
+
+
+def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any]:
+    """Build a keyword-only dataclass representing an operation's CLI surface.
+
+    Returns
+    -------
+    type[Any]
+        Dataclass type capturing operation parameters.
+    """
+    required_fields: list[FieldDef] = []
+    optional_fields: list[FieldDef] = []
+    required_field_len = 2
+
+    for spec in metadata.params:
+        field_def = _make_param_field(spec)
+        if len(field_def) == required_field_len:
+            required_fields.append(field_def)
+        else:
+            optional_fields.append(field_def)
+
+    runtime_field = (
+        "runtime",
+        Annotated[RuntimeCLI, Parameter(name="*")],
+        field(default_factory=RuntimeCLI),
+    )
+    skip_field = (
+        "skip_prereqs",
+        Annotated[
             bool,
             Parameter(
                 name="--skip-prereqs",
                 help="Skip prerequisite pipeline execution.",
                 negative=(),
             ),
-        ] = False,
-    ) -> None:
-        runtime_cfg = runtime or RuntimeCLI()
-        invoke_with_typer_translation(
-            legacy.op_call,
-            op.id,
-            params=params,
-            project_root=runtime_cfg.project_root,
-            skip_prereqs=skip_prereqs,
-            verbose=bool(runtime_cfg.verbose),
+        ],
+        False,
+    )
+    field_definitions = [*required_fields, *optional_fields, runtime_field, skip_field]
+
+    cls_name = f"{metadata.cli_name.replace('-', '_').title().replace('_', '')}OpCli"
+    params_cls = make_dataclass(
+        cls_name,
+        field_definitions,
+        kw_only=True,
+    )
+    params_cls.__module__ = __name__
+    return params_cls
+
+
+def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
+    """Build a runtime from CLI flags with Cyclopts-native error handling.
+
+    Returns
+    -------
+    ProjectRuntime
+        Resolved runtime for invoking operations.
+
+    Raises
+    ------
+    ValidationError
+        If runtime resolution fails.
+    """
+    try:
+        return build_runtime_from_cli(cli)
+    except RuntimeCliError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+def _invoke_operation_with_prereqs(
+    op_id: str,
+    params: dict[str, Any],
+    runtime: ProjectRuntime,
+    *,
+    skip_prereqs: bool,
+    verbose: bool,
+) -> None:
+    """Run optional prerequisites then invoke the operation."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not skip_prereqs:
+        run_operation_prereqs(
+            op_id=op_id,
+            gateway=runtime.gateway,
+            snapshot=runtime.snapshot,
+            paths=runtime.paths,
+            tools=runtime.tools,
         )
 
+    invoke_operation(op_id, params, runtime)
+
+
+def _build_params_dict(cfg: OperationCliArgs, specs: tuple[CliParamSpec, ...]) -> dict[str, Any]:
+    """Extract non-null parameters from a CLI dataclass instance.
+
+    Returns
+    -------
+    dict[str, Any]
+        Mapping of parameter names to provided values.
+    """
+    params: dict[str, Any] = {}
+    for spec in specs:
+        value = getattr(cfg, spec.name)
+        if value is not None:
+            params[spec.name] = value
+    return params
+
+
+def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
+    """Register a dynamic subcommand for an operation."""
+    command_name = metadata.cli_name
+    if command_name in _REGISTERED_OP_COMMANDS:
+        return
+
+    params_cls = _make_operation_params_dataclass(metadata)
+    cfg_annotation = Annotated[params_cls, Parameter(name="*")]
+
+    def dynamic_op(cfg: OperationCliArgs | None = None) -> None:  # type: ignore[unused-ignore]
+        if cfg is None:
+            message = "Operation parameters are required."
+            raise ValidationError(message)
+        typed_cfg = cfg
+        runtime_cli = typed_cfg.runtime
+        runtime = _runtime_from_cli(runtime_cli)
+        params = _build_params_dict(typed_cfg, metadata.params)
+        _invoke_operation_with_prereqs(
+            metadata.operation.id,
+            params,
+            runtime,
+            skip_prereqs=typed_cfg.skip_prereqs,
+            verbose=bool(runtime_cli.verbose),
+        )
+
+    dynamic_op.__annotations__["cfg"] = cfg_annotation
+    op_app.command(
+        name=command_name,
+        help=metadata.operation.summary or metadata.operation.id,
+    )(dynamic_op)
     _REGISTERED_OP_COMMANDS.add(command_name)
 
 
 def register_dynamic_operations() -> None:
-    """Register subcommands for all operations in the catalog."""
-    for op in iter_operations():
-        _register_dynamic_operation(op)
+    """Register subcommands for all operations with CLI support."""
+    for op in get_operations_with_cli_support():
+        metadata = build_operation_cli_metadata(op)
+        _register_dynamic_operation(metadata)
 
 
 # -----------------------------------------------------------------------------
@@ -204,10 +403,9 @@ def dataset_list(
 ) -> None:
     """List datasets from the registry."""
     cfg = cfg or DatasetListCli()  # type: ignore[call-arg]
-    runtime = cfg.runtime
-    invoke_with_typer_translation(
-        legacy.dataset_list,
-        project_root=runtime.project_root,
+    runtime = _runtime_from_cli(cfg.runtime)
+    dataset_list_handler(
+        runtime=runtime,
         json_output=cfg.json_output,
     )
 
@@ -246,11 +444,7 @@ def dataset_describe(
     cfg = cfg or DatasetDescribeCli()
     if not cfg.table_key:
         raise SystemExit(2)
-    invoke_with_typer_translation(
-        legacy.dataset_describe,
-        table_key=cfg.table_key,
-        json_output=cfg.json_output,
-    )
+    dataset_describe_handler(table_key=cfg.table_key, json_output=cfg.json_output)
 
 
 @dataclass
@@ -273,12 +467,8 @@ def dataset_verify(
 ) -> None:
     """Verify dataset contracts against actual data."""
     cfg = cfg or DatasetVerifyCli()  # type: ignore[call-arg]
-    runtime = cfg.runtime
-    invoke_with_typer_translation(
-        legacy.dataset_verify,
-        table_key=cfg.table_key,
-        project_root=runtime.project_root,
-    )
+    runtime = _runtime_from_cli(cfg.runtime)
+    dataset_verify_handler(table_key=cfg.table_key, runtime=runtime)
 
 
 # -----------------------------------------------------------------------------
@@ -323,13 +513,13 @@ def serve_http(
 ) -> None:
     """Start the HTTP server."""
     runtime_cfg = runtime or RuntimeCLI()
-    invoke_with_typer_translation(
-        legacy.serve_http,
+    runtime_obj = _runtime_from_cli(runtime_cfg)
+    serve_http_handler(
         host=host,
         port=port,
         auto_pipeline=auto_pipeline,
         reload=reload,
-        project_root=runtime_cfg.project_root,
+        runtime=runtime_obj,
     )
 
 
@@ -348,10 +538,10 @@ def serve_mcp(
 ) -> None:
     """Start the MCP server."""
     runtime_cfg = runtime or RuntimeCLI()
-    invoke_with_typer_translation(
-        legacy.serve_mcp,
+    runtime_obj = _runtime_from_cli(runtime_cfg)
+    serve_mcp_handler(
         auto_pipeline=auto_pipeline,
-        project_root=runtime_cfg.project_root,
+        runtime=runtime_obj,
     )
 
 

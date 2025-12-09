@@ -11,7 +11,7 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.profile_tools import ProfileToolOptions, register_profile_tools
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in
-from tests._helpers.mcp import RecordingMcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig

@@ -63,8 +63,10 @@ from tests._helpers.fakes.function_catalogs import (
     create_mock_catalog_with_functions,
 )
 from tests._helpers.fakes.graph_contexts import create_graph_gateway
-from tests._helpers.fakes.graph_runtimes import (
-    MockGraphRuntime,
+from tests._helpers.fakes.graph_runtime import (
+    GraphRuntimeDouble as MockGraphRuntime,
+)
+from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,

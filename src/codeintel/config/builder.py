@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal, Self, TypedDict, Unpack, overload
+from typing import TYPE_CHECKING, ClassVar, Literal, Self, overload
 
 from codeintel.config.primitives import (
     BuildLayoutOptions,
@@ -49,20 +49,6 @@ from codeintel.config.steps_graphs import (
 )
 
 
-class _LegacySnapshotKwargs(TypedDict, total=False):
-    repo: str
-    commit: str
-    repo_root: Path
-    branch: str | None
-    build_dir: Path | None
-    db_path: Path | None
-    document_output_dir: Path | None
-    log_db_path: Path | None
-    binaries: ToolBinaries | None
-    profiles: ScanProfiles | None
-    graph_backend: GraphBackendConfig | None
-
-
 @dataclass(frozen=True)
 class BuilderDependencies:
     """Optional overrides for builder-scoped dependencies."""
@@ -84,65 +70,6 @@ class BuilderDependencies:
             self.profiles,
             self.graph_backend or GraphBackendConfig(),
         )
-
-
-_LEGACY_SNAPSHOT_KEYS = frozenset(_LegacySnapshotKwargs.__annotations__.keys())
-
-
-def _snapshot_from_legacy(legacy: _LegacySnapshotKwargs) -> SnapshotInit:
-    """Build a SnapshotInit from legacy keyword arguments.
-
-    Parameters
-    ----------
-    legacy
-        Legacy keyword arguments accepted by `ConfigBuilder.from_snapshot`.
-
-    Returns
-    -------
-    SnapshotInit
-        Normalized snapshot inputs.
-
-    Raises
-    ------
-    ValueError
-        If required parameters are missing.
-    TypeError
-        If provided values do not match expected types.
-    """
-    repo = legacy.get("repo")
-    commit = legacy.get("commit")
-    repo_root = legacy.get("repo_root")
-    missing = [
-        name
-        for name, value in (
-            ("repo", repo),
-            ("commit", commit),
-            ("repo_root", repo_root),
-        )
-        if value is None
-    ]
-    if missing:
-        message = (
-            "ConfigBuilder.from_snapshot requires SnapshotInit or legacy arguments "
-            f"for {', '.join(missing)}"
-        )
-        raise ValueError(message)
-    branch = legacy.get("branch")
-    if not isinstance(repo, str) or not isinstance(commit, str):
-        message = "repo and commit must be strings"
-        raise TypeError(message)
-    if not isinstance(repo_root, Path):
-        message = "repo_root must be a Path"
-        raise TypeError(message)
-    if branch is not None and not isinstance(branch, str):
-        message = "branch must be a string when provided"
-        raise TypeError(message)
-    return SnapshotInit(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        branch=branch,
-    )
 
 
 @dataclass
@@ -194,63 +121,30 @@ class ConfigBuilder:
     @classmethod
     def from_snapshot(
         cls,
-        snapshot: SnapshotInit | None = None,
+        snapshot: SnapshotInit,
         *,
         layout: BuildLayoutOptions | None = None,
         primitives: BuilderDependencies | None = None,
-        **legacy: Unpack[_LegacySnapshotKwargs],
     ) -> Self:
-        """
-        Create a builder from snapshot and layout primitives.
+        """Create a builder from snapshot and layout primitives.
 
-        Raises
-        ------
-        TypeError
-            If unsupported parameter types are provided.
-        ValueError
-            If required snapshot parameters are missing or provided profiles are incomplete.
+        Parameters
+        ----------
+        snapshot
+            Snapshot parameters (repo, commit, repo_root, optional branch).
+        layout
+            Optional build layout overrides.
+        primitives
+            Optional dependency overrides (binaries, profiles, graph backend).
 
         Returns
         -------
         Self
             ConfigBuilder ready to produce step configs.
         """
-        unexpected = set(legacy).difference(_LEGACY_SNAPSHOT_KEYS)
-        if unexpected:
-            message = f"Unsupported arguments for ConfigBuilder.from_snapshot: {sorted(unexpected)}"
-            raise TypeError(message)
-
-        if snapshot is None:
-            missing_required = [
-                key
-                for key in (
-                    "repo",
-                    "commit",
-                    "repo_root",
-                )
-                if legacy.get(key) is None
-            ]
-            if missing_required:
-                message = (
-                    "ConfigBuilder.from_snapshot requires snapshot or legacy arguments "
-                    f"for {', '.join(missing_required)}"
-                )
-                raise ValueError(message)
-
-        snapshot_init = snapshot or _snapshot_from_legacy(legacy)
-        layout_options = layout or BuildLayoutOptions(
-            build_dir=legacy.get("build_dir"),
-            db_path=legacy.get("db_path"),
-            document_output_dir=legacy.get("document_output_dir"),
-            log_db_path=legacy.get("log_db_path"),
-        )
-        dependencies = primitives or BuilderDependencies(
-            binaries=legacy.get("binaries"),
-            profiles=legacy.get("profiles"),
-            graph_backend=legacy.get("graph_backend"),
-        )
-
-        snapshot_ref = snapshot_init.to_snapshot_ref()
+        layout_options = layout or BuildLayoutOptions()
+        dependencies = primitives or BuilderDependencies()
+        snapshot_ref = snapshot.to_snapshot_ref()
         has_layout_overrides = any(
             value is not None
             for value in (

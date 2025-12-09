@@ -7,12 +7,12 @@ import pytest
 
 from codeintel.config.models import GraphBackendConfig
 from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.gateway import GatewayFactory
 
 
 def test_build_graph_engine_uses_backend_flags() -> None:
     """Graph engine factory honors backend GPU preference."""
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = GatewayFactory().with_views().open()
     try:
         env: dict[str, str] = {}
         engine = build_graph_engine(
@@ -36,7 +36,7 @@ def test_build_graph_engine_uses_backend_flags() -> None:
 
 def test_build_graph_engine_cpu_backend_leaves_env_clean() -> None:
     """CPU backend path should not set GPU env flags."""
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = GatewayFactory().with_views().open()
     try:
         env: dict[str, str] = {}
         engine = build_graph_engine(

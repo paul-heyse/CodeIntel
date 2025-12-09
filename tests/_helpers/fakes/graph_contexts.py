@@ -41,6 +41,7 @@ from tests._helpers.env import (
     build_test_gateway,
     create_test_env,
 )
+from tests._helpers.env_options import EnvOptions, GatewayOptions
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -131,7 +132,10 @@ class GraphTestEnv:
         GraphTestEnv
             Configured environment.
         """
-        env_ctx = create_test_env(tmp_path, repo=repo, commit=commit, repo_root=tmp_path)
+        env_ctx = create_test_env(
+            tmp_path,
+            options=EnvOptions(repo=repo, commit=commit, repo_root=tmp_path),
+        )
         plugin_ctx = None
         if with_plugin_context:
             plugin_ctx = GraphPluginExecutionContext(
@@ -186,9 +190,11 @@ def create_graph_gateway() -> StorageGateway:
         Caller is responsible for closing.
     """
     return build_test_gateway(
-        file_backed=False,
-        repo=DEFAULT_REPO,
-        commit=DEFAULT_COMMIT,
+        GatewayOptions(
+            file_backed=False,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
+        )
     )
 
 

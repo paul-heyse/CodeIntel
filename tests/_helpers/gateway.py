@@ -323,115 +323,21 @@ def memory_con_with_macros() -> DuckDBConnection:
     return con
 
 
-def gateway_with_macros(
-    *,
-    apply_schema: bool = True,
-    ensure_views: bool = True,
-    validate_schema: bool = True,
-    repo: str | None = None,
-    commit: str | None = None,
-) -> StorageGateway:
-    """
-    Create an in-memory StorageGateway with schemas/views/macros ensured.
-
-    Prefer using ``GatewayFactory`` for new code. Delegate to ``GatewayFactory.open()``
-    which may raise ``RuntimeError`` if ingest macros cannot be registered.
-
-    Parameters
-    ----------
-    apply_schema
-        Whether to apply database schema on creation.
-    ensure_views
-        Whether to ensure views are created.
-    validate_schema
-        Whether to validate the schema after creation.
-    repo
-        Optional repository identifier.
-    commit
-        Optional commit hash.
+def gateway_with_macros() -> StorageGateway:
+    """Open an in-memory gateway with macros ensured.
 
     Returns
     -------
     StorageGateway
-        Gateway backed by an in-memory DuckDB connection with ingest macros present.
+        Gateway configured with schema/views and ingest macros.
     """
-    factory = GatewayFactory()
-    if not apply_schema:
-        factory = factory.without_schema()
-    if not ensure_views:
-        factory = factory.without_views()
-    if not validate_schema:
-        factory = factory.without_validation()
-    if repo is not None and commit is not None:
-        factory = factory.with_snapshot(repo, commit)
-    return factory.open()
-
-
-def open_fresh_duckdb(db_path: Path) -> StorageGateway:
-    """
-    Return a fresh DuckDB connection for tests.
-
-    Prefer using ``GatewayFactory().file_backed(db_path).open()`` for new code.
-
-    Parameters
-    ----------
-    db_path
-        Path to the database file.
-
-    Returns
-    -------
-    StorageGateway
-        Open gateway (caller must close).
-    """
-    return GatewayFactory().file_backed(db_path).open()
+    return GatewayFactory().open()
 
 
 def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:
     """Apply defensive DDL statements (DROP/CREATE) to avoid cross-test conflicts."""
     for stmt in ddl:
         gateway.con.execute(stmt)
-
-
-def open_ingestion_gateway(
-    *,
-    apply_schema: bool = True,
-    ensure_views: bool = False,
-    validate_schema: bool = True,
-    strict_schema: bool = True,
-) -> StorageGateway:
-    """
-    Return an in-memory gateway prepped for ingestion runners.
-
-    Prefer using ``GatewayFactory`` for new code.
-
-    Parameters
-    ----------
-    apply_schema
-        Whether to apply database schema.
-    ensure_views
-        Whether to ensure views are created.
-    validate_schema
-        Whether to validate schema.
-    strict_schema
-        Whether to enforce strict schema mode.
-
-    Returns
-    -------
-    StorageGateway
-        Gateway configured for ingestion tests.
-    """
-    factory = GatewayFactory()
-    if not apply_schema:
-        factory = factory.without_schema()
-    factory = factory.with_views() if ensure_views else factory.without_views()
-    if not validate_schema:
-        factory = factory.without_validation()
-    factory = factory.strict() if strict_schema else factory.relaxed()
-    return factory.open()
-
-
-# Backward compatibility alias
-open_ingestion_gateway_with_macros = open_ingestion_gateway
 
 
 @dataclass(frozen=True)
@@ -572,6 +478,7 @@ def build_duckdb_query_service(
 
 __all__ = [
     "MACROS_EXPECTED",
+    "BackendOptions",
     "DuckDBConnection",
     "GatewayFactory",
     "ScopeRecordingQuery",  # Re-exported from fakes.serving
@@ -580,8 +487,5 @@ __all__ = [
     "build_scope_parsing_service",
     "gateway_with_macros",
     "memory_con_with_macros",
-    "open_fresh_duckdb",
-    "open_ingestion_gateway",
-    "open_ingestion_gateway_with_macros",  # Alias for backward compatibility
     "seed_tables",
 ]

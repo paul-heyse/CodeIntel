@@ -103,6 +103,7 @@ from tests._helpers.fakes.networkx_graphs import (
     star_graph,
 )
 from tests._helpers.fakes.query_service import FakeQueryService, ModelLike
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
     build_callgraph_fixture_repo,
@@ -158,6 +159,7 @@ __all__ = [
     "CallgraphFixtureOptions",
     "ExecutionContextBuilder",
     "FakeQueryService",
+    "GatewayFactory",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "GraphPluginBuilder",

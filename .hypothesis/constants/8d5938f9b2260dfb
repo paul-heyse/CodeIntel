@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_build.py
+# hypothesis_version: 6.148.7
+
+['*', '--all', '--dry-run', '--force', '--limit', '--module', '--run-id', '-a', '-f', '-i', '-m', '-n', 'build', 'build_app', 'history', 'run', 'status']

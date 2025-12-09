@@ -71,6 +71,7 @@ from codeintel.core.plugins.execution.context import (
 from codeintel.core.resources import ResourceRegistry
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.env import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID, create_test_env
+from tests._helpers.env_options import EnvOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -294,10 +295,12 @@ class ExecutionContextBuilder:
         if gateway is None:
             env_ctx = create_test_env(
                 base_path,
-                repo=repo,
-                commit=commit,
-                file_backed=opts.file_backed,
-                repo_root=base_path,
+                options=EnvOptions(
+                    repo=repo,
+                    commit=commit,
+                    file_backed=opts.file_backed,
+                    repo_root=base_path,
+                ),
             )
             gateway = env_ctx.gateway
             snapshot = env_ctx.snapshot

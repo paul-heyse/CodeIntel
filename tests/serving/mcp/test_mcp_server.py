@@ -16,7 +16,7 @@ from codeintel.serving.mcp.server import create_mcp_server
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import expect_true
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_fast import wrap_fastmcp
+from tests._helpers.mcp_registrar import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway

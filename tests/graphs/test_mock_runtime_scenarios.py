@@ -26,8 +26,10 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fakes.graph_runtimes import (
-    MockGraphRuntime,
+from tests._helpers.fakes.graph_runtime import (
+    GraphRuntimeDouble as MockGraphRuntime,
+)
+from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,

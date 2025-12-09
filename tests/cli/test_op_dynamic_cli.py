@@ -6,8 +6,11 @@ correctly generates typed commands for serving operations.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from codeintel.cli import cyclopts_ops
 from codeintel.cli.op_params import (
     OperationCliMetadata,
     ParamRole,
@@ -24,7 +27,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.cli import run_cli
+from tests._helpers.cli import run_cli, temp_repo_context
 
 # -----------------------------------------------------------------------------
 # Parameter Classification Tests
@@ -178,7 +181,7 @@ def test_operation_has_required_datasets() -> None:
 
 def test_dynamic_op_help_available() -> None:
     """Dynamic subcommands should be registered and expose help."""
-    op = next(iter_operations())
+    op = next(iter(iter_operations()))
     command_name = op.id.replace(".", "-")
 
     result = run_cli(["op", command_name, "--help"])
@@ -186,6 +189,117 @@ def test_dynamic_op_help_available() -> None:
     expect_equal(result.exit_code, 0)
     if op.summary:
         expect_in(op.summary.split()[0].lower(), result.stdout.lower())
+
+
+def test_dynamic_op_parses_and_forwards_params(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Dynamic ops should coerce typed params and skip prereqs when requested."""
+    invoked: list[tuple[str, dict[str, object]]] = []
+    prereq_calls: list[dict[str, object]] = []
+
+    def fake_invoke(op_id: str, kwargs: dict[str, object], _runtime: object) -> None:
+        invoked.append((op_id, kwargs))
+
+    def fake_prereqs(**kwargs: object) -> None:
+        prereq_calls.append(kwargs)
+
+    class DummyRuntime:
+        gateway: object | None = None
+        snapshot: object | None = None
+        paths: object | None = None
+        tools: object | None = None
+
+    monkeypatch.setattr(cyclopts_ops, "invoke_operation", fake_invoke)
+    monkeypatch.setattr(cyclopts_ops, "run_operation_prereqs", fake_prereqs)
+    monkeypatch.setattr(cyclopts_ops, "_runtime_from_cli", lambda _: DummyRuntime())
+
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        result = run_cli(
+            [
+                "op",
+                "functions-high-risk",
+                "--min-risk",
+                "0.9",
+                "--limit",
+                "5",
+                "--skip-prereqs",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "deadbeef",
+                "--db-path",
+                str(db_path),
+                "--build-dir",
+                str(ctx.build_dir),
+                "--repo-root",
+                str(ctx.repo_root),
+            ],
+            env=ctx.env,
+            cwd=ctx.repo_root,
+        )
+
+    expect_equal(result.exit_code, 0)
+    expect_equal(len(prereq_calls), 0)
+    expect_equal(len(invoked), 1)
+    op_id, kwargs = invoked[0]
+    expect_equal(op_id, "functions.high_risk")
+    expect_equal(kwargs.get("min_risk"), 0.9)
+    expect_equal(kwargs.get("limit"), 5)
+
+
+def test_dynamic_op_runs_prereqs_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Dynamic ops should trigger prerequisites when not skipped."""
+    prereq_calls: list[dict[str, object]] = []
+    invoked: list[str] = []
+
+    def fake_prereqs(**kwargs: object) -> None:
+        prereq_calls.append(kwargs)
+
+    def fake_invoke(op_id: str, _kwargs: dict[str, object], _runtime: object) -> None:
+        invoked.append(op_id)
+
+    class DummyRuntime:
+        gateway: object | None = None
+        snapshot: object | None = None
+        paths: object | None = None
+        tools: object | None = None
+
+    monkeypatch.setattr(cyclopts_ops, "run_operation_prereqs", fake_prereqs)
+    monkeypatch.setattr(cyclopts_ops, "invoke_operation", fake_invoke)
+    monkeypatch.setattr(cyclopts_ops, "_runtime_from_cli", lambda _: DummyRuntime())
+
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        result = run_cli(
+            [
+                "op",
+                "function-summary",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "deadbeef",
+                "--db-path",
+                str(db_path),
+                "--build-dir",
+                str(ctx.build_dir),
+                "--repo-root",
+                str(ctx.repo_root),
+            ],
+            env=ctx.env,
+            cwd=ctx.repo_root,
+        )
+
+    expect_equal(result.exit_code, 0)
+    expect_equal(len(prereq_calls), 1)
+    expect_equal(invoked, ["function.summary"])
 
 
 # -----------------------------------------------------------------------------

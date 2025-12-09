@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Self
 
 from tests._helpers.context import DEFAULT_COMMIT, DEFAULT_REPO, TestContext
 from tests._helpers.env import create_test_env
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 
@@ -202,9 +203,11 @@ class TestScenario:
         """
         ctx = create_test_env(
             tmp_path,
-            repo=self.config.repo,
-            commit=self.config.commit,
-            file_backed=self.config.file_backed,
+            options=EnvOptions(
+                repo=self.config.repo,
+                commit=self.config.commit,
+                file_backed=self.config.file_backed,
+            ),
         )
 
         ctx.extra.update(self.config.extra)
