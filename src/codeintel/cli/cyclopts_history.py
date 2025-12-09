@@ -2,20 +2,37 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
-import typer
 from cyclopts import App, Parameter
 
+from codeintel.cli.cli_errors import invoke_with_typer_translation
 from codeintel.cli.commands.history import HistoryOptions, history_timeseries_handler
-from codeintel.cli.cyclopts_common import Verbose
+from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
 
 history_app = App(
     name="history",
     help="Historical timeseries aggregation.",
 )
+
+
+class EntityKind(Enum):
+    """Entity categories to include in history aggregation."""
+
+    FUNCTION = "function"
+    MODULE = "module"
+    BOTH = "both"
+
+
+class SelectionStrategy(Enum):
+    """Strategies for selecting top entities."""
+
+    RISK_SCORE = "risk_score"
+    CALL_PAGERANK = "call_pagerank"
+    HOTSPOT_SCORE = "hotspot_score"
 
 
 @dataclass
@@ -36,13 +53,7 @@ class HistoryTimeseriesCli:
             help="Commits to include in the timeseries (latest first).",
         ),
     ] = None
-    repo_root: Annotated[
-        Path,
-        Parameter(
-            name="--repo-root",
-            help="Path to the repository root (default: current directory).",
-        ),
-    ] = Path()
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
     db_dir: Annotated[
         Path,
         Parameter(
@@ -58,12 +69,12 @@ class HistoryTimeseriesCli:
         ),
     ] = Path("build/db/history.duckdb")
     entity_kind: Annotated[
-        str,
+        EntityKind,
         Parameter(
             name="--entity-kind",
             help="Entity kind to include: function, module, or both.",
         ),
-    ] = "function"
+    ] = EntityKind.FUNCTION
     max_entities: Annotated[
         int,
         Parameter(
@@ -72,13 +83,12 @@ class HistoryTimeseriesCli:
         ),
     ] = 500
     selection_strategy: Annotated[
-        str,
+        SelectionStrategy,
         Parameter(
             name="--selection-strategy",
             help="Selection strategy for picking entities (default: risk_score).",
         ),
-    ] = "risk_score"
-    verbose: Verbose = 0
+    ] = SelectionStrategy.RISK_SCORE
 
 
 @history_app.command(name="timeseries")
@@ -90,29 +100,28 @@ def timeseries(
     Raises
     ------
     SystemExit
-        When required arguments are missing or the handler exits.
+        If required arguments are missing or a delegated handler exits.
     """
-    cfg = cfg or HistoryTimeseriesCli()
+    cfg = cfg or HistoryTimeseriesCli()  # type: ignore[call-arg]
     if not cfg.repo:
         raise SystemExit(2)
+    runtime_options = runtime_cli_to_options(cfg.runtime)
     options = HistoryOptions(
-        repo_root=cfg.repo_root,
+        repo_root=runtime_options.repo_root or Path(),
         db_dir=cfg.db_dir,
         output_db=cfg.output_db,
-        entity_kind=cfg.entity_kind,
+        entity_kind=cfg.entity_kind.value,
         max_entities=cfg.max_entities,
-        selection_strategy=cfg.selection_strategy,
+        selection_strategy=cfg.selection_strategy.value,
     )
     commits = list(cfg.commits) if cfg.commits is not None else []
-    try:
-        history_timeseries_handler(
-            repo=cfg.repo,
-            commits=commits,
-            options=options,
-            verbose=cfg.verbose,
-        )
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(
+        history_timeseries_handler,
+        repo=cfg.repo,
+        commits=commits,
+        options=options,
+        verbose=cfg.runtime.verbose,
+    )
 
 
 __all__ = ["history_app"]

@@ -8,7 +8,7 @@ from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeatur
 from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.plugin_execution import execute_target_plugin
+from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.rows import function_meta
 from tests.analytics.conftest import PluginTestHarness
 
@@ -65,9 +65,8 @@ def test_function_ast_features_plugin(plugin_harness: PluginTestHarness) -> None
     _seed_function_sources(plugin_harness.ctx.repo_root)
     catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
-
-    result = execute_target_plugin(FunctionAstFeaturesPlugin(), plugin_harness.plugin_ctx)
+    resources = TargetResourceOverrides(catalog=catalog_provider)
+    result = plugin_harness.execute_plugin(FunctionAstFeaturesPlugin(), resources=resources)
     expect_true(result.success)
     expect_equal(plugin_harness.ctx.query_count("analytics.function_ast_features"), 2)
 
@@ -77,8 +76,7 @@ def test_function_contracts_plugin(plugin_harness: PluginTestHarness) -> None:
     _seed_function_sources(plugin_harness.ctx.repo_root)
     catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
 
-    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
-
-    result = execute_target_plugin(FunctionContractsPlugin(), plugin_harness.plugin_ctx)
+    resources = TargetResourceOverrides(catalog=catalog_provider)
+    result = plugin_harness.execute_plugin(FunctionContractsPlugin(), resources=resources)
     expect_true(result.success)
     expect_true(plugin_harness.ctx.query_count("analytics.function_contracts") >= 1)

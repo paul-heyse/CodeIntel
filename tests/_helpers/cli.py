@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 
-from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
-
 from codeintel.cli import app
+from codeintel.cli.cli_errors import handle_cli_error
 
 
 @dataclass(frozen=True)
@@ -105,17 +104,8 @@ def run_cli(
             try:
                 app(argv, result_action="return_value", exit_on_error=False, print_error=False)
                 exit_code = 0
-            except SystemExit as exc:
-                exit_code = exc.code if isinstance(exc.code, int) else 1
-            except UnknownOptionError as exc:
-                token = getattr(exc, "token", None)
-                value = getattr(token, "value", None)
-                message = f"No such option: {value}" if value else "No such option"
-                stderr_buf.write(message)
-                exit_code = 2
-            except UnknownCommandError as exc:
-                stderr_buf.write(str(exc))
-                exit_code = 2
+            except BaseException as exc:  # noqa: BLE001 - map CLI errors to codes
+                exit_code = handle_cli_error(exc, stderr_buf)
     finally:
         os.environ.clear()
         os.environ.update(original_env)

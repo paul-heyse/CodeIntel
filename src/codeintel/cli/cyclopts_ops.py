@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
-import typer
 from cyclopts import App, Parameter
 
 import codeintel.cli.main as legacy
-from codeintel.cli.cyclopts_common import ProjectRoot
+from codeintel.cli.cli_errors import invoke_with_typer_translation
+from codeintel.cli.cyclopts_common import RuntimeCLI
+from codeintel.serving.operations.catalog import Operation, iter_operations
 
 op_app = App(
     name="op",
@@ -26,6 +27,8 @@ serve_app = App(
     help="HTTP and MCP server commands.",
 )
 
+# Track dynamically registered operation command names to avoid duplicates
+_REGISTERED_OP_COMMANDS: set[str] = set()
 
 # -----------------------------------------------------------------------------
 # op commands
@@ -57,18 +60,13 @@ class OpListCli:
 def op_list(
     cfg: Annotated[OpListCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """List available serving operations.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
+    """List available serving operations."""
     cfg = cfg or OpListCli()
-    try:
-        legacy.op_list(category=cfg.category, json_output=cfg.json_output)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(
+        legacy.op_list,
+        category=cfg.category,
+        json_output=cfg.json_output,
+    )
 
 
 @dataclass
@@ -88,20 +86,12 @@ class OpCallCli:
             help="Operation parameters as key=value pairs.",
         ),
     ] = None
-    project_root: ProjectRoot = None
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
     skip_prereqs: Annotated[
         bool,
         Parameter(
             name="--skip-prereqs",
             help="Skip prerequisite pipeline execution.",
-            negative=(),
-        ),
-    ] = False
-    verbose: Annotated[
-        bool,
-        Parameter(
-            name=["--verbose", "-v"],
-            help="Enable verbose output.",
             negative=(),
         ),
     ] = False
@@ -116,21 +106,76 @@ def op_call(
     Raises
     ------
     SystemExit
-        When required arguments are missing or the handler exits.
+        If an operation ID is not provided.
     """
     cfg = cfg or OpCallCli()
     if not cfg.op_id:
         raise SystemExit(2)
-    try:
-        legacy.op_call(
-            cfg.op_id,
-            params=cfg.params,
-            project_root=cfg.project_root,
-            skip_prereqs=cfg.skip_prereqs,
-            verbose=cfg.verbose,
+    runtime = cfg.runtime
+    invoke_with_typer_translation(
+        legacy.op_call,
+        cfg.op_id,
+        params=cfg.params,
+        project_root=runtime.project_root,
+        skip_prereqs=cfg.skip_prereqs,
+        verbose=bool(runtime.verbose),
+    )
+
+
+def _command_name_for_operation(op: Operation) -> str:
+    """Normalize operation ID into a CLI-friendly command name.
+
+    Returns
+    -------
+    str
+        Operation identifier with dots replaced by hyphens.
+    """
+    return op.id.replace(".", "-")
+
+
+def _register_dynamic_operation(op: Operation) -> None:
+    """Register a dynamic subcommand for an operation."""
+    command_name = _command_name_for_operation(op)
+    if command_name in _REGISTERED_OP_COMMANDS:
+        return
+
+    @op_app.command(name=command_name, help=op.summary or op.id)
+    def dynamic_op(  # type: ignore[unused-ignore]
+        params: Annotated[
+            list[str] | None,
+            Parameter(
+                name=None,
+                help="Operation parameters as key=value pairs.",
+            ),
+        ] = None,
+        *,
+        runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
+        skip_prereqs: Annotated[
+            bool,
+            Parameter(
+                name="--skip-prereqs",
+                help="Skip prerequisite pipeline execution.",
+                negative=(),
+            ),
+        ] = False,
+    ) -> None:
+        runtime_cfg = runtime or RuntimeCLI()
+        invoke_with_typer_translation(
+            legacy.op_call,
+            op.id,
+            params=params,
+            project_root=runtime_cfg.project_root,
+            skip_prereqs=skip_prereqs,
+            verbose=bool(runtime_cfg.verbose),
         )
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+
+    _REGISTERED_OP_COMMANDS.add(command_name)
+
+
+def register_dynamic_operations() -> None:
+    """Register subcommands for all operations in the catalog."""
+    for op in iter_operations():
+        _register_dynamic_operation(op)
 
 
 # -----------------------------------------------------------------------------
@@ -142,7 +187,7 @@ def op_call(
 class DatasetListCli:
     """CLI surface for `codeintel dataset list`."""
 
-    project_root: ProjectRoot = None
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
     json_output: Annotated[
         bool,
         Parameter(
@@ -157,18 +202,14 @@ class DatasetListCli:
 def dataset_list(
     cfg: Annotated[DatasetListCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """List datasets from the registry.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
-    cfg = cfg or DatasetListCli()
-    try:
-        legacy.dataset_list(project_root=cfg.project_root, json_output=cfg.json_output)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    """List datasets from the registry."""
+    cfg = cfg or DatasetListCli()  # type: ignore[call-arg]
+    runtime = cfg.runtime
+    invoke_with_typer_translation(
+        legacy.dataset_list,
+        project_root=runtime.project_root,
+        json_output=cfg.json_output,
+    )
 
 
 @dataclass
@@ -200,15 +241,16 @@ def dataset_describe(
     Raises
     ------
     SystemExit
-        When required arguments are missing or the handler exits.
+        If the required dataset key is missing.
     """
     cfg = cfg or DatasetDescribeCli()
     if not cfg.table_key:
         raise SystemExit(2)
-    try:
-        legacy.dataset_describe(table_key=cfg.table_key, json_output=cfg.json_output)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(
+        legacy.dataset_describe,
+        table_key=cfg.table_key,
+        json_output=cfg.json_output,
+    )
 
 
 @dataclass
@@ -222,25 +264,21 @@ class DatasetVerifyCli:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    project_root: ProjectRoot = None
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
 
 
 @dataset_app.command(name="verify")
 def dataset_verify(
     cfg: Annotated[DatasetVerifyCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Verify dataset contracts against actual data.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
-    cfg = cfg or DatasetVerifyCli()
-    try:
-        legacy.dataset_verify(table_key=cfg.table_key, project_root=cfg.project_root)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    """Verify dataset contracts against actual data."""
+    cfg = cfg or DatasetVerifyCli()  # type: ignore[call-arg]
+    runtime = cfg.runtime
+    invoke_with_typer_translation(
+        legacy.dataset_verify,
+        table_key=cfg.table_key,
+        project_root=runtime.project_root,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -281,25 +319,18 @@ def serve_http(
             negative=(),
         ),
     ] = False,
-    project_root: ProjectRoot = None,
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
 ) -> None:
-    """Start the HTTP server.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
-    try:
-        legacy.serve_http(
-            host=host,
-            port=port,
-            auto_pipeline=auto_pipeline,
-            reload=reload,
-            project_root=project_root,
-        )
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    """Start the HTTP server."""
+    runtime_cfg = runtime or RuntimeCLI()
+    invoke_with_typer_translation(
+        legacy.serve_http,
+        host=host,
+        port=port,
+        auto_pipeline=auto_pipeline,
+        reload=reload,
+        project_root=runtime_cfg.project_root,
+    )
 
 
 @serve_app.command(name="mcp")
@@ -313,19 +344,23 @@ def serve_mcp(
             negative=(),
         ),
     ] = False,
-    project_root: ProjectRoot = None,
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] | None = None,
 ) -> None:
-    """Start the MCP server.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
-    try:
-        legacy.serve_mcp(auto_pipeline=auto_pipeline, project_root=project_root)
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    """Start the MCP server."""
+    runtime_cfg = runtime or RuntimeCLI()
+    invoke_with_typer_translation(
+        legacy.serve_mcp,
+        auto_pipeline=auto_pipeline,
+        project_root=runtime_cfg.project_root,
+    )
 
 
-__all__ = ["dataset_app", "op_app", "serve_app"]
+register_dynamic_operations()
+
+
+__all__ = [
+    "dataset_app",
+    "op_app",
+    "register_dynamic_operations",
+    "serve_app",
+]

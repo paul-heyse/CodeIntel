@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
+from tests._helpers.gateway import GatewayFactory, build_duckdb_backend
 
 
 def test_explain_dataset_tool_smoke() -> None:
@@ -16,7 +16,7 @@ def test_explain_dataset_tool_smoke() -> None:
     if not hasattr(mcp, "tools"):
         pytest.skip("FastMCP tools registry not available")
 
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
         backend = build_duckdb_backend(gateway, repo="demo/repo", commit="deadbeef")

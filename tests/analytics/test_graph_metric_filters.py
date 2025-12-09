@@ -8,7 +8,7 @@ from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_g
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.factories.config_factories import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.gateway import GatewayFactory
 
 
 def test_filter_call_graph_prunes_nodes() -> None:
@@ -38,7 +38,7 @@ def test_filter_import_graph_noop_without_modules() -> None:
 
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    gateway = GatewayFactory().with_views().open()
     try:
         cfg_snapshot = make_snapshot(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
         cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)

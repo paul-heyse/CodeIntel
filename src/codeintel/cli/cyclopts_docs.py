@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Annotated
 
-import typer
 from cyclopts import App, Parameter
 
+from codeintel.cli.cli_errors import invoke_with_typer_translation
 from codeintel.cli.commands.docs import (
     BackendOptions,
     DocsExportOptions,
@@ -19,7 +18,12 @@ from codeintel.cli.commands.docs import (
     _bundle_docs_export,
     docs_export_handler,
 )
-from codeintel.cli.cyclopts_common import JsonFlag, OutputFmt, ProjectRoot, Verbose
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    resolve_output_format,
+    runtime_cli_to_options,
+)
 
 docs_app = App(
     name="docs",
@@ -31,49 +35,7 @@ docs_app = App(
 class DocsProjectCli:
     """Project and storage selection for docs export."""
 
-    project_root: ProjectRoot = None
-    repo: Annotated[
-        str | None,
-        Parameter(
-            name="--repo",
-            help="Repository slug (e.g., 'org/repo'). Uses project config if omitted.",
-        ),
-    ] = None
-    commit: Annotated[
-        str | None,
-        Parameter(
-            name="--commit",
-            help="Commit SHA. Uses project config if omitted.",
-        ),
-    ] = None
-    db_path: Annotated[
-        Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database. Uses project config if omitted.",
-        ),
-    ] = None
-    build_dir: Annotated[
-        Path | None,
-        Parameter(
-            name="--build-dir",
-            help="Build directory (default: build/).",
-        ),
-    ] = None
-    repo_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--repo-root",
-            help="Path to repository root (default: current directory).",
-        ),
-    ] = None
-    document_output_dir: Annotated[
-        Path | None,
-        Parameter(
-            name="--document-output-dir",
-            help="Override Document Output/ directory.",
-        ),
-    ] = None
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
 
 
 @dataclass
@@ -130,8 +92,7 @@ class DocsExportCli:
             help="Dataset name to export (repeatable).",
         ),
     ] = None
-    output_format: OutputFmt = OutputFormat.TEXT
-    json: JsonFlag = False
+    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
     dry_run: Annotated[
         bool,
         Parameter(
@@ -148,7 +109,6 @@ class DocsExportCli:
             negative=(),
         ),
     ] = False
-    verbose: Verbose = 0
 
 
 @dataclass(frozen=True)
@@ -167,29 +127,26 @@ def docs_export(
     backend: Annotated[DocsBackendCli, Parameter(name="*")] | None = None,
     export: Annotated[DocsExportCli, Parameter(name="*")] | None = None,
 ) -> None:
-    """Export datasets to Document Output/.
-
-    Raises
-    ------
-    SystemExit
-        When the underlying handler triggers a CLI exit.
-    """
+    """Export datasets to Document Output/."""
     project_cfg = project or DocsProjectCli()
     backend_cfg = backend or DocsBackendCli()
     export_cfg = export or DocsExportCli()
 
-    output_format = export_cfg.output_format
-    if export_cfg.json:
-        output_format = OutputFormat.JSON
+    runtime = runtime_cli_to_options(project_cfg.runtime)
+    output_format = resolve_output_format(
+        json_flag=export_cfg.output.json,
+        explicit=export_cfg.output.output_format,
+        default=OutputFormat.TEXT,
+    )
 
     cli_kwargs = {
-        "project_root": project_cfg.project_root,
-        "repo": project_cfg.repo,
-        "commit": project_cfg.commit,
-        "repo_root": project_cfg.repo_root,
-        "db_path": project_cfg.db_path,
-        "build_dir": project_cfg.build_dir,
-        "document_output_dir": project_cfg.document_output_dir,
+        "project_root": runtime.project_root,
+        "repo": runtime.repo,
+        "commit": runtime.commit,
+        "repo_root": runtime.repo_root,
+        "db_path": runtime.db_path,
+        "build_dir": runtime.build_dir,
+        "document_output_dir": runtime.document_output_dir,
         "nx_backend": backend_cfg.nx_backend,
         "nx_gpu_mode": backend_cfg.nx_gpu_mode,
         "validation": export_cfg.validate,
@@ -199,6 +156,7 @@ def docs_export(
         "output_format": output_format,
         "run_mode": DryRunMode.DRY_RUN if export_cfg.dry_run else DryRunMode.EXECUTE,
         "prereq_mode": export_cfg.skip_prereqs,
+        "verbose": project_cfg.runtime.verbose,
     }
     bundled_mapping = _bundle_docs_export(cli_kwargs)
     bundle = DocsExportBundle(
@@ -207,15 +165,13 @@ def docs_export(
         export_options=bundled_mapping["export_options"],
         verbose=bundled_mapping["verbose"],
     )
-    try:
-        docs_export_handler(
-            bundle.project,
-            bundle.backend,
-            bundle.export_options,
-            bundle.verbose,
-        )
-    except typer.Exit as exc:
-        raise SystemExit(exc.exit_code) from exc
+    invoke_with_typer_translation(
+        docs_export_handler,
+        bundle.project,
+        bundle.backend,
+        bundle.export_options,
+        bundle.verbose,
+    )
 
 
 __all__ = ["docs_app"]

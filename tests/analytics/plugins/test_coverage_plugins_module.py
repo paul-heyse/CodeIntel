@@ -7,7 +7,6 @@ from typing import cast
 from codeintel.analytics.plugins.coverage.functions import CoverageFunctionsPlugin
 from codeintel.analytics.plugins.coverage.test_edges import CoverageTestEdgesPlugin
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.seeds.core import CORE_PACK, GOID_FUNC_B
 from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests.analytics.conftest import PluginTestHarness
@@ -19,7 +18,7 @@ def test_coverage_functions_plugin_populates_function_metrics(
     """CoverageFunctionsPlugin should aggregate line coverage into function rows."""
     plugin_harness.ctx.require(CORE_PACK, COVERAGE_LINES_PACK)
 
-    result = execute_target_plugin(CoverageFunctionsPlugin(), plugin_harness.plugin_ctx)
+    result = plugin_harness.execute_plugin(CoverageFunctionsPlugin())
     expect_true(result.success)
 
     fn_count = plugin_harness.ctx.query_count("core.goids")
@@ -45,7 +44,7 @@ def test_coverage_test_edges_plugin_handles_missing_coverage_file(
     """CoverageTestEdgesPlugin should no-op when coverage data is absent."""
     plugin_harness.ctx.require(CORE_PACK)
 
-    result = execute_target_plugin(CoverageTestEdgesPlugin(), plugin_harness.plugin_ctx)
+    result = plugin_harness.execute_plugin(CoverageTestEdgesPlugin())
     expect_true(result.success)
 
     expect_equal(plugin_harness.ctx.query_count("analytics.test_coverage_edges"), 0)

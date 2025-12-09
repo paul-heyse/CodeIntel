@@ -10,8 +10,8 @@ from codeintel.analytics.plugins.functions.effects import FunctionEffectsPlugin
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_true
+from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.graphs import build_graph_engine_double
-from tests._helpers.plugin_execution import execute_target_plugin
 from tests._helpers.rows import function_meta
 from tests.analytics.conftest import PluginTestHarness
 
@@ -94,10 +94,8 @@ def test_function_effects_plugin_detects_transitive_effects(
         options=GraphRuntimeOptions(snapshot=plugin_harness.ctx.snapshot),
         engine=engine,
     )
-    plugin_harness.plugin_ctx.resources.catalog = catalog_provider
-    plugin_harness.plugin_ctx.resources.graph_runtime = runtime
-
-    result = execute_target_plugin(FunctionEffectsPlugin(), plugin_harness.plugin_ctx)
+    resources = TargetResourceOverrides(catalog=catalog_provider, graph_runtime=runtime)
+    result = plugin_harness.execute_plugin(FunctionEffectsPlugin(), resources=resources)
     expect_true(result.success)
 
     helper_row = plugin_harness.ctx.query(

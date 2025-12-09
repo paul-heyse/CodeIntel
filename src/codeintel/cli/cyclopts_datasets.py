@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
 
-import typer
 from cyclopts import App, Parameter
 
+from codeintel.cli.cli_errors import invoke_with_typer_translation
 from codeintel.cli.commands import datasets as ds
+from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
 
 datasets_ext_app = App(
     name="datasets",
@@ -18,73 +19,24 @@ datasets_ext_app = App(
 )
 
 
-VerboseLevel = Annotated[
-    int,
-    Parameter(
-        name=["--verbose", "-v"],
-        help="Increase logging verbosity (0 = warnings, higher = more detail).",
-    ),
-]
-
-
 @dataclass
 class DatasetRuntimeCli:
     """Runtime selection shared by all datasets commands."""
 
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Explicit project root directory (otherwise discovered).",
-        ),
-    ] = None
-    repo: Annotated[
-        str | None,
-        Parameter(
-            name="--repo",
-            help="Repository slug (e.g., org/repo). Overrides project config.",
-        ),
-    ] = None
-    commit: Annotated[
-        str | None,
-        Parameter(
-            name="--commit",
-            help="Commit SHA. Overrides project config when supplied.",
-        ),
-    ] = None
-    repo_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--repo-root",
-            help="Path to repository root; overrides auto-discovery.",
-        ),
-    ] = None
-    db_path: Annotated[
-        Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database. Uses project config if omitted.",
-        ),
-    ] = None
-    build_dir: Annotated[
-        Path | None,
-        Parameter(
-            name="--build-dir",
-            help="Build directory root. Uses project config if omitted.",
-        ),
-    ] = None
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
 
 
 def _runtime_from_cli(cli: DatasetRuntimeCli) -> ds.RuntimeOptions:
+    options = runtime_cli_to_options(cli.runtime)
     project = ds.ProjectSelection(
-        project_root=cli.project_root,
-        repo=cli.repo,
-        commit=cli.commit,
-        repo_root=cli.repo_root,
+        project_root=options.project_root,
+        repo=options.repo,
+        commit=options.commit,
+        repo_root=options.repo_root,
     )
     build = ds.BuildSelection(
-        db_path=cli.db_path,
-        build_dir=cli.build_dir,
+        db_path=options.db_path,
+        build_dir=options.build_dir,
     )
     return ds.RuntimeOptions(project=project, build=build)
 
@@ -94,17 +46,8 @@ def _run(
     *args: object,
     **kwargs: object,
 ) -> None:
-    """Invoke a Typer-era handler and normalize ``typer.Exit`` into ``SystemExit``.
-
-    Raises
-    ------
-    SystemExit
-        When the delegated handler triggers a CLI exit.
-    """
-    try:
-        handler(*args, **kwargs)
-    except typer.Exit as exc:  # type: ignore[attr-defined]
-        raise SystemExit(exc.exit_code) from exc
+    """Invoke a Typer-era handler and normalize exits into ``SystemExit``."""
+    invoke_with_typer_translation(handler, *args, **kwargs)
 
 
 @dataclass
@@ -132,10 +75,10 @@ class LintCliOptions:
 def lint(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[LintCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Validate dataset contract health."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or LintCliOptions()
     lint_opts = ds.LintOptions(
         schema_dir=selected_options.schema_dir,
@@ -143,7 +86,7 @@ def lint(
             ds.SamplingMode.ENABLED if selected_options.sample_rows else ds.SamplingMode.DISABLED
         ),
     )
-    _run(ds.datasets_lint_handler, runtime_opts, lint_opts, verbose)
+    _run(ds.datasets_lint_handler, runtime_opts, lint_opts, runtime_cfg.runtime.verbose)
 
 
 DocsFilterMode = Literal["include", "only", "exclude"]
@@ -181,17 +124,17 @@ class ListCliFilters:
 def list_datasets(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     filters: Annotated[ListCliFilters, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """List datasets with capabilities and optional filters."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_filters = filters or ListCliFilters()
     filter_opts = ds.ListFilters(
         docs_view=selected_filters.docs_view,
         read_only=selected_filters.read_only,
         max_description=selected_filters.max_description,
     )
-    _run(ds.datasets_list_handler, runtime_opts, filter_opts, verbose)
+    _run(ds.datasets_list_handler, runtime_opts, filter_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -211,12 +154,17 @@ class SnapshotCliOptions:
 def snapshot(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[SnapshotCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Write current dataset specs to a JSON snapshot file."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or SnapshotCliOptions()
-    _run(ds.datasets_snapshot_handler, runtime_opts, selected_options.output, verbose)
+    _run(
+        ds.datasets_snapshot_handler,
+        runtime_opts,
+        selected_options.output,
+        runtime_cfg.runtime.verbose,
+    )
 
 
 @dataclass
@@ -257,10 +205,10 @@ class DiffCliOptions:
 def diff(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[DiffCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Diff current dataset specs against a baseline."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or DiffCliOptions()
     diff_opts = ds.DiffOptions(
         baseline=selected_options.baseline,
@@ -268,7 +216,7 @@ def diff(
         against_ref=selected_options.against_ref,
         baseline_path=selected_options.baseline_path,
     )
-    _run(ds.datasets_diff_handler, runtime_opts, diff_opts, verbose)
+    _run(ds.datasets_diff_handler, runtime_opts, diff_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -303,10 +251,10 @@ class ConformanceCliOptions:
 def conformance(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[ConformanceCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Run full dataset conformance checks."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or ConformanceCliOptions()
     conf_opts = ds.ConformanceOptions(
         schema_dir=selected_options.schema_dir,
@@ -315,7 +263,7 @@ def conformance(
         ),
         sample_size=selected_options.sample_size,
     )
-    _run(ds.datasets_conformance_handler, runtime_opts, conf_opts, verbose)
+    _run(ds.datasets_conformance_handler, runtime_opts, conf_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -396,14 +344,20 @@ def generate_schemas(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     export: Annotated[ExportCliOptions, Parameter(name="*")] | None = None,
     schema: Annotated[GenerateSchemasCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Generate export JSON Schemas from TypedDict row models."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     export_opts = _export_from_cli(export or ExportCliOptions())
     schema_cfg = schema or GenerateSchemasCliOptions()
     schema_opts = ds.GenerateSchemasOptions(output_dir=schema_cfg.output_dir)
-    _run(ds.datasets_generate_schemas_handler, runtime_opts, export_opts, schema_opts, verbose)
+    _run(
+        ds.datasets_generate_schemas_handler,
+        runtime_opts,
+        export_opts,
+        schema_opts,
+        runtime_cfg.runtime.verbose,
+    )
 
 
 @dataclass
@@ -437,17 +391,17 @@ class CatalogCliOptions:
 def catalog(
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[CatalogCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Generate Markdown/HTML dataset catalog."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or CatalogCliOptions()
     catalog_opts = ds.CatalogOptions(
         output_dir=selected_options.output_dir,
         sample_rows_count=selected_options.sample_rows_count,
         sample_rows_strict=selected_options.sample_rows_strict,
     )
-    _run(ds.datasets_catalog_handler, runtime_opts, catalog_opts, verbose)
+    _run(ds.datasets_catalog_handler, runtime_opts, catalog_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -629,12 +583,18 @@ def scaffold(
     ],
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
     options: Annotated[ScaffoldCliOptions, Parameter(name="*")] | None = None,
-    verbose: VerboseLevel = 0,
 ) -> None:
     """Create a new dataset scaffold."""
-    runtime_opts = _runtime_from_cli(runtime or DatasetRuntimeCli())
+    runtime_cfg = runtime or DatasetRuntimeCli()
+    runtime_opts = _runtime_from_cli(runtime_cfg)
     scaffold_opts = _scaffold_options_from_cli(options or ScaffoldCliOptions())
-    _run(ds.datasets_scaffold_handler, name, runtime_opts, scaffold_opts, verbose)
+    _run(
+        ds.datasets_scaffold_handler,
+        name,
+        runtime_opts,
+        scaffold_opts,
+        runtime_cfg.runtime.verbose,
+    )
 
 
 __all__ = ["datasets_ext_app"]

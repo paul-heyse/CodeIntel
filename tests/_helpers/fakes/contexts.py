@@ -3,16 +3,63 @@
 All contexts are production-backed (real StorageGateway, SnapshotRef, BuildPaths) with
 optional SQL call recording. This replaces fragmented builders in ingestion and plugin
 helpers while keeping the wiring consistent with runtime code.
+
+This module provides the canonical entry point for building execution contexts in tests:
+
+- ``ExecutionContextBuilder`` - Fluent builder for PluginExecutionContext and
+  TargetExecutionContext
+- ``RecordingGateway`` - SQL recording wrapper around real gateways
+- ``make_test_output_target`` - Create minimal OutputTarget for plugin testing
+- ``execute_plugin`` / ``execute_plugin_async`` - Execute TargetPlugin with builder
+
+Migration Guide
+---------------
+**From plugin_execution.py:**
+
+Before::
+
+    from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
+
+
+    def test_plugin(plugin_ctx: PluginTestContext) -> None:
+        result = execute_target_plugin(MyPlugin(), plugin_ctx)
+
+After::
+
+    from tests._helpers.fakes.contexts import ExecutionContextBuilder
+
+
+    def test_plugin(tmp_path: Path) -> None:
+        builder = ExecutionContextBuilder.create(tmp_path)
+        result = builder.execute_plugin(MyPlugin())
+
+**From ingestion_context.py:**
+
+Before::
+
+    from tests._helpers.fakes.ingestion_context import make_target_context
+
+    ctx = make_target_context(repo_root, modules=("a.py",))
+
+After::
+
+    from tests._helpers.fakes.contexts import ExecutionContextBuilder
+
+    builder = ExecutionContextBuilder.create(tmp_path, repo_root=repo_root)
+    ctx = builder.build_target_context(target, resources=TargetResourceOverrides(modules=("a.py",)))
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
-from codeintel.build.context import ContextResources, TargetExecutionContext
+from codeintel.build.context import ContextResources, TargetExecutionContext, TargetResult
+from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
+from codeintel.build.plugin import TargetPlugin
 from codeintel.build.targets import OutputTarget
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.execution import RunContext
@@ -34,6 +81,39 @@ if TYPE_CHECKING:
     from codeintel.ingestion.tracker import ChangeTracker
 
 T = TypeVar("T")
+
+
+# =============================================================================
+# Standalone Helper Functions
+# =============================================================================
+
+
+def make_test_output_target(plugin: TargetPlugin) -> OutputTarget:
+    """Create a minimal OutputTarget for testing a plugin.
+
+    Parameters
+    ----------
+    plugin
+        Plugin instance to create target for.
+
+    Returns
+    -------
+    OutputTarget
+        Minimal target suitable for test execution.
+    """
+    return OutputTarget(
+        name=plugin.plugin_name,
+        module="analytics",  # Default module for testing
+        plugin=plugin.plugin_name,
+        contract=EMPTY_CONTRACT,
+        dependencies=(),
+        description=plugin.plugin_description,
+    )
+
+
+# =============================================================================
+# Recording Gateway
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -374,6 +454,128 @@ class ExecutionContextBuilder:
             parameters=parameters or EMPTY_PARAMETERS,
         )
 
+    def build_target_context_for_plugin(
+        self,
+        plugin: TargetPlugin,
+        *,
+        parameters: TargetParameters | None = None,
+        resources: TargetResourceOverrides | None = None,
+    ) -> TargetExecutionContext:
+        """Build a TargetExecutionContext using plugin metadata for target.
+
+        This convenience method creates an OutputTarget from the plugin's
+        metadata and builds the context in one step.
+
+        Parameters
+        ----------
+        plugin
+            Plugin to create context for.
+        parameters
+            Optional target parameters.
+        resources
+            Optional resource overrides.
+
+        Returns
+        -------
+        TargetExecutionContext
+            Configured target execution context.
+        """
+        target = make_test_output_target(plugin)
+        return self.build_target_context(
+            target=target,
+            parameters=parameters,
+            resources=resources,
+        )
+
+    async def execute_plugin_async(
+        self,
+        plugin: TargetPlugin,
+        *,
+        parameters: TargetParameters | None = None,
+        resources: TargetResourceOverrides | None = None,
+    ) -> TargetResult:
+        """Execute a TargetPlugin asynchronously.
+
+        This method builds the execution context and runs the plugin.
+        Use this in async test functions.
+
+        Parameters
+        ----------
+        plugin
+            Plugin instance to execute.
+        parameters
+            Optional target parameters.
+        resources
+            Optional resource overrides.
+
+        Returns
+        -------
+        TargetResult
+            Result of plugin execution.
+        """
+        ctx = self.build_target_context_for_plugin(
+            plugin,
+            parameters=parameters,
+            resources=resources,
+        )
+        return await plugin.execute(ctx)
+
+    def execute_plugin(
+        self,
+        plugin: TargetPlugin,
+        *,
+        parameters: TargetParameters | None = None,
+        resources: TargetResourceOverrides | None = None,
+    ) -> TargetResult:
+        """Execute a TargetPlugin synchronously.
+
+        This method wraps the async plugin.execute() and runs it using
+        asyncio.run() for use in synchronous test code.
+
+        Parameters
+        ----------
+        plugin
+            Plugin instance to execute.
+        parameters
+            Optional target parameters.
+        resources
+            Optional resource overrides.
+
+        Returns
+        -------
+        TargetResult
+            Result of plugin execution.
+        """
+        return asyncio.run(
+            self.execute_plugin_async(
+                plugin,
+                parameters=parameters,
+                resources=resources,
+            )
+        )
+
+    @property
+    def effective_gateway(self) -> StorageGateway | RecordingGateway:
+        """Return the effective gateway (possibly with recording).
+
+        Returns
+        -------
+        StorageGateway | RecordingGateway
+            The gateway being used for context building.
+        """
+        return self._gateway
+
+    @property
+    def build_paths(self) -> BuildPaths:
+        """Return effective build paths.
+
+        Returns
+        -------
+        BuildPaths
+            Build paths for the context.
+        """
+        return self._paths or BuildPaths.from_repo_root(self.snapshot.repo_root)
+
 
 def build_plugin_execution_context(
     tmp_path: Path,
@@ -455,10 +657,12 @@ def build_target_execution_context(
 
 __all__ = [
     "BuilderOptions",
+    "EnvOverrides",
     "ExecutionContextBuilder",
     "RecordingGateway",
     "SqlCall",
     "TargetResourceOverrides",
     "build_plugin_execution_context",
     "build_target_execution_context",
+    "make_test_output_target",
 ]

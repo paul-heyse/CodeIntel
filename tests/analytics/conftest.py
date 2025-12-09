@@ -3,6 +3,35 @@
 This module provides fixtures for analytics tests that need gateway and
 context infrastructure. For general test fixtures like TestContext, test_ctx,
 graph_ctx, etc., use the fixtures from the main conftest.py.
+
+Migration Guide
+---------------
+Tests should migrate from the legacy `PluginTestContext`/`execute_target_plugin`
+pattern to using `ExecutionContextBuilder` directly:
+
+**Before**::
+
+    from tests._helpers.plugin_execution import execute_target_plugin
+
+
+    def test_plugin(plugin_harness: PluginTestHarness) -> None:
+        plugin_harness.plugin_ctx.resources.catalog = my_catalog
+        result = execute_target_plugin(MyPlugin(), plugin_harness.plugin_ctx)
+
+**After**::
+
+    from tests._helpers.fakes.contexts import TargetResourceOverrides
+
+
+    def test_plugin(plugin_harness: PluginTestHarness) -> None:
+        resources = TargetResourceOverrides(catalog=my_catalog)
+        result = plugin_harness.execute_plugin(MyPlugin(), resources=resources)
+
+Or using the builder directly::
+
+    def test_plugin(plugin_harness: PluginTestHarness) -> None:
+        builder = plugin_harness.execution_builder()
+        result = builder.execute_plugin(MyPlugin(), resources=resources)
 """
 
 from __future__ import annotations
@@ -10,15 +39,22 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.context import TargetResult
+from codeintel.build.plugin import TargetPlugin
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_RUN_ID
 from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.fakes.configs import create_test_snapshot
+from tests._helpers.fakes.contexts import (
+    ExecutionContextBuilder,
+    TargetResourceOverrides,
+)
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionMeta,
@@ -33,9 +69,11 @@ from tests._helpers.fakes.graph_runtimes import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
-from tests._helpers.gateway import gateway_with_macros
-from tests._helpers.plugin_execution import PluginTestContext
+from tests._helpers.gateway import GatewayFactory
 from tests.analytics.integration.sample_repo import SampleRepo, write_sample_repo
+
+if TYPE_CHECKING:
+    from codeintel.build.parameters import TargetParameters
 
 # =============================================================================
 # Standard Analytics Test Fixtures
@@ -85,7 +123,7 @@ def memory_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway with schema applied and validation enabled.
     """
-    gateway = gateway_with_macros()
+    gateway = GatewayFactory().open()
     try:
         yield gateway
     finally:
@@ -310,14 +348,64 @@ def mock_catalog_realistic() -> MockFunctionCatalog:
 
 @dataclass
 class PluginTestHarness:
-    """Bundle TestContext with a ready PluginTestContext and cleanup."""
+    """Bundle TestContext with plugin execution capabilities.
+
+    This class provides the `execution_builder`/`execute_plugin` methods
+    for executing plugins in tests using ExecutionContextBuilder.
+
+    Attributes
+    ----------
+    ctx : TestContext
+        The underlying test context with gateway, snapshot, and query methods.
+    """
 
     ctx: TestContext
-    plugin_ctx: PluginTestContext
 
     def close(self) -> None:
         """Close the underlying TestContext."""
         self.ctx.close()
+
+    def execution_builder(self) -> ExecutionContextBuilder:
+        """Create an ExecutionContextBuilder from this harness.
+
+        Returns
+        -------
+        ExecutionContextBuilder
+            Builder initialized with this harness's gateway/snapshot/paths.
+        """
+        return ExecutionContextBuilder(
+            gateway=self.ctx.gateway,
+            snapshot=self.ctx.snapshot,
+            paths=self.ctx.build_paths,
+        )
+
+    def execute_plugin(
+        self,
+        plugin: TargetPlugin,
+        *,
+        parameters: TargetParameters | None = None,
+        resources: TargetResourceOverrides | None = None,
+    ) -> TargetResult:
+        """Execute a TargetPlugin using ExecutionContextBuilder.
+
+        This is the preferred method for executing plugins in tests.
+
+        Parameters
+        ----------
+        plugin
+            Plugin instance to execute.
+        parameters
+            Optional target parameters.
+        resources
+            Optional resource overrides (catalog, graph_runtime, modules, etc.).
+
+        Returns
+        -------
+        TargetResult
+            Result of plugin execution.
+        """
+        builder = self.execution_builder()
+        return builder.execute_plugin(plugin, parameters=parameters, resources=resources)
 
 
 @pytest.fixture
@@ -327,15 +415,10 @@ def plugin_harness(tmp_path: Path) -> Iterator[PluginTestHarness]:
     Yields
     ------
     PluginTestHarness
-        Harness containing both TestContext and PluginTestContext.
+        Harness containing TestContext for plugin execution.
     """
     ctx = create_test_context(tmp_path)
-    plugin_ctx = PluginTestContext(
-        gateway=ctx.gateway,
-        snapshot=ctx.snapshot,
-        paths=ctx.build_paths,
-    )
-    harness = PluginTestHarness(ctx=ctx, plugin_ctx=plugin_ctx)
+    harness = PluginTestHarness(ctx=ctx)
     try:
         yield harness
     finally:

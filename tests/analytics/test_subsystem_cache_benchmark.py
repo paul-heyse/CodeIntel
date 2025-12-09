@@ -8,7 +8,7 @@ import pytest
 from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.subsystems.materialize import refresh_subsystem_caches
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 
 def _seed_subsystem(con: DuckDBPyConnection, *, repo: str, commit: str) -> None:
@@ -61,7 +61,7 @@ def _seed_subsystem(con: DuckDBPyConnection, *, repo: str, commit: str) -> None:
 
 def test_refresh_and_benchmark_returns_timings() -> None:
     """Refreshing caches with benchmarking enabled should emit timing data."""
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     _seed_subsystem(gateway.con, repo="demo/repo", commit="deadbeef")
     result = refresh_subsystem_caches(
         gateway,
