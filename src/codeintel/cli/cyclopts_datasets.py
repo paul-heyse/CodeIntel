@@ -2,16 +2,52 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import invoke_with_typer_translation
-from codeintel.cli.commands import datasets as ds
-from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
+from codeintel.cli.cli_errors import run_handler
+from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.datasets_handlers import (
+    BootstrapSnippet,
+    BuildSelection,
+    CatalogOptions,
+    ConformanceOptions,
+    DatasetExportOptions,
+    DatasetScaffoldOptions,
+    DiffOptions,
+    DryRunMode,
+    ExportValidationMode,
+    GenerateSchemasOptions,
+    LintOptions,
+    ListFilters,
+    MacroRequirement,
+    OutputFormat,
+    OverwritePolicy,
+    ProjectSelection,
+    RegistryCheck,
+    RuntimeOptions,
+    SamplingMode,
+    SamplingStrictness,
+    ScaffoldBehaviorOptions,
+    ScaffoldFileOptions,
+    ScaffoldIOOptions,
+    ScaffoldMetadataOptions,
+    ScaffoldSchemaOptions,
+    datasets_catalog_handler,
+    datasets_conformance_handler,
+    datasets_diff_handler,
+    datasets_generate_schemas_handler,
+    datasets_lint_handler,
+    datasets_list_handler,
+    datasets_scaffold_handler,
+    datasets_snapshot_handler,
+)
+from codeintel.cli.datasets_handlers import (
+    ScaffoldCliOptions as ScaffoldCliOptionsHandler,
+)
 
 datasets_ext_app = App(
     name="datasets",
@@ -23,31 +59,22 @@ datasets_ext_app = App(
 class DatasetRuntimeCli:
     """Runtime selection shared by all datasets commands."""
 
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
 
 
-def _runtime_from_cli(cli: DatasetRuntimeCli) -> ds.RuntimeOptions:
+def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
     options = runtime_cli_to_options(cli.runtime)
-    project = ds.ProjectSelection(
+    project = ProjectSelection(
         project_root=options.project_root,
         repo=options.repo,
         commit=options.commit,
         repo_root=options.repo_root,
     )
-    build = ds.BuildSelection(
+    build = BuildSelection(
         db_path=options.db_path,
         build_dir=options.build_dir,
     )
-    return ds.RuntimeOptions(project=project, build=build)
-
-
-def _run(
-    handler: Callable[..., object],
-    *args: object,
-    **kwargs: object,
-) -> None:
-    """Invoke a Typer-era handler and normalize exits into ``SystemExit``."""
-    invoke_with_typer_translation(handler, *args, **kwargs)
+    return RuntimeOptions(project=project, build=build)
 
 
 @dataclass
@@ -80,13 +107,11 @@ def lint(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or LintCliOptions()
-    lint_opts = ds.LintOptions(
+    lint_opts = LintOptions(
         schema_dir=selected_options.schema_dir,
-        sampling=(
-            ds.SamplingMode.ENABLED if selected_options.sample_rows else ds.SamplingMode.DISABLED
-        ),
+        sampling=(SamplingMode.ENABLED if selected_options.sample_rows else SamplingMode.DISABLED),
     )
-    _run(ds.datasets_lint_handler, runtime_opts, lint_opts, runtime_cfg.runtime.verbose)
+    run_handler(datasets_lint_handler, runtime_opts, lint_opts, runtime_cfg.runtime.verbose)
 
 
 DocsFilterMode = Literal["include", "only", "exclude"]
@@ -129,12 +154,12 @@ def list_datasets(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_filters = filters or ListCliFilters()
-    filter_opts = ds.ListFilters(
+    filter_opts = ListFilters(
         docs_view=selected_filters.docs_view,
         read_only=selected_filters.read_only,
         max_description=selected_filters.max_description,
     )
-    _run(ds.datasets_list_handler, runtime_opts, filter_opts, runtime_cfg.runtime.verbose)
+    run_handler(datasets_list_handler, runtime_opts, filter_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -159,8 +184,8 @@ def snapshot(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or SnapshotCliOptions()
-    _run(
-        ds.datasets_snapshot_handler,
+    run_handler(
+        datasets_snapshot_handler,
         runtime_opts,
         selected_options.output,
         runtime_cfg.runtime.verbose,
@@ -210,13 +235,13 @@ def diff(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or DiffCliOptions()
-    diff_opts = ds.DiffOptions(
+    diff_opts = DiffOptions(
         baseline=selected_options.baseline,
         output=selected_options.output,
         against_ref=selected_options.against_ref,
         baseline_path=selected_options.baseline_path,
     )
-    _run(ds.datasets_diff_handler, runtime_opts, diff_opts, runtime_cfg.runtime.verbose)
+    run_handler(datasets_diff_handler, runtime_opts, diff_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -256,14 +281,12 @@ def conformance(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or ConformanceCliOptions()
-    conf_opts = ds.ConformanceOptions(
+    conf_opts = ConformanceOptions(
         schema_dir=selected_options.schema_dir,
-        sampling=(
-            ds.SamplingMode.ENABLED if selected_options.sample_rows else ds.SamplingMode.DISABLED
-        ),
+        sampling=(SamplingMode.ENABLED if selected_options.sample_rows else SamplingMode.DISABLED),
         sample_size=selected_options.sample_size,
     )
-    _run(ds.datasets_conformance_handler, runtime_opts, conf_opts, runtime_cfg.runtime.verbose)
+    run_handler(datasets_conformance_handler, runtime_opts, conf_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -271,19 +294,19 @@ class ExportCliOptions:
     """Shared export configuration for generate-schemas."""
 
     validation: Annotated[
-        ds.ExportValidationMode,
+        ExportValidationMode,
         Parameter(
             name="--validation",
             help="Validation strategy for exports.",
         ),
-    ] = ds.ExportValidationMode.REQUIRED
+    ] = ExportValidationMode.REQUIRED
     macro_requirement: Annotated[
-        ds.MacroRequirement,
+        MacroRequirement,
         Parameter(
             name="--macro-requirement",
             help="Macro requirement policy for exports.",
         ),
-    ] = ds.MacroRequirement.REQUIRE_NORMALIZED
+    ] = MacroRequirement.REQUIRE_NORMALIZED
     schemas: Annotated[
         list[str] | None,
         Parameter(
@@ -299,12 +322,12 @@ class ExportCliOptions:
         ),
     ] = None
     output_format: Annotated[
-        ds.OutputFormat,
+        OutputFormat,
         Parameter(
             name="--output-format",
             help="Output format for command metadata (text or json).",
         ),
-    ] = ds.OutputFormat.TEXT
+    ] = OutputFormat.TEXT
     dry_run: Annotated[
         bool,
         Parameter(
@@ -328,14 +351,14 @@ class GenerateSchemasCliOptions:
     ] = Path("src/codeintel/config/schemas/export")
 
 
-def _export_from_cli(cfg: ExportCliOptions) -> ds.DatasetExportOptions:
-    return ds.DatasetExportOptions(
+def _export_from_cli(cfg: ExportCliOptions) -> DatasetExportOptions:
+    return DatasetExportOptions(
         validation=cfg.validation,
         macro_requirement=cfg.macro_requirement,
         schemas=cfg.schemas,
         datasets=cfg.datasets,
         output_format=cfg.output_format,
-        run_mode=ds.DryRunMode.DRY_RUN if cfg.dry_run else ds.DryRunMode.EXECUTE,
+        run_mode=DryRunMode.DRY_RUN if cfg.dry_run else DryRunMode.EXECUTE,
     )
 
 
@@ -350,9 +373,9 @@ def generate_schemas(
     runtime_opts = _runtime_from_cli(runtime_cfg)
     export_opts = _export_from_cli(export or ExportCliOptions())
     schema_cfg = schema or GenerateSchemasCliOptions()
-    schema_opts = ds.GenerateSchemasOptions(output_dir=schema_cfg.output_dir)
-    _run(
-        ds.datasets_generate_schemas_handler,
+    schema_opts = GenerateSchemasOptions(output_dir=schema_cfg.output_dir)
+    run_handler(
+        datasets_generate_schemas_handler,
         runtime_opts,
         export_opts,
         schema_opts,
@@ -379,12 +402,12 @@ class CatalogCliOptions:
         ),
     ] = 3
     sample_rows_strict: Annotated[
-        ds.SamplingStrictness,
+        SamplingStrictness,
         Parameter(
             name="--sample-rows-strict",
             help="Sampling strictness: lenient or strict.",
         ),
-    ] = ds.SamplingStrictness.LENIENT
+    ] = SamplingStrictness.LENIENT
 
 
 @datasets_ext_app.command(name="catalog")
@@ -396,12 +419,12 @@ def catalog(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     selected_options = options or CatalogCliOptions()
-    catalog_opts = ds.CatalogOptions(
+    catalog_opts = CatalogOptions(
         output_dir=selected_options.output_dir,
         sample_rows_count=selected_options.sample_rows_count,
         sample_rows_strict=selected_options.sample_rows_strict,
     )
-    _run(ds.datasets_catalog_handler, runtime_opts, catalog_opts, runtime_cfg.runtime.verbose)
+    run_handler(datasets_catalog_handler, runtime_opts, catalog_opts, runtime_cfg.runtime.verbose)
 
 
 @dataclass
@@ -493,12 +516,12 @@ class ScaffoldCliOptions:
         ),
     ] = Path("build/dataset_scaffolds")
     overwrite_policy: Annotated[
-        ds.OverwritePolicy,
+        OverwritePolicy,
         Parameter(
             name="--overwrite-policy",
             help="Overwrite policy when scaffold paths already exist.",
         ),
-    ] = ds.OverwritePolicy.ERROR
+    ] = OverwritePolicy.ERROR
     specs_snapshot: Annotated[
         Path,
         Parameter(
@@ -515,12 +538,12 @@ class ScaffoldCliOptions:
         ),
     ] = False
     bootstrap: Annotated[
-        ds.BootstrapSnippet,
+        BootstrapSnippet,
         Parameter(
             name="--bootstrap",
             help="Control emission of bootstrap snippets in metadata.",
         ),
-    ] = ds.BootstrapSnippet.SKIP
+    ] = BootstrapSnippet.SKIP
     registry_check: Annotated[
         bool,
         Parameter(
@@ -531,40 +554,38 @@ class ScaffoldCliOptions:
     ] = False
 
 
-def _scaffold_options_from_cli(cfg: ScaffoldCliOptions) -> ds.ScaffoldCliOptions:
-    metadata = ds.ScaffoldMetadataOptions(
+def _scaffold_options_from_cli(cfg: ScaffoldCliOptions) -> ScaffoldCliOptionsHandler:
+    metadata = ScaffoldMetadataOptions(
         kind=cfg.kind,
         table_key=cfg.table_key,
         owner=cfg.owner,
         freshness_sla=cfg.freshness_sla,
         retention_policy=cfg.retention_policy,
     )
-    schema = ds.ScaffoldSchemaOptions(
+    schema = ScaffoldSchemaOptions(
         schema_version=cfg.schema_version,
         validation_profile=cfg.validation_profile,
         schema_id=cfg.schema_id,
     )
-    files = ds.ScaffoldFileOptions(
+    files = ScaffoldFileOptions(
         jsonl_filename=cfg.jsonl_filename,
         parquet_filename=cfg.parquet_filename,
         stable_id=cfg.stable_id,
     )
-    dataset_opts = ds.DatasetScaffoldOptions(
+    dataset_opts = DatasetScaffoldOptions(
         output_dir=cfg.output_dir,
         overwrite_policy=cfg.overwrite_policy,
     )
-    io_opts = ds.ScaffoldIOOptions(
+    io_opts = ScaffoldIOOptions(
         specs_snapshot=cfg.specs_snapshot,
         scaffold=dataset_opts,
     )
-    behavior = ds.ScaffoldBehaviorOptions(
-        run_mode=ds.DryRunMode.DRY_RUN if cfg.dry_run else ds.DryRunMode.EXECUTE,
+    behavior = ScaffoldBehaviorOptions(
+        run_mode=DryRunMode.DRY_RUN if cfg.dry_run else DryRunMode.EXECUTE,
         bootstrap=cfg.bootstrap,
-        registry_check=ds.RegistryCheck.ENABLED
-        if cfg.registry_check
-        else ds.RegistryCheck.DISABLED,
+        registry_check=RegistryCheck.ENABLED if cfg.registry_check else RegistryCheck.DISABLED,
     )
-    return ds.ScaffoldCliOptions(
+    return ScaffoldCliOptionsHandler(
         metadata=metadata,
         schema=schema,
         files=files,
@@ -588,8 +609,8 @@ def scaffold(
     runtime_cfg = runtime or DatasetRuntimeCli()
     runtime_opts = _runtime_from_cli(runtime_cfg)
     scaffold_opts = _scaffold_options_from_cli(options or ScaffoldCliOptions())
-    _run(
-        ds.datasets_scaffold_handler,
+    run_handler(
+        datasets_scaffold_handler,
         name,
         runtime_opts,
         scaffold_opts,

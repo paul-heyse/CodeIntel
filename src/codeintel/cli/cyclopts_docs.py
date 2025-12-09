@@ -8,25 +8,27 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
-from codeintel.cli.commands.docs import (
+from codeintel.cli.cli_errors import ValidationError, run_handler
+from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    OutputParam,
+    RuntimeCLI,
+    RuntimeParam,
+    resolve_output_format,
+    runtime_cli_to_options,
+)
+from codeintel.cli.docs_handlers import (
     BackendOptions,
     DocsExportOptions,
     DryRunMode,
     ExportValidationMode,
     MacroRequirement,
     NxGpuMode,
-    OutputFormat,
     PrereqMode,
     ProjectOptions,
-    _bundle_docs_export,
+    bundle_docs_export,
     docs_export_handler,
-)
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    RuntimeCLI,
-    resolve_output_format,
-    runtime_cli_to_options,
 )
 
 docs_app = App(
@@ -113,7 +115,7 @@ class DocsExportCli:
             help="Dataset name to export (repeatable).",
         ),
     ] = None
-    output: Annotated[OutputFormatCLI, Parameter(name="*")] = field(default_factory=OutputFormatCLI)
+    output: OutputParam = field(default_factory=OutputFormatCLI)
     run_mode: Annotated[
         DryRunMode | None,
         Parameter(
@@ -156,7 +158,7 @@ DEFAULT_EXPORT = DocsExportCli()
 class DocsCli:
     """Grouped CLI surface for docs export."""
 
-    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     backend: Annotated[DocsBackendCli, Parameter(name="*")] = field(default_factory=DocsBackendCli)
     export: Annotated[DocsExportCli, Parameter(name="*")] = field(default_factory=DocsExportCli)
 
@@ -232,7 +234,7 @@ def docs_export(
         "verbose": project_cfg.verbose,
     }
     try:
-        bundled_mapping = _bundle_docs_export(cli_kwargs)
+        bundled_mapping = bundle_docs_export(cli_kwargs)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     bundle = DocsExportBundle(
@@ -241,7 +243,7 @@ def docs_export(
         export_options=bundled_mapping["export_options"],
         verbose=bundled_mapping["verbose"],
     )
-    invoke_with_typer_translation(
+    run_handler(
         docs_export_handler,
         bundle.project,
         bundle.backend,

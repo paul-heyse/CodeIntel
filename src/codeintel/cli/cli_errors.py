@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from collections.abc import Callable
 from types import ModuleType
 from typing import ParamSpec, TextIO, TypeVar
@@ -13,6 +14,7 @@ from codeintel.cli.errors import CLI_EXIT_USAGE, CLI_EXIT_VALIDATION
 
 P = ParamSpec("P")
 _T = TypeVar("_T")
+_HandlerP = ParamSpec("_HandlerP")
 
 
 class CliError(Exception):
@@ -45,6 +47,45 @@ class ValidationError(CliError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, CLI_EXIT_VALIDATION)
+
+
+class DocsValidationError(ValidationError):
+    """Validation error specific to docs export operations."""
+
+
+def run_handler(
+    handler: Callable[_HandlerP, None],
+    *args: _HandlerP.args,
+    **kwargs: _HandlerP.kwargs,
+) -> None:
+    """Execute a handler with CLI-appropriate error handling.
+
+    Convert ValidationError and RuntimeError to SystemExit with
+    appropriate exit codes. This function bridges Typer-free handlers
+    to the Cyclopts CLI layer.
+
+    Parameters
+    ----------
+    handler
+        The handler function to execute.
+    *args
+        Positional arguments for the handler.
+    **kwargs
+        Keyword arguments for the handler.
+
+    Raises
+    ------
+    SystemExit
+        With code 1 when handler raises ValidationError or RuntimeError.
+    """
+    try:
+        handler(*args, **kwargs)
+    except ValidationError as exc:
+        sys.stderr.write(f"Error: {exc.message}\n")
+        raise SystemExit(exc.exit_code) from exc
+    except RuntimeError as exc:
+        sys.stderr.write(f"Error: {exc}\n")
+        raise SystemExit(CLI_EXIT_VALIDATION) from exc
 
 
 def handle_cli_error(exc: BaseException, stderr_writer: TextIO) -> int:
@@ -186,10 +227,12 @@ def _load_typer_exit() -> ModuleType | None:
 
 __all__ = [
     "CliError",
+    "DocsValidationError",
     "UnknownCommandCliError",
     "UnknownOptionCliError",
     "ValidationError",
     "handle_cli_error",
     "invoke_with_typer_translation",
+    "run_handler",
     "translate_typer_exit",
 ]

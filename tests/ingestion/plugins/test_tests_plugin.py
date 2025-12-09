@@ -12,21 +12,39 @@ from codeintel.ingestion.plugins.tests_plugin import (
     get_module_paths,
     resolve_report_file,
 )
-from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    seed_modules_and_repo_map,
     write_pytest_report,
 )
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-EXPECTED_TEST_ROWS = 2
+EXPECTED_TEST_ROWS = 3
 TRUNCATED_LONGREPR_LENGTH = 1000
+EXPECTED_UNICODE_NODEID = "tests/pkg/test_beta.py::test_fail_unicode_☂"
+SAMPLE_TESTS: list[dict[str, object]] = [
+    {"nodeid": "tests/pkg/mod.py::test_ok", "outcome": "passed", "duration": 0.1},
+    {
+        "nodeid": EXPECTED_UNICODE_NODEID,
+        "outcome": "failed",
+        "duration": 0.2,
+        "longrepr": "x" * 1500,
+    },
+    {
+        "nodeid": "tests/pkg/test_gamma.py::test_skipped",
+        "outcome": "skipped",
+        "duration": 0.05,
+        "longrepr": None,
+    },
+]
+SAMPLE_SUMMARY = {"passed": 1, "failed": 1, "skipped": 1, "error": 0, "duration": 0.35}
 
 
 def test_get_module_paths_uses_resources(tmp_path: Path) -> None:
@@ -47,10 +65,7 @@ def test_get_module_paths_reads_database(tmp_path: Path) -> None:
     """Database rows are used when resources are empty."""
     plugin = TestsIngestPlugin()
     ctx = build_target_context_for_plugin(plugin, tmp_path)
-    ctx.gateway.con.execute(
-        "INSERT INTO core.modules (module, path, repo, commit) VALUES (?, ?, ?, ?)",
-        ["pkg.mod", "pkg/mod.py", DEFAULT_REPO, DEFAULT_COMMIT],
-    )
+    seed_modules_and_repo_map(ctx, ["pkg/mod.py"])
 
     paths = get_module_paths(ctx)
 
@@ -95,25 +110,16 @@ async def test_execute_ingests_test_results_and_summary(tmp_path: Path) -> None:
     ctx = build_target_context_for_plugin(
         plugin, tmp_path, config=TargetContextConfig(resources=overrides)
     )
-    longrepr = "x" * 1500
     report = write_pytest_report(
         ctx.build_dir,
-        tests=[
-            {"nodeid": "tests/pkg/mod.py::test_ok", "outcome": "passed", "duration": 0.1},
-            {
-                "nodeid": "tests/pkg/mod.py::test_fail",
-                "outcome": "failed",
-                "duration": 0.2,
-                "longrepr": longrepr,
-            },
-        ],
-        summary={"passed": 1, "failed": 1, "skipped": 0, "error": 0, "duration": 0.3},
+        tests=SAMPLE_TESTS,
+        summary=SAMPLE_SUMMARY,
     )
 
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts.get("core.test_results"), EXPECTED_TEST_ROWS)
+    expect_equal(result.row_counts.get("core.test_results"), 3)
     rows = ctx.gateway.con.execute(
         "SELECT longrepr FROM core.test_results WHERE repo = ? AND commit = ? ORDER BY nodeid",
         [ctx.repo, ctx.commit],
@@ -126,20 +132,24 @@ async def test_execute_ingests_test_results_and_summary(tmp_path: Path) -> None:
         "FROM core.test_summary WHERE repo = ? AND commit = ?",
         [ctx.repo, ctx.commit],
     ).fetchone()
-    expect_equal(summary_row, (1, 1, 0, 0))
+    expect_equal(summary_row, (1, 1, 1, 0))
     expect_true(report.exists())
 
 
 @pytest.mark.anyio
-async def test_execute_handles_missing_report(tmp_path: Path) -> None:
+async def test_execute_handles_missing_report(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """No report should yield success with empty row_counts."""
     plugin = TestsIngestPlugin()
     ctx = build_target_context_for_plugin(plugin, tmp_path)
+    caplog.set_level("INFO")
 
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
+    assert_logged(caplog.records, level="INFO", containing="No pytest report found")
 
 
 @pytest.mark.anyio

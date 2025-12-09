@@ -91,7 +91,7 @@ def wrap_command(
         for spec in option_specs
     ]
 
-    signature_target = cast(_HasSignature, command_wrapper)
+    signature_target = cast("_HasSignature", command_wrapper)
     signature_target.__signature__ = inspect.Signature(parameters)
     command_wrapper.__name__ = name or handler.__name__
     command_wrapper.__qualname__ = command_wrapper.__name__

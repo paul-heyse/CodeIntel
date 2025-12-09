@@ -14,6 +14,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.ingestion import TargetContextConfig, build_target_context_for_plugin
 from tests.ingestion.test_runner_plumbing import build_repo_with_configs
 
@@ -49,6 +50,7 @@ async def test_execute_ingests_valid_configs_and_logs_invalid(
     """Valid configs are ingested while invalid files only emit warnings."""
     repo_root, _ = build_repo_with_configs(tmp_path, include_invalid=True)
     plugin = ConfigIngestPlugin()
+    caplog.set_level("WARNING")
     ctx = build_target_context_for_plugin(
         plugin,
         tmp_path,
@@ -62,6 +64,7 @@ async def test_execute_ingests_valid_configs_and_logs_invalid(
     expect_true(ingested_rows >= MIN_CONFIG_ROWS_EXPECTED)
     expect_equal(result.row_counts.get("analytics.config_values"), ingested_rows)
     expect_in("Config parse warning", caplog.text)
+    assert_logged(caplog.records, level="WARNING", containing="Config parse warning")
 
 
 @pytest.mark.anyio

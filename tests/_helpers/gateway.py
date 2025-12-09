@@ -7,6 +7,7 @@ registered, and building backend services.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -340,6 +341,53 @@ def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:
         gateway.con.execute(stmt)
 
 
+def seed_repo_identity(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    modules: dict[str, str] | None = None,
+) -> None:
+    """
+    Insert a repo identity row for serving-layer verification.
+
+    Parameters
+    ----------
+    gateway
+        Target gateway with an applied schema.
+    repo
+        Repository slug to record.
+    commit
+        Commit hash to record.
+    modules
+        Optional module->path mappings to persist alongside identity.
+    """
+    modules_payload = modules or {}
+    gateway.con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    gateway.con.execute(
+        """
+        INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
+        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        """,
+        [repo, commit, json.dumps(modules_payload)],
+    )
+    if modules_payload:
+        gateway.con.execute(
+            "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        )
+        gateway.con.executemany(
+            """
+            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+            VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+            """,
+            [(module, path, repo, commit) for module, path in modules_payload.items()],
+        )
+
+
 @dataclass(frozen=True)
 class BackendOptions:
     """Options for building a DuckDBBackend."""
@@ -487,5 +535,6 @@ __all__ = [
     "build_scope_parsing_service",
     "gateway_with_macros",
     "memory_con_with_macros",
+    "seed_repo_identity",
     "seed_tables",
 ]

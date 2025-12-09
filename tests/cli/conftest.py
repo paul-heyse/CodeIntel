@@ -120,8 +120,8 @@ def _track_and_close_gateways(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]
 
     monkeypatch.setattr("codeintel.storage.gateway.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.storage.gateway.factory.open_gateway", _wrapped_open)
-    monkeypatch.setattr("codeintel.cli.commands._common.open_gateway", _wrapped_open)
-    monkeypatch.setattr("codeintel.cli.commands.storage.open_gateway", _wrapped_open)
+    monkeypatch.setattr("codeintel.cli.common_handlers.open_gateway", _wrapped_open)
+    monkeypatch.setattr("codeintel.cli.storage_handlers.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.cli.project.open_gateway", _wrapped_open)
 
     try:

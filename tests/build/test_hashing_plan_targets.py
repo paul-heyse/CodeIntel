@@ -10,7 +10,6 @@ from typing import Any, cast
 
 import pytest
 
-from codeintel.build import operations
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
@@ -19,6 +18,7 @@ from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep, 
 from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
+from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers import make_snapshot, sample_target_graph
 from tests._helpers.assertions import (
     expect_equal,
@@ -29,6 +29,7 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
+from tests._helpers.operations_registry import OperationRegistryBuilder
 
 
 @dataclass
@@ -215,29 +216,35 @@ def test_target_table_keys_and_execution_duration() -> None:
     expect_true(legacy_target.estimated_duration_ms >= 0)
 
 
-def test_operations_resolve_missing_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_operations_resolve_missing_mapping() -> None:
     """Operations resolution skips datasets/graphs without mappings."""
-    # Override caches to avoid loading real registry
-    monkeypatch.setattr(operations, "_TABLE_TO_TARGET", {})
-    monkeypatch.setattr(operations, "_GRAPH_TO_TARGET", {})
+    graph = sample_target_graph()
+    builder = OperationRegistryBuilder(targets=graph.all_targets)
 
-    unresolved_datasets = operations.resolve_targets_for_operation(
-        cast(
-            "Any",
-            type(
-                "Op",
-                (),
-                {
-                    "id": "op",
-                    "required_datasets": ("core.unknown",),
-                    "required_graphs": ("unknown_graph",),
-                },
-            )(),
-        )
+    op = Operation(
+        id="op",
+        category="tests",
+        summary="missing mappings",
+        description=None,
+        http_method=None,
+        http_path=None,
+        tool_name=None,
+        output_model_name="None",
+        backend_method="",
+        data_source=DataSourceType.TABLE,
+        source_name="core.unknown",
+        repository_method=None,
+        required_datasets=("core.unknown",),
+        required_graphs=("unknown_graph",),
+        exposed_datasets=(),
+        supports_pagination=False,
+        default_limit=None,
+        max_limit=None,
     )
+    targets = builder.build_targets_for_operation(op)
 
-    expect_false(bool(unresolved_datasets.data_targets))
-    expect_false(bool(unresolved_datasets.graph_targets))
+    expect_false(bool(targets.data_targets))
+    expect_false(bool(targets.graph_targets))
 
 
 def test_operations_targets_dataclass_repr() -> None:

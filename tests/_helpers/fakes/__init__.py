@@ -56,17 +56,15 @@ from tests._helpers.fakes.tools import (
 from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
-    # Protocol-based fakes
+    "BackendHandle",
+    "BatchCall",
     "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeTestReporter",
-    # Legacy fakes
     "FakeToolRunner",
     "FakeToolService",
     "FakeToolServiceConfig",
     "FakeTypeChecker",
-    "BackendHandle",
-    "BatchCall",
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
@@ -74,6 +72,5 @@ __all__ = [
     "RecordingIngestStorageService",
     "ServingBackend",
     "build_serving_backend",
-    # Utilities
     "utcnow",
 ]

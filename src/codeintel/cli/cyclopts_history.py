@@ -9,9 +9,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import ValidationError, invoke_with_typer_translation
-from codeintel.cli.commands.history import HistoryOptions, history_timeseries_handler
+from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.history_handlers import HistoryOptions, history_timeseries_handler
 
 history_app = App(
     name="history",
@@ -119,7 +119,7 @@ def timeseries(
         selection_strategy=cfg.selection_strategy.value,
     )
     commits = list(cfg.commits) if cfg.commits is not None else []
-    invoke_with_typer_translation(
+    run_handler(
         history_timeseries_handler,
         repo=cfg.repo,
         commits=commits,

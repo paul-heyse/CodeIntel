@@ -1,10 +1,10 @@
 """Tests for DatasetSchemaResponse capability normalization."""
 
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
+from codeintel.serving.domain_models import DatasetSchema, ResponseMeta
 from codeintel.serving.mcp import models
 from tests._helpers.assertions import expect_equal
 
@@ -14,8 +14,8 @@ def _make_schema(
     dataset_name: str,
     table_key: str,
     capabilities: object,
-) -> SimpleNamespace:
-    return SimpleNamespace(
+) -> DatasetSchema:
+    return DatasetSchema(
         dataset_name=dataset_name,
         table_key=table_key,
         duckdb_schema=[],
@@ -28,7 +28,7 @@ def _make_schema(
         schema_version=None,
         stable_id=None,
         validation_profile=None,
-        meta=None,
+        meta=ResponseMeta(),
     )
 
 

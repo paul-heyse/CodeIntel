@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import ast
+import json
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
 
 import networkx as nx
+import pytest
 
 from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
@@ -17,9 +18,8 @@ from codeintel.analytics.functions.function_effects import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql.builder import ensure_schema
-from tests._helpers.assertions import expect_equal, expect_false, expect_true
+from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.gateway import GatewayFactory
@@ -53,7 +53,9 @@ def _build_function_ast_map(
     return ast_by_goid, module_path
 
 
-def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) -> None:
+def test_compute_function_effects_with_transitive_and_missing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """compute_function_effects records direct, transitive, and missing AST effects."""
     repo_root = tmp_path / "repo"
     source = """
@@ -92,13 +94,10 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
     )
     snapshot = SnapshotRef(repo="demo", commit="effects", repo_root=repo_root)
     gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
-    call_graph = nx.DiGraph()
-    call_graph.add_nodes_from(goids.values())
-    call_graph.add_edge(goids["caller"], goids["impure"])
     engine = build_graph_engine_double(
         gateway,
         snapshot,
-        call_graph=call_graph,
+        call_graph=nx.DiGraph([(goids["caller"], goids["impure"])]),
         copy_graphs=False,
     )
     runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
@@ -181,26 +180,51 @@ def test_compute_function_effects_with_transitive_and_missing(tmp_path: Path) ->
         missing_goids={goids["missing"]},
     )
 
+    caplog.set_level("INFO")
     try:
-        with patch.object(IngestStorageService, "run_batch", autospec=True) as run_batch:
-            compute_function_effects(gateway, cfg, inputs=inputs)
-        rows = run_batch.call_args.args[2]
+        compute_function_effects(gateway, cfg, inputs=inputs)
+        effects_by_goid = {
+            int(row[0]): row
+            for row in gateway.con.execute(
+                """
+                select
+                  function_goid_h128,
+                  is_pure,
+                  uses_io,
+                  touches_db,
+                  uses_time,
+                  uses_randomness,
+                  modifies_globals,
+                  modifies_closure,
+                  spawns_threads_or_tasks,
+                  has_transitive_effects,
+                  purity_confidence,
+                  effects_json
+                from analytics.function_effects
+                """
+            ).fetchall()
+        }
     finally:
         gateway.close()
 
-    effects_by_goid = {int(row[2]): row for row in rows}
-    expect_true(effects_by_goid[goids["impure"]][4])  # uses_io
-    expect_true(effects_by_goid[goids["impure"]][6])  # uses_time
-    expect_true(effects_by_goid[goids["impure"]][7])  # uses_randomness
-    expect_true(effects_by_goid[goids["impure"]][8])  # modifies_globals
-    expect_true(effects_by_goid[goids["impure"]][10])  # spawns_threads_or_tasks
-    expect_true(effects_by_goid[goids["caller"]][11])
-    expect_false(effects_by_goid[goids["caller"]][3])
-    expect_true(effects_by_goid[goids["caller"]][12] < 1.0)
-    expect_true(effects_by_goid[goids["uses_nonlocal"]][9])
-    expect_false(effects_by_goid[goids["missing"]][3])
-    expect_equal(effects_by_goid[goids["missing"]][12], 0.0)
-    expect_equal(
-        effects_by_goid[goids["missing"]][13]["errors"][0]["details"]["kind"],
-        "missing_ast",
-    )
+    expect_false(effects_by_goid[goids["impure"]][1])  # is_pure
+    expect_true(effects_by_goid[goids["impure"]][2])  # uses_io
+    expect_true(effects_by_goid[goids["impure"]][4])  # uses_time
+    expect_true(effects_by_goid[goids["impure"]][5])  # uses_randomness
+    expect_true(effects_by_goid[goids["impure"]][6])  # modifies_globals
+    expect_true(effects_by_goid[goids["impure"]][8])  # spawns_threads_or_tasks
+
+    expect_false(effects_by_goid[goids["caller"]][1])
+    expect_true(effects_by_goid[goids["caller"]][9])  # has_transitive_effects
+    expect_true(effects_by_goid[goids["caller"]][10] < 1.0)  # purity_confidence reduced
+
+    expect_true(effects_by_goid[goids["uses_nonlocal"]][7])  # modifies_closure
+
+    expect_false(effects_by_goid[goids["missing"]][1])  # is_pure should default to False
+    expect_equal(effects_by_goid[goids["missing"]][10], 0.0)  # purity_confidence
+
+    effects_json = effects_by_goid[goids["missing"]][11]
+    parsed = effects_json if isinstance(effects_json, dict) else json.loads(effects_json)
+    expect_equal(parsed["errors"][0]["details"]["kind"], "missing_ast")
+
+    assert_logged(caplog.records, level="INFO", containing="function_effects populated")

@@ -5,19 +5,20 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from enum import Enum
+from functools import wraps
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Literal, TypedDict, Unpack
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, Unpack, cast
 
 import attrs
 import cyclopts.help.help as help_mod
 from cyclopts.argument import Argument, ArgumentCollection
 from cyclopts.core import App
+from cyclopts.group import Group
+from cyclopts.help.help import HelpPanel
 from rich.console import Console
 
 if TYPE_CHECKING:
     from cyclopts._result_action import ResultAction
-    from cyclopts.group import Group
-    from cyclopts.help.help import HelpPanel
 
 
 class _AppCallKwargs(TypedDict, total=False):
@@ -31,7 +32,15 @@ class _AppCallKwargs(TypedDict, total=False):
     backend: Literal["asyncio", "trio"] | None
     result_action: ResultAction | None
 
+
+class _HelpModule(Protocol):
+    create_parameter_help_panel: Callable[..., HelpPanel]
+
+
 _ORIGINAL_CREATE_PARAMETER_HELP_PANEL = help_mod.create_parameter_help_panel
+_GROUP_INDEX = 0
+_ARGUMENT_COLLECTION_INDEX = 1
+_FORMAT_INDEX = 2
 
 
 def _safe_default(argument: Argument) -> object:
@@ -107,10 +116,11 @@ def _patched_collection(argument_collection: Iterable[Argument]) -> ArgumentColl
         return ArgumentCollection(patched_arguments)
 
 
-def create_parameter_help_panel(
+def _patched_create_parameter_help_panel(
     group: Group,
     argument_collection: ArgumentCollection,
     help_format: str,
+    /,
 ) -> HelpPanel:
     """Normalize argument defaults before delegating to the original renderer.
 
@@ -121,6 +131,29 @@ def create_parameter_help_panel(
     """
     patched_collection = _patched_collection(argument_collection)
     return _ORIGINAL_CREATE_PARAMETER_HELP_PANEL(group, patched_collection, help_format)
+
+
+@wraps(_ORIGINAL_CREATE_PARAMETER_HELP_PANEL)
+def create_parameter_help_panel(*args: object, **kwargs: object) -> HelpPanel:
+    """Normalize defaults before delegating to the Cyclopts renderer.
+
+    Returns
+    -------
+    HelpPanel
+        The rendered help panel.
+    """
+    group = cast("Group", args[_GROUP_INDEX] if args else kwargs["group"])
+    argument_collection = cast(
+        "ArgumentCollection",
+        args[_ARGUMENT_COLLECTION_INDEX]
+        if len(args) > _ARGUMENT_COLLECTION_INDEX
+        else kwargs["argument_collection"],
+    )
+    help_format = cast(
+        "str",
+        args[_FORMAT_INDEX] if len(args) > _FORMAT_INDEX else kwargs["format"],
+    )
+    return _patched_create_parameter_help_panel(group, argument_collection, help_format)
 
 
 def _iter_patch_targets() -> Iterator[tuple[object, str]]:
@@ -150,7 +183,8 @@ def _patched_help_renderer() -> Iterator[None]:
 
 def apply_help_patch() -> None:
     """Install the hardened help renderer globally for Cyclopts."""
-    help_mod.create_parameter_help_panel = create_parameter_help_panel
+    help_module = cast("_HelpModule", help_mod)
+    help_module.create_parameter_help_panel = create_parameter_help_panel
 
 
 def build_patched_app(make_app: Callable[[], App]) -> App:

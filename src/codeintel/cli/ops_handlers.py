@@ -19,7 +19,7 @@ from typing import Any
 import uvicorn
 
 from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.commands._common import OutputFormat
+from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,

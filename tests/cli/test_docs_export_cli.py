@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.docs import (
+from codeintel.cli.docs_handlers import (
     DocsExportOptions,
     DryRunMode,
     ExportValidationMode,

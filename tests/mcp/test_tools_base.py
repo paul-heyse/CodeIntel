@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -132,6 +131,10 @@ def _operations() -> list[Operation]:
     ]
 
 
+class _MissingBackend:
+    """Backend without the requested method for negative testing."""
+
+
 def test_register_tools_registers_all_categories() -> None:
     """Tools are registered for all categories with injected operations."""
     backend = _StubBackend(calls=[])
@@ -153,7 +156,7 @@ def test_register_tools_registers_all_categories() -> None:
 
 def test_register_tools_for_category_type_error_propagates() -> None:
     """TypeError bubbles when backend method is missing."""
-    backend = SimpleNamespace()
+    backend = _MissingBackend()
     mcp_ctx = make_mcp_context(
         backend=cast("QueryBackendOrService", backend),
         operations=[
