@@ -25,7 +25,6 @@ from codeintel.cli.commands.docs import (
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
-    RuntimeParam,
     resolve_output_format,
     runtime_cli_to_options,
 )
@@ -34,13 +33,6 @@ docs_app = App(
     name="docs",
     help="Document export utilities.",
 )
-
-
-@dataclass
-class DocsProjectCli:
-    """Project and storage selection for docs export."""
-
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
 
 
 @dataclass
@@ -156,6 +148,19 @@ class DocsExportCli:
     ] = False
 
 
+DEFAULT_BACKEND = DocsBackendCli()
+DEFAULT_EXPORT = DocsExportCli()
+
+
+@dataclass
+class DocsCli:
+    """Grouped CLI surface for docs export."""
+
+    runtime: Annotated[RuntimeCLI, Parameter(name="*")] = field(default_factory=RuntimeCLI)
+    backend: Annotated[DocsBackendCli, Parameter(name="*")] = field(default_factory=DocsBackendCli)
+    export: Annotated[DocsExportCli, Parameter(name="*")] = field(default_factory=DocsExportCli)
+
+
 @dataclass(frozen=True)
 class DocsExportBundle:
     """Typed bundle returned by docs export option normalization."""
@@ -168,9 +173,7 @@ class DocsExportBundle:
 
 @docs_app.command(name="export")
 def docs_export(
-    project: Annotated[DocsProjectCli, Parameter(name="*")] = DocsProjectCli(),
-    backend: Annotated[DocsBackendCli, Parameter(name="*")] | None = None,
-    export: Annotated[DocsExportCli, Parameter(name="*")] | None = None,
+    cfg: Annotated[DocsCli, Parameter(name="*")] | None = None,
 ) -> None:
     """Export datasets to Document Output/.
 
@@ -179,9 +182,10 @@ def docs_export(
     ValidationError
         If option values are invalid.
     """
-    project_cfg = project
-    backend_cfg = backend or DocsBackendCli()
-    export_cfg = export or DocsExportCli()
+    cfg = cfg or DocsCli()
+    project_cfg = cfg.runtime
+    backend_cfg = cfg.backend
+    export_cfg = cfg.export
     validation_mode = export_cfg.validation_mode
     if validation_mode is None:
         validation_mode = (
@@ -201,7 +205,7 @@ def docs_export(
     if prereq_mode is None:
         prereq_mode = PrereqMode.SKIP if export_cfg.skip_prereqs else PrereqMode.RUN
 
-    runtime = runtime_cli_to_options(project_cfg.runtime)
+    runtime_opts = runtime_cli_to_options(project_cfg)
     output_format = resolve_output_format(
         json_flag=export_cfg.output.json,
         explicit=export_cfg.output.output_format,
@@ -209,13 +213,13 @@ def docs_export(
     )
 
     cli_kwargs = {
-        "project_root": runtime.project_root,
-        "repo": runtime.repo,
-        "commit": runtime.commit,
-        "repo_root": runtime.repo_root,
-        "db_path": runtime.db_path,
-        "build_dir": runtime.build_dir,
-        "document_output_dir": runtime.document_output_dir,
+        "project_root": runtime_opts.project_root,
+        "repo": runtime_opts.repo,
+        "commit": runtime_opts.commit,
+        "repo_root": runtime_opts.repo_root,
+        "db_path": runtime_opts.db_path,
+        "build_dir": runtime_opts.build_dir,
+        "document_output_dir": runtime_opts.document_output_dir,
         "nx_backend": backend_cfg.nx_backend.value,
         "nx_gpu_mode": backend_cfg.nx_gpu_mode,
         "validation": validation_mode,
@@ -225,7 +229,7 @@ def docs_export(
         "output_format": output_format,
         "run_mode": run_mode,
         "prereq_mode": prereq_mode,
-        "verbose": project_cfg.runtime.verbose,
+        "verbose": project_cfg.verbose,
     }
     try:
         bundled_mapping = _bundle_docs_export(cli_kwargs)

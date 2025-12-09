@@ -237,7 +237,8 @@ def _resolve_goals(
         if module not in valid_modules:
             msg = f"Unknown module: {module}. Valid: {', '.join(valid_modules)}"
             raise typer.BadParameter(msg)
-        module_targets = graph.targets_for_module(module)  # type: ignore[arg-type]
+        module_typed = cast("TargetModule", module)
+        module_targets = graph.targets_for_module(module_typed)
         return [t.name for t in module_targets]
 
     if targets:
@@ -596,7 +597,7 @@ def build_status_handler(options: BuildStatusOptions) -> None:
             )
             raise typer.Exit(code=1)
 
-        module_targets = graph.targets_for_module(options.module)  # type: ignore[arg-type]
+        module_targets = graph.targets_for_module(cast("TargetModule", options.module))
         module_names = {t.name for t in module_targets}
         filtered_targets = {
             name: target_state

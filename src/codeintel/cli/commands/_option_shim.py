@@ -13,6 +13,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 from typer.models import ArgumentInfo, OptionInfo
 
@@ -59,13 +60,19 @@ def wrap_command(
         A wrapper function with a custom signature Typer can inspect.
     """
 
+    class _HasSignature(Protocol):
+        __signature__: inspect.Signature
+
+    def _has_default(value: object) -> bool:
+        return value not in {inspect.Signature.empty, None, ...}
+
     def _normalized_annotation(annotation: object, default: object) -> object:
         if isinstance(annotation, (OptionInfo, ArgumentInfo)):
             if isinstance(default, (OptionInfo, ArgumentInfo)):
-                if default.default not in {inspect.Signature.empty, ..., None}:  # type: ignore[comparison-overlap]
+                if _has_default(default.default):
                     return type(default.default)
                 return str
-            if default not in {inspect.Signature.empty, ..., None}:  # type: ignore[comparison-overlap]
+            if _has_default(default):
                 return type(default)
             return str
         return annotation
@@ -84,7 +91,8 @@ def wrap_command(
         for spec in option_specs
     ]
 
-    command_wrapper.__signature__ = inspect.Signature(parameters)  # type: ignore[attr-defined]
+    signature_target = cast(_HasSignature, command_wrapper)
+    signature_target.__signature__ = inspect.Signature(parameters)
     command_wrapper.__name__ = name or handler.__name__
     command_wrapper.__qualname__ = command_wrapper.__name__
     command_wrapper.__doc__ = handler.__doc__

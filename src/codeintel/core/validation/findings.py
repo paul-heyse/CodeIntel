@@ -10,6 +10,7 @@ at minimum a ``check_name`` (or similar identifier) and ``severity`` field.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 from codeintel.core.validation.options import ValidationSeverity
 
@@ -65,8 +66,7 @@ def apply_severity_overrides[T: Mapping[str, object]](
         # Create updated copy
         updated = dict(finding)
         updated["severity"] = override
-        # Type checker sees dict, but the structure matches T
-        normalized.append(updated)  # type: ignore[arg-type]
+        normalized.append(cast("T", updated))
     return normalized
 
 

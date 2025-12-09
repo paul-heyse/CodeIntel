@@ -38,6 +38,16 @@ from tests._helpers.fakes.fake_providers import (
 from tests._helpers.fakes.fake_providers import (
     FakeToolRunner as ProtocolFakeToolRunner,
 )
+from tests._helpers.fakes.ingestion_runtime import (
+    BatchCall,
+    RecordingBuildExecutor,
+    RecordingIngestStorageService,
+)
+from tests._helpers.fakes.serving_backends import (
+    BackendHandle,
+    ServingBackend,
+    build_serving_backend,
+)
 from tests._helpers.fakes.tools import (
     FakeToolRunner,
     FakeToolService,
@@ -55,9 +65,15 @@ __all__ = [
     "FakeToolService",
     "FakeToolServiceConfig",
     "FakeTypeChecker",
+    "BackendHandle",
+    "BatchCall",
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
+    "RecordingBuildExecutor",
+    "RecordingIngestStorageService",
+    "ServingBackend",
+    "build_serving_backend",
     # Utilities
     "utcnow",
 ]

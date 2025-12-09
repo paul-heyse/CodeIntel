@@ -68,7 +68,7 @@ def test_main_uses_register_tools_and_runs() -> None:
     register_calls: list[tuple[object, ServingConfig | None]] = []
 
     class _RecordingMcp(RecordingMcp):
-        def run(self) -> None:  # type: ignore[override]
+        def run(self) -> None:
             _ = self
             nonlocal run_called
             run_called = True

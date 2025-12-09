@@ -19,8 +19,10 @@ from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
     SubsystemModuleRow,
-    SymbolUseEdgeRow,
+    SymbolEdgeOptions,
     insert_rows,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
 )
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
@@ -383,22 +385,26 @@ def insert_symbol_edges(
 ) -> None:
     """Seed symbol use edges between api/service/utils."""
     ensure_schema(gateway.con, "graph.symbol_use_edges")
-    insert_rows(
+    insert_symbol_use_edges(
         gateway,
         [
-            SymbolUseEdgeRow(
-                symbol="pkg.mod_b.func_b",
-                def_path=ast_by_goid[goids["func_b"]].rel_path,
-                use_path=ast_by_goid[goids["func_a"]].rel_path,
-                same_file=False,
-                same_module=False,
+            make_symbol_use_edge_row(
+                "pkg.mod_b.func_b",
+                ast_by_goid[goids["func_b"]].rel_path,
+                ast_by_goid[goids["func_a"]].rel_path,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                ),
             ),
-            SymbolUseEdgeRow(
-                symbol="pkg.mod_c.func_c",
-                def_path=ast_by_goid[goids["func_c"]].rel_path,
-                use_path=ast_by_goid[goids["func_b"]].rel_path,
-                same_file=False,
-                same_module=False,
+            make_symbol_use_edge_row(
+                "pkg.mod_c.func_c",
+                ast_by_goid[goids["func_c"]].rel_path,
+                ast_by_goid[goids["func_b"]].rel_path,
+                options=SymbolEdgeOptions(
+                    same_file=False,
+                    same_module=False,
+                ),
             ),
         ],
     )

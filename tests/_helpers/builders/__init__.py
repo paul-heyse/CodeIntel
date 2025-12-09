@@ -45,7 +45,11 @@ from tests._helpers.builders.graph import (
     CFGEdgeRow,
     DFGEdgeRow,
     ImportGraphEdgeRow,
+    SymbolEdgeOptions,
+    SymbolUseEdgeInput,
     SymbolUseEdgeRow,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
 )
 from tests._helpers.builders.row_protocol import InsertableRow, insert_rows
 
@@ -76,10 +80,14 @@ __all__ = [
     "StaticDiagnosticsRow",
     "SubsystemModuleRow",
     "SubsystemRow",
+    "SymbolEdgeOptions",
     "SymbolGraphMetricsModulesRow",
+    "SymbolUseEdgeInput",
     "SymbolUseEdgeRow",
     "TestCatalogRow",
     "TestCoverageEdgeRow",
     "TypednessRow",
     "insert_rows",
+    "insert_symbol_use_edges",
+    "make_symbol_use_edge_row",
 ]

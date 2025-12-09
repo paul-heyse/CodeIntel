@@ -14,7 +14,13 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
+from tests._helpers.builders import (
+    GoidRow,
+    ModuleRow,
+    TestCatalogRow,
+    insert_rows,
+    insert_symbol_use_edges,
+)
 from tests._helpers.configs.graph_config import (
     COMMIT,
     REPO,
@@ -276,10 +282,11 @@ def _seed_symbol_use_edges(gateway: StorageGateway) -> None:
 
     The tuple format is: (symbol, def_path, use_path, same_file, same_module).
     """
-    gateway.graph.insert_symbol_use_edges(
+    insert_symbol_use_edges(
+        gateway,
         [
             ("pkg.a.callee", "pkg/a.py", "pkg/b.py", False, False),
-        ]
+        ],
     )
 
 

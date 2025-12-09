@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import import_module
-from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack
+from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
 
 import networkx as nx
 from duckdb import Error as DuckDBError
@@ -203,7 +203,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_call_graph_from_db()
             self.call_graph_obj = graph
-        return self._clone_graph(graph)
+        return cast("nx.DiGraph | None", self._clone_graph(graph))
 
     @property
     def import_graph(self) -> nx.DiGraph | None:
@@ -212,7 +212,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_import_graph_from_db()
             self.import_graph_obj = graph
-        return self._clone_graph(graph)
+        return cast("nx.DiGraph | None", self._clone_graph(graph))
 
     @property
     def symbol_module_graph(self) -> nx.Graph | None:
@@ -241,7 +241,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
     @property
     def cfg_graph(self) -> nx.DiGraph | None:
         self._recorder.record("cfg_graph")
-        return self._clone_graph(self._cfg_graph_internal)
+        return cast("nx.DiGraph | None", self._clone_graph(self._cfg_graph_internal))
 
     @cfg_graph.setter
     def cfg_graph(self, graph: nx.DiGraph | None) -> None:
@@ -256,7 +256,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
         self._backend_internal = value
 
     @property
-    def use_gpu(self) -> bool:  # type: ignore[override]
+    def use_gpu(self) -> bool:
         return self._use_gpu_internal
 
     @use_gpu.setter
@@ -343,14 +343,14 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             graph = loader()
         if graph is None and return_default_on_missing:
             graph = default_type()
-        return self._clone_graph(graph)
+        return cast("_GraphT | None", self._clone_graph(graph))
 
-    def _clone_graph(self, graph: _GraphT | None) -> _GraphT | None:
+    def _clone_graph(self, graph: nx.Graph | None) -> nx.Graph | None:
         if graph is None:
             return None
         if self.copy_graphs and hasattr(graph, "copy"):
             copied = graph.copy()
-            return copied
+            return cast("nx.Graph", copied)
         return graph
 
     def _load_call_graph_from_db(self) -> nx.DiGraph | None:

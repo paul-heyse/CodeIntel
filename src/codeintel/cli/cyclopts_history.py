@@ -102,7 +102,7 @@ def timeseries(
     ValidationError
         If required arguments are missing.
     """
-    cfg = cfg or HistoryTimeseriesCli()  # type: ignore[call-arg]
+    cfg = cfg or HistoryTimeseriesCli()
     if not cfg.repo:
         message = "Repository slug is required."
         raise ValidationError(message)

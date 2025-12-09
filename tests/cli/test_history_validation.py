@@ -1,4 +1,4 @@
-"""CLI enum validation coverage for docs export."""
+"""Validation coverage for history CLI surface."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 from tests._helpers.cli import CLIContext, run_cli
 
 
-def test_docs_export_invalid_validation_mode(cli_ctx: CLIContext) -> None:
-    """Invalid validation-mode yields exit 1 with friendly message."""
+def test_history_timeseries_requires_commits(cli_ctx: CLIContext) -> None:
+    """Missing commits should fail with a validation error."""
     result = run_cli(
-        ["docs", "export", "--validation-mode", "invalid"],
+        ["history", "timeseries", "--repo", "demo/repo"],
         env=cli_ctx.env,
         cwd=cli_ctx.repo_root,
     )
 
     expect_equal(result.exit_code, CLI_EXIT_VALIDATION)
-    expect_in('Invalid value for "--validation-mode"', result.stderr)
+    expect_in("At least one commit is required.", result.stderr)

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.mcp.models import (
@@ -39,6 +39,14 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import QueryBackend
 
 
+class _ProfileModelLookup(TypedDict):
+    """Mapping of profile model names to response model classes."""
+
+    FunctionProfileResponse: type[FunctionProfileResponse]
+    FileProfileResponse: type[FileProfileResponse]
+    ModuleProfileResponse: type[ModuleProfileResponse]
+
+
 def _require_spec(
     op_id: str, expected_tool: str, operations: Iterable[Operation] | None
 ) -> Operation:
@@ -54,6 +62,22 @@ def _require_spec(
         message = f"Operation {op_id} has mismatched tool name"
         raise ValueError(message)
     return spec
+
+
+def _resolve_model_from_module(name: str) -> ResponseFactory | None:
+    """Resolve a response model class from the models module by name.
+
+    Returns
+    -------
+    ResponseFactory | None
+        Response model when found, otherwise None.
+    """
+    model_map: _ProfileModelLookup = {
+        "FunctionProfileResponse": FunctionProfileResponse,
+        "FileProfileResponse": FileProfileResponse,
+        "ModuleProfileResponse": ModuleProfileResponse,
+    }
+    return cast("ResponseFactory | None", model_map.get(name))
 
 
 @dataclass
@@ -85,13 +109,8 @@ def register_profile_tools(
         Optional overrides for operations, model resolution, and prereq runner.
     """
     opts = options or ProfileToolOptions()
-    resolve_model = opts.model_resolver or (
-        lambda name: getattr(  # type: ignore[misc]
-            __import__("codeintel.serving.mcp.models", fromlist=[name]),
-            name,
-            None,
-        )
-    )
+
+    resolve_model = opts.model_resolver or _resolve_model_from_module
     run_prereqs = opts.prereq_runner or (
         lambda op_id, cfg, bkd: ensure_prereqs_for_mcp(op_id=op_id, config=cfg, backend=bkd)
     )
@@ -103,9 +122,9 @@ def register_profile_tools(
     spec_file = _require_spec("profiles.file", "get_file_profile", opts.operations)
     spec_module = _require_spec("profiles.module", "get_module_profile", opts.operations)
 
-    fn_model_cls = cast("ResponseFactory | None", resolve_model(spec_function.output_model_name))
-    file_model_cls = cast("ResponseFactory | None", resolve_model(spec_file.output_model_name))
-    module_model_cls = cast("ResponseFactory | None", resolve_model(spec_module.output_model_name))
+    fn_model_cls = resolve_model(spec_function.output_model_name)
+    file_model_cls = resolve_model(spec_file.output_model_name)
+    module_model_cls = resolve_model(spec_module.output_model_name)
 
     @mcp.tool(
         name=spec_function.tool_name,
