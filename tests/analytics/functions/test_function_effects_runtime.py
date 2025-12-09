@@ -78,6 +78,12 @@ def test_compute_function_effects_with_transitive_and_missing(
     def caller() -> int:
         return impure("x")
 
+    def wrapper() -> int:
+        return caller()
+
+    def naive_unicode(name: str | None = None) -> str | None:
+        return name
+
     def uses_nonlocal() -> int:
         value = 0
 
@@ -88,7 +94,14 @@ def test_compute_function_effects_with_transitive_and_missing(
 
         return inner()
     """
-    goids = {"impure": 1001, "caller": 1002, "uses_nonlocal": 1003, "missing": 1004}
+    goids = {
+        "impure": 1001,
+        "caller": 1002,
+        "uses_nonlocal": 1003,
+        "missing": 1004,
+        "wrapper": 1005,
+        "naive_unicode": 1006,
+    }
     ast_map, module_path = _build_function_ast_map(
         repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
     )
@@ -97,7 +110,12 @@ def test_compute_function_effects_with_transitive_and_missing(
     engine = build_graph_engine_double(
         gateway,
         snapshot,
-        call_graph=nx.DiGraph([(goids["caller"], goids["impure"])]),
+        call_graph=nx.DiGraph(
+            [
+                (goids["caller"], goids["impure"]),
+                (goids["wrapper"], goids["caller"]),
+            ]
+        ),
         copy_graphs=False,
     )
     runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
@@ -172,6 +190,26 @@ def test_compute_function_effects_with_transitive_and_missing(
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(1, 1),
                 ),
+                function_meta(
+                    goid=goids["wrapper"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="wrapper",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(
+                        ast_map[goids["wrapper"]].start_line,
+                        ast_map[goids["wrapper"]].end_line,
+                    ),
+                ),
+                function_meta(
+                    goid=goids["naive_unicode"],
+                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    qualname="naïve_unicode",
+                    snapshot=(snapshot.repo, snapshot.commit),
+                    line_span=(
+                        ast_map[goids["naive_unicode"]].start_line,
+                        ast_map[goids["naive_unicode"]].end_line,
+                    ),
+                ),
             ],
             module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
         ),
@@ -217,11 +255,13 @@ def test_compute_function_effects_with_transitive_and_missing(
     expect_false(effects_by_goid[goids["caller"]][1])
     expect_true(effects_by_goid[goids["caller"]][9])  # has_transitive_effects
     expect_true(effects_by_goid[goids["caller"]][10] < 1.0)  # purity_confidence reduced
+    expect_true(effects_by_goid[goids["wrapper"]][9])  # transitive via caller
 
     expect_true(effects_by_goid[goids["uses_nonlocal"]][7])  # modifies_closure
 
     expect_false(effects_by_goid[goids["missing"]][1])  # is_pure should default to False
     expect_equal(effects_by_goid[goids["missing"]][10], 0.0)  # purity_confidence
+    expect_true(effects_by_goid[goids["naive_unicode"]][1])  # pure
 
     effects_json = effects_by_goid[goids["missing"]][11]
     parsed = effects_json if isinstance(effects_json, dict) else json.loads(effects_json)
