@@ -14,7 +14,7 @@ from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.http.fastapi import create_app
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 
 
 @pytest.fixture
@@ -27,11 +27,7 @@ def gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway connected to an in-memory DuckDB instance.
     """
-    gw = gateway_with_macros(
-        validate_schema=False,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
+    gw = GatewayFactory().without_validation().with_snapshot("demo/repo", "deadbeef").open()
     gw.con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)

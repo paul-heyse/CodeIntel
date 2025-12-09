@@ -34,13 +34,15 @@ from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.fakes.graph_runtimes import (
-    MockGraphRuntime,
+from tests._helpers.fakes.graph_runtime import (
+    GraphRuntimeDouble as MockGraphRuntime,
+)
+from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
-from tests._helpers.gateway import gateway_with_macros, open_ingestion_gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.seeds.golden_graphs import (
     GOLDEN_COMMIT,
     GOLDEN_REPO,
@@ -67,11 +69,7 @@ def graph_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Configured gateway; automatically closed after test.
     """
-    gateway = gateway_with_macros(
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
+    gateway = GatewayFactory().with_views().open()
     apply_all_schemas(gateway.con)
     try:
         yield gateway
@@ -176,9 +174,7 @@ def golden_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway with golden dataset seeded; automatically closed.
     """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
+    gateway = GatewayFactory().with_views().open()
     apply_all_schemas(gateway.con)
     seed_golden_graphs(gateway, repo=GOLDEN_REPO, commit=GOLDEN_COMMIT)
     try:

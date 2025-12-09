@@ -18,6 +18,7 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.env import create_test_env
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.contexts import (
     EnvOverrides,
     ExecutionContextBuilder,
@@ -144,7 +145,7 @@ def _build_target_context(
         Configured context for plugin execution.
     """
     if gateway is None:
-        env = create_test_env(tmp_path, repo_root=repo_root)
+        env = create_test_env(tmp_path, options=EnvOptions(repo_root=repo_root))
         gateway = env.gateway
 
     # Use repo_root for the snapshot, not tmp_path
@@ -195,7 +196,7 @@ async def test_execute_queries_gateway_when_modules_missing(tmp_path: Path) -> N
     repo_root = build_repo_tree(tmp_path / "repo", {})
 
     # Create a real gateway and seed test data
-    env = create_test_env(tmp_path / "env", repo_root=repo_root)
+    env = create_test_env(tmp_path / "env", options=EnvOptions(repo_root=repo_root))
     env.gateway.con.execute(
         "INSERT INTO core.modules (module, path, repo, commit) VALUES (?, ?, ?, ?)",
         ["pkg.db_mod", "pkg/db_mod.py", DEFAULT_REPO, DEFAULT_COMMIT],

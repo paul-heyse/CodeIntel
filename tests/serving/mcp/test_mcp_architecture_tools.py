@@ -31,7 +31,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_fast import wrap_fastmcp
+from tests._helpers.mcp_registrar import wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -784,7 +784,7 @@ def test_graph_plugin_plan_disable_dependency_override() -> None:
     plan = plan_graph_plugins(
         plugin_names=("goid_builder",),
         disabled=("scip_ingest",),
-        allow_missing_dependencies=True,
+        plan_options=PlanningOptions(allow_missing_dependencies=True),
     )
     expect_is_not_none(plan)
     expect_true("goid_builder" in plan.ordered_names)

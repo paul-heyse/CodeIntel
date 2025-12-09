@@ -72,12 +72,7 @@ def test_metadata_bootstrap_populates_catalog() -> None:
 
 def test_dataflow_metadata_populated() -> None:
     """bootstrap_metadata_datasets should populate dataset_dataflow_* tables and repositories."""
-    gateway = (
-        GatewayFactory()
-        .without_validation()
-        .with_snapshot("test/repo", "deadbeef")
-        .open()
-    )
+    gateway = GatewayFactory().without_validation().with_snapshot("test/repo", "deadbeef").open()
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
         repo = DataflowRepository(gateway, "test/repo", "deadbeef")

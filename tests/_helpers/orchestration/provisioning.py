@@ -62,7 +62,7 @@ from tests._helpers.configs import (
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.fakes.contexts import ExecutionContextBuilder
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
     write_coverage_driver,
@@ -229,13 +229,15 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
         gateway = open_gateway(cfg)
         ensure_ingest_macros(gateway.con)
     else:
-        gateway = gateway_with_macros(
-            apply_schema=opts.apply_schema,
-            ensure_views=effective_ensure_views,
-            validate_schema=effective_validate_schema,
-            repo=ctx.repo,
-            commit=ctx.commit,
-        )
+        factory = GatewayFactory()
+        if not opts.apply_schema:
+            factory = factory.without_schema()
+        if effective_ensure_views:
+            factory = factory.with_views()
+        if not effective_validate_schema:
+            factory = factory.without_validation()
+        factory = factory.with_snapshot(ctx.repo, ctx.commit)
+        gateway = factory.open()
     _assert_ingest_macros_present(gateway.con)
     return gateway
 

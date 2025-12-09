@@ -26,7 +26,7 @@ from codeintel.ingestion.compute import (
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.helpers.module_index import load_module_map
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -72,7 +72,7 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
     snapshot = _make_test_snapshot(tmp_path)
-    gateway = open_ingestion_gateway()
+    gateway = GatewayFactory().open()
     profile = default_code_profile(snapshot.repo_root)
 
     # Use Step-based API

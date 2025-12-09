@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.config.datasets import DEFAULT_JSONL_FILENAMES
 from codeintel.serving.backend import BackendLimits
-from tests._helpers.gateway import build_duckdb_query_service, gateway_with_macros
+from tests._helpers.gateway import GatewayFactory, build_duckdb_query_service
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -16,7 +16,7 @@ def _require(*, condition: bool, message: str) -> None:
 
 def test_dataset_specs_include_contract_fields() -> None:
     """Dataset specs should surface filenames, schema IDs, and row binding flags."""
-    gateway = gateway_with_macros(validate_schema=False)
+    gateway = GatewayFactory().without_validation().open()
     try:
         query = build_duckdb_query_service(
             gateway=gateway, repo="repo", commit="commit", limits=BackendLimits()

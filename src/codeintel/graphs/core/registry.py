@@ -281,7 +281,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         disabled: Sequence[str] | None = None,
         defaults: Sequence[str] | None = None,
         plan_options: PlanningOptions | None = None,
-        **legacy_plan_kwargs: object,
     ) -> GraphPluginPlan:
         """Build an execution plan with dependency resolution.
 
@@ -301,37 +300,16 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         defaults
             Default plugins if no explicit list provided.
         plan_options
-            Planning options controlling dependency handling. Legacy keyword
-            arguments ``allow_missing_dependencies`` and ``dependency_policy``
-            are still honored when provided. Selection defaults to
-            ``SelectionPolicy.LENIENT`` and explicit requests can still be
-            treated as required via ``requested_required``.
-        **legacy_plan_kwargs
-            Optional legacy parameters for dependency handling.
+            Planning options controlling dependency handling. Selection
+            defaults to ``SelectionPolicy.LENIENT`` and explicit requests
+            can still be treated as required via ``requested_required``.
 
         Returns
         -------
         GraphPluginPlan
             Ordered execution plan with graph-specific metadata.
         """
-        dep_policy_obj = legacy_plan_kwargs.get("dependency_policy", DependencyPolicy.STRICT)
-        dep_policy = (
-            dep_policy_obj
-            if isinstance(dep_policy_obj, DependencyPolicy)
-            else DependencyPolicy(dep_policy_obj)
-        )
-        sel_policy_obj = legacy_plan_kwargs.get("selection_policy", SelectionPolicy.LENIENT)
-        selection_policy = (
-            sel_policy_obj
-            if isinstance(sel_policy_obj, SelectionPolicy)
-            else SelectionPolicy(sel_policy_obj)
-        )
-        plan_opts = plan_options or PlanningOptions(
-            allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
-            dependency_policy=dep_policy,
-            selection_policy=selection_policy,
-            use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
-        )
+        plan_opts = plan_options or PlanningOptions()
 
         self._ensure_loaded()
         if plan_opts.use_stubs:
@@ -776,7 +754,6 @@ def plan_graph_plugins(
     disabled: Sequence[str] | None = None,
     defaults: Sequence[str] | None = None,
     plan_options: PlanningOptions | None = None,
-    **legacy_plan_kwargs: object,
 ) -> GraphPluginPlan:
     """Build an execution plan for graph plugins.
 
@@ -791,42 +768,22 @@ def plan_graph_plugins(
     defaults
         Default plugins if no explicit list provided.
     plan_options
-        Planning options controlling dependency handling. When provided, overrides
-        allow_missing_dependencies/dependency_policy values.
-        Selection defaults to ``SelectionPolicy.LENIENT`` to preserve
-        backward-compatible skipping of unknown plugins.
-    **legacy_plan_kwargs
-        Optional legacy parameters for dependency handling.
+        Planning options controlling dependency handling. Selection defaults
+        to ``SelectionPolicy.LENIENT`` to preserve backward-compatible
+        skipping of unknown plugins.
 
     Returns
     -------
     GraphPluginPlan
         Ordered execution plan.
     """
-    dep_policy_obj = legacy_plan_kwargs.get("dependency_policy", DependencyPolicy.STRICT)
-    dep_policy = (
-        dep_policy_obj
-        if isinstance(dep_policy_obj, DependencyPolicy)
-        else DependencyPolicy(dep_policy_obj)
-    )
-    sel_policy_obj = legacy_plan_kwargs.get("selection_policy", SelectionPolicy.LENIENT)
-    selection_policy = (
-        sel_policy_obj
-        if isinstance(sel_policy_obj, SelectionPolicy)
-        else SelectionPolicy(sel_policy_obj)
-    )
-    opts = plan_options or PlanningOptions(
-        allow_missing_dependencies=bool(legacy_plan_kwargs.get("allow_missing_dependencies")),
-        dependency_policy=dep_policy,
-        selection_policy=selection_policy,
-        use_stubs=bool(legacy_plan_kwargs.get("use_stubs", True)),
-    )
+    resolved_plan_options = plan_options or PlanningOptions()
     return get_graph_registry().plan(
         plugin_names=plugin_names,
         enabled=enabled,
         disabled=disabled,
         defaults=defaults,
-        plan_options=opts,
+        plan_options=resolved_plan_options,
     )
 
 

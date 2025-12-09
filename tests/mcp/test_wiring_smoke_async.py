@@ -8,7 +8,7 @@ from typing import cast
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_true
-from tests._helpers.mcp_async import AsyncRecordingMcp
+from tests._helpers.mcp_registrar import AsyncRecordingMcpRegistrar as AsyncRecordingMcp
 
 
 def test_mcp_wiring_smoke_async_registrar() -> None:

@@ -15,6 +15,7 @@ from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.env import create_test_env
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.contexts import (
     EnvOverrides,
     ExecutionContextBuilder,
@@ -99,7 +100,7 @@ def _build_target_context(
     TargetExecutionContext
         Configured context for plugin execution.
     """
-    env = create_test_env(repo_root, repo_root=repo_root)
+    env = create_test_env(repo_root, options=EnvOptions(repo_root=repo_root))
     builder = ExecutionContextBuilder.create(
         repo_root,
         env_overrides=EnvOverrides(

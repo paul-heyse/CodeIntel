@@ -543,11 +543,119 @@ def build_graph_engine_double(
     return GraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
 
+# ---------------------------------------------------------------------------
+# Convenience factory functions (migrated from deprecated graph_runtimes.py)
+# ---------------------------------------------------------------------------
+
+
+def create_mock_runtime_with_call_graph(
+    edges: list[tuple[str, str]] | None = None,
+) -> GraphRuntimeDouble:
+    """Create a GraphRuntimeDouble with a populated call graph.
+
+    Parameters
+    ----------
+    edges
+        Optional list of (source, target) edges. Defaults to a simple chain.
+
+    Returns
+    -------
+    GraphRuntimeDouble
+        Runtime seeded with a call graph.
+    """
+    if edges is None:
+        edges = [("func_a", "func_b"), ("func_b", "func_c")]
+    call_g = nx.DiGraph()
+    call_g.add_edges_from(edges)
+    return GraphRuntimeDouble(call_graph=call_g)
+
+
+def create_mock_runtime_with_import_graph(
+    edges: list[tuple[str, str]] | None = None,
+) -> GraphRuntimeDouble:
+    """Create a GraphRuntimeDouble with a populated import graph.
+
+    Parameters
+    ----------
+    edges
+        Optional list of (source, target) edges. Defaults to a simple chain.
+
+    Returns
+    -------
+    GraphRuntimeDouble
+        Runtime seeded with an import graph.
+    """
+    if edges is None:
+        edges = [("mod_a", "mod_b"), ("mod_b", "mod_c")]
+    import_g = nx.DiGraph()
+    import_g.add_edges_from(edges)
+    return GraphRuntimeDouble(import_graph=import_g)
+
+
+def create_mock_runtime_all_graphs() -> GraphRuntimeDouble:
+    """Create a GraphRuntimeDouble with all graph types populated.
+
+    Returns
+    -------
+    GraphRuntimeDouble
+        Runtime seeded with all graph types.
+    """
+    call_g = nx.DiGraph([("f1", "f2"), ("f2", "f3")])
+    import_g = nx.DiGraph([("m1", "m2"), ("m2", "m3")])
+    symbol_mod_g = nx.Graph([("sym1", "mod1"), ("sym2", "mod2")])
+    symbol_func_g = nx.Graph([("sym1", "func1"), ("sym2", "func2")])
+    config_mod_g = nx.Graph([("config1", "mod1")])
+    test_func_g = nx.Graph([("test1", "func1")])
+    cfg_g = nx.DiGraph([("entry", "block1"), ("block1", "exit")])
+    return GraphRuntimeDouble(
+        call_graph=call_g,
+        import_graph=import_g,
+        symbol_module_graph=symbol_mod_g,
+        symbol_function_graph=symbol_func_g,
+        config_graph=config_mod_g,
+        test_function_graph=test_func_g,
+        cfg_graph=cfg_g,
+    )
+
+
+def create_mock_runtime_with_standard_graphs(
+    fixtures: GraphFixtures | None = None,
+) -> GraphRuntimeDouble:
+    """Create a GraphRuntimeDouble seeded with standard graph shapes.
+
+    Parameters
+    ----------
+    fixtures
+        Optional pre-built graph fixtures. Defaults to standard_graph_fixtures().
+
+    Returns
+    -------
+    GraphRuntimeDouble
+        Runtime seeded with standard fixtures.
+    """
+    if fixtures is None:
+        # Use lazy import to avoid circular dependency with graphs.py
+        graphs_module = import_module("tests._helpers.graphs")
+        graphs = graphs_module.standard_graph_fixtures()
+    else:
+        graphs = fixtures
+    return GraphRuntimeDouble.from_fixtures(graphs)
+
+
+# Alias for backward compatibility during migration
+MockGraphRuntime = GraphRuntimeDouble
+
+
 __all__ = [
     "CountingGraphEngineAdapter",
     "GraphCallRecord",
     "GraphEngineAdapter",
     "GraphRuntimeDouble",
+    "MockGraphRuntime",  # Alias for backward compatibility
     "build_graph_engine_double",
+    "create_mock_runtime_all_graphs",
+    "create_mock_runtime_with_call_graph",
+    "create_mock_runtime_with_import_graph",
+    "create_mock_runtime_with_standard_graphs",
 ]
 _GraphT = TypeVar("_GraphT", bound=nx.Graph)

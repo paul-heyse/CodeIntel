@@ -21,7 +21,7 @@ from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata import INGEST_MACROS
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.configs import CoverageSeedConfig
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration import seed_coverage_rows
 
 
@@ -139,11 +139,9 @@ def open_seeded_architecture_gateway(
         Gateway with schema, views, and architecture seed data applied.
     """
     if db_path is None:
-        gateway = gateway_with_macros(
-            apply_schema=True,
-            ensure_views=strict_schema,
-            validate_schema=strict_schema,
-        )
+        factory = GatewayFactory()
+        factory = factory.with_views() if strict_schema else factory.without_validation()
+        gateway = factory.open()
     else:
         cfg = StorageConfig(
             db_path=db_path,

@@ -123,10 +123,13 @@ def invoke_with_typer_translation(
 def translate_typer_exit(exc: BaseException) -> SystemExit:
     """Convert a Typer ``Exit`` to ``SystemExit`` while preserving the code.
 
+    Returns
+    -------
+    SystemExit
+        SystemExit instance carrying the original exit code.
+
     Raises
     ------
-    SystemExit
-        Wrapped Typer exit as a SystemExit.
     TypeError
         If the provided exception is not a Typer exit.
     """

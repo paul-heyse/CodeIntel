@@ -22,7 +22,7 @@ from codeintel.ingestion.tracker import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.gateway import GatewayFactory
 
 
 def _module(rel_path: str) -> ModuleRecord:
@@ -244,7 +244,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     _, file_b = _setup_test_files(repo_root)
     snapshot = make_snapshot(repo_root=repo_root)
 
-    gateway = open_ingestion_gateway()
+    gateway = GatewayFactory().open()
     try:
         scan_step, doc_step, scan_profile = _create_scan_infrastructure(gateway, repo_root)
 
@@ -298,7 +298,7 @@ def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:
     file_path = repo_root / "a.py"
     file_path.write_text("x = 1\n", encoding="utf8")
 
-    gateway = open_ingestion_gateway()
+    gateway = GatewayFactory().open()
 
     def make_record() -> ModuleRecord:
         return ModuleRecord(

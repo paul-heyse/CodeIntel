@@ -10,7 +10,7 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.mcp import RecordingMcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

@@ -8,8 +8,8 @@ from tests._helpers.cli import CLIContext, run_cli
 
 
 def test_unknown_option_normalized(cli_ctx: CLIContext) -> None:
-    """Unknown top-level option yields exit 2 with normalized message."""
-    result = run_cli(["--bogus"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
+    """Unknown option on subcommand reports normalized usage error."""
+    result = run_cli(["build", "run", "--bogus"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
 
     expect_equal(result.exit_code, CLI_EXIT_USAGE)
     expect_in("No such option: --bogus", result.stderr)
@@ -21,14 +21,6 @@ def test_unknown_command_normalized(cli_ctx: CLIContext) -> None:
 
     expect_equal(result.exit_code, CLI_EXIT_USAGE)
     expect_in("No such command: nonesuch", result.stderr)
-
-
-def test_subcommand_unknown_option(cli_ctx: CLIContext) -> None:
-    """Unknown option on subcommand also reports normalized usage error."""
-    result = run_cli(["build", "run", "--bogus"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
-
-    expect_equal(result.exit_code, CLI_EXIT_USAGE)
-    expect_in("No such option: --bogus", result.stderr)
 
 
 def test_validation_error_exit_code(cli_ctx: CLIContext) -> None:

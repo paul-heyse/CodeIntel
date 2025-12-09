@@ -21,7 +21,7 @@ from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
-from tests._helpers.mcp import RecordingMcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
 
 @dataclass
