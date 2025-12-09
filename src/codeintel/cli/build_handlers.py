@@ -26,6 +26,9 @@ from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.cli_errors import ProblemDetail, ValidationError
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.common_handlers import RuntimeCliOptions
+
+# Import consolidated setup_logging from handlers.base
+from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -107,26 +110,8 @@ class BuildHistoryOptions:
 # Logging Configuration
 # =============================================================================
 
-
-def setup_logging(verbosity: int) -> None:
-    """Configure logging based on verbosity level.
-
-    Parameters
-    ----------
-    verbosity
-        Verbosity level (0=WARNING, 1=INFO, 2+=DEBUG).
-    """
-    if verbosity <= 0:
-        level = logging.WARNING
-    elif verbosity == 1:
-        level = logging.INFO
-    else:
-        level = logging.DEBUG
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+# Use consolidated setup_logging from handlers.base
+setup_logging = _setup_logging_impl
 
 
 # =============================================================================

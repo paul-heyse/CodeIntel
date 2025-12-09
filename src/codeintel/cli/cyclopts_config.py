@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, TextIO
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.config_loader import DEFAULT_CONFIG_PATHS
+from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 
 if TYPE_CHECKING:
     from codeintel.cli.cyclopts_common import RuntimeCLI

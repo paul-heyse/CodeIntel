@@ -14,7 +14,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 
@@ -42,6 +42,9 @@ from codeintel.serving.operations.catalog import (
     iter_operations,
 )
 from codeintel.storage.validation import collect_contract_issues
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 
 LOG = logging.getLogger(__name__)
 
@@ -412,6 +415,26 @@ def op_list_structured(
     return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
 
 
+def op_list_ctx(
+    ctx: ExecutionContext,
+) -> CliResult[OperationListResult]:
+    """List available serving operations (ExecutionContext pattern).
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - category: Optional category filter
+
+    Returns
+    -------
+    CliResult[OperationListResult]
+        List of operations matching the filter.
+    """
+    category = ctx.get_str_param("category")
+    return op_list_structured(category=category)
+
+
 def dataset_list_structured(
     *,
     runtime: ProjectRuntime,
@@ -527,6 +550,7 @@ __all__ = [
     "dataset_verify_structured",
     "invoke_operation",
     "op_call_handler",
+    "op_list_ctx",
     "op_list_handler",
     "op_list_structured",
     "serve_http_handler",
