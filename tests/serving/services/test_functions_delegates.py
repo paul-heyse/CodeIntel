@@ -22,11 +22,18 @@ from codeintel.serving.mcp.models import (
     ResponseMeta,
     TestsForFunctionResponse,
 )
-from codeintel.serving.services.functions import _FunctionQueryDelegates, _HttpFunctionQueryMixin
-from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+from tests._helpers.http_payloads import (
+    RequestRecorder,
+    assert_scope_serialized,
+    make_function_http_responses,
+)
+from tests._helpers.serving_harnesses import (
+    FunctionDelegateHarness,
+    HttpFunctionHarness,
+    RecordingObservability,
+)
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -37,6 +44,7 @@ MAX_ROWS: Final = 100
 LOW_RISK: Final = 0.3
 RADIUS_ONE: Final = 1
 GOID_ONE: Final = 1
+RETRY_EXPECTED: Final = 2
 
 
 def _expect(*, condition: bool, message: str) -> None:
@@ -500,47 +508,6 @@ def test_get_import_boundary_nonexistent_subsystem(
 # =============================================================================
 
 
-class _DelegateHarness(_FunctionQueryDelegates):
-    """Harness that executes provided payloads and records datasets."""
-
-    def __init__(self, payloads: dict[str, object]) -> None:
-        self.query = HookedDuckDBQueryApi(
-            function_hooks={
-                "get_function_summary": lambda **_: payloads["get_function_summary"],
-                "list_high_risk_functions": lambda **_: payloads["list_high_risk_functions"],
-                "get_callgraph_neighbors": lambda **_: payloads["get_callgraph_neighbors"],
-                "get_tests_for_function": lambda **_: payloads["get_tests_for_function"],
-                "get_callgraph_neighborhood": lambda **_: payloads["get_callgraph_neighborhood"],
-                "get_import_boundary": lambda **_: payloads["get_import_boundary"],
-            },
-            profile_hooks={"get_file_summary": lambda **_: payloads["get_file_summary"]},
-        )
-        self.called: list[tuple[str, str | None]] = []
-
-    def _call(
-        self,
-        name: str,
-        func,
-        *,
-        dataset: str | None = None,
-        **_: object,
-    ) -> object:  # type: ignore[override]
-        self.called.append((name, dataset))
-        return func()
-
-
-class RecordingObservability(ServiceObservability):
-    """Observability stub capturing emitted metrics."""
-
-    def __init__(self) -> None:
-        self.enabled = True
-        self.records: list[object] = []
-
-    def record(self, metrics, context=None) -> None:  # type: ignore[override]
-        _ = context
-        self.records.append(metrics)
-
-
 class _Requester:
     """HTTP request stub returning fixed responses and recording calls."""
 
@@ -552,22 +519,6 @@ class _Requester:
     def request_json(self, path: str, params: dict[str, object]) -> object:
         self.calls.append((path, params))
         return self.responses[path]
-
-
-class _HttpFunctionsHarness(_HttpFunctionQueryMixin):
-    """Concrete HTTP mixin harness for testing."""
-
-    def __init__(
-        self,
-        responses: dict[str, object],
-        *,
-        limits: BackendLimits,
-        observability: ServiceObservability | None,
-        requester: _Requester,
-    ) -> None:
-        self.limits = limits
-        self.observability = observability
-        self.request_json = requester.request_json
 
 
 def test_function_delegates_normalize_payloads_and_scope() -> None:
@@ -591,12 +542,11 @@ def test_function_delegates_normalize_payloads_and_scope() -> None:
         "get_import_boundary": ImportBoundaryResponse(nodes=[], edges=[], meta=ResponseMeta()),
         "get_file_summary": FileSummaryResponse(
             found=True,
-            summary=None,
-            functions=[],
+            file=None,
             meta=ResponseMeta(),
         ),
     }
-    delegates = _DelegateHarness(payloads)
+    delegates = FunctionDelegateHarness(payloads)
     scope = GraphScopePayload(paths=("src",))
 
     summary = delegates.get_function_summary(goid_h128=GOID_ONE, scope=scope)
@@ -651,9 +601,8 @@ def test_function_delegates_normalize_payloads_and_scope() -> None:
 
 def test_http_function_mixin_clamp_short_circuits() -> None:
     """Ensure HTTP mixin returns empty responses when clamp_limit errors."""
-    requester = _Requester({})
-    http_funcs = _HttpFunctionsHarness(
-        {},
+    requester = RequestRecorder({})
+    http_funcs = HttpFunctionHarness(
         limits=BackendLimits(default_limit=1, max_rows_per_call=1),
         observability=None,
         requester=requester,
@@ -674,24 +623,10 @@ def test_http_function_mixin_clamp_short_circuits() -> None:
 
 def test_http_function_mixin_normalization_and_retry_metrics() -> None:
     """Validate HTTP mixin normalization and retry metric emission."""
-    responses = {
-        "/function/callgraph": CallGraphNeighborsResponse(
-            outgoing=[],
-            incoming=[],
-            meta=ResponseMeta(),
-        ),
-        "/function/tests": {"tests": [], "meta": ResponseMeta().model_dump()},
-        "/file/summary": FileSummaryResponse(
-            found=True,
-            summary=None,
-            functions=[],
-            meta=ResponseMeta(),
-        ),
-    }
-    requester = _Requester(responses, last_retry_attempts=3)
+    responses = make_function_http_responses()
+    requester = RequestRecorder(responses, last_retry_attempts=3)
     observability = RecordingObservability()
-    http_funcs = _HttpFunctionsHarness(
-        responses,
+    http_funcs = HttpFunctionHarness(
         limits=BackendLimits(default_limit=5, max_rows_per_call=10),
         observability=observability,
         requester=requester,
@@ -715,10 +650,7 @@ def test_http_function_mixin_normalization_and_retry_metrics() -> None:
         message="file summary normalized",
     )
     _expect(
-        condition=len(observability.records) >= 2,
+        condition=len(observability.records) >= RETRY_EXPECTED,
         message="observability should record retries",
     )
-    _expect(
-        condition=requester.calls[0][1].get("scope") is not None,
-        message="scope should be serialized in HTTP request",
-    )
+    assert_scope_serialized(requester, "/function/callgraph")

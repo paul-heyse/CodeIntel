@@ -75,6 +75,7 @@ class TestsIngestPlugin(TargetPlugin):
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
+            log.warning("Tests ingest failed: %s", errors)
             return TargetResult.failed(f"Tests ingest failed: {errors}")
 
         return TargetResult.succeeded(row_counts=result.table_counts or {})

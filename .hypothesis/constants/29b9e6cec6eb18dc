@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/ops_handlers.py
+# hypothesis_version: 6.148.7
+
+['  Columns:\n', '(view)', '1', '=', 'AUTO_PIPELINE_ENV', 'CODEINTEL_COMMIT', 'CODEINTEL_DB_PATH', 'CODEINTEL_REPO', 'CODEINTEL_REPO_ROOT', '__dict__', 'category', 'columns', 'dataset_list_handler', 'description', 'false', 'http_path', 'id', 'invoke_operation', 'is_view', 'json', 'model_dump', 'name', 'nullable', 'op_call_handler', 'op_list_handler', 'owner_package', 'required', 'serve_http_handler', 'serve_mcp_handler', 'summary', 'table_key', 'tool_name', 'true', 'type']

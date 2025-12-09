@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -15,23 +17,28 @@ from codeintel.serving.mcp.function_tools import FunctionToolOptions, register_f
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_true,
 )
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
+LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class _DomainModel:
-    value: str
+    payload: object
 
     def model_dump(self) -> dict[str, object]:
-        return {"value": self.value}
+        if isinstance(self.payload, Mapping):
+            return dict(self.payload)
+        return {"value": str(self.payload)}
 
     @classmethod
     def from_domain(cls, payload: object) -> _DomainModel:
-        return cls(value=str(payload))
+        return cls(payload=payload)
 
 
 class _Backend:
@@ -45,7 +52,13 @@ class _Backend:
 
     def get_fn(self, *, payload: object = "x") -> _DomainModel:
         self.calls.append("get_fn")
-        return _DomainModel.from_domain(payload)
+        enriched = {
+            "id": "fn-alpha",
+            "payload": payload,
+            "summary": "helper fn",
+            "notes": None,
+        }
+        return _DomainModel.from_domain(enriched)
 
     def get_fn_with_scope(self, *, scope: str | None = None) -> _DomainModel:
         ctx = get_current_request_context()
@@ -55,7 +68,7 @@ class _Backend:
 
     def get_raw(self, **_: object) -> dict[str, object]:
         self.calls.append("get_raw")
-        return {"id": "raw-fn"}
+        return {"id": "raw-fn", "name": "raw函数", "metadata": None}
 
     def get_domain_from_str(self, **_: object) -> str:
         self.calls.append("get_domain_from_str")
@@ -64,6 +77,7 @@ class _Backend:
     def raise_error(self, **_: object) -> _DomainModel:
         self.calls.append("raise_error")
         message = "fail"
+        LOGGER.error("Function tool failure: %s", message)
         raise RuntimeError(message)
 
     def validate_fn(self, **_: object) -> str:
@@ -72,7 +86,7 @@ class _Backend:
 
 
 class _ValidatingModel:
-    value: str
+    payload: object
 
     @classmethod
     def model_validate(cls, payload: object) -> _DomainModel:
@@ -122,7 +136,10 @@ def test_register_function_tools_registers_and_executes() -> None:
     expect_equal([reg.name for reg in mcp.registrations.calls], ["functions_summary"])
     tool_func = mcp.registry["functions_summary"]
     result = tool_func(payload="hello")
-    expect_equal(result, {"value": "hello"})
+    expect_equal(
+        result,
+        {"id": "fn-alpha", "payload": "hello", "summary": "helper fn", "notes": None},
+    )
 
 
 def test_serialize_payload_validator_path() -> None:
@@ -204,8 +221,8 @@ def test_function_tool_sets_scope_and_resets_context() -> None:
     expect_true(get_current_request_context() is None)
 
 
-def test_function_tool_resets_context_on_error() -> None:
-    """Request context should reset even when backend raises."""
+def test_function_tool_resets_context_on_error(caplog: pytest.LogCaptureFixture) -> None:
+    """Request context should reset even when backend raises and logs."""
     spec = Operation(
         id="graph.error",
         category="graph",
@@ -237,6 +254,7 @@ def test_function_tool_resets_context_on_error() -> None:
     with pytest.raises(RuntimeError):
         mcp.registry["graph_error"]()
     expect_true(get_current_request_context() is None)
+    assert_logged(caplog.records, containing="Function tool failure: fail")
 
 
 def test_function_tool_from_domain_path() -> None:
@@ -305,7 +323,10 @@ def test_function_tool_passes_through_raw_dict_when_no_model() -> None:
         config=None,
         options=FunctionToolOptions(operations=(spec,)),
     )
-    expect_equal(mcp.registry["functions_raw"](), {"id": "raw-fn"})
+    expect_equal(
+        mcp.registry["functions_raw"](),
+        {"id": "raw-fn", "name": "raw函数", "metadata": None},
+    )
 
 
 def test_function_tool_invokes_auto_pipeline() -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -125,7 +125,7 @@ def write_coverage_file(
     build_dir: Path,
     *,
     filename: str = "coverage.json",
-    content: str | None = None,
+    content: str | Mapping[str, object] | None = None,
 ) -> Path:
     """Write a coverage artifact into the build directory.
 
@@ -136,7 +136,8 @@ def write_coverage_file(
     """
     coverage_path = build_dir / filename
     coverage_path.parent.mkdir(parents=True, exist_ok=True)
-    coverage_path.write_text(content or "{}", encoding="utf-8")
+    payload = json.dumps(content) if isinstance(content, Mapping) else content or "{}"
+    coverage_path.write_text(payload, encoding="utf-8")
     return coverage_path
 
 
@@ -164,7 +165,7 @@ def write_pytest_report(
 
 def write_scip_index(
     build_dir: Path,
-    documents: Sequence[dict[str, object]],
+    documents: Sequence[Mapping[str, object]],
     *,
     filename: str = "index.json",
 ) -> Path:
@@ -188,7 +189,8 @@ def write_scip_index(
     scip_dir = build_dir / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
     index_path = scip_dir / filename
-    index_path.write_text(json.dumps({"documents": list(documents)}), encoding="utf-8")
+    typed_documents = [dict(doc) for doc in documents]
+    index_path.write_text(json.dumps({"documents": typed_documents}), encoding="utf-8")
     return index_path
 
 

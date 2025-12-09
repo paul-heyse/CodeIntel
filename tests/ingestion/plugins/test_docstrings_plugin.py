@@ -16,7 +16,7 @@ from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
 from codeintel.ingestion.ports.storage import IngestStoragePort
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
-from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.contexts import (
@@ -236,13 +236,16 @@ async def test_execute_queries_gateway_when_modules_missing(tmp_path: Path) -> N
 
 
 @pytest.mark.anyio
-async def test_execute_recovers_from_gateway_errors(tmp_path: Path) -> None:
+async def test_execute_recovers_from_gateway_errors(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Database lookup failures should result in an empty module set."""
     repo_root = build_repo_tree(tmp_path / "repo", {})
     # Use a FailingGateway that raises RuntimeError on execute
     gateway = FailingGateway(error_message="db down")
     captured = StepCallCapture()
     plugin = _make_plugin(captured)
+    caplog.set_level("WARNING")
 
     ctx = _build_target_context(
         tmp_path,
@@ -257,3 +260,33 @@ async def test_execute_recovers_from_gateway_errors(tmp_path: Path) -> None:
     expect_equal(captured.modules, [])
     expect_equal(captured.repo, DEFAULT_REPO)
     expect_equal(captured.commit, DEFAULT_COMMIT)
+    assert_logged(caplog.records, level="WARNING", containing="gateway error")
+
+
+@pytest.mark.anyio
+async def test_execute_logs_step_errors(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Step errors should be logged with warnings while still returning counts."""
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/doc.py": '"""docstring"""', "pkg/unicode/δ.py": '"""δoc"""'},
+    )
+    captured = StepCallCapture()
+    error_result = StepResult(
+        table_counts={"core.docstrings": 2},
+        errors=["missing docstring in pkg/doc.py", "parse error in pkg/unicode/δ.py"],
+    )
+    plugin = _make_plugin(captured, result=error_result)
+    caplog.set_level("WARNING")
+
+    ctx = _build_target_context(
+        tmp_path,
+        plugin,
+        repo_root=repo_root,
+        modules=("pkg/doc.py", "pkg/unicode/δ.py"),
+    )
+    result = await plugin.execute(ctx)
+
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {"core.docstrings": 2})
+    assert_logged(caplog.records, level="WARNING", containing="missing docstring in pkg/doc.py")
+    assert_logged(caplog.records, level="WARNING", containing="pkg/unicode/δ.py")

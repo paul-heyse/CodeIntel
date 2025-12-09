@@ -160,12 +160,66 @@ def assert_help(result: CliResult) -> None:
         raise AssertionError(message)
 
 
+def build_dynamic_op_args(
+    op_name: str, ctx: CLIContext, extras: list[str] | None = None
+) -> list[str]:
+    """Construct common argument list for dynamic op invocations.
+
+    Parameters
+    ----------
+    op_name
+        Operation name in CLI form (hyphenated).
+    ctx
+        CLIContext providing repo/build paths and env.
+    extras
+        Additional args to append.
+
+    Returns
+    -------
+    list[str]
+        Argument list suitable for run_cli/app.
+    """
+    base_args = [
+        "op",
+        op_name,
+        "--repo",
+        "example/repo",
+        "--commit",
+        "deadbeef",
+        "--db-path",
+        str(ctx.build_dir / "db" / "codeintel.duckdb"),
+        "--build-dir",
+        str(ctx.build_dir),
+        "--repo-root",
+        str(ctx.repo_root),
+    ]
+    return base_args + (extras or [])
+
+
+def assert_parse_error(result: CliResult, *, match: str) -> None:
+    """Assert a CLI invocation failed with an expected error substring.
+
+    Raises
+    ------
+    AssertionError
+        If the invocation succeeded or did not include the expected text.
+    """
+    if result.exit_code == 0:
+        message = "Expected failure but command succeeded"
+        raise AssertionError(message)
+    if match not in result.stderr and match not in result.stdout:
+        message = f"Expected error containing '{match}', got: {result.stderr or result.stdout}"
+        raise AssertionError(message)
+
+
 __all__ = [
     "CLIContext",
     "CliResult",
     "assert_exit",
     "assert_help",
+    "assert_parse_error",
     "assert_success",
+    "build_dynamic_op_args",
     "run_cli",
     "temp_repo_context",
 ]

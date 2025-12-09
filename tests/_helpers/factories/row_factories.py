@@ -109,13 +109,29 @@ def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfile
                 "repo": repo,
                 "commit": commit,
                 "function_goid_h128": 202,
-                "urn": "urn:fn:β::process",
+                "urn": "urn:fn:beta::process",
                 "rel_path": "pkg/beta.py",
                 "language": "python",
                 "kind": "method",
                 "qualname": "pkg.beta.B.process",
                 "tags": "[]",
                 "owners": None,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "FunctionProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "function_goid_h128": 303,
+                "urn": "urn:fn:unicode::δelta",
+                "rel_path": "pkg/unicode/δ.py",
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.unicode.δ.fn",
+                "tags": '["unicode","core"]',
+                "owners": '["team-δ"]',
                 "created_at": None,
             },
         ),
@@ -155,6 +171,18 @@ def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel
                 "created_at": None,
             },
         ),
+        cast(
+            "FileProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": "pkg/unicode/δ.py",
+                "module": "pkg.unicode.delta",
+                "tags": '["unicode"]',
+                "owners": None,
+                "created_at": None,
+            },
+        ),
     ]
 
 
@@ -188,6 +216,18 @@ def sample_module_profile_rows(repo: str, commit: str) -> list[ModuleProfileRowM
                 "path": "pkg/beta.py",
                 "tags": "[]",
                 "owners": None,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "ModuleProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "module": "pkg.unicode.delta",
+                "path": "pkg/unicode/δ.py",
+                "tags": '["unicode"]',
+                "owners": '["team-unicode"]',
                 "created_at": None,
             },
         ),
@@ -231,6 +271,20 @@ def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
                 "created_at": None,
             },
         ),
+        cast(
+            "ProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "test_id": "tests/unicode/test_delta.py::test_δelta_flow",
+                "rel_path": "tests/unicode/test_delta.py",
+                "markers": ["unicode"],
+                "functions_covered": [303],
+                "primary_function_goids": [303],
+                "subsystems_covered": ["intl"],
+                "created_at": None,
+            },
+        ),
     ]
 
 
@@ -269,4 +323,104 @@ def sample_behavioral_coverage_rows(repo: str, commit: str) -> list[BehavioralCo
                 "created_at": None,
             },
         ),
+        cast(
+            "BehavioralCoverageRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "test_id": "tests/unicode/test_delta.py::test_δelta_flow",
+                "rel_path": "tests/unicode/test_delta.py",
+                "qualname": "test_δelta_flow",
+                "behavior_tags": ["unicode", "edge"],
+                "tag_source": "heuristic",
+                "created_at": None,
+            },
+        ),
+    ]
+
+
+def sample_pytest_tests() -> list[dict[str, object]]:
+    """
+    Return multi-row pytest tests payload with unicode and nullable longrepr.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Test rows containing varied outcomes and longrepr coverage.
+    """
+    return [
+        cast(
+            "dict[str, object]",
+            {"nodeid": "tests/pkg/mod.py::test_ok", "outcome": "passed", "duration": 0.1},
+        ),
+        cast(
+            "dict[str, object]",
+            {
+                "nodeid": "tests/pkg/test_unicode.py::test_fail_umbrella_umbrella",
+                "outcome": "failed",
+                "duration": 0.25,
+                "longrepr": "x" * 1500,
+            },
+        ),
+        cast(
+            "dict[str, object]",
+            {
+                "nodeid": "tests/pkg/test_gamma.py::test_skipped",
+                "outcome": "skipped",
+                "duration": 0.05,
+                "longrepr": None,
+            },
+        ),
+    ]
+
+
+def sample_pytest_summary() -> dict[str, object]:
+    """
+    Return a pytest summary payload with counts and duration.
+
+    Returns
+    -------
+    dict[str, object]
+        Summary including counts and total duration.
+    """
+    return {"passed": 1, "failed": 1, "skipped": 1, "error": 0, "duration": 0.4}
+
+
+def sample_coverage_payload() -> dict[str, object]:
+    """
+    Return coverage-like JSON payload keyed by relative path.
+
+    Returns
+    -------
+    dict[str, object]
+        Mapping of file path to covered/missing line lists.
+    """
+    return {
+        "pkg/mod.py": {"covered_lines": [1, 2], "missing_lines": [3]},
+        "pkg/naive.py": {"covered_lines": [1], "missing_lines": [2, 3]},
+    }
+
+
+def sample_scip_documents() -> list[dict[str, object]]:
+    """
+    Build SCIP documents with symbols and occurrences for multiple files.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        SCIP document payloads with symbols and occurrences.
+    """
+    return [
+        {
+            "relativePath": "pkg/a.py",
+            "symbols": [{"symbol": "pkg/a.py:func", "documentation": ["doc"]}],
+            "occurrences": [{"symbol": "pkg/a.py:func", "range": [1, 0, 1, 4], "symbolRoles": 1}],
+        },
+        {
+            "relativePath": "pkg/naive.py",
+            "symbols": [{"symbol": "pkg/naive.py:helper", "documentation": ["naive helper"]}],
+            "occurrences": [
+                {"symbol": "pkg/naive.py:helper", "range": [2, 0, 2, 6], "symbolRoles": 1}
+            ],
+        },
     ]

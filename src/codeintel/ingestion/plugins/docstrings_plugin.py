@@ -71,7 +71,8 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
             [ctx.repo, ctx.commit],
         ).fetchall()
         return [str(row[0]) for row in rows]
-    except (RuntimeError, OSError):
+    except (RuntimeError, OSError) as exc:
+        log.warning("Docstring module discovery fell back due to gateway error: %s", exc)
         return []
 
 

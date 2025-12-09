@@ -10,7 +10,13 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import ValidationError, run_handler
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import (
+    ExistingDir,
+    OutputPath,
+    RuntimeCLI,
+    RuntimeParam,
+    runtime_cli_to_options,
+)
 from codeintel.cli.history_handlers import HistoryOptions, history_timeseries_handler
 
 history_app = App(
@@ -55,14 +61,14 @@ class HistoryTimeseriesCli:
     ] = None
     runtime: RuntimeParam = field(default_factory=RuntimeCLI)
     db_dir: Annotated[
-        Path,
+        ExistingDir,
         Parameter(
             name="--db-dir",
             help="Directory with per-commit DuckDB snapshots.",
         ),
     ] = Path("build/db")
     output_db: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--output-db",
             help="Destination DuckDB for history_timeseries.",
@@ -92,40 +98,38 @@ class HistoryTimeseriesCli:
 
 
 @history_app.command(name="timeseries")
-def timeseries(
-    cfg: Annotated[HistoryTimeseriesCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Aggregate analytics.history_timeseries across commits.
+@dataclass
+class HistoryTimeseriesCommand:
+    """Aggregate analytics.history_timeseries across commits."""
 
-    Raises
-    ------
-    ValidationError
-        If required arguments are missing.
-    """
-    cfg = cfg or HistoryTimeseriesCli()
-    if not cfg.repo:
-        message = "Repository slug is required."
-        raise ValidationError(message)
-    if cfg.commits is None or not list(cfg.commits):
-        message = "At least one commit is required."
-        raise ValidationError(message)
-    runtime_options = runtime_cli_to_options(cfg.runtime)
-    options = HistoryOptions(
-        repo_root=runtime_options.repo_root or Path(),
-        db_dir=cfg.db_dir,
-        output_db=cfg.output_db,
-        entity_kind=cfg.entity_kind.value,
-        max_entities=cfg.max_entities,
-        selection_strategy=cfg.selection_strategy.value,
+    cfg: Annotated[HistoryTimeseriesCli, Parameter(name="*")] = field(
+        default_factory=HistoryTimeseriesCli
     )
-    commits = list(cfg.commits) if cfg.commits is not None else []
-    run_handler(
-        history_timeseries_handler,
-        repo=cfg.repo,
-        commits=commits,
-        options=options,
-        verbose=cfg.runtime.verbose,
-    )
+
+    def __call__(self) -> None:
+        if not self.cfg.repo:
+            message = "Repository slug is required."
+            raise ValidationError(message)
+        if self.cfg.commits is None or not list(self.cfg.commits):
+            message = "At least one commit is required."
+            raise ValidationError(message)
+        runtime_options = runtime_cli_to_options(self.cfg.runtime)
+        options = HistoryOptions(
+            repo_root=runtime_options.repo_root or Path(),
+            db_dir=self.cfg.db_dir,
+            output_db=self.cfg.output_db,
+            entity_kind=self.cfg.entity_kind.value,
+            max_entities=self.cfg.max_entities,
+            selection_strategy=self.cfg.selection_strategy.value,
+        )
+        commits = list(self.cfg.commits)
+        run_handler(
+            history_timeseries_handler,
+            repo=self.cfg.repo,
+            commits=commits,
+            options=options,
+            verbose=self.cfg.runtime.verbose,
+        )
 
 
 __all__ = ["history_app"]

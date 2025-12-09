@@ -6,17 +6,22 @@ correctly generates typed commands for serving operations.
 
 from __future__ import annotations
 
+import inspect
+from dataclasses import replace
 from pathlib import Path
+from typing import Any, Literal, cast, get_args
 
 import pytest
 
 from codeintel.cli import cyclopts_ops
 from codeintel.cli.op_params import (
+    CliParamSpec,
     OperationCliMetadata,
     ParamRole,
     build_operation_cli_metadata,
     classify_param_role,
     get_backend_signature_for_operation,
+    get_help_panel_for_role,
     get_operations_with_cli_support,
 )
 from codeintel.serving.operations.catalog import get_operation, iter_operations
@@ -24,10 +29,16 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_instance,
+    expect_is_not,
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.cli import run_cli, temp_repo_context
+from tests._helpers.cli import (
+    assert_parse_error,
+    build_dynamic_op_args,
+    run_cli,
+    temp_repo_context,
+)
 
 # -----------------------------------------------------------------------------
 # Parameter Classification Tests
@@ -251,6 +262,29 @@ def test_dynamic_op_parses_and_forwards_params(
     expect_equal(kwargs.get("limit"), 5)
 
 
+def test_dynamic_op_prereq_toggle_default_and_flag(tmp_path: Path) -> None:
+    """Skip-prereqs default is False and flag flips it to True."""
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        base_args = build_dynamic_op_args(
+            "functions-high-risk",
+            ctx,
+            extras=[
+                "--min-risk",
+                "0.9",
+                "--limit",
+                "5",
+            ],
+        )
+        default_ns = cyclopts_ops.app(base_args, result_action="return_value")
+        expect_true(not default_ns.kwargs.get("skip_prereqs"))
+
+        flagged_args = [*base_args, "--skip-prereqs"]
+        flagged_ns = cyclopts_ops.app(flagged_args, result_action="return_value")
+        expect_true(flagged_ns.kwargs.get("skip_prereqs"))
+
+
 def test_dynamic_op_runs_prereqs_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -300,6 +334,179 @@ def test_dynamic_op_runs_prereqs_when_enabled(
     expect_equal(result.exit_code, 0)
     expect_equal(len(prereq_calls), 1)
     expect_equal(invoked, ["function.summary"])
+
+
+def _extract_parameter(metadata: tuple[object, ...]) -> cyclopts_ops.Parameter:
+    """Return the first Cyclopts Parameter from Annotated metadata.
+
+    Returns
+    -------
+    cyclopts_ops.Parameter
+        The embedded Cyclopts parameter metadata.
+
+    Raises
+    ------
+    AssertionError
+        If no parameter metadata is found.
+    """
+    for meta in metadata:
+        if isinstance(meta, cyclopts_ops.Parameter):
+            return meta
+    message = "Parameter metadata not found"
+    raise AssertionError(message)
+
+
+def _register_test_op(cli_name: str, params: tuple[CliParamSpec, ...]) -> None:
+    """Register a synthetic operation for CLI parsing tests."""
+    base_op = expect_is_not_none(get_operation("function.summary"))
+    op = replace(
+        base_op,
+        id=cli_name.replace("-", "."),
+        summary=cli_name,
+        tool_name=base_op.tool_name or cli_name,
+    )
+    metadata = OperationCliMetadata(
+        operation=op,
+        cli_name=cli_name,
+        help_text="test op",
+        params=params,
+    )
+    cyclopts_ops.register_dynamic_operation_for_tests(metadata)
+
+
+def _make_spec(
+    name: str,
+    python_type: type[Any] | None,
+    default: object,
+    role: ParamRole,
+    *,
+    is_optional: bool,
+) -> CliParamSpec:
+    """Build CliParamSpec with derived cli_name and help panel.
+
+    Returns
+    -------
+    CliParamSpec
+        Populated parameter spec.
+    """
+    return CliParamSpec(
+        name=name,
+        cli_name=name.replace("_", "-"),
+        python_type=python_type if python_type is not None else None,
+        default=default,
+        role=role,
+        help_text=name,
+        help_panel=get_help_panel_for_role(role),
+        is_optional=is_optional,
+    )
+
+
+def test_dynamic_param_literal_shows_choices() -> None:
+    """Literal-annotated params should expose choices in generated Parameter."""
+    operation = expect_is_not_none(get_operation("function.summary"))
+    spec = OperationCliMetadata(
+        operation=operation,
+        cli_name="function-summary",
+        help_text="summary",
+        params=(
+            cyclopts_ops.CliParamSpec(
+                name="kind",
+                cli_name="kind",
+                python_type=cast("type[Any]", Literal["a", "b"]),
+                default=None,
+                role="filter",
+                help_text="kind",
+                help_panel="Filtering Options",
+                is_optional=True,
+            ),
+        ),
+    ).params[0]
+
+    field_def = cyclopts_ops.build_param_field_for_spec(spec)
+    annotated = field_def[1]
+    metadata = get_args(annotated)[1:]
+    parameter = _extract_parameter(metadata)
+    expect_true(parameter.show_choices)
+
+
+def test_dynamic_param_env_path_defaults_to_venv(tmp_path: Path) -> None:
+    """Env-like path params should default to .venv and require existing dir."""
+    spec = cyclopts_ops.CliParamSpec(
+        name="venv_path",
+        cli_name="venv-path",
+        python_type=Path,
+        default=inspect.Parameter.empty,
+        role="advanced",
+        help_text="venv path",
+        help_panel="Advanced Options",
+        is_optional=True,
+    )
+
+    default_val, validator = cyclopts_ops.path_defaults_and_validator(spec)
+    expect_equal(default_val, Path(".venv"))
+    expect_is_not(validator, None)
+    if validator is None:
+        pytest.fail("Expected a path validator for env-like paths")
+
+    missing = tmp_path / ".venv"
+    with pytest.raises(ValueError, match="does not exist"):
+        validator(Path, missing)
+    missing.mkdir()
+    validator(Path, missing)  # should not raise
+
+
+def test_dynamic_param_output_path_allows_missing_file(tmp_path: Path) -> None:
+    """Output-like paths should allow non-existent targets when parent exists."""
+    spec = cyclopts_ops.CliParamSpec(
+        name="output_file",
+        cli_name="output-file",
+        python_type=Path,
+        default=None,
+        role="filter",
+        help_text="output file",
+        help_panel="Filtering Options",
+        is_optional=True,
+    )
+    default_val, validator = cyclopts_ops.path_defaults_and_validator(spec)
+    expect_equal(default_val, None)
+    expect_is_not(validator, None)
+    if validator is None:
+        pytest.fail("Expected a path validator for output paths")
+
+    bad_path = tmp_path / "missing_parent" / "out.json"
+    with pytest.raises(ValueError, match="Parent directory"):
+        validator(Path, bad_path)
+
+    parent = tmp_path / "outdir"
+    parent.mkdir()
+    good_path = parent / "out.json"
+    validator(Path, good_path)  # should not raise
+
+
+# -----------------------------------------------------------------------------
+# Grouping / metadata tests
+# -----------------------------------------------------------------------------
+
+
+def test_dynamic_param_groups_match_role_titles() -> None:
+    """Group metadata should align with role-specific titles."""
+    roles: tuple[ParamRole, ...] = ("selector", "filter", "advanced")
+    for role in roles:
+        spec = _make_spec(
+            name=f"{role}_param",
+            python_type=str,
+            default=None,
+            role=role,
+            is_optional=True,
+        )
+        field_def = cyclopts_ops.build_param_field_for_spec(spec)
+        annotated = field_def[1]
+        metadata = get_args(annotated)[1:]
+        group = next((m for m in metadata if isinstance(m, cyclopts_ops.Group)), None)
+        expect_is_not(group, None)
+        if group is None:
+            pytest.fail("Expected Group metadata for dynamic param")
+        expect_equal(group.name, get_help_panel_for_role(role))
 
 
 # -----------------------------------------------------------------------------
@@ -372,3 +579,420 @@ def test_dynamic_cli_respects_operation_defaults() -> None:
                 param.default is not None or param.python_type is not None,
                 message="Optional parameters should have defaults or type hints",
             )
+
+
+def test_dynamic_op_path_and_literal_handling_end_to_end(tmp_path: Path) -> None:
+    """Exercise choice/path heuristics via actual op CLI invocation."""
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        venv_dir = ctx.repo_root / ".venv"
+        venv_dir.mkdir(parents=True, exist_ok=True)
+
+        result = run_cli(
+            [
+                "op",
+                "function-summary",
+                "--kind",
+                "full",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "deadbeef",
+                "--db-path",
+                str(db_path),
+                "--build-dir",
+                str(ctx.build_dir),
+                "--repo-root",
+                str(ctx.repo_root),
+                "--env",
+                str(venv_dir),
+            ],
+            env=ctx.env,
+            cwd=ctx.repo_root,
+        )
+
+    expect_equal(result.exit_code, 0)
+    expect_in("function summary", result.stdout.lower())
+
+
+def test_dynamic_op_env_default_requires_existing_venv(tmp_path: Path) -> None:
+    """Missing default .venv should trigger validation error when env flag omitted."""
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Intentionally do NOT create .venv
+        result = run_cli(
+            [
+                "op",
+                "function-summary",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "deadbeef",
+                "--db-path",
+                str(db_path),
+                "--build-dir",
+                str(ctx.build_dir),
+                "--repo-root",
+                str(ctx.repo_root),
+            ],
+            env=ctx.env,
+            cwd=ctx.repo_root,
+        )
+
+    expect_true(result.exit_code != 0)
+    expect_in("Path does not exist", result.stderr)
+
+
+def test_dynamic_op_env_default_uses_existing_venv(tmp_path: Path) -> None:
+    """Existing .venv should satisfy the env-path validator when flag is omitted."""
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        venv_dir = ctx.repo_root / ".venv"
+        venv_dir.mkdir(parents=True, exist_ok=True)
+
+        result = run_cli(
+            [
+                "op",
+                "function-summary",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "deadbeef",
+                "--db-path",
+                str(db_path),
+                "--build-dir",
+                str(ctx.build_dir),
+                "--repo-root",
+                str(ctx.repo_root),
+            ],
+            env=ctx.env,
+            cwd=ctx.repo_root,
+        )
+
+    expect_equal(result.exit_code, 0)
+    expect_in("function summary", result.stdout.lower())
+
+
+def test_dynamic_op_returns_kwargs_with_converted_types(tmp_path: Path) -> None:
+    """Parsing with result_action should return converted kwargs, not strings.
+
+    Raises
+    ------
+    TypeError
+        If the Cyclopts app does not return a SimpleNamespace payload.
+    """
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        venv_dir = ctx.repo_root / ".venv"
+        venv_dir.mkdir(parents=True, exist_ok=True)
+        args = build_dynamic_op_args(
+            "functions-high-risk",
+            ctx,
+            extras=[
+                "--min-risk",
+                "0.9",
+                "--limit",
+                "5",
+                "--env",
+                str(venv_dir),
+            ],
+        )
+        result = cyclopts_ops.app(args, result_action="return_value")
+
+    if not isinstance(result, cyclopts_ops.SimpleNamespace):
+        message = "Expected SimpleNamespace result from Cyclopts app invocation"
+        raise TypeError(message)
+    expect_equal(result.kwargs.get("min_risk"), 0.9)
+    expect_equal(result.kwargs.get("limit"), 5)
+    expect_is_instance(result.kwargs.get("env"), Path)
+
+
+def test_dynamic_op_literal_choice_parsing(tmp_path: Path) -> None:
+    """Literal choices parse correctly and reject invalid values."""
+    params = (
+        _make_spec(
+            name="kind",
+            python_type=cast("type[Any]", Literal["full", "summary"]),
+            default=None,
+            role="filter",
+            is_optional=True,
+        ),
+    )
+    _register_test_op("test-choice-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        args = build_dynamic_op_args(
+            "test-choice-op",
+            ctx,
+            extras=["--kind", "full"],
+        )
+        result_ns = cyclopts_ops.app(args, result_action="return_value")
+        expect_equal(result_ns.kwargs.get("kind"), "full")
+
+        bad_args = build_dynamic_op_args(
+            "test-choice-op",
+            ctx,
+            extras=["--kind", "invalid"],
+        )
+        bad_result = run_cli(bad_args, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_result, match="invalid")
+
+
+def test_dynamic_op_bool_flag_without_negative(tmp_path: Path) -> None:
+    """Bool params should not accept autogenerated negative flags."""
+    params = (
+        _make_spec(
+            name="flag",
+            python_type=bool,
+            default=False,
+            role="filter",
+            is_optional=True,
+        ),
+    )
+    _register_test_op("test-bool-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        args = build_dynamic_op_args(
+            "test-bool-op",
+            ctx,
+            extras=["--flag"],
+        )
+        ns = cyclopts_ops.app(args, result_action="return_value")
+        expect_true(ns.kwargs.get("flag"))
+
+        bad_args = build_dynamic_op_args(
+            "test-bool-op",
+            ctx,
+            extras=["--no-flag"],
+        )
+        bad_result = run_cli(bad_args, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_result, match="No such option")
+
+
+def test_dynamic_op_numeric_coercion_and_failure(tmp_path: Path) -> None:
+    """Numeric params coerce strings and reject invalid numbers."""
+    params = (
+        _make_spec(
+            name="limit",
+            python_type=int,
+            default=None,
+            role="filter",
+            is_optional=True,
+        ),
+        _make_spec(
+            name="threshold",
+            python_type=float,
+            default=None,
+            role="filter",
+            is_optional=True,
+        ),
+    )
+    _register_test_op("test-numeric-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        good_args = build_dynamic_op_args(
+            "test-numeric-op",
+            ctx,
+            extras=["--limit", "10", "--threshold", "0.75"],
+        )
+        ns = cyclopts_ops.app(good_args, result_action="return_value")
+        expect_equal(ns.kwargs.get("limit"), 10)
+        expect_equal(ns.kwargs.get("threshold"), 0.75)
+
+        bad_args = build_dynamic_op_args(
+            "test-numeric-op",
+            ctx,
+            extras=["--limit", "not-a-number"],
+        )
+        bad_result = run_cli(bad_args, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_result, match="invalid")
+
+
+def test_dynamic_op_required_vs_optional(tmp_path: Path) -> None:
+    """Required params must be provided; optional may be omitted."""
+    params = (
+        _make_spec(
+            name="required_arg",
+            python_type=str,
+            default=inspect.Parameter.empty,
+            role="selector",
+            is_optional=False,
+        ),
+        _make_spec(
+            name="optional_arg",
+            python_type=str,
+            default=None,
+            role="filter",
+            is_optional=True,
+        ),
+    )
+    _register_test_op("test-required-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        missing_required = build_dynamic_op_args("test-required-op", ctx)
+        bad_result = run_cli(missing_required, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_result, match="missing")
+
+        good_args = build_dynamic_op_args(
+            "test-required-op",
+            ctx,
+            extras=["--required-arg", "value"],
+        )
+        ns = cyclopts_ops.app(good_args, result_action="return_value")
+        expect_equal(ns.kwargs.get("required_arg"), "value")
+        expect_equal(ns.kwargs.get("optional_arg"), None)
+
+
+def test_dynamic_op_env_path_heuristics(tmp_path: Path) -> None:
+    """Env default and custom env path validation."""
+    params = (
+        _make_spec(
+            name="env_path",
+            python_type=Path,
+            default=inspect.Parameter.empty,
+            role="advanced",
+            is_optional=True,
+        ),
+        _make_spec(
+            name="input_path",
+            python_type=Path,
+            default=inspect.Parameter.empty,
+            role="selector",
+            is_optional=False,
+        ),
+    )
+    _register_test_op("test-path-env-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        input_path = ctx.repo_root / "input.txt"
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        input_path.write_text("data")
+
+        # Missing .venv triggers error
+        args_missing_env = build_dynamic_op_args(
+            "test-path-env-op",
+            ctx,
+            extras=["--input-path", str(input_path)],
+        )
+        bad_env = run_cli(args_missing_env, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_env, match="Path does not exist")
+
+        # Create .venv and ensure default works
+        venv_dir = ctx.repo_root / ".venv"
+        venv_dir.mkdir(parents=True, exist_ok=True)
+        args_default_env = build_dynamic_op_args(
+            "test-path-op",
+            ctx,
+            extras=["--input-path", str(input_path)],
+        )
+        ns_default = cyclopts_ops.app(args_default_env, result_action="return_value")
+        expect_equal(ns_default.kwargs.get("env_path"), Path(".venv"))
+        expect_is_instance(ns_default.kwargs.get("input_path"), Path)
+
+        # Custom env override must exist
+        custom_env = ctx.repo_root / "custom_env"
+        args_custom_missing = build_dynamic_op_args(
+            "test-path-env-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--env-path", str(custom_env)],
+        )
+        bad_custom = run_cli(args_custom_missing, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_custom, match="does not exist")
+        custom_env.mkdir(parents=True, exist_ok=True)
+        args_custom_ok = build_dynamic_op_args(
+            "test-path-env-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--env-path", str(custom_env)],
+        )
+        ns_custom = cyclopts_ops.app(args_custom_ok, result_action="return_value")
+        expect_equal(ns_custom.kwargs.get("env_path"), custom_env)
+
+
+def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
+    """Output-like paths allow missing file when parent exists; inputs must exist."""
+    params = (
+        _make_spec(
+            name="output_file",
+            python_type=Path,
+            default=None,
+            role="filter",
+            is_optional=True,
+        ),
+        _make_spec(
+            name="input_path",
+            python_type=Path,
+            default=inspect.Parameter.empty,
+            role="selector",
+            is_optional=False,
+        ),
+    )
+    _register_test_op("test-path-output-op", params)
+    with temp_repo_context(tmp_path) as ctx:
+        db_path = ctx.build_dir / "db" / "codeintel.duckdb"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        input_path = ctx.repo_root / "input.txt"
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        input_path.write_text("data")
+
+        # Parent missing -> error
+        bad_output = ctx.repo_root / "missing_parent" / "out.json"
+        args_bad_output = build_dynamic_op_args(
+            "test-path-output-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--output-file", str(bad_output)],
+        )
+        bad_out = run_cli(args_bad_output, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_out, match="Parent directory")
+
+        # Parent exists -> success, Path converter applied
+        output_dir = ctx.repo_root / "outdir"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "out.json"
+        args_good_output = build_dynamic_op_args(
+            "test-path-output-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--output-file", str(output_file)],
+        )
+        ns_output = cyclopts_ops.app(args_good_output, result_action="return_value")
+        expect_equal(ns_output.kwargs.get("output_file"), output_file)
+
+        # Missing input should fail
+        missing_input = ctx.repo_root / "missing.txt"
+        args_missing_input = build_dynamic_op_args(
+            "test-path-output-op",
+            ctx,
+            extras=["--input-path", str(missing_input)],
+        )
+        bad_input = run_cli(args_missing_input, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_input, match="Path does not exist")
+
+        # Output file allowed if parent exists; parent missing fails
+        bad_output = ctx.repo_root / "missing_parent" / "out.json"
+        args_bad_output = build_dynamic_op_args(
+            "test-path-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--output-file", str(bad_output)],
+        )
+        bad_out = run_cli(args_bad_output, env=ctx.env, cwd=ctx.repo_root)
+        assert_parse_error(bad_out, match="Parent directory")
+
+        output_dir = ctx.repo_root / "outdir"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "out.json"
+        args_good_output = build_dynamic_op_args(
+            "test-path-op",
+            ctx,
+            extras=["--input-path", str(input_path), "--output-file", str(output_file)],
+        )
+        ns_output = cyclopts_ops.app(args_good_output, result_action="return_value")
+        expect_equal(ns_output.kwargs.get("output_file"), output_file)

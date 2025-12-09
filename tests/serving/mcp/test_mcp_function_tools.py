@@ -14,8 +14,10 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.function_tools import (
     FUNCTION_TOOL_CATEGORIES,
+    FunctionToolOptions,
     register_function_tools,
 )
+from codeintel.serving.mcp.models import FunctionSummaryResponse, FunctionSummaryRow
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
@@ -25,7 +27,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_registrar import wrap_fastmcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -488,6 +490,48 @@ def test_local_query_service_as_backend(
     register_function_tools(mcp, service)
 
     expect_equal(mcp.name, "Test Local Service")
+
+
+def test_function_tools_serialize_unicode_summary() -> None:
+    """Function tools serialize typed summaries with unicode fields."""
+
+    class _FakeFunctionBackend:
+        def __init__(self) -> None:
+            self._summary = FunctionSummaryResponse(
+                found=True,
+                summary=FunctionSummaryRow(
+                    repo="demo",
+                    commit="δ123",
+                    rel_path="pkg/unicode/δ.py",
+                    function_goid_h128=303,
+                    urn="urn:fn:unicode::δelta",
+                    language="python",
+                    kind="function",
+                    qualname="pkg.unicode.δ.fn",
+                    cyclomatic_complexity=3,
+                    risk_level="medium",
+                    tested=True,
+                    test_count=2,
+                    failing_test_count=1,
+                ),
+            )
+
+        def get_function_summary(self, **_: object) -> FunctionSummaryResponse:
+            return self._summary
+
+    registrar = RecordingMcpRegistrar("function-recorder")
+    ops = [spec for spec in iter_operations() if spec.id == "function.summary"]
+    register_function_tools(
+        registrar,
+        _FakeFunctionBackend(),
+        options=FunctionToolOptions(operations=ops),
+    )
+
+    tool = registrar.registry["get_function_summary"]
+    result = tool(function_goid=303)
+    expect_true(result["found"])
+    expect_in("δ.py", result["summary"]["rel_path"])
+    expect_equal(result["summary"]["failing_test_count"], 1)
 
 
 # =============================================================================

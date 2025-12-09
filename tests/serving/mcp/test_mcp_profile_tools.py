@@ -17,12 +17,13 @@ from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_is_not_none,
     expect_true,
 )
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_registrar import wrap_fastmcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -97,6 +98,21 @@ def test_register_profile_tools_success(
 
     # Server should be configured
     expect_equal(mcp.name, "Test Profile Tools")
+
+
+def test_profile_tools_return_problem_detail_on_missing_function(
+    provisioned_repo: ProvisionedGateway, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Profile tool should emit ProblemDetail payload for unknown goid."""
+    backend = _build_backend(provisioned_repo)
+    registrar = RecordingMcpRegistrar("ProfileTools")
+    register_profile_tools(registrar, backend)
+
+    with caplog.at_level("WARNING"):
+        result = registrar.registry["get_function_profile"](goid_h128=999_999_999_999)
+    expect_true(isinstance(result, dict))
+    expect_true("error" in result)
+    assert_logged(caplog.records, level="WARNING", containing="MCP tool error")
 
 
 def test_register_profile_tools_with_service(

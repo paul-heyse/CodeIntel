@@ -29,6 +29,7 @@ from codeintel.export.validate_exports import (
     validate_files,
 )
 from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.storage import gateway as storage_gateway
 from codeintel.storage.datasets import DatasetRegistry, list_dataset_specs, load_dataset_registry
 from codeintel.storage.datasets.catalog import (
     SamplingConfig,
@@ -37,7 +38,7 @@ from codeintel.storage.datasets.catalog import (
     write_markdown_catalog,
 )
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
-from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway
 from codeintel.storage.schema.json_schema import generate_export_schemas
 from codeintel.storage.validation import collect_contract_issues
 from codeintel.storage.validation.conformance import run_conformance
@@ -413,7 +414,7 @@ def open_gateway_from_config(cfg: CodeIntelConfig, *, read_only: bool) -> Storag
         repo=cfg.repo.repo,
         commit=cfg.repo.commit,
     )
-    return open_gateway(gateway_cfg)
+    return storage_gateway.open_gateway(gateway_cfg)
 
 
 # -----------------------------------------------------------------------------

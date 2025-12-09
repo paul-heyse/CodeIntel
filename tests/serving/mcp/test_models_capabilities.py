@@ -21,7 +21,7 @@ def _make_schema(
         duckdb_schema=[],
         json_schema=None,
         sample_rows=[],
-        capabilities=capabilities,
+        capabilities=cast("dict[str, bool]", capabilities),
         owner=None,
         freshness_sla=None,
         retention_policy=None,
@@ -34,13 +34,10 @@ def _make_schema(
 
 def test_from_domain_decodes_bytes_keys_and_values() -> None:
     """Bytes keys/values are decoded and normalized through from_domain/to_domain."""
-    schema = cast(
-        "models.dm.DatasetSchema",
-        _make_schema(
-            dataset_name="ds",
-            table_key="tbl",
-            capabilities={b"export": b"1", "docs_view": True},
-        ),
+    schema = _make_schema(
+        dataset_name="ds",
+        table_key="tbl",
+        capabilities={b"export": b"1", "docs_view": True},
     )
 
     response = models.DatasetSchemaResponse.from_domain(schema)
@@ -52,13 +49,10 @@ def test_from_domain_decodes_bytes_keys_and_values() -> None:
 
 def test_from_domain_rejects_unsupported_value_types() -> None:
     """Unsupported capability value types raise a clear error."""
-    schema = cast(
-        "models.dm.DatasetSchema",
-        _make_schema(
-            dataset_name="ds",
-            table_key="tbl",
-            capabilities={"export": object()},
-        ),
+    schema = _make_schema(
+        dataset_name="ds",
+        table_key="tbl",
+        capabilities={"export": object()},
     )
 
     with pytest.raises(TypeError):

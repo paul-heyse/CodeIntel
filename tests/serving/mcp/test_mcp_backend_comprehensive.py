@@ -5,9 +5,7 @@ This module tests the DuckDBBackend using real gateways.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 import pytest
@@ -18,11 +16,15 @@ from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.bootstrap import build_backend_resource
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
+from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
-from codeintel.serving.mcp.models import FunctionSummaryResponse, ResponseMeta
+from codeintel.serving.mcp.models import (
+    DatasetSpecDescriptor,
+    FunctionSummaryResponse,
+    ResponseMeta,
+)
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail, ProblemError
-from codeintel.serving.services.query_service import LocalQueryService
+from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
@@ -30,12 +32,12 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.dataset_factories import SpecOptions, make_descriptor, make_spec
 from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
-from tests._helpers.http_backend import make_http_backend_with_responses
-from tests._helpers.http_backend import make_http_backend_with_responses
-from tests._helpers.http_backend import make_http_backend_with_responses
-from tests._helpers.serving_stubs import HookedQueryService
+from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
+from tests._helpers.http_payloads import make_problem_detail_payload, make_retry_sequence
+from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -1375,71 +1377,52 @@ def test_serving_config_remote_api_missing_url_raises(
 # =============================================================================
 
 
-@dataclass
-class _DataclassDescriptor:
-    name: str
-    table: str
-    description: str
-    owner: str | None = None
+class _DatasetService(LocalQueryService):
+    """LocalQueryService wrapper providing dataset-only hooks."""
 
-
-class _ModelDumpDescriptor:
-    def __init__(self, name: str, table: str, description: str) -> None:
-        self._payload = {"name": name, "table": table, "description": description}
-
-    def model_dump(self) -> dict[str, object]:
-        return dict(self._payload)
-
-
-class _DictDescriptor:
-    def __init__(self, name: str, table: str, description: str) -> None:
-        self.name = name
-        self.table = table
-        self.description = description
-
-
-class _DatasetService(HookedQueryService):
     def __init__(self) -> None:
-        super().__init__(hooks={})
         self._rows_fail = False
-        self.hooks = {
-            "list_datasets": self._list_datasets,
-            "dataset_specs": self._dataset_specs,
-            "dataset_schema": self._dataset_schema,
-            "read_dataset_rows": self._read_dataset_rows,
-        }
-
-    def _list_datasets(self) -> list[object]:
-        return [
-            _DictDescriptor(
-                name="docs.functions",
-                table="docs.v_functions",
-                description="fn docs",
-            ),
-            _DataclassDescriptor(
-                name="docs.modules",
-                table="docs.v_modules",
-                description="module docs",
-            ),
-            _ModelDumpDescriptor(
-                name="docs.subsystems",
-                table="docs.v_subsystems",
-                description="subsystem docs",
-            ),
-        ]
-
-    def _dataset_specs(self) -> list[object]:
-        return [
-            {
-                "name": "docs.functions",
-                "table_key": "docs.v_functions",
-                "family": "docs",
-                "is_view": True,
-                "schema_columns": ["goid", "name"],
+        query = HookedDuckDBQueryApi(
+            hooks={
+                "dataset_hooks": {
+                    "list_datasets": self._list_datasets,
+                    "dataset_specs": self._dataset_specs,
+                    "dataset_schema": self._dataset_schema,
+                    "read_dataset_rows": self._read_dataset_rows,
+                },
+                "profile_hooks": {"get_file_hints": self._file_hints},
             }
-        ]
+        )
+        super().__init__(
+            query=query,
+            dataset_tables={
+                "docs.functions": "docs.v_functions",
+                "docs.functions_model": "docs.v_functions_model",
+                "docs.functions_payload": "docs.v_functions_payload",
+            },
+            observability=None,
+        )
 
-    def _dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+    @staticmethod
+    def _list_datasets() -> list[object]:
+        domain, model, payload, _meta = make_descriptor(
+            name="docs.functions",
+            table="docs.v_functions",
+            description="fn docs",
+        )
+        return [domain, model, payload]
+
+    @staticmethod
+    def _dataset_specs() -> list[object]:
+        model, payload, _meta = make_spec(
+            name="docs.functions",
+            table_key="docs.v_functions",
+            options=SpecOptions(family="docs", schema_columns=["goid", "name"]),
+        )
+        return [model, payload]
+
+    @staticmethod
+    def _dataset_schema(*, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         meta = dm.ResponseMeta(
             requested_limit=sample_limit,
             applied_limit=sample_limit,
@@ -1498,6 +1481,41 @@ class _DatasetService(HookedQueryService):
     def enable_rows_failure(self) -> None:
         self._rows_fail = True
 
+    @staticmethod
+    def _file_hints(*, rel_path: str) -> dm.FileHintsResult:
+        _ = rel_path
+        return dm.FileHintsResult(found=False, hints=[], meta=dm.ResponseMeta())
+
+    @staticmethod
+    def list_datasets() -> list[dm.DatasetDescriptorDomain]:
+        domain, model, payload, _meta = make_descriptor(
+            name="docs.functions",
+            table="docs.v_functions",
+            description="fn docs",
+        )
+        return cast("list[dm.DatasetDescriptorDomain]", [domain, model, payload])
+
+    @staticmethod
+    def dataset_specs() -> list[DatasetSpecDescriptor]:
+        model, payload, _meta = make_spec(
+            name="docs.functions",
+            table_key="docs.v_functions",
+            options=SpecOptions(family="docs", schema_columns=["goid", "name"]),
+        )
+        return cast("list[DatasetSpecDescriptor]", [model, payload])
+
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+        return self._dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
+
+    def read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dm.DatasetRows:
+        return self._read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
+
 
 def test_dataset_backend_normalization_variants() -> None:
     """Cover DatasetBackendMixin normalization for dict, dataclass, and model_dump."""
@@ -1518,10 +1536,22 @@ def test_dataset_backend_normalization_variants() -> None:
     expect_is_instance(specs, list)
 
     schema = backend.dataset_schema(dataset_name="docs.functions")
-    expect_is_instance(schema.meta.applied_limit, int)
+    schema_meta = schema.meta
+    expect_true(schema_meta is not None)
+    if schema_meta is not None:
+        schema_limit = schema_meta.applied_limit
+        expect_true(schema_limit is not None)
+        if schema_limit is not None:
+            expect_is_instance(schema_limit, int)
 
     rows = backend.read_dataset_rows(dataset_name="docs.functions", limit=1, offset=0)
-    expect_equal(rows.meta.applied_limit, 1)
+    rows_meta = rows.meta
+    expect_true(rows_meta is not None)
+    if rows_meta is not None:
+        rows_limit = rows_meta.applied_limit
+        expect_true(rows_limit is not None)
+        if rows_limit is not None:
+            expect_equal(rows_limit, 1)
 
     backend_handle.close()
 
@@ -1547,24 +1577,33 @@ def test_dataset_backend_rows_error_translated_to_mcp() -> None:
 def test_dataset_backend_problem_error_translated() -> None:
     """Ensure ProblemError is translated to McpError for dataset_schema."""
 
-    class _ProblemService(HookedQueryService):
+    class _ProblemService(LocalQueryService):
         def __init__(self) -> None:
-            super().__init__(
+            query = HookedDuckDBQueryApi(
                 hooks={
-                    "dataset_schema": self._dataset_schema,
-                    "list_datasets": list,
-                    "dataset_specs": list,
-                    "read_dataset_rows": lambda **_: dm.DatasetRows(
-                        dataset_name="docs.functions",
-                        limit=1,
-                        offset=0,
-                        rows=[],
-                        meta=dm.ResponseMeta(),
-                    ),
+                    "dataset_hooks": {
+                        "dataset_schema": self._dataset_schema,
+                        "list_datasets": lambda **_: [],
+                        "dataset_specs": lambda **_: [],
+                        "read_dataset_rows": lambda **_: dm.DatasetRows(
+                            dataset_name="docs.functions",
+                            limit=1,
+                            offset=0,
+                            rows=[],
+                            meta=dm.ResponseMeta(),
+                        ),
+                    }
                 }
             )
+            super().__init__(
+                query=query,
+                dataset_tables={"docs.functions": "docs.v_functions"},
+                observability=None,
+            )
 
-        def _dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+        @staticmethod
+        def _dataset_schema(*, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+            _ = (dataset_name, sample_limit)
             detail = ProblemDetail(
                 type="about:blank",
                 title="oops",
@@ -1573,6 +1612,9 @@ def test_dataset_backend_problem_error_translated() -> None:
                 code="bad",
             )
             raise ProblemError(detail)
+
+        def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
+            return self._dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
 
     service = _ProblemService()
     backend_handle = build_serving_backend(service=service)
@@ -1712,11 +1754,11 @@ def test_duckdb_backend_domain_conversions(provisioned_repo: ProvisionedGateway)
         dm.FileHintsResult,
     )
     expect_is_instance(
-        backend.list_subsystem_profiles(),
+        backend.service.list_subsystem_profiles(),
         dm.SubsystemProfileResult,
     )
     expect_is_instance(
-        backend.list_subsystem_coverage(),
+        backend.service.list_subsystem_coverage(),
         dm.SubsystemCoverageResult,
     )
 
@@ -1741,111 +1783,56 @@ def test_http_backend_health_and_request_success() -> None:
 
 def test_http_backend_retry_and_circuit_breaker() -> None:
     """Cover retry path and circuit-open guard."""
-    backend = make_http_backend_with_responses(
-        [
-            (200, {"ok": True}),  # health
-            (
-                500,
-                {
-                    "type": "about:blank",
-                    "title": "retry",
-                    "detail": "server error",
-                    "status": 500,
-                },
-            ),
-            (200, {"ok": True}),
-        ],
+    cfg = HttpBackendTestConfig(
         retry_attempts=2,
         backoff=0.0,
         circuit_threshold=1,
         circuit_cooldown_s=100.0,
     )
+    backend = make_http_backend_with_responses(make_retry_sequence(), config=cfg)
 
     payload = backend.request_json("/functions/high-risk", {})
     expect_true(payload["ok"])
     expect_equal(backend.last_retry_attempts, 2)
 
-    failing_client = _make_client_with_responses(
-        [
-            (200, {"ok": True}),  # health
-            (
-                500,
-                {
-                    "type": "about:blank",
-                    "title": "retry",
-                    "detail": "server error",
-                    "status": 500,
-                },
-            ),
-        ]
-    )
-    circuit_backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(),
-        client=failing_client,
-        retry_attempts=1,
-        retry_backoff=0.0,
-        circuit_threshold=1,
-        circuit_cooldown_s=100.0,
+    circuit_backend = make_http_backend_with_responses(
+        make_retry_sequence()[0:2],
+        config=HttpBackendTestConfig(
+            retry_attempts=1,
+            backoff=0.0,
+            circuit_threshold=1,
+            circuit_cooldown_s=100.0,
+        ),
     )
 
     with pytest.raises(McpError):
-        _ = circuit_backend._request_json("/functions/high-risk", {})
+        _ = circuit_backend.request_json("/functions/high-risk", {})
 
     with pytest.raises(McpError):
-        _ = circuit_backend._request_json("/functions/high-risk", {})
+        _ = circuit_backend.request_json("/functions/high-risk", {})
 
 
 def test_http_backend_problem_detail_response() -> None:
     """Ensure 4xx responses raise McpError with ProblemDetail payload."""
-    client = _make_client_with_responses(
+    backend = make_http_backend_with_responses(
         [
             (200, {"ok": True}),  # health
-            (
-                404,
-                {
-                    "type": "about:blank",
-                    "title": "missing",
-                    "detail": "not found",
-                    "status": 404,
-                },
-            ),
+            (404, make_problem_detail_payload()),
         ]
-    )
-    backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(),
-        client=client,
     )
 
     with pytest.raises(McpError):
-        _ = backend._request_json("/missing", {})
+        _ = backend.request_json("/missing", {})
 
 
 def test_http_backend_async_close_when_owned() -> None:
     """Ensure close handles async clients when owned."""
-    client = _make_client_with_responses([(200, {"ok": True})])
-    backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(),
-        client=client,
-    )
+    backend = make_http_backend_with_responses([(200, {"ok": True})])
     async_client = httpx.AsyncClient(
         base_url="http://test",
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"ok": True})),
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True})),
     )
-    backend.client = async_client
-    backend._owns_client = True
-    backend._async_client = True
+    backend.set_async_client(async_client)
 
     backend.close()
     expect_true(async_client.is_closed)
@@ -1853,29 +1840,14 @@ def test_http_backend_async_close_when_owned() -> None:
 
 def test_http_backend_service_override_normalization() -> None:
     """Validate service_override is honored and normalization accepts response models."""
-
-    class _OverrideService:
-        def get_function_summary(
-            self,
-            *,
-            urn: str | None = None,
-            goid_h128: int | None = None,
-            rel_path: str | None = None,
-            qualname: str | None = None,
-            scope: object | None = None,
-        ) -> FunctionSummaryResponse:
-            _ = (urn, goid_h128, rel_path, qualname, scope)
-            return FunctionSummaryResponse(found=True, summary=None, meta=ResponseMeta())
-
-    client = _make_client_with_responses([(200, {"ok": True})])
-    service = _OverrideService()
-    backend = HttpBackend(
-        base_url="http://test",
-        repo="demo/repo",
-        commit="deadbeef",
-        timeout=1.0,
-        limits=BackendLimits(),
-        client=client,
+    service = HttpQueryService(
+        request_json=lambda _path, _params: FunctionSummaryResponse(
+            found=True, summary=None, meta=ResponseMeta()
+        ).model_dump(),
+        limits=BackendLimits(default_limit=5, max_rows_per_call=10),
+    )
+    backend = make_http_backend_with_responses(
+        [(200, {"ok": True})],
         service_override=service,
     )
 

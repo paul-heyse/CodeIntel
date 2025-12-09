@@ -7,13 +7,15 @@ coverage data into function-level coverage statistics.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
+import codeintel.analytics.testing.coverage.edges as coverage_edges
 from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
+from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
@@ -21,6 +23,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.config_factory import coverage_analytics_cfg
 from tests._helpers.coverage import (
     CoverageLineSeedData,
@@ -154,6 +157,26 @@ def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
 # ---------------------------------------------------------------------------
 # Test Cases
 # ---------------------------------------------------------------------------
+
+
+def test_load_coverage_data_missing_file_logs_warning(
+    tmp_path: Path, snapshot: SnapshotRef, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Missing coverage files should emit a warning and return None."""
+    cfg = TestCoverageStepConfig(
+        snapshot=snapshot,
+        coverage_file=tmp_path / "nonexistent.coverage",
+    )
+    caplog.set_level("WARNING")
+
+    result = coverage_edges.load_coverage_data(cfg)
+
+    expect_true(result is None)
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="Coverage file",
+    )
 
 
 def test_empty_goids_produces_no_rows(

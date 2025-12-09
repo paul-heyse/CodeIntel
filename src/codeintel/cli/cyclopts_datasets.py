@@ -9,7 +9,14 @@ from typing import Annotated, Literal
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
-from codeintel.cli.cyclopts_common import RuntimeCLI, RuntimeParam, runtime_cli_to_options
+from codeintel.cli.cyclopts_common import (
+    ExistingDir,
+    ExistingPath,
+    OutputPath,
+    RuntimeCLI,
+    RuntimeParam,
+    runtime_cli_to_options,
+)
 from codeintel.cli.datasets_handlers import (
     BootstrapSnippet,
     BuildSelection,
@@ -82,7 +89,7 @@ class LintCliOptions:
     """Options for ``codeintel datasets lint``."""
 
     schema_dir: Annotated[
-        Path,
+        ExistingDir,
         Parameter(
             name="--schema-dir",
             help="Directory containing export JSON Schemas.",
@@ -99,19 +106,22 @@ class LintCliOptions:
 
 
 @datasets_ext_app.command(name="lint")
-def lint(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[LintCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class LintCommand:
     """Validate dataset contract health."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_options = options or LintCliOptions()
-    lint_opts = LintOptions(
-        schema_dir=selected_options.schema_dir,
-        sampling=(SamplingMode.ENABLED if selected_options.sample_rows else SamplingMode.DISABLED),
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
-    run_handler(datasets_lint_handler, runtime_opts, lint_opts, runtime_cfg.runtime.verbose)
+    options: Annotated[LintCliOptions, Parameter(name="*")] = field(default_factory=LintCliOptions)
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        lint_opts = LintOptions(
+            schema_dir=self.options.schema_dir,
+            sampling=(SamplingMode.ENABLED if self.options.sample_rows else SamplingMode.DISABLED),
+        )
+        run_handler(datasets_lint_handler, runtime_opts, lint_opts, self.runtime.runtime.verbose)
 
 
 DocsFilterMode = Literal["include", "only", "exclude"]
@@ -146,20 +156,23 @@ class ListCliFilters:
 
 
 @datasets_ext_app.command(name="list")
-def list_datasets(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    filters: Annotated[ListCliFilters, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class ListDatasetsCommand:
     """List datasets with capabilities and optional filters."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_filters = filters or ListCliFilters()
-    filter_opts = ListFilters(
-        docs_view=selected_filters.docs_view,
-        read_only=selected_filters.read_only,
-        max_description=selected_filters.max_description,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
-    run_handler(datasets_list_handler, runtime_opts, filter_opts, runtime_cfg.runtime.verbose)
+    filters: Annotated[ListCliFilters, Parameter(name="*")] = field(default_factory=ListCliFilters)
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        filter_opts = ListFilters(
+            docs_view=self.filters.docs_view,
+            read_only=self.filters.read_only,
+            max_description=self.filters.max_description,
+        )
+        run_handler(datasets_list_handler, runtime_opts, filter_opts, self.runtime.runtime.verbose)
 
 
 @dataclass
@@ -167,7 +180,7 @@ class SnapshotCliOptions:
     """Options for ``codeintel datasets snapshot``."""
 
     output: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--output",
             help="Output file path for JSON dataset specs.",
@@ -176,20 +189,25 @@ class SnapshotCliOptions:
 
 
 @datasets_ext_app.command(name="snapshot")
-def snapshot(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[SnapshotCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class SnapshotCommand:
     """Write current dataset specs to a JSON snapshot file."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_options = options or SnapshotCliOptions()
-    run_handler(
-        datasets_snapshot_handler,
-        runtime_opts,
-        selected_options.output,
-        runtime_cfg.runtime.verbose,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
+    options: Annotated[SnapshotCliOptions, Parameter(name="*")] = field(
+        default_factory=SnapshotCliOptions
+    )
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        run_handler(
+            datasets_snapshot_handler,
+            runtime_opts,
+            self.options.output,
+            self.runtime.runtime.verbose,
+        )
 
 
 @dataclass
@@ -197,14 +215,14 @@ class DiffCliOptions:
     """Options for ``codeintel datasets diff``."""
 
     baseline: Annotated[
-        Path | None,
+        ExistingPath | None,
         Parameter(
             name="--baseline",
             help="Path to JSON baseline from `codeintel datasets snapshot`.",
         ),
     ] = None
     output: Annotated[
-        Path | None,
+        OutputPath | None,
         Parameter(
             name="--output",
             help="Optional output file path for writing current specs.",
@@ -218,7 +236,7 @@ class DiffCliOptions:
         ),
     ] = None
     baseline_path: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--baseline-path",
             help="Path of the snapshot file inside the git ref.",
@@ -227,21 +245,24 @@ class DiffCliOptions:
 
 
 @datasets_ext_app.command(name="diff")
-def diff(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[DiffCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class DiffCommand:
     """Diff current dataset specs against a baseline."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_options = options or DiffCliOptions()
-    diff_opts = DiffOptions(
-        baseline=selected_options.baseline,
-        output=selected_options.output,
-        against_ref=selected_options.against_ref,
-        baseline_path=selected_options.baseline_path,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
-    run_handler(datasets_diff_handler, runtime_opts, diff_opts, runtime_cfg.runtime.verbose)
+    options: Annotated[DiffCliOptions, Parameter(name="*")] = field(default_factory=DiffCliOptions)
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        diff_opts = DiffOptions(
+            baseline=self.options.baseline,
+            output=self.options.output,
+            against_ref=self.options.against_ref,
+            baseline_path=self.options.baseline_path,
+        )
+        run_handler(datasets_diff_handler, runtime_opts, diff_opts, self.runtime.runtime.verbose)
 
 
 @dataclass
@@ -249,7 +270,7 @@ class ConformanceCliOptions:
     """Options for ``codeintel datasets conformance``."""
 
     schema_dir: Annotated[
-        Path,
+        ExistingDir,
         Parameter(
             name="--schema-dir",
             help="Directory containing export JSON Schemas.",
@@ -273,20 +294,27 @@ class ConformanceCliOptions:
 
 
 @datasets_ext_app.command(name="conformance")
-def conformance(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[ConformanceCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class ConformanceCommand:
     """Run full dataset conformance checks."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_options = options or ConformanceCliOptions()
-    conf_opts = ConformanceOptions(
-        schema_dir=selected_options.schema_dir,
-        sampling=(SamplingMode.ENABLED if selected_options.sample_rows else SamplingMode.DISABLED),
-        sample_size=selected_options.sample_size,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
-    run_handler(datasets_conformance_handler, runtime_opts, conf_opts, runtime_cfg.runtime.verbose)
+    options: Annotated[ConformanceCliOptions, Parameter(name="*")] = field(
+        default_factory=ConformanceCliOptions
+    )
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        conf_opts = ConformanceOptions(
+            schema_dir=self.options.schema_dir,
+            sampling=(SamplingMode.ENABLED if self.options.sample_rows else SamplingMode.DISABLED),
+            sample_size=self.options.sample_size,
+        )
+        run_handler(
+            datasets_conformance_handler, runtime_opts, conf_opts, self.runtime.runtime.verbose
+        )
 
 
 @dataclass
@@ -343,7 +371,7 @@ class GenerateSchemasCliOptions:
     """Options for ``codeintel datasets generate-schemas``."""
 
     output_dir: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--output-dir",
             help="Directory to write generated JSON Schemas.",
@@ -363,24 +391,31 @@ def _export_from_cli(cfg: ExportCliOptions) -> DatasetExportOptions:
 
 
 @datasets_ext_app.command(name="generate-schemas")
-def generate_schemas(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    export: Annotated[ExportCliOptions, Parameter(name="*")] | None = None,
-    schema: Annotated[GenerateSchemasCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class GenerateSchemasCommand:
     """Generate export JSON Schemas from TypedDict row models."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    export_opts = _export_from_cli(export or ExportCliOptions())
-    schema_cfg = schema or GenerateSchemasCliOptions()
-    schema_opts = GenerateSchemasOptions(output_dir=schema_cfg.output_dir)
-    run_handler(
-        datasets_generate_schemas_handler,
-        runtime_opts,
-        export_opts,
-        schema_opts,
-        runtime_cfg.runtime.verbose,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
+    export: Annotated[ExportCliOptions, Parameter(name="*")] = field(
+        default_factory=ExportCliOptions
+    )
+    schema: Annotated[GenerateSchemasCliOptions, Parameter(name="*")] = field(
+        default_factory=GenerateSchemasCliOptions
+    )
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        export_opts = _export_from_cli(self.export)
+        schema_opts = GenerateSchemasOptions(output_dir=self.schema.output_dir)
+        run_handler(
+            datasets_generate_schemas_handler,
+            runtime_opts,
+            export_opts,
+            schema_opts,
+            self.runtime.runtime.verbose,
+        )
 
 
 @dataclass
@@ -388,7 +423,7 @@ class CatalogCliOptions:
     """Options for ``codeintel datasets catalog``."""
 
     output_dir: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--output-dir",
             help="Directory to write catalog artifacts (Markdown/HTML).",
@@ -411,20 +446,27 @@ class CatalogCliOptions:
 
 
 @datasets_ext_app.command(name="catalog")
-def catalog(
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[CatalogCliOptions, Parameter(name="*")] | None = None,
-) -> None:
+@dataclass
+class CatalogCommand:
     """Generate Markdown/HTML dataset catalog."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    selected_options = options or CatalogCliOptions()
-    catalog_opts = CatalogOptions(
-        output_dir=selected_options.output_dir,
-        sample_rows_count=selected_options.sample_rows_count,
-        sample_rows_strict=selected_options.sample_rows_strict,
+
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
-    run_handler(datasets_catalog_handler, runtime_opts, catalog_opts, runtime_cfg.runtime.verbose)
+    options: Annotated[CatalogCliOptions, Parameter(name="*")] = field(
+        default_factory=CatalogCliOptions
+    )
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        catalog_opts = CatalogOptions(
+            output_dir=self.options.output_dir,
+            sample_rows_count=self.options.sample_rows_count,
+            sample_rows_strict=self.options.sample_rows_strict,
+        )
+        run_handler(
+            datasets_catalog_handler, runtime_opts, catalog_opts, self.runtime.runtime.verbose
+        )
 
 
 @dataclass
@@ -509,7 +551,7 @@ class ScaffoldCliOptions:
         ),
     ] = None
     output_dir: Annotated[
-        Path,
+        OutputPath,
         Parameter(
             name="--output-dir",
             help="Directory to write scaffold files.",
@@ -523,7 +565,7 @@ class ScaffoldCliOptions:
         ),
     ] = OverwritePolicy.ERROR
     specs_snapshot: Annotated[
-        Path,
+        ExistingPath,
         Parameter(
             name="--specs-snapshot",
             help="Path to dataset specs snapshot used for bootstrap hints.",
@@ -595,27 +637,33 @@ def _scaffold_options_from_cli(cfg: ScaffoldCliOptions) -> ScaffoldCliOptionsHan
 
 
 @datasets_ext_app.command(name="scaffold")
-def scaffold(
+@dataclass
+class ScaffoldCommand:
+    """Create a new dataset scaffold."""
+
     name: Annotated[
         str,
         Parameter(
             help="Name of the dataset to scaffold (TypedDict / logical dataset name).",
         ),
-    ],
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] | None = None,
-    options: Annotated[ScaffoldCliOptions, Parameter(name="*")] | None = None,
-) -> None:
-    """Create a new dataset scaffold."""
-    runtime_cfg = runtime or DatasetRuntimeCli()
-    runtime_opts = _runtime_from_cli(runtime_cfg)
-    scaffold_opts = _scaffold_options_from_cli(options or ScaffoldCliOptions())
-    run_handler(
-        datasets_scaffold_handler,
-        name,
-        runtime_opts,
-        scaffold_opts,
-        runtime_cfg.runtime.verbose,
+    ] = ""
+    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
+        default_factory=DatasetRuntimeCli
     )
+    options: Annotated[ScaffoldCliOptions, Parameter(name="*")] = field(
+        default_factory=ScaffoldCliOptions
+    )
+
+    def __call__(self) -> None:
+        runtime_opts = _runtime_from_cli(self.runtime)
+        scaffold_opts = _scaffold_options_from_cli(self.options)
+        run_handler(
+            datasets_scaffold_handler,
+            self.name,
+            runtime_opts,
+            scaffold_opts,
+            self.runtime.runtime.verbose,
+        )
 
 
 __all__ = ["datasets_ext_app"]

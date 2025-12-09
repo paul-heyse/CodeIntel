@@ -7,25 +7,31 @@ through HTTP routes and direct LocalQueryService invocation, using real gateways
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.context import RequestContext
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import GraphScopePayload
 from codeintel.serving.services.base import BaseFunctionQueries, BaseSubsystemQueries
 from codeintel.serving.services.errors import ProblemDetail, ProblemError
-from codeintel.serving.services.observability import ServiceCallMetrics, ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.serving.services.transport import HttpTransport, LocalTransport
-from tests._helpers.assertions import expect_equal, expect_in, expect_is_not_none, expect_true
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.serving_harnesses import RecordingObservability
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
@@ -37,6 +43,8 @@ if TYPE_CHECKING:
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
+
+T = TypeVar("T")
 MIN_RISK_THRESHOLD = 0.7
 LOW_RISK_THRESHOLD = 0.3
 HIGH_RISK_THRESHOLD = 0.9
@@ -980,10 +988,10 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
     def _execute(
         self,
         operation: str,
-        executor: Callable[[], object],
+        executor: Callable[[], T],
         *,
         dataset: str | None = None,
-    ) -> object:
+    ) -> T:
         self.calls.append((operation, dataset))
         return executor()
 
@@ -995,9 +1003,13 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         rel_path: str | None = None,
         qualname: str | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> str:
+    ) -> dm.FunctionSummaryResult:
         _ = (urn, goid_h128, rel_path, qualname, scope)
-        return self._execute("get_function_summary", lambda: "summary", dataset="functions")
+        return self._execute(
+            "get_function_summary",
+            lambda: dm.FunctionSummaryResult(found=True, summary=None, meta=dm.ResponseMeta()),
+            dataset="functions",
+        )
 
     def list_high_risk_functions(
         self,
@@ -1006,9 +1018,15 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         limit: int | None = None,
         tested_only: bool = False,
         scope: GraphScopePayload | None = None,
-    ) -> str:
+    ) -> dm.HighRiskFunctionsResult:
         _ = (min_risk, limit, tested_only, scope)
-        return self._execute("list_high_risk_functions", lambda: "risk", dataset="functions")
+        return self._execute(
+            "list_high_risk_functions",
+            lambda: dm.HighRiskFunctionsResult(
+                functions=[], truncated=False, meta=dm.ResponseMeta()
+            ),
+            dataset="functions",
+        )
 
     def get_callgraph_neighbors(
         self,
@@ -1017,9 +1035,12 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         direction: str = "both",
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> str:
+    ) -> dm.CallGraphNeighbors:
         _ = (goid_h128, direction, limit, scope)
-        return self._execute("get_callgraph_neighbors", lambda: "neighbors")
+        return self._execute(
+            "get_callgraph_neighbors",
+            lambda: dm.CallGraphNeighbors(outgoing=[], incoming=[], meta=dm.ResponseMeta()),
+        )
 
     def get_tests_for_function(
         self,
@@ -1028,9 +1049,12 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         urn: str | None = None,
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> str:
+    ) -> dm.TestsForFunctionResult:
         _ = (goid_h128, urn, limit, scope)
-        return self._execute("get_tests_for_function", lambda: "tests")
+        return self._execute(
+            "get_tests_for_function",
+            lambda: dm.TestsForFunctionResult(tests=[], meta=dm.ResponseMeta()),
+        )
 
     def get_callgraph_neighborhood(
         self,
@@ -1038,11 +1062,11 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         goid_h128: int,
         radius: int = 1,
         max_nodes: int | None = None,
-    ) -> str:
+    ) -> dm.GraphNeighborhood:
         _ = (goid_h128, radius, max_nodes)
         return self._execute(
             "get_callgraph_neighborhood",
-            lambda: "neighborhood",
+            lambda: dm.GraphNeighborhood(nodes=[], edges=[], meta=dm.ResponseMeta()),
             dataset="call_graph_nodes",
         )
 
@@ -1051,11 +1075,11 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         *,
         subsystem_id: str,
         max_edges: int | None = None,
-    ) -> str:
+    ) -> dm.ImportBoundary:
         _ = (subsystem_id, max_edges)
         return self._execute(
             "get_import_boundary",
-            lambda: "boundary",
+            lambda: dm.ImportBoundary(nodes=[], edges=[], meta=dm.ResponseMeta()),
             dataset="import_graph_edges",
         )
 
@@ -1064,9 +1088,12 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         *,
         rel_path: str,
         scope: GraphScopePayload | None = None,
-    ) -> str:
+    ) -> dm.FileSummaryResult:
         _ = (rel_path, scope)
-        return self._execute("get_file_summary", lambda: "file_summary")
+        return self._execute(
+            "get_file_summary",
+            lambda: dm.FileSummaryResult(found=True, file=None, meta=dm.ResponseMeta()),
+        )
 
 
 class _RecordedSubsystemQueries(BaseSubsystemQueries):
@@ -1079,10 +1106,10 @@ class _RecordedSubsystemQueries(BaseSubsystemQueries):
     def _execute(
         self,
         operation: str,
-        executor: Callable[[], object],
+        executor: Callable[[], T],
         *,
         dataset: str | None = None,
-    ) -> object:
+    ) -> T:
         self.calls.append((operation, dataset))
         return executor()
 
@@ -1092,22 +1119,33 @@ class _RecordedSubsystemQueries(BaseSubsystemQueries):
         limit: int | None = None,
         role: str | None = None,
         q: str | None = None,
-    ) -> str:
+    ) -> dm.SubsystemSummaryResult:
         _ = (limit, role, q)
-        return self._execute("list_subsystems", lambda: "subs")
+        return self._execute(
+            "list_subsystems",
+            lambda: dm.SubsystemSummaryResult(subsystems=[], meta=dm.ResponseMeta()),
+        )
 
-    def get_module_subsystems(self, *, module: str) -> str:
+    def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
         _ = module
-        return self._execute("get_module_subsystems", lambda: "mods")
+        return self._execute(
+            "get_module_subsystems",
+            lambda: dm.ModuleSubsystemResult(found=True, memberships=[], meta=dm.ResponseMeta()),
+        )
 
     def get_subsystem_modules(
         self,
         *,
         subsystem_id: str,
         module_limit: int | None = None,
-    ) -> str:
+    ) -> dm.SubsystemModulesResult:
         _ = (subsystem_id, module_limit)
-        return self._execute("get_subsystem_modules", lambda: "subs_modules")
+        return self._execute(
+            "get_subsystem_modules",
+            lambda: dm.SubsystemModulesResult(
+                found=True, subsystem=None, modules=[], meta=dm.ResponseMeta()
+            ),
+        )
 
     def search_subsystems(
         self,
@@ -1115,28 +1153,36 @@ class _RecordedSubsystemQueries(BaseSubsystemQueries):
         limit: int | None = None,
         role: str | None = None,
         q: str | None = None,
-    ) -> str:
+    ) -> dm.SubsystemSearchResult:
         _ = (limit, role, q)
-        return self._execute("search_subsystems", lambda: "search")
+        return self._execute(
+            "search_subsystems",
+            lambda: dm.SubsystemSearchResult(subsystems=[], meta=dm.ResponseMeta()),
+        )
 
     def summarize_subsystem(
         self,
         *,
         subsystem_id: str,
         module_limit: int | None = None,
-    ) -> str:
+    ) -> dm.SubsystemModulesResult:
         _ = (subsystem_id, module_limit)
-        return self._execute("summarize_subsystem", lambda: "summary")
+        return self._execute(
+            "summarize_subsystem",
+            lambda: dm.SubsystemModulesResult(
+                found=True, subsystem=None, modules=[], meta=dm.ResponseMeta()
+            ),
+        )
 
     def list_subsystem_profiles(
         self,
         *,
         limit: int | None = None,
-    ) -> str:
+    ) -> dm.SubsystemProfileResult:
         _ = limit
         return self._execute(
             "list_subsystem_profiles",
-            lambda: "profiles",
+            lambda: dm.SubsystemProfileResult(profiles=[], meta=dm.ResponseMeta()),
             dataset="docs.v_subsystem_profile",
         )
 
@@ -1144,29 +1190,13 @@ class _RecordedSubsystemQueries(BaseSubsystemQueries):
         self,
         *,
         limit: int | None = None,
-    ) -> str:
+    ) -> dm.SubsystemCoverageResult:
         _ = limit
         return self._execute(
             "list_subsystem_coverage",
-            lambda: "coverage",
+            lambda: dm.SubsystemCoverageResult(coverage=[], meta=dm.ResponseMeta()),
             dataset="docs.v_subsystem_coverage",
         )
-
-
-class _RecordingObservability(ServiceObservability):
-    """Observability stub that captures recorded metrics."""
-
-    def __init__(self) -> None:
-        super().__init__(enabled=True)
-        self.records: list[ServiceCallMetrics] = []
-
-    def record(
-        self,
-        metrics: ServiceCallMetrics,
-        context: RequestContext | None = None,
-    ) -> None:
-        _ = context
-        self.records.append(metrics)
 
 
 def test_base_function_queries_executes_and_records_dataset() -> None:
@@ -1178,10 +1208,10 @@ def test_base_function_queries_executes_and_records_dataset() -> None:
     neighbors = queries.get_callgraph_neighborhood(goid_h128=1, radius=1)
     boundary = queries.get_import_boundary(subsystem_id="s")
 
-    expect_equal(summary, "summary")
-    expect_equal(risk, "risk")
-    expect_equal(neighbors, "neighborhood")
-    expect_equal(boundary, "boundary")
+    expect_is_not_none(summary.meta)
+    expect_is_instance(risk, dm.HighRiskFunctionsResult)
+    expect_is_instance(neighbors, dm.GraphNeighborhood)
+    expect_is_instance(boundary, dm.ImportBoundary)
     expect_in(("get_function_summary", "functions"), queries.calls)
     expect_in(("get_callgraph_neighborhood", "call_graph_nodes"), queries.calls)
     expect_in(("get_import_boundary", "import_graph_edges"), queries.calls)
@@ -1196,17 +1226,17 @@ def test_base_subsystem_queries_executes_and_records_dataset() -> None:
     profiles = queries.list_subsystem_profiles(limit=1)
     coverage = queries.list_subsystem_coverage(limit=2)
 
-    expect_equal(subs, "subs")
-    expect_equal(modules, "subs_modules")
-    expect_equal(profiles, "profiles")
-    expect_equal(coverage, "coverage")
+    expect_is_instance(subs, dm.SubsystemSummaryResult)
+    expect_is_instance(modules, dm.SubsystemModulesResult)
+    expect_is_instance(profiles, dm.SubsystemProfileResult)
+    expect_is_instance(coverage, dm.SubsystemCoverageResult)
     expect_in(("list_subsystem_profiles", "docs.v_subsystem_profile"), queries.calls)
     expect_in(("list_subsystem_coverage", "docs.v_subsystem_coverage"), queries.calls)
 
 
 def test_local_transport_records_context_and_dataset() -> None:
     """Ensure LocalTransport forwards context into observability metrics."""
-    observability = _RecordingObservability()
+    observability = RecordingObservability()
     transport = LocalTransport(
         query=HookedDuckDBQueryApi(),
         observability=observability,
@@ -1233,7 +1263,7 @@ def test_local_transport_records_context_and_dataset() -> None:
 
 def test_http_transport_records_errors_and_retries() -> None:
     """Ensure HttpTransport surfaces errors while emitting observability metrics."""
-    observability = _RecordingObservability()
+    observability = RecordingObservability()
     transport = HttpTransport(
         request_json=lambda _path, _params: None,
         observability=observability,

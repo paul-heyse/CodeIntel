@@ -98,6 +98,17 @@ LLM recommendation:
 
 * For **normal CLI scripts**: keep the default `result_action` (prints, maps bools to exit codes, etc.).([cyclopts.readthedocs.io][8])
 * For **embedding in tests or orchestrators**: construct a *second* `App` or call with `result_action="return_value"` so parsing doesn’t `sys.exit`.([cyclopts.readthedocs.io][8])
+* Config precedence (CodeIntel): CLI flags > environment (`CODEINTEL_*`) > TOML file (`codeintel.toml` or `CODEINTEL_CONFIG_PATH`) > signature defaults. The root app wires both `Env("CODEINTEL_")` and an optional TOML loader.
+* Quick harness patterns:
+  ```python
+  from codeintel.cli.cyclopts_app import app
+
+  # Parse/execute without exiting (sync)
+  ns = app(["build", "status", "--help"], result_action="return_value")
+
+  # Async contexts
+  # await app.run_async(["op", "function-summary", ...], result_action="return_value")
+  ```
 
 ### 2.2 `@app.command`, `@app.default`, `@app.meta`
 
@@ -1309,4 +1320,3 @@ For an AI agent working in your CodeIntel repo, these are the recommended patter
 
      * Unit tests on the underlying business function (no Cyclopts).
      * At least one test that calls the Cyclopts `App` with tokens and asserts on results & parse behavior.
-

@@ -13,7 +13,7 @@ from codeintel.ingestion.compute import TypingIngestStep
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
-from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.contexts import (
@@ -120,15 +120,19 @@ def _build_target_context(
 
 
 @pytest.mark.anyio
-async def test_typing_plugin_skips_without_type_checker(tmp_path: Path) -> None:
+async def test_typing_plugin_skips_without_type_checker(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """When no type checker is provided, the plugin should skip work."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
     ctx = _build_target_context(repo_root, modules=("pkg/typed.py",))
+    caplog.set_level("INFO")
 
     result = await TypingIngestPlugin().execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
+    assert_logged(caplog.records, level="INFO", containing="Type checker not available")
 
 
 @pytest.mark.anyio
@@ -158,14 +162,20 @@ async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> Non
 
 
 @pytest.mark.anyio
-async def test_typing_plugin_reports_failure(tmp_path: Path) -> None:
+async def test_typing_plugin_reports_failure(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Errors returned from the async step should fail the target result."""
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/typed.py": TYPED_SOURCE, "pkg/unicode/δ.py": TYPED_SOURCE},
+    )
     # Use RecordingTypeChecker (a proper double) instead of object()
     checker = RecordingTypeChecker()
-    ctx = _build_target_context(repo_root, modules=("pkg/typed.py",))
+    ctx = _build_target_context(repo_root, modules=("pkg/typed.py", "pkg/unicode/δ.py"))
     captured = StepCallCapture()
     failing_result = StepResult.fail("typing blew up")
+    caplog.set_level("WARNING")
 
     # Pass the checker directly rather than via ctx.resources.type_checker
     result = await _make_plugin(
@@ -176,3 +186,4 @@ async def test_typing_plugin_reports_failure(tmp_path: Path) -> None:
 
     expect_true(result.success is False)
     expect_equal(result.error_message, "Typing ingest failed: typing blew up")
+    assert_logged(caplog.records, level="WARNING", containing="Typing ingest failed")

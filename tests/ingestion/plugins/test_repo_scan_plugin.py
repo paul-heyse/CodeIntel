@@ -84,7 +84,10 @@ async def test_compute_row_counts_handles_missing_table(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Row count computation should return 0 for tables that are absent."""
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/mod.py": "x = 1\n", "pkg/nested/mod2.py": "y = 2\n"},
+    )
     plugin = RepoScanPlugin()
     caplog.set_level("WARNING")
     ctx = build_target_context_for_plugin(
@@ -106,9 +109,11 @@ async def test_compute_row_counts_handles_missing_table(
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts.get("core.modules"), 1)
+    expect_equal(result.row_counts.get("core.modules"), 2)
     expect_equal(result.row_counts.get("core.missing_table"), 0)
-    assert_logged(caplog.records, level="WARNING", containing="Row count fallback for core.missing_table")
+    assert_logged(
+        caplog.records, level="WARNING", containing="Row count fallback for core.missing_table"
+    )
 
 
 @pytest.mark.anyio
@@ -116,7 +121,10 @@ async def test_row_counts_ignore_absent_tables_without_errors(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Missing tables should not raise and should return zero counts."""
-    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/only.py": "y = 2\n"})
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/only.py": "y = 2\n", "pkg/deep/nested.py": "z = 3\n"},
+    )
     plugin = RepoScanPlugin()
     caplog.set_level("WARNING")
     ctx = build_target_context_for_plugin(
@@ -138,6 +146,6 @@ async def test_row_counts_ignore_absent_tables_without_errors(
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts.get("core.modules"), 1)
+    expect_equal(result.row_counts.get("core.modules"), 2)
     expect_equal(result.row_counts.get("core.absent_table"), 0)
     assert_logged(caplog.records, level="WARNING", containing="core.absent_table")

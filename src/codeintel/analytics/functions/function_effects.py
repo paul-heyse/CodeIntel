@@ -187,6 +187,12 @@ def _build_effect_rows(
                 catalog_provider=inputs.catalog,
             ),
         )
+    if missing:
+        log.warning(
+            "Missing AST for %d functions while computing effects: %s",
+            len(missing),
+            sorted(missing),
+        )
     all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
     analyses: dict[int, EffectAnalysis] = {
         goid: _analyze_function(info, inputs.cfg) for goid, info in ast_by_goid.items()
@@ -204,6 +210,12 @@ def _build_effect_rows(
     unresolved_calls = _unresolved_call_counts(
         inputs.gateway.con, inputs.cfg.repo, inputs.cfg.commit
     )
+    if unresolved_calls:
+        log.warning(
+            "Unresolved call edges detected for %d functions while computing effects: %s",
+            len(unresolved_calls),
+            sorted(unresolved_calls),
+        )
 
     rows: list[tuple[object, ...]] = []
     for goid in all_goids:

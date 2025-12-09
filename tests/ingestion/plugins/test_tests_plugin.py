@@ -14,6 +14,7 @@ from codeintel.ingestion.plugins.tests_plugin import (
 )
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
+from tests._helpers.factories.row_factories import sample_pytest_summary, sample_pytest_tests
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
@@ -28,23 +29,9 @@ if TYPE_CHECKING:
 
 EXPECTED_TEST_ROWS = 3
 TRUNCATED_LONGREPR_LENGTH = 1000
-EXPECTED_UNICODE_NODEID = "tests/pkg/test_beta.py::test_fail_unicode_☂"
-SAMPLE_TESTS: list[dict[str, object]] = [
-    {"nodeid": "tests/pkg/mod.py::test_ok", "outcome": "passed", "duration": 0.1},
-    {
-        "nodeid": EXPECTED_UNICODE_NODEID,
-        "outcome": "failed",
-        "duration": 0.2,
-        "longrepr": "x" * 1500,
-    },
-    {
-        "nodeid": "tests/pkg/test_gamma.py::test_skipped",
-        "outcome": "skipped",
-        "duration": 0.05,
-        "longrepr": None,
-    },
-]
-SAMPLE_SUMMARY = {"passed": 1, "failed": 1, "skipped": 1, "error": 0, "duration": 0.35}
+SAMPLE_TESTS: list[dict[str, object]] = sample_pytest_tests()
+EXPECTED_UNICODE_NODEID = SAMPLE_TESTS[1]["nodeid"]
+SAMPLE_SUMMARY = sample_pytest_summary()
 
 
 def test_get_module_paths_uses_resources(tmp_path: Path) -> None:
@@ -153,15 +140,19 @@ async def test_execute_handles_missing_report(
 
 
 @pytest.mark.anyio
-async def test_execute_fails_on_malformed_report(tmp_path: Path) -> None:
+async def test_execute_fails_on_malformed_report(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Malformed JSON should produce a failed result."""
     plugin = TestsIngestPlugin()
     ctx = build_target_context_for_plugin(plugin, tmp_path)
     bad_path = ctx.build_dir / "test-results" / "pytest-report.json"
     bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_text("{", encoding="utf-8")
+    caplog.set_level("WARNING")
 
     result = await plugin.execute(ctx)
 
     expect_true(result.success is False)
     expect_true("Failed to read test report" in (result.error_message or ""))
+    assert_logged(caplog.records, level="WARNING", containing="Tests ingest failed")

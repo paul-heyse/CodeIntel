@@ -18,7 +18,8 @@ from codeintel.ingestion.plugins.coverage_plugin import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import build_repo_tree
-from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions import assert_logged, expect_equal, expect_true
+from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeCoverageCollector, FakeProviders
 from tests._helpers.fakes.recording_gateways import FailingGateway
@@ -86,6 +87,27 @@ def test_get_module_paths_handles_gateway_errors(tmp_path: Path) -> None:
     expect_equal(paths, [])
 
 
+@pytest.mark.anyio
+async def test_execute_skips_when_no_coverage_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When no coverage file is found, plugin should log and return empty counts."""
+    plugin = CoverageIngestPlugin()
+    repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
+    ctx = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root),
+    )
+    caplog.set_level(logging.INFO)
+
+    result = await plugin.execute(ctx)
+
+    expect_true(result.success is True)
+    expect_equal(result.row_counts, {})
+    assert_logged(caplog.records, level="INFO", containing="No coverage file found")
+
+
 def test_resolve_coverage_file_prefers_repo_dot_coverage(tmp_path: Path) -> None:
     """Resolution favors repo-root .coverage over other candidates."""
     plugin = CoverageIngestPlugin()
@@ -112,7 +134,8 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
         tmp_path / "repo",
         {"pkg/mod.py": "x = 1\n", "pkg/naïve.py": "y = 2\n"},
     )
-    coverage_file = write_coverage_file(repo_root, filename=".coverage", content="{}")
+    coverage_payload = sample_coverage_payload()
+    coverage_file = write_coverage_file(repo_root, filename=".coverage", content=coverage_payload)
 
     fake_providers = FakeProviders()
     fake_providers.coverage_collector.coverage_data = {

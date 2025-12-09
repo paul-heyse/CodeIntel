@@ -1,12 +1,28 @@
-"""Shared Cyclopts primitives and runtime helpers for the CodeIntel CLI."""
+"""Shared Cyclopts primitives and runtime helpers for the CodeIntel CLI.
+
+Configuration precedence
+------------------------
+CLI flags override environment variables (``CODEINTEL_*``), which override the
+optional TOML config file (``codeintel.toml`` or ``CODEINTEL_CONFIG_PATH``),
+which finally fall back to defaults in function signatures.
+
+Execution model
+---------------
+The root :class:`cyclopts.App` is configured with ``result_action`` set to
+``["call_if_callable", "return_value"]`` so commands can be embedded in tests
+or other orchestrators without forcing ``sys.exit``. Commands implemented as
+dataclasses with ``__call__`` will run naturally under this policy.
+"""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from cyclopts import App, Parameter
+from cyclopts import config as cyclopts_config
 
 from codeintel.cli.common_handlers import (
     BackendFlags,
@@ -26,6 +42,41 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
+CONFIG_ENV_PREFIX = "CODEINTEL_"
+CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
+DEFAULT_CONFIG_PATH = Path("codeintel.toml")
+
+_ENV_CONFIG = cyclopts_config.Env(CONFIG_ENV_PREFIX)
+
+
+def _resolve_config_path() -> Path:
+    """Return the configured TOML path (env override or default).
+
+    Returns
+    -------
+    Path
+        Path to the config file, defaulting to ``codeintel.toml``.
+    """
+    env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
+    return Path(env_path) if env_path else DEFAULT_CONFIG_PATH
+
+
+def _optional_toml_config(apps: object, commands: tuple[str, ...], arguments: object) -> object:
+    """Apply TOML config if present; otherwise return the arguments unchanged.
+
+    Returns
+    -------
+    object
+        Possibly updated arguments after applying TOML overrides.
+    """
+    path = _resolve_config_path()
+    if not path.exists():
+        return arguments
+    toml_loader = cast("Any", cyclopts_config.Toml(str(path)))
+    app_arg = cast("App", apps)
+    args_arg = cast("Any", arguments)
+    return toml_loader(app_arg, commands, args_arg)
+
 
 def make_root_app() -> App:
     """Construct the root Cyclopts application with shared defaults.
@@ -41,6 +92,9 @@ def make_root_app() -> App:
         default_parameter=Parameter(
             show_default=True,
         ),
+        config=[_optional_toml_config, _ENV_CONFIG],
+        result_action=["call_if_callable", "return_value"],
+        print_error=True,
     )
 
 
@@ -76,6 +130,28 @@ JsonFlag = Annotated[
         name="--json",
         help="Alias for --output-format json.",
         negative=(),
+    ),
+]
+
+# Reusable path aliases (no runtime validator to avoid heavy dependency).
+ExistingPath = Annotated[
+    Path,
+    Parameter(
+        help="Path that should exist.",
+    ),
+]
+
+ExistingDir = Annotated[
+    Path,
+    Parameter(
+        help="Directory path that should exist.",
+    ),
+]
+
+OutputPath = Annotated[
+    Path,
+    Parameter(
+        help="Output file path (parent directory should exist).",
     ),
 ]
 
@@ -299,11 +375,14 @@ class RuntimeWithFormat:
 
 __all__ = [
     "BackendFlags",
+    "ExistingDir",
+    "ExistingPath",
     "JsonFlag",
     "OutputFmt",
     "OutputFormat",
     "OutputFormatCLI",
     "OutputParam",
+    "OutputPath",
     "ProjectCLI",
     "ProjectRoot",
     "RuntimeCLI",

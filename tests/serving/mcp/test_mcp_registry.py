@@ -7,14 +7,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mcp.server.fastmcp import FastMCP
-
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.registry import register_tools
 from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.assertions import expect_equal
+from tests._helpers.assertions import expect_equal, expect_not_empty, expect_true
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -28,7 +27,7 @@ if TYPE_CHECKING:
 def test_register_tools_with_backend(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_tools registers tools on FastMCP with backend.
+    """Verify register_tools registers tools on registrar with backend.
 
     Parameters
     ----------
@@ -51,19 +50,22 @@ def test_register_tools_with_backend(
         service=service,
     )
 
-    server = FastMCP("TestServer", json_response=True)
+    registrar = RecordingMcpRegistrar("TestServer")
 
     # Should not raise
-    register_tools(server, backend)
+    register_tools(registrar, backend)
 
     # Server should be configured
-    expect_equal(server.name, "TestServer")
+    expect_equal(registrar.app_name, "TestServer")
+    tools = registrar.list_tools()
+    expect_not_empty(tools)
+    expect_true(len(tools) >= 6)
 
 
 def test_register_tools_with_service(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_tools registers tools on FastMCP with service.
+    """Verify register_tools registers tools on registrar with service.
 
     Parameters
     ----------
@@ -80,12 +82,13 @@ def test_register_tools_with_service(
         dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
     )
 
-    server = FastMCP("TestServer", json_response=True)
+    registrar = RecordingMcpRegistrar("TestServer")
 
     # Should not raise - accepts QueryService directly
-    register_tools(server, service)
+    register_tools(registrar, service)
 
-    expect_equal(server.name, "TestServer")
+    expect_equal(registrar.app_name, "TestServer")
+    expect_not_empty(registrar.list_tools())
 
 
 def test_register_tools_with_config(
@@ -116,9 +119,10 @@ def test_register_tools_with_config(
         repo_root=provisioned_repo.repo_root,
     )
 
-    server = FastMCP("TestServer", json_response=True)
+    registrar = RecordingMcpRegistrar("TestServer")
 
     # Should not raise
-    register_tools(server, service, config)
+    register_tools(registrar, service, config)
 
-    expect_equal(server.name, "TestServer")
+    expect_equal(registrar.app_name, "TestServer")
+    expect_not_empty(registrar.list_tools())

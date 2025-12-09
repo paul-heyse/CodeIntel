@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_subsystem.py
+# hypothesis_version: 6.148.7
+
+['--limit', '--q', '--role', 'coverage', 'list', 'module-memberships', 'profiles', 'show', 'subsystem', 'subsystem_app']

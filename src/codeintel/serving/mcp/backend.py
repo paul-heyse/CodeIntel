@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import cast
 
@@ -121,6 +122,8 @@ class DatasetBackendMixin:
                 continue
             if is_dataclass(dataset):
                 payload = asdict(dataset)
+            elif isinstance(dataset, Mapping):
+                payload = dict(dataset)
             elif hasattr(dataset, "model_dump"):
                 payload = cast("dict[str, object]", dataset.model_dump())
             else:
