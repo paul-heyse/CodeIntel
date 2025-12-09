@@ -210,7 +210,26 @@ class RuntimeCLI:
     verbose: Verbose = 0
 
 
-RuntimeParam = Annotated[RuntimeCLI, Parameter(name="*")]
+RuntimeParam = RuntimeCLI
+
+
+def runtime_field() -> RuntimeCLI:
+    """Reusable runtime field with shared Cyclopts parameter metadata.
+
+    This function returns a dataclass ``field()`` configured for nested
+    runtime CLI flags. The return type is ``RuntimeCLI`` rather than
+    ``Field[RuntimeCLI]`` to match standard dataclass typing conventions
+    (the dataclass decorator replaces fields with actual values at runtime).
+
+    Returns
+    -------
+    RuntimeCLI
+        Dataclass field (typed as RuntimeCLI for type checker compatibility).
+    """
+    return field(default_factory=RuntimeCLI, metadata={"parameter": Parameter(name="*")})
+
+
+RUNTIME_PARAM_FIELD = runtime_field()
 
 
 @dataclass
@@ -231,7 +250,26 @@ class OutputFormatCLI:
     json: JsonFlag = False
 
 
-OutputParam = Annotated[OutputFormatCLI, Parameter(name="*")]
+OutputParam = OutputFormatCLI
+
+
+def output_field() -> OutputFormatCLI:
+    """Reusable output-format field with shared Cyclopts parameter metadata.
+
+    This function returns a dataclass ``field()`` configured for nested
+    output format flags. The return type is ``OutputFormatCLI`` rather than
+    ``Field[OutputFormatCLI]`` to match standard dataclass typing conventions
+    (the dataclass decorator replaces fields with actual values at runtime).
+
+    Returns
+    -------
+    OutputFormatCLI
+        Dataclass field (typed as OutputFormatCLI for type checker compatibility).
+    """
+    return field(default_factory=OutputFormatCLI, metadata={"parameter": Parameter(name="*")})
+
+
+OUTPUT_PARAM_FIELD = output_field()
 
 
 def resolve_output_format(
@@ -255,7 +293,7 @@ def resolve_output_format(
 
 
 def runtime_cli_to_options(
-    cli: RuntimeCLI, *, backend: BackendFlags | None = None
+    cli: RuntimeCLI | None, *, backend: BackendFlags | None = None
 ) -> RuntimeCliOptions:
     """Convert a RuntimeCLI dataclass to RuntimeCliOptions.
 
@@ -264,20 +302,21 @@ def runtime_cli_to_options(
     RuntimeCliOptions
         Options object suitable for runtime construction.
     """
+    resolved_cli = cli or RuntimeCLI()
     return RuntimeCliOptions(
-        project_root=cli.project_root,
-        repo=cli.repo,
-        commit=cli.commit,
-        db_path=cli.db_path,
-        build_dir=cli.build_dir,
-        repo_root=cli.repo_root,
-        document_output_dir=cli.document_output_dir,
+        project_root=resolved_cli.project_root,
+        repo=resolved_cli.repo,
+        commit=resolved_cli.commit,
+        db_path=resolved_cli.db_path,
+        build_dir=resolved_cli.build_dir,
+        repo_root=resolved_cli.repo_root,
+        document_output_dir=resolved_cli.document_output_dir,
         backend=backend or BackendFlags(),
     )
 
 
 def build_runtime_from_cli(
-    options: RuntimeCliOptions | RuntimeCLI,
+    options: RuntimeCliOptions | RuntimeCLI | None,
     *,
     allow_fallback: bool = True,
 ) -> ProjectRuntime:
@@ -293,6 +332,8 @@ def build_runtime_from_cli(
     RuntimeCliError
         If a project cannot be resolved from the provided options.
     """
+    if options is None:
+        options = RuntimeCLI()
     if isinstance(options, RuntimeCLI):
         options = runtime_cli_to_options(options)
 
@@ -373,7 +414,56 @@ class RuntimeWithFormat:
     output_format: OutputFormat
 
 
+def get_verbose(cli: RuntimeCLI) -> int:
+    """Extract verbosity count from RuntimeCLI.
+
+    Returns
+    -------
+    int
+        Verbosity level specified by the user.
+    """
+    return cli.verbose
+
+
+def get_output_format(
+    cli: OutputFormatCLI, *, default: OutputFormat = OutputFormat.TEXT
+) -> OutputFormat:
+    """Resolve the output format from OutputFormatCLI.
+
+    Returns
+    -------
+    OutputFormat
+        Effective output format after applying CLI toggles.
+    """
+    return resolve_output_format(
+        json_flag=cli.json,
+        explicit=cli.output_format,
+        default=default,
+    )
+
+
+def make_handler_context(
+    runtime_cli: RuntimeCLI,
+    output_cli: OutputFormatCLI,
+    *,
+    default_output: OutputFormat,
+) -> tuple[RuntimeCliOptions, int, OutputFormat]:
+    """Return runtime options, verbosity, and output format for handlers.
+
+    Returns
+    -------
+    tuple[RuntimeCliOptions, int, OutputFormat]
+        Runtime options, verbosity count, and output format.
+    """
+    runtime_opts = runtime_cli_to_options(runtime_cli)
+    verbose = get_verbose(runtime_cli)
+    output_format = get_output_format(output_cli, default=default_output)
+    return runtime_opts, verbose, output_format
+
+
 __all__ = [
+    "OUTPUT_PARAM_FIELD",
+    "RUNTIME_PARAM_FIELD",
     "BackendFlags",
     "ExistingDir",
     "ExistingPath",
@@ -393,7 +483,11 @@ __all__ = [
     "StorageCLI",
     "Verbose",
     "build_runtime_from_cli",
+    "get_output_format",
+    "get_verbose",
+    "make_handler_context",
     "make_root_app",
+    "output_field",
     "resolve_output_format",
     "runtime_cli_to_options",
 ]

@@ -10,6 +10,8 @@ Note: Uses shared analytics fixtures from analytics/conftest.py.
 
 from __future__ import annotations
 
+from typing import cast
+
 import networkx as nx
 import pytest
 
@@ -20,7 +22,7 @@ from codeintel.analytics.resources.factory import (
     ProviderFactoryOptions,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
@@ -191,19 +193,55 @@ def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: Sn
     expect_true(not registry.has(ModuleMapProvider))
 
 
-class _BadRuntimeLike:
+class _BadRuntimeLike(GraphRuntimeLike):
     """Runtime double with invalid graph types to trigger warnings."""
 
     def __init__(self) -> None:
-        self.call_graph = nx.Graph()  # should be DiGraph
-        self.import_graph = nx.Graph()
-        self.symbol_module_graph = nx.Graph()
-        self.symbol_function_graph = nx.Graph()
-        self.config_module_bipartite = nx.Graph()
-        self.test_function_bipartite = nx.Graph()
-        self.cfg_graph = nx.Graph()
-        self.backend = None
-        self.use_gpu = False
+        self._call_graph = nx.Graph()  # should be DiGraph
+        self._import_graph = nx.Graph()
+        self._symbol_module_graph = nx.Graph()
+        self._symbol_function_graph = nx.Graph()
+        self._config_module_bipartite = nx.Graph()
+        self._test_function_bipartite = nx.Graph()
+        self._cfg_graph = nx.Graph()
+        self._backend: GraphBackendConfig | None = None
+        self._use_gpu = False
+
+    @property
+    def call_graph(self) -> nx.DiGraph | None:
+        return cast("nx.DiGraph", self._call_graph)
+
+    @property
+    def import_graph(self) -> nx.DiGraph | None:
+        return cast("nx.DiGraph", self._import_graph)
+
+    @property
+    def symbol_module_graph(self) -> nx.Graph | None:
+        return self._symbol_module_graph
+
+    @property
+    def symbol_function_graph(self) -> nx.Graph | None:
+        return self._symbol_function_graph
+
+    @property
+    def config_module_bipartite(self) -> nx.Graph | None:
+        return self._config_module_bipartite
+
+    @property
+    def test_function_bipartite(self) -> nx.Graph | None:
+        return self._test_function_bipartite
+
+    @property
+    def cfg_graph(self) -> nx.DiGraph | None:
+        return cast("nx.DiGraph", self._cfg_graph)
+
+    @property
+    def backend(self) -> GraphBackendConfig | None:
+        return self._backend
+
+    @property
+    def use_gpu(self) -> bool:
+        return self._use_gpu
 
 
 def test_graph_provider_logs_when_graph_types_invalid(caplog: pytest.LogCaptureFixture) -> None:

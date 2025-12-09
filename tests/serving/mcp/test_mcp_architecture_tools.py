@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -24,14 +24,16 @@ from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
+    expect_in,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.gateway import build_duckdb_query_service
-from tests._helpers.mcp_registrar import wrap_fastmcp
+from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -724,6 +726,24 @@ def test_backend_summarize_subsystem_via_tools(
     with contextlib.suppress(McpError):
         response = backend.summarize_subsystem(subsystem_id=subsystem_id)
         expect_is_not_none(response)
+
+
+def test_architecture_tools_emit_problem_detail_and_logs(
+    architecture_gateway: StorageGateway, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Architecture tools should return ProblemDetail payloads and log warnings on errors."""
+    backend = _build_architecture_backend(architecture_gateway)
+    registrar = RecordingMcpRegistrar("ArchTools")
+
+    register_architecture_tools(registrar, backend)
+
+    with caplog.at_level("WARNING"):
+        result = registrar.registry["get_module_architecture"]("non.existent.module.path")
+
+    result_dict = cast("dict[str, object]", result)
+    expect_true(isinstance(result_dict, dict))
+    expect_in("error", result_dict)
+    assert_logged(caplog.records, level="WARNING", containing="MCP tool error")
 
 
 # =============================================================================

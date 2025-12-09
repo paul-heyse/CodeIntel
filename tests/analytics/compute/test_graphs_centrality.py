@@ -6,6 +6,9 @@ betweenness centrality on directed graphs using real NetworkX graphs.
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import TypedDict
+
 import networkx as nx
 import pytest
 from networkx.exception import NetworkXAlgorithmError
@@ -480,16 +483,30 @@ def test_betweenness_values_are_floats() -> None:
 # =============================================================================
 
 
-def _make_context(**overrides: object) -> GraphContext:
+class _ContextOverrides(TypedDict, total=False):
+    betweenness_sample: int
+    eigen_max_iter: int
+    seed: int
+    pagerank_weight: str | None
+    betweenness_weight: str | None
+    use_gpu: bool
+    community_detection_limit: int | None
+    now: datetime | None
+
+
+def _make_context(overrides: _ContextOverrides | None = None) -> GraphContext:
+    params = overrides or {}
     return GraphContext(
         repo="repo",
         commit="commit",
-        betweenness_sample=2,
-        eigen_max_iter=1,
-        seed=1,
-        pagerank_weight="weight",
-        betweenness_weight="weight",
-        **overrides,
+        betweenness_sample=params.get("betweenness_sample", 2),
+        eigen_max_iter=params.get("eigen_max_iter", 1),
+        seed=params.get("seed", 1),
+        pagerank_weight=params.get("pagerank_weight", "weight"),
+        betweenness_weight=params.get("betweenness_weight", "weight"),
+        use_gpu=params.get("use_gpu", False),
+        community_detection_limit=params.get("community_detection_limit"),
+        now=params.get("now"),
     )
 
 

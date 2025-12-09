@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/tool_utils.py
+# hypothesis_version: 6.148.7
+
+['MCP tool error: %s', '_wrap', 'error', 'wrap_tool']

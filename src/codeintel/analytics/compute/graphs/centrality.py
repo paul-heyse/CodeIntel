@@ -35,8 +35,8 @@ log = logging.getLogger(__name__)
 class CentralityComputations:
     """Optional computation overrides for centrality helpers."""
 
-    eigen_fn: Callable[[nx.Graph, int, str | None], dict[Any, float]] | None = None
-    constraint_fn: Callable[[nx.Graph, str | None], Any] | None = None
+    eigen_fn: Callable[..., dict[Any, float]] | None = None
+    constraint_fn: Callable[..., Any] | None = None
 
 
 def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:

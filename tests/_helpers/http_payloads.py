@@ -7,12 +7,11 @@ from collections.abc import Callable, Mapping
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     FileSummaryResponse,
-    ProblemDetail,
     ResponseMeta,
     SubsystemCoverageResponse,
     SubsystemProfileResponse,
 )
-from codeintel.serving.services.errors import ProblemError
+from codeintel.serving.services.errors import ProblemDetail, ProblemError
 
 
 def make_function_http_responses(meta: ResponseMeta | None = None) -> dict[str, object]:

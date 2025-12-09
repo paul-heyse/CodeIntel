@@ -27,7 +27,7 @@ from tests._helpers.ingestion import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-EXPECTED_TEST_ROWS = 3
+EXPECTED_TEST_ROWS = 4
 TRUNCATED_LONGREPR_LENGTH = 1000
 SAMPLE_TESTS: list[dict[str, object]] = sample_pytest_tests()
 EXPECTED_UNICODE_NODEID = SAMPLE_TESTS[1]["nodeid"]
@@ -106,7 +106,7 @@ async def test_execute_ingests_test_results_and_summary(tmp_path: Path) -> None:
     result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
-    expect_equal(result.row_counts.get("core.test_results"), 3)
+    expect_equal(result.row_counts.get("core.test_results"), EXPECTED_TEST_ROWS)
     rows = ctx.gateway.con.execute(
         "SELECT longrepr FROM core.test_results WHERE repo = ? AND commit = ? ORDER BY nodeid",
         [ctx.repo, ctx.commit],
@@ -119,7 +119,7 @@ async def test_execute_ingests_test_results_and_summary(tmp_path: Path) -> None:
         "FROM core.test_summary WHERE repo = ? AND commit = ?",
         [ctx.repo, ctx.commit],
     ).fetchone()
-    expect_equal(summary_row, (1, 1, 1, 0))
+    expect_equal(summary_row, (1, 1, 1, 1))
     expect_true(report.exists())
 
 

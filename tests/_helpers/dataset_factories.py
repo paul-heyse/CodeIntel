@@ -168,6 +168,46 @@ def dataset_spec_variants(
     return model, payload
 
 
+def sample_dataset_specs() -> list[DatasetSpecDescriptor]:
+    """
+    Build representative dataset specs for MCP tests (unicode/null/flags).
+
+    Returns
+    -------
+    list[DatasetSpecDescriptor]
+        Multiple specs covering docs views, read-only flags, and unicode names.
+    """
+    return [
+        make_spec(
+            name="Analytics Metrics Δ",
+            table_key="analytics.fn_metrics",
+            options=SpecOptions(
+                family="analytics",
+                is_view=False,
+                description="Primary metrics table Δ",
+                owner=None,
+                schema_columns=["col1", "col2"],
+                has_row_binding=True,
+            ),
+        )[0],
+        make_spec(
+            name="Docs View",
+            table_key="docs.fn_metrics_δ",
+            options=SpecOptions(
+                family="docs",
+                is_view=True,
+                description="Docs view for metrics",
+                owner="team-docs",
+                schema_columns=["col1", "col2"],
+                has_row_binding=False,
+                schema_version=None,
+                json_schema_id=None,
+                validation_profile="strict",
+            ),
+        )[0],
+    ]
+
+
 __all__ = [
     "DescriptorOptions",
     "SpecOptions",
@@ -175,4 +215,5 @@ __all__ = [
     "dataset_spec_variants",
     "make_descriptor",
     "make_spec",
+    "sample_dataset_specs",
 ]

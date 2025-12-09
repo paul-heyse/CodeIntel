@@ -5,12 +5,13 @@ This module tests the function- and graph-related MCP tools using real gateways.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.function_tools import (
     FUNCTION_TOOL_CATEGORIES,
@@ -21,6 +22,7 @@ from codeintel.serving.mcp.models import FunctionSummaryResponse, FunctionSummar
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_in,
     expect_is_not_none,
@@ -28,6 +30,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
+from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -494,44 +497,83 @@ def test_local_query_service_as_backend(
 
 def test_function_tools_serialize_unicode_summary() -> None:
     """Function tools serialize typed summaries with unicode fields."""
+    summary = FunctionSummaryResponse(
+        found=True,
+        summary=FunctionSummaryRow(
+            repo="demo",
+            commit="δ123",
+            rel_path="pkg/unicode/δ.py",
+            function_goid_h128=303,
+            urn="urn:fn:unicode::δelta",
+            language="python",
+            kind="function",
+            qualname="pkg.unicode.δ.fn",
+            cyclomatic_complexity=3,
+            risk_level="medium",
+            tested=True,
+            test_count=2,
+            failing_test_count=1,
+        ),
+    )
 
-    class _FakeFunctionBackend:
-        def __init__(self) -> None:
-            self._summary = FunctionSummaryResponse(
-                found=True,
-                summary=FunctionSummaryRow(
-                    repo="demo",
-                    commit="δ123",
-                    rel_path="pkg/unicode/δ.py",
-                    function_goid_h128=303,
-                    urn="urn:fn:unicode::δelta",
-                    language="python",
-                    kind="function",
-                    qualname="pkg.unicode.δ.fn",
-                    cyclomatic_complexity=3,
-                    risk_level="medium",
-                    tested=True,
-                    test_count=2,
-                    failing_test_count=1,
-                ),
-            )
-
-        def get_function_summary(self, **_: object) -> FunctionSummaryResponse:
-            return self._summary
+    backend = LocalQueryService(
+        query=HookedDuckDBQueryApi(
+            hooks={"function_hooks": {"get_function_summary": lambda **_: summary}},
+        )
+    )
 
     registrar = RecordingMcpRegistrar("function-recorder")
     ops = [spec for spec in iter_operations() if spec.id == "function.summary"]
     register_function_tools(
         registrar,
-        _FakeFunctionBackend(),
+        backend,
         options=FunctionToolOptions(operations=ops),
     )
 
     tool = registrar.registry["get_function_summary"]
-    result = tool(function_goid=303)
+    result = cast("dict[str, object]", tool(goid_h128=303))
     expect_true(result["found"])
-    expect_in("δ.py", result["summary"]["rel_path"])
-    expect_equal(result["summary"]["failing_test_count"], 1)
+    summary_dict = cast("dict[str, object]", result["summary"])
+    expect_in("δ.py", cast("str", summary_dict["rel_path"]))
+    expect_equal(summary_dict["failing_test_count"], 1)
+
+
+def test_function_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> None:
+    """Function tools emit ProblemDetail payloads and warning logs."""
+    failing_backend = LocalQueryService(
+        query=HookedDuckDBQueryApi(
+            hooks={
+                "function_hooks": {
+                    "get_function_summary": lambda **_: (_ for _ in ()).throw(
+                        errors.invalid_argument("missing goid")
+                    )
+                }
+            },
+        )
+    )
+
+    registrar = RecordingMcpRegistrar("function-errors")
+    ops = [spec for spec in iter_operations() if spec.id == "function.summary"]
+
+    register_function_tools(
+        registrar,
+        failing_backend,
+        options=FunctionToolOptions(operations=ops),
+    )
+
+    with caplog.at_level("WARNING"):
+        result = cast(
+            "dict[str, object]", registrar.registry["get_function_summary"](goid_h128=None)
+        )
+
+    expect_true("error" in result)
+    error_payload = cast("dict[str, object]", result["error"])
+    expect_equal(error_payload["title"], "Invalid argument")
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="MCP tool error: missing goid",
+    )
 
 
 # =============================================================================

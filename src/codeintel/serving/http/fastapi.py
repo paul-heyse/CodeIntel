@@ -142,7 +142,7 @@ def install_exception_handlers(app: FastAPI) -> None:
             type="https://codeintel/problems/invalid-request",
             title="Invalid request",
             detail=str(exc),
-            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="invalid-request",
             extras={"errors": exc.errors()},
         )

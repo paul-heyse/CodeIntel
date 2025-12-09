@@ -18,6 +18,8 @@ from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 
+MIN_TOOL_COUNT = 6
+
 
 # =============================================================================
 # register_tools Tests
@@ -59,7 +61,7 @@ def test_register_tools_with_backend(
     expect_equal(registrar.app_name, "TestServer")
     tools = registrar.list_tools()
     expect_not_empty(tools)
-    expect_true(len(tools) >= 6)
+    expect_true(len(tools) >= MIN_TOOL_COUNT)
 
 
 def test_register_tools_with_service(

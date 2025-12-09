@@ -5,7 +5,7 @@ This module tests the profile-oriented MCP tools using real gateways.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -109,7 +109,10 @@ def test_profile_tools_return_problem_detail_on_missing_function(
     register_profile_tools(registrar, backend)
 
     with caplog.at_level("WARNING"):
-        result = registrar.registry["get_function_profile"](goid_h128=999_999_999_999)
+        result = cast(
+            "dict[str, object]",
+            registrar.registry["get_function_profile"](goid_h128=999_999_999_999),
+        )
     expect_true(isinstance(result, dict))
     expect_true("error" in result)
     assert_logged(caplog.records, level="WARNING", containing="MCP tool error")

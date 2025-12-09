@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from codeintel.analytics.compute.hotspots.metrics import build_hotspots
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import HotspotsStepConfig
+from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -48,18 +50,31 @@ def test_build_hotspots_inserts_scores() -> None:
 def test_build_hotspots_logs_git_failure(caplog: pytest.LogCaptureFixture) -> None:
     """Git failures warn but do not abort hotspot computation."""
 
-    class _FailingResult:
+    class _FailingRunner(ToolRunner):
         def __init__(self) -> None:
-            self.returncode = 2
-            self.stdout = "ok"
-            self.stderr = "fatal: not a git repo"
+            super().__init__(cache_dir=Path.cwd())
+            self.invocations = 0
 
-    class _FailingRunner:
-        def __init__(self) -> None:
-            self._result = _FailingResult()
-
-        def run(self, tool: str, args: list[str], cwd: Path) -> _FailingResult:  # noqa: ARG002
-            return self._result
+        def run(
+            self,
+            tool: ToolName | str,
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            output_path: Path | None = None,
+            timeout_s: float | None = None,
+        ) -> ToolRunResult:
+            _ = (cwd, output_path, timeout_s)
+            self.invocations += 1
+            resolved_tool = tool if isinstance(tool, ToolName) else ToolName(tool)
+            return ToolRunResult(
+                tool=resolved_tool,
+                args=tuple(args),
+                returncode=2,
+                stdout="ok",
+                stderr="fatal: not a git repo",
+                duration_s=0.0,
+            )
 
     gateway = GatewayFactory().with_snapshot(repo="demo", commit="abc123").open()
     con = gateway.con

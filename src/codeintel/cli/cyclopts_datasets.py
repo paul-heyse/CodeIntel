@@ -10,11 +10,12 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import run_handler
 from codeintel.cli.cyclopts_common import (
+    RUNTIME_PARAM_FIELD,
     ExistingDir,
     ExistingPath,
     OutputPath,
-    RuntimeCLI,
     RuntimeParam,
+    get_verbose,
     runtime_cli_to_options,
 )
 from codeintel.cli.datasets_handlers import (
@@ -66,7 +67,7 @@ datasets_ext_app = App(
 class DatasetRuntimeCli:
     """Runtime selection shared by all datasets commands."""
 
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
 
 
 def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
@@ -82,6 +83,10 @@ def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
         build_dir=options.build_dir,
     )
     return RuntimeOptions(project=project, build=build)
+
+
+def _runtime_verbose(cli: DatasetRuntimeCli) -> int:
+    return get_verbose(cli.runtime)
 
 
 @dataclass
@@ -121,7 +126,7 @@ class LintCommand:
             schema_dir=self.options.schema_dir,
             sampling=(SamplingMode.ENABLED if self.options.sample_rows else SamplingMode.DISABLED),
         )
-        run_handler(datasets_lint_handler, runtime_opts, lint_opts, self.runtime.runtime.verbose)
+        run_handler(datasets_lint_handler, runtime_opts, lint_opts, _runtime_verbose(self.runtime))
 
 
 DocsFilterMode = Literal["include", "only", "exclude"]
@@ -172,7 +177,9 @@ class ListDatasetsCommand:
             read_only=self.filters.read_only,
             max_description=self.filters.max_description,
         )
-        run_handler(datasets_list_handler, runtime_opts, filter_opts, self.runtime.runtime.verbose)
+        run_handler(
+            datasets_list_handler, runtime_opts, filter_opts, _runtime_verbose(self.runtime)
+        )
 
 
 @dataclass
@@ -206,7 +213,7 @@ class SnapshotCommand:
             datasets_snapshot_handler,
             runtime_opts,
             self.options.output,
-            self.runtime.runtime.verbose,
+            _runtime_verbose(self.runtime),
         )
 
 
@@ -262,7 +269,7 @@ class DiffCommand:
             against_ref=self.options.against_ref,
             baseline_path=self.options.baseline_path,
         )
-        run_handler(datasets_diff_handler, runtime_opts, diff_opts, self.runtime.runtime.verbose)
+        run_handler(datasets_diff_handler, runtime_opts, diff_opts, _runtime_verbose(self.runtime))
 
 
 @dataclass
@@ -313,7 +320,7 @@ class ConformanceCommand:
             sample_size=self.options.sample_size,
         )
         run_handler(
-            datasets_conformance_handler, runtime_opts, conf_opts, self.runtime.runtime.verbose
+            datasets_conformance_handler, runtime_opts, conf_opts, _runtime_verbose(self.runtime)
         )
 
 
@@ -414,7 +421,7 @@ class GenerateSchemasCommand:
             runtime_opts,
             export_opts,
             schema_opts,
-            self.runtime.runtime.verbose,
+            _runtime_verbose(self.runtime),
         )
 
 
@@ -465,7 +472,7 @@ class CatalogCommand:
             sample_rows_strict=self.options.sample_rows_strict,
         )
         run_handler(
-            datasets_catalog_handler, runtime_opts, catalog_opts, self.runtime.runtime.verbose
+            datasets_catalog_handler, runtime_opts, catalog_opts, _runtime_verbose(self.runtime)
         )
 
 
@@ -645,8 +652,9 @@ class ScaffoldCommand:
         str,
         Parameter(
             help="Name of the dataset to scaffold (TypedDict / logical dataset name).",
+            required=True,
         ),
-    ] = ""
+    ]
     runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
         default_factory=DatasetRuntimeCli
     )
@@ -662,7 +670,7 @@ class ScaffoldCommand:
             self.name,
             runtime_opts,
             scaffold_opts,
-            self.runtime.runtime.verbose,
+            _runtime_verbose(self.runtime),
         )
 
 

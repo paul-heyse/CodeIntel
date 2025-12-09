@@ -5,7 +5,7 @@ This module tests the DuckDBBackend using real gateways.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
@@ -27,12 +27,17 @@ from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetai
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.dataset_factories import SpecOptions, make_descriptor, make_spec
+from tests._helpers.dataset_factories import (
+    DescriptorOptions,
+    make_descriptor,
+    sample_dataset_specs,
+)
 from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
@@ -1414,12 +1419,8 @@ class _DatasetService(LocalQueryService):
 
     @staticmethod
     def _dataset_specs() -> list[object]:
-        model, payload, _meta = make_spec(
-            name="docs.functions",
-            table_key="docs.v_functions",
-            options=SpecOptions(family="docs", schema_columns=["goid", "name"]),
-        )
-        return [model, payload]
+        specs = sample_dataset_specs()
+        return [*specs, *(spec.model_dump() for spec in specs)]
 
     @staticmethod
     def _dataset_schema(*, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
@@ -1488,21 +1489,22 @@ class _DatasetService(LocalQueryService):
 
     @staticmethod
     def list_datasets() -> list[dm.DatasetDescriptorDomain]:
-        domain, model, payload, _meta = make_descriptor(
+        domain, _, _payload, _meta = make_descriptor(
             name="docs.functions",
             table="docs.v_functions",
             description="fn docs",
         )
-        return cast("list[dm.DatasetDescriptorDomain]", [domain, model, payload])
+        unicode_domain, _, _payload2, _meta2 = make_descriptor(
+            name="docs.Δelta",
+            table="docs.delta",
+            description="Delta dataset",
+            options=DescriptorOptions(owner=None, schema_version="v2"),
+        )
+        return [domain, unicode_domain]
 
     @staticmethod
     def dataset_specs() -> list[DatasetSpecDescriptor]:
-        model, payload, _meta = make_spec(
-            name="docs.functions",
-            table_key="docs.v_functions",
-            options=SpecOptions(family="docs", schema_columns=["goid", "name"]),
-        )
-        return cast("list[DatasetSpecDescriptor]", [model, payload])
+        return sample_dataset_specs()
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         return self._dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
@@ -1781,8 +1783,8 @@ def test_http_backend_health_and_request_success() -> None:
     expect_true(payload["ok"])
 
 
-def test_http_backend_retry_and_circuit_breaker() -> None:
-    """Cover retry path and circuit-open guard."""
+def test_http_backend_retry_and_circuit_breaker(caplog: pytest.LogCaptureFixture) -> None:
+    """Cover retry path and circuit-open guard with warning logs."""
     cfg = HttpBackendTestConfig(
         retry_attempts=2,
         backoff=0.0,
@@ -1805,15 +1807,14 @@ def test_http_backend_retry_and_circuit_breaker() -> None:
         ),
     )
 
-    with pytest.raises(McpError):
+    with caplog.at_level("WARNING"), pytest.raises(McpError):
         _ = circuit_backend.request_json("/functions/high-risk", {})
 
-    with pytest.raises(McpError):
-        _ = circuit_backend.request_json("/functions/high-risk", {})
+    assert_logged(caplog.records, level="WARNING", containing="HTTP backend error")
 
 
-def test_http_backend_problem_detail_response() -> None:
-    """Ensure 4xx responses raise McpError with ProblemDetail payload."""
+def test_http_backend_problem_detail_response(caplog: pytest.LogCaptureFixture) -> None:
+    """Ensure 4xx responses raise McpError with ProblemDetail payload and logs warning."""
     backend = make_http_backend_with_responses(
         [
             (200, {"ok": True}),  # health
@@ -1821,8 +1822,9 @@ def test_http_backend_problem_detail_response() -> None:
         ]
     )
 
-    with pytest.raises(McpError):
+    with caplog.at_level("WARNING"), pytest.raises(McpError):
         _ = backend.request_json("/missing", {})
+    assert_logged(caplog.records, level="WARNING", containing="HTTP backend error")
 
 
 def test_http_backend_async_close_when_owned() -> None:

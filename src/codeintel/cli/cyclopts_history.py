@@ -11,10 +11,11 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.cyclopts_common import (
+    RUNTIME_PARAM_FIELD,
     ExistingDir,
     OutputPath,
-    RuntimeCLI,
     RuntimeParam,
+    get_verbose,
     runtime_cli_to_options,
 )
 from codeintel.cli.history_handlers import HistoryOptions, history_timeseries_handler
@@ -59,7 +60,7 @@ class HistoryTimeseriesCli:
             help="Commits to include in the timeseries (latest first).",
         ),
     ] = None
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
     db_dir: Annotated[
         ExistingDir,
         Parameter(
@@ -123,12 +124,13 @@ class HistoryTimeseriesCommand:
             selection_strategy=self.cfg.selection_strategy.value,
         )
         commits = list(self.cfg.commits)
+        verbose = get_verbose(self.cfg.runtime)
         run_handler(
             history_timeseries_handler,
             repo=self.cfg.repo,
             commits=commits,
             options=options,
-            verbose=self.cfg.runtime.verbose,
+            verbose=verbose,
         )
 
 

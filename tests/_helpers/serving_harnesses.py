@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.observability import (
@@ -13,6 +13,8 @@ from codeintel.serving.services.observability import (
 )
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+
+T = TypeVar("T")
 
 
 class Requester(Protocol):
@@ -68,12 +70,12 @@ class FunctionDelegateHarness(LocalQueryService):
     def _call(
         self,
         name: str,
-        func: Callable[[], object],
+        func: Callable[[], T],
         *,
         dataset: str | None = None,
         schema_version: str | None = None,
         retries: int | None = None,
-    ) -> object:
+    ) -> T:
         self.called.append((name, dataset))
         return super()._call(
             name,
@@ -130,12 +132,12 @@ class SubsystemDelegateHarness(LocalQueryService):
     def _call(
         self,
         name: str,
-        func: Callable[[], object],
+        func: Callable[[], T],
         *,
         dataset: str | None = None,
         schema_version: str | None = None,
         retries: int | None = None,
-    ) -> object:
+    ) -> T:
         self.called.append((name, dataset))
         return super()._call(
             name,

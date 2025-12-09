@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -21,12 +21,11 @@ from codeintel.cli.build_handlers import (
 from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.common_handlers import OutputFormat
 from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
+    OUTPUT_PARAM_FIELD,
+    RUNTIME_PARAM_FIELD,
     OutputParam,
-    RuntimeCLI,
     RuntimeParam,
-    resolve_output_format,
-    runtime_cli_to_options,
+    make_handler_context,
 )
 
 build_app = App(
@@ -106,8 +105,8 @@ class BuildRunCli:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
     def __call__(self) -> None:
         if self.module is not None and self.module not in MODULE_CHOICES:
@@ -115,11 +114,8 @@ class BuildRunCli:
             message = f"Unknown module: {self.module}. Valid: {valid}"
             raise ValidationError(message)
         _validate_build_run_selection(self.targets, self.module, all_targets=self.all_targets)
-        runtime_opts = runtime_cli_to_options(self.runtime)
-        output_format = resolve_output_format(
-            json_flag=self.output.json,
-            explicit=self.output.output_format,
-            default=OutputFormat.TEXT,
+        runtime_opts, verbose, output_format = make_handler_context(
+            self.runtime, self.output, default_output=OutputFormat.TEXT
         )
         options = BuildRunOptions(
             targets=self.targets,
@@ -130,7 +126,7 @@ class BuildRunCli:
         )
         ctx_opts = BuildRunContext(
             runtime_options=runtime_opts,
-            verbose=self.runtime.verbose,
+            verbose=verbose,
             output_format=output_format,
         )
         run_handler(build_run_handler, options, ctx_opts)
@@ -149,25 +145,22 @@ class BuildStatusCli:
             show_choices=True,
         ),
     ] = None
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
     def __call__(self) -> None:
         if self.module is not None and self.module not in MODULE_CHOICES:
             valid = ", ".join(MODULE_CHOICES)
             message = f"Unknown module: {self.module}. Valid: {valid}"
             raise ValidationError(message)
-        runtime_opts = runtime_cli_to_options(self.runtime)
-        output_format = resolve_output_format(
-            json_flag=self.output.json,
-            explicit=self.output.output_format,
-            default=OutputFormat.TEXT,
+        runtime_opts, verbose, output_format = make_handler_context(
+            self.runtime, self.output, default_output=OutputFormat.TEXT
         )
         options = BuildStatusOptions(
             module=self.module,
             runtime_options=runtime_opts,
             output_format=output_format,
-            verbose=self.runtime.verbose,
+            verbose=verbose,
         )
         run_handler(build_status_handler, options)
 
@@ -191,22 +184,19 @@ class BuildHistoryCli:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    runtime: RuntimeParam = field(default_factory=RuntimeCLI)
-    output: OutputParam = field(default_factory=OutputFormatCLI)
+    runtime: RuntimeParam = RUNTIME_PARAM_FIELD
+    output: OutputParam = OUTPUT_PARAM_FIELD
 
     def __call__(self) -> None:
-        runtime_opts = runtime_cli_to_options(self.runtime)
-        output_format = resolve_output_format(
-            json_flag=self.output.json,
-            explicit=self.output.output_format,
-            default=OutputFormat.TEXT,
+        runtime_opts, verbose, output_format = make_handler_context(
+            self.runtime, self.output, default_output=OutputFormat.TEXT
         )
         options = BuildHistoryOptions(
             run_id=self.run_id,
             limit=self.limit,
             runtime_options=runtime_opts,
             output_format=output_format,
-            verbose=self.runtime.verbose,
+            verbose=verbose,
         )
         run_handler(build_history_handler, options)
 

@@ -6,10 +6,11 @@ tests to inject custom payload producers for each method.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TypeVar, cast
 
+from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.query_api import (
@@ -19,17 +20,26 @@ from codeintel.serving.backend.query_api import (
     ProfileQueriesApi,
     SubsystemQueriesApi,
 )
-from codeintel.serving.mcp.models import DatasetSpecDescriptor, GraphScopePayload
+from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+
+
+def _dispatch(hooks: dict[str, Callable[..., object]], name: str, **kwargs: object) -> object:
+    if name not in hooks:
+        message = "hook not provided for requested operation"
+        raise NotImplementedError(message)
+    return hooks[name](**kwargs)
+
 
 T = TypeVar("T")
 
 
-def _dispatch(hooks: dict[str, Callable[..., object]], name: str, **kwargs: object) -> T:
-    if name not in hooks:
-        message = "hook not provided for requested operation"
-        raise NotImplementedError(message)
-    return cast("T", hooks[name](**kwargs))
+def _dispatch_typed(
+    hooks: dict[str, Callable[..., object]],
+    name: str,
+    **kwargs: object,
+) -> T:
+    return cast("T", _dispatch(hooks, name, **kwargs))
 
 
 @dataclass
@@ -45,9 +55,9 @@ class HookedFunctionQueries(FunctionQueriesApi):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.FunctionSummaryResult:
-        return _dispatch(
+        return _dispatch_typed[dm.FunctionSummaryResult](
             self.hooks,
             "get_function_summary",
             urn=urn,
@@ -63,9 +73,9 @@ class HookedFunctionQueries(FunctionQueriesApi):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.HighRiskFunctionsResult:
-        return _dispatch(
+        return _dispatch_typed[dm.HighRiskFunctionsResult](
             self.hooks,
             "list_high_risk_functions",
             min_risk=min_risk,
@@ -80,9 +90,9 @@ class HookedFunctionQueries(FunctionQueriesApi):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.CallGraphNeighbors:
-        return _dispatch(
+        return _dispatch_typed[dm.CallGraphNeighbors](
             self.hooks,
             "get_callgraph_neighbors",
             goid_h128=goid_h128,
@@ -97,9 +107,9 @@ class HookedFunctionQueries(FunctionQueriesApi):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.TestsForFunctionResult:
-        return _dispatch(
+        return _dispatch_typed[dm.TestsForFunctionResult](
             self.hooks,
             "get_tests_for_function",
             goid_h128=goid_h128,
@@ -115,7 +125,7 @@ class HookedFunctionQueries(FunctionQueriesApi):
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> dm.GraphNeighborhood:
-        return _dispatch(
+        return _dispatch_typed[dm.GraphNeighborhood](
             self.hooks,
             "get_callgraph_neighborhood",
             goid_h128=goid_h128,
@@ -129,7 +139,7 @@ class HookedFunctionQueries(FunctionQueriesApi):
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> dm.ImportBoundary:
-        return _dispatch(
+        return _dispatch_typed[dm.ImportBoundary](
             self.hooks,
             "get_import_boundary",
             subsystem_id=subsystem_id,
@@ -140,9 +150,9 @@ class HookedFunctionQueries(FunctionQueriesApi):
         self,
         *,
         rel_path: str,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.FileSummaryResult:
-        return _dispatch(
+        return _dispatch_typed[dm.FileSummaryResult](
             self.hooks,
             "get_file_summary",
             rel_path=rel_path,
@@ -150,10 +160,14 @@ class HookedFunctionQueries(FunctionQueriesApi):
         )
 
     def get_function_profile(self, goid_h128: int) -> dm.FunctionProfileResult:
-        return _dispatch(self.hooks, "get_function_profile", goid_h128=goid_h128)
+        return _dispatch_typed[dm.FunctionProfileResult](
+            self.hooks, "get_function_profile", goid_h128=goid_h128
+        )
 
     def get_function_architecture(self, goid_h128: int) -> dm.FunctionArchitectureResult:
-        return _dispatch(self.hooks, "get_function_architecture", goid_h128=goid_h128)
+        return _dispatch_typed[dm.FunctionArchitectureResult](
+            self.hooks, "get_function_architecture", goid_h128=goid_h128
+        )
 
 
 @dataclass
@@ -163,30 +177,42 @@ class HookedProfileQueries(ProfileQueriesApi):
     hooks: dict[str, Callable[..., object]] = field(default_factory=dict)
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
-        return _dispatch(self.hooks, "get_function_profile", goid_h128=goid_h128)
+        return _dispatch_typed[dm.FunctionProfileResult](
+            self.hooks, "get_function_profile", goid_h128=goid_h128
+        )
 
     def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
-        return _dispatch(self.hooks, "get_file_profile", rel_path=rel_path)
+        return _dispatch_typed[dm.FileProfileResult](
+            self.hooks, "get_file_profile", rel_path=rel_path
+        )
 
     def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
-        return _dispatch(self.hooks, "get_module_profile", module=module)
+        return _dispatch_typed[dm.ModuleProfileResult](
+            self.hooks, "get_module_profile", module=module
+        )
 
     def get_function_architecture(self, *, goid_h128: int) -> dm.FunctionArchitectureResult:
-        return _dispatch(self.hooks, "get_function_architecture", goid_h128=goid_h128)
+        return _dispatch_typed[dm.FunctionArchitectureResult](
+            self.hooks, "get_function_architecture", goid_h128=goid_h128
+        )
 
     def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
-        return _dispatch(self.hooks, "get_module_architecture", module=module)
+        return _dispatch_typed[dm.ModuleArchitectureResult](
+            self.hooks, "get_module_architecture", module=module
+        )
 
     def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
-        return _dispatch(self.hooks, "get_file_hints", rel_path=rel_path)
+        return _dispatch_typed[dm.FileHintsResult](self.hooks, "get_file_hints", rel_path=rel_path)
 
     def get_file_summary(
         self,
         *,
         rel_path: str,
-        scope: GraphScopePayload | None = None,
+        scope: GraphRunScope | None = None,
     ) -> dm.FileSummaryResult:
-        return _dispatch(self.hooks, "get_file_summary", rel_path=rel_path, scope=scope)
+        return _dispatch_typed[dm.FileSummaryResult](
+            self.hooks, "get_file_summary", rel_path=rel_path, scope=scope
+        )
 
 
 @dataclass
@@ -202,10 +228,14 @@ class HookedSubsystemQueries(SubsystemQueriesApi):
         role: str | None = None,
         q: str | None = None,
     ) -> dm.SubsystemSummaryResult:
-        return _dispatch(self.hooks, "list_subsystems", limit=limit, role=role, q=q)
+        return _dispatch_typed[dm.SubsystemSummaryResult](
+            self.hooks, "list_subsystems", limit=limit, role=role, q=q
+        )
 
     def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
-        return _dispatch(self.hooks, "get_module_subsystems", module=module)
+        return _dispatch_typed[dm.ModuleSubsystemResult](
+            self.hooks, "get_module_subsystems", module=module
+        )
 
     def get_subsystem_modules(
         self,
@@ -213,7 +243,7 @@ class HookedSubsystemQueries(SubsystemQueriesApi):
         subsystem_id: str,
         module_limit: int | None = None,
     ) -> dm.SubsystemModulesResult:
-        return _dispatch(
+        return _dispatch_typed[dm.SubsystemModulesResult](
             self.hooks,
             "get_subsystem_modules",
             subsystem_id=subsystem_id,
@@ -227,7 +257,9 @@ class HookedSubsystemQueries(SubsystemQueriesApi):
         role: str | None = None,
         q: str | None = None,
     ) -> dm.SubsystemSearchResult:
-        return _dispatch(self.hooks, "search_subsystems", limit=limit, role=role, q=q)
+        return _dispatch_typed[dm.SubsystemSearchResult](
+            self.hooks, "search_subsystems", limit=limit, role=role, q=q
+        )
 
     def summarize_subsystem(
         self,
@@ -235,7 +267,7 @@ class HookedSubsystemQueries(SubsystemQueriesApi):
         subsystem_id: str,
         module_limit: int | None = None,
     ) -> dm.SubsystemModulesResult:
-        return _dispatch(
+        return _dispatch_typed[dm.SubsystemModulesResult](
             self.hooks,
             "summarize_subsystem",
             subsystem_id=subsystem_id,
@@ -243,10 +275,14 @@ class HookedSubsystemQueries(SubsystemQueriesApi):
         )
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
-        return _dispatch(self.hooks, "list_subsystem_profiles", limit=limit)
+        return _dispatch_typed[dm.SubsystemProfileResult](
+            self.hooks, "list_subsystem_profiles", limit=limit
+        )
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
-        return _dispatch(self.hooks, "list_subsystem_coverage", limit=limit)
+        return _dispatch_typed[dm.SubsystemCoverageResult](
+            self.hooks, "list_subsystem_coverage", limit=limit
+        )
 
 
 @dataclass
@@ -256,10 +292,26 @@ class HookedDatasetQueries(DatasetQueriesApi):
     hooks: dict[str, Callable[..., object]] = field(default_factory=dict)
 
     def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
-        return _dispatch(self.hooks, "list_datasets")
+        """
+        Return dataset descriptors from the configured hook.
+
+        Returns
+        -------
+        list[DatasetDescriptorDomain]
+            Dataset descriptors provided by the hook.
+        """
+        return _dispatch_typed[list[dm.DatasetDescriptorDomain]](self.hooks, "list_datasets")
 
     def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        return _dispatch(self.hooks, "dataset_specs")
+        """
+        Return dataset spec descriptors from the configured hook.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset specification descriptors.
+        """
+        return _dispatch_typed[list[DatasetSpecDescriptor]](self.hooks, "dataset_specs")
 
     def read_dataset_rows(
         self,
@@ -267,8 +319,8 @@ class HookedDatasetQueries(DatasetQueriesApi):
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
-    ) -> dm.DatasetRows:
-        return _dispatch(
+    ) -> Sequence[Mapping[str, object]]:
+        return _dispatch_typed[Sequence[Mapping[str, object]]](
             self.hooks,
             "read_dataset_rows",
             dataset_name=dataset_name,
@@ -277,7 +329,7 @@ class HookedDatasetQueries(DatasetQueriesApi):
         )
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
-        return _dispatch(
+        return _dispatch_typed[dm.DatasetSchema](
             self.hooks,
             "dataset_schema",
             dataset_name=dataset_name,
@@ -306,7 +358,7 @@ class HookedDuckDBQueryApi(DuckDBQueryApi):
         self.dataset_hooks = grouped.get("dataset_hooks", {})
 
     @property
-    def gateway(self) -> StorageGateway | None:
+    def gateway(self) -> StorageGateway:
         return self._gateway
 
     @property
@@ -328,6 +380,28 @@ class HookedDuckDBQueryApi(DuckDBQueryApi):
     @property
     def datasets(self) -> HookedDatasetQueries:
         return HookedDatasetQueries(self.dataset_hooks)
+
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
+        """
+        Delegate dataset listing through injected hooks.
+
+        Returns
+        -------
+        list[DatasetDescriptorDomain]
+            Dataset descriptors provided by the hook.
+        """
+        return self.datasets.list_datasets()
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Delegate dataset specs retrieval through injected hooks.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset spec descriptors provided by the hook.
+        """
+        return self.datasets.dataset_specs()
 
     def __getattr__(self, name: str) -> object:
         raise AttributeError(name)

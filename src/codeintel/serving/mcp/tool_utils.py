@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from functools import wraps
-import logging
 
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend

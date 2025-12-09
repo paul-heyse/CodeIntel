@@ -737,7 +737,7 @@ def test_get_file_summary_missing_param(
         response = client.get("/file/summary")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 # =============================================================================
@@ -934,7 +934,7 @@ def test_callgraph_neighbors_missing_goid_h128(
         response = client.get("/function/callgraph")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_callgraph_neighborhood_missing_goid_h128(
@@ -952,7 +952,7 @@ def test_callgraph_neighborhood_missing_goid_h128(
         response = client.get("/graph/call/neighborhood")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_import_boundary_missing_subsystem_id(
@@ -970,7 +970,7 @@ def test_import_boundary_missing_subsystem_id(
         response = client.get("/graph/import/boundary")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 # =============================================================================

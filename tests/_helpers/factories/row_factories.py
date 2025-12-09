@@ -371,6 +371,15 @@ def sample_pytest_tests() -> list[dict[str, object]]:
                 "longrepr": None,
             },
         ),
+        cast(
+            "dict[str, object]",
+            {
+                "nodeid": "tests/pkg/test_error.py::test_raises",
+                "outcome": "error",
+                "duration": 0.02,
+                "longrepr": None,
+            },
+        ),
     ]
 
 
@@ -383,7 +392,7 @@ def sample_pytest_summary() -> dict[str, object]:
     dict[str, object]
         Summary including counts and total duration.
     """
-    return {"passed": 1, "failed": 1, "skipped": 1, "error": 0, "duration": 0.4}
+    return {"passed": 1, "failed": 1, "skipped": 1, "error": 1, "duration": 0.42}
 
 
 def sample_coverage_payload() -> dict[str, object]:
@@ -396,8 +405,9 @@ def sample_coverage_payload() -> dict[str, object]:
         Mapping of file path to covered/missing line lists.
     """
     return {
-        "pkg/mod.py": {"covered_lines": [1, 2], "missing_lines": [3]},
-        "pkg/naive.py": {"covered_lines": [1], "missing_lines": [2, 3]},
+        "pkg/mod.py": {"covered_lines": [1, 2, 4], "missing_lines": [3]},
+        "pkg/naive.py": {"covered_lines": [1], "missing_lines": [2, 3, 5]},
+        "pkg/unicode/δ.py": {"covered_lines": [1, 3], "missing_lines": [2]},
     }
 
 
@@ -413,14 +423,28 @@ def sample_scip_documents() -> list[dict[str, object]]:
     return [
         {
             "relativePath": "pkg/a.py",
-            "symbols": [{"symbol": "pkg/a.py:func", "documentation": ["doc"]}],
-            "occurrences": [{"symbol": "pkg/a.py:func", "range": [1, 0, 1, 4], "symbolRoles": 1}],
+            "symbols": [
+                {"symbol": "pkg/a.py:func", "documentation": ["doc"]},
+                {"symbol": "pkg/a.py:helper", "documentation": ["helper doc"]},
+            ],
+            "occurrences": [
+                {"symbol": "pkg/a.py:func", "range": [1, 0, 1, 4], "symbolRoles": 1},
+                {"symbol": "pkg/a.py:helper", "range": [2, 0, 2, 6], "symbolRoles": 1},
+            ],
         },
         {
             "relativePath": "pkg/naive.py",
             "symbols": [{"symbol": "pkg/naive.py:helper", "documentation": ["naive helper"]}],
             "occurrences": [
                 {"symbol": "pkg/naive.py:helper", "range": [2, 0, 2, 6], "symbolRoles": 1}
+            ],
+        },
+        {
+            "relativePath": "pkg/unicode/δ.py",
+            "symbols": [{"symbol": "pkg/unicode/δ.py:δelta", "documentation": ["Δ doc"]}],
+            "occurrences": [
+                {"symbol": "pkg/unicode/δ.py:δelta", "range": [1, 0, 1, 6], "symbolRoles": 1},
+                {"symbol": "pkg/unicode/δ.py:δelta", "range": [2, 0, 2, 6], "symbolRoles": 0},
             ],
         },
     ]
