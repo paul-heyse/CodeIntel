@@ -13,13 +13,19 @@ import logging
 import os
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from enum import Enum
 from pathlib import Path
 from typing import Literal
 
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.runtime import build_graph_runtime as build_graph_runtime_internal
 from codeintel.cli.cli_errors import ValidationError
+from codeintel.cli.cli_types import (
+    BackendFlags,
+    OutputFormat,
+    PathSelection,
+    RepoSelection,
+    RuntimeOptions,
+)
 from codeintel.cli.project import (
     ProjectConfig,
     ProjectNotFoundError,
@@ -43,61 +49,13 @@ LOG = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
-# Enums
-# -----------------------------------------------------------------------------
-
-
-class OutputFormat(Enum):
-    """Output rendering format."""
-
-    TEXT = "text"
-    JSON = "json"
-
-
-# -----------------------------------------------------------------------------
 # Dataclasses
 # -----------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class BackendFlags:
-    """Backend preferences provided via CLI."""
-
-    use_gpu: bool = False
-    backend: str = "auto"
-    strict: bool = False
-
-
-@dataclass(frozen=True)
-class RuntimeCliOptions:
-    """Bundle runtime discovery and backend options."""
-
-    project_root: Path | None = None
-    repo: str | None = None
-    commit: str | None = None
-    db_path: Path | None = None
-    build_dir: Path | None = None
-    repo_root: Path | None = None
-    document_output_dir: Path | None = None
-    backend: BackendFlags = field(default_factory=BackendFlags)
-
-
-@dataclass(frozen=True)
-class RepoSelection:
-    """Repository identification inputs."""
-
-    repo: str | None
-    commit: str | None
-
-
-@dataclass(frozen=True)
-class PathSelection:
-    """Repository path inputs for storage and builds."""
-
-    repo_root: Path | None
-    db_path: Path | None
-    build_dir: Path | None
-    document_output_dir: Path | None = None
+# Backward compatible alias - RuntimeCliOptions is now an alias for RuntimeOptions
+# from cli_types.py. This maintains backward compatibility with existing code.
+RuntimeCliOptions = RuntimeOptions
 
 
 @dataclass(frozen=True)

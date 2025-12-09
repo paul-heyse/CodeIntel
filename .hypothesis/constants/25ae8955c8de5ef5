@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cli_types.py
+# hypothesis_version: 6.148.7
+
+['BackendFlags', 'HelpLevel', 'OutputFormat', 'PathSelection', 'RepoSelection', 'RuntimeOptions', 'auto', 'brief', 'full', 'json', 'text']

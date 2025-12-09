@@ -18,7 +18,14 @@ from codeintel.cli.cyclopts_help import (
     build_patched_app,
     create_parameter_help_panel,
 )
-from tests._helpers.assertions.expectation_assertions import expect_in, expect_not_in
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_not_equal,
+    expect_not_in,
+    expect_true,
+)
 
 
 @dataclass
@@ -192,8 +199,8 @@ def test_all_cyclopts_locations_are_patched() -> None:
     apply_help_patch()
 
     # Verify all locations point to our function
-    assert help_mod.create_parameter_help_panel is create_parameter_help_panel
-    assert help_pkg.create_parameter_help_panel is create_parameter_help_panel
+    expect_true(help_mod.create_parameter_help_panel is create_parameter_help_panel)
+    expect_true(help_pkg.create_parameter_help_panel is create_parameter_help_panel)
 
 
 def test_display_default_repr_is_clean() -> None:
@@ -206,19 +213,19 @@ def test_display_default_repr_is_clean() -> None:
     none_default = _DisplayDefault("(none)")
 
     # Clean repr for help output
-    assert repr(none_default) == "(none)"
-    assert str(none_default) == "(none)"
-    assert none_default.name == "(none)"
+    expect_equal(repr(none_default), "(none)")
+    expect_equal(str(none_default), "(none)")
+    expect_equal(none_default.name, "(none)")
 
     # Falsy like None (for boolean contexts)
-    assert not bool(none_default)
+    expect_false(bool(none_default))
 
     # NOT equal to None (important for Cyclopts show_default logic)
     # Cyclopts checks: default not in (None, empty)
     # If we equaled None, defaults wouldn't be shown
-    assert none_default != None  # noqa: E711
+    expect_not_equal(none_default, None)
     # Note: Use tuple not set because _DisplayDefault is unhashable
-    assert none_default not in (None, "empty")  # noqa: PLR6201
+    expect_not_in(none_default, (None, "empty"))
 
 
 def test_display_default_equality() -> None:
@@ -228,12 +235,12 @@ def test_display_default_equality() -> None:
     dd3 = _DisplayDefault("other")
 
     # Same name means equal
-    assert dd1 == dd2
+    expect_equal(dd1, dd2)
 
     # Different names are not equal
-    assert dd1 != dd3
+    expect_not_equal(dd1, dd3)
 
     # Not equal to arbitrary objects
-    assert dd1 != "some string"
+    expect_not_equal(dd1, "some string")
     arbitrary_int = 123
-    assert dd1 != arbitrary_int
+    expect_not_equal(dd1, arbitrary_int)

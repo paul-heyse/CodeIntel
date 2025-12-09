@@ -16,7 +16,9 @@ from enum import Enum
 from textwrap import indent
 from typing import cast
 
-from codeintel.cli.common_handlers import OutputFormat
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.result_types import GraphPlanResult, GraphPluginInfo, GraphPluginsResult
+from codeintel.cli.results import CliResult
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
     GraphPluginPlan,
@@ -440,6 +442,81 @@ def graph_plugins_handler(options: GraphPluginsOptions) -> None:
         _restore_registry_logger(registry_logger, previous_registry_level)
 
 
+# -----------------------------------------------------------------------------
+# Structured Handlers (return CliResult instead of printing)
+# -----------------------------------------------------------------------------
+
+
+def graph_plugins_handler_structured(
+    options: GraphPluginsOptions,
+) -> CliResult[GraphPluginsResult | GraphPlanResult]:
+    """List registered graph plugins or display an execution plan (structured version).
+
+    Parameters
+    ----------
+    options
+        Graph plugin options.
+
+    Returns
+    -------
+    CliResult[GraphPluginsResult | GraphPlanResult]
+        Structured result with plugin list or execution plan.
+    """
+    registry_logger, previous_registry_level = _configure_registry_logger(options.output_format)
+
+    try:
+        if options.mode is PlanMode.PLAN:
+            plan_result = _plan_plugins(options)
+            if plan_result is None:
+                # Return empty plan
+                return CliResult.ok(
+                    GraphPlanResult(
+                        plan_id="empty",
+                        plugins=[],
+                        skipped=[],
+                    )
+                )
+
+            # Convert plan to structured result
+            plugins = [
+                GraphPluginInfo(
+                    name=p.metadata.name,
+                    stage=p.metadata.stage,
+                    output_tables=p.metadata.produces_tables,
+                    enabled=True,
+                )
+                for p in plan_result.plugins
+            ]
+            skipped = [{"name": s.name, "reason": s.reason} for s in plan_result.skipped_plugins]
+            return CliResult.ok(
+                GraphPlanResult(
+                    plan_id=plan_result.plan_id,
+                    plugins=plugins,
+                    skipped=skipped,
+                )
+            )
+
+        # List mode
+        all_plugins = list_graph_plugins()
+        plugin_list: list[dict[str, object]] = [
+            {
+                "name": plugin.metadata.name,
+                "stage": plugin.metadata.stage,
+                "output_tables": list(plugin.metadata.produces_tables),
+            }
+            for plugin in all_plugins
+        ]
+
+        return CliResult.ok(
+            GraphPluginsResult(
+                plugins=plugin_list,
+                count=len(plugin_list),
+            )
+        )
+    finally:
+        _restore_registry_logger(registry_logger, previous_registry_level)
+
+
 __all__ = [
     "DependencyPolicy",
     "GraphPluginsOptions",
@@ -449,5 +526,6 @@ __all__ = [
     "SelectionPolicy",
     "bundle_graph_plugins",
     "graph_plugins_handler",
+    "graph_plugins_handler_structured",
     "parse_graph_options",
 ]

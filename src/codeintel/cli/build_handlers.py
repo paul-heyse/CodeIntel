@@ -23,14 +23,17 @@ from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
-from codeintel.cli.cli_errors import ValidationError
-from codeintel.cli.common_handlers import OutputFormat, RuntimeCliOptions
+from codeintel.cli.cli_errors import ProblemDetail, ValidationError
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.common_handlers import RuntimeCliOptions
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
     build_project_runtime,
     find_project_root,
 )
+from codeintel.cli.result_types import BuildHistoryResult, BuildStatusResult
+from codeintel.cli.results import CliResult
 
 LOG = logging.getLogger(__name__)
 
@@ -862,6 +865,162 @@ def build_history_handler(options: BuildHistoryOptions) -> None:
         sys.stdout.write("\n")
 
 
+# =============================================================================
+# Structured Handlers (return CliResult instead of printing)
+# =============================================================================
+
+
+def build_status_handler_structured(
+    options: BuildStatusOptions,
+) -> CliResult[BuildStatusResult]:
+    """Show current state of all build targets (structured version).
+
+    Parameters
+    ----------
+    options
+        Status command options.
+
+    Returns
+    -------
+    CliResult[BuildStatusResult]
+        Structured result with target status information.
+    """
+    setup_logging(options.verbose)
+
+    try:
+        runtime = build_runtime_from_cli(options.runtime_options)
+    except (ProjectNotFoundError, ValidationError) as e:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:project-error",
+                title="Project Error",
+                detail=str(e),
+                status=400,
+            )
+        )
+
+    graph = get_target_graph()
+
+    LOG.info(
+        "build.status repo=%s commit=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+    )
+
+    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
+    state = validator.validate()
+
+    if options.module:
+        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
+        if options.module not in valid_modules:
+            return CliResult.fail(
+                ProblemDetail(
+                    type="urn:codeintel:cli:validation-error",
+                    title="Invalid Module",
+                    detail=f"Unknown module: {options.module}. Valid: {', '.join(valid_modules)}",
+                    status=400,
+                )
+            )
+
+        module_targets = graph.targets_for_module(cast("TargetModule", options.module))
+        module_names = {t.name for t in module_targets}
+        filtered_targets = {
+            name: target_state
+            for name, target_state in state.targets.items()
+            if name in module_names
+        }
+        state = DatabaseState(
+            repo=state.repo,
+            commit=state.commit,
+            targets=filtered_targets,
+        )
+
+    # Convert state to result format
+    targets: list[dict[str, object]] = []
+    stale_count = 0
+    fresh_count = 0
+
+    # _group_targets_by_status returns (computed, stale, missing, blocked)
+    computed, stale_list, missing_list, blocked_list = _group_targets_by_status(state)
+
+    targets.extend({"name": name, "status": "fresh"} for name in computed)
+    fresh_count = len(computed)
+
+    targets.extend({"name": name, "status": "stale"} for name in stale_list)
+    stale_count = len(stale_list)
+
+    targets.extend({"name": name, "status": "missing"} for name in missing_list)
+    stale_count += len(missing_list)
+
+    targets.extend({"name": name, "status": "blocked"} for name in blocked_list)
+
+    return CliResult.ok(
+        BuildStatusResult(
+            targets=targets,
+            stale_count=stale_count,
+            fresh_count=fresh_count,
+        )
+    )
+
+
+def build_history_handler_structured(
+    options: BuildHistoryOptions,
+) -> CliResult[BuildHistoryResult]:
+    """Show build run history (structured version).
+
+    Parameters
+    ----------
+    options
+        History command options.
+
+    Returns
+    -------
+    CliResult[BuildHistoryResult]
+        Structured result with build history.
+    """
+    setup_logging(options.verbose)
+
+    try:
+        runtime = build_runtime_from_cli(options.runtime_options)
+    except (ProjectNotFoundError, ValidationError) as e:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:project-error",
+                title="Project Error",
+                detail=str(e),
+                status=400,
+            )
+        )
+
+    if options.run_id:
+        try:
+            record = _lookup_run_by_id(runtime, options.run_id)
+        except ValidationError as e:
+            return CliResult.fail(
+                ProblemDetail(
+                    type="urn:codeintel:cli:not-found",
+                    title="Run Not Found",
+                    detail=str(e),
+                    status=404,
+                )
+            )
+        return CliResult.ok(
+            BuildHistoryResult(
+                runs=[record.to_dict()],
+                count=1,
+            )
+        )
+
+    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=options.limit)
+
+    return CliResult.ok(
+        BuildHistoryResult(
+            runs=[r.to_dict() for r in runs],
+            count=len(runs),
+        )
+    )
+
+
 __all__ = [
     "BuildHistoryOptions",
     "BuildRunContext",
@@ -872,9 +1031,11 @@ __all__ = [
     "RuntimeCliOptions",
     "TargetScope",
     "build_history_handler",
+    "build_history_handler_structured",
     "build_run_handler",
     "build_runtime_from_cli",
     "build_status_handler",
+    "build_status_handler_structured",
     "bundle_build_run",
     "setup_logging",
 ]

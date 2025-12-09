@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/cli_render.py
+# hypothesis_version: 6.148.7
+
+[' | ', '#', '-', 'Available Datasets', 'Available Operations', 'Build Targets', 'CODEINTEL_THEME', 'ColumnSpec', 'DATASET_TABLE_SPEC', 'Description', 'Last Run', 'Name', 'OPERATION_TABLE_SPEC', 'Operation ID', 'OutputRenderer', 'PlainRenderer', 'RenderMode', 'RichRenderer', 'Status', 'Summary', 'Table Key', 'TableSpec', 'Tags', 'Target', '__dict__', 'auto', 'bold', 'bold blue', 'bold green', 'bold magenta', 'bold red', 'center', 'cyan', 'default', 'description', 'dim', 'error', 'full', 'get_renderer', 'heading', 'id', 'info', 'json', 'jsonl', 'key', 'last_run', 'left', 'message', 'muted', 'name', 'plain', 'render_cli_result', 'rich', 'right', 'status', 'success', 'summary', 'table_key', 'tags', 'to_dict', 'value', 'warning', 'white', 'yellow']
