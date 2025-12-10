@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from time import perf_counter
-
 import pytest
 
-from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql.builder import prepared_statements_dynamic
+from tests._helpers.macros import assert_macro_perf, measure_ingest_perf
 
 
 def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tuple[object, ...]]:
@@ -47,39 +44,12 @@ def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tupl
     return [sample(i) for i in range(count)]
 
 
-def test_ingest_macro_perf_reasonable(fresh_gateway: StorageGateway) -> None:
+@pytest.mark.parametrize(
+    "table_key",
+    ["analytics.function_metrics", "analytics.function_effects"],
+)
+def test_ingest_macro_perf_reasonable(macro_gateway: StorageGateway, table_key: str) -> None:
     """Macro-based ingest should be within a reasonable factor of prepared inserts."""
-    con = fresh_gateway.con
-    adapter = DuckDBStorageAdapter(fresh_gateway)
-    table_keys = ["analytics.function_metrics", "analytics.function_effects"]
-    for table_key in table_keys:
-        rows = _sample_rows(con, table_key, count=15)
-
-        con.execute(
-            "DELETE FROM analytics.function_metrics WHERE 1=1"
-            if table_key == "analytics.function_metrics"
-            else "DELETE FROM analytics.function_effects WHERE 1=1"
-        )
-        start_macro = perf_counter()
-        result = adapter.write_batch(table_key, rows)
-        macro_inserted = result.rows_written
-        macro_elapsed = perf_counter() - start_macro
-
-        con.execute(
-            "DELETE FROM analytics.function_metrics WHERE 1=1"
-            if table_key == "analytics.function_metrics"
-            else "DELETE FROM analytics.function_effects WHERE 1=1"
-        )
-        stmts = prepared_statements_dynamic(con, table_key)
-        start_prepared = perf_counter()
-        con.executemany(stmts.insert_sql, rows)
-        prepared_elapsed = perf_counter() - start_prepared
-
-        if macro_inserted != len(rows):
-            pytest.fail(f"Inserted rows {macro_inserted} != expected {len(rows)} for {table_key}")
-        # Allow a generous factor to avoid flakiness while catching regressions.
-        if macro_elapsed > prepared_elapsed * 10 + 0.05:
-            pytest.fail(
-                f"Macro ingest slower than expected for {table_key}: macro={macro_elapsed:.6f}s "
-                f"prepared={prepared_elapsed:.6f}s"
-            )
+    rows = _sample_rows(macro_gateway.con, table_key, count=15)
+    result = measure_ingest_perf(macro_gateway, table_key, rows)
+    assert_macro_perf(result)

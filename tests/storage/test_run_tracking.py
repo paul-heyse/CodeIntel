@@ -20,7 +20,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_length,
 )
-from tests._helpers.factories import make_snapshot
+from tests._helpers.run_tracking import RunContextOptions, make_run_context
 
 
 def test_pipeline_run_record_stores_fields() -> None:
@@ -79,28 +79,24 @@ def test_step_completion_params_to_record() -> None:
     expect_is_not_none(record.completed_at)
 
 
-def _make_run_context(run_id: str, tmp_path: Path) -> RunContext:
+def _make_run_context(run_id: str, repo_root: Path) -> RunContext:
     """
     Create a RunContext for testing.
-
-    Parameters
-    ----------
-    run_id
-        Unique run identifier.
-    tmp_path
-        Temporary path for repo root.
 
     Returns
     -------
     RunContext
-        A RunContext configured for testing.
+        Run context configured for the provided run_id and repo root.
     """
-    snapshot = make_snapshot(repo="test/repo", commit="abc123", repo_root=tmp_path)
-    return RunContext(
+    return make_run_context(
         run_id=run_id,
-        kind="full",
-        snapshot=snapshot,
-        trigger="cli",
+        repo_root=repo_root,
+        options=RunContextOptions(
+            repo="test/repo",
+            commit="abc123",
+            kind="full",
+            trigger="cli",
+        ),
     )
 
 
@@ -108,7 +104,7 @@ def test_start_run_inserts_record(fresh_gateway: StorageGateway, tmp_path: Path)
     """Verify start_run inserts a pipeline run record."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
-    ctx = _make_run_context(run_id="run-test-1", tmp_path=tmp_path)
+    ctx = _make_run_context(run_id="run-test-1", repo_root=tmp_path)
 
     tracking.start_run(ctx, pipeline_name="Test Pipeline")
 
@@ -124,7 +120,7 @@ def test_complete_run_updates_status(fresh_gateway: StorageGateway, tmp_path: Pa
     """Verify complete_run updates run status."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
-    ctx = _make_run_context(run_id="run-test-2", tmp_path=tmp_path)
+    ctx = _make_run_context(run_id="run-test-2", repo_root=tmp_path)
 
     tracking.start_run(ctx)
     tracking.complete_run("run-test-2", status="succeeded")
@@ -142,7 +138,7 @@ def test_complete_run_with_error_summary(fresh_gateway: StorageGateway, tmp_path
     """Verify complete_run stores error summary."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
-    ctx = _make_run_context(run_id="run-test-3", tmp_path=tmp_path)
+    ctx = _make_run_context(run_id="run-test-3", repo_root=tmp_path)
 
     tracking.start_run(ctx)
     tracking.complete_run("run-test-3", status="failed", error_summary="Test error occurred")
@@ -160,7 +156,7 @@ def test_fetch_run_returns_record(fresh_gateway: StorageGateway, tmp_path: Path)
     """Verify fetch_run returns PipelineRunRecord."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
-    ctx = _make_run_context(run_id="run-test-4", tmp_path=tmp_path)
+    ctx = _make_run_context(run_id="run-test-4", repo_root=tmp_path)
 
     tracking.start_run(ctx, pipeline_name="Fetch Test")
 

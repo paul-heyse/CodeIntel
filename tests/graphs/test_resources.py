@@ -19,6 +19,7 @@ from tests._helpers.assertions import (
     expect_false,
     expect_in,
     expect_is_instance,
+    expect_row_value,
     expect_true,
 )
 
@@ -657,9 +658,7 @@ def test_storage_resource_connection_usable(storage_resource: StorageResource) -
     """StorageResource gateway connection is usable."""
     result = storage_resource.gateway.con.execute("SELECT 1 AS value").fetchone()
 
-    expect_true(result is not None)
-    if result is not None:
-        expect_equal(result[0], EXPECTED_ONE)
+    expect_row_value(result, 0, EXPECTED_ONE, message="Expected SELECT to return 1")
 
 
 def test_storage_resource_protocol_conformance(storage_resource: StorageResource) -> None:

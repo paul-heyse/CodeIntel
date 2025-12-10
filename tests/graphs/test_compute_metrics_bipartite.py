@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.graphs.compute.metrics.bipartite import (
@@ -20,8 +19,8 @@ from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
     expect_is_instance,
-    expect_is_not_none,
     expect_true,
+    require_projection_graph,
 )
 from tests._helpers.fakes.networkx_graphs import (
     bipartite_graph,
@@ -44,20 +43,6 @@ EXPECTED_DEGREE_TWO: Final[int] = 2
 EXPECTED_DEGREE_THREE: Final[int] = 3
 TOLERANCE: Final[float] = 0.01
 WEIGHT_VALUE: Final[float] = 2.5
-
-
-def _require_projection(graph: nx.Graph | None) -> nx.Graph:
-    """Ensure a projection graph exists for type checking.
-
-    Returns
-    -------
-    nx.Graph
-        The provided projection graph when it is present.
-    """
-    expect_is_not_none(graph, message="Expected projection graph")
-    if graph is None:
-        raise AssertionError("Expected projection graph")
-    return graph
 
 
 # ===========================================================================
@@ -239,7 +224,7 @@ def test_weighted_projection_simple_bipartite() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     # 1 and 2 share connection through x, so they're connected in projection
     expect_true(projection.has_edge("p1", "p2"))
 
@@ -251,7 +236,7 @@ def test_weighted_projection_no_shared_neighbors() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_TWO)
     expect_equal(projection.number_of_edges(), 0)  # No shared neighbors
 
@@ -263,7 +248,7 @@ def test_weighted_projection_complete_bipartite() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_THREE)
     # Complete graph of 3 nodes has 3 edges
     expect_equal(projection.number_of_edges(), EXPECTED_EDGE_COUNT_THREE)
@@ -276,7 +261,7 @@ def test_weighted_projection_weights() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_true(projection.has_edge("p1", "p2"))
     # Weight should reflect shared neighbors (2 shared)
     edge_data = projection.get_edge_data("p1", "p2")
@@ -308,7 +293,7 @@ def test_weighted_projection_partial_overlap() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_THREE)
     # All pairs share at least one neighbor
     expect_true(projection.has_edge(1, 2))
@@ -331,7 +316,7 @@ def test_weighted_projection_secondary_partition() -> None:
 
     result = compute_weighted_projection(graph, secondary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     # a and b share 1, b and c share 2
     expect_true(projection.has_edge("a", "b"))
     expect_true(projection.has_edge("b", "c"))
@@ -345,7 +330,7 @@ def test_weighted_projection_single_node() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_equal(projection.number_of_nodes(), 1)
     expect_equal(projection.number_of_edges(), 0)  # Single node, no edges
 
@@ -378,7 +363,7 @@ def test_projection_matches_shared_neighbors_count() -> None:
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     # The weighted_projected_graph uses neighbor count as weight
     edge_data = projection.get_edge_data("p1", "p2")
     expect_true(edge_data is not None)
@@ -453,7 +438,7 @@ def test_complete_bipartite_projection_edges(
 
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_equal(projection.number_of_edges(), expected_projection_edges)
 
 
@@ -475,5 +460,5 @@ def test_projection_with_varying_shared_neighbors(shared_count: int) -> None:
     primary = {1, 2}
     result = compute_weighted_projection(graph, primary)
 
-    projection = _require_projection(result)
+    projection = require_projection_graph(result)
     expect_true(projection.has_edge(1, 2))

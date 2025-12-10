@@ -388,9 +388,7 @@ def test_get_callgraph_neighborhood_node_not_in_graph(
     graph = nx.DiGraph()
     graph.add_edge(1, 2)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -413,9 +411,7 @@ def test_get_callgraph_neighborhood_with_radius(
     graph.add_edge(2, 3)
     graph.add_edge(3, 4)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -444,9 +440,7 @@ def test_get_import_boundary_subsystem_not_found(
     graph = nx.DiGraph()
     graph.add_edge("sub1", "sub2")
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -465,9 +459,7 @@ def test_get_import_boundary_basic(architecture_gateway: StorageGateway) -> None
     graph.add_edge("sub1", "sub2", weight=1.0)
     graph.add_edge("sub3", "sub1", weight=0.5)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -489,9 +481,7 @@ def test_get_import_boundary_with_max_edges(architecture_gateway: StorageGateway
     graph.add_edge("sub1", "sub3")
     graph.add_edge("sub1", "sub4")
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -509,9 +499,7 @@ def test_get_import_boundary_with_max_edges(architecture_gateway: StorageGateway
 
 def test_get_import_boundary_no_graph_engine(architecture_gateway: StorageGateway) -> None:
     """Return empty boundary when no graph engine available."""
-    components = build_backend_components(
-        architecture_gateway, graph_engine=None
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=None)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -801,9 +789,7 @@ def test_get_callgraph_neighborhood_with_edge_data(
         weight=0.9,
     )
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -842,9 +828,7 @@ def test_get_callgraph_neighborhood_edge_without_data(
     graph = nx.DiGraph()
     graph.add_edge(1, 2)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -878,9 +862,7 @@ def test_get_callgraph_neighborhood_multiple_nodes_truncated(
     graph.add_edge(1, 4)
     graph.add_edge(1, 5)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -913,9 +895,7 @@ def test_get_import_boundary_with_incoming_edges(
     graph.add_edge("sub3", "sub1", weight=0.5)
     graph.add_edge("sub4", "sub1", weight=0.8)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -942,9 +922,7 @@ def test_get_import_boundary_truncates_during_in_edges(
     graph.add_edge("sub4", "sub1", weight=0.8)
     graph.add_edge("sub5", "sub1", weight=0.9)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -971,9 +949,7 @@ def test_get_import_boundary_edge_without_weight(
     graph = nx.DiGraph()
     graph.add_edge("sub1", "sub2")  # No weight attribute
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    components = build_backend_components(
-        architecture_gateway, graph_engine=graph_engine
-    )
+    components = build_backend_components(architecture_gateway, graph_engine=graph_engine)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,
@@ -1124,9 +1100,7 @@ def test_get_callgraph_neighbors_with_scope(architecture_gateway: StorageGateway
 def test_backend_with_custom_limits(architecture_gateway: StorageGateway) -> None:
     """Verify custom limits are applied correctly."""
     custom_limits = BackendLimits(default_limit=10, max_rows_per_call=50)
-    components = build_backend_components(
-        architecture_gateway, limits=custom_limits
-    )
+    components = build_backend_components(architecture_gateway, limits=custom_limits)
     backend = FunctionQueryLayer(
         context=components.context,
         repositories=components.repositories,

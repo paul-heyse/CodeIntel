@@ -30,6 +30,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.factories import make_snapshot
 
@@ -50,6 +51,15 @@ EXPECTED_EMPTY_LIST_LENGTH = 0
 EXPECTED_SINGLE_EDGE = 1
 EXPECTED_COVERAGE_RATIO_FULL = 1.0
 FLOAT_COMPARISON_TOLERANCE = 0.01
+
+
+def test_synthesize_coverage_edges_populates_tables(test_ctx: TestContext) -> None:
+    """Helper should seed catalog, edges, and coverage functions consistently."""
+    synthesize_coverage_edges(test_ctx, [("tests/test_mod.py::test_one", TEST_GOID)])
+
+    expect_equal(test_ctx.query_count("analytics.test_catalog"), 1)
+    expect_equal(test_ctx.query_count("analytics.test_coverage_edges"), 1)
+    expect_equal(test_ctx.query_count("analytics.coverage_functions"), 1)
 
 
 class TestBuildEdgesForFile:

@@ -69,9 +69,23 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
 from tests._helpers.ingestion import write_coverage_file, write_pytest_report
-from tests._helpers.orchestration.tooling import ToolingOutputs
+from tests._helpers.orchestration.tooling import (
+    ToolingArtifacts,
+    ToolingOutputs,
+    build_tooling_artifacts,
+)
 
 pytest_plugins = ["tests._helpers.orchestration.tooling"]
+@pytest.fixture
+def tooling_artifacts(tmp_path: Path) -> ToolingArtifacts:
+    """Run real tooling to produce coverage/pytest artifacts for integration checks.
+
+    Returns
+    -------
+    ToolingArtifacts
+        Bundle containing adapter, service, and artifact paths.
+    """
+    return build_tooling_artifacts(tmp_path)
 
 # =============================================================================
 # Test Constants
@@ -250,6 +264,7 @@ def test_diagnostic_entry_attributes() -> None:
         code="E001",
         message="Undefined variable",
     )
+
 
 def test_diagnostic_result_errors_by_path() -> None:
     """DiagnosticResult.errors_by_path should count errors per file."""
@@ -1201,10 +1216,11 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
 
 def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
     """ToolService.run_coverage_report should return report from parsed data."""
-    coverage_json = {
-        "files": {"mod.py": {"executed_lines": [1, 2], "missing_lines": [3]}},
-    }
-    coverage_path = write_coverage_file(tmp_path, content=coverage_json)
+    artifacts = build_tooling_artifacts(tmp_path)
+    coverage_path = write_coverage_file(
+        tmp_path,
+        content={"files": {"mod.py": {"executed_lines": [1, 2], "missing_lines": [3]}}},
+    )
     run = make_tool_run_result(
         ToolName.COVERAGE,
         options=ToolRunOptions(
@@ -1215,13 +1231,13 @@ def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
             output_path=coverage_path,
         ),
     )
-    runner = PresetRunner(run)
-    service = ToolService(runner)
+    service = ToolService(PresetRunner(run))
 
-    report = asyncio.run(service.run_coverage_report(tmp_path))
+    report = asyncio.run(service.run_coverage_report(artifacts.context.repo_root))
 
     # Should return a CoverageReport
     expect_true(isinstance(report, CoverageReport))
+    expect_true(len(report.files) > 0)
 
 
 def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) -> None:

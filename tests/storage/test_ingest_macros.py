@@ -176,9 +176,9 @@ def test_macros_contain_ingest_prefix() -> None:
         )
 
 
-def test_ingest_macros_registered_on_gateway(fresh_gateway: StorageGateway) -> None:
+def test_ingest_macros_registered_on_gateway(macro_gateway: StorageGateway) -> None:
     """All ingest macros should be registered automatically for new gateways."""
-    macros = list_ingest_macros(fresh_gateway.con)
+    macros = list_ingest_macros(macro_gateway.con)
     missing = {macro.lower() for macro in INGEST_MACROS.values() if macro.lower() not in macros}
     if missing:
         pytest.fail(f"Missing ingest macros: {sorted(missing)}")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
@@ -15,9 +14,6 @@ from codeintel.storage.helpers.profiling import (
     run_profile,
     write_text,
 )
-from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.schema import apply_all_schemas
-from codeintel.storage.views import create_all_views
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -25,6 +21,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.docs_views import create_bootstrapped_docs_db
 
 
 def test_docs_views_is_defined() -> None:
@@ -59,9 +56,9 @@ def test_write_text_creates_nested_directories(tmp_path: Path) -> None:
     expect_equal(file_path.read_text(), "Nested content")
 
 
-def test_explain_returns_plan_text(fresh_gateway: StorageGateway) -> None:
+def test_explain_returns_plan_text(schema_gateway: StorageGateway) -> None:
     """Verify explain returns EXPLAIN plan as string."""
-    con = fresh_gateway.con
+    con = schema_gateway.con
 
     result = explain(con=con, view="docs.v_subsystem_profile", analyze=False)
 
@@ -69,9 +66,9 @@ def test_explain_returns_plan_text(fresh_gateway: StorageGateway) -> None:
     expect_true(len(result) > 0)
 
 
-def test_explain_analyze_returns_plan_text(fresh_gateway: StorageGateway) -> None:
+def test_explain_analyze_returns_plan_text(schema_gateway: StorageGateway) -> None:
     """Verify explain with analyze=True returns EXPLAIN ANALYZE plan."""
-    con = fresh_gateway.con
+    con = schema_gateway.con
 
     result = explain(con=con, view="docs.v_subsystem_coverage", analyze=True)
 
@@ -88,30 +85,12 @@ def test_run_profile_raises_on_missing_db(tmp_path: Path) -> None:
         run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
 
-def _create_test_db(db_path: Path) -> None:
-    """Create a bootstrapped DuckDB with required schemas and views for profiling tests."""
-    # Use ATTACH with STORAGE_VERSION v1.4.0 for typed macro support
-    con = duckdb.connect(":memory:")
-    try:
-        # Attach file database with newer storage version
-        con.execute(f"ATTACH DATABASE '{db_path}' AS test_db (STORAGE_VERSION 'v1.4.0')")
-        # Switch to the attached database
-        con.execute("USE test_db")
-
-        # Apply all schemas to create a properly bootstrapped database
-        apply_all_schemas(con)
-        create_all_views(con)
-        bootstrap_metadata_datasets(con, include_views=True)
-    finally:
-        con.close()
-
-
 def test_run_profile_creates_artifacts(tmp_path: Path) -> None:
     """Verify run_profile creates profiling artifacts with EXPLAIN plans."""
     db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "profiling_output"
 
-    _create_test_db(db_path)
+    create_bootstrapped_docs_db(db_path)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
@@ -136,7 +115,7 @@ def test_run_profile_analyze_mode_creates_artifacts(tmp_path: Path) -> None:
     db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "profiling_output"
 
-    _create_test_db(db_path)
+    create_bootstrapped_docs_db(db_path)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
 
@@ -166,7 +145,7 @@ def test_main_with_valid_db_returns_success(tmp_path: Path) -> None:
     db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "output"
 
-    _create_test_db(db_path)
+    create_bootstrapped_docs_db(db_path)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
@@ -176,7 +155,7 @@ def test_main_with_analyze_flag(tmp_path: Path) -> None:
     db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "output"
 
-    _create_test_db(db_path)
+    create_bootstrapped_docs_db(db_path)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
 

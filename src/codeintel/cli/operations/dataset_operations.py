@@ -1,7 +1,10 @@
 """Dataset command operation specifications.
 
-Define and register operations for the dataset command group including
+Define operation specs for the dataset command group including
 list, describe, and verify commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/ops.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -10,7 +13,8 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import DatasetDescribeResult, DatasetListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.handlers.ops import dataset_describe_structured
-from codeintel.cli.introspection import StringValidator, ValidationSchema, register_operation
+from codeintel.cli.introspection import StringValidator, ValidationSchema
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _dataset_list_handler() -> CliResult[DatasetListResult]:
@@ -45,7 +49,7 @@ def _dataset_describe_handler(*, table_key: str) -> CliResult[DatasetDescribeRes
     return dataset_describe_structured(table_key=table_key)
 
 
-# Dataset List Operation
+# Dataset List Operation (registers to LEGACY registry)
 DATASET_LIST_SPEC: OperationSpec[DatasetListResult] = register_operation(
     OperationSpec(
         operation_id="dataset.list",
@@ -57,7 +61,7 @@ DATASET_LIST_SPEC: OperationSpec[DatasetListResult] = register_operation(
     )
 )
 
-# Dataset Describe Operation
+# Dataset Describe Operation (registers to LEGACY registry)
 _dataset_describe_schema = ValidationSchema().add("table_key", StringValidator(min_length=1))
 
 DATASET_DESCRIBE_SPEC: OperationSpec[DatasetDescribeResult] = register_operation(

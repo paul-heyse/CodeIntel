@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import (
     dataset_describe_handler,
     dataset_list_handler,
@@ -23,7 +21,13 @@ dataset_app = App(
     help="Dataset inspection commands.",
 )
 
+# Config for dataset commands - no runtime needed for listing/describing
+_DATASET_NO_RUNTIME_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+# Config for dataset verify - requires runtime
+_DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+
+@cli_command("dataset.list", handler=dataset_list_handler, config=_DATASET_NO_RUNTIME_CONFIG)
 @dataset_app.command(name="list")
 @dataclass
 class DatasetListCommand:
@@ -53,29 +57,10 @@ class DatasetListCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the dataset list command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {}
-
-        with command_context(
-            "dataset.list",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,  # No project needed for listing datasets
-        ) as (ctx, renderer):
-            result = dataset_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command(
+    "dataset.describe", handler=dataset_describe_handler, config=_DATASET_NO_RUNTIME_CONFIG
+)
 @dataset_app.command(name="describe")
 @dataclass
 class DatasetDescribeCommand:
@@ -105,28 +90,8 @@ class DatasetDescribeCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the dataset describe command."""
-        runtime_cli = RuntimeCLI(verbose=self.verbose)
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "table_key": self.table_key,
-        }
-
-        with command_context(
-            "dataset.describe",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,  # No project needed for describing contracts
-        ) as (ctx, renderer):
-            result = dataset_describe_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
 @dataset_app.command(name="verify")
 @dataclass
 class DatasetVerifyCommand:
@@ -146,6 +111,14 @@ class DatasetVerifyCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format.",
+            show_choices=True,
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -154,29 +127,6 @@ class DatasetVerifyCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the dataset verify command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI()
-
-        params: dict[str, object] = {
-            "table_key": self.table_key,
-        }
-
-        with command_context(
-            "dataset.verify",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = dataset_verify_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 __all__ = [

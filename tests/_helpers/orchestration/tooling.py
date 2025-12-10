@@ -18,6 +18,7 @@ import pytest
 from coverage import Coverage
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
@@ -25,6 +26,8 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.results import CoverageFileSummary
 from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.fakes.tools import write_dummy_scip_files
+from tests._helpers.ingestion import write_coverage_file, write_pytest_report
 
 
 def _ensure_ok(result: ToolRunResult, *, action: str) -> None:
@@ -119,6 +122,19 @@ class ToolingOutputs:
     context: ToolingContext
 
 
+@dataclass(frozen=True)
+class ToolingArtifacts:
+    """Prebuilt artifact bundle for adapter/service tests."""
+
+    coverage_file: Path
+    pytest_report: Path
+    scip_index: Path
+    scip_index_json: Path
+    service: ToolService
+    adapter: ToolRunnerAdapter
+    context: ToolingContext
+
+
 def build_tooling_context(base_dir: Path) -> ToolingContext:
     repo_root = base_dir / "repo"
     driver_path = _write_tooling_repo(repo_root)
@@ -175,6 +191,51 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
         ruff_errors=dict(ruff_errors),
         coverage_reports=coverage_report.files,
         context=context,
+    )
+
+
+def build_tooling_artifacts(
+    tmp_path: Path,
+    *,
+    tooling_outputs: ToolingOutputs | None = None,
+) -> ToolingArtifacts:
+    """Create coverage, pytest, and SCIP artifacts with a ready ToolRunnerAdapter.
+
+    Returns
+    -------
+    ToolingArtifacts
+        Bundle containing artifact paths plus a configured service/adapter pair.
+    """
+    outputs = tooling_outputs or run_static_tooling(build_tooling_context(tmp_path))
+    build_dir = tmp_path / "artifacts"
+    coverage_json = {
+        "files": {
+            summary.rel_path: {
+                "executed_lines": sorted(summary.executed_lines),
+                "missing_lines": sorted(summary.missing_lines),
+            }
+            for summary in outputs.coverage_reports
+        }
+    }
+    coverage_file = write_coverage_file(build_dir, content=coverage_json)
+    pytest_report = write_pytest_report(
+        build_dir,
+        tests=[
+            {"nodeid": f"test_{idx}", "outcome": "passed", "duration": 0.01}
+            for idx, _ in enumerate(outputs.pyright_errors.items(), start=1)
+        ],
+        summary={"passed": len(outputs.pyright_errors)},
+    )
+    scip_index, scip_index_json = write_dummy_scip_files(build_dir)
+    adapter = ToolRunnerAdapter(outputs.context.service)
+    return ToolingArtifacts(
+        coverage_file=coverage_file,
+        pytest_report=pytest_report,
+        scip_index=scip_index,
+        scip_index_json=scip_index_json,
+        service=outputs.context.service,
+        adapter=adapter,
+        context=outputs.context,
     )
 
 

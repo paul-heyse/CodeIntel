@@ -3,9 +3,9 @@
 > **Phase:** 5 of 6  
 > **Duration:** 5-7 days  
 > **Risk Level:** Medium  
-> **Dependencies:** Phase 4 complete  
+> **Dependencies:** Phase 4 complete ✅  
 > **Parallelizable:** Yes (per command file)  
-> **Last Updated:** December 2024 (Post-Phase 3)  
+> **Last Updated:** December 2024 (Post-Phase 4)  
 
 ---
 
@@ -40,14 +40,65 @@ Phase 5 creates the `@cli_command` decorator and migrates all commands:
 
 ### 2.1 Phase Dependencies
 
-- [ ] Phase 4 complete (registry unified)
-- [ ] All handlers migrated (Phase 3)
-- [ ] Handler signatures finalized
+- [x] Phase 4 complete (registry unified) ✅
+- [x] All handlers migrated (Phase 3) ✅
+- [x] Handler signatures finalized: `(ctx: HandlerContext) -> CliResult[T]`
 
 ### 2.2 Environment
 
 - [ ] All existing tests passing
 - [ ] Clean git working tree
+
+### 2.3 Phase 3 & 4 Context (Informing Phase 5)
+
+All handlers now use the unified `HandlerContext` with typed accessors:
+
+```python
+# Current handler pattern (Phase 3 complete)
+from codeintel.cli.handlers.context import HandlerContext
+
+def my_handler(ctx: HandlerContext) -> CliResult[MyResult]:
+    name = ctx.param_str("name")           # Optional param
+    count = ctx.param_int("count", 10)     # With default
+    target = ctx.require_str("target")     # Required (raises ParameterError)
+    # ... business logic
+```
+
+**Phase 4 Outcome:** Two registries now exist:
+- **NEW registry** (`execution/registry.py`): For handler-based operations with new `OperationSpec`
+- **LEGACY registry** (`introspection/registry.py`): Backward compat for existing tests
+
+The `@cli_command` decorator **MUST** register with the NEW registry in `execution/registry.py`, using the new `OperationSpec` type with `group`, `require_runtime`, etc. fields.
+
+```python
+# @cli_command imports from execution/registry.py (NEW registry)
+from codeintel.cli.execution.registry import OperationSpec, register_operation
+```
+
+The decorator will create `HandlerContext` with `_params` populated from command dataclass fields.
+
+---
+
+## 2.4 Phase 4 Outcome Summary
+
+Phase 4 created a dual registry architecture:
+
+| Registry | Location | OperationSpec Type | Populated By |
+|----------|----------|-------------------|--------------|
+| **NEW** | `execution/registry.py` | `group`, `require_runtime`, `require_gateway`, etc. | `handlers/*.py` module-level registrations |
+| **LEGACY** | `introspection/registry.py` | `category` (enum), `param_schema`, etc. | `operations/*.py` module-level registrations |
+
+**Import paths:**
+```python
+# NEW registry (for @cli_command and handlers)
+from codeintel.cli.execution.registry import OperationSpec, register_operation, get_registry
+
+# LEGACY registry (for backward-compatible tests)
+from codeintel.cli.introspection.registry import register_operation as legacy_register
+from codeintel.cli.introspection import get_operation_registry  # Returns LEGACY registry
+```
+
+**Key point for Phase 5:** The `@cli_command` decorator MUST use the NEW registry imports.
 
 ---
 
@@ -98,12 +149,14 @@ def _extract_params(command_instance: Any) -> dict[str, Any]:
     return params
 ```
 
-### 3.4 Auto-Registration
+### 3.4 Auto-Registration (NEW Registry)
 
-When the decorator is applied, it registers the operation:
+When the decorator is applied, it registers the operation with the **NEW registry** (`execution/registry.py`):
 
 ```python
-# During decoration
+# During decoration - imports from NEW registry
+from codeintel.cli.execution.registry import OperationSpec, register_operation
+
 register_operation(OperationSpec(
     operation_id=operation_id,
     name=cls.__name__,
@@ -115,6 +168,12 @@ register_operation(OperationSpec(
     require_graph_runtime=require_graph_runtime,
 ))
 ```
+
+**Important:** The decorator uses the NEW `OperationSpec` from `execution/registry.py`, NOT the legacy spec from `execution/executor.py`. The key differences:
+- NEW: `group: str` (CLI command group name)
+- NEW: `require_runtime`, `require_gateway`, `require_graph_runtime` (booleans)
+- LEGACY: `category: OperationCategory` (enum)
+- LEGACY: `param_schema`, `requires_progress` (different fields)
 
 ---
 
@@ -245,6 +304,9 @@ decorator generates it based on:
 - Handler function to invoke
 - Resource requirements
 - Command dataclass fields
+
+Note: This decorator registers with the NEW registry in execution/registry.py,
+NOT the legacy registry in introspection/registry.py.
 """
 
 from __future__ import annotations
@@ -255,6 +317,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from codeintel.cli.execution.bootstrap import bootstrap_cli
+# IMPORTANT: Import from NEW registry (execution/registry.py), not introspection
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.rendering.service import get_renderer
@@ -407,7 +470,7 @@ def _execute_command(
     project_root = _get_path_field(command, "project", "project_root")
     database_path = _get_path_field(command, "db_path", "database_path")
 
-    # Create context
+    # Create context (params become _params for typed accessor methods)
     ctx = HandlerContext(
         config=config,
         operation_id=operation_id,
@@ -415,7 +478,7 @@ def _execute_command(
         verbosity=verbosity,
         project_root=project_root,
         database_path=database_path,
-        _params=params,
+        _params=params,  # Handlers access via ctx.param_str(), ctx.require_int(), etc.
     )
 
     # Execute handler
@@ -834,11 +897,23 @@ Update any developer documentation:
 
 ## 7. File Changes
 
+### 7.0 Phase 4 Completed Files (Context)
+
+These files were created/modified in Phase 4 and are now available for Phase 5:
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `execution/registry.py` | ✅ Created | NEW `OperationRegistry` and `OperationSpec` |
+| `introspection/__init__.py` | ✅ Modified | Re-exports both NEW and LEGACY registries |
+| `handlers/*.py` | ✅ Modified | All 12 handler modules register with NEW registry |
+| `operations/*.py` | ✅ Modified | Continue registering with LEGACY for backward compat |
+| `tests/cli/execution/test_registry.py` | ✅ Created | Tests for NEW registry |
+
 ### 7.1 New Files Created
 
 | File | Purpose |
 |------|---------|
-| `commands/decorators.py` | `@cli_command` decorator |
+| `commands/decorators.py` | `@cli_command` decorator (registers with NEW registry) |
 | `tests/cli/commands/test_decorators.py` | Decorator unit tests |
 
 ### 7.2 Files Modified
@@ -885,25 +960,41 @@ From each command file:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import pytest
 from cyclopts import Parameter
 
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
+# Import from NEW registry (execution/registry.py)
 from codeintel.cli.execution.registry import get_registry, reset_registry
 from codeintel.cli.rendering.types import OutputFormat
 
+if TYPE_CHECKING:
+    from codeintel.cli.handlers.context import HandlerContext
 
-def dummy_handler(ctx):
-    """Dummy handler for testing."""
+
+def dummy_handler(ctx: HandlerContext) -> CliResult[dict[str, bool]]:
+    """Return success result for testing.
+    
+    Parameters
+    ----------
+    ctx
+        Handler context (unused in test).
+    
+    Returns
+    -------
+    CliResult[dict[str, bool]]
+        Success result with test data.
+    """
+    _ = ctx  # Acknowledge unused
     return CliResult.ok({"test": True})
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
-    """Reset registry before each test."""
+def _reset_registry() -> None:
+    """Reset NEW registry before each test."""
     reset_registry()
 
 
@@ -981,12 +1072,22 @@ uv run pytest tests/cli/ -v
 
 ## 9. Verification Checklist
 
+### 9.0 Phase 4 Prerequisites Verified
+
+- [x] NEW registry exists at `execution/registry.py`
+- [x] `OperationSpec` has: `operation_id`, `name`, `description`, `handler`, `group`, `require_runtime`, `require_gateway`, `require_graph_runtime`, `tags`, `hidden`
+- [x] `get_registry()` returns NEW registry singleton
+- [x] `register_operation()` registers with NEW registry
+- [x] All handler modules have module-level registrations
+- [x] Tests pass: `uv run pytest tests/cli/execution/test_registry.py`
+
 ### 9.1 Decorator Implementation
 
 - [ ] `commands/decorators.py` created
+- [ ] `@cli_command` decorator imports from `execution/registry.py` (NOT introspection)
 - [ ] `@cli_command` decorator works
 - [ ] Parameter extraction correct
-- [ ] Auto-registration works
+- [ ] Auto-registration uses NEW `OperationSpec` type
 - [ ] Exit code handling correct
 
 ### 9.2 Command Migration

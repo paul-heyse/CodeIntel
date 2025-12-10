@@ -9,8 +9,10 @@ from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlu
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
+from tests._helpers.harnesses import plugin_harness_with_packs
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta
-from tests.analytics.conftest import PluginTestHarness
+from tests._helpers.seeds import CORE_PACK
 
 
 def _seed_function_sources(repo_root: Path) -> None:
@@ -60,23 +62,27 @@ def _make_catalog(ctx_repo: str, ctx_commit: str) -> FunctionCatalogService:
     return FunctionCatalogService(catalog)
 
 
-def test_function_ast_features_plugin(plugin_harness: PluginTestHarness) -> None:
+def test_function_ast_features_plugin(tmp_path: Path) -> None:
     """FunctionAstFeaturesPlugin should persist feature rows for catalog functions."""
-    _seed_function_sources(plugin_harness.ctx.repo_root)
-    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
+    with plugin_harness_with_packs(tmp_path, CORE_PACK) as harness:
+        _seed_function_sources(harness.ctx.repo_root)
+        catalog_provider = _make_catalog(harness.ctx.repo, harness.ctx.commit)
+        ensure_catalog_with_goids(harness.ctx, catalog_provider)
 
-    resources = TargetResourceOverrides(catalog=catalog_provider)
-    result = plugin_harness.execute_plugin(FunctionAstFeaturesPlugin(), resources=resources)
-    expect_true(result.success)
-    expect_equal(plugin_harness.ctx.query_count("analytics.function_ast_features"), 2)
+        resources = TargetResourceOverrides(catalog=catalog_provider)
+        result = harness.execute_plugin(FunctionAstFeaturesPlugin(), resources=resources)
+        expect_true(result.success)
+        expect_equal(harness.ctx.query_count("analytics.function_ast_features"), 2)
 
 
-def test_function_contracts_plugin(plugin_harness: PluginTestHarness) -> None:
+def test_function_contracts_plugin(tmp_path: Path) -> None:
     """FunctionContractsPlugin should derive contracts from AST-loaded functions."""
-    _seed_function_sources(plugin_harness.ctx.repo_root)
-    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
+    with plugin_harness_with_packs(tmp_path, CORE_PACK) as harness:
+        _seed_function_sources(harness.ctx.repo_root)
+        catalog_provider = _make_catalog(harness.ctx.repo, harness.ctx.commit)
+        ensure_catalog_with_goids(harness.ctx, catalog_provider)
 
-    resources = TargetResourceOverrides(catalog=catalog_provider)
-    result = plugin_harness.execute_plugin(FunctionContractsPlugin(), resources=resources)
-    expect_true(result.success)
-    expect_true(plugin_harness.ctx.query_count("analytics.function_contracts") >= 1)
+        resources = TargetResourceOverrides(catalog=catalog_provider)
+        result = harness.execute_plugin(FunctionContractsPlugin(), resources=resources)
+        expect_true(result.success)
+        expect_true(harness.ctx.query_count("analytics.function_contracts") >= 1)

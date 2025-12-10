@@ -30,7 +30,9 @@ def test_resolve_callee_precedence_local_then_alias() -> None:
 
     expect_equal(result.callee_goid, 1)
     expect_equal(result.resolved_via, "local_name")
-    expect_true(result.confidence > 0.0, message="Confidence should be positive for local resolution")
+    expect_true(
+        result.confidence > 0.0, message="Confidence should be positive for local resolution"
+    )
 
 
 def test_resolve_callee_import_alias_global_attr_chain() -> None:
@@ -49,7 +51,9 @@ def test_resolve_callee_import_alias_global_attr_chain() -> None:
 
     expect_equal(result.callee_goid, ALIAS_GOID)
     expect_equal(result.resolved_via, "import_alias")
-    expect_true(result.confidence > 0.0, message="Confidence should be positive for alias resolution")
+    expect_true(
+        result.confidence > 0.0, message="Confidence should be positive for alias resolution"
+    )
 
 
 def test_resolve_callee_unresolved_returns_none() -> None:

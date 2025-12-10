@@ -10,14 +10,25 @@ import pytest
 from codeintel.serving.backend import BackendLimits
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
-from tests._helpers.serving_apps import ServiceApp, build_service_app
+from tests._helpers.serving_apps import (
+    ServiceApp,
+    ServiceContext,
+    build_service_app,
+    build_service_context_from_components,
+)
+from tests._helpers.serving_harnesses import RecordingObservability
+from tests.serving.mcp.conftest import McpBackendComponents
+
+pytest_plugins = ["tests.serving.mcp.conftest"]
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 
 
 @pytest.fixture
-def service_app_factory() -> Callable[..., ServiceApp]:
+def service_app_factory(
+    mcp_backend_factory: Callable[..., McpBackendComponents],
+) -> Callable[..., ServiceApp]:
     """Build service apps bound to a gateway snapshot.
 
     Returns
@@ -32,11 +43,22 @@ def service_app_factory() -> Callable[..., ServiceApp]:
         repo: str,
         commit: str,
         limits: BackendLimits | None = None,
+        observability: RecordingObservability | None = None,
     ) -> ServiceApp:
+        obs = observability or RecordingObservability()
+        components = mcp_backend_factory(
+            gateway=gateway,
+            repo=repo,
+            commit=commit,
+            limits=limits,
+            observability=obs,
+        )
         return build_service_app(
             gateway,
             snapshot=(repo, commit),
             limits=limits,
+            observability=obs,
+            components=components,
         )
 
     return _build
@@ -62,6 +84,20 @@ def provisioned_service_app(
 
 
 @pytest.fixture
+def provisioned_service_ctx(
+    mcp_backend_components: McpBackendComponents,
+) -> ServiceContext:
+    """Service context constructed from the provisioned gateway snapshot.
+
+    Returns
+    -------
+    ServiceContext
+        Aggregated service/backend/app bound to the provisioned repo.
+    """
+    return build_service_context_from_components(mcp_backend_components)
+
+
+@pytest.fixture
 def architecture_service_app(
     architecture_gateway: StorageGateway,
     service_app_factory: Callable[..., ServiceApp],
@@ -78,6 +114,26 @@ def architecture_service_app(
         repo="demo/repo",
         commit="deadbeef",
     )
+
+
+@pytest.fixture
+def architecture_service_ctx(
+    architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
+) -> ServiceContext:
+    """Service context constructed from the architecture gateway snapshot.
+
+    Returns
+    -------
+    ServiceContext
+        Aggregated service/backend/app bound to the architecture data snapshot.
+    """
+    components = mcp_backend_factory(
+        gateway=architecture_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    )
+    return build_service_context_from_components(components)
 
 
 @pytest.fixture
@@ -110,6 +166,8 @@ def architecture_samples(
 
 __all__ = [
     "architecture_service_app",
+    "architecture_service_ctx",
     "provisioned_service_app",
+    "provisioned_service_ctx",
     "service_app_factory",
 ]

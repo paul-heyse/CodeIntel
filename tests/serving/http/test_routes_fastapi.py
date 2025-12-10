@@ -7,7 +7,7 @@ and middleware using real gateways and TestClient - no mocking.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,42 +28,6 @@ from tests._helpers.assertions import (
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
-
-
-# =============================================================================
-# Shared fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def provisioned_http_app(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., FastAPI],
-) -> FastAPI:
-    """FastAPI app wired to the provisioned gateway snapshot.
-
-    Returns
-    -------
-    FastAPI
-        Application configured against the provisioned gateway snapshot.
-    """
-    return make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-    )
-
-
-@pytest.fixture
-def provisioned_http_client(provisioned_http_app: FastAPI) -> Iterator[TestClient]:
-    """Provide a TestClient for the provisioned HTTP app.
-
-    Yields
-    ------
-    TestClient
-        Client bound to the provisioned FastAPI application.
-    """
-    with TestClient(provisioned_http_app) as client:
-        yield client
 
 
 # =============================================================================

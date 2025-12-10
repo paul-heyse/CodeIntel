@@ -1,26 +1,17 @@
 """Cyclopts wiring for subsystem exploration commands.
 
-This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
-Commands use the command_context() helper for standardized infrastructure:
-
-- Configuration loading via ConfigService
-- Runtime resolution
-- Logging setup based on verbosity
-- Unified rendering via UnifiedRenderer
-- Automatic resource cleanup
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.subsystem import (
     subsystem_coverage_handler,
     subsystem_list_handler,
@@ -35,7 +26,11 @@ subsystem_app = App(
     help="Subsystem exploration commands.",
 )
 
+# Config for subsystem commands - requires runtime and gateway
+_SUBSYSTEM_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+
+@cli_command("subsystem.list", handler=subsystem_list_handler, config=_SUBSYSTEM_CONFIG)
 @subsystem_app.command(name="list")
 @dataclass
 class SubsystemListCommand:
@@ -85,32 +80,8 @@ class SubsystemListCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the subsystem list command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "role": self.role,
-            "query": self.query,
-            "limit": self.limit,
-        }
-
-        with command_context(
-            "subsystem.list",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = subsystem_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("subsystem.show", handler=subsystem_show_handler, config=_SUBSYSTEM_CONFIG)
 @subsystem_app.command(name="show")
 @dataclass
 class SubsystemShowCommand:
@@ -146,28 +117,8 @@ class SubsystemShowCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the subsystem show command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {"subsystem_id": self.subsystem_id}
-
-        with command_context(
-            "subsystem.show",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = subsystem_show_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("subsystem.profiles", handler=subsystem_profiles_handler, config=_SUBSYSTEM_CONFIG)
 @subsystem_app.command(name="profiles")
 @dataclass
 class SubsystemProfilesCommand:
@@ -203,28 +154,8 @@ class SubsystemProfilesCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the subsystem profiles command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {"limit": self.limit}
-
-        with command_context(
-            "subsystem.profiles",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = subsystem_profiles_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("subsystem.coverage", handler=subsystem_coverage_handler, config=_SUBSYSTEM_CONFIG)
 @subsystem_app.command(name="coverage")
 @dataclass
 class SubsystemCoverageCommand:
@@ -260,28 +191,12 @@ class SubsystemCoverageCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the subsystem coverage command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {"limit": self.limit}
-
-        with command_context(
-            "subsystem.coverage",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = subsystem_coverage_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command(
+    "subsystem.module_memberships",
+    handler=subsystem_module_memberships_handler,
+    config=_SUBSYSTEM_CONFIG,
+)
 @subsystem_app.command(name="module-memberships")
 @dataclass
 class SubsystemMembershipCommand:
@@ -316,27 +231,6 @@ class SubsystemMembershipCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the subsystem module-memberships command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"module": self.module}
-
-        with command_context(
-            "subsystem.module_memberships",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = subsystem_module_memberships_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 __all__ = ["subsystem_app"]

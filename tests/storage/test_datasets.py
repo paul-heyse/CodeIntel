@@ -38,34 +38,12 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.dataset_factories import sample_dataset_registry
 
 
 def _sample_registry() -> DatasetRegistry:
-    """
-    Create a sample dataset registry for testing.
-
-    Returns
-    -------
-    DatasetRegistry
-        A test registry with sample datasets.
-    """
-    table_key = "core.ast_nodes"
-    contract = get_dataset_contracts_by_table_key()[table_key]
-    dataset = DatasetContract(
-        table_key=table_key,
-        name="ast_nodes",
-        schema=contract.schema,
-        json_schema_id="ast_nodes",
-        jsonl_filename="ast_nodes.jsonl",
-        parquet_filename="ast_nodes.parquet",
-        owner="team-data",
-        freshness_sla="daily",
-        retention_policy="90d",
-        schema_version="1",
-        stable_id="ast_nodes",
-        upstream_dependencies=("core.modules",),
-        validation_profile="strict",
-    )
+    """Create a sample dataset registry for testing."""
+    registry = sample_dataset_registry()
     view_key = "docs.v_function_summary"
     view_dataset = DatasetContract(
         table_key=view_key,
@@ -75,10 +53,10 @@ def _sample_registry() -> DatasetRegistry:
         family="docs",
     )
     return DatasetRegistry(
-        by_name={"ast_nodes": dataset, "v_function_summary": view_dataset},
-        by_table_key={table_key: dataset, view_key: view_dataset},
-        jsonl_datasets={table_key: "ast_nodes.jsonl"},
-        parquet_datasets={table_key: "ast_nodes.parquet"},
+        by_name={**registry.by_name, "v_function_summary": view_dataset},
+        by_table_key={**registry.by_table_key, view_key: view_dataset},
+        jsonl_datasets=registry.jsonl_datasets,
+        parquet_datasets=registry.parquet_datasets,
     )
 
 

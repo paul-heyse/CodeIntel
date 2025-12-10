@@ -1,7 +1,10 @@
 """History operation specifications.
 
-Define and register operations for the history command group including
+Define operation specs for the history command group including
 list, show, and clear commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/history.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryDetailResult, HistoryListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _history_list_handler(
@@ -36,7 +39,6 @@ def _history_list_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameters to avoid unused variable warnings
     _ = limit
     _ = operation_filter
     return CliResult.ok(
@@ -104,7 +106,6 @@ def _history_clear_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameters to avoid unused variable warnings
     _ = before_days
     _ = operation_filter
     return CliResult.ok(
@@ -115,7 +116,7 @@ def _history_clear_handler(
     )
 
 
-# History List Operation
+# History List Operation (registers to LEGACY registry)
 HISTORY_LIST_SPEC: OperationSpec[HistoryListResult] = register_operation(
     OperationSpec(
         operation_id="history.list",
@@ -127,7 +128,7 @@ HISTORY_LIST_SPEC: OperationSpec[HistoryListResult] = register_operation(
     )
 )
 
-# History Show Operation
+# History Show Operation (registers to LEGACY registry)
 HISTORY_SHOW_SPEC: OperationSpec[HistoryDetailResult] = register_operation(
     OperationSpec(
         operation_id="history.show",
@@ -139,7 +140,7 @@ HISTORY_SHOW_SPEC: OperationSpec[HistoryDetailResult] = register_operation(
     )
 )
 
-# History Clear Operation
+# History Clear Operation (registers to LEGACY registry)
 HISTORY_CLEAR_SPEC: OperationSpec[HistoryListResult] = register_operation(
     OperationSpec(
         operation_id="history.clear",

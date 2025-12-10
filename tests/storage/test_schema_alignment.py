@@ -48,10 +48,10 @@ def test_apply_and_validate_schema_alignment(fresh_gateway: StorageGateway) -> N
 
 
 def test_ensure_schemas_preserve_creates_tables_idempotently(
-    fresh_gateway: StorageGateway,
+    schema_gateway: StorageGateway,
 ) -> None:
     """Verify ensure_schemas_preserve can be called multiple times safely."""
-    con = fresh_gateway.con
+    con = schema_gateway.con
 
     ensure_schemas_preserve(con)
 
@@ -80,10 +80,10 @@ def test_ensure_schemas_preserve_creates_tables_idempotently(
 
 
 def test_ensure_schemas_preserve_with_extra_ddl(
-    fresh_gateway: StorageGateway,
+    schema_gateway: StorageGateway,
 ) -> None:
     """Verify ensure_schemas_preserve applies extra DDL statements."""
-    con = fresh_gateway.con
+    con = schema_gateway.con
 
     extra_ddl = [
         "CREATE TABLE IF NOT EXISTS core.test_extra_table (id INTEGER PRIMARY KEY);",

@@ -31,6 +31,7 @@ DEFAULT_COMPLETE_SIZE: Final[int] = 5
 # Internal constants
 _ALPHABET_SIZE: Final[int] = 26
 _MIN_CYCLE_SIZE: Final[int] = 2
+_MIN_LAYER_SPAN: Final[int] = 3
 
 
 def empty_graph() -> nx.Graph:
@@ -156,6 +157,24 @@ def star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGr
         else:
             g.add_edge(hub, spoke)
 
+    return g
+
+
+def weighted_star_graph(
+    spokes: int = DEFAULT_SPOKES,
+    *,
+    weight: float = 1.0,
+    inward: bool = False,
+) -> nx.DiGraph:
+    """Create a weighted star graph with consistent edge attributes.
+
+    Returns
+    -------
+    nx.DiGraph
+        Star graph with weight attributes on each edge.
+    """
+    g = star_graph(spokes, inward=inward)
+    nx.set_edge_attributes(g, dict.fromkeys(g.edges, weight), "weight")
     return g
 
 
@@ -380,6 +399,34 @@ def bipartite_graph(left: int = 3, right: int = 3) -> nx.DiGraph:
         for rnode in right_nodes:
             g.add_edge(lnode, rnode)
 
+    return g
+
+
+def acyclic_bipartite_flow(
+    left: int = DEFAULT_SPOKES,
+    right: int = DEFAULT_SPOKES,
+    *,
+    direction: str = "lr",
+) -> nx.DiGraph:
+    """Create a directed bipartite graph flowing left-to-right or right-to-left.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed bipartite graph with optional direction reversal.
+    """
+    g = nx.DiGraph()
+    left_nodes = [f"L{i}" for i in range(left)]
+    right_nodes = [f"R{i}" for i in range(right)]
+    g.add_nodes_from(left_nodes, bipartite=0)
+    g.add_nodes_from(right_nodes, bipartite=1)
+
+    if direction == "rl":
+        sources, targets = right_nodes, left_nodes
+    else:
+        sources, targets = left_nodes, right_nodes
+
+    g.add_edges_from((src, dst) for src in sources for dst in targets)
     return g
 
 
@@ -617,6 +664,43 @@ def layered_graph(layers: tuple[int, ...] = (2, 3, 2)) -> nx.DiGraph:
     return g
 
 
+def layered_dag_graph(
+    layers: tuple[int, ...] = (2, 3, 2), *, cross_layer_edges: bool = False
+) -> nx.DiGraph:
+    """Create a layered DAG with optional skip-level edges.
+
+    Parameters
+    ----------
+    layers
+        Tuple specifying number of nodes per layer.
+    cross_layer_edges
+        When True, connect each layer to the next layer and the following layer
+        to model wider fan-out without manual edge wiring.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed acyclic graph with layered structure.
+    """
+    g = layered_graph(layers)
+    if not cross_layer_edges or len(layers) < _MIN_LAYER_SPAN:
+        return g
+
+    nodes_by_layer: list[list[str]] = []
+    for layer_idx, size in enumerate(layers):
+        layer_nodes = [f"L{layer_idx}N{i}" for i in range(size)]
+        nodes_by_layer.append(layer_nodes)
+
+    for layer_idx in range(len(nodes_by_layer) - 2):
+        current_layer = nodes_by_layer[layer_idx]
+        skip_layer = nodes_by_layer[layer_idx + 2]
+        for src in current_layer:
+            for dst in skip_layer:
+                g.add_edge(src, dst)
+
+    return g
+
+
 def bridged_cliques_graph(
     clique1_size: int = 3,
     clique2_size: int = 3,
@@ -656,6 +740,85 @@ def bridged_cliques_graph(
             g.add_edge(src, dst)
     # Bridge
     g.add_edge(bridge_from, bridge_to)
+    return g
+
+
+def bridge_chain_graph(
+    segments: int = 3,
+    *,
+    segment_size: int = 3,
+    prefix: str = "seg",
+) -> nx.Graph:
+    """Create a chain of clique segments connected by single bridge edges.
+
+    Each segment is a clique of ``segment_size`` nodes (``seg0_0``, ``seg0_1``, ...).
+    The last node of each segment connects to the first node of the next,
+    producing articulation edges useful for resilience/bridge testing.
+
+    Parameters
+    ----------
+    segments
+        Number of clique segments in the chain.
+    segment_size
+        Number of nodes inside each clique segment.
+    prefix
+        Prefix used when naming nodes.
+
+    Returns
+    -------
+    nx.Graph
+        Graph of clique segments joined by bridge edges.
+    """
+    g = nx.Graph()
+    if segments <= 0 or segment_size <= 0:
+        return g
+
+    previous_nodes: list[str] | None = None
+    for segment_index in range(segments):
+        nodes = [f"{prefix}{segment_index}_{i}" for i in range(segment_size)]
+        g.add_nodes_from(nodes)
+        for i, src in enumerate(nodes):
+            for dst in nodes[i + 1 :]:
+                g.add_edge(src, dst)
+        if previous_nodes:
+            g.add_edge(previous_nodes[-1], nodes[0])
+        previous_nodes = nodes
+
+    return g
+
+
+def fan_in_fan_out_graph(
+    sources: tuple[str, ...] = ("in1", "in2"),
+    sinks: tuple[str, ...] = ("out1", "out2"),
+    *,
+    center: str = "core",
+) -> nx.DiGraph:
+    """Create a directed graph with multiple inputs converging and diverging.
+
+    Parameters
+    ----------
+    sources
+        Nodes that feed into the central node.
+    sinks
+        Nodes that receive edges from the central node.
+    center
+        Name of the central fan-in/fan-out node.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph modelling fan-in and fan-out structure.
+    """
+    g = nx.DiGraph()
+    g.add_node(center)
+    g.add_nodes_from(sources)
+    g.add_nodes_from(sinks)
+
+    for src in sources:
+        g.add_edge(src, center)
+    for dst in sinks:
+        g.add_edge(center, dst)
+
     return g
 
 
@@ -896,9 +1059,11 @@ __all__ = [
     "DEFAULT_COMPLETE_SIZE",
     "DEFAULT_CYCLE_SIZE",
     "DEFAULT_SPOKES",
+    "acyclic_bipartite_flow",
     "barbell_graph_small",
     "bidirectional_deps_graph",
     "bipartite_graph",
+    "bridge_chain_graph",
     "bridged_cliques_graph",
     "chain_graph",
     "complete_digraph",
@@ -910,11 +1075,13 @@ __all__ = [
     "disconnected_graph",
     "empty_digraph",
     "empty_graph",
+    "fan_in_fan_out_graph",
     "fork_join_cfg",
     "god_module_graph",
     "hub_and_spoke_graph",
     "hub_dependencies_graph",
     "independent_modules_graph",
+    "layered_dag_graph",
     "layered_graph",
     "linear_dependency_graph",
     "nested_loop_graph",
@@ -929,5 +1096,6 @@ __all__ = [
     "tree_graph",
     "two_cycle_graph",
     "two_sccs_graph",
+    "weighted_star_graph",
     "while_loop_cfg",
 ]

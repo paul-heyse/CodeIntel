@@ -5,6 +5,7 @@
 > **Risk Level:** Low  
 > **Dependencies:** Phase 5 complete  
 > **Parallelizable:** Partially  
+> **Last Updated:** December 2024 (Post-Phase 3)  
 
 ---
 
@@ -41,9 +42,27 @@ Phase 6 completes the migration by removing all legacy code:
 ### 2.1 Phase Dependencies
 
 - [ ] Phase 5 complete (all commands migrated)
+- [x] Phase 3 complete (all handlers use `HandlerContext`)
 - [ ] All CLI commands working
 - [ ] All tests passing
 - [ ] No imports of files to be deleted
+
+### 2.2 Phase 3 Context (Relevant to Cleanup)
+
+Phase 3 introduced a temporary adapter function that should be removed in Phase 6:
+
+```python
+# In handlers/context.py (temporary - remove in Phase 6)
+def handler_context_from_enhanced(
+    ctx: EnhancedHandlerContext,
+    operation_id: str,
+    params: dict[str, object] | None = None,
+) -> HandlerContext:
+    """Create HandlerContext from legacy EnhancedHandlerContext."""
+    ...
+```
+
+This is a **standalone function** (not a classmethod) that was extracted from `HandlerContext` in Phase 3 to reduce public method count.
 
 ### 2.2 Pre-Deletion Verification
 
@@ -350,7 +369,9 @@ from __future__ import annotations
 # Context is now the single context type
 from codeintel.cli.handlers.context import (
     HandlerContext,
+    ParameterError,  # Exception for missing/invalid params
     handler_context_manager,
+    # NOTE: handler_context_from_enhanced removed in Phase 6
 )
 
 # Re-export handlers
@@ -365,10 +386,13 @@ from codeintel.cli.handlers.jobs import (
 
 __all__ = [
     "HandlerContext",
+    "ParameterError",
     "handler_context_manager",
     # ... handler exports
 ]
 ```
+
+**Note:** The `handler_context_from_enhanced` adapter function is removed in Phase 6 as all code paths now use `HandlerContext` directly.
 
 **`execution/__init__.py`:**
 
@@ -421,8 +445,8 @@ __all__ = [
 Search for and remove any compatibility code:
 
 ```bash
-# Find adapter methods
-rg "from_enhanced_context" src/
+# Find adapter function (standalone, not classmethod - changed in Phase 3)
+rg "handler_context_from_enhanced" src/
 
 # Find deprecation warnings
 rg "DeprecationWarning" src/codeintel/cli/
@@ -433,17 +457,28 @@ rg "TODO.*migration|TODO.*Phase" src/codeintel/cli/
 
 **Remove from `handlers/context.py`:**
 
-Delete the `from_enhanced_context` class method if present:
+Delete the `handler_context_from_enhanced` **standalone function** (note: this was converted from a classmethod in Phase 3):
 
 ```python
-# DELETE THIS ENTIRE METHOD
-@classmethod
-def from_enhanced_context(cls, ctx, operation_id, params=None):
+# DELETE THIS ENTIRE FUNCTION (it's at module level, not inside HandlerContext)
+def handler_context_from_enhanced(
+    ctx: EnhancedHandlerContext,
+    operation_id: str,
+    params: dict[str, object] | None = None,
+) -> HandlerContext:
     """Create HandlerContext from legacy EnhancedHandlerContext.
     
-    WARNING: This is temporary scaffolding. Remove in Phase 6.
+    This is a temporary adapter for gradual migration. It will be
+    removed in Phase 6 when all handlers have been migrated.
     """
     ...
+```
+
+**Also remove from `__all__`:**
+
+```python
+# In handlers/context.py __all__, remove:
+"handler_context_from_enhanced",
 ```
 
 ---
@@ -695,6 +730,7 @@ uv run ruff check src/codeintel/cli/
 - [ ] No imports of deleted files in `src/`
 - [ ] No imports of deleted files in `tests/`
 - [ ] All `__init__.py` files updated
+- [ ] `handler_context_from_enhanced` removed from `context.py` and `__all__`
 
 ### 7.3 Quality Checks
 
@@ -715,6 +751,7 @@ Phase 6 is complete when:
 | All legacy files deleted | ⬜ |
 | No imports of deleted files | ⬜ |
 | All `__init__.py` updated | ⬜ |
+| `handler_context_from_enhanced` removed | ⬜ |
 | No compatibility code remains | ⬜ |
 | All tests pass | ⬜ |
 | Type checking clean | ⬜ |
@@ -899,6 +936,13 @@ if rg "from codeintel.cli.execution.adapter import" src/ tests/; then
     exit 1
 fi
 
+# Check for adapter function usage (should not be used outside context.py itself)
+echo "Checking for handler_context_from_enhanced usage..."
+if rg "handler_context_from_enhanced" src/ --glob '!**/context.py' tests/; then
+    echo "❌ handler_context_from_enhanced still used"
+    exit 1
+fi
+
 echo "✓ No remaining imports found"
 
 # Delete files
@@ -943,6 +987,9 @@ echo "=== Phase 6 cleanup complete ==="
 The CLI has been successfully migrated to the unified architecture:
 
 - **Single `HandlerContext`** for all operations
+  - Typed parameter accessors: `param_str()`, `param_int()`, `param_bool()`, `param_path()`, `param_enum()`, `param_list()`, `param_tuple()`
+  - Required parameter accessors: `require_str()`, `require_int()`, `require_path()` (raise `ParameterError`)
+  - Lazy resource access: `ctx.gateway`, `ctx.runtime`, `ctx.graph_runtime`
 - **Single `UnifiedRenderer`** for all output
 - **Declarative `@cli_command`** for all commands
 - **Unified `OperationRegistry`** for introspection

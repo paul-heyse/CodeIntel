@@ -82,9 +82,9 @@ def _fetch_schema(con: duckdb.DuckDBPyConnection, view_key: str) -> list[tuple[s
     return [(str(name), str(dtype)) for name, dtype in rows]
 
 
-def test_subsystem_docs_views_schema_stable(fresh_gateway: StorageGateway) -> None:
+def test_subsystem_docs_views_schema_stable(schema_gateway: StorageGateway) -> None:
     """Detect unintended column drift for subsystem docs views."""
     for view_key, expected in EXPECTED_SCHEMAS.items():
-        actual = _fetch_schema(fresh_gateway.con, view_key)
+        actual = _fetch_schema(schema_gateway.con, view_key)
         if actual != expected:
             pytest.fail(f"{view_key} schema drift detected: {actual} != {expected}")

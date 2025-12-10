@@ -70,6 +70,22 @@ def load_analytics_samples(gateway: StorageGateway) -> AnalyticsSamples:
     )
 
 
+def architecture_seed_selector(gateway: StorageGateway) -> AnalyticsSamples:
+    """Return architecture-friendly analytics samples with graceful skips.
+
+    Parameters
+    ----------
+    gateway
+        Gateway seeded with architecture analytics data.
+
+    Returns
+    -------
+    AnalyticsSamples
+        Sample identifiers suitable for subsystem/profile/function tests.
+    """
+    return load_analytics_samples(gateway)
+
+
 def dependency_library_patterns() -> dict[str, LibraryPattern]:
     """Return standard library patterns for dependency tests.
 
@@ -203,6 +219,7 @@ def dependency_calls_sample(
 
 __all__ = [
     "AnalyticsSamples",
+    "architecture_seed_selector",
     "dependency_alias_sources",
     "dependency_calls_sample",
     "dependency_library_patterns",

@@ -23,9 +23,8 @@ from codeintel.cli.datasets_handlers import (
     ScaffoldSchemaOptions,
     build_scaffold_options,
 )
-from codeintel.config.datasets import DatasetContract
-from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
+from tests._helpers.dataset_factories import sample_dataset_registry
 
 
 def _base_opts(tmp_path: Path) -> ScaffoldOptions:
@@ -157,18 +156,7 @@ def test_scaffold_emits_bootstrap_snippet_when_requested(tmp_path: Path) -> None
 def test_scaffold_registry_conflict_blocks_creation(tmp_path: Path) -> None:
     """Live registry clashes should fail fast when enabled."""
     opts = _base_opts(tmp_path)
-    existing = DatasetContract(
-        table_key=opts.table_key,
-        name=opts.name,
-        schema=None,
-        stable_id=opts.stable_id,
-    )
-    registry = DatasetRegistry(
-        by_name={opts.name: existing},
-        by_table_key={opts.table_key: existing},
-        jsonl_datasets={},
-        parquet_datasets={},
-    )
+    registry = sample_dataset_registry(tmp_path)
     with pytest.raises(ScaffoldConfigError):
         build_scaffold_options(
             name=opts.name,

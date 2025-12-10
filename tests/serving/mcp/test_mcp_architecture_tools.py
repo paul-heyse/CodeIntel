@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import cast
 
 import pytest
@@ -32,16 +32,26 @@ from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests.serving.mcp.conftest import McpBackendComponents
 
 # =============================================================================
-# Constants
-# =============================================================================
-
-DEFAULT_LIMIT = 10
-MAX_ROWS = 100
-
-
-# =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+def _build_arch_backend(
+    architecture_gateway: StorageGateway,
+    factory: Callable[..., McpBackendComponents],
+) -> DuckDBBackend:
+    """Build an architecture-aware backend from the seeded gateway.
+
+    Returns
+    -------
+    DuckDBBackend
+        Backend bound to the provided architecture gateway snapshot.
+    """
+    return factory(
+        gateway=architecture_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    ).backend
 
 
 @pytest.fixture(autouse=True)
@@ -221,7 +231,6 @@ def test_register_architecture_tools_local_db_config(
         repo=mcp_backend.repo,
         commit=mcp_backend.commit,
         db_path=mcp_backend.gateway.config.db_path,
-        repo_root=mcp_backend.gateway.config.repo_root,
     )
 
     register_architecture_tools(mcp, mcp_backend.backend, config=config)
@@ -346,7 +355,7 @@ def test_backend_get_function_architecture_via_tools(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_function_architecture works through backend."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT function_goid_h128 FROM analytics.graph_metrics_functions LIMIT 1"
@@ -365,7 +374,7 @@ def test_backend_get_function_architecture_not_found(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_function_architecture handles not found."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     nonexistent_goid = 99999999
     with contextlib.suppress(McpError):
@@ -377,7 +386,7 @@ def test_backend_get_module_architecture_via_tools(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_module_architecture works through backend."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT module FROM analytics.graph_metrics_modules LIMIT 1"
@@ -396,7 +405,7 @@ def test_backend_get_module_architecture_not_found(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_module_architecture handles not found."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     with contextlib.suppress(McpError):
         backend.get_module_architecture(module="nonexistent.module.xyz")
@@ -407,7 +416,7 @@ def test_backend_get_subsystem_modules_via_tools(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_subsystem_modules works through backend."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
@@ -427,7 +436,7 @@ def test_backend_summarize_subsystem_via_tools(
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify summarize_subsystem works through backend."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
@@ -443,10 +452,12 @@ def test_backend_summarize_subsystem_via_tools(
 
 
 def test_architecture_tools_emit_problem_detail_and_logs(
-    architecture_gateway: StorageGateway, caplog: pytest.LogCaptureFixture
+    architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Architecture tools should return ProblemDetail payloads and log warnings on errors."""
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
     registrar = RecordingMcpRegistrar("ArchTools")
 
     register_architecture_tools(registrar, backend)

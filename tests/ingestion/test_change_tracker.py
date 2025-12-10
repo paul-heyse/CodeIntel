@@ -10,9 +10,7 @@ from codeintel.ingestion import (
     DocstringsExtractStep,
     DuckDBStorageAdapter,
     HashChangeDetectionAdapter,
-    RepoScanStep,
 )
-from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import (
@@ -24,8 +22,8 @@ from tests._helpers import build_repo_tree
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
-    build_scan_profile,
-    create_scan_and_docstring_steps,
+    ScanSetupOptions,
+    make_scan_setup,
     module_records_for_paths,
     seed_inventory_from_paths,
 )
@@ -235,41 +233,6 @@ def _docstrings_by_path(gateway: StorageGateway) -> dict[str, set[str]]:
     return grouped
 
 
-def _setup_test_files(repo_root: Path) -> tuple[Path, Path]:
-    """Create test files a.py and b.py with initial content.
-
-    Returns
-    -------
-    tuple[Path, Path]
-        Paths to file_a and file_b.
-    """
-    repo_root = build_repo_tree(
-        repo_root,
-        {
-            "a.py": '"""Module A."""\n\ndef foo(x: int) -> int:\n    """Doc A."""\n    return x + 1',
-            "b.py": '"""Module B."""\n\ndef bar(y):\n    """Doc B."""\n    return y',
-        },
-    )
-    return repo_root / "a.py", repo_root / "b.py"
-
-
-def _create_scan_infrastructure(
-    gateway: StorageGateway,
-    repo_root: Path,
-    tmp_path: Path,
-) -> tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]:
-    """Create steps and profile for repo scanning.
-
-    Returns
-    -------
-    tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]
-        Scan step, docstrings step, and scan profile.
-    """
-    scan_step, doc_step = create_scan_and_docstring_steps(gateway, repo_root, tmp_path)
-    scan_profile = build_scan_profile(repo_root)
-    return scan_step, doc_step, scan_profile
-
-
 def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     """Ensure incremental typing ingest only processes modules flagged as changed.
 
@@ -278,48 +241,48 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     2. When a file is modified, only that file's metrics change
     3. Unchanged files retain their original metrics
     """
-    repo_root = tmp_path / "repo"
-    _, file_b = _setup_test_files(repo_root)
-    snapshot = make_snapshot(repo_root=repo_root)
+    repo_structure = {
+        "a.py": '"""Module A."""\n\ndef foo(x: int) -> int:\n    """Doc A."""\n    return x + 1',
+        "b.py": '"""Module B."""\n\ndef bar(y):\n    """Doc B."""\n    return y',
+    }
+    setup = make_scan_setup(tmp_path, options=ScanSetupOptions(repo_structure=repo_structure))
+    snapshot = make_snapshot(repo_root=setup.repo_root)
+    doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
 
-    gateway = GatewayFactory().with_macros().open()
     try:
-        scan_step, doc_step, scan_profile = _create_scan_infrastructure(
-            gateway, repo_root, tmp_path
+        _, modules, _ = setup.scan_step.execute(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            repo_root=setup.repo_root,
+            profile=setup.profile,
         )
 
-        # Step 1: Populate core.modules via repo scan
-        _, modules, _ = scan_step.execute(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=repo_root, profile=scan_profile
-        )
-
-        # Step 2: Ingest baseline docstrings
         doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
-        baseline_docstrings = _docstrings_by_path(gateway)
+        baseline_docstrings = _docstrings_by_path(setup.gateway)
 
-        # Step 3: Modify file_b to add type annotations
+        file_b = setup.repo_root / "b.py"
         file_b.write_text(
             '"""Module B updated."""\n\ndef bar(y: int) -> int:\n'
             '    """Doc B updated."""\n    return y + 2',
             encoding="utf8",
         )
 
-        # Step 4: Re-ingest to pick up changes
         doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
-        updated_docstrings = _docstrings_by_path(gateway)
+        updated_docstrings = _docstrings_by_path(setup.gateway)
 
-        # Verify: b.py should be updated, a.py unchanged
         if updated_docstrings.get("a.py") != baseline_docstrings.get("a.py"):
+            baseline_a = baseline_docstrings.get("a.py")
+            updated_a = updated_docstrings.get("a.py")
             pytest.fail(
-                f"Unchanged module docstrings should remain stable. "
-                f"Baseline: {baseline_docstrings.get('a.py')}, Updated: {updated_docstrings.get('a.py')}"
+                "Unchanged module docstrings should remain stable. "
+                f"Baseline: {baseline_a}, Updated: {updated_a}"
             )
         if updated_docstrings.get("b.py") == baseline_docstrings.get("b.py"):
             pytest.fail("Changed module docstrings should be updated")
         if "Module B updated." not in updated_docstrings.get("b.py", ""):
             pytest.fail("Updated docstring content was not ingested")
     finally:
-        gateway.close()
+        setup.gateway.close()
 
 
 def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:

@@ -20,6 +20,8 @@ import pytest
 from codeintel.export.export_jsonl import NORMALIZED_MACROS, export_jsonl_for_table
 from codeintel.export.export_parquet import export_parquet_for_table
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from tests._helpers.dataset_factories import sample_dataset_registry
+from tests._helpers.macros import assert_all_ingest_macros
 
 # =============================================================================
 # Seed Helpers
@@ -74,6 +76,7 @@ def test_export_fails_without_macro_succeeds_after_restore(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Export should fail without macro and succeed once macro is restored."""
+    assert_all_ingest_macros(fresh_gateway.con)
     _seed_call_graph_edges_minimal(fresh_gateway)
 
     jsonl_out = tmp_path / "out.jsonl"
@@ -161,6 +164,9 @@ def test_require_macros_allows_macro_backed_tables(
     tmp_path: Path,
 ) -> None:
     """Macro-backed datasets export successfully when enforcement is enabled."""
+    assert_all_ingest_macros(fresh_gateway.con)
+    # Ensure dataset registry has entries for macro-backed tables
+    sample_dataset_registry(tmp_path)
     output = tmp_path / "function_metrics.jsonl"
     export_jsonl_for_table(
         fresh_gateway,

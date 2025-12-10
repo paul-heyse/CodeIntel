@@ -77,9 +77,9 @@ def test_validate_row_with_schema_passes_valid_data() -> None:
 # =============================================================================
 
 
-def test_apply_all_schemas_creates_function_validation(fresh_gateway: StorageGateway) -> None:
+def test_apply_all_schemas_creates_function_validation(schema_gateway: StorageGateway) -> None:
     """Schema application should create analytics.function_validation."""
-    con = fresh_gateway.con
+    con = schema_gateway.con
     rows = con.execute("PRAGMA table_info(analytics.function_validation)").fetchall()
     if not rows:
         pytest.fail("analytics.function_validation should exist after apply_all_schemas")

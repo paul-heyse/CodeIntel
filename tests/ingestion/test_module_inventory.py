@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,30 +17,12 @@ from codeintel.ingestion.compute import (
     repo_scan,
     typing_ingest,
 )
-from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.helpers.module_index import load_module_map
-from tests._helpers import build_repo_tree
-from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import create_scan_step
-
-if TYPE_CHECKING:
-    from codeintel.config.primitives import SnapshotRef
+from tests._helpers.ingestion import module_inventory_context
 
 
 def _source(module: ModuleType) -> str:
     return inspect.getsource(module)
-
-
-def _make_test_snapshot(tmp_path: Path) -> SnapshotRef:
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
-        {
-            "src/pkg/a.py": "print('a')\n",
-            "src/pkg/b.py": "print('b')\n",
-        },
-    )
-    return make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
 
 
 def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
@@ -70,28 +51,24 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
-    snapshot = _make_test_snapshot(tmp_path)
-    gateway = GatewayFactory().with_macros().open()
-    profile = default_code_profile(snapshot.repo_root)
-
-    scan_step, _, _ = create_scan_step(gateway, snapshot.repo_root, tmp_path)
-    _, modules, _ = scan_step.execute(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        repo_root=snapshot.repo_root,
-        profile=profile,
+    ctx = module_inventory_context(tmp_path)
+    _, modules, _ = ctx.scan_step.execute(
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
+        profile=ctx.profile,
     )
 
     module_map = load_module_map(
-        gateway,
-        snapshot.repo,
-        snapshot.commit,
+        ctx.gateway,
+        ctx.snapshot.repo,
+        ctx.snapshot.commit,
         language="python",
         logger=None,
     )
     records = list(
         FilesystemDiscoveryAdapter.iter_modules(
-            module_map, snapshot.repo_root, logger=None, scan_profile=profile
+            module_map, ctx.snapshot.repo_root, logger=None, scan_profile=ctx.profile
         )
     )
 

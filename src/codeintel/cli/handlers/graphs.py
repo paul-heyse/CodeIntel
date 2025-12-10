@@ -11,6 +11,7 @@ from enum import Enum
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
@@ -312,6 +313,34 @@ def graph_plugins_plan_handler(
         )
     )
 
+
+# -----------------------------------------------------------------------------
+# Operation Registrations
+# -----------------------------------------------------------------------------
+
+register_operation(
+    OperationSpec(
+        operation_id="graphs.plugins.list",
+        name="List Graph Plugins",
+        description="List registered graph plugins",
+        handler=graph_plugins_list_handler,
+        group="graphs",
+        require_runtime=False,
+        require_gateway=False,
+    )
+)
+
+register_operation(
+    OperationSpec(
+        operation_id="graphs.plugins.plan",
+        name="Graph Plugins Plan",
+        description="Display an execution plan for graph plugins",
+        handler=graph_plugins_plan_handler,
+        group="graphs",
+        require_runtime=False,
+        require_gateway=False,
+    )
+)
 
 __all__ = [
     "GraphPlanResult",

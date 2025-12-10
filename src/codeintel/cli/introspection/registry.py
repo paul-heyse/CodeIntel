@@ -112,6 +112,31 @@ class OperationRegistry:
         """Clear all registered operations."""
         self.operations.clear()
 
+    def __len__(self) -> int:
+        """Return the number of registered operations.
+
+        Returns
+        -------
+        int
+            Count of registered operations.
+        """
+        return len(self.operations)
+
+    def __contains__(self, operation_id: str) -> bool:
+        """Check if an operation is registered.
+
+        Parameters
+        ----------
+        operation_id
+            Operation identifier to check.
+
+        Returns
+        -------
+        bool
+            True if operation is registered.
+        """
+        return operation_id in self.operations
+
 
 # Global registry instance
 _REGISTRY = OperationRegistry()

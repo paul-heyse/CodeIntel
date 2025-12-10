@@ -32,7 +32,7 @@ from codeintel.cli.commands._common import (
     runtime_field,
 )
 from codeintel.cli.commands._help import _AppCallKwargs
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import OutputEnvelope, iter_stdin_records
 from codeintel.cli.core.output import merge_stdin_with_args
 from codeintel.cli.errors import ValidationError
@@ -211,7 +211,13 @@ class OperationCliArgs(Protocol):
 # op commands
 # -----------------------------------------------------------------------------
 
+# Config for op commands - no runtime needed for listing
+_OP_NO_RUNTIME_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+# Config for op call - requires runtime
+_OP_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+
+@cli_command("op.list", handler=op_list_handler, config=_OP_NO_RUNTIME_CONFIG)
 @op_app.command(name="list")
 @dataclass
 class OpListCommand:
@@ -241,28 +247,8 @@ class OpListCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the op list command."""
-        runtime_cli = RuntimeCLI(verbose=self.verbose)
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "category": self.category,
-        }
-
-        with command_context(
-            "op.list",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,  # No project needed for listing operations
-        ) as (ctx, renderer):
-            result = op_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("op.call", handler=op_call_handler, config=_OP_RUNTIME_CONFIG)
 @op_app.command(name="call")
 @dataclass
 class OpCallCommand:
@@ -297,6 +283,14 @@ class OpCallCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format.",
+            show_choices=True,
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -305,31 +299,6 @@ class OpCallCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the op call command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI()
-
-        params: dict[str, object] = {
-            "op_id": self.op_id,
-            "params": self.params,
-            "skip_prereqs": self.skip_prereqs,
-        }
-
-        with command_context(
-            "op.call",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = op_call_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 # -----------------------------------------------------------------------------

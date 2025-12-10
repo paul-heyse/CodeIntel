@@ -52,7 +52,7 @@ from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
     seed_foreign_key_tables,
-    seed_modules_and_repo_map,
+    seed_ingestion_tables,
     seed_numeric_table,
     seed_varchar_table,
 )
@@ -726,4 +726,4 @@ def _seed_modules(
             snapshot=(repo, commit),
         ),
     )
-    seed_modules_and_repo_map(ctx, paths)
+    seed_ingestion_tables(ctx, module_paths=paths)

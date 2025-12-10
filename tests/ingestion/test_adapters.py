@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -22,7 +21,6 @@ from codeintel.ingestion.adapters.duckdb_storage import (
     quote_table_key,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.engine.results import CoverageReport
 from codeintel.ingestion.ports.tools import ToolStatus
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
@@ -32,11 +30,16 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.tools import make_failing_tool_service, make_success_tool_service
+from tests._helpers.fakes.tools import (
+    make_failing_tool_service,
+    make_success_tool_service,
+    write_dummy_scip_files,
+)
 from tests._helpers.ingestion import write_pytest_report
-
-if TYPE_CHECKING:
-    from tests._helpers.orchestration.tooling import ToolingOutputs
+from tests._helpers.orchestration.tooling import (
+    ToolingArtifacts,
+    ToolingOutputs,
+)
 
 pytest_plugins = ["tests._helpers.orchestration.tooling"]
 
@@ -82,26 +85,24 @@ def failing_tool_adapter() -> ToolRunnerAdapter:
 
 
 @pytest.fixture
-def coverage_tool_adapter(tooling_outputs: ToolingOutputs) -> ToolRunnerAdapter:
-    """Provide a ToolRunnerAdapter seeded with real coverage summaries.
+def coverage_tooling(tmp_path: Path, tooling_outputs: ToolingOutputs) -> ToolingArtifacts:
+    """Provide a ToolRunnerAdapter and artifacts seeded with real coverage summaries.
 
     Returns
     -------
-    ToolRunnerAdapter
-        Adapter backed by a fake service carrying real coverage data.
+    ToolingArtifacts
+        Bundle containing adapter and coverage/test artifacts.
     """
-    coverage_report = CoverageReport.from_file_reports(
-        [
-            (
-                summary.rel_path,
-                set(summary.executed_lines),
-                set(summary.missing_lines),
-            )
-            for summary in tooling_outputs.coverage_reports
-        ],
-        json_path=tooling_outputs.context.coverage_file,
+    scip_index, scip_index_json = write_dummy_scip_files(tmp_path)
+    return ToolingArtifacts(
+        coverage_file=tooling_outputs.context.coverage_file,
+        pytest_report=write_pytest_report(tmp_path),
+        scip_index=scip_index,
+        scip_index_json=scip_index_json,
+        service=tooling_outputs.context.service,
+        adapter=ToolRunnerAdapter(tooling_outputs.context.service),
+        context=tooling_outputs.context,
     )
-    return ToolRunnerAdapter(make_success_tool_service(coverage_report=coverage_report))
 
 
 # =============================================================================
@@ -445,14 +446,14 @@ def test_tool_runner_adapter_diagnostic_tools_failure(
 
 
 def test_tool_runner_adapter_run_coverage_success(
-    coverage_tool_adapter: ToolRunnerAdapter,
+    coverage_tooling: ToolingArtifacts,
     tooling_outputs: ToolingOutputs,
 ) -> None:
     """ToolRunnerAdapter.run_coverage should return file data."""
     result = asyncio.run(
-        coverage_tool_adapter.run_coverage(
+        coverage_tooling.adapter.run_coverage(
             tooling_outputs.context.repo_root,
-            coverage_file=tooling_outputs.context.coverage_file,
+            coverage_file=coverage_tooling.coverage_file,
         )
     )
 

@@ -47,7 +47,9 @@ def test_maybe_enable_nx_gpu_falls_back_when_missing() -> None:
         result.effective_backend == "cpu" and not result.gpu_enabled,
         message="Expected CPU fallback when enabler fails in non-strict mode",
     )
-    expect_true(result.fallback_reason is not None, message="Expected fallback reason to be populated")
+    expect_true(
+        result.fallback_reason is not None, message="Expected fallback reason to be populated"
+    )
 
 
 def test_maybe_enable_nx_gpu_raises_when_strict() -> None:

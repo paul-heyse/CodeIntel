@@ -29,7 +29,6 @@ def test_plugin_tests_avoid_cross_test_imports() -> None:
 
     if offending_files:
         message = (
-            "Plugin tests must not import other test modules: "
-            f"{', '.join(sorted(offending_files))}"
+            f"Plugin tests must not import other test modules: {', '.join(sorted(offending_files))}"
         )
         raise AssertionError(message)

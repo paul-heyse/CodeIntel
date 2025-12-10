@@ -11,9 +11,23 @@ from tests._helpers.harnesses.base import (
     BaseTestHarness,
     ResultLike,
 )
+from tests._helpers.harnesses.analytics import (
+    AnalyticsPluginHarness,
+    coverage_plugin_harness,
+    data_models_plugin_harness,
+    entrypoints_plugin_harness,
+    graph_plugin_harness,
+    plugin_harness_with_packs,
+)
 
 __all__ = [
+    "AnalyticsPluginHarness",
     "BaseResultAssertions",
     "BaseTestHarness",
     "ResultLike",
+    "coverage_plugin_harness",
+    "data_models_plugin_harness",
+    "entrypoints_plugin_harness",
+    "graph_plugin_harness",
+    "plugin_harness_with_packs",
 ]

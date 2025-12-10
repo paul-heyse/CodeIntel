@@ -1,7 +1,10 @@
 """Subsystem operation specifications.
 
-Define and register operations for the subsystem command group including
+Define operation specs for the subsystem command group including
 list and show commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/subsystem.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import SubsystemDetailResult, SubsystemListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _subsystem_list_handler(
@@ -33,7 +36,6 @@ def _subsystem_list_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameter to avoid unused variable warning
     _ = include_deps
     return CliResult.ok(
         SubsystemListResult(
@@ -75,7 +77,7 @@ def _subsystem_show_handler(
     )
 
 
-# Subsystem List Operation
+# Subsystem List Operation (registers to LEGACY registry)
 SUBSYSTEM_LIST_SPEC: OperationSpec[SubsystemListResult] = register_operation(
     OperationSpec(
         operation_id="subsystem.list",
@@ -87,7 +89,7 @@ SUBSYSTEM_LIST_SPEC: OperationSpec[SubsystemListResult] = register_operation(
     )
 )
 
-# Subsystem Show Operation
+# Subsystem Show Operation (registers to LEGACY registry)
 SUBSYSTEM_SHOW_SPEC: OperationSpec[SubsystemDetailResult] = register_operation(
     OperationSpec(
         operation_id="subsystem.show",

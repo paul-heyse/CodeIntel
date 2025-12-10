@@ -142,28 +142,10 @@ def test_health_endpoint_read_only_false(
 
 
 def test_health_endpoint_database_connectivity_verified(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    health_http_client: TestClient,
 ) -> None:
-    """Verify /health actually probes DuckDB connectivity.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    # Health should pass when DB is accessible
-    with TestClient(app) as client:
-        response = client.get("/health")
+    """Verify /health actually probes DuckDB connectivity."""
+    response = health_http_client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     # This confirms the DuckDB SELECT 1 query succeeded

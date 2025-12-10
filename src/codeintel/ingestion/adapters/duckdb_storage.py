@@ -123,6 +123,17 @@ def _build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
     return render_sql(["DELETE FROM", table_sql, "WHERE", delete_clause])
 
 
+def _jsonify_nested_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert dict/list columns to JSON strings for DuckDB compatibility."""
+    for col in df.columns:
+        contains_nested = bool(df[col].apply(lambda x: isinstance(x, (dict, list))).any())
+        if contains_nested:
+            df[col] = df[col].apply(
+                lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
+            )
+    return df
+
+
 def _quote_macro_name(macro_name: str) -> str:
     """Return a validated macro identifier (optionally schema-qualified).
 
@@ -481,14 +492,7 @@ class DuckDBStorageAdapter:
         self.con.execute("DROP TABLE IF EXISTS temp_ingest_values")
         schema_rel.limit(0).create("temp_ingest_values")
         df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
-
-        # Convert dict/list columns to JSON strings for DuckDB compatibility
-        for col in df.columns:
-            contains_nested = bool(df[col].apply(lambda x: isinstance(x, (dict, list))).any())
-            if contains_nested:
-                df[col] = df[col].apply(
-                    lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
-                )
+        df = _jsonify_nested_columns(df)
 
         self.con.append("temp_ingest_values", df, by_name=True)
 
@@ -554,6 +558,7 @@ class DuckDBStorageAdapter:
         """
         _, _, table_sql = _quote_table_key(table_key)
         df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
+        df = _jsonify_nested_columns(df)
         try:
             self.con.from_df(df).insert_into(table_sql)
         except DuckDBError:

@@ -1,26 +1,17 @@
 """Cyclopts wiring for IDE helper commands.
 
-This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
-Commands use the command_context() helper for standardized infrastructure:
-
-- Configuration loading via ConfigService
-- Runtime resolution
-- Logging setup based on verbosity
-- Unified rendering via UnifiedRenderer
-- Automatic resource cleanup
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ide import ide_hints_handler
 from codeintel.cli.rendering.types import OutputFormat
 
@@ -29,7 +20,11 @@ ide_app = App(
     help="IDE helper commands.",
 )
 
+# Config for IDE commands - requires runtime and gateway
+_IDE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+
+@cli_command("ide.hints", handler=ide_hints_handler, config=_IDE_CONFIG)
 @ide_app.command(name="hints")
 @dataclass
 class IdeHintsCommand:
@@ -64,27 +59,6 @@ class IdeHintsCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the IDE hints command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"rel_path": self.rel_path}
-
-        with command_context(
-            "ide.hints",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = ide_hints_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 __all__ = ["ide_app"]
