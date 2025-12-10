@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from codeintel.cli.resilience import RetryPolicy
+from codeintel.cli.execution.retry import RetryPolicy
 
 # =============================================================================
 # Type Aliases

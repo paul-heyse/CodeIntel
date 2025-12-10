@@ -14,6 +14,7 @@ from codeintel.storage.helpers.profiling import (
     run_profile,
     write_text,
 )
+from tests._helpers import docs_views_ready_gateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -21,7 +22,20 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.docs_views import create_bootstrapped_docs_db
+
+
+@pytest.fixture
+def docs_profile_db(tmp_path: Path) -> Path:
+    """Provision a file-backed docs views database and return its path."""
+    db_path = tmp_path / "docs_profile.duckdb"
+    ctx = docs_views_ready_gateway(
+        tmp_path / "docs_profile_repo",
+        file_backed=True,
+        db_path=db_path,
+    )
+    db_file = Path(ctx.gateway.config.db_path)
+    ctx.close()
+    return db_file
 
 
 def test_docs_views_is_defined() -> None:
@@ -56,9 +70,9 @@ def test_write_text_creates_nested_directories(tmp_path: Path) -> None:
     expect_equal(file_path.read_text(), "Nested content")
 
 
-def test_explain_returns_plan_text(schema_gateway: StorageGateway) -> None:
+def test_explain_returns_plan_text(docs_views_gateway: StorageGateway) -> None:
     """Verify explain returns EXPLAIN plan as string."""
-    con = schema_gateway.con
+    con = docs_views_gateway.con
 
     result = explain(con=con, view="docs.v_subsystem_profile", analyze=False)
 
@@ -66,9 +80,9 @@ def test_explain_returns_plan_text(schema_gateway: StorageGateway) -> None:
     expect_true(len(result) > 0)
 
 
-def test_explain_analyze_returns_plan_text(schema_gateway: StorageGateway) -> None:
+def test_explain_analyze_returns_plan_text(docs_views_gateway: StorageGateway) -> None:
     """Verify explain with analyze=True returns EXPLAIN ANALYZE plan."""
-    con = schema_gateway.con
+    con = docs_views_gateway.con
 
     result = explain(con=con, view="docs.v_subsystem_coverage", analyze=True)
 
@@ -85,14 +99,11 @@ def test_run_profile_raises_on_missing_db(tmp_path: Path) -> None:
         run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
 
-def test_run_profile_creates_artifacts(tmp_path: Path) -> None:
+def test_run_profile_creates_artifacts(docs_profile_db: Path, tmp_path: Path) -> None:
     """Verify run_profile creates profiling artifacts with EXPLAIN plans."""
-    db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "profiling_output"
 
-    create_bootstrapped_docs_db(db_path)
-
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
+    run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=False)
 
     # Check profile_meta.json is created
     meta_file = output_dir / "profile_meta.json"
@@ -110,14 +121,13 @@ def test_run_profile_creates_artifacts(tmp_path: Path) -> None:
     expect_true(len(coverage_explain.read_text()) > 0)
 
 
-def test_run_profile_analyze_mode_creates_artifacts(tmp_path: Path) -> None:
+def test_run_profile_analyze_mode_creates_artifacts(
+    docs_profile_db: Path, tmp_path: Path
+) -> None:
     """Verify run_profile with analyze=True creates EXPLAIN ANALYZE artifacts."""
-    db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "profiling_output"
 
-    create_bootstrapped_docs_db(db_path)
-
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
+    run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=True)
 
     # Check meta shows analyze mode
     meta_file = output_dir / "profile_meta.json"
@@ -140,24 +150,18 @@ def test_main_with_missing_db_calls_parser_error(tmp_path: Path) -> None:
         run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
 
-def test_main_with_valid_db_returns_success(tmp_path: Path) -> None:
+def test_main_with_valid_db_returns_success(docs_profile_db: Path, tmp_path: Path) -> None:
     """Verify run_profile succeeds on a valid database."""
-    db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "output"
 
-    create_bootstrapped_docs_db(db_path)
-
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
+    run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=False)
 
 
-def test_main_with_analyze_flag(tmp_path: Path) -> None:
+def test_main_with_analyze_flag(docs_profile_db: Path, tmp_path: Path) -> None:
     """Verify main processes --analyze flag correctly."""
-    db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "output"
 
-    create_bootstrapped_docs_db(db_path)
-
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
+    run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=True)
 
     # Verify analyze files were created
     expect_true((output_dir / "docs_v_subsystem_profile.analyze.txt").exists())

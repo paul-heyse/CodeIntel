@@ -245,11 +245,11 @@ def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOut
 
 
 def test_tool_status_enum_values() -> None:
-    """ToolStatus should have expected enum values."""
-    expect_true(ToolStatus.OK.value == "ok")
-    expect_true(ToolStatus.NOT_FOUND.value == "not_found")
-    expect_true(ToolStatus.FAILED.value == "failed")
-    expect_true(ToolStatus.TIMEOUT.value == "timeout")
+    """ToolStatus should expose the expected value set."""
+    expect_equal(
+        {status.value for status in ToolStatus},
+        {"failed", "not_found", "ok", "skipped", "timeout"},
+    )
 
 
 # =============================================================================

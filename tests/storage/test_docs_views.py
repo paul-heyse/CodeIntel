@@ -45,17 +45,17 @@ def _require(*, condition: bool, message: str) -> None:
 # =============================================================================
 
 
-def test_test_profile_has_primary_subsystem_index(schema_gateway: StorageGateway) -> None:
+def test_test_profile_has_primary_subsystem_index(docs_views_gateway: StorageGateway) -> None:
     """analytics.test_profile should be indexed for primary_subsystem_id scans."""
-    index_names = list_indexes(schema_gateway.con, schema="analytics", table="test_profile")
+    index_names = list_indexes(docs_views_gateway.con, schema="analytics", table="test_profile")
     expected = "idx_analytics_test_profile_primary_subsystem"
     if expected not in index_names:
         pytest.fail(f"Missing index {expected} on analytics.test_profile")
 
 
-def test_subsystems_has_repo_commit_index(schema_gateway: StorageGateway) -> None:
+def test_subsystems_has_repo_commit_index(docs_views_gateway: StorageGateway) -> None:
     """analytics.subsystems should be indexed for repo/commit/subsystem lookups."""
-    index_names = list_indexes(schema_gateway.con, schema="analytics", table="subsystems")
+    index_names = list_indexes(docs_views_gateway.con, schema="analytics", table="subsystems")
     expected = "idx_analytics_subsystems_repo_commit_id"
     if expected not in index_names:
         pytest.fail(f"Missing index {expected} on analytics.subsystems")
@@ -66,10 +66,10 @@ def test_subsystems_has_repo_commit_index(schema_gateway: StorageGateway) -> Non
 # =============================================================================
 
 
-def test_docs_views_registered_in_metadata(schema_gateway: StorageGateway) -> None:
+def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -> None:
     """Derived docs views should be registered as views in metadata.datasets."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    rows = schema_gateway.con.execute(
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    rows = docs_views_gateway.con.execute(
         "SELECT table_key, is_view FROM metadata.datasets WHERE table_key LIKE 'docs.%'"
     ).fetchall()
     table_keys = {row[0] for row in rows}
@@ -80,19 +80,21 @@ def test_docs_views_registered_in_metadata(schema_gateway: StorageGateway) -> No
         pytest.fail("Expected all docs entries in metadata.datasets to be marked as views")
 
 
-def test_docs_view_readable_via_dataset_rows(schema_gateway: StorageGateway) -> None:
+def test_docs_view_readable_via_dataset_rows(docs_views_gateway: StorageGateway) -> None:
     """Docs views remain readable through metadata.dataset_rows slices."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    repo = DatasetReadRepository(gateway=schema_gateway, repo="demo/repo", commit="deadbeef")
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    repo = DatasetReadRepository(
+        gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef"
+    )
     rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
     if not isinstance(rows, list):
         pytest.fail("Expected list from dataset_rows")
 
 
-def test_docs_views_expose_capabilities(schema_gateway: StorageGateway) -> None:
+def test_docs_views_expose_capabilities(docs_views_gateway: StorageGateway) -> None:
     """Docs views and caches surface docs/read-only capability flags."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    registry = load_dataset_registry(schema_gateway.con)
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    registry = load_dataset_registry(docs_views_gateway.con)
     profile_view = registry.by_name["v_subsystem_profile"]
     profile_caps = profile_view.capabilities()
     if not profile_caps["docs_view"]:
@@ -139,10 +141,12 @@ def test_call_graph_view_scopes_edges_to_repo_commit(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_subsystem_profile_columns(schema_gateway: StorageGateway) -> None:
+def test_subsystem_profile_columns(docs_views_gateway: StorageGateway) -> None:
     """Subsystem profile view exposes expected columns for typed contracts."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    rel_df = schema_gateway.con.execute("SELECT * FROM docs.v_subsystem_profile LIMIT 0").fetchdf()
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    rel_df = (
+        docs_views_gateway.con.execute("SELECT * FROM docs.v_subsystem_profile LIMIT 0").fetchdf()
+    )
     cols = [c.lower() for c in rel_df.columns]
     expected = {
         "repo",
@@ -177,10 +181,12 @@ def test_subsystem_profile_columns(schema_gateway: StorageGateway) -> None:
     )
 
 
-def test_subsystem_coverage_columns(schema_gateway: StorageGateway) -> None:
+def test_subsystem_coverage_columns(docs_views_gateway: StorageGateway) -> None:
     """Subsystem coverage view exposes expected columns for typed contracts."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    rel_df = schema_gateway.con.execute("SELECT * FROM docs.v_subsystem_coverage LIMIT 0").fetchdf()
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    rel_df = (
+        docs_views_gateway.con.execute("SELECT * FROM docs.v_subsystem_coverage LIMIT 0").fetchdf()
+    )
     cols = [c.lower() for c in rel_df.columns]
     expected = {
         "repo",
@@ -218,11 +224,11 @@ def test_subsystem_coverage_columns(schema_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_subsystem_profile_view_prefers_cache(schema_gateway: StorageGateway) -> None:
+def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway) -> None:
     """Cached subsystem profile rows should override computed values."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    seed_subsystem(schema_gateway.con, overrides={"module_count": 1, "function_count": 2})
-    schema_gateway.con.execute(
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    seed_subsystem(docs_views_gateway.con, overrides={"module_count": 1, "function_count": 2})
+    docs_views_gateway.con.execute(
         """
         INSERT INTO analytics.subsystem_profile_cache (
             repo, commit, subsystem_id, name, description, module_count,
@@ -240,7 +246,7 @@ def test_subsystem_profile_view_prefers_cache(schema_gateway: StorageGateway) ->
         """,
         [EXPECTED_MODULE_COUNT_42, EXPECTED_FUNCTION_COUNT_4],
     )
-    row = schema_gateway.con.execute(
+    row = docs_views_gateway.con.execute(
         """
         SELECT name, module_count, function_count, risk_level
         FROM docs.v_subsystem_profile
@@ -263,11 +269,11 @@ def test_subsystem_profile_view_prefers_cache(schema_gateway: StorageGateway) ->
     _require(condition=risk_level == "medium", message="Expected cached risk_level to be used")
 
 
-def test_subsystem_coverage_view_prefers_cache(schema_gateway: StorageGateway) -> None:
+def test_subsystem_coverage_view_prefers_cache(docs_views_gateway: StorageGateway) -> None:
     """Cached subsystem coverage rows should override computed values."""
-    bootstrap_metadata_datasets(schema_gateway.con)
-    seed_subsystem(schema_gateway.con, overrides={"module_count": 1, "function_count": 2})
-    schema_gateway.con.execute(
+    bootstrap_metadata_datasets(docs_views_gateway.con)
+    seed_subsystem(docs_views_gateway.con, overrides={"module_count": 1, "function_count": 2})
+    docs_views_gateway.con.execute(
         """
         INSERT INTO analytics.subsystem_coverage_cache (
             repo, commit, subsystem_id, name, description, module_count,
@@ -286,7 +292,7 @@ def test_subsystem_coverage_view_prefers_cache(schema_gateway: StorageGateway) -
         """,
         [EXPECTED_TEST_COUNT_99, EXPECTED_FUNCTIONS_COVERED_50],
     )
-    row = schema_gateway.con.execute(
+    row = docs_views_gateway.con.execute(
         """
         SELECT test_count, total_functions_covered, risk_level
         FROM docs.v_subsystem_coverage

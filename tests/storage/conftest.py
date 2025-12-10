@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import docs_views_ready_gateway
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -55,3 +57,20 @@ def relaxed_schema_gateway() -> Iterator[StorageGateway]:
         yield gateway
     finally:
         gateway.close()
+
+
+@pytest.fixture
+def docs_views_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
+    """
+    Provide a gateway provisioned with docs view seeds for profiling/coverage tests.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway configured with docs export seeds and coverage-ready views.
+    """
+    ctx = docs_views_ready_gateway(tmp_path / "docs_views")
+    try:
+        yield ctx.gateway
+    finally:
+        ctx.close()

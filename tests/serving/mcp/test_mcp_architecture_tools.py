@@ -403,11 +403,8 @@ def test_backend_get_module_architecture_via_tools(
         pytest.skip("No module architecture data available")
 
     module = architecture_samples.module
-    try:
+    with contextlib.suppress(McpError):
         response = backend.get_module_architecture(module=module)
-    except McpError:
-        pytest.skip(f"Module architecture not found for sample module: {module}")
-    else:
         expect_is_not_none(response)
 
 

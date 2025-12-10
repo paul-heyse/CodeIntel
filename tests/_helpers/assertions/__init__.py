@@ -52,6 +52,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_not_equal,
     expect_not_in,
+    expect_row_count,
     expect_row_value,
     expect_rows_equal,
     expect_true,

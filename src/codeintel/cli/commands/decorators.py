@@ -7,9 +7,6 @@ decorator generates it based on:
 - Handler function to invoke
 - Resource requirements
 - Command dataclass fields
-
-Note: This decorator registers with the NEW registry in execution/registry.py,
-NOT the legacy registry in introspection/registry.py.
 """
 
 from __future__ import annotations

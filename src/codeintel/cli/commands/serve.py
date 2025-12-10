@@ -1,16 +1,17 @@
-"""Cyclopts wiring for serve command group."""
+"""Cyclopts wiring for serve command group.
+
+HTTP and MCP server commands using the @cli_command decorator.
+"""
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands._common import ProjectRoot, Verbose
+from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.handlers.ops import serve_http_handler, serve_mcp_handler
 
 serve_app = App(
@@ -20,6 +21,7 @@ serve_app = App(
 
 
 @serve_app.command(name="http")
+@cli_command("serve.http", handler=serve_http_handler)
 @dataclass
 class ServeHttpCommand:
     """Start the HTTP server."""
@@ -54,50 +56,12 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Project root directory.",
-        ),
-    ] = None
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
-
-    def __call__(self) -> None:
-        """Execute the serve http command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI()
-
-        params: dict[str, object] = {
-            "host": self.host,
-            "port": self.port,
-            "auto_pipeline": self.auto_pipeline,
-            "reload": self.reload,
-        }
-
-        with command_context(
-            "serve.http",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = serve_http_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    project_root: ProjectRoot = None
+    verbose: Verbose = 0
 
 
 @serve_app.command(name="mcp")
+@cli_command("serve.mcp", handler=serve_mcp_handler)
 @dataclass
 class ServeMcpCommand:
     """Start the MCP server."""
@@ -110,44 +74,8 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Project root directory.",
-        ),
-    ] = None
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
-
-    def __call__(self) -> None:
-        """Execute the serve mcp command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI()
-
-        params: dict[str, object] = {
-            "auto_pipeline": self.auto_pipeline,
-        }
-
-        with command_context(
-            "serve.mcp",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = serve_mcp_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    project_root: ProjectRoot = None
+    verbose: Verbose = 0
 
 
 __all__ = [

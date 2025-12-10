@@ -2,9 +2,6 @@
 
 Provide commands to explore registered operations and view detailed
 help with resource requirements.
-
-Note: Phase 6 Migration - Schema command removed as new OperationSpec
-no longer includes param_schema. Use CLI --help for parameter info.
 """
 
 from __future__ import annotations

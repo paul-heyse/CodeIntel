@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.cli.config import build_config_from_options, load_config
-from codeintel.cli.handlers.base import setup_logging
+from codeintel.cli.handlers._utilities import setup_logging
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import (
     ProjectConfig,

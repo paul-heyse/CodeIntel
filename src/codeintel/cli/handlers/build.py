@@ -25,11 +25,9 @@ from codeintel.cli.project import (
     build_project_runtime,
     find_project_root,
 )
-from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:
     from codeintel.build.manifest import BuildRunRecord
-    from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
 
@@ -115,32 +113,6 @@ class BuildHistoryResult:
             "runs": self.runs,
             "count": self.count,
         }
-
-
-def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
-    """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
-
-    Parameters
-    ----------
-    runtime
-        ResolvedRuntime from handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Compatible ProjectRuntime instance.
-    """
-    gateway = open_gateway(StorageConfig.for_readonly(runtime.paths.db_path))
-    return ProjectRuntime(
-        root=runtime.root,
-        project=runtime.project,
-        cfg=runtime.config,
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        gateway=gateway,
-        tools=runtime.config.tools,
-        serving=runtime.serving,
-    )
 
 
 def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
@@ -305,7 +277,7 @@ def _execute_build(
     force_targets: list[str] | None,
     run_mode: RunMode,
 ) -> tuple[BuildResult | None, BuildPlan]:
-    """Execute build with the full Phase 2-5 pipeline.
+    """Execute build with the full build pipeline.
 
     Parameters
     ----------

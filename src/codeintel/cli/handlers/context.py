@@ -1,13 +1,11 @@
 """Unified handler context for all CLI operations.
 
 This module provides the single, canonical context type that all CLI handlers
-receive. It consolidates functionality that was previously spread across:
+receive. It provides:
 
-- handlers/base.py (HandlerContext)
-- handlers/protocol.py (EnhancedHandlerContext)
-- execution/context.py (ExecutionContext)
-
-This is the target implementation from the CLI Unified Architecture migration.
+- Lazy resource access (gateway, runtime, graph_runtime)
+- Typed parameter extraction
+- Automatic resource cleanup
 """
 
 from __future__ import annotations

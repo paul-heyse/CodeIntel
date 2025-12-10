@@ -2,30 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext, ParameterError
+from codeintel.cli.handlers.context import ParameterError
 from codeintel.cli.handlers.ide import IdeHintsResult, ide_hints_handler
-from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.models import FileHintsResponse, ResponseMeta, ViewRow
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.serving_contexts import ProvisionedServiceContext
+from tests.cli.handlers.conftest import HandlerContextBuilder
 
 HTTP_NOT_FOUND = 404
 
 
-def test_ide_hints_handler_returns_ok_when_hints_found() -> None:
+def test_ide_hints_handler_returns_ok_when_hints_found(
+    handler_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result when hints are found."""
     hint_row = ViewRow.model_validate(
         {
@@ -42,19 +41,28 @@ def test_ide_hints_handler_returns_ok_when_hints_found() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_backend_returning(mock_response):
-        ctx = _build_test_context(params={"rel_path": "pkg/mod.py"})
+    with patch.object(
+        handler_service_context.backend,
+        "get_file_hints",
+        return_value=mock_response,
+    ):
+        ctx = handler_context_builder(
+            handler_service_context, "ide.hints", {"rel_path": "pkg/mod.py"}
+        )
         result = ide_hints_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
     expect_is_instance(result.data, IdeHintsResult)
     if result.data is not None:
-        expect_equal(result.data.rel_path, "pkg/mod.py")
-        expect_equal(len(result.data.hints), 1)
+            expect_equal(result.data.rel_path, "pkg/mod.py")
+            expect_equal(len(result.data.hints), 1)
 
 
-def test_ide_hints_handler_returns_fail_when_no_hints() -> None:
+def test_ide_hints_handler_returns_fail_when_no_hints(
+    handler_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns failure result when no hints are found."""
     mock_response = FileHintsResponse(
         found=False,
@@ -62,8 +70,16 @@ def test_ide_hints_handler_returns_fail_when_no_hints() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_backend_returning(mock_response):
-        ctx = _build_test_context(params={"rel_path": "missing.py"})
+    with patch.object(
+        handler_service_context.backend,
+        "get_file_hints",
+        return_value=mock_response,
+    ):
+        ctx = handler_context_builder(
+            handler_service_context,
+            "ide.hints",
+            {"rel_path": "missing.py"},
+        )
         result = ide_hints_handler(ctx)
 
     expect_true(not result.success)
@@ -75,23 +91,41 @@ def test_ide_hints_handler_returns_fail_when_no_hints() -> None:
             expect_true("missing.py" in result.error.detail)
 
 
-def test_ide_hints_handler_raises_when_rel_path_missing() -> None:
+def test_ide_hints_handler_raises_when_rel_path_missing(
+    handler_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler raises ParameterError when rel_path is missing."""
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
-    with _mock_backend_returning(mock_response):
-        ctx = _build_test_context(params={})
+    with patch.object(
+        handler_service_context.backend,
+        "get_file_hints",
+        return_value=mock_response,
+    ):
+        ctx = handler_context_builder(handler_service_context, "ide.hints", {})
 
         with pytest.raises(ParameterError, match="Required parameter 'rel_path' not provided"):
             ide_hints_handler(ctx)
 
 
-def test_ide_hints_handler_raises_when_rel_path_empty() -> None:
+def test_ide_hints_handler_raises_when_rel_path_empty(
+    handler_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler raises ValueError when rel_path is empty after strip."""
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
-    with _mock_backend_returning(mock_response):
-        ctx = _build_test_context(params={"rel_path": "  "})
+    with patch.object(
+        handler_service_context.backend,
+        "get_file_hints",
+        return_value=mock_response,
+    ):
+        ctx = handler_context_builder(
+            handler_service_context,
+            "ide.hints",
+            {"rel_path": "  "},
+        )
 
         # The handler gets "  " as a string, which is non-empty but whitespace.
         # After stripping, it becomes empty and should raise ValueError.
@@ -112,61 +146,3 @@ def test_ide_hints_result_to_dict() -> None:
     expect_equal(data["rel_path"], "pkg/mod.py")
     expect_equal(data["hints"], [{"module": "pkg.mod", "subsystem_id": "core"}])
     expect_equal(data["meta"], {"total_count": 1})
-
-
-@contextmanager
-def _mock_backend_returning(response: FileHintsResponse) -> Iterator[None]:
-    """Create patch for build_backend_resource.
-
-    Parameters
-    ----------
-    response
-        Response to return from get_file_hints.
-
-    Yields
-    ------
-    None
-        Context manager for patch.
-    """
-    mock_backend = MagicMock()
-    mock_backend.get_file_hints.return_value = response
-    mock_resource = MagicMock()
-    mock_resource.backend = mock_backend
-
-    with patch(
-        "codeintel.cli.handlers.ide.build_backend_resource",
-        return_value=mock_resource,
-    ):
-        yield
-
-
-def _build_test_context(
-    params: dict[str, object],
-) -> HandlerContext:
-    """Build a test context with mocked dependencies.
-
-    Parameters
-    ----------
-    params
-        Handler parameters.
-
-    Returns
-    -------
-    HandlerContext
-        Test context.
-    """
-    mock_serving = MagicMock(spec=ServingConfig)
-    mock_runtime = MagicMock(spec=ResolvedRuntime)
-    mock_runtime.serving = mock_serving
-    mock_config = MagicMock(spec=CliConfig)
-    mock_gateway = MagicMock(spec=StorageGateway)
-    mock_graph_runtime = MagicMock()
-
-    return HandlerContext(
-        config=mock_config,
-        operation_id="ide.hints",
-        _params=params,
-        _runtime=mock_runtime,
-        _gateway=mock_gateway,
-        _graph_runtime=mock_graph_runtime,
-    )

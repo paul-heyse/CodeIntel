@@ -25,8 +25,6 @@ from tests._helpers.serving_contexts import (
 from tests._helpers.serving_harnesses import RecordingObservability
 from tests.serving.mcp.conftest import McpBackendComponents
 
-pytest_plugins = ["tests.serving.mcp.conftest"]
-
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 

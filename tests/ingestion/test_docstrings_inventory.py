@@ -9,7 +9,7 @@ import pytest
 from codeintel.ingestion import DocstringsExtractStep
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import ScanSetupOptions, make_scan_setup
+from tests._helpers.ingestion import ScanSetupOptions, closing_gateway, make_scan_setup
 
 
 def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -> None:
@@ -29,7 +29,7 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
     snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=setup.repo_root)
     doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
 
-    try:
+    with closing_gateway(setup.gateway):
         _, modules, _ = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,
@@ -47,8 +47,6 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
             pytest.fail(f"Unexpected docstring paths {rel_paths}, expected {expected_paths}")
         if not all("/" in rel_path for rel_path in rel_paths):
             pytest.fail(f"Non-POSIX paths observed: {rel_paths}")
-    finally:
-        setup.gateway.close()
 
 
 def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) -> None:
@@ -65,7 +63,7 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
     )
     snapshot = make_snapshot(repo="demo/docstrings", repo_root=setup.repo_root)
     doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
-    try:
+    with closing_gateway(setup.gateway):
         _, modules, _ = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,
@@ -87,5 +85,3 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
         rel_paths = [row[0] for row in rows]
         if rel_paths != ["src/pkg/visible.py"]:
             pytest.fail(f"Docstrings ingested for unexpected paths: {rel_paths}")
-    finally:
-        setup.gateway.close()

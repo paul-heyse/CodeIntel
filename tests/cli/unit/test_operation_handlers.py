@@ -5,11 +5,9 @@ Test individual operations through OperationTestHarness.
 
 from __future__ import annotations
 
-from codeintel.cli.execution import OperationCategory
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import (
     expect_false,
-    expect_in,
     expect_is_not_none,
     expect_not_empty,
     expect_true,
@@ -39,9 +37,9 @@ def test_build_status_no_params(
     expect_true(result.success or result.error is not None)
 
 
-def test_build_operations_have_correct_category() -> None:
-    """Build operations should have BUILD, WRITE, or READ category."""
-    registry = get_operation_registry()
+def test_build_operations_have_required_group() -> None:
+    """Build operations should have a group assigned."""
+    registry = get_registry()
 
     build_ops = [
         spec.operation_id
@@ -52,10 +50,7 @@ def test_build_operations_have_correct_category() -> None:
         spec = registry.get(op_id)
         expect_is_not_none(spec)
         if spec is not None:
-            expect_in(
-                spec.category,
-                {OperationCategory.BUILD, OperationCategory.READ, OperationCategory.WRITE},
-            )
+            expect_is_not_none(spec.group)
 
 
 def test_op_list_returns_operations(
@@ -99,7 +94,7 @@ def test_storage_status_returns_info(
 
 def test_registry_has_operations() -> None:
     """Registry should have registered operations."""
-    registry = get_operation_registry()
+    registry = get_registry()
     operations = registry.list_operations()
 
     expect_not_empty(operations)
@@ -107,7 +102,7 @@ def test_registry_has_operations() -> None:
 
 def test_registry_lookup_nonexistent() -> None:
     """Registry returns None for unknown operations."""
-    registry = get_operation_registry()
+    registry = get_registry()
     _spec = registry.get("nonexistent.operation")
 
     # Should return None, not raise
@@ -115,7 +110,7 @@ def test_registry_lookup_nonexistent() -> None:
 
 def test_operations_have_required_fields() -> None:
     """All registered operations have required fields."""
-    registry = get_operation_registry()
+    registry = get_registry()
 
     for spec in registry.list_operations():
         expect_is_not_none(spec)
@@ -124,4 +119,6 @@ def test_operations_have_required_fields() -> None:
             spec.handler is not None,
             message=f"Handler missing for {spec.operation_id}",
         )
-        expect_is_not_none(spec.category)
+        expect_is_not_none(spec.group)
+        expect_is_not_none(spec.name)
+        expect_is_not_none(spec.description)

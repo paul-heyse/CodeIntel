@@ -2,9 +2,6 @@
 
 Provide detailed help for operations using introspection APIs,
 including operation metadata and resource requirements.
-
-Note: Phase 6 Migration - Updated to work with the new OperationInfo
-structure from the unified handler-based registry.
 """
 
 from __future__ import annotations

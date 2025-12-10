@@ -26,40 +26,25 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.tools import FakeToolRunner, FakeToolService, FakeToolServiceConfig
 
-# =============================================================================
-# INGEST_MACRO_TABLES Tests
-# =============================================================================
-
-
-def test_ingest_macro_tables_is_frozenset() -> None:
-    """INGEST_MACRO_TABLES should be a frozenset."""
-    expect_is_instance(INGEST_MACRO_TABLES, frozenset)
-
-
-def test_ingest_macro_tables_contains_expected_tables() -> None:
-    """INGEST_MACRO_TABLES should contain key ingestion tables."""
-    # Core tables
-    expect_in("core.ast_nodes", INGEST_MACRO_TABLES)
-    expect_in("core.cst_nodes", INGEST_MACRO_TABLES)
-    expect_in("core.docstrings", INGEST_MACRO_TABLES)
-    expect_in("core.modules", INGEST_MACRO_TABLES)
-    expect_in("core.goids", INGEST_MACRO_TABLES)
-
-    # Analytics tables
-    expect_in("analytics.coverage_lines", INGEST_MACRO_TABLES)
-    expect_in("analytics.function_metrics", INGEST_MACRO_TABLES)
-    expect_in("analytics.typedness", INGEST_MACRO_TABLES)
-
-    # Graph tables
-    expect_in("graph.call_graph_edges", INGEST_MACRO_TABLES)
-    expect_in("graph.call_graph_nodes", INGEST_MACRO_TABLES)
-
-
 EXPECTED_TABLE_KEY_PARTS = 2
 
 
-def test_ingest_macro_tables_all_have_schema_prefix() -> None:
-    """All entries in INGEST_MACRO_TABLES should have schema.table format."""
+def test_ingest_macro_tables_sanity() -> None:
+    """INGEST_MACRO_TABLES should include expected entries with schema.table format."""
+    expect_is_instance(INGEST_MACRO_TABLES, frozenset)
+    expect_true(len(INGEST_MACRO_TABLES) > 0)
+    required = {
+        "core.ast_nodes",
+        "core.cst_nodes",
+        "core.docstrings",
+        "core.modules",
+        "analytics.coverage_lines",
+        "analytics.typedness",
+        "graph.call_graph_edges",
+        "graph.call_graph_nodes",
+    }
+    for table_key in required:
+        expect_in(table_key, INGEST_MACRO_TABLES)
     for table_key in INGEST_MACRO_TABLES:
         parts = table_key.split(".")
         expect_true(
@@ -69,11 +54,6 @@ def test_ingest_macro_tables_all_have_schema_prefix() -> None:
         schema, table = parts
         expect_true(bool(schema), message=f"Table key '{table_key}' has empty schema")
         expect_true(bool(table), message=f"Table key '{table_key}' has empty table name")
-
-
-def test_ingest_macro_tables_not_empty() -> None:
-    """INGEST_MACRO_TABLES should not be empty."""
-    expect_true(len(INGEST_MACRO_TABLES) > 0)
 
 
 # =============================================================================

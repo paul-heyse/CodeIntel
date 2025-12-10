@@ -19,7 +19,6 @@ from __future__ import annotations
 from codeintel.cli.commands import (
     app,
     build_app,
-    command_context,
     dataset_app,
     datasets_ext_app,
     docs_app,
@@ -39,7 +38,6 @@ from codeintel.cli.commands import ops as cyclopts_ops
 __all__ = [
     "app",
     "build_app",
-    "command_context",
     "cyclopts_ops",
     "dataset_app",
     "datasets_ext_app",

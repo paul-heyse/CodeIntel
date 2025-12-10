@@ -18,6 +18,7 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     ScanSetupOptions,
+    closing_gateway,
     make_scan_setup,
     module_records_for_paths,
     seed_inventory_from_paths,
@@ -106,7 +107,7 @@ def test_view_for_dataset_incremental(tmp_path: Path) -> None:
         policy=IncrementalIngestPolicy(min_total_modules_for_ratio=1),
     )
 
-    try:
+    with closing_gateway(setup.gateway):
         view = tracker.view_for_dataset(dataset_name="test", module_filter=None)
 
         if view.use_full_rebuild:
@@ -115,8 +116,6 @@ def test_view_for_dataset_incremental(tmp_path: Path) -> None:
             pytest.fail("Unexpected modules selected for reparse")
         if view.deleted_paths:
             pytest.fail("Expected no deleted paths")
-    finally:
-        setup.gateway.close()
 
 
 def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy(
@@ -154,7 +153,7 @@ def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy(
         policy=IncrementalIngestPolicy(max_changed_ratio=0.5, min_total_modules_for_ratio=1),
     )
 
-    try:
+    with closing_gateway(setup.gateway):
         view = tracker.view_for_dataset(dataset_name="test", module_filter=None)
 
         if not view.use_full_rebuild:
@@ -164,8 +163,6 @@ def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy(
         expected_deleted = [module.rel_path for module in modules]
         if view.deleted_paths != expected_deleted:
             pytest.fail("Deleted paths did not match expected full rebuild set")
-    finally:
-        setup.gateway.close()
 
 
 def test_view_for_dataset_respects_module_filter_and_deleted_paths(
@@ -203,7 +200,7 @@ def test_view_for_dataset_respects_module_filter_and_deleted_paths(
         policy=IncrementalIngestPolicy(min_total_modules_for_ratio=10),
     )
 
-    try:
+    with closing_gateway(setup.gateway):
         view = tracker.view_for_dataset(
             dataset_name="test",
             module_filter=lambda module: module.rel_path.endswith(".py")
@@ -216,8 +213,6 @@ def test_view_for_dataset_respects_module_filter_and_deleted_paths(
             pytest.fail("Filter should only select src Python modules")
         if view.deleted_paths:
             pytest.fail("Deleted paths outside filter should be ignored")
-    finally:
-        setup.gateway.close()
 
 
 def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
@@ -255,7 +250,7 @@ def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
         policy=IncrementalIngestPolicy(),
     )
 
-    try:
+    with closing_gateway(setup.gateway):
         view = tracker.view_for_dataset(dataset_name="test", module_filter=None)
 
         if not view.use_full_rebuild:
@@ -265,8 +260,6 @@ def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
         expected_deleted = [module.rel_path for module in modules]
         if view.deleted_paths != expected_deleted:
             pytest.fail("Full rebuild should delete all module paths")
-    finally:
-        setup.gateway.close()
 
 
 def _docstrings_by_path(gateway: StorageGateway) -> dict[str, set[str]]:
@@ -365,7 +358,7 @@ def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:
             modules=modules,
         )
 
-    try:
+    with closing_gateway(gateway):
         # First pass: file is new → should report as added
         first = _compute_changes(gateway, make_request([make_record()]))
         if len(first.added) != 1 or first.modified or first.deleted:
@@ -388,5 +381,3 @@ def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:
         deleted = _compute_changes(gateway, make_request([]))  # Empty list = file not found
         if deleted.added or deleted.modified or len(deleted.deleted) != 1:
             pytest.fail(f"Expected single deletion only, got {deleted}")
-    finally:
-        gateway.close()

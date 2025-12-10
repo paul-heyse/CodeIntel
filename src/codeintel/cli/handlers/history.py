@@ -13,7 +13,7 @@ from typing import Any
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.handlers.base import setup_logging
+from codeintel.cli.handlers._utilities import setup_logging
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner

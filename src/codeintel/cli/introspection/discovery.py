@@ -1,9 +1,6 @@
 """Introspection utilities for CLI operations.
 
 Provide runtime discovery of operations, their metadata, and examples.
-
-Note: Phase 6 Migration Complete - This module now uses the unified
-handler-based registry from ``codeintel.cli.execution.registry``.
 """
 
 from __future__ import annotations

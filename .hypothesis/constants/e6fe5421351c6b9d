@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/execution/retry.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 30.0, 'RetryCallback', 'RetryContext', 'RetryOptions', 'RetryPolicy', 'RetryableError', 'T', 'Unreachable', 'execute_with_retry', 'with_retry']

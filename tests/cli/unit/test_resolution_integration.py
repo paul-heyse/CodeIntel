@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.execution.context import ExecutionContext
-from codeintel.cli.options import CommonOptions
+from codeintel.cli.commands._common import CommonOptions
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution import ResolutionError
 from tests._helpers.assertions.expectation_assertions import (
