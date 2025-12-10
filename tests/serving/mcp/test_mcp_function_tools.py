@@ -5,6 +5,7 @@ This module tests the function- and graph-related MCP tools using real gateways.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -12,7 +13,6 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.function_tools import (
     FUNCTION_TOOL_CATEGORIES,
     FunctionToolOptions,
@@ -20,7 +20,6 @@ from codeintel.serving.mcp.function_tools import (
 )
 from codeintel.serving.mcp.models import FunctionSummaryResponse, FunctionSummaryRow
 from codeintel.serving.operations import iter_operations
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -28,9 +27,9 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -44,51 +43,12 @@ MAX_ROWS = 100
 
 
 # =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
-# =============================================================================
 # register_function_tools Tests
 # =============================================================================
 
 
 def test_register_function_tools_success(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_function_tools registers tools successfully.
 
@@ -98,17 +58,16 @@ def test_register_function_tools_success(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test Function Tools")
-    backend = _build_backend(provisioned_repo)
 
     # Should not raise
-    register_function_tools(mcp, backend)
+    register_function_tools(mcp, mcp_backend.backend)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Function Tools")
 
 
 def test_register_function_tools_with_service(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify register_function_tools works with service directly.
 
@@ -118,25 +77,14 @@ def test_register_function_tools_with_service(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test Service")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
 
-    register_function_tools(mcp, service)
+    register_function_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Service")
 
 
 def test_register_function_tools_with_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_function_tools works with serving config.
 
@@ -146,16 +94,15 @@ def test_register_function_tools_with_config(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test With Config")
-    backend = _build_backend(provisioned_repo)
     config = ServingConfig()
 
-    register_function_tools(mcp, backend, config=config)
+    register_function_tools(mcp, mcp_backend.backend, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_function_tools_on_multiple_servers(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify tools can be registered on multiple servers.
 
@@ -164,14 +111,12 @@ def test_register_function_tools_on_multiple_servers(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     mcp1 = wrap_fastmcp("Server 1")
-    register_function_tools(mcp1, backend)
+    register_function_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_function_tools(mcp2, backend)
+    register_function_tools(mcp2, mcp_backend.backend)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -246,7 +191,7 @@ def test_function_operations_have_output_model() -> None:
 
 
 def test_backend_list_high_risk_functions(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.list_high_risk_functions works.
 
@@ -255,15 +200,13 @@ def test_backend_list_high_risk_functions(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.list_high_risk_functions(limit=DEFAULT_LIMIT)
+    result = mcp_backend.backend.list_high_risk_functions(limit=DEFAULT_LIMIT)
     expect_is_not_none(result)
     expect_true(hasattr(result, "functions"))
 
 
 def test_backend_get_function_summary(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_function_summary works.
 
@@ -272,10 +215,7 @@ def test_backend_get_function_summary(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Get a valid goid from the backend
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -285,12 +225,12 @@ def test_backend_get_function_summary(
     if goid is None:
         pytest.skip("No goid_h128 in function")
 
-    result = backend.get_function_summary(goid_h128=int(goid))
+    result = mcp_backend.backend.get_function_summary(goid_h128=int(goid))
     expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighbors(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_callgraph_neighbors works.
 
@@ -299,10 +239,7 @@ def test_backend_get_callgraph_neighbors(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Get a valid goid from the backend
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -312,14 +249,14 @@ def test_backend_get_callgraph_neighbors(
     if goid is None:
         pytest.skip("No goid_h128 in function")
 
-    result = backend.get_callgraph_neighbors(
+    result = mcp_backend.backend.get_callgraph_neighbors(
         goid_h128=int(goid), direction="both", limit=DEFAULT_LIMIT
     )
     expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighborhood(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_callgraph_neighborhood works.
 
@@ -328,10 +265,7 @@ def test_backend_get_callgraph_neighborhood(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Get a valid goid from the backend
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -341,7 +275,7 @@ def test_backend_get_callgraph_neighborhood(
     if goid is None:
         pytest.skip("No goid_h128 in function")
 
-    result = backend.get_callgraph_neighborhood(
+    result = mcp_backend.backend.get_callgraph_neighborhood(
         goid_h128=int(goid), radius=1, max_nodes=DEFAULT_LIMIT
     )
     expect_is_not_none(result)
@@ -353,7 +287,7 @@ def test_backend_get_callgraph_neighborhood(
 
 
 def test_backend_get_function_summary_not_found(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend returns appropriate result for nonexistent function.
 
@@ -362,17 +296,15 @@ def test_backend_get_function_summary_not_found(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     nonexistent_goid = 99999999999999999
 
-    result = backend.get_function_summary(goid_h128=nonexistent_goid)
+    result = mcp_backend.backend.get_function_summary(goid_h128=nonexistent_goid)
     # Should return a result (may have not_found message)
     expect_is_not_none(result)
 
 
 def test_backend_get_callgraph_neighbors_not_found(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend handles nonexistent function for callgraph neighbors.
 
@@ -381,11 +313,9 @@ def test_backend_get_callgraph_neighbors_not_found(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     nonexistent_goid = 99999999999999999
 
-    result = backend.get_callgraph_neighbors(
+    result = mcp_backend.backend.get_callgraph_neighbors(
         goid_h128=nonexistent_goid, direction="both", limit=DEFAULT_LIMIT
     )
     # Should return a result (may be empty)
@@ -398,7 +328,8 @@ def test_backend_get_callgraph_neighbors_not_found(
 
 
 def test_backend_with_custom_limits(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify backend respects custom limits.
 
@@ -410,24 +341,12 @@ def test_backend_with_custom_limits(
     custom_limit = 25
     custom_max = 250
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+    backend = mcp_backend_factory(
+        gateway=mcp_backend.gateway,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
         limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
+    ).backend
 
     expect_equal(backend.limits.default_limit, custom_limit)
     expect_equal(backend.limits.max_rows_per_call, custom_max)

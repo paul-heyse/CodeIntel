@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.jobs import JobStatus, get_job_manager
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -175,90 +173,7 @@ class JobsCleanupResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _require_str_param(ctx: EnhancedHandlerContext, name: str) -> str:
-    """Extract required string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str
-        Parameter value.
-
-    Raises
-    ------
-    ValueError
-        If parameter is missing.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        msg = f"{name} parameter is required"
-        raise ValueError(msg)
-    return str(value)
-
-
-def _get_int_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: int = 0,
-) -> int:
-    """Extract integer parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    int
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    return int(str(value))
-
-
-def jobs_list_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsListResult]:
+def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
     """List background jobs.
 
     Parameters
@@ -273,8 +188,8 @@ def jobs_list_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsListResult]:
     CliResult[JobsListResult]
         List of jobs.
     """
-    status_str = _get_str_param(ctx, "status")
-    limit = _get_int_param(ctx, "limit", 20)
+    status_str = ctx.param_str("status")
+    limit = ctx.param_int("limit", 20)
 
     LOG.info("Listing jobs with status=%s, limit=%d", status_str, limit)
 
@@ -287,7 +202,7 @@ def jobs_list_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsListResult]:
     return CliResult.ok(JobsListResult(jobs=job_dicts, count=len(jobs)))
 
 
-def jobs_status_handler(ctx: EnhancedHandlerContext) -> CliResult[JobStatusResult]:
+def jobs_status_handler(ctx: HandlerContext) -> CliResult[JobStatusResult]:
     """Get status of a background job.
 
     Parameters
@@ -301,7 +216,7 @@ def jobs_status_handler(ctx: EnhancedHandlerContext) -> CliResult[JobStatusResul
     CliResult[JobStatusResult]
         Job status details.
     """
-    job_id = _require_str_param(ctx, "job_id")
+    job_id = ctx.require_str("job_id")
 
     LOG.info("Getting status for job: %s", job_id)
 
@@ -331,7 +246,7 @@ def jobs_status_handler(ctx: EnhancedHandlerContext) -> CliResult[JobStatusResul
     )
 
 
-def jobs_output_handler(ctx: EnhancedHandlerContext) -> CliResult[JobOutputResult]:
+def jobs_output_handler(ctx: HandlerContext) -> CliResult[JobOutputResult]:
     """Get output of a completed job.
 
     Parameters
@@ -345,7 +260,7 @@ def jobs_output_handler(ctx: EnhancedHandlerContext) -> CliResult[JobOutputResul
     CliResult[JobOutputResult]
         Job output.
     """
-    job_id = _require_str_param(ctx, "job_id")
+    job_id = ctx.require_str("job_id")
 
     LOG.info("Getting output for job: %s", job_id)
 
@@ -383,7 +298,7 @@ def jobs_output_handler(ctx: EnhancedHandlerContext) -> CliResult[JobOutputResul
     )
 
 
-def jobs_cancel_handler(ctx: EnhancedHandlerContext) -> CliResult[JobCancelResult]:
+def jobs_cancel_handler(ctx: HandlerContext) -> CliResult[JobCancelResult]:
     """Cancel a running job.
 
     Parameters
@@ -397,7 +312,7 @@ def jobs_cancel_handler(ctx: EnhancedHandlerContext) -> CliResult[JobCancelResul
     CliResult[JobCancelResult]
         Cancellation result.
     """
-    job_id = _require_str_param(ctx, "job_id")
+    job_id = ctx.require_str("job_id")
 
     LOG.info("Cancelling job: %s", job_id)
 
@@ -417,7 +332,7 @@ def jobs_cancel_handler(ctx: EnhancedHandlerContext) -> CliResult[JobCancelResul
     return CliResult.ok(JobCancelResult(job_id=job_id, cancelled=True))
 
 
-def jobs_cleanup_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsCleanupResult]:
+def jobs_cleanup_handler(ctx: HandlerContext) -> CliResult[JobsCleanupResult]:
     """Clean up old completed jobs.
 
     Parameters
@@ -431,7 +346,7 @@ def jobs_cleanup_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsCleanupRe
     CliResult[JobsCleanupResult]
         Cleanup result.
     """
-    max_age_days = _get_int_param(ctx, "max_age_days", 7)
+    max_age_days = ctx.param_int("max_age_days", 7)
 
     LOG.info("Cleaning up jobs older than %d days", max_age_days)
 

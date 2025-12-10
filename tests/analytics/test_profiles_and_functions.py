@@ -79,14 +79,18 @@ from codeintel.config.datasets import (
 )
 from codeintel.config.primitives import BuildLayoutOptions
 from codeintel.storage.gateway import DuckDBConnection
-from tests._helpers import assert_frozen
+from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
+    assert_coverage_lines,
+    assert_function_loc,
+    assert_typedness_bucket,
     expect_equal,
     expect_false,
     expect_in,
     expect_is_instance,
     expect_length,
     expect_true,
+    require_row,
 )
 from tests._helpers.config_factory import profiles_analytics_cfg
 from tests._helpers.context import TestContext
@@ -104,6 +108,14 @@ from tests._helpers.factories.row_factories import (
 )
 from tests._helpers.rows import list_public_exports
 from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds.core import (
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    MOD_A_PATH,
+    MOD_B_PATH,
+    MOD_C_PATH,
+)
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"
@@ -127,6 +139,22 @@ def profiles_ctx(tmp_path: Path) -> Iterator[TestContext]:
         Seeded context configured with profile seeds.
     """
     ctx = TestScenario.with_profiles().build(tmp_path)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+
+
+@pytest.fixture
+def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide coverage context using coverage/metrics packs.
+
+    Yields
+    ------
+    Iterator[TestContext]
+        Context seeded with coverage and metrics packs.
+    """
+    ctx = TestScenario.with_coverage().with_seeds(METRICS_PACK).build(tmp_path)
     try:
         yield ctx
     finally:
@@ -226,6 +254,49 @@ def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -
     _assert_function_profile(con)
     _assert_file_profile(con)
     _assert_module_profile(con)
+
+
+def test_coverage_aggregates_and_function_metrics(coverage_ctx: TestContext) -> None:
+    """Coverage aggregates share seeds with function metrics and typedness helpers."""
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
+    assert_coverage_lines(
+        con,
+        snapshot=snapshot,
+        rel_path=MOD_A_PATH,
+        executable=10,
+        covered=8,
+    )
+    assert_coverage_lines(
+        con,
+        snapshot=snapshot,
+        rel_path=MOD_B_PATH,
+        executable=15,
+        covered=12,
+    )
+    assert_coverage_lines(
+        con,
+        snapshot=snapshot,
+        rel_path=MOD_C_PATH,
+        executable=8,
+        covered=6,
+    )
+    row = require_row(
+        con.execute(
+            """
+            SELECT COUNT(*) FROM analytics.coverage_functions
+            WHERE repo = ? AND commit = ?
+            """,
+            [snapshot.repo, snapshot.commit],
+        ).fetchone()
+    )
+    expect_equal(row[0], 4)
+    assert_function_loc(con, goid=GOID_FUNC_A, loc=10, logical_loc=8)
+    assert_function_loc(con, goid=GOID_FUNC_B, loc=15, logical_loc=12)
+    assert_function_loc(con, goid=GOID_FUNC_C, loc=8, logical_loc=6)
+    assert_typedness_bucket(con, goid=GOID_FUNC_A, bucket="fully_typed")
+    assert_typedness_bucket(con, goid=GOID_FUNC_B, bucket="partial_typed")
+    assert_typedness_bucket(con, goid=GOID_FUNC_C, bucket="untyped")
 
 
 # =============================================================================

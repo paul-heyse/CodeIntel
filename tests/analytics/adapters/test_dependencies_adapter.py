@@ -15,9 +15,7 @@ import pytest
 
 from codeintel.analytics.adapters.dependencies import (
     DependencyAggregateAdapter,
-    DependencyAggregateRow,
     DependencyCallAdapter,
-    DependencyCallRow,
     compute_dep_id,
     to_decimal,
 )
@@ -38,8 +36,8 @@ from tests._helpers.contracts import count_rows
 from tests._helpers.rows import (
     DependencyAggregatePayloadSeed,
     DependencyCallPayloadSeed,
-    dependency_aggregate_payload,
-    dependency_call_payload,
+    dependency_aggregate_row_from_payload,
+    dependency_call_row_from_payload,
 )
 
 # =============================================================================
@@ -148,57 +146,6 @@ def _aggregate_seed(
     return replace(base, **overrides)
 
 
-def _dependency_call_row(seed: DependencyCallPayloadSeed) -> DependencyCallRow:
-    payload = dependency_call_payload(seed)
-    repo = str(payload["repo"])
-    commit = str(payload["commit"])
-    library = str(payload["library"])
-    dep_id = compute_dep_id(repo, commit, library)
-    return DependencyCallRow(
-        repo=repo,
-        commit=commit,
-        dep_id=dep_id,
-        library=library,
-        service_name=str(payload["service_name"]),
-        function_goid_h128=payload["function_goid_h128"],
-        function_urn=str(payload["function_urn"]),
-        rel_path=str(payload["rel_path"]),
-        module=str(payload["module"]),
-        qualname=str(payload["qualname"]),
-        callsite_count=payload["callsite_count"],
-        modes=payload["modes"],
-        evidence_json=payload["evidence_json"],
-        created_at=payload["created_at"],
-    )
-
-
-def _dependency_aggregate_row(seed: DependencyAggregatePayloadSeed) -> DependencyAggregateRow:
-    payload = dependency_aggregate_payload(seed)
-    repo = str(payload["repo"])
-    commit = str(payload["commit"])
-    library = str(payload["library"])
-    dep_id = compute_dep_id(repo, commit, library)
-    return DependencyAggregateRow(
-        repo=repo,
-        commit=commit,
-        dep_id=dep_id,
-        library=library,
-        service_name=str(payload["service_name"]),
-        category=payload["category"],
-        language=str(payload["language"]),
-        severity=payload["severity"],
-        criticality=payload["criticality"],
-        risk_score=payload["risk_score"],
-        function_count=payload["function_count"],
-        callsite_count=payload["callsite_count"],
-        modules_json=payload["modules_json"],
-        usage_modes=payload["usage_modes"],
-        config_keys=payload["config_keys"],
-        risk_level=str(payload["risk_level"]),
-        created_at=payload["created_at"],
-    )
-
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -287,14 +234,14 @@ def test_to_decimal_handles_large_int() -> None:
 # =============================================================================
 
 
-def test_dependency_call_row_creation() -> None:
+def test_dependency_call_row_from_payload_creation() -> None:
     """Create DependencyCallRow with all required fields."""
     seed = _call_seed(
         library="requests",
         service_name="HTTP Client",
         qualname="services.api.fetch_data",
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
 
     expect_equal(row.repo, DEMO_REPO)
     expect_equal(row.commit, DEMO_COMMIT)
@@ -303,7 +250,7 @@ def test_dependency_call_row_creation() -> None:
     expect_equal(row.qualname, "services.api.fetch_data")
 
 
-def test_dependency_call_row_goid_is_decimal() -> None:
+def test_dependency_call_row_from_payload_goid_is_decimal() -> None:
     """DependencyCallRow goid is stored as Decimal."""
     seed = _call_seed(
         library="requests",
@@ -311,13 +258,13 @@ def test_dependency_call_row_goid_is_decimal() -> None:
         qualname="services.api.fetch_data",
         goid=TEST_GOID_67890,
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
 
     expect_is_instance(row.function_goid_h128, Decimal)
     expect_equal(row.function_goid_h128, Decimal(TEST_GOID_67890))
 
 
-def test_dependency_call_row_modes_is_list() -> None:
+def test_dependency_call_row_from_payload_modes_is_list() -> None:
     """DependencyCallRow modes is a list of strings."""
     seed = _call_seed(
         library="redis",
@@ -325,7 +272,7 @@ def test_dependency_call_row_modes_is_list() -> None:
         qualname="cache.client.get",
         modes=("read", "write", "delete"),
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
 
     expect_is_instance(row.modes, list)
     expect_in("read", row.modes)
@@ -333,14 +280,14 @@ def test_dependency_call_row_modes_is_list() -> None:
     expect_in("delete", row.modes)
 
 
-def test_dependency_call_row_is_frozen() -> None:
+def test_dependency_call_row_from_payload_is_frozen() -> None:
     """DependencyCallRow is immutable."""
     seed = _call_seed(
         library="requests",
         service_name="HTTP Client",
         qualname="api.fetch",
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
 
     assert_frozen(row, "library", "other")
 
@@ -350,7 +297,7 @@ def test_dependency_call_row_is_frozen() -> None:
 # =============================================================================
 
 
-def test_dependency_aggregate_row_creation() -> None:
+def test_dependency_aggregate_row_from_payload_creation() -> None:
     """Create DependencyAggregateRow with all required fields."""
     seed = _aggregate_seed(
         library="sqlalchemy",
@@ -358,7 +305,7 @@ def test_dependency_aggregate_row_creation() -> None:
         category="database",
         risk_level="high",
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     expect_equal(row.repo, DEMO_REPO)
     expect_equal(row.commit, DEMO_COMMIT)
@@ -368,7 +315,7 @@ def test_dependency_aggregate_row_creation() -> None:
     expect_equal(row.risk_level, "high")
 
 
-def test_dependency_aggregate_row_optional_fields() -> None:
+def test_dependency_aggregate_row_from_payload_optional_fields() -> None:
     """DependencyAggregateRow handles optional fields."""
     seed = _aggregate_seed(
         library="custom_lib",
@@ -378,7 +325,7 @@ def test_dependency_aggregate_row_optional_fields() -> None:
         criticality=None,
         risk_score=None,
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     expect_is_none(row.category)
     expect_is_none(row.severity)
@@ -386,7 +333,7 @@ def test_dependency_aggregate_row_optional_fields() -> None:
     expect_is_none(row.risk_score)
 
 
-def test_dependency_aggregate_row_numeric_fields() -> None:
+def test_dependency_aggregate_row_from_payload_numeric_fields() -> None:
     """DependencyAggregateRow numeric fields have correct types."""
     seed = _aggregate_seed(
         library="redis",
@@ -396,7 +343,7 @@ def test_dependency_aggregate_row_numeric_fields() -> None:
         function_count=FUNCTION_COUNT_3,
         callsite_count=CALLSITE_COUNT_10,
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     expect_equal(row.criticality, CRITICALITY_0_5)
     expect_equal(row.risk_score, RISK_SCORE_0_75)
@@ -404,26 +351,26 @@ def test_dependency_aggregate_row_numeric_fields() -> None:
     expect_equal(row.callsite_count, CALLSITE_COUNT_10)
 
 
-def test_dependency_aggregate_row_list_fields() -> None:
+def test_dependency_aggregate_row_from_payload_list_fields() -> None:
     """DependencyAggregateRow list fields are populated."""
     seed = _aggregate_seed(
         library="requests",
         service_name="HTTP Client",
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     expect_is_instance(row.modules_json, list)
     expect_is_instance(row.usage_modes, list)
     expect_is_instance(row.config_keys, list)
 
 
-def test_dependency_aggregate_row_is_frozen() -> None:
+def test_dependency_aggregate_row_from_payload_is_frozen() -> None:
     """DependencyAggregateRow is immutable."""
     seed = _aggregate_seed(
         library="requests",
         service_name="HTTP Client",
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     assert_frozen(row, "library", "other")
 
@@ -474,7 +421,7 @@ def test_call_adapter_persist_single_row(
         qualname="api.fetch_data",
         callsite_count=CALLSITE_COUNT_5,
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
 
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
@@ -496,7 +443,7 @@ def test_call_adapter_persist_multiple_rows(
     adapter = DependencyCallAdapter(fresh_gateway, snapshot)
 
     rows = [
-        _dependency_call_row(
+        dependency_call_row_from_payload(
             _call_seed(
                 library="requests",
                 service_name="HTTP Client",
@@ -504,7 +451,7 @@ def test_call_adapter_persist_multiple_rows(
                 goid=1001,
             )
         ),
-        _dependency_call_row(
+        dependency_call_row_from_payload(
             _call_seed(
                 library="requests",
                 service_name="HTTP Client",
@@ -512,7 +459,7 @@ def test_call_adapter_persist_multiple_rows(
                 goid=1002,
             )
         ),
-        _dependency_call_row(
+        dependency_call_row_from_payload(
             _call_seed(
                 library="sqlalchemy",
                 service_name="SQL Database",
@@ -547,7 +494,7 @@ def test_call_adapter_persist_verifies_data(
         callsite_count=CALLSITE_COUNT_5,
         modes=("read",),
     )
-    row = _dependency_call_row(seed)
+    row = dependency_call_row_from_payload(seed)
     adapter.persist([row])
 
     # Query and verify
@@ -613,7 +560,7 @@ def test_aggregate_adapter_persist_single_row(
         category="http",
         risk_level="low",
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
@@ -635,14 +582,14 @@ def test_aggregate_adapter_persist_multiple_rows(
     adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
 
     rows = [
-        _dependency_aggregate_row(
+        dependency_aggregate_row_from_payload(
             _aggregate_seed(
                 library="requests",
                 service_name="HTTP Client",
                 category="http",
             )
         ),
-        _dependency_aggregate_row(
+        dependency_aggregate_row_from_payload(
             _aggregate_seed(
                 library="sqlalchemy",
                 service_name="SQL Database",
@@ -678,7 +625,7 @@ def test_aggregate_adapter_persist_verifies_data(
         function_count=FUNCTION_COUNT_3,
         callsite_count=CALLSITE_COUNT_10,
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
     adapter.persist([row])
 
     # Query and verify
@@ -714,7 +661,7 @@ def test_aggregate_adapter_persist_with_null_fields(
         criticality=None,
         risk_score=None,
     )
-    row = _dependency_aggregate_row(seed)
+    row = dependency_aggregate_row_from_payload(seed)
 
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)

@@ -22,6 +22,7 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
 )
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import ProjectRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
@@ -33,7 +34,6 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
     from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
@@ -70,119 +70,6 @@ class ServeStartResult:
             "commit": self.commit,
             "db_path": self.db_path,
         }
-
-
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _require_str_param(ctx: EnhancedHandlerContext, name: str) -> str:
-    """Extract required string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str
-        Parameter value.
-
-    Raises
-    ------
-    ValueError
-        If parameter is missing.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        msg = f"{name} parameter is required"
-        raise ValueError(msg)
-    return str(value)
-
-
-def _get_int_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: int = 0,
-) -> int:
-    """Extract integer parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    int
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    return int(str(value))
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
 
 
 def _parse_param_value(value: str) -> str | int | float | bool:
@@ -287,7 +174,7 @@ def op_list_structured(*, category: str | None) -> CliResult[OperationListResult
     return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
 
 
-def op_list_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationListResult]:
+def op_list_handler(ctx: HandlerContext) -> CliResult[OperationListResult]:
     """List available serving operations.
 
     Parameters
@@ -301,11 +188,11 @@ def op_list_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationListResul
     CliResult[OperationListResult]
         List of operations matching the filter.
     """
-    category = _get_str_param(ctx, "category")
+    category = ctx.param_str("category")
     return op_list_structured(category=category)
 
 
-def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationCallResult]:
+def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
     """Invoke an operation end-to-end with optional prerequisites.
 
     Parameters
@@ -321,9 +208,9 @@ def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationCallResul
     CliResult[OperationCallResult]
         Operation result.
     """
-    op_id = _require_str_param(ctx, "op_id")
-    params_raw = ctx.params.get("params") or []
-    skip_prereqs = _get_bool_param(ctx, "skip_prereqs", default=False)
+    op_id = ctx.require_str("op_id")
+    params_list = ctx.param_list("params")
+    skip_prereqs = ctx.param_bool("skip_prereqs", default=False)
 
     op = get_operation(op_id)
     if op is None:
@@ -337,12 +224,6 @@ def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationCallResul
         )
 
     kwargs: dict[str, str | int | float | bool] = {}
-    if params_raw is None:
-        params_list: list[str] = []
-    elif isinstance(params_raw, list):
-        params_list = [str(p) for p in params_raw]
-    else:
-        params_list = [str(params_raw)]
     for param_str in params_list:
         if "=" not in param_str:
             return CliResult.fail(
@@ -507,7 +388,7 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     )
 
 
-def dataset_list_handler(ctx: EnhancedHandlerContext) -> CliResult[DatasetListResult]:
+def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
     """List datasets from the registry.
 
     Parameters
@@ -538,7 +419,7 @@ def dataset_list_handler(ctx: EnhancedHandlerContext) -> CliResult[DatasetListRe
 
 
 def dataset_describe_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetDescribeResult]:
     """Show contract details for a dataset.
 
@@ -553,12 +434,12 @@ def dataset_describe_handler(
     CliResult[DatasetDescribeResult]
         Dataset details.
     """
-    table_key = _require_str_param(ctx, "table_key")
+    table_key = ctx.require_str("table_key")
     return dataset_describe_structured(table_key=table_key)
 
 
 def dataset_verify_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetVerifyResult]:
     """Verify dataset contracts against actual data.
 
@@ -573,7 +454,7 @@ def dataset_verify_handler(
     CliResult[DatasetVerifyResult]
         Verification result.
     """
-    table_key = _get_str_param(ctx, "table_key")
+    table_key = ctx.param_str("table_key")
     project_runtime = _resolved_to_project_runtime(ctx.runtime)
 
     issues = collect_contract_issues(project_runtime.gateway.con)
@@ -584,7 +465,7 @@ def dataset_verify_handler(
     return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
-def serve_http_handler(ctx: EnhancedHandlerContext) -> CliResult[ServeStartResult]:
+def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     """Start the HTTP server.
 
     Parameters
@@ -605,10 +486,10 @@ def serve_http_handler(ctx: EnhancedHandlerContext) -> CliResult[ServeStartResul
     -----
     This function blocks while the server is running.
     """
-    host = _get_str_param(ctx, "host", "127.0.0.1") or "127.0.0.1"
-    port = _get_int_param(ctx, "port", 8000)
-    auto_pipeline = _get_bool_param(ctx, "auto_pipeline", default=False)
-    reload = _get_bool_param(ctx, "reload", default=False)
+    host = ctx.param_str("host", "127.0.0.1") or "127.0.0.1"
+    port = ctx.param_int("port", 8000)
+    auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
+    reload = ctx.param_bool("reload", default=False)
 
     project_runtime = _resolved_to_project_runtime(ctx.runtime)
 
@@ -648,7 +529,7 @@ def serve_http_handler(ctx: EnhancedHandlerContext) -> CliResult[ServeStartResul
     )
 
 
-def serve_mcp_handler(ctx: EnhancedHandlerContext) -> CliResult[ServeStartResult]:
+def serve_mcp_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     """Start the MCP server.
 
     Parameters
@@ -662,7 +543,7 @@ def serve_mcp_handler(ctx: EnhancedHandlerContext) -> CliResult[ServeStartResult
     This function blocks while the server is running and exits the process
     via sys.exit(), so it never returns normally.
     """
-    auto_pipeline = _get_bool_param(ctx, "auto_pipeline", default=False)
+    auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
 
     project_runtime = _resolved_to_project_runtime(ctx.runtime)
 

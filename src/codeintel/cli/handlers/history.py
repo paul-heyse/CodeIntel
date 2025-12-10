@@ -1,6 +1,6 @@
 """Handlers for history timeseries commands.
 
-These handlers follow the EnhancedHandlerContext pattern and return CliResult.
+Migrate to use HandlerContext and return CliResult.
 """
 
 from __future__ import annotations
@@ -8,12 +8,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.base import setup_logging
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
@@ -22,9 +23,6 @@ from codeintel.storage.gateway import (
     build_snapshot_gateway_resolver,
     open_gateway,
 )
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -67,138 +65,6 @@ class HistoryTimeseriesResult:
         }
 
 
-# -----------------------------------------------------------------------------
-# Parameter Helpers
-# -----------------------------------------------------------------------------
-
-
-def _get_str_param(ctx: EnhancedHandlerContext, key: str, default: str = "") -> str:
-    """Get string parameter with default.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    key
-        Parameter key.
-    default
-        Default value.
-
-    Returns
-    -------
-    str
-        Parameter value or default.
-    """
-    value = ctx.params.get(key)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _require_str_param(ctx: EnhancedHandlerContext, key: str) -> str:
-    """Require string parameter.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    key
-        Parameter key.
-
-    Returns
-    -------
-    str
-        Parameter value.
-
-    Raises
-    ------
-    RuntimeError
-        If parameter is missing or empty.
-    """
-    value = ctx.params.get(key)
-    if value is None or (isinstance(value, str) and not value):
-        msg = f"Missing required parameter: {key}"
-        raise RuntimeError(msg)
-    return str(value)
-
-
-def _get_int_param(ctx: EnhancedHandlerContext, key: str, default: int = 0) -> int:
-    """Get integer parameter with default.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    key
-        Parameter key.
-    default
-        Default value.
-
-    Returns
-    -------
-    int
-        Parameter value or default.
-    """
-    value = ctx.params.get(key)
-    if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    return int(str(value))
-
-
-def _get_path_param(ctx: EnhancedHandlerContext, key: str, default: Path) -> Path:
-    """Get path parameter with default.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    key
-        Parameter key.
-    default
-        Default value.
-
-    Returns
-    -------
-    Path
-        Parameter value or default.
-    """
-    value = ctx.params.get(key)
-    if value is None:
-        return default
-    if isinstance(value, Path):
-        return value
-    return Path(str(value))
-
-
-def _get_enum_str_param(ctx: EnhancedHandlerContext, key: str, default: str = "") -> str:
-    """Get enum parameter as string.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    key
-        Parameter key.
-    default
-        Default value.
-
-    Returns
-    -------
-    str
-        Parameter value as string.
-    """
-    value = ctx.params.get(key)
-    if value is None:
-        return default
-    # Handle enum values
-    value_attr = getattr(value, "value", None)
-    if value_attr is not None:
-        return str(value_attr)
-    return str(value)
-
-
 def _make_error(title: str, detail: str, status: int = 1) -> ProblemDetail:
     """Create a ProblemDetail for an error.
 
@@ -229,7 +95,7 @@ def _make_error(title: str, detail: str, status: int = 1) -> ProblemDetail:
 # -----------------------------------------------------------------------------
 
 
-def history_timeseries_handler(ctx: EnhancedHandlerContext) -> CliResult[HistoryTimeseriesResult]:
+def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseriesResult]:
     """Aggregate analytics.history_timeseries across multiple commits.
 
     Collects analytics data from per-commit DuckDB snapshots and aggregates
@@ -256,25 +122,21 @@ def history_timeseries_handler(ctx: EnhancedHandlerContext) -> CliResult[History
     setup_logging(ctx.verbosity)
 
     # Check commits first since it's a command-specific required parameter
-    commits_raw = ctx.params.get("commits")
-    commits: list[str] = []
-    if commits_raw is not None:
-        if isinstance(commits_raw, list):
-            commits = [str(c) for c in commits_raw]
-        else:
-            commits = [str(commits_raw)]
+    commits = ctx.param_list("commits")
 
     if not commits:
         return CliResult.fail(_make_error("Validation Error", "At least one commit is required"))
 
-    repo = _require_str_param(ctx, "repo")
+    repo = ctx.require_str("repo")
 
-    repo_root = _get_path_param(ctx, "repo_root", Path.cwd())
-    db_dir = _get_path_param(ctx, "db_dir", Path("build/db"))
-    output_db = _get_path_param(ctx, "output_db", Path("build/db/history.duckdb"))
-    entity_kind = _get_enum_str_param(ctx, "entity_kind", "function")
-    max_entities = _get_int_param(ctx, "max_entities", 500)
-    selection_strategy = _get_enum_str_param(ctx, "selection_strategy", "risk_score")
+    repo_root = ctx.param_path("repo_root", Path.cwd()) or Path.cwd()
+    db_dir = ctx.param_path("db_dir", Path("build/db")) or Path("build/db")
+    output_db = ctx.param_path("output_db", Path("build/db/history.duckdb")) or Path(
+        "build/db/history.duckdb"
+    )
+    entity_kind = ctx.param_str("entity_kind", "function") or "function"
+    max_entities = ctx.param_int("max_entities", 500)
+    selection_strategy = ctx.param_str("selection_strategy", "risk_score") or "risk_score"
 
     runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
     builder = ConfigBuilder.from_snapshot(

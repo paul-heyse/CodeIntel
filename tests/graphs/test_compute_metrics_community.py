@@ -24,12 +24,15 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.networkx_graphs import (
+    barbell_graph_small,
     bridged_cliques_graph,
     chain_graph,
     complete_digraph,
     complete_graph,
     disconnected_graph,
+    single_node_graph,
 )
+from tests.graphs.constants import COMPLETE_GRAPH_SIZES
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -60,8 +63,7 @@ def test_greedy_empty_graph_returns_empty() -> None:
 
 def test_greedy_single_node_single_community() -> None:
     """Single node is its own community."""
-    graph = nx.Graph()
-    graph.add_node(1)
+    graph = single_node_graph(1)
     result = detect_communities_greedy(graph)
 
     expect_length(result, 1)
@@ -116,7 +118,7 @@ def test_greedy_weighted_edges() -> None:
 
 def test_greedy_resolution_parameter() -> None:
     """Resolution parameter affects community granularity."""
-    graph = nx.barbell_graph(5, 1)  # Two cliques connected by path
+    graph = barbell_graph_small()
 
     result_low = detect_communities_greedy(graph, resolution=0.5)
     result_high = detect_communities_greedy(graph, resolution=2.0)
@@ -143,8 +145,7 @@ def test_louvain_empty_graph_returns_empty() -> None:
 
 def test_louvain_single_node() -> None:
     """Single node is assigned to a community."""
-    graph = nx.Graph()
-    graph.add_node("A")
+    graph = single_node_graph("A")
     result = detect_communities_louvain(graph)
 
     expect_length(result, 1)
@@ -179,7 +180,7 @@ def test_louvain_directed_graph_converted() -> None:
 
 def test_louvain_seed_reproducibility() -> None:
     """Same seed produces same results."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
 
     result1 = detect_communities_louvain(graph, seed=RANDOM_SEED)
     result2 = detect_communities_louvain(graph, seed=RANDOM_SEED)
@@ -200,7 +201,7 @@ def test_louvain_different_seeds_may_differ() -> None:
 
 def test_louvain_resolution_parameter() -> None:
     """Resolution parameter affects community granularity."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
 
     result_low = detect_communities_louvain(graph, resolution=0.5, seed=RANDOM_SEED)
     result_high = detect_communities_louvain(graph, resolution=2.0, seed=RANDOM_SEED)
@@ -235,8 +236,7 @@ def test_label_propagation_empty_graph_returns_empty() -> None:
 
 def test_label_propagation_single_node() -> None:
     """Single node is assigned to a community."""
-    graph = nx.Graph()
-    graph.add_node("X")
+    graph = single_node_graph("X")
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, 1)
@@ -343,7 +343,7 @@ def test_modularity_directed_graph_converted() -> None:
 
 def test_modularity_resolution_parameter() -> None:
     """Resolution parameter affects modularity calculation."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
     communities = detect_communities_greedy(graph)
 
     result_default = compute_modularity(graph, communities, resolution=DEFAULT_RESOLUTION)
@@ -371,7 +371,7 @@ def test_modularity_weighted_graph() -> None:
 
 def test_modularity_with_detected_communities() -> None:
     """Modularity of detected communities should be reasonable."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
     communities = detect_communities_louvain(graph, seed=RANDOM_SEED)
     result = compute_modularity(graph, communities)
 
@@ -386,7 +386,7 @@ def test_modularity_with_detected_communities() -> None:
 
 def test_all_algorithms_same_graph() -> None:
     """All algorithms work on the same graph and return valid results."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
 
     greedy_result = detect_communities_greedy(graph)
     louvain_result = detect_communities_louvain(graph, seed=RANDOM_SEED)
@@ -400,7 +400,7 @@ def test_all_algorithms_same_graph() -> None:
 
 def test_modularity_comparison_across_algorithms() -> None:
     """Compare modularity of different algorithm results."""
-    graph = nx.barbell_graph(5, 1)
+    graph = barbell_graph_small()
 
     greedy_communities = detect_communities_greedy(graph)
     louvain_communities = detect_communities_louvain(graph, seed=RANDOM_SEED)
@@ -420,7 +420,7 @@ def test_modularity_comparison_across_algorithms() -> None:
 
 @pytest.mark.parametrize(
     "graph_size",
-    [5, 10, 15, 20],
+    COMPLETE_GRAPH_SIZES,
 )
 def test_greedy_various_sizes(graph_size: int) -> None:
     """Greedy algorithm works on various graph sizes."""
@@ -432,7 +432,7 @@ def test_greedy_various_sizes(graph_size: int) -> None:
 
 @pytest.mark.parametrize(
     "graph_size",
-    [5, 10, 15, 20],
+    COMPLETE_GRAPH_SIZES,
 )
 def test_louvain_various_sizes(graph_size: int) -> None:
     """Louvain algorithm works on various graph sizes."""

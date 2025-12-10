@@ -6,7 +6,7 @@ This module tests the architecture and subsystem MCP tools using real gateways.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -32,11 +32,12 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 # =============================================================================
 # Constants

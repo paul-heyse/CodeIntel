@@ -34,7 +34,10 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
+    nested_loop_graph,
+    self_loop_graph,
     star_graph,
+    two_cycle_graph,
 )
 
 # ---------------------------------------------------------------------------
@@ -448,8 +451,7 @@ def test_find_cycles_simple_cycle() -> None:
 
 def test_find_cycles_self_loop() -> None:
     """Self-loop is detected as cycle."""
-    graph = nx.DiGraph()
-    graph.add_edge("A", "A")
+    graph = self_loop_graph("A")
     result = find_dfg_cycles(graph)
 
     expect_true(len(result) >= 1)
@@ -458,11 +460,7 @@ def test_find_cycles_self_loop() -> None:
 
 def test_find_cycles_multiple_cycles() -> None:
     """Multiple cycles are detected."""
-    graph = nx.DiGraph()
-    # Cycle 1: A -> B -> A
-    graph.add_edges_from([("A", "B"), ("B", "A")])
-    # Cycle 2: C -> D -> C
-    graph.add_edges_from([("C", "D"), ("D", "C")])
+    graph = two_cycle_graph()
 
     result = find_dfg_cycles(graph)
 
@@ -484,18 +482,7 @@ def test_find_cycles_limit_respected() -> None:
 
 def test_find_cycles_nested_cycles() -> None:
     """Nested cycles are detected."""
-    graph = nx.DiGraph()
-    # Outer cycle: A -> B -> C -> A
-    # Inner cycle: B -> D -> B
-    graph.add_edges_from(
-        [
-            ("A", "B"),
-            ("B", "C"),
-            ("C", "A"),
-            ("B", "D"),
-            ("D", "B"),
-        ]
-    )
+    graph = nested_loop_graph()
 
     result = find_dfg_cycles(graph)
 

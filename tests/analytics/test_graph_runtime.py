@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import cast
 
 import networkx as nx
 import pytest
@@ -27,7 +23,6 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
 from codeintel.analytics.runtime import (
-    GraphRuntime,
     GraphRuntimeOptions,
     GraphRuntimePool,
     build_graph_runtime,
@@ -37,7 +32,6 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import GraphKind
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -45,99 +39,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_true,
 )
-from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.graphs import (
-    CountingGraphEngineAdapter,
-    GraphFixtures,
-    GraphStubEngine,
-)
-
-
-@dataclass
-class GraphRuntimeHarness:
-    """Shared harness for graph runtime-related tests."""
-
-    snapshot: SnapshotRef
-    gateway: StorageGateway
-    cache_dir: Path
-    fixtures: GraphFixtures
-
-    def build_engine(self) -> CountingGraphEngineAdapter:
-        """Create a graph engine double backed by canonical fixtures.
-
-        Returns
-        -------
-        CountingGraphEngineAdapter
-            Engine adapter suitable for GraphRuntime consumption.
-        """
-        call_graph = cast("nx.DiGraph", self.fixtures.call_graph.copy())
-        import_graph = cast("nx.DiGraph", self.fixtures.import_graph.copy())
-        cfg_graph = (
-            cast("nx.DiGraph", self.fixtures.cfg_graph.copy())
-            if self.fixtures.cfg_graph is not None
-            else None
-        )
-        runtime = GraphStubEngine(
-            gateway=self.gateway,
-            snapshot=self.snapshot,
-            call_graph=call_graph,
-            import_graph=import_graph,
-            config_graph=self.fixtures.config_graph.copy(),
-            symbol_module_graph=self.fixtures.symbol_module_graph.copy(),
-            symbol_function_graph=self.fixtures.symbol_function_graph.copy(),
-            cfg_graph=cfg_graph,
-        )
-        return CountingGraphEngineAdapter(runtime, gateway=self.gateway, snapshot=self.snapshot)
-
-    def build_runtime(
-        self,
-        *,
-        engine: CountingGraphEngineAdapter | None = None,
-        cache_dir: Path | None = None,
-    ) -> GraphRuntime:
-        """Create a GraphRuntime bound to this harness.
-
-        Returns
-        -------
-        GraphRuntime
-            Runtime configured with the provided engine and cache directory.
-        """
-        options = GraphRuntimeOptions(
-            snapshot=self.snapshot, graph_cache_dir=cache_dir or self.cache_dir
-        )
-        return GraphRuntime(options=options, engine=engine or self.build_engine())
-
-
-@pytest.fixture
-def graph_runtime_ctx(tmp_path: Path) -> Iterator[GraphRuntimeHarness]:
-    """Provide a reusable graph runtime harness with seeded graphs.
-
-    Yields
-    ------
-    Iterator[GraphRuntimeHarness]
-        Harness seeded with canonical graphs and cache directory.
-    """
-    snapshot = make_snapshot(repo_root=tmp_path)
-    gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
-    fixtures = GraphFixtures(
-        call_graph=nx.DiGraph([("a", "b")]),
-        import_graph=nx.DiGraph(),
-        config_graph=nx.Graph(),
-        symbol_module_graph=nx.Graph(),
-        symbol_function_graph=nx.Graph(),
-    )
-    harness = GraphRuntimeHarness(
-        snapshot=snapshot,
-        gateway=gateway,
-        cache_dir=tmp_path,
-        fixtures=fixtures,
-    )
-    try:
-        yield harness
-    finally:
-        gateway.close()
+from tests._helpers.graph_runtime_harness import GraphRuntimeHarness
 
 
 def test_disk_cache_round_trip(graph_runtime_ctx: GraphRuntimeHarness) -> None:
@@ -147,13 +50,19 @@ def test_disk_cache_round_trip(graph_runtime_ctx: GraphRuntimeHarness) -> None:
 
     graph1 = runtime.ensure_call_graph()
     expect_equal(engine.method_counts.get("load_call_graph", 0), 1)
-    expect_equal(graph1.number_of_nodes(), 2)
+    expect_equal(
+        graph1.number_of_nodes(),
+        graph_runtime_ctx.fixtures.call_graph.number_of_nodes(),
+    )
 
     engine2 = graph_runtime_ctx.build_engine()
     runtime2 = graph_runtime_ctx.build_runtime(engine=engine2)
     graph2 = runtime2.ensure_call_graph()
     expect_equal(engine2.method_counts.get("load_call_graph", 0), 0)
-    expect_equal(graph2.number_of_edges(), 1)
+    expect_equal(
+        graph2.number_of_edges(),
+        graph_runtime_ctx.fixtures.call_graph.number_of_edges(),
+    )
 
 
 def test_disk_cache_mismatch_falls_back_to_loader(graph_runtime_ctx: GraphRuntimeHarness) -> None:

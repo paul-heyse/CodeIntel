@@ -1,4 +1,4 @@
-"""Tests for UnifiedRenderer."""
+"""Tests for UnifiedRenderer and factory functions."""
 
 from __future__ import annotations
 
@@ -13,11 +13,15 @@ from codeintel.cli.rendering import (
     RenderContext,
     TableSpec,
     UnifiedRenderer,
+    get_renderer,
+    render_cli_result,
 )
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
+    expect_false,
     expect_in,
     expect_length,
+    expect_true,
 )
 
 
@@ -227,3 +231,128 @@ def test_render_result_with_warnings() -> None:
 
     expect_in("Warning 1", err.getvalue())
     expect_in("Warning 2", err.getvalue())
+
+
+# --- Tests for get_renderer factory function ---
+
+
+def test_get_renderer_returns_unified_renderer() -> None:
+    """Verify get_renderer returns a UnifiedRenderer instance."""
+    renderer = get_renderer()
+    expect_true(isinstance(renderer, UnifiedRenderer))
+
+
+def test_get_renderer_respects_json_format() -> None:
+    """Verify get_renderer creates renderer with specified format."""
+    renderer = get_renderer(OutputFormat.JSON)
+    expect_equal(renderer.context.format, OutputFormat.JSON)
+
+
+def test_get_renderer_respects_jsonl_format() -> None:
+    """Verify get_renderer creates renderer with JSONL format."""
+    renderer = get_renderer(OutputFormat.JSONL)
+    expect_equal(renderer.context.format, OutputFormat.JSONL)
+
+
+def test_get_renderer_respects_color_override() -> None:
+    """Verify get_renderer respects color=False override."""
+    renderer = get_renderer(color=False)
+    expect_false(renderer.context.color)
+
+
+def test_get_renderer_uses_custom_writer() -> None:
+    """Verify get_renderer uses custom writer when provided."""
+    out = StringIO()
+    renderer = get_renderer(writer=out)
+    renderer.render_message("Test output")
+    expect_in("Test output", out.getvalue())
+
+
+def test_get_renderer_uses_custom_err_writer() -> None:
+    """Verify get_renderer uses custom error writer when provided."""
+    out = StringIO()
+    err = StringIO()
+    renderer = get_renderer(writer=out, err_writer=err)
+    error = ProblemDetail(
+        type="urn:test:error",
+        title="Test Error",
+        status=400,
+    )
+    renderer.render_error(error)
+    expect_in("Test Error", err.getvalue())
+
+
+# --- Tests for render_cli_result function ---
+
+
+def test_render_cli_result_success_returns_zero() -> None:
+    """Verify render_cli_result returns 0 for success."""
+    result: CliResult[dict[str, str]] = CliResult.ok({"status": "done"})
+    out = StringIO()
+    err = StringIO()
+    renderer = UnifiedRenderer(
+        RenderContext(
+            format=OutputFormat.JSON,
+            color=False,
+            writer=out,
+            err_writer=err,
+            is_tty=False,
+        )
+    )
+    exit_code = render_cli_result(result, renderer)
+    expect_equal(exit_code, 0)
+
+
+def test_render_cli_result_failure_returns_nonzero() -> None:
+    """Verify render_cli_result returns non-zero for failure."""
+    error = ProblemDetail(
+        type="urn:test:error",
+        title="Failed",
+        status=400,
+    )
+    result: CliResult[dict[str, str]] = CliResult.fail(error)
+    out = StringIO()
+    err = StringIO()
+    renderer = UnifiedRenderer(
+        RenderContext(
+            format=OutputFormat.TEXT,
+            color=False,
+            writer=out,
+            err_writer=err,
+            is_tty=False,
+        )
+    )
+    exit_code = render_cli_result(result, renderer)
+    expect_equal(exit_code, 1)
+
+
+def test_render_cli_result_creates_renderer() -> None:
+    """Verify render_cli_result creates renderer if None provided."""
+    result: CliResult[dict[str, str]] = CliResult.ok({"key": "value"})
+    # Should not raise, even without a renderer
+    exit_code = render_cli_result(result, output_format=OutputFormat.TEXT)
+    expect_equal(exit_code, 0)
+
+
+def test_render_cli_result_uses_table_spec() -> None:
+    """Verify render_cli_result uses table_spec for list data."""
+    out = StringIO()
+    err = StringIO()
+    renderer = UnifiedRenderer(
+        RenderContext(
+            format=OutputFormat.TEXT,
+            color=False,
+            writer=out,
+            err_writer=err,
+            is_tty=False,
+        )
+    )
+    rows = [{"name": "item1"}, {"name": "item2"}]
+    result: CliResult[list[dict[str, str]]] = CliResult.ok(rows)
+    spec = TableSpec(columns=(ColumnSpec("name", "Name"),))
+
+    exit_code = render_cli_result(result, renderer, table_spec=spec)
+
+    expect_equal(exit_code, 0)
+    expect_in("Name", out.getvalue())
+    expect_in("item1", out.getvalue())

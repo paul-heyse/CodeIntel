@@ -22,7 +22,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.fakes.networkx_graphs import bipartite_graph
+from tests._helpers.fakes.networkx_graphs import bipartite_graph, shared_neighbors_graph
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -113,25 +113,21 @@ def test_bipartite_degrees_simple_bipartite() -> None:
 
 def test_bipartite_degrees_unweighted() -> None:
     """Unweighted degree computation."""
-    graph = nx.Graph()
-    # Primary: 1 connects to a, b
-    # Primary: 2 connects to b, c
-    graph.add_edges_from([(1, "a"), (1, "b"), (2, "b"), (2, "c")])
-    primary = {1, 2}
-    secondary = {"a", "b", "c"}
+    graph = shared_neighbors_graph(shared=1, primary=("p1", "p2"), unique_first=1, unique_second=1)
+    primary = {"p1", "p2"}
+    secondary = set(graph.nodes()) - primary
 
     result = compute_bipartite_degrees(graph, primary, secondary)
 
-    # Node 1 has degree 2 (connects to a, b)
-    expect_equal(result.degree[1], EXPECTED_DEGREE_TWO)
-    # Node 2 has degree 2 (connects to b, c)
-    expect_equal(result.degree[2], EXPECTED_DEGREE_TWO)
-    # Node b has degree 2 (connected from 1, 2)
-    expect_equal(result.degree["b"], EXPECTED_DEGREE_TWO)
-    # Node a has degree 1
-    expect_equal(result.degree["a"], EXPECTED_DEGREE_ONE)
-    # Node c has degree 1
-    expect_equal(result.degree["c"], EXPECTED_DEGREE_ONE)
+    expect_equal(result.degree["p1"], EXPECTED_DEGREE_TWO)
+    expect_equal(result.degree["p2"], EXPECTED_DEGREE_TWO)
+    # Shared neighbor has degree 2, uniques degree 1
+    shared_nodes = {node for node in secondary if node.startswith("s")}
+    unique_nodes = secondary - shared_nodes
+    for node in shared_nodes:
+        expect_equal(result.degree[node], EXPECTED_DEGREE_TWO)
+    for node in unique_nodes:
+        expect_equal(result.degree[node], EXPECTED_DEGREE_ONE)
 
 
 def test_bipartite_degrees_weighted() -> None:
@@ -232,24 +228,20 @@ def test_weighted_projection_all_nodes() -> None:
 
 def test_weighted_projection_simple_bipartite() -> None:
     """Simple bipartite projection."""
-    graph = nx.Graph()
-    # Primary: 1, 2 both connect to shared node 'x'
-    graph.add_edges_from([(1, "x"), (2, "x")])
-    primary = {1, 2}
+    graph = shared_neighbors_graph(shared=1)
+    primary = {"p1", "p2"}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = _require_projection(result)
     # 1 and 2 share connection through x, so they're connected in projection
-    expect_true(projection.has_edge(1, 2))
+    expect_true(projection.has_edge("p1", "p2"))
 
 
 def test_weighted_projection_no_shared_neighbors() -> None:
     """Nodes with no shared neighbors have no edges in projection."""
-    graph = nx.Graph()
-    # 1 connects to 'a', 2 connects to 'b' (no overlap)
-    graph.add_edges_from([(1, "a"), (2, "b")])
-    primary = {1, 2}
+    graph = shared_neighbors_graph(shared=0, unique_first=1, unique_second=1)
+    primary = {"p1", "p2"}
 
     result = compute_weighted_projection(graph, primary)
 
@@ -273,24 +265,15 @@ def test_weighted_projection_complete_bipartite() -> None:
 
 def test_weighted_projection_weights() -> None:
     """Projection has weights based on shared neighbors."""
-    graph = nx.Graph()
-    # 1 and 2 share both 'a' and 'b'
-    graph.add_edges_from(
-        [
-            (1, "a"),
-            (1, "b"),
-            (2, "a"),
-            (2, "b"),
-        ]
-    )
-    primary = {1, 2}
+    graph = shared_neighbors_graph(shared=2)
+    primary = {"p1", "p2"}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = _require_projection(result)
-    expect_true(projection.has_edge(1, 2))
+    expect_true(projection.has_edge("p1", "p2"))
     # Weight should reflect shared neighbors (2 shared)
-    edge_data = projection.get_edge_data(1, 2)
+    edge_data = projection.get_edge_data("p1", "p2")
     expect_true(edge_data is not None)
     if edge_data is not None:
         expect_true("weight" in edge_data)
@@ -384,25 +367,14 @@ def test_bipartite_degree_metrics_frozen() -> None:
 
 def test_projection_matches_shared_neighbors_count() -> None:
     """Projection edge weights match shared neighbor counts."""
-    graph = nx.Graph()
-    # Node 1 and 2 share exactly 2 neighbors (a, b)
-    graph.add_edges_from(
-        [
-            (1, "a"),
-            (1, "b"),
-            (1, "c"),  # Not shared
-            (2, "a"),
-            (2, "b"),
-            (2, "d"),  # Not shared
-        ]
-    )
-    primary = {1, 2}
+    graph = shared_neighbors_graph(shared=2, unique_first=1, unique_second=1)
+    primary = {"p1", "p2"}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = _require_projection(result)
     # The weighted_projected_graph uses neighbor count as weight
-    edge_data = projection.get_edge_data(1, 2)
+    edge_data = projection.get_edge_data("p1", "p2")
     expect_true(edge_data is not None)
 
 

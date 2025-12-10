@@ -5,28 +5,27 @@ This module tests the profile-oriented MCP tools using real gateways.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 # =============================================================================
 # Constants
@@ -37,51 +36,12 @@ MAX_ROWS = 100
 
 
 # =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
-# =============================================================================
 # register_profile_tools Tests
 # =============================================================================
 
 
 def test_register_profile_tools_success(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_profile_tools registers tools successfully.
 
@@ -91,22 +51,20 @@ def test_register_profile_tools_success(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test Profile Tools")
-    backend = _build_backend(provisioned_repo)
 
     # Should not raise
-    register_profile_tools(mcp, backend)
+    register_profile_tools(mcp, mcp_backend.backend)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Profile Tools")
 
 
 def test_profile_tools_return_problem_detail_on_missing_function(
-    provisioned_repo: ProvisionedGateway, caplog: pytest.LogCaptureFixture
+    mcp_backend: McpBackendComponents, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Profile tool should emit ProblemDetail payload for unknown goid."""
-    backend = _build_backend(provisioned_repo)
     registrar = RecordingMcpRegistrar("ProfileTools")
-    register_profile_tools(registrar, backend)
+    register_profile_tools(registrar, mcp_backend.backend)
 
     with caplog.at_level("WARNING"):
         result = cast(
@@ -119,7 +77,7 @@ def test_profile_tools_return_problem_detail_on_missing_function(
 
 
 def test_register_profile_tools_with_service(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify register_profile_tools works with service directly.
 
@@ -129,25 +87,14 @@ def test_register_profile_tools_with_service(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test Service")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
 
-    register_profile_tools(mcp, service)
+    register_profile_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Service")
 
 
 def test_register_profile_tools_with_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_profile_tools works with serving config.
 
@@ -157,16 +104,15 @@ def test_register_profile_tools_with_config(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test With Config")
-    backend = _build_backend(provisioned_repo)
     config = ServingConfig()
 
-    register_profile_tools(mcp, backend, config=config)
+    register_profile_tools(mcp, mcp_backend.backend, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_profile_tools_on_multiple_servers(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify tools can be registered on multiple servers.
 
@@ -175,14 +121,12 @@ def test_register_profile_tools_on_multiple_servers(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     mcp1 = wrap_fastmcp("Server 1")
-    register_profile_tools(mcp1, backend)
+    register_profile_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_profile_tools(mcp2, backend)
+    register_profile_tools(mcp2, mcp_backend.backend)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -223,7 +167,7 @@ def test_profile_operations_have_backend_method() -> None:
 
 
 def test_backend_get_function_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_function_profile works.
 
@@ -232,10 +176,7 @@ def test_backend_get_function_profile(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Get a valid goid from the backend
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -245,12 +186,12 @@ def test_backend_get_function_profile(
     if goid is None:
         pytest.skip("No goid_h128 in function")
 
-    result = backend.get_function_profile(goid_h128=int(goid))
+    result = mcp_backend.backend.get_function_profile(goid_h128=int(goid))
     expect_is_not_none(result)
 
 
 def test_backend_get_file_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_file_profile works.
 
@@ -259,10 +200,7 @@ def test_backend_get_file_profile(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Try with a likely existing path
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -272,12 +210,12 @@ def test_backend_get_file_profile(
     if rel_path is None:
         pytest.skip("No rel_path in function")
 
-    result = backend.get_file_profile(rel_path=str(rel_path))
+    result = mcp_backend.backend.get_file_profile(rel_path=str(rel_path))
     expect_is_not_none(result)
 
 
 def test_backend_get_module_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_module_profile works.
 
@@ -286,10 +224,7 @@ def test_backend_get_module_profile(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # Get a valid module from the backend
-    result_obj = backend.list_high_risk_functions(limit=1)
+    result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
 
@@ -299,7 +234,7 @@ def test_backend_get_module_profile(
     if module is None:
         pytest.skip("No module in function")
 
-    result = backend.get_module_profile(module=str(module))
+    result = mcp_backend.backend.get_module_profile(module=str(module))
     expect_is_not_none(result)
 
 
@@ -309,7 +244,7 @@ def test_backend_get_module_profile(
 
 
 def test_backend_get_function_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend raises McpError for nonexistent function.
 
@@ -318,16 +253,14 @@ def test_backend_get_function_profile_not_found(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     nonexistent_goid = 99999999999999999
 
     with pytest.raises(McpError):
-        backend.get_function_profile(goid_h128=nonexistent_goid)
+        mcp_backend.backend.get_function_profile(goid_h128=nonexistent_goid)
 
 
 def test_backend_get_file_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend handles nonexistent file gracefully.
 
@@ -336,16 +269,13 @@ def test_backend_get_file_profile_not_found(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    # File profile not found returns a result, not an exception
-    result = backend.get_file_profile(rel_path="nonexistent/path/to/file.py")
+    result = mcp_backend.backend.get_file_profile(rel_path="nonexistent/path/to/file.py")
     # Should return result with found=False or empty
     expect_is_not_none(result)
 
 
 def test_backend_get_module_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend raises McpError for nonexistent module.
 
@@ -354,10 +284,8 @@ def test_backend_get_module_profile_not_found(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     with pytest.raises(McpError):
-        backend.get_module_profile(module="nonexistent.module.path")
+        mcp_backend.backend.get_module_profile(module="nonexistent.module.path")
 
 
 # =============================================================================
@@ -366,7 +294,8 @@ def test_backend_get_module_profile_not_found(
 
 
 def test_backend_with_custom_limits(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify backend respects custom limits.
 
@@ -378,24 +307,12 @@ def test_backend_with_custom_limits(
     custom_limit = 25
     custom_max = 250
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+    backend = mcp_backend_factory(
+        gateway=mcp_backend.gateway,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
         limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
+    ).backend
 
     expect_equal(backend.limits.default_limit, custom_limit)
     expect_equal(backend.limits.max_rows_per_call, custom_max)
@@ -407,7 +324,7 @@ def test_backend_with_custom_limits(
 
 
 def test_register_profile_tools_preserves_backend_state(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify registration doesn't alter backend state.
 
@@ -417,7 +334,7 @@ def test_register_profile_tools_preserves_backend_state(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test State")
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     original_repo = backend.repo
     original_commit = backend.commit

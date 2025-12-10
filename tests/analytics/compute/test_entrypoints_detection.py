@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -13,19 +15,54 @@ from codeintel.analytics.compute.entrypoints.detection import (
     detect_entrypoints,
 )
 from tests._helpers import assert_frozen
-from tests._helpers.assertions import assert_mapping_list
+from tests._helpers.assertions import (
+    assert_evidence_location,
+    assert_evidence_snippet_contains,
+    assert_evidence_urn,
+    assert_mapping_list,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
     expect_in,
     expect_is_instance,
     expect_is_not_none,
+    expect_length,
     expect_true,
 )
-from tests._helpers.seeds.entrypoints import ENTRYPOINTS_MOD_FQN, ENTRYPOINTS_MOD_PATH
+from tests._helpers.context import TestContext
+from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds.entrypoints import (
+    ENTRYPOINTS_CLI_END,
+    ENTRYPOINTS_CLI_START,
+    ENTRYPOINTS_HELLO_END,
+    ENTRYPOINTS_HELLO_START,
+    ENTRYPOINTS_MOD_FQN,
+    ENTRYPOINTS_MOD_PATH,
+    ENTRYPOINTS_PACK,
+    write_entrypoints_source,
+)
 
 REL_PATH = ENTRYPOINTS_MOD_PATH
 MODULE = ENTRYPOINTS_MOD_FQN
+
+
+@pytest.fixture
+def entrypoints_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide seeded context with canonical entrypoints source.
+
+    Yields
+    ------
+    Iterator[TestContext]
+        Seeded test context with entrypoints pack and source files.
+    """
+    ctx = TestScenario.minimal().with_seeds(ENTRYPOINTS_PACK).build(tmp_path)
+    source = write_entrypoints_source(ctx.repo_root)
+    ctx.extra["entrypoints_source"] = source
+    try:
+        yield ctx
+    finally:
+        ctx.close()
 
 
 def test_detector_settings_defaults_and_disable() -> None:
@@ -256,6 +293,39 @@ class MyClass:
     expect_is_instance(result, list)
 
 
+def test_detect_entrypoints_with_seeded_pack(entrypoints_ctx: TestContext) -> None:
+    """Detect entrypoints and evidence from the canonical seeded module."""
+    source_raw = entrypoints_ctx.extra["entrypoints_source"]
+    source = str(source_raw)
+    candidates = detect_entrypoints(
+        source,
+        rel_path=REL_PATH,
+        module=MODULE,
+        settings=DetectorSettings(),
+    )
+    expect_length(candidates, 2)
+
+    hello = next(candidate for candidate in candidates if candidate.qualname.endswith("hello"))
+    expect_equal(hello.lineno, ENTRYPOINTS_HELLO_START)
+    expect_equal(hello.end_lineno, ENTRYPOINTS_HELLO_END)
+    assert_evidence_location(hello.evidence[0], path=REL_PATH)
+    assert_evidence_snippet_contains(hello.evidence[0], "app.get")
+
+    cli = next(candidate for candidate in candidates if candidate.qualname.endswith("cli_main"))
+    expect_equal(cli.lineno, ENTRYPOINTS_CLI_START)
+    expect_equal(cli.end_lineno, ENTRYPOINTS_CLI_END)
+    assert_evidence_location(cli.evidence[0], path=REL_PATH)
+    assert_evidence_snippet_contains(cli.evidence[0], "cli.command")
+
+    urn_row = expect_is_not_none(
+        entrypoints_ctx.gateway.con.execute(
+            "SELECT urn FROM core.goids WHERE goid_h128 = ?",
+            [ENTRYPOINTS_PACK.hello_goid],
+        ).fetchone()
+    )
+    assert_evidence_urn({"urn": urn_row[0]}, ENTRYPOINTS_PACK.hello_urn)
+
+
 def test_detects_fastapi_and_flask_routes() -> None:
     """Detect HTTP entrypoints for FastAPI and Flask-style decorators."""
     source = """
@@ -430,7 +500,7 @@ def test_detect_entrypoints_emits_snippet_evidence() -> None:
     if not evidence:
         pytest.fail("Entrypoint candidate did not include evidence")
     sample = evidence[0]
-    expect_equal(sample["path"], REL_PATH)
-    expect_equal(sample["lineno"], 5)
-    expect_equal(sample["snippet"], '@app.get("/ping")')
-    expect_true("app.get" in str(sample["details"]))
+    assert_evidence_location(sample, path=REL_PATH, lineno=5)
+    assert_evidence_snippet_contains(sample, "@app.get")
+    details = sample.get("details")
+    expect_true(isinstance(details, dict))

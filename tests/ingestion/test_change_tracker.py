@@ -20,21 +20,44 @@ from codeintel.ingestion.tracker import (
     IncrementalIngestPolicy,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import build_repo_tree
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     build_scan_profile,
     create_scan_and_docstring_steps,
+    module_records_for_paths,
+    seed_inventory_from_paths,
 )
 
+TEST_REPO_ROOT = Path("repo")
 
-def _module(rel_path: str) -> ModuleRecord:
-    return ModuleRecord(
-        rel_path=rel_path,
-        module_name=rel_path.replace("/", ".").removesuffix(".py"),
-        file_path=Path(rel_path),
-        index=0,
-        total=0,
+
+def _modules(paths: list[str], repo_root: Path = TEST_REPO_ROOT) -> list[ModuleRecord]:
+    """Build ModuleRecord instances for tests.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records derived from the provided relative paths.
+    """
+    return module_records_for_paths(paths, repo_root)
+
+
+def _seed_inventory(
+    gateway: StorageGateway,
+    repo_root: Path,
+    repo: str,
+    commit: str,
+    paths: list[str],
+) -> None:
+    """Seed core.modules and repo_map for consistency with module lists."""
+    seed_inventory_from_paths(
+        repo_root=repo_root,
+        gateway=gateway,
+        repo=repo,
+        commit=commit,
+        paths=paths,
     )
 
 
@@ -61,7 +84,14 @@ def _compute_changes(gateway: StorageGateway, request: ChangeRequest) -> ChangeS
 
 def test_view_for_dataset_incremental(fresh_gateway: StorageGateway) -> None:
     """Use incremental mode when change ratios remain below thresholds."""
-    modules = [_module("a.py"), _module("b.py"), _module("c.py")]
+    modules = _modules(["a.py", "b.py", "c.py"])
+    _seed_inventory(
+        fresh_gateway,
+        TEST_REPO_ROOT,
+        repo="repo",
+        commit="deadbeef",
+        paths=[module.rel_path for module in modules],
+    )
     tracker = ChangeTracker(
         gateway=fresh_gateway,
         change_request=ChangeRequest(
@@ -89,7 +119,14 @@ def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Trigger full rebuild when change ratio exceeds policy limits."""
-    modules = [_module("a.py"), _module("b.py"), _module("c.py")]
+    modules = _modules(["a.py", "b.py", "c.py"])
+    _seed_inventory(
+        fresh_gateway,
+        TEST_REPO_ROOT,
+        repo="repo",
+        commit="deadbeef",
+        paths=[module.rel_path for module in modules],
+    )
     tracker = ChangeTracker(
         gateway=fresh_gateway,
         change_request=ChangeRequest(
@@ -118,7 +155,14 @@ def test_view_for_dataset_respects_module_filter_and_deleted_paths(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Apply module filter and ignore deletions outside the filtered set."""
-    modules = [_module("src/a.py"), _module("src/b.txt"), _module("tests/c.py")]
+    modules = _modules(["src/a.py", "src/b.txt", "tests/c.py"])
+    _seed_inventory(
+        fresh_gateway,
+        TEST_REPO_ROOT,
+        repo="repo",
+        commit="deadbeef",
+        paths=[module.rel_path for module in modules],
+    )
     tracker = ChangeTracker(
         gateway=fresh_gateway,
         change_request=ChangeRequest(
@@ -150,7 +194,14 @@ def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Force full rebuild when change request flag is set."""
-    modules = [_module("a.py"), _module("b.py")]
+    modules = _modules(["a.py", "b.py"])
+    _seed_inventory(
+        fresh_gateway,
+        TEST_REPO_ROOT,
+        repo="repo",
+        commit="deadbeef",
+        paths=[module.rel_path for module in modules],
+    )
     tracker = ChangeTracker(
         gateway=fresh_gateway,
         change_request=ChangeRequest(
@@ -192,18 +243,14 @@ def _setup_test_files(repo_root: Path) -> tuple[Path, Path]:
     tuple[Path, Path]
         Paths to file_a and file_b.
     """
-    repo_root.mkdir()
-    file_a = repo_root / "a.py"
-    file_b = repo_root / "b.py"
-    file_a.write_text(
-        '"""Module A."""\n\ndef foo(x: int) -> int:\n    """Doc A."""\n    return x + 1',
-        encoding="utf8",
+    repo_root = build_repo_tree(
+        repo_root,
+        {
+            "a.py": '"""Module A."""\n\ndef foo(x: int) -> int:\n    """Doc A."""\n    return x + 1',
+            "b.py": '"""Module B."""\n\ndef bar(y):\n    """Doc B."""\n    return y',
+        },
     )
-    file_b.write_text(
-        '"""Module B."""\n\ndef bar(y):\n    """Doc B."""\n    return y',
-        encoding="utf8",
-    )
-    return file_a, file_b
+    return repo_root / "a.py", repo_root / "b.py"
 
 
 def _create_scan_infrastructure(
@@ -286,21 +333,16 @@ def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:
     The key insight is that deletions are detected by ABSENCE from the current
     module list, not by passing a module record for a non-existent file.
     """
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"a.py": "x = 1\n"},
+    )
     file_path = repo_root / "a.py"
-    file_path.write_text("x = 1\n", encoding="utf8")
 
     gateway = GatewayFactory().with_macros().open()
 
     def make_record() -> ModuleRecord:
-        return ModuleRecord(
-            rel_path="a.py",
-            module_name="mod",
-            file_path=file_path,
-            index=1,
-            total=1,
-        )
+        return _modules(["a.py"], repo_root=repo_root)[0]
 
     def make_request(modules: list[ModuleRecord]) -> ChangeRequest:
         return ChangeRequest(

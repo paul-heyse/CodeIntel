@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.graphs.compute.metrics.statistics import (
@@ -38,8 +37,13 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
+    empty_digraph,
+    empty_graph,
+    scc_with_tail_graph,
+    single_node_digraph,
     star_graph,
 )
+from tests.graphs.constants import CYCLE_SCC_SIZES, SMALL_COMPLETE_GRAPH_SIZES
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -78,15 +82,14 @@ DENSITY_CHAIN_FOUR: Final[float] = 3 / 12  # 3 edges, max 12
 
 def test_in_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = get_in_degrees(graph)
     expect_equal(result, [])
 
 
 def test_in_degrees_single_node() -> None:
     """Single node has in-degree 0."""
-    graph = nx.DiGraph()
-    graph.add_node(1)
+    graph = single_node_digraph(1)
     result = get_in_degrees(graph)
 
     expect_length(result, 1)
@@ -135,7 +138,7 @@ def test_in_degrees_diamond_graph() -> None:
 
 def test_out_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = get_out_degrees(graph)
     expect_equal(result, [])
 
@@ -182,7 +185,7 @@ def test_out_degrees_diamond_graph() -> None:
 
 def test_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = get_degrees(graph)
     expect_equal(result, [])
 
@@ -249,15 +252,14 @@ def test_degree_values() -> None:
 
 def test_diameter_empty_graph() -> None:
     """Empty graph returns None."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_diameter_estimate(graph)
     expect_true(result is None)
 
 
 def test_diameter_single_node() -> None:
     """Single node has diameter 0."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = single_node_digraph("A")
     result = compute_diameter_estimate(graph)
     expect_equal(result, 0.0)
 
@@ -304,15 +306,14 @@ def test_diameter_star_graph() -> None:
 
 def test_avg_path_length_empty_graph() -> None:
     """Empty graph returns None."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_avg_shortest_path_length(graph)
     expect_true(result is None)
 
 
 def test_avg_path_length_single_node() -> None:
     """Single node has avg path length 0."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = single_node_digraph("A")
     result = compute_avg_shortest_path_length(graph)
     expect_equal(result, 0.0)
 
@@ -353,15 +354,14 @@ def test_avg_path_length_disconnected_uses_largest() -> None:
 
 def test_condensation_layers_empty_graph() -> None:
     """Empty graph returns None."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_condensation_layer_count(graph)
     expect_true(result is None)
 
 
 def test_condensation_layers_single_node() -> None:
     """Single node has 1 layer."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = single_node_digraph("A")
     result = compute_condensation_layer_count(graph)
     expect_equal(result, EXPECTED_LAYER_COUNT_ONE)
 
@@ -391,11 +391,7 @@ def test_condensation_layers_diamond_graph() -> None:
 
 def test_condensation_layers_mixed_graph() -> None:
     """Graph with SCC and DAG parts."""
-    graph = nx.DiGraph()
-    # Cycle: A -> B -> C -> A (one SCC)
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    # DAG extending: C -> D -> E
-    graph.add_edges_from([("C", "D"), ("D", "E")])
+    graph = scc_with_tail_graph()
 
     result = compute_condensation_layer_count(graph)
 
@@ -410,7 +406,7 @@ def test_condensation_layers_mixed_graph() -> None:
 
 def test_statistics_empty_graph() -> None:
     """Empty graph returns zero statistics."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_graph_statistics(graph)
 
     expect_equal(result.node_count, 0)
@@ -425,8 +421,7 @@ def test_statistics_empty_graph() -> None:
 
 def test_statistics_single_node() -> None:
     """Single node graph statistics."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = single_node_digraph("A")
     result = compute_graph_statistics(graph)
 
     expect_equal(result.node_count, 1)
@@ -567,11 +562,7 @@ def test_chain_scc_counts(node_count: int, expected_scc_count: int) -> None:
 
 @pytest.mark.parametrize(
     "cycle_size",
-    [
-        3,
-        5,
-        10,
-    ],
+    CYCLE_SCC_SIZES,
 )
 def test_cycle_single_scc(cycle_size: int) -> None:
     """Cycle graphs have exactly one SCC."""
@@ -594,16 +585,12 @@ def test_chain_is_dag(node_count: int) -> None:
 
 
 @pytest.mark.parametrize(
-    ("n", "expected_edge_count"),
-    [
-        (3, 6),  # 3*2
-        (4, 12),  # 4*3
-        (5, 20),  # 5*4
-    ],
+    "n",
+    SMALL_COMPLETE_GRAPH_SIZES,
 )
-def test_complete_edge_counts(n: int, expected_edge_count: int) -> None:
+def test_complete_edge_counts(n: int) -> None:
     """Complete directed graphs have n*(n-1) edges."""
     graph = complete_digraph(n)
     result = compute_graph_statistics(graph)
 
-    expect_equal(result.edge_count, expected_edge_count)
+    expect_equal(result.edge_count, n * (n - 1))

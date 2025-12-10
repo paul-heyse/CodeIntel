@@ -84,7 +84,13 @@ def architecture_service_app(
 def analytics_samples(
     provisioned_service_app: ServiceApp,
 ) -> AnalyticsSamples:
-    """Analytics identifiers extracted once per session."""
+    """Analytics identifiers extracted once per session.
+
+    Returns
+    -------
+    AnalyticsSamples
+        Sample identifiers from the provisioned service gateway.
+    """
     return load_analytics_samples(provisioned_service_app.gateway)
 
 
@@ -92,7 +98,13 @@ def analytics_samples(
 def architecture_samples(
     architecture_service_app: ServiceApp,
 ) -> AnalyticsSamples:
-    """Analytics identifiers for architecture-focused service app."""
+    """Analytics identifiers for architecture-focused service app.
+
+    Returns
+    -------
+    AnalyticsSamples
+        Sample identifiers from the architecture gateway.
+    """
     return load_analytics_samples(architecture_service_app.gateway)
 
 

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.plugin import TargetPlugin
-from tests._helpers import build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.ingestion_plugins import StepCallCapture
@@ -15,6 +14,7 @@ from tests._helpers.fakes.recording_gateways import ConnectionRecordingGateway, 
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     TargetContextConfig,
+    build_repo_tree,
     build_target_context_for_plugin,
     module_records_for_paths,
     seed_modules_and_repo_map,

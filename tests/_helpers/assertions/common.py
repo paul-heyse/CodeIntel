@@ -17,6 +17,8 @@ Example
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -360,7 +362,44 @@ def assert_validation_error(
     raise AssertionError(msg)
 
 
+def assert_no_subprocess_usage(
+    src_root: Path,
+    *,
+    allowed: Iterable[Path] | None = None,
+    patterns: tuple[str, ...] = ("create_subprocess_exec(", "subprocess.run(", "Popen("),
+) -> None:
+    """Assert no subprocess usage outside the allowed set.
+
+    Raises
+    ------
+    AssertionError
+        If subprocess-related calls are found outside the allowed set.
+    """
+    repo_root = Path().resolve()
+    allowed_set = set(allowed or ())
+    violations: list[str] = []
+    for path in src_root.rglob("*.py"):
+        rel_path = path.relative_to(repo_root)
+        if rel_path in allowed_set:
+            continue
+        content = path.read_text(encoding="utf8")
+        if any(pattern in content for pattern in patterns):
+            violations.append(str(rel_path))
+    if violations:
+        message = f"Direct subprocess usage found in: {', '.join(sorted(violations))}"
+        raise AssertionError(message)
+
+
+SUBPROCESS_ALLOWLIST: tuple[Path, ...] = (
+    Path("src/codeintel/ingestion/engine/infrastructure/runner.py"),
+    Path("src/codeintel/ingestion/engine/service.py"),
+    Path("src/codeintel/build/providers.py"),
+    Path("src/codeintel/cli/jobs/_jobs.py"),
+)
+
+
 __all__ = [
+    "SUBPROCESS_ALLOWLIST",
     "HasRowCounts",
     "HasSuccessAndError",
     "assert_failure",
@@ -368,6 +407,7 @@ __all__ = [
     "assert_invalid",
     "assert_meta_contains",
     "assert_no_error",
+    "assert_no_subprocess_usage",
     "assert_row_count",
     "assert_success",
     "assert_valid",

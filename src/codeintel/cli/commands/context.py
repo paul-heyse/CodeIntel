@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.config import build_config_from_options, load_config
 from codeintel.cli.handlers.base import setup_logging
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import (
     ProjectConfig,
     ProjectNotFoundError,
@@ -28,7 +28,6 @@ from codeintel.cli.project import (
 )
 from codeintel.cli.rendering.service import UnifiedRenderer
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
-from codeintel.cli.rendering.types import OutputFormat as RenderOutputFormat
 from codeintel.cli.resolution.params import BackendFlags, RuntimeParams
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.models import CliPathsInput
@@ -104,7 +103,7 @@ def command_context(
     *,
     params: dict[str, object] | None = None,
     require_runtime: bool = True,
-) -> Iterator[tuple[EnhancedHandlerContext, UnifiedRenderer]]:
+) -> Iterator[tuple[HandlerContext, UnifiedRenderer]]:
     """Create unified context for Cyclopts command execution.
 
     This context manager provides:
@@ -136,7 +135,7 @@ def command_context(
 
     Yields
     ------
-    tuple[EnhancedHandlerContext, UnifiedRenderer]
+    tuple[HandlerContext, UnifiedRenderer]
         Handler context and renderer for command execution.
 
     Notes
@@ -166,9 +165,6 @@ def command_context(
     # Resolve output format
     output_format = _resolve_output_format(output_cli, default=OutputFormat.TEXT)
 
-    # Map OutputFormat (cli_types) to OutputFormat (rendering.types)
-    render_format = RenderOutputFormat(output_format.value)
-
     # Load configuration
     config = load_config(validate=False)
 
@@ -185,7 +181,7 @@ def command_context(
         runtime = _create_stub_runtime()
 
     # Create render context and renderer
-    render_ctx = RenderContext.auto_detect(format_override=render_format)
+    render_ctx = RenderContext.auto_detect(format_override=output_format)
     renderer = UnifiedRenderer(render_ctx)
 
     # Combine params with CLI values (runtime_params serve as defaults, resolved_params override)
@@ -200,13 +196,16 @@ def command_context(
         **resolved_params,  # Command-specific params override runtime defaults
     }
 
-    # Create enhanced context
-    ctx = EnhancedHandlerContext(
+    # Create HandlerContext with appropriate settings
+    ctx = HandlerContext(
         config=config,
-        runtime=runtime,
-        params=combined_params,
+        operation_id=operation_id,
+        output_format=output_format,
         verbosity=verbosity,
-        _operation_name=operation_id,
+        project_root=runtime.root if runtime else None,
+        database_path=runtime.db_path if runtime else None,
+        _params=combined_params,
+        _runtime=runtime,  # Pre-populate if runtime was already resolved
     )
 
     try:

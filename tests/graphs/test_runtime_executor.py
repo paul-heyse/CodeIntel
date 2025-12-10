@@ -27,7 +27,6 @@ from codeintel.graphs.core.context import (
     GraphPluginExecutionContextBuilder,
 )
 from codeintel.graphs.core.protocol import GraphPluginProtocol
-from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.runtime import graph_executor
 from codeintel.graphs.runtime.graph_executor import (
@@ -47,6 +46,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
+from tests._helpers.graphs import build_graph_engine_double
 
 
 class _MockFunctionCatalogProvider(FunctionCatalogProvider):
@@ -204,7 +204,9 @@ def test_graph_plugin_execution_context_require_graphs_by_type_and_name(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """require_graphs resolves resources by type and name; errors when missing."""
-    engine = NxGraphEngine(gateway=graph_executor_env.gateway, snapshot=graph_executor_env.snapshot)
+    engine = build_graph_engine_double(
+        graph_executor_env.gateway, graph_executor_env.snapshot
+    )
     engine_resource = GraphResource(engine=engine)
     base_builder = GraphPluginExecutionContextBuilder(
         gateway=graph_executor_env.gateway,
@@ -247,7 +249,9 @@ def test_graph_plugin_execution_context_builder_wiring(graph_executor_env: Graph
     """Builder should propagate scope, catalog provider, and registered resources."""
     scope = GraphRunScope(paths=("a.py",))
     catalog_provider = _MockFunctionCatalogProvider()
-    engine = NxGraphEngine(gateway=graph_executor_env.gateway, snapshot=graph_executor_env.snapshot)
+    engine = build_graph_engine_double(
+        graph_executor_env.gateway, graph_executor_env.snapshot
+    )
     resource = GraphResource(engine=engine)
 
     builder = GraphPluginExecutionContextBuilder(

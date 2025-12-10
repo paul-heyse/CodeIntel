@@ -24,6 +24,7 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     star_graph,
 )
+from tests.graphs.constants import STAR_SPOKE_SWEEP
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -399,12 +400,7 @@ def test_reachable_various_chains(chain_length: int, expected_reachable_from_fir
 
 @pytest.mark.parametrize(
     ("spoke_count", "expected_reachable_from_hub"),
-    [
-        (1, 2),  # hub + 1 spoke
-        (3, 4),  # hub + 3 spokes
-        (5, 6),  # hub + 5 spokes
-        (10, 11),  # hub + 10 spokes
-    ],
+    [(spokes, spokes + 1) for spokes in STAR_SPOKE_SWEEP],
 )
 def test_reachable_star_graphs(spoke_count: int, expected_reachable_from_hub: int) -> None:
     """Star graphs of various sizes have correct reachability from hub."""

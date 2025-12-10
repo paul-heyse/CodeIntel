@@ -16,13 +16,13 @@ from codeintel.ingestion.plugins.coverage_plugin import (
     paths_to_modules,
     resolve_coverage_file,
 )
-from tests._helpers import build_repo_tree
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeCoverageCollector, FakeProviders
 from tests._helpers.ingestion import (
     TargetContextConfig,
+    build_repo_tree,
     build_target_context_for_plugin,
     write_coverage_file,
 )

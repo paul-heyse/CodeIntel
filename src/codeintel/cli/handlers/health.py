@@ -18,13 +18,12 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 from codeintel.cli.core import CliResult
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.introspection import get_operation_registry
 from codeintel.cli.observability import TelemetryConfig
 
 if TYPE_CHECKING:
     from types import ModuleType
-
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -465,7 +464,7 @@ class HealthCheckResult:
 
 
 def health_check_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[HealthCheckResult]:
     """Run all health checks.
 
@@ -480,7 +479,7 @@ def health_check_handler(
         Health check results.
     """
     # Use ctx for logging context
-    _ = ctx.params  # Acknowledge params even if empty
+    _ = ctx._params  # Acknowledge params even if empty
     LOG.info("Running health checks")
 
     checker = get_health_checker()

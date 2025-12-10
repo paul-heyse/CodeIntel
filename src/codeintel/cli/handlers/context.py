@@ -22,16 +22,21 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypeVar
 
+from codeintel.analytics.runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
+from codeintel.cli.handlers._lazy_resources import lazy_resolve_runtime
+from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.cli.config.model import CliConfig
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
     from codeintel.cli.resolution.types import ResolvedRuntime
-    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 
@@ -60,6 +65,30 @@ class ParameterError(ValueError):
         """Initialize the error."""
         super().__init__(message)
         self.key = key
+
+
+@dataclass(frozen=True)
+class HandlerContextOptions:
+    """Options for creating a HandlerContext.
+
+    Bundle optional parameters to reduce argument count in factory functions.
+
+    Parameters
+    ----------
+    output_format
+        Requested output format.
+    verbosity
+        Verbosity level (0=WARNING, 1=INFO, 2+=DEBUG).
+    project_root
+        Optional project root directory.
+    database_path
+        Optional database file path.
+    """
+
+    output_format: OutputFormat = OutputFormat.TEXT
+    verbosity: int = 0
+    project_root: Path | None = None
+    database_path: Path | None = None
 
 
 @dataclass
@@ -121,7 +150,7 @@ class HandlerContext:
     database_path: Path | None = None
 
     # Internal state
-    _params: dict[str, Any] = field(default_factory=dict, repr=False)
+    _params: dict[str, object] = field(default_factory=dict, repr=False)
     _runtime: ResolvedRuntime | None = field(default=None, repr=False)
     _gateway: StorageGateway | None = field(default=None, repr=False)
     _graph_runtime: GraphRuntime | None = field(default=None, repr=False)
@@ -629,25 +658,12 @@ class HandlerContext:
         ResolvedRuntime
             Resolved runtime.
         """
-        from codeintel.cli.execution.context import (  # noqa: PLC0415
-            ExecutionContext,
-        )
-        from codeintel.cli.resolution.runtime import RuntimeResolver  # noqa: PLC0415
-
-        # Build params dict for ExecutionContext
-        params: dict[str, object] = dict(self._params)
-        if self.project_root is not None:
-            params["project_root"] = self.project_root
-        if self.database_path is not None:
-            params["db_path"] = self.database_path
-
-        # Create a minimal execution context for resolution
-        exec_ctx = ExecutionContext(
+        return lazy_resolve_runtime(
             operation_id=self.operation_id,
-            params=params,
+            params=self._params,
+            project_root=self.project_root,
+            database_path=self.database_path,
         )
-
-        return RuntimeResolver.resolve(exec_ctx)
 
     def _open_gateway(self) -> StorageGateway:
         """Open storage gateway.
@@ -657,11 +673,6 @@ class HandlerContext:
         StorageGateway
             Open gateway.
         """
-        from codeintel.storage.gateway import (  # noqa: PLC0415
-            StorageConfig,
-            open_gateway,
-        )
-
         runtime = self.runtime
         storage_config = StorageConfig(db_path=runtime.db_path, read_only=True)
         return open_gateway(storage_config)
@@ -674,11 +685,6 @@ class HandlerContext:
         GraphRuntime
             Configured graph runtime.
         """
-        from codeintel.analytics.runtime import (  # noqa: PLC0415
-            GraphRuntimeOptions,
-            build_graph_runtime,
-        )
-
         options = GraphRuntimeOptions(snapshot=self.runtime.snapshot)
         return build_graph_runtime(
             gateway=self.gateway,
@@ -713,16 +719,17 @@ class HandlerContext:
         HandlerContext
             New context wrapping the legacy context's resources.
 
+        Raises
+        ------
+        TypeError
+            If ctx is not an EnhancedHandlerContext instance.
+
         Notes
         -----
         WARNING: This method is temporary scaffolding. Do not add new
         usages. It will be removed in Phase 6.
         """
-        from codeintel.cli.handlers.protocol import (  # noqa: PLC0415
-            EnhancedHandlerContext as EHC,
-        )
-
-        if not isinstance(ctx, EHC):
+        if not isinstance(ctx, EnhancedHandlerContext):
             msg = f"Expected EnhancedHandlerContext, got {type(ctx).__name__}"
             raise TypeError(msg)
 
@@ -753,15 +760,11 @@ class HandlerContext:
 
 
 @contextmanager
-def handler_context_manager(  # noqa: PLR0913
+def handler_context_manager(
     config: CliConfig,
     operation_id: str,
     params: dict[str, object] | None = None,
-    *,
-    output_format: OutputFormat = OutputFormat.TEXT,
-    verbosity: int = 0,
-    project_root: Path | None = None,
-    database_path: Path | None = None,
+    options: HandlerContextOptions | None = None,
 ) -> Iterator[HandlerContext]:
     """Create handler context with automatic resource cleanup.
 
@@ -773,14 +776,8 @@ def handler_context_manager(  # noqa: PLR0913
         Operation identifier.
     params
         Operation parameters.
-    output_format
-        Output format.
-    verbosity
-        Verbosity level.
-    project_root
-        Optional project root.
-    database_path
-        Optional database path.
+    options
+        Optional context options (output_format, verbosity, etc.).
 
     Yields
     ------
@@ -793,16 +790,19 @@ def handler_context_manager(  # noqa: PLR0913
     >>> config = MagicMock()
     >>> config.log_level = "WARNING"
     >>> with handler_context_manager(config, "my.op", {"key": "value"}) as ctx:
-    ...     assert ctx.operation_id == "my.op"
-    ...     assert ctx.param_str("key") == "value"
+    ...     ctx.operation_id == "my.op"
+    ...     ctx.param_str("key") == "value"
+    True
+    True
     """
+    opts = options or HandlerContextOptions()
     ctx = HandlerContext(
         config=config,
         operation_id=operation_id,
-        output_format=output_format,
-        verbosity=verbosity,
-        project_root=project_root,
-        database_path=database_path,
+        output_format=opts.output_format,
+        verbosity=opts.verbosity,
+        project_root=opts.project_root,
+        database_path=opts.database_path,
         _params=params or {},
     )
     try:
@@ -813,6 +813,7 @@ def handler_context_manager(  # noqa: PLR0913
 
 __all__ = [
     "HandlerContext",
+    "HandlerContextOptions",
     "ParameterError",
     "handler_context_manager",
 ]

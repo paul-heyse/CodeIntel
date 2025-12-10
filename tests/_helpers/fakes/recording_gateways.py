@@ -104,11 +104,23 @@ class ConnectionRecordingGateway:
         return cast("DuckDBConnection", self._recording_con)
 
     def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
-        """Delegate SQL execution to the underlying gateway."""
+        """Delegate SQL execution to the underlying gateway.
+
+        Returns
+        -------
+        DuckDBConnection
+            Result of the delegated execution.
+        """
         return self._gateway.execute(sql, params)
 
     def table(self, name: str) -> DuckDBRelation:
-        """Return a relation from the underlying gateway."""
+        """Return a relation from the underlying gateway.
+
+        Returns
+        -------
+        DuckDBRelation
+            Relation retrieved from the gateway.
+        """
         return self._gateway.table(name)
 
     def close(self) -> None:
@@ -187,7 +199,13 @@ class FailingGateway:
         raise RuntimeError(self._error_message)
 
     def table(self, name: str) -> DuckDBRelation:
-        """Raise when attempting to access a table."""
+        """Raise when attempting to access a table.
+
+        Raises
+        ------
+        RuntimeError
+            Always raises to simulate database failure.
+        """
         _ = name
         raise RuntimeError(self._error_message)
 

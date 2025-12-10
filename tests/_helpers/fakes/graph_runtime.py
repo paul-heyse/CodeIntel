@@ -317,6 +317,20 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             return_default_on_missing=False,
         )
 
+    def clear_graphs(self) -> None:
+        """Clear any cached graph objects."""
+        for attr in (
+            "call_graph_obj",
+            "import_graph_obj",
+            "symbol_module_graph_obj",
+            "symbol_function_graph_obj",
+            "config_bipartite_obj",
+            "test_function_bipartite_obj",
+            "_cfg_graph_internal",
+        ):
+            if hasattr(self, attr):
+                setattr(self, attr, None)
+
     def ensure_cfg_graph(self) -> nx.DiGraph | None:
         self._recorder.record("ensure_cfg_graph")
         return self._graph_or_db(
@@ -428,6 +442,14 @@ class GraphEngineAdapter(GraphEngine):
     def use_gpu(self) -> bool:
         return self._runtime.use_gpu
 
+    @property
+    def repo(self) -> str:
+        return self._snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        return self._snapshot.commit
+
     def call_graph(self) -> nx.DiGraph:
         return self._ensure_graph(self._runtime.ensure_call_graph, nx.DiGraph)
 
@@ -463,6 +485,10 @@ class GraphEngineAdapter(GraphEngine):
 
     def load_test_function_bipartite(self) -> nx.Graph:
         return self._ensure_graph(self._runtime.ensure_test_function_bipartite, nx.Graph)
+
+    def clear_cache(self) -> None:
+        """Clear any cached graphs on the runtime."""
+        self._runtime.clear_graphs()
 
     def close(self) -> None:
         if self._runtime.gateway is not None:

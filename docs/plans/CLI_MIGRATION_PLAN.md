@@ -1,9 +1,9 @@
 # CLI Unified Architecture Migration Plan
 
-> **Status:** Draft  
+> **Status:** In Progress (Phase 2 Complete)  
 > **Target Architecture:** [CLI_UNIFIED_ARCHITECTURE.md](./CLI_UNIFIED_ARCHITECTURE.md)  
 > **Estimated Duration:** 4-6 weeks (20-29 working days)  
-> **Last Updated:** 2025-01-10
+> **Last Updated:** 2025-12-10
 
 ---
 
@@ -197,26 +197,27 @@ cli/
 
 ### 3.3 Files to be Deleted
 
-Upon completion of Phase 6, the following files will be removed:
+The following files will be removed as part of the migration. Some have already been deleted in earlier phases:
 
-| File | Superseded By |
-|------|---------------|
-| `handlers/base.py` | `handlers/context.py` |
-| `handlers/protocol.py` | `handlers/context.py` |
-| `execution/context.py` | `handlers/context.py` |
-| `execution/adapter.py` | `commands/decorators.py` |
-| `commands/context.py` | `commands/decorators.py` (internals) |
-| `rendering/renderers.py` | `rendering/service.py` |
-| `operations/build_operations.py` | Registration in handlers |
-| `operations/dataset_operations.py` | Registration in handlers |
-| `operations/docs_operations.py` | Registration in handlers |
-| `operations/graph_operations.py` | Registration in handlers |
-| `operations/history_operations.py` | Registration in handlers |
-| `operations/ide_operations.py` | Registration in handlers |
-| `operations/op_operations.py` | Registration in handlers |
-| `operations/storage_operations.py` | Registration in handlers |
-| `operations/subsystem_operations.py` | Registration in handlers |
-| `introspection/registry.py` | `execution/registry.py` |
+| File | Superseded By | Status |
+|------|---------------|--------|
+| `rendering/renderers.py` | `rendering/service.py` | ✅ **Deleted in Phase 2** |
+| `handlers/base.py` | `handlers/context.py` | Pending (Phase 6) |
+| `handlers/protocol.py` | `handlers/context.py` | Pending (Phase 6) |
+| `execution/context.py` | `handlers/context.py` | Pending (Phase 6) |
+| `execution/adapter.py` | `commands/decorators.py` | Pending (Phase 6) |
+| `commands/context.py` | `commands/decorators.py` (internals) | Pending (Phase 6) |
+| `operations/build_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/dataset_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/docs_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/graph_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/history_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/ide_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/op_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/storage_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `operations/subsystem_operations.py` | Registration in handlers | Pending (Phase 6) |
+| `introspection/registry.py` | `execution/registry.py` | Pending (Phase 6) |
+| `_migration_flags.py` | N/A (temporary scaffolding) | Pending (Phase 6) |
 
 ---
 
@@ -408,27 +409,58 @@ USE_UNIFIED_RENDERER: bool = os.environ.get("CODEINTEL_CLI_V2_RENDER", "0") == "
 **Core Implementation:**
 
 ```python
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Self, TypeVar
+
+if TYPE_CHECKING:
+    from codeintel.cli.config.model import CliConfig
+    from codeintel.cli.resolution.types import ResolvedRuntime
+
+
+@dataclass(frozen=True)
+class HandlerContextOptions:
+    """Options for creating a HandlerContext.
+
+    Bundle optional parameters to reduce argument count in factory functions.
+    """
+
+    output_format: OutputFormat = OutputFormat.TEXT
+    verbosity: int = 0
+    project_root: Path | None = None
+    database_path: Path | None = None
+
+
 @dataclass
 class HandlerContext:
     """Unified context for all CLI handler operations."""
-    
+
     # Core configuration
     config: CliConfig
     operation_id: str
-    output_format: OutputFormat
-    verbosity: int
-    
+    output_format: OutputFormat = OutputFormat.TEXT
+    verbosity: int = 0
+
     # Runtime resolution parameters
-    project_root: Path | None
-    index_path: Path | None
-    database_path: Path | None
-    
-    # Internal state
-    _params: dict[str, Any]
+    project_root: Path | None = None
+    index_path: Path | None = None
+    database_path: Path | None = None
+
+    # Internal state (use `object` not `Any` to avoid type issues)
+    _params: dict[str, object] = field(default_factory=dict, repr=False)
     _runtime: ResolvedRuntime | None = field(default=None, repr=False)
     _gateway: StorageGateway | None = field(default=None, repr=False)
     _graph_runtime: GraphRuntime | None = field(default=None, repr=False)
     _closed: bool = field(default=False, repr=False)
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit context manager, closing resources."""
+        self.close()
 ```
 
 **Required Methods:**
@@ -437,17 +469,55 @@ class HandlerContext:
 |--------|---------|
 | `param_str(key, default)` | Get string parameter |
 | `param_int(key, default)` | Get integer parameter |
-| `param_bool(key, default)` | Get boolean parameter |
+| `param_bool(key, *, default)` | Get boolean parameter (keyword-only default) |
 | `param_path(key, default)` | Get Path parameter |
 | `param_enum(key, enum_type, default)` | Get enum parameter |
-| `require_str(key)` | Get required string (raises on missing) |
-| `require_int(key)` | Get required integer |
-| `require_path(key)` | Get required path |
+| `param_list(key, default)` | Get list[str] parameter |
+| `param_tuple(key, default)` | Get tuple[str, ...] parameter |
+| `require_str(key)` | Get required string (raises `ParameterError`) |
+| `require_int(key)` | Get required integer (raises `ParameterError`) |
+| `require_path(key)` | Get required path (raises `ParameterError`) |
 | `runtime` | Property: lazy-load `ResolvedRuntime` |
 | `gateway` | Property: lazy-load `StorageGateway` |
 | `graph_runtime` | Property: lazy-load `GraphRuntime` |
-| `close()` | Clean up resources |
+| `logger` | Property: operation-specific logger |
+| `db_path` | Property: database path from runtime or fallback |
+| `color_enabled` | Property: check if color output is enabled |
+| `close()` | Clean up resources (idempotent) |
 | `__enter__` / `__exit__` | Context manager protocol |
+
+**Helper Module for Lazy Imports:**
+
+**File:** `src/codeintel/cli/handlers/_lazy_resources.py`
+
+```python
+"""Lazy resource loading helpers to avoid circular imports."""
+
+from __future__ import annotations
+
+from codeintel.cli.execution.context import ExecutionContext
+from codeintel.cli.resolution.runtime import RuntimeResolver
+
+
+def lazy_resolve_runtime(
+    operation_id: str,
+    params: dict[str, object],
+    project_root: Path | None,
+    database_path: Path | None,
+) -> ResolvedRuntime:
+    """Resolve runtime from handler context parameters."""
+    exec_params: dict[str, object] = dict(params)
+    if project_root is not None:
+        exec_params["project_root"] = project_root
+    if database_path is not None:
+        exec_params["db_path"] = database_path
+
+    exec_ctx = ExecutionContext(
+        operation_id=operation_id,
+        params=exec_params,
+    )
+    return RuntimeResolver.resolve(exec_ctx)
+```
 
 **Adapter Methods (temporary, remove in Phase 6):**
 
@@ -457,9 +527,15 @@ def from_enhanced_context(
     cls,
     ctx: EnhancedHandlerContext,
     operation_id: str,
-    params: dict[str, Any],
+    params: dict[str, object] | None = None,
 ) -> HandlerContext:
-    """Create HandlerContext from legacy EnhancedHandlerContext."""
+    """Create HandlerContext from legacy EnhancedHandlerContext.
+
+    Raises
+    ------
+    TypeError
+        If ctx is not an EnhancedHandlerContext instance.
+    """
 ```
 
 #### 6.3.2 `execution/bootstrap.py` — CLI Bootstrap
@@ -469,44 +545,96 @@ def from_enhanced_context(
 **Core Implementation:**
 
 ```python
-_BOOTSTRAP_COMPLETE: bool = False
-_BOOTSTRAP_LOCK: threading.Lock = threading.Lock()
+from __future__ import annotations
+
+import logging
+import signal
+import sys
+import threading
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from codeintel.cli.config import load_config as load_cli_config
+
+if TYPE_CHECKING:
+    from types import FrameType
+    from codeintel.cli.config.model import CliConfig
+
+LOG = logging.getLogger(__name__)
+
+VERBOSITY_DEBUG = 2
+VERBOSITY_INFO = 1
+
+
+@dataclass
+class _BootstrapState:
+    """Internal state for bootstrap management.
+
+    Use dataclass instead of global variables to avoid PLW0603 linting errors.
+    """
+
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    complete: bool = False
+    config: CliConfig | None = None
+
+
+# Module-level state instance (singleton)
+_state = _BootstrapState()
+
 
 def bootstrap_cli(
     verbosity: int = 0,
     config: CliConfig | None = None,
 ) -> CliConfig:
-    """
-    Initialize CLI subsystems exactly once.
-    
+    """Initialize CLI subsystems exactly once.
+
     Idempotent: safe to call multiple times.
     Thread-safe: uses lock for concurrent access.
-    
+
     Initializes:
-    - Logging configuration
-    - Rich console theming
-    - Signal handlers (SIGINT, SIGTERM)
-    
+
+    - Logging configuration based on verbosity
+    - Signal handlers for graceful shutdown (SIGINT, SIGTERM)
+
     Parameters
     ----------
     verbosity
-        Logging verbosity level (0=WARNING, 1=INFO, 2+=DEBUG)
+        Logging verbosity level (0=WARNING, 1=INFO, 2+=DEBUG).
     config
         Optional pre-loaded configuration. If None, loads from environment.
-    
+
     Returns
     -------
     CliConfig
-        The active CLI configuration
+        The active CLI configuration.
     """
+    # Fast path for already initialized
+    if _state.complete:
+        if _state.config is not None:
+            return _state.config
+        return load_cli_config(validate=False)
+
+    with _state.lock:
+        # Double-check after acquiring lock
+        if _state.complete and _state.config is not None:
+            return _state.config
+
+        active_config = config if config is not None else load_cli_config(validate=False)
+        _configure_logging(verbosity, active_config)
+        _register_signal_handlers()
+
+        _state.config = active_config
+        _state.complete = True
+
+        LOG.debug("CLI bootstrap complete (verbosity=%d)", verbosity)
+        return active_config
 ```
 
 **Responsibilities:**
 1. Load configuration (if not provided)
 2. Configure logging based on verbosity
-3. Set up Rich console theme
-4. Register signal handlers for graceful shutdown
-5. Set global `_BOOTSTRAP_COMPLETE` flag
+3. Register signal handlers for graceful shutdown
+4. Cache config in `_BootstrapState` dataclass (avoids global statements)
 
 #### 6.3.3 Test Coverage
 
@@ -641,19 +769,81 @@ Document any capabilities in `renderers.py` not present in `service.py`:
 Add missing functions to achieve API compatibility:
 
 ```python
-def get_renderer(output_format: OutputFormat) -> UnifiedRenderer:
-    """Factory function for renderer instances."""
-    return UnifiedRenderer(
-        render_context=RenderContext(format=output_format)
-    )
+from __future__ import annotations
 
-def render_cli_result(
-    result: CliResult[Any],
-    renderer: UnifiedRenderer,
+import sys
+from typing import TextIO
+
+
+def get_renderer(
+    output_format: OutputFormat = OutputFormat.TEXT,
+    *,
+    color: bool | None = None,
+    writer: TextIO | None = None,
+    err_writer: TextIO | None = None,
+) -> UnifiedRenderer:
+    """Get a renderer for the specified output format.
+
+    Factory function that creates UnifiedRenderer instances with appropriate
+    settings based on output format, environment, and TTY detection.
+
+    Parameters
+    ----------
+    output_format
+        Desired output format (TEXT, JSON, or JSONL).
+    color
+        Override color detection. If None, auto-detect based on TTY.
+    writer
+        Output stream (defaults to sys.stdout).
+    err_writer
+        Error stream (defaults to sys.stderr).
+
+    Returns
+    -------
+    UnifiedRenderer
+        Configured renderer instance.
+    """
+    if writer is not None or err_writer is not None:
+        is_tty = (writer or sys.stdout).isatty()
+        use_color = color if color is not None else (is_tty and output_format == OutputFormat.TEXT)
+        ctx = RenderContext(
+            format=output_format,
+            color=use_color,
+            writer=writer or sys.stdout,
+            err_writer=err_writer or sys.stderr,
+            is_tty=is_tty,
+        )
+    else:
+        ctx = RenderContext.auto_detect(
+            format_override=output_format,
+            color_override=color,
+        )
+    return UnifiedRenderer(ctx)
+
+
+def render_cli_result[T](
+    result: CliResult[T],
+    renderer: UnifiedRenderer | None = None,
+    *,
     table_spec: TableSpec | None = None,
+    output_format: OutputFormat = OutputFormat.TEXT,
 ) -> int:
-    """Render a CLI result and return exit code."""
+    """Render a CliResult and return exit code.
+
+    Convenience function that creates a renderer if not provided and renders
+    the result appropriately. Uses PEP 695 type parameter syntax.
+    """
+    if renderer is None:
+        renderer = get_renderer(output_format)
+
+    if table_spec is not None and result.success and isinstance(result.data, list):
+        renderer.render_table(result.data, table_spec)
+        return 0
+
+    return renderer.render_result(result)
 ```
+
+**Note:** `specs.py` already existed with pre-built table specifications — no new file needed.
 
 #### 7.4.3 Migrate Consumers
 
@@ -1649,7 +1839,28 @@ If critical issues discovered post-deployment:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-01-10 | AI Assistant | Initial draft |
+| 1.1 | 2025-12-10 | AI Assistant | Updated based on Phase 1 & 2 implementation learnings |
+
+### Implementation Learnings (v1.1)
+
+Key deviations and learnings from Phase 1 and Phase 2:
+
+1. **HandlerContextOptions dataclass** — Created to bundle optional parameters and comply with PLR0913 (max 5 arguments)
+
+2. **_lazy_resources.py module** — Added to avoid circular imports between `handlers/context.py` and `execution/context.py`
+
+3. **_BootstrapState dataclass** — Used instead of global variables to avoid PLW0603 linting errors
+
+4. **Type annotations** — Use `dict[str, object]` instead of `dict[str, Any]` for params to comply with typing rules
+
+5. **PEP 695 generics** — Use `def render_cli_result[T](...)` syntax for function-level type parameters
+
+6. **specs.py already existed** — No need to create pre-built table specs file
+
+7. **renderers.py deleted in Phase 2** — Earlier than originally planned (was scheduled for Phase 6)
+
+8. **TextIO import** — Must be from `typing` module, not `io` module
 
 ---
 
-*This document serves as the high-level implementation plan. Detailed phase-specific plans will be generated from this document.*
+*This document serves as the high-level implementation plan. Detailed phase-specific plans are in the `phases/` directory.*

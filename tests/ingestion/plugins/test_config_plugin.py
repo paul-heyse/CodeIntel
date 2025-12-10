@@ -15,8 +15,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
-from tests._helpers.ingestion import TargetContextConfig, build_target_context_for_plugin
-from tests.ingestion.test_runner_plumbing import build_repo_with_configs
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_repo_with_configs,
+    build_target_context_for_plugin,
+)
 
 # Minimum rows expected from flattening yaml + toml + ini config values
 MIN_CONFIG_ROWS_EXPECTED = 5

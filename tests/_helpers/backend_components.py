@@ -25,7 +25,22 @@ def build_backend_components(
     limits: BackendLimits | None = None,
     graph_engine: GraphEngine | None = None,
 ) -> BackendComponents:
-    """Construct BackendContext, repositories, and provider for tests."""
+    """Construct BackendContext, repositories, and provider for tests.
+
+    Parameters
+    ----------
+    gateway
+        Gateway seeded for backend tests.
+    limits
+        Optional backend limits to apply.
+    graph_engine
+        Optional graph engine override.
+
+    Returns
+    -------
+    BackendComponents
+        Aggregated context, repositories, and graph engine provider.
+    """
     repo = gateway.config.repo or "demo/repo"
     commit = gateway.config.commit or "deadbeef"
     context = BackendContext(

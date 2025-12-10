@@ -34,8 +34,8 @@ from codeintel.cli.execution.types import (
     SyncHandler,
     get_handler_type,
 )
-from codeintel.cli.rendering.renderers import (
-    OutputRenderer,
+from codeintel.cli.rendering.service import (
+    UnifiedRenderer,
     get_renderer,
     render_cli_result,
 )
@@ -160,7 +160,7 @@ class OperationExecutor:
         self,
         middleware_stack: MiddlewareStack | None = None,
         progress_tracker: ProgressTracker | None = None,
-        default_renderer: OutputRenderer | None = None,
+        default_renderer: UnifiedRenderer | None = None,
         resilience_config: ResilienceConfig | None = None,
     ) -> None:
         """Initialize the executor."""
@@ -708,7 +708,7 @@ def configure_executor(
     *,
     middleware_stack: MiddlewareStack | None = None,
     progress_tracker: ProgressTracker | None = None,
-    default_renderer: OutputRenderer | None = None,
+    default_renderer: UnifiedRenderer | None = None,
     resilience_config: ResilienceConfig | None = None,
 ) -> OperationExecutor:
     """Configure the global executor.

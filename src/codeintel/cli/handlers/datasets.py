@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -24,7 +25,6 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
     from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
@@ -158,63 +158,6 @@ class DatasetDiffResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
-
-
 def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
 
@@ -241,13 +184,13 @@ def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     )
 
 
-def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from enhanced handler context.
+def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
+    """Build ProjectRuntime from handler context.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context.
+        Handler context.
 
     Returns
     -------
@@ -259,8 +202,7 @@ def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
     ValidationError
         If project cannot be resolved.
     """
-    project_root_raw = ctx.params.get("project_root")
-    project_root = Path(str(project_root_raw)) if project_root_raw else None
+    project_root = ctx.param_path("project_root")
 
     try:
         project_root_resolved = find_project_root(project_root)
@@ -271,7 +213,7 @@ def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
 
 
 def datasets_list_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetsListResult]:
     """List datasets with capabilities and optional filters.
 
@@ -288,8 +230,8 @@ def datasets_list_handler(
     CliResult[DatasetsListResult]
         List of datasets.
     """
-    category = _get_str_param(ctx, "category")
-    include_internal = _get_bool_param(ctx, "include_internal")
+    category = ctx.param_str("category")
+    include_internal = ctx.param_bool("include_internal")
 
     try:
         runtime = _build_runtime_from_ctx(ctx)
@@ -331,7 +273,7 @@ def datasets_list_handler(
 
 
 def datasets_lint_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetLintResult]:
     """Validate dataset contract health.
 
@@ -375,7 +317,7 @@ def datasets_lint_handler(
 
 
 def datasets_snapshot_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetSnapshotResult]:
     """Write current dataset specs to a JSON snapshot file.
 
@@ -391,7 +333,7 @@ def datasets_snapshot_handler(
     CliResult[DatasetSnapshotResult]
         Snapshot result.
     """
-    output_path_str = _get_str_param(ctx, "output")
+    output_path_str = ctx.param_str("output")
     if not output_path_str:
         return CliResult.fail(
             ProblemDetail(
@@ -428,7 +370,7 @@ def datasets_snapshot_handler(
 
 
 def datasets_diff_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DatasetDiffResult]:
     """Diff current dataset specs against a baseline.
 
@@ -444,7 +386,7 @@ def datasets_diff_handler(
     CliResult[DatasetDiffResult]
         Diff result.
     """
-    baseline_path_str = _get_str_param(ctx, "baseline_path")
+    baseline_path_str = ctx.param_str("baseline_path")
     if not baseline_path_str:
         return CliResult.fail(
             ProblemDetail(

@@ -7,6 +7,7 @@ This module tests:
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
@@ -33,19 +34,15 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
-from tests._helpers.graphs import build_ast_map
+from tests._helpers.graphs import build_canonical_ast_lookup
 from tests._helpers.repo import (
     GOID_FUNC_A,
     GOID_FUNC_B,
     GOID_FUNC_C,
     GOID_HELPER,
-    MOD_A_FQN,
     MOD_A_PATH,
-    MOD_B_FQN,
     MOD_B_PATH,
-    MOD_C_FQN,
     MOD_C_PATH,
-    MOD_UTIL_FQN,
     MOD_UTIL_PATH,
 )
 from tests._helpers.rows import AstMetricSeed, ast_metric_row
@@ -121,26 +118,51 @@ def ast_lookup(ast_metrics_ctx: TestContext) -> dict[int, FunctionAst]:
     dict[int, FunctionAst]
         Mapping of GOID to parsed function metadata.
     """
-    repo_root = ast_metrics_ctx.repo_root
-    paths = {
-        MOD_A_FQN: repo_root / MOD_A_PATH,
-        MOD_B_FQN: repo_root / MOD_B_PATH,
-        MOD_C_FQN: repo_root / MOD_C_PATH,
-        MOD_UTIL_FQN: repo_root / MOD_UTIL_PATH,
-    }
-    goids = {
-        "func_a": GOID_FUNC_A,
-        "func_b": GOID_FUNC_B,
-        "func_c": GOID_FUNC_C,
-        "helper": GOID_HELPER,
-    }
-    target_names = {
-        MOD_A_FQN: "func_a",
-        MOD_B_FQN: "func_b",
-        MOD_C_FQN: "func_c",
-        MOD_UTIL_FQN: "helper",
-    }
-    return build_ast_map(paths, goids, repo_root, target_names=target_names)
+    return build_canonical_ast_lookup(ast_metrics_ctx.repo_root)
+
+
+def _call_fan_counts(ast_lookup: dict[int, FunctionAst]) -> tuple[dict[int, int], dict[int, int]]:
+    """Compute simple fan-out and fan-in counts using call names.
+
+    Returns
+    -------
+    tuple[dict[int, int], dict[int, int]]
+        Fan-out counts and fan-in counts keyed by GOID.
+    """
+    name_by_goid = {goid: ast_node.qualname.split(".")[-1] for goid, ast_node in ast_lookup.items()}
+    canonical_names = set(name_by_goid.values())
+    fan_out: dict[int, set[int]] = {goid: set() for goid in ast_lookup}
+    for goid, ast_node in ast_lookup.items():
+        target_names: set[str] = set()
+        for node in ast.walk(ast_node.node):
+            if isinstance(node, ast.Call):
+                func = node.func
+                target_name = None
+                if isinstance(func, ast.Name):
+                    target_name = func.id
+                elif isinstance(func, ast.Attribute):
+                    target_name = func.attr
+                if target_name is not None and target_name in canonical_names:
+                    target_names.add(target_name)
+        fan_out[goid] = {
+            candidate for candidate, name in name_by_goid.items() if name in target_names
+        }
+    fan_in: dict[int, int] = {}
+    for goid in ast_lookup:
+        fan_in[goid] = 0
+    for targets in fan_out.values():
+        for target in targets:
+            fan_in[target] += 1
+    fan_out_counts = {goid: len(targets) for goid, targets in fan_out.items()}
+    return fan_out_counts, fan_in
+
+
+AST_EXPECTATIONS = [
+    (GOID_FUNC_A, MOD_A_PATH, 3, 0, 1, 0),
+    (GOID_FUNC_B, MOD_B_PATH, 6, 0, 1, 1),
+    (GOID_FUNC_C, MOD_C_PATH, 2, 0, 0, 1),
+    (GOID_HELPER, MOD_UTIL_PATH, 2, 0, 0, 0),
+]
 
 
 def _insert_ast_metrics(gateway: StorageGateway, seeds: list[AstMetricSeed]) -> None:
@@ -586,6 +608,25 @@ def test_build_hotspots_logs_git_failure(
         level="WARNING",
         containing="git log exited with code 2",
     )
+
+
+@pytest.mark.parametrize(
+    "expected",
+    AST_EXPECTATIONS,
+)
+def test_ast_metrics_loc_and_calls(
+    ast_lookup: dict[int, FunctionAst],
+    expected: tuple[int, str, int, int, int, int],
+) -> None:
+    """Validate AST spans, decorator counts, and simple call fan metrics."""
+    goid, rel_path, expected_loc, decorators, fan_out, fan_in = expected
+    fan_out_counts, fan_in_counts = _call_fan_counts(ast_lookup)
+    node = ast_lookup[goid]
+    expect_equal(node.rel_path, rel_path)
+    expect_equal(node.end_line - node.start_line + 1, expected_loc)
+    expect_equal(len(node.node.decorator_list), decorators)
+    expect_equal(fan_out_counts[goid], fan_out)
+    expect_equal(fan_in_counts[goid], fan_in)
 
 
 @pytest.mark.parametrize(

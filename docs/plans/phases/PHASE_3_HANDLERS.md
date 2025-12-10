@@ -3,8 +3,9 @@
 > **Phase:** 3 of 6  
 > **Duration:** 5-7 days  
 > **Risk Level:** Medium  
-> **Dependencies:** Phase 1 complete, Phase 2 substantially complete  
+> **Dependencies:** Phase 1 complete ✅, Phase 2 complete ✅  
 > **Parallelizable:** Yes (per handler file)  
+> **Updated:** 2025-12-10 (reflects Phase 1 & 2 learnings)  
 
 ---
 
@@ -95,7 +96,7 @@ from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 **After:**
 ```python
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.handlers.context import HandlerContext, ParameterError
 ```
 
 ### 4.2 Signature Changes
@@ -145,22 +146,51 @@ def my_handler(ctx: EnhancedHandlerContext) -> CliResult[MyData]:
 def my_handler(ctx: HandlerContext) -> CliResult[MyData]:
     name = ctx.param_str("name")
     limit = ctx.param_int("limit", 20)
-    job_id = ctx.require_str("job_id")
+    job_id = ctx.require_str("job_id")  # Raises ParameterError if missing
 ```
 
 ### 4.4 Param Helper Mapping
 
-| Old Function | New Method |
-|--------------|------------|
-| `_get_str_param(ctx, key, default)` | `ctx.param_str(key, default)` |
-| `_get_int_param(ctx, key, default)` | `ctx.param_int(key, default)` |
-| `_get_bool_param(ctx, key, default)` | `ctx.param_bool(key, default=default)` |
-| `_get_path_param(ctx, key, default)` | `ctx.param_path(key, default)` |
-| `_get_enum_str_param(ctx, key, enum, default)` | `ctx.param_enum(key, enum, default)` |
-| `_require_str_param(ctx, key)` | `ctx.require_str(key)` |
-| `_require_int_param(ctx, key)` | `ctx.require_int(key)` |
-| `_require_path_param(ctx, key)` | `ctx.require_path(key)` |
-| `ctx.params.get(key)` | `ctx.param_str(key)` or appropriate type |
+| Old Function | New Method | Notes |
+|--------------|------------|-------|
+| `_get_str_param(ctx, key, default)` | `ctx.param_str(key, default)` | Returns `str \| None` |
+| `_get_int_param(ctx, key, default)` | `ctx.param_int(key, default)` | Logs warning on invalid |
+| `_get_bool_param(ctx, key, default)` | `ctx.param_bool(key, default=default)` | **Keyword-only default** |
+| `_get_path_param(ctx, key, default)` | `ctx.param_path(key, default)` | Returns `Path \| None` |
+| `_get_enum_str_param(ctx, key, enum, default)` | `ctx.param_enum(key, enum, default)` | Returns `E \| None` |
+| `_require_str_param(ctx, key)` | `ctx.require_str(key)` | Raises `ParameterError` |
+| `_require_int_param(ctx, key)` | `ctx.require_int(key)` | Raises `ParameterError` |
+| `_require_path_param(ctx, key)` | `ctx.require_path(key)` | Raises `ParameterError` |
+| `ctx.params.get(key)` | `ctx.param_str(key)` or appropriate | Prefer typed accessor |
+| N/A | `ctx.param_list(key, default)` | **New** - returns `list[str]` |
+| N/A | `ctx.param_tuple(key, default)` | **New** - returns `tuple[str, ...]` |
+
+### 4.5 Resource Access (Unchanged)
+
+The lazy resource properties have the same names:
+
+```python
+# These work identically in both contexts:
+runtime = ctx.runtime        # ResolvedRuntime (lazy)
+gateway = ctx.gateway        # StorageGateway (lazy)
+graph_rt = ctx.graph_runtime # GraphRuntime (lazy)
+```
+
+### 4.6 Additional Properties in HandlerContext
+
+New convenience properties not in EnhancedHandlerContext:
+
+```python
+# Get operation-specific logger
+logger = ctx.logger  # Returns Logger named for operation
+
+# Get database path (from runtime or fallback)
+db_path = ctx.db_path  # Returns Path | None
+
+# Check color settings
+if ctx.color_enabled:
+    # Use colored output
+```
 
 ---
 
@@ -211,13 +241,14 @@ Based on Phase 0 inventory:
 
 **Changes:**
 
-1. Update import:
+1. Update imports:
    ```python
    # Before
    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
    
    # After
    from codeintel.cli.handlers.context import HandlerContext
+   from codeintel.cli.rendering.types import OutputFormat
    ```
 
 2. Update `command_context()` yield type:
@@ -241,23 +272,41 @@ Based on Phase 0 inventory:
    )
    
    # After
+   # Convert output_format string to enum if needed
+   try:
+       fmt = OutputFormat(render_format) if isinstance(render_format, str) else render_format
+   except ValueError:
+       fmt = OutputFormat.TEXT
+   
    ctx = HandlerContext(
        config=config,
        operation_id=operation_id,
-       output_format=render_format,
+       output_format=fmt,
        verbosity=verbosity,
        project_root=runtime.root if runtime else None,
        database_path=runtime.db_path if runtime else None,
        _params=combined_params,
-       _runtime=runtime,  # Pre-populate if available
+       _runtime=runtime,  # Pre-populate if runtime was already resolved
    )
    ```
 
-4. Update close handling (already compatible since HandlerContext has `close()`)
+4. Context manager already compatible — `HandlerContext` has `close()` method
+
+5. **Alternative: Use adapter method during transition:**
+   ```python
+   # If EnhancedHandlerContext is still needed temporarily:
+   ctx = HandlerContext.from_enhanced_context(
+       enhanced_ctx,
+       operation_id=operation_id,
+       params=extra_params,
+   )
+   ```
 
 **Verification:**
 ```bash
 uv run pytest tests/cli/commands/ -v -k "context"
+uv run ruff check src/codeintel/cli/commands/context.py
+uv run pyright src/codeintel/cli/commands/context.py
 ```
 
 ---
@@ -681,6 +730,106 @@ If significant issues discovered:
 3. Verify tests pass with old code
 
 **Note:** Handler files are independent, so individual rollbacks are safe.
+
+---
+
+## 12. Implementation Notes (from Phase 1 & 2)
+
+### 12.1 Key Differences from EnhancedHandlerContext
+
+| Aspect | EnhancedHandlerContext | HandlerContext |
+|--------|------------------------|----------------|
+| Params type | `dict[str, Any]` | `dict[str, object]` |
+| Output format | String (`"text"`, `"json"`) | `OutputFormat` enum |
+| Error on missing param | `ValueError` | `ParameterError` |
+| Logger | Via `setup_logging()` | `ctx.logger` property |
+| Context manager | Manual close | `__enter__`/`__exit__` |
+
+### 12.2 Common Migration Pitfalls
+
+1. **Boolean default is keyword-only:**
+   ```python
+   # WRONG - positional default
+   ctx.param_bool("flag", False)
+   
+   # CORRECT - keyword-only
+   ctx.param_bool("flag", default=False)
+   ```
+
+2. **ParameterError vs ValueError:**
+   ```python
+   # Old code might catch ValueError
+   try:
+       value = _require_str_param(ctx, "key")
+   except ValueError:
+       ...
+   
+   # New code should catch ParameterError
+   from codeintel.cli.handlers.context import ParameterError
+   try:
+       value = ctx.require_str("key")
+   except ParameterError:
+       ...
+   ```
+
+3. **Direct params access should be replaced:**
+   ```python
+   # Avoid - direct access still works but prefer typed methods
+   value = ctx._params.get("key")
+   
+   # Prefer - typed accessor
+   value = ctx.param_str("key")
+   ```
+
+### 12.3 Testing Migrated Handlers
+
+Each migrated handler should be tested with:
+
+```python
+from unittest.mock import MagicMock
+
+from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.rendering.types import OutputFormat
+
+
+def test_my_handler() -> None:
+    """Test handler with new context."""
+    mock_config = MagicMock()
+    mock_config.color = False
+    mock_config.log_level = "WARNING"
+
+    ctx = HandlerContext(
+        config=mock_config,
+        operation_id="test.handler",
+        output_format=OutputFormat.TEXT,
+        verbosity=0,
+        _params={"key": "value", "count": 10},
+    )
+
+    with ctx:
+        result = my_handler(ctx)
+
+    assert result.success
+    # ... more assertions
+```
+
+### 12.4 Quality Gates
+
+Every migrated handler file must pass:
+
+```bash
+# Linting (no errors, no suppressions)
+uv run ruff check src/codeintel/cli/handlers/{handler}.py
+
+# Type checking
+uv run pyright src/codeintel/cli/handlers/{handler}.py
+
+# Pyrefly
+uv run pyrefly check src/codeintel/cli/handlers/{handler}.py
+
+# Tests
+uv run pytest tests/cli/handlers/test_{handler}.py -v
+```
 
 ---
 

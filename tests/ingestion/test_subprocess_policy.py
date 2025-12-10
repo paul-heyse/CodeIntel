@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from codeintel.ingestion.engine.infrastructure import ToolName
-from tests._helpers.assertions import expect_equal
+from tests._helpers.assertions import (
+    SUBPROCESS_ALLOWLIST,
+    assert_no_subprocess_usage,
+    expect_equal,
+)
 from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
 
 
@@ -16,25 +18,7 @@ def test_no_direct_subprocess_usage_outside_tooling() -> None:
     """Fail when subprocess usage appears outside the centralized tooling modules."""
     repo_root = Path().resolve()
     src_root = repo_root / "src" / "codeintel"
-    allowed = {
-        Path("src/codeintel/ingestion/engine/infrastructure/runner.py"),
-        Path("src/codeintel/ingestion/engine/service.py"),
-        Path("src/codeintel/build/providers.py"),
-        Path("src/codeintel/cli/jobs/_jobs.py"),
-    }
-    patterns = ("create_subprocess_exec(", "subprocess.run(", "Popen(")
-
-    violations: list[str] = []
-    for path in src_root.rglob("*.py"):
-        rel_path = path.relative_to(repo_root)
-        if rel_path in allowed:
-            continue
-        content = path.read_text(encoding="utf8")
-        if any(pattern in content for pattern in patterns):
-            violations.append(str(rel_path))
-
-    if violations:
-        pytest.fail(f"Direct subprocess usage found in: {', '.join(sorted(violations))}")
+    assert_no_subprocess_usage(src_root, allowed=SUBPROCESS_ALLOWLIST)
 
 
 def test_preset_runner_respects_tool_run_options(tmp_path: Path) -> None:

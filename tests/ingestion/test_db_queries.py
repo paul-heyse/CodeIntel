@@ -51,8 +51,10 @@ from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    seed_foreign_key_tables,
     seed_modules_and_repo_map,
     seed_numeric_table,
+    seed_varchar_table,
 )
 
 # Test constants (non-repo/commit)
@@ -63,113 +65,6 @@ EXPECTED_FRACTION_0_5 = 0.5
 EXPECTED_FRACTION_1_0 = 1.0
 EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
-
-
-def _create_varchar_table(
-    gateway: StorageGateway, table: str, values: list[tuple[int, str | None]]
-) -> None:
-    """Create a VARCHAR table with the provided rows.
-
-    Raises
-    ------
-    ValueError
-        If an unsupported table is requested.
-    """
-    if table == "core.test_nulls":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_nulls (
-                id INTEGER,
-                value VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_nulls (id, value) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_dupes":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_dupes (
-                id INTEGER,
-                name VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_dupes (id, name) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_unique":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_unique (
-                id INTEGER,
-                name VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_unique (id, name) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_frac1":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_frac1 (
-                id INTEGER,
-                value VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_frac1 (id, value) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_frac2":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_frac2 (
-                id INTEGER,
-                value VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_frac2 (id, value) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_frac3":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_frac3 (
-                id INTEGER,
-                value VARCHAR
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_frac3 (id, value) VALUES (?, ?)",
-            values,
-        )
-    elif table == "core.test_frac_empty":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_frac_empty (
-                id INTEGER,
-                value VARCHAR
-            )
-            """
-        )
-        if values:
-            gateway.con.executemany(
-                "INSERT INTO core.test_frac_empty (id, value) VALUES (?, ?)",
-                values,
-            )
-    else:
-        message = f"Unsupported varchar table for tests: {table}"
-        raise ValueError(message)
 
 
 # =============================================================================
@@ -440,7 +335,7 @@ def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway, tmp_path: Path
 
 def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway) -> None:
     """safe_count_nulls should count NULL values correctly."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_nulls",
         [
@@ -564,7 +459,7 @@ def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) ->
 
 def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None:
     """safe_count_duplicates should count duplicate values."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_dupes",
         [
@@ -584,7 +479,7 @@ def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None
 
 def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway) -> None:
     """safe_count_duplicates should return 0 when all values are unique."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_unique",
         [
@@ -613,7 +508,7 @@ def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> N
 
 def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 1.0 when all values are non-null."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_frac1",
         [
@@ -629,7 +524,7 @@ def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> N
 
 def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return correct fraction."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_frac2",
         [
@@ -647,7 +542,7 @@ def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None
 
 def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 0.0 when all values are null."""
-    _create_varchar_table(
+    seed_varchar_table(
         fresh_gateway,
         "core.test_frac3",
         [
@@ -663,7 +558,7 @@ def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_not_null_fraction should return 0.0 for empty table."""
-    _create_varchar_table(fresh_gateway, "core.test_frac_empty", [])
+    seed_varchar_table(fresh_gateway, "core.test_frac_empty", [])
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac_empty", "value")
 
@@ -684,25 +579,13 @@ def test_safe_not_null_fraction_invalid_table(fresh_gateway: StorageGateway) -> 
 
 def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway) -> None:
     """safe_count_orphan_refs should return 0 when all refs are valid."""
-    # Create parent and child tables
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_parent (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_child (
-            id INTEGER,
-            parent_id INTEGER
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_parent (id, name) VALUES (1, 'a'), (2, 'b')
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_child (id, parent_id) VALUES (1, 1), (2, 2)
-    """)
+    seed_foreign_key_tables(
+        fresh_gateway,
+        parent_table="core.test_parent",
+        child_table="core.test_child",
+        parent_rows=[(1, "a"), (2, "b")],
+        child_rows=[(1, 1), (2, 2)],
+    )
 
     fk = ForeignKeyRef(
         source_table="core.test_child",
@@ -718,27 +601,17 @@ def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway) -> Non
 
 def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> None:
     """safe_count_orphan_refs should count orphaned references."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_parent2 (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_child2 (
-            id INTEGER,
-            parent_id INTEGER
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_parent2 (id, name) VALUES (1, 'a')
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_child2 (id, parent_id) VALUES
-            (1, 1),    -- valid ref
-            (2, 99),   -- orphan
-            (3, 100)   -- orphan
-    """)
+    seed_foreign_key_tables(
+        fresh_gateway,
+        parent_table="core.test_parent2",
+        child_table="core.test_child2",
+        parent_rows=[(1, "a")],
+        child_rows=[
+            (1, 1),
+            (2, 99),
+            (3, 100),
+        ],
+    )
 
     fk = ForeignKeyRef(
         source_table="core.test_child2",
@@ -754,27 +627,17 @@ def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> N
 
 def test_safe_count_orphan_refs_with_nulls_allowed(fresh_gateway: StorageGateway) -> None:
     """safe_count_orphan_refs should handle NULL values when allow_null=True."""
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_parent3 (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR
-        )
-    """)
-    fresh_gateway.con.execute("""
-        CREATE TABLE IF NOT EXISTS core.test_child3 (
-            id INTEGER,
-            parent_id INTEGER
-        )
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_parent3 (id, name) VALUES (1, 'a')
-    """)
-    fresh_gateway.con.execute("""
-        INSERT INTO core.test_child3 (id, parent_id) VALUES
+    seed_foreign_key_tables(
+        fresh_gateway,
+        parent_table="core.test_parent3",
+        child_table="core.test_child3",
+        parent_rows=[(1, "a")],
+        child_rows=[
             (1, 1),
-            (2, NULL),  -- NULL is allowed, not counted as orphan
-            (3, 99)     -- orphan
-    """)
+            (2, None),
+            (3, 99),
+        ],
+    )
 
     fk = ForeignKeyRef(
         source_table="core.test_child3",

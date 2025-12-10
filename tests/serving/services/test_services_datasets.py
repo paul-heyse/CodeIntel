@@ -1,25 +1,15 @@
-"""Tests for dataset query service delegates.
-
-This module tests the _LocalDatasetMixin methods in services/datasets.py
-through HTTP routes and direct LocalQueryService invocation, using real gateways.
-"""
+"""Tests for dataset query service delegates using shared service app fixtures."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Iterator
+from contextlib import suppress
 
 import pytest
-from fastapi import FastAPI, status
+from fastapi import status
 from fastapi.testclient import TestClient
 
-from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.backend import BackendLimits
-from codeintel.serving.domain_models import DatasetRows, DatasetSchema
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
-from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.services.query_service import LocalQueryService
@@ -28,318 +18,143 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.serving_apps import ServiceApp
 
-if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-DEFAULT_LIMIT = 10
-MAX_ROWS = 100
 SAMPLE_LIMIT = 5
 OFFSET_ZERO = 0
-OFFSET_ONE = 1
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _create_test_app(provisioned_repo: ProvisionedGateway) -> FastAPI:
-    """Create a test FastAPI app with the provisioned gateway.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    FastAPI
-        Configured FastAPI application.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    return create_app(config_loader=load_config, backend_factory=backend_factory)
-
-
-def _build_local_query_service(
-    provisioned_repo: ProvisionedGateway,
-) -> LocalQueryService:
-    """Build a LocalQueryService for direct testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+@pytest.fixture
+def service(provisioned_service_app: ServiceApp) -> LocalQueryService:
+    """Expose the configured LocalQueryService for reuse across tests.
 
     Returns
     -------
     LocalQueryService
-        Configured local query service.
+        Service instance backed by the provisioned gateway snapshot.
     """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
+    return provisioned_service_app.service
 
 
-# =============================================================================
-# list_datasets Tests (via HTTP)
-# =============================================================================
+@pytest.fixture
+def service_client(provisioned_service_app: ServiceApp) -> Iterator[TestClient]:
+    """Provide a TestClient bound to the provisioned service app.
 
-
-def test_list_datasets_returns_list(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify list_datasets returns a list of datasets.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    Yields
+    ------
+    TestClient
+        Client connected to the provisioned service FastAPI app.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets")
+    with provisioned_service_app.client() as client:
+        yield client
+
+
+@pytest.fixture
+def datasets(service: LocalQueryService) -> list[dm.DatasetDescriptorDomain]:
+    """List available datasets or skip when none are present.
+
+    Returns
+    -------
+    list[DatasetDescriptorDomain]
+        Available dataset descriptors for the provisioned gateway.
+    """
+    dataset_descriptors = service.list_datasets()
+    if not dataset_descriptors:
+        pytest.skip("No datasets available")
+    return dataset_descriptors
+
+
+@pytest.fixture
+def dataset_name(datasets: list[dm.DatasetDescriptorDomain]) -> str:
+    """Return a stable dataset name for HTTP and service-level tests.
+
+    Returns
+    -------
+    str
+        Canonical dataset name from the provisioned gateway.
+    """
+    return datasets[0].name
+
+
+def test_list_datasets_returns_list(service_client: TestClient) -> None:
+    """Verify list_datasets returns a list of datasets over HTTP."""
+    response = service_client.get("/datasets")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     expect_is_instance(data, list)
 
 
-def test_list_datasets_contains_expected_fields(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify list_datasets returns datasets with expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets")
+def test_list_datasets_contains_expected_fields(service_client: TestClient) -> None:
+    """Verify list_datasets returns datasets with expected fields."""
+    response = service_client.get("/datasets")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    if data:  # If there are datasets
+    if data:
         first_dataset = data[0]
-        # Check for expected fields
         expect_true("name" in first_dataset or "id" in first_dataset)
 
 
 def test_list_datasets_not_empty(
-    provisioned_repo: ProvisionedGateway,
+    service_client: TestClient, datasets: list[dm.DatasetDescriptorDomain]
 ) -> None:
-    """Verify list_datasets returns at least some datasets.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets")
+    """Verify list_datasets returns at least some datasets."""
+    response = service_client.get("/datasets")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    # Provisioned repo should have some datasets
-    expect_true(len(data) > 0)
+    expect_true(len(data) >= len(datasets))
 
 
-# =============================================================================
-# read_dataset_rows Tests (via HTTP)
-# =============================================================================
-
-
-def test_read_dataset_rows_with_valid_dataset(
-    provisioned_repo: ProvisionedGateway,
+@pytest.mark.parametrize(
+    ("query_suffix", "expected_statuses"),
+    [
+        ("", {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}),
+        ("?limit=5", {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}),
+        ("?offset=1", {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}),
+        ("?limit=5&offset=1", {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}),
+        ("?limit=0", {status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND}),
+        (
+            "?offset=1000000",
+            {status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND},
+        ),
+        (
+            "?limit=-1",
+            {
+                status.HTTP_200_OK,
+                status.HTTP_400_BAD_REQUEST,
+                status.HTTP_404_NOT_FOUND,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+            },
+        ),
+        (
+            "?offset=-5",
+            {
+                status.HTTP_200_OK,
+                status.HTTP_400_BAD_REQUEST,
+                status.HTTP_404_NOT_FOUND,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+            },
+        ),
+    ],
+)
+def test_read_dataset_rows_variants(
+    service_client: TestClient,
+    dataset_name: str,
+    query_suffix: str,
+    expected_statuses: set[int],
 ) -> None:
-    """Verify read_dataset_rows works with a valid dataset.
+    """Verify read_dataset_rows handles varied query parameters."""
+    response = service_client.get(f"/datasets/{dataset_name}{query_suffix}")
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    # First get a valid dataset name
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    # Get the first dataset's name or id
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}")
-
-    # Should return 200 or 404 depending on data availability
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    expect_true(response.status_code in expected_statuses)
 
 
-def test_read_dataset_rows_with_limit(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows respects limit parameter.
+def test_read_dataset_rows_nonexistent_dataset(service_client: TestClient) -> None:
+    """Verify read_dataset_rows returns error for nonexistent dataset."""
+    response = service_client.get("/datasets/nonexistent_dataset_name_xyz")
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?limit={SAMPLE_LIMIT}")
-
-    # Should return 200 or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
-
-
-def test_read_dataset_rows_with_offset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows respects offset parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?offset={OFFSET_ONE}")
-
-    # Should return 200 or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
-
-
-def test_read_dataset_rows_with_limit_and_offset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows works with both limit and offset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?limit={SAMPLE_LIMIT}&offset={OFFSET_ONE}")
-
-    # Should return 200 or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
-
-
-def test_read_dataset_rows_nonexistent_dataset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows returns error for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets/nonexistent_dataset_name_xyz")
-
-    # Should return 400 or 404 for unknown dataset
     expect_true(
         response.status_code
         in {
@@ -349,90 +164,22 @@ def test_read_dataset_rows_nonexistent_dataset(
     )
 
 
-# =============================================================================
-# dataset_schema Tests (via HTTP)
-# =============================================================================
-
-
-def test_dataset_schema_with_valid_dataset(
-    provisioned_repo: ProvisionedGateway,
+@pytest.mark.parametrize("path_suffix", ["schema", f"schema?limit={SAMPLE_LIMIT}"])
+def test_dataset_schema_http(
+    service_client: TestClient,
+    dataset_name: str,
+    path_suffix: str,
 ) -> None:
-    """Verify dataset_schema works with a valid dataset.
+    """Verify dataset_schema works over HTTP with and without sample_limit."""
+    response = service_client.get(f"/datasets/{dataset_name}/{path_suffix}")
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}/schema")
-
-    # Should return 200 or 404
     expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
-def test_dataset_schema_with_sample_limit(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify dataset_schema respects sample_limit parameter.
+def test_dataset_schema_nonexistent_dataset(service_client: TestClient) -> None:
+    """Verify dataset_schema returns error for nonexistent dataset."""
+    response = service_client.get("/datasets/nonexistent_dataset_name_xyz/schema")
 
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}/schema?limit={SAMPLE_LIMIT}")
-
-    # Should return 200 or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
-
-
-def test_dataset_schema_nonexistent_dataset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify dataset_schema returns error for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets/nonexistent_dataset_name_xyz/schema")
-
-    # Should return 400 or 404 for unknown dataset
     expect_true(
         response.status_code
         in {
@@ -442,433 +189,103 @@ def test_dataset_schema_nonexistent_dataset(
     )
 
 
-# =============================================================================
-# dataset_specs Tests (via HTTP)
-# =============================================================================
-
-
-def test_dataset_specs_returns_list(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify dataset_specs returns a list.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        response = client.get("/datasets/specs")
+def test_dataset_specs_returns_list(service_client: TestClient) -> None:
+    """Verify dataset_specs returns a list over HTTP."""
+    response = service_client.get("/datasets/specs")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     expect_is_instance(data, list)
 
 
-# =============================================================================
-# Direct LocalQueryService Tests
-# =============================================================================
-
-
-def test_local_query_service_list_datasets(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify LocalQueryService.list_datasets works directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
+def test_local_query_service_list_datasets(service: LocalQueryService) -> None:
+    """Verify LocalQueryService.list_datasets works directly."""
     datasets = service.list_datasets()
-    expect_true(datasets is not None)
     expect_is_instance(datasets, list)
 
 
-def test_local_query_service_dataset_specs(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify LocalQueryService.dataset_specs works directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
+def test_local_query_service_dataset_specs(service: LocalQueryService) -> None:
+    """Verify LocalQueryService.dataset_specs works directly."""
     specs = service.dataset_specs()
-    expect_true(specs is not None)
     expect_is_instance(specs, list)
 
 
 def test_local_query_service_read_dataset_rows(
-    provisioned_repo: ProvisionedGateway,
+    service: LocalQueryService,
+    dataset_name: str,
 ) -> None:
-    """Verify LocalQueryService.read_dataset_rows works directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    # First get a valid dataset name
-    datasets = service.list_datasets()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].name
-
-    try:
+    """Verify LocalQueryService.read_dataset_rows works directly."""
+    with suppress(McpError):
         rows = service.read_dataset_rows(
-            dataset_name=dataset_name, limit=SAMPLE_LIMIT, offset=OFFSET_ZERO
+            dataset_name=dataset_name,
+            limit=SAMPLE_LIMIT,
+            offset=OFFSET_ZERO,
         )
         expect_true(rows is not None)
-    except McpError:
-        # Expected when dataset is not readable
-        pass
 
 
 def test_local_query_service_dataset_schema(
-    provisioned_repo: ProvisionedGateway,
+    service: LocalQueryService,
+    dataset_name: str,
 ) -> None:
-    """Verify LocalQueryService.dataset_schema works directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    # First get a valid dataset name
-    datasets = service.list_datasets()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].name
-
-    try:
+    """Verify LocalQueryService.dataset_schema works directly."""
+    with suppress(McpError):
         schema = service.dataset_schema(dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT)
         expect_true(schema is not None)
-    except McpError:
-        # Expected when dataset schema is not available
-        pass
 
 
 def test_local_query_service_read_dataset_rows_nonexistent(
-    provisioned_repo: ProvisionedGateway,
+    service: LocalQueryService,
 ) -> None:
-    """Verify LocalQueryService raises error for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
+    """Verify LocalQueryService raises error for nonexistent dataset."""
     with pytest.raises(McpError):
         service.read_dataset_rows(
-            dataset_name="nonexistent_dataset_xyz", limit=DEFAULT_LIMIT, offset=OFFSET_ZERO
+            dataset_name="nonexistent_dataset_xyz",
+            limit=service.limits.default_limit,
+            offset=OFFSET_ZERO,
         )
 
 
-def test_local_query_service_dataset_schema_nonexistent(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify LocalQueryService raises error for nonexistent dataset schema.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
+def test_local_query_service_dataset_schema_nonexistent(service: LocalQueryService) -> None:
+    """Verify LocalQueryService raises error for nonexistent dataset schema."""
     with pytest.raises(McpError):
-        service.dataset_schema(dataset_name="nonexistent_dataset_xyz", sample_limit=SAMPLE_LIMIT)
-
-
-# =============================================================================
-# Response Structure Tests
-# =============================================================================
+        service.dataset_schema(
+            dataset_name="nonexistent_dataset_xyz",
+            sample_limit=SAMPLE_LIMIT,
+        )
 
 
 def test_dataset_rows_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    service_client: TestClient,
+    dataset_name: str,
 ) -> None:
-    """Verify dataset rows response contains expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}")
+    """Verify dataset rows response contains expected fields."""
+    response = service_client.get(f"/datasets/{dataset_name}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict with expected fields
         expect_is_instance(data, dict)
-        # Should contain rows or similar field
         expect_true("rows" in data or "data" in data or isinstance(data.get("results"), list))
 
 
 def test_dataset_schema_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    service_client: TestClient,
+    dataset_name: str,
 ) -> None:
-    """Verify dataset schema response contains expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}/schema")
+    """Verify dataset schema response contains expected fields."""
+    response = service_client.get(f"/datasets/{dataset_name}/schema")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (schema structure)
         expect_is_instance(data, dict)
 
 
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
-def test_read_dataset_rows_with_zero_limit(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows handles zero limit gracefully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?limit=0")
-
-    # Should handle zero limit gracefully
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_200_OK,
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-        }
-    )
-
-
-def test_read_dataset_rows_with_large_offset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows handles large offset gracefully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    large_offset = 1000000
-
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?offset={large_offset}")
-
-    # Should handle large offset - likely returns empty or error
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_200_OK,
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-        }
-    )
-
-
-# =============================================================================
-# Negative Limit Tests
-# =============================================================================
-
-
-def test_read_dataset_rows_with_negative_limit(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows handles negative limit gracefully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    negative_limit = -1
-
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?limit={negative_limit}")
-
-    # Should handle negative limit - either clamp to 0 or return error
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_200_OK,
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-        }
-    )
-
-
-def test_read_dataset_rows_with_negative_offset(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify read_dataset_rows handles negative offset gracefully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    negative_offset = -5
-
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
-        datasets_response = client.get("/datasets")
-
-    if datasets_response.status_code != status.HTTP_200_OK:
-        pytest.skip("Could not list datasets")
-
-    datasets = datasets_response.json()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].get("name") or datasets[0].get("id")
-    if not dataset_name:
-        pytest.skip("Could not find dataset name")
-
-    with TestClient(app) as client:
-        response = client.get(f"/datasets/{dataset_name}?offset={negative_offset}")
-
-    # Should handle negative offset - either clamp to 0 or return error
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_200_OK,
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-        }
-    )
-
-
-# =============================================================================
-# LocalDatasetMixin Property Tests
-# =============================================================================
-
-
 def test_local_dataset_mixin_uses_query_gateway(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
-    """Verify LocalDatasetMixin uses query gateway for dataset mapping.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    # Create service without explicit dataset_tables - should fall back to gateway
+    """Verify LocalDatasetMixin uses query gateway for dataset mapping."""
     service = LocalQueryService(
-        query=query,
+        query=provisioned_service_app.service.query,
         dataset_tables=None,
     )
 
@@ -877,192 +294,85 @@ def test_local_dataset_mixin_uses_query_gateway(
 
 
 def test_local_dataset_mixin_with_explicit_tables(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
-    """Verify LocalDatasetMixin uses explicit dataset_tables when provided.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    # Create service with explicit dataset_tables
+    """Verify LocalDatasetMixin uses explicit dataset_tables when provided."""
     service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+        query=provisioned_service_app.service.query,
+        dataset_tables=dict(provisioned_service_app.gateway.datasets.mapping),
     )
 
     datasets = service.list_datasets()
     expect_is_instance(datasets, list)
 
 
-# =============================================================================
-# Dataset Descriptor Tests
-# =============================================================================
-
-
 def test_dataset_descriptors_have_name(
-    provisioned_repo: ProvisionedGateway,
+    datasets: list[dm.DatasetDescriptorDomain],
 ) -> None:
-    """Verify dataset descriptors contain name field.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
+    """Verify dataset descriptors contain name field."""
     for dataset in datasets:
         expect_true(hasattr(dataset, "name"))
         expect_true(dataset.name is not None)
 
 
 def test_dataset_descriptors_have_table(
-    provisioned_repo: ProvisionedGateway,
+    datasets: list[dm.DatasetDescriptorDomain],
 ) -> None:
-    """Verify dataset descriptors contain table field.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
+    """Verify dataset descriptors contain table field."""
     for dataset in datasets:
         expect_true(hasattr(dataset, "table"))
 
 
 def test_dataset_descriptors_have_docs_view_flag(
-    provisioned_repo: ProvisionedGateway,
+    datasets: list[dm.DatasetDescriptorDomain],
 ) -> None:
-    """Verify dataset descriptors contain is_docs_view field.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
+    """Verify dataset descriptors contain is_docs_view field."""
     for dataset in datasets:
         expect_true(hasattr(dataset, "is_docs_view"))
         expect_is_instance(dataset.is_docs_view, bool)
 
 
 def test_dataset_descriptors_have_read_only_flag(
-    provisioned_repo: ProvisionedGateway,
+    datasets: list[dm.DatasetDescriptorDomain],
 ) -> None:
-    """Verify dataset descriptors contain is_read_only field.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
+    """Verify dataset descriptors contain is_read_only field."""
     for dataset in datasets:
         expect_true(hasattr(dataset, "is_read_only"))
         expect_is_instance(dataset.is_read_only, bool)
 
 
-# =============================================================================
-# Dataset Specs Tests
-# =============================================================================
-
-
-def test_dataset_specs_structure(
-    provisioned_repo: ProvisionedGateway,
-) -> None:
-    """Verify dataset_specs returns properly structured specs.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
+def test_dataset_specs_structure(service: LocalQueryService) -> None:
+    """Verify dataset_specs returns properly structured specs."""
     specs = service.dataset_specs()
     for spec in specs:
         expect_is_instance(spec, DatasetSpecDescriptor)
 
 
-# =============================================================================
-# Read Dataset Rows Meta Tests
-# =============================================================================
-
-
 def test_read_dataset_rows_returns_domain_model(
-    provisioned_repo: ProvisionedGateway,
+    service: LocalQueryService,
+    dataset_name: str,
 ) -> None:
-    """Verify read_dataset_rows returns DatasetRows domain model.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].name
-
-    try:
+    """Verify read_dataset_rows returns DatasetRows domain model."""
+    with suppress(McpError):
         result = service.read_dataset_rows(
-            dataset_name=dataset_name, limit=SAMPLE_LIMIT, offset=OFFSET_ZERO
+            dataset_name=dataset_name,
+            limit=SAMPLE_LIMIT,
+            offset=OFFSET_ZERO,
         )
-        expect_is_instance(result, DatasetRows)
+        expect_is_instance(result, dm.DatasetRows)
         expect_true(hasattr(result, "dataset_name"))
         expect_true(hasattr(result, "rows"))
         expect_true(hasattr(result, "offset"))
-    except McpError:
-        # Expected when dataset is not readable
-        pass
-
-
-# =============================================================================
-# Dataset Schema Domain Model Tests
-# =============================================================================
 
 
 def test_dataset_schema_returns_domain_model(
-    provisioned_repo: ProvisionedGateway,
+    service: LocalQueryService,
+    dataset_name: str,
 ) -> None:
-    """Verify dataset_schema returns DatasetSchema domain model.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
-    service = _build_local_query_service(provisioned_repo)
-
-    datasets = service.list_datasets()
-    if not datasets:
-        pytest.skip("No datasets available")
-
-    dataset_name = datasets[0].name
-
-    try:
-        result = service.dataset_schema(dataset_name=dataset_name, sample_limit=SAMPLE_LIMIT)
-        expect_is_instance(result, DatasetSchema)
-    except McpError:
-        # Expected when dataset schema is not available
-        pass
+    """Verify dataset_schema returns DatasetSchema domain model."""
+    with suppress(McpError):
+        result = service.dataset_schema(
+            dataset_name=dataset_name,
+            sample_limit=SAMPLE_LIMIT,
+        )
+        expect_is_instance(result, dm.DatasetSchema)

@@ -6,6 +6,7 @@ This module provides reusable assertion functions for test validation.
 from __future__ import annotations
 
 from tests._helpers.assertions.common import (
+    SUBPROCESS_ALLOWLIST,
     HasRowCounts,
     HasSuccessAndError,
     assert_failure,
@@ -13,19 +14,30 @@ from tests._helpers.assertions.common import (
     assert_invalid,
     assert_meta_contains,
     assert_no_error,
+    assert_no_subprocess_usage,
     assert_row_count,
     assert_success,
     assert_valid,
     assert_validation_error,
     format_assertion_message,
 )
-from tests._helpers.assertions.coverage_assertions import assert_single_edge
+from tests._helpers.assertions.coverage_assertions import (
+    assert_coverage_lines,
+    assert_function_loc,
+    assert_single_edge,
+    assert_typedness_bucket,
+)
 from tests._helpers.assertions.dataclass_assertions import assert_cannot_setattr
 from tests._helpers.assertions.dependencies import (
     assert_cycle_count,
     assert_edge_count,
     assert_no_cycles,
     build_dependency_graph,
+)
+from tests._helpers.assertions.evidence import (
+    assert_evidence_location,
+    assert_evidence_snippet_contains,
+    assert_evidence_urn,
 )
 from tests._helpers.assertions.expectation_assertions import (
     expect_empty,
@@ -45,6 +57,12 @@ from tests._helpers.assertions.expectation_assertions import (
     require_rows,
     unwrap_optional,
 )
+from tests._helpers.assertions.graphs import (
+    assert_component_counts,
+    assert_cycle_membership,
+    assert_filtered_graph,
+    assert_graph_counts,
+)
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.assertions.schema_assertions import (
     assert_mapping_list,
@@ -56,13 +74,23 @@ from tests._helpers.assertions.table_assertions import (
 )
 
 __all__ = [
+    "SUBPROCESS_ALLOWLIST",
     "HasRowCounts",
     "HasSuccessAndError",
     "assert_cannot_setattr",
     "assert_columns_not_null",
+    "assert_component_counts",
+    "assert_coverage_lines",
     "assert_cycle_count",
+    "assert_cycle_membership",
     "assert_edge_count",
+    "assert_evidence_location",
+    "assert_evidence_snippet_contains",
+    "assert_evidence_urn",
     "assert_failure",
+    "assert_filtered_graph",
+    "assert_function_loc",
+    "assert_graph_counts",
     "assert_has_error",
     "assert_invalid",
     "assert_logged",
@@ -71,10 +99,12 @@ __all__ = [
     "assert_meta_contains",
     "assert_no_cycles",
     "assert_no_error",
+    "assert_no_subprocess_usage",
     "assert_row_count",
     "assert_single_edge",
     "assert_success",
     "assert_table_has_rows",
+    "assert_typedness_bucket",
     "assert_valid",
     "assert_validation_error",
     "build_dependency_graph",

@@ -68,7 +68,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
-from tests._helpers.ingestion import write_pytest_report
+from tests._helpers.ingestion import write_coverage_file, write_pytest_report
 from tests._helpers.orchestration.tooling import ToolingOutputs
 
 pytest_plugins = ["tests._helpers.orchestration.tooling"]
@@ -1300,14 +1300,18 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
 
 def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
     """ToolService.run_coverage_report should return report from parsed data."""
-    # Coverage plugin requires coverage JSON data
+    coverage_json = {
+        "files": {"mod.py": {"executed_lines": [1, 2], "missing_lines": [3]}},
+    }
+    coverage_path = write_coverage_file(tmp_path, content=coverage_json)
     run = make_tool_run_result(
         ToolName.COVERAGE,
         options=ToolRunOptions(
             returncode=0,
-            stdout='{"files": {"mod.py": {"executed_lines": [1,2], "missing_lines": [3]}}}',
+            stdout="",
             stderr="",
             duration_s=0.1,
+            output_path=coverage_path,
         ),
     )
     runner = PresetRunner(run)

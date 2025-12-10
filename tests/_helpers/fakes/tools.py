@@ -554,6 +554,52 @@ class FakeToolService(ToolService):
         return self.fake_config.pytest_success
 
 
+def make_success_tool_service(
+    *,
+    coverage_report: CoverageReport | None = None,
+) -> FakeToolService:
+    """Create a FakeToolService configured for successful tool runs.
+
+    Returns
+    -------
+    FakeToolService
+        Service with deterministic success responses.
+    """
+    return FakeToolService(
+        FakeToolServiceConfig(
+            pyright_errors={"mod.py": 2, "other.py": 0},
+            pyrefly_errors={"mod.py": 1},
+            ruff_errors={"style.py": 3},
+            coverage_report=coverage_report
+            or CoverageReport.from_file_reports(
+                [
+                    ("mod.py", {1, 2, 3}, {4, 5}),
+                ]
+            ),
+            pytest_success=True,
+        )
+    )
+
+
+def make_failing_tool_service() -> FakeToolService:
+    """Create a FakeToolService configured to raise errors on all tools.
+
+    Returns
+    -------
+    FakeToolService
+        Service configured to raise exceptions for every tool invocation.
+    """
+    config = FakeToolServiceConfig(
+        raise_on_pyright=RuntimeError("pyright failed"),
+        raise_on_pyrefly=RuntimeError("pyrefly failed"),
+        raise_on_ruff=OSError("ruff failed"),
+        raise_on_coverage=ValueError("coverage failed"),
+        raise_on_scip=RuntimeError("SCIP failed"),
+        raise_on_pytest=RuntimeError("pytest failed"),
+    )
+    return FakeToolService(config)
+
+
 __all__ = [
     "FakeScipResult",
     "FakeToolRunner",
@@ -561,7 +607,9 @@ __all__ = [
     "FakeToolServiceConfig",
     "PresetRunner",
     "ToolRunOptions",
+    "make_failing_tool_service",
     "make_scip_index_result",
+    "make_success_tool_service",
     "make_tool_run_result",
     "write_dummy_scip_files",
 ]

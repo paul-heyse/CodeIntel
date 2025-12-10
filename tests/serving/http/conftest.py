@@ -14,6 +14,7 @@ from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
 from tests._helpers.gateway import build_duckdb_query_service
 
 
@@ -80,4 +81,12 @@ def make_http_app() -> Callable[..., FastAPI]:
     return _build
 
 
-__all__ = ["make_http_app"]
+@pytest.fixture
+def architecture_samples(
+    architecture_gateway: StorageGateway,
+) -> AnalyticsSamples:
+    """Analytics identifiers for architecture gateway snapshots."""
+    return load_analytics_samples(architecture_gateway)
+
+
+__all__ = ["architecture_samples", "make_http_app"]

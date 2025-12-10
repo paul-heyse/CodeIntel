@@ -12,9 +12,11 @@ from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
 )
+from tests._helpers import build_repo_tree
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
+    build_scan_profile,
     create_scan_and_docstring_steps,
 )
 
@@ -34,9 +36,8 @@ def _code_profile_ignoring_dir(snapshot_repo_root: Path, ignored_dir_name: str) 
     """
     base = default_code_profile(snapshot_repo_root)
     ignore_dirs = (*base.ignore_dirs, ignored_dir_name)
-    return ScanProfile(
-        repo_root=base.repo_root,
-        source_roots=base.source_roots,
+    return build_scan_profile(
+        snapshot_repo_root,
         include_globs=base.include_globs,
         ignore_dirs=ignore_dirs,
         log_every=base.log_every,
@@ -76,13 +77,14 @@ def _scan_and_extract_docstrings(
 
 def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -> None:
     """Ensure docstrings ingest honors scan profile filters and module inventory."""
-    repo_root = tmp_path / "repo"
-    (repo_root / "src" / "pkg").mkdir(parents=True)
-    (repo_root / "src" / "ignored").mkdir(parents=True)
-
-    (repo_root / "src" / "pkg" / "a.py").write_text('"""doc A"""\n', encoding="utf8")
-    (repo_root / "src" / "pkg" / "b.py").write_text('"""doc B"""\n', encoding="utf8")
-    (repo_root / "src" / "ignored" / "c.py").write_text('"""ignored doc"""\n', encoding="utf8")
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {
+            "src/pkg/a.py": '"""doc A"""\n',
+            "src/pkg/b.py": '"""doc B"""\n',
+            "src/ignored/c.py": '"""ignored doc"""\n',
+        },
+    )
 
     snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=repo_root)
     code_profile = _code_profile_ignoring_dir(snapshot.repo_root, "ignored")
@@ -99,12 +101,13 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
 
 def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) -> None:
     """Verify docstrings ingest trusts core.modules instead of re-scanning the filesystem."""
-    repo_root = tmp_path / "repo"
-    src_pkg = repo_root / "src" / "pkg"
-    src_pkg.mkdir(parents=True)
-
-    (src_pkg / "visible.py").write_text('"""visible doc"""\n', encoding="utf8")
-    (src_pkg / "ghost.py").write_text('"""ghost doc"""\n', encoding="utf8")
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {
+            "src/pkg/visible.py": '"""visible doc"""\n',
+            "src/pkg/ghost.py": '"""ghost doc"""\n',
+        },
+    )
 
     snapshot = make_snapshot(repo="demo/docstrings", repo_root=repo_root)
     code_profile = default_code_profile(snapshot.repo_root)
