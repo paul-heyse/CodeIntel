@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Final
 
 import networkx as nx
+import pytest
 
 from codeintel.graphs.compute.metrics.centrality import (
     CentralityMetrics,
@@ -55,7 +56,31 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fakes.networkx_graphs import complete_graph
+from codeintel.graphs.compute.metrics.structural import (
+    StructuralMetrics,
+    compute_all_structural,
+    compute_clustering_coefficient as compute_structural_clustering,
+    compute_constraint,
+    compute_core_number,
+    compute_effective_size,
+    compute_triangles,
+)
+from tests._helpers.fakes.networkx_graphs import (
+    bidirectional_deps_graph,
+    chain_graph,
+    complete_digraph,
+    complete_graph,
+    complex_sccs_graph,
+    cyclic_graph,
+    diamond_graph,
+    disconnected_graph,
+    god_module_graph,
+    hub_dependencies_graph,
+    independent_modules_graph,
+    linear_dependency_graph,
+    star_graph,
+    two_sccs_graph,
+)
 
 # ---------------------------------------------------------------------------
 # Constants for magic value compliance
@@ -74,6 +99,7 @@ HUB_THRESHOLD_RATIO: Final[float] = 0.1
 EXPECTED_NODE_COUNT_TWO: Final[int] = 2
 EXPECTED_NODE_COUNT_FOUR: Final[int] = 4
 EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
+EXPECTED_NODE_COUNT_SIX: Final[int] = 6
 EXPECTED_LAYER_TWO: Final[int] = 2
 EXPECTED_EFFERENT_TWO: Final[int] = 2
 EXPECTED_INSTABILITY_TWO_THIRDS: Final[float] = 2 / 3
@@ -86,6 +112,9 @@ PAGERANK_POINT_FIVE: Final[float] = 0.5
 BETWEENNESS_POINT_THREE: Final[float] = 0.3
 STAR_GRAPH_SIZE_TEN: Final[int] = 10
 COMMUNITY_SIZE_THREE: Final[int] = 3
+HUB_DEPENDENT_COUNT: Final[int] = 4
+TRIANGLES_PER_NODE_K4: Final[int] = 3
+CORE_NUMBER_K4: Final[int] = 3
 
 
 # ===========================================================================
@@ -102,7 +131,7 @@ def test_pagerank_empty_graph_returns_empty() -> None:
 
 def test_pagerank_simple_cycle() -> None:
     """Cycle graph has uniform PageRank."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    graph = cyclic_graph(EXPECTED_CYCLE_NODES)
     result = compute_pagerank(graph)
 
     expect_true(len(result) == EXPECTED_CYCLE_NODES)
@@ -115,13 +144,12 @@ def test_pagerank_simple_cycle() -> None:
 
 def test_pagerank_star_graph_center_has_highest() -> None:
     """Star graph center has highest PageRank."""
-    # Center node 0 with edges from 1,2,3,4 to 0
-    graph = nx.DiGraph([(1, 0), (2, 0), (3, 0), (4, 0)])
+    graph = star_graph(4, inward=True)
     result = compute_pagerank(graph)
 
     # Center should have highest PageRank
-    expect_true(result[0] > result[1])
-    expect_true(result[0] > result[2])
+    expect_true(result["hub"] > result["spoke1"])
+    expect_true(result["hub"] > result["spoke2"])
 
 
 def test_pagerank_custom_alpha() -> None:
@@ -132,6 +160,36 @@ def test_pagerank_custom_alpha() -> None:
 
     # Results should differ with different alpha
     expect_true(result_default != result_low_alpha)
+
+
+def test_pagerank_chain_graph_probability_distribution() -> None:
+    """Chain graph PageRank sums to one."""
+    graph = chain_graph()
+    result = compute_pagerank(graph)
+
+    expect_true(len(result) == graph.number_of_nodes())
+    expect_true(abs(sum(result.values()) - 1.0) < PAGERANK_TOLERANCE)
+
+
+def test_pagerank_single_node_graph() -> None:
+    """Single node graph assigns all rank to that node."""
+    graph = nx.DiGraph()
+    graph.add_node("solo")
+
+    result = compute_pagerank(graph)
+
+    expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
+    expect_true(abs(result["solo"] - 1.0) < PAGERANK_TOLERANCE)
+
+
+def test_pagerank_outward_star_hub_has_low_rank() -> None:
+    """Outward star distributes rank to spokes."""
+    graph = star_graph(3)
+
+    result = compute_pagerank(graph)
+
+    expect_true(result["hub"] < result["spoke1"])
+    expect_true(result["hub"] < result["spoke2"])
 
 
 def test_betweenness_empty_graph_returns_empty() -> None:
@@ -156,6 +214,23 @@ def test_betweenness_sampling_parameter() -> None:
     result = compute_betweenness(graph, k=3)
 
     expect_true(len(result) == graph.number_of_nodes())
+
+
+def test_betweenness_diamond_prioritizes_inner_nodes() -> None:
+    """Diamond graph betweenness highlights middle nodes."""
+    graph = diamond_graph()
+    result = compute_betweenness(graph)
+
+    expect_true(result["B"] >= result["A"])
+    expect_true(result["C"] >= result["A"])
+
+
+def test_betweenness_disconnected_graph_has_entries_for_all_nodes() -> None:
+    """Disconnected graph still returns values for all nodes."""
+    graph = disconnected_graph()
+    result = compute_betweenness(graph)
+
+    expect_true(len(result) == EXPECTED_NODE_COUNT_SIX)
 
 
 def test_closeness_empty_graph_returns_empty() -> None:
@@ -185,6 +260,14 @@ def test_closeness_wf_improved_parameter() -> None:
     expect_true(len(result_improved) == len(result_basic))
 
 
+def test_closeness_disconnected_graph_returns_all_nodes() -> None:
+    """Disconnected graph returns closeness for each node."""
+    graph = disconnected_graph()
+    result = compute_closeness(graph)
+
+    expect_true(len(result) == EXPECTED_NODE_COUNT_SIX)
+
+
 def test_degree_centrality_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
@@ -201,6 +284,14 @@ def test_in_degree_centrality() -> None:
     expect_true(result[0] > result[1])
 
 
+def test_in_degree_centrality_empty_graph() -> None:
+    """Empty graph returns empty in-degree centrality."""
+    graph = nx.DiGraph()
+    result = compute_in_degree_centrality(graph)
+
+    expect_true(result == {})
+
+
 def test_out_degree_centrality() -> None:
     """Out-degree centrality computation."""
     graph = nx.DiGraph([(0, 1), (0, 2), (0, 3)])
@@ -210,11 +301,32 @@ def test_out_degree_centrality() -> None:
     expect_true(result[0] > result[1])
 
 
+def test_out_degree_centrality_empty_graph() -> None:
+    """Empty graph returns empty out-degree centrality."""
+    graph = nx.DiGraph()
+    result = compute_out_degree_centrality(graph)
+
+    expect_true(result == {})
+
+
 def test_all_centralities_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = nx.DiGraph()
     result = compute_all_centralities(graph)
     expect_true(result == {})
+
+
+def test_all_centralities_single_node_returns_zero_degrees() -> None:
+    """Single node graph returns zero degrees."""
+    graph = nx.DiGraph()
+    graph.add_node("solo")
+    result = compute_all_centralities(graph)
+
+    expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
+    metrics = result["solo"]
+    expect_true(metrics.in_degree == 0)
+    expect_true(metrics.out_degree == 0)
+    expect_true(metrics.degree == 0)
 
 
 def test_all_centralities_returns_dataclass() -> None:
@@ -300,6 +412,15 @@ def test_scc_disconnected_nodes_are_separate() -> None:
     expect_true(len(result.components) >= EXPECTED_MIN_COMPONENTS)
 
 
+def test_scc_dag_nodes_are_singletons() -> None:
+    """DAG nodes are individual SCCs."""
+    graph = chain_graph()
+    result = find_strongly_connected(graph)
+
+    expect_true(len(result.components) == graph.number_of_nodes())
+    expect_true(all(comp.size == 1 for comp in result.components))
+
+
 def test_scc_node_to_component_mapping() -> None:
     """Node to component mapping is correct."""
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
@@ -318,6 +439,36 @@ def test_scc_condensation_graph_computed() -> None:
 
     expect_true(result.condensation is not None)
     expect_true(isinstance(result.condensation, nx.DiGraph))
+
+
+def test_scc_two_components_sizes() -> None:
+    """Two SCC graph returns expected component sizes."""
+    graph = two_sccs_graph()
+    result = find_strongly_connected(graph)
+
+    sizes = sorted(comp.size for comp in result.components)
+    expect_true(len(sizes) == EXPECTED_MIN_COMPONENTS)
+    expect_equal(sizes[0], EXPECTED_NODE_COUNT_TWO)
+    expect_equal(sizes[1], EXPECTED_NODE_COUNT_TWO)
+
+
+def test_scc_complex_component_mix() -> None:
+    """Complex SCC graph finds all component sizes."""
+    graph = complex_sccs_graph()
+    result = find_strongly_connected(graph)
+
+    sizes = sorted(comp.size for comp in result.components)
+    expect_equal(sizes, [1, 2, 3])
+
+
+def test_scc_single_node_component() -> None:
+    """Single node graph returns one SCC."""
+    graph = nx.DiGraph()
+    graph.add_node("solo")
+    result = find_strongly_connected(graph)
+
+    expect_true(len(result.components) == EXPECTED_SINGLE_COMPONENT)
+    expect_true(result.components[0].size == EXPECTED_SINGLE_COMPONENT)
 
 
 def test_wcc_empty_graph_returns_empty() -> None:
@@ -525,6 +676,17 @@ def test_condensation_layers_with_condensation() -> None:
     expect_true(len(result) == graph.number_of_nodes())
 
 
+def test_condensation_layers_respects_component_order() -> None:
+    """Condensation layers order SCCs topologically."""
+    graph = two_sccs_graph()
+    scc_result = find_strongly_connected(graph, compute_condensation=True)
+    layers = condensation_layers(graph, scc_result)
+
+    expect_equal(layers["A"], layers["B"])
+    expect_equal(layers["C"], layers["D"])
+    expect_true(layers["C"] > layers["A"])
+
+
 # ===========================================================================
 # COUPLING TESTS
 # ===========================================================================
@@ -581,6 +743,59 @@ def test_coupling_source_node_full_instability() -> None:
     expect_true(result[1].instability == INSTABILITY_FULL)
 
 
+def test_coupling_independent_modules_zero_coupling() -> None:
+    """Independent modules have zero afferent/efferent."""
+    graph = independent_modules_graph()
+    result = compute_coupling(graph)
+
+    expect_true(all(metrics.afferent == 0 for metrics in result.values()))
+    expect_true(all(metrics.efferent == 0 for metrics in result.values()))
+    expect_true(all(metrics.instability == INSTABILITY_ZERO for metrics in result.values()))
+
+
+def test_coupling_linear_dependencies_match_directions() -> None:
+    """Linear dependency chain yields graded instability."""
+    graph = linear_dependency_graph()
+    result = compute_coupling(graph)
+
+    expect_equal(result["module_a"].instability, INSTABILITY_FULL)
+    expect_true(abs(result["module_b"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
+    expect_equal(result["module_c"].instability, INSTABILITY_ZERO)
+
+
+def test_coupling_hub_dependencies_concentrate_afferent() -> None:
+    """Hub dependencies concentrate afferent coupling on core."""
+    graph = hub_dependencies_graph()
+    result = compute_coupling(graph)
+
+    expect_equal(result["core"].afferent, HUB_DEPENDENT_COUNT)
+    expect_equal(result["core"].instability, INSTABILITY_ZERO)
+    expect_equal(result["module_a"].efferent, EXPECTED_SINGLE_COMPONENT)
+    expect_equal(result["module_b"].efferent, EXPECTED_SINGLE_COMPONENT)
+
+
+def test_coupling_god_module_concentrates_efferent() -> None:
+    """God module pushes instability outward."""
+    graph = god_module_graph()
+    result = compute_coupling(graph)
+
+    expect_equal(result["god"].efferent, HUB_DEPENDENT_COUNT)
+    expect_equal(result["god"].afferent, 0)
+    expect_equal(result["god"].instability, INSTABILITY_FULL)
+    expect_equal(result["module_a"].instability, INSTABILITY_ZERO)
+
+
+def test_coupling_bidirectional_pair_balances_instability() -> None:
+    """Bidirectional dependencies share balanced instability."""
+    graph = bidirectional_deps_graph()
+    result = compute_coupling(graph)
+
+    expect_equal(result["module_a"].afferent, EXPECTED_SINGLE_COMPONENT)
+    expect_equal(result["module_a"].efferent, EXPECTED_SINGLE_COMPONENT)
+    expect_true(abs(result["module_a"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
+    expect_true(abs(result["module_b"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
+
+
 def test_abstractness_zero_total_returns_zero() -> None:
     """Zero total classes returns zero abstractness."""
     result = compute_abstractness("module", abstract_count=0, total_count=0)
@@ -614,6 +829,25 @@ def test_distance_main_sequence_off_main_returns_distance() -> None:
 
     # abs(0.5 + 1.0 - 1.0) = 0.5
     expect_true(result == INSTABILITY_HALF)
+
+
+@pytest.mark.parametrize(
+    ("coupling", "abstractness", "expected"),
+    [
+        (CouplingMetrics(afferent=5, efferent=0, instability=INSTABILITY_ZERO), 1.0, 0.0),
+        (CouplingMetrics(afferent=0, efferent=5, instability=INSTABILITY_FULL), 0.0, 0.0),
+        (CouplingMetrics(afferent=5, efferent=0, instability=INSTABILITY_ZERO), 0.0, 1.0),
+        (CouplingMetrics(afferent=0, efferent=5, instability=INSTABILITY_FULL), 1.0, 1.0),
+        (CouplingMetrics(afferent=3, efferent=3, instability=INSTABILITY_HALF), 0.5, 0.0),
+    ],
+)
+def test_distance_main_sequence_key_scenarios(
+    coupling: CouplingMetrics, abstractness: float, expected: float
+) -> None:
+    """Distance from main sequence handles canonical stability quadrants."""
+    result = compute_distance_from_main_sequence(coupling, abstractness=abstractness)
+
+    expect_true(abs(result - expected) < PAGERANK_TOLERANCE)
 
 
 def test_louvain_empty_graph_returns_empty() -> None:
@@ -786,6 +1020,73 @@ def test_coupling_to_rows_converts_metrics() -> None:
     expect_true(row["afferent_coupling"] == AFFERENT_THREE)
     expect_true(row["efferent_coupling"] == EFFERENT_TWO)
     expect_true(row["instability"] == INSTABILITY_POINT_FOUR)
+
+
+# ===========================================================================
+# STRUCTURAL METRIC TESTS
+# ===========================================================================
+
+
+def test_structural_clustering_handles_directed_graphs() -> None:
+    """Structural clustering converts directed graphs."""
+    graph = complete_digraph(EXPECTED_NODE_COUNT_FOUR)
+    result = compute_structural_clustering(graph)
+
+    expect_true(len(result) == EXPECTED_NODE_COUNT_FOUR)
+
+
+def test_structural_triangles_complete_graph_counts() -> None:
+    """Complete graphs have predictable triangle counts."""
+    graph = complete_graph(EXPECTED_NODE_COUNT_FOUR)
+    result = compute_triangles(graph)
+
+    expect_true(all(count == TRIANGLES_PER_NODE_K4 for count in result.values()))
+
+
+def test_structural_core_number_chain_graph() -> None:
+    """Chain graph yields core number of 1 for all nodes."""
+    graph = chain_graph().to_undirected()
+    result = compute_core_number(graph)
+
+    expect_true(all(core == EXPECTED_SINGLE_COMPONENT for core in result.values()))
+
+
+def test_structural_constraint_single_node_zero() -> None:
+    """Constraint for isolated node is zero."""
+    graph = nx.Graph()
+    graph.add_node("solo")
+    result = compute_constraint(graph)
+
+    expect_true(result["solo"] == INSTABILITY_ZERO)
+
+
+def test_structural_effective_size_star_hub_larger_than_spokes() -> None:
+    """Effective size favors hub in a star graph."""
+    graph = star_graph(4).to_undirected()
+    result = compute_effective_size(graph)
+
+    expect_true(result["hub"] > result["spoke1"])
+
+
+def test_all_structural_complete_graph_metrics() -> None:
+    """All structural metrics are populated for complete graph."""
+    graph = complete_graph(EXPECTED_NODE_COUNT_FOUR)
+    result = compute_all_structural(graph)
+
+    expect_true(len(result) == EXPECTED_NODE_COUNT_FOUR)
+    for metrics in result.values():
+        expect_true(isinstance(metrics, StructuralMetrics))
+        expect_true(abs(metrics.clustering - INSTABILITY_FULL) < PAGERANK_TOLERANCE)
+        expect_true(metrics.triangles == TRIANGLES_PER_NODE_K4)
+        expect_true(metrics.core_number == CORE_NUMBER_K4)
+
+
+def test_all_structural_empty_graph_returns_empty() -> None:
+    """Empty graph returns empty structural metrics."""
+    graph = nx.Graph()
+    result = compute_all_structural(graph)
+
+    expect_true(result == {})
 
 
 # ===========================================================================

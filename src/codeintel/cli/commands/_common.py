@@ -271,8 +271,8 @@ def get_output_format(
     )
 
 
-# command_context is imported from codeintel.cli.command_context
-# and re-exported here for backwards compatibility and convenience
+# command_context is imported from codeintel.cli.commands.context
+# and re-exported here for convenience
 
 
 __all__ = [

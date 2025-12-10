@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -16,16 +15,12 @@ from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.factories.row_factories import sample_pytest_summary, sample_pytest_tests
 from tests._helpers.fakes.contexts import TargetResourceOverrides
-from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
-    seed_modules_and_repo_map,
     write_pytest_report,
 )
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
 
 EXPECTED_TEST_ROWS = 4
 TRUNCATED_LONGREPR_LENGTH = 1000
@@ -34,47 +29,16 @@ EXPECTED_UNICODE_NODEID = SAMPLE_TESTS[1]["nodeid"]
 SAMPLE_SUMMARY = sample_pytest_summary()
 
 
-def test_get_module_paths_uses_resources(tmp_path: Path) -> None:
-    """resources.modules should be returned directly."""
-    plugin = TestsIngestPlugin()
-    overrides = TargetResourceOverrides(modules=("pkg/mod.py",))
-    ctx = build_target_context_for_plugin(
-        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
-    )
-    ctx.gateway.con.execute("DELETE FROM core.modules")
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/mod.py"])
-
-
-def test_get_module_paths_reads_database(tmp_path: Path) -> None:
-    """Database rows are used when resources are empty."""
-    plugin = TestsIngestPlugin()
-    ctx = build_target_context_for_plugin(plugin, tmp_path)
-    seed_modules_and_repo_map(ctx, ["pkg/mod.py"])
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/mod.py"])
-
-
-def test_get_module_paths_handles_gateway_error(tmp_path: Path) -> None:
-    """Gateway failures should return an empty list."""
-    plugin = TestsIngestPlugin()
-    failing_gateway = FailingGateway("db down")
-    ctx = build_target_context_for_plugin(
-        plugin,
+@pytest.mark.parametrize("scenario", ["resources", "db_fallback", "gateway_failure"])
+def test_module_path_resolution_scenarios(tmp_path: Path, scenario: str) -> None:
+    """Shared module path resolution coverage for TestsIngestPlugin."""
+    run_module_path_resolution_scenarios(
+        lambda _capture: TestsIngestPlugin(),
+        get_module_paths,
         tmp_path,
-        config=TargetContextConfig(
-            gateway=cast("StorageGateway", failing_gateway),
-            resources=TargetResourceOverrides(modules=()),
-        ),
+        resources_path="pkg/mod.py",
+        scenario=scenario,
     )
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, [])
 
 
 def test_resolve_report_file_prefers_build_dir(tmp_path: Path) -> None:

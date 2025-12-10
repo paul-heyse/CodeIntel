@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
@@ -17,6 +17,8 @@ from tests._helpers.assertions import expect_equal, expect_in, expect_is_instanc
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+
+HttpAppFactory = Callable[..., FastAPI]
 
 
 # =============================================================================
@@ -47,7 +49,7 @@ def test_build_meta_router_returns_router() -> None:
 
 def test_meta_datasets_returns_list(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/datasets returns a list of dataset metadata.
 
@@ -55,6 +57,8 @@ def test_meta_datasets_returns_list(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -79,7 +83,7 @@ def test_meta_datasets_returns_list(
 
 def test_meta_datasets_includes_limit_info(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/datasets includes limit configuration.
 
@@ -87,6 +91,8 @@ def test_meta_datasets_includes_limit_info(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     default_limit = 25
     max_rows = 250
@@ -119,7 +125,7 @@ def test_meta_datasets_includes_limit_info(
 
 def test_meta_operations_returns_list(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/operations returns a list of operation metadata.
 
@@ -127,6 +133,8 @@ def test_meta_operations_returns_list(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -151,7 +159,7 @@ def test_meta_operations_returns_list(
 
 def test_meta_operations_includes_http_details(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/operations includes HTTP method and path.
 
@@ -159,6 +167,8 @@ def test_meta_operations_includes_http_details(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -187,7 +197,7 @@ def test_meta_operations_includes_http_details(
 
 def test_meta_dataflow_returns_graph(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/dataflow returns nodes and edges.
 
@@ -195,6 +205,8 @@ def test_meta_dataflow_returns_graph(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -216,7 +228,7 @@ def test_meta_dataflow_returns_graph(
 
 def test_meta_dataflow_nodes_have_expected_fields(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/dataflow nodes have required fields.
 
@@ -224,6 +236,8 @@ def test_meta_dataflow_nodes_have_expected_fields(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -251,7 +265,7 @@ def test_meta_dataflow_nodes_have_expected_fields(
 
 def test_meta_debug_prereqs_unknown_operation(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns 404 for unknown operation.
 
@@ -259,6 +273,8 @@ def test_meta_debug_prereqs_unknown_operation(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
@@ -275,7 +291,7 @@ def test_meta_debug_prereqs_unknown_operation(
 
 def test_meta_debug_prereqs_valid_operation(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns debug info for valid operation.
 
@@ -283,6 +299,8 @@ def test_meta_debug_prereqs_valid_operation(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(

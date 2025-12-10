@@ -15,6 +15,7 @@ from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    module_records_for_paths,
     seed_modules_and_repo_map,
 )
 
@@ -26,7 +27,13 @@ async def run_sync_plugin_wiring_scenario(
     *,
     table_key: str,
 ) -> None:
-    """Execute a standard wiring scenario for a synchronous ingest plugin."""
+    """Execute a standard wiring scenario for a synchronous ingest plugin.
+
+    Raises
+    ------
+    ValueError
+        If an unknown scenario is provided.
+    """
     repo_root = build_repo_tree(
         tmp_path / "repo",
         {"pkg/mod.py": "x = 1\n"},
@@ -108,4 +115,84 @@ async def run_sync_plugin_wiring_scenario(
         expect_equal(capture.repo_root, repo_root)
         return
 
-    raise ValueError(f"Unknown scenario '{scenario}'")
+    message = f"Unknown scenario '{scenario}'"
+    raise ValueError(message)
+
+
+def run_module_path_resolution_scenarios(
+    plugin_factory: Callable[[StepCallCapture], TargetPlugin],
+    get_module_paths: Callable[[object], list[str]],
+    tmp_path: Path,
+    *,
+    resources_path: str,
+    scenario: str | None = None,
+) -> None:
+    """Exercise module path resolution across resources, DB, and gateway failure.
+
+    Raises
+    ------
+    ValueError
+        If an unknown scenario is provided.
+    """
+    capture = StepCallCapture()
+    plugin = plugin_factory(capture)
+
+    scenarios = {
+        "resources": lambda: _assert_resources_path(
+            plugin, get_module_paths, tmp_path, resources_path
+        ),
+        "db_fallback": lambda: _assert_db_path(plugin, get_module_paths, tmp_path, resources_path),
+        "gateway_failure": lambda: _assert_gateway_failure(plugin, get_module_paths, tmp_path),
+    }
+    if scenario is not None:
+        run = scenarios.get(scenario)
+        if run is None:
+            message = f"Unknown scenario '{scenario}'"
+            raise ValueError(message)
+        run()
+        return
+
+    for run in scenarios.values():
+        run()
+
+
+def _assert_resources_path(
+    plugin: TargetPlugin,
+    get_module_paths: Callable[[object], list[str]],
+    tmp_path: Path,
+    resources_path: str,
+) -> None:
+    overrides = TargetResourceOverrides(modules=(resources_path,))
+    ctx = build_target_context_for_plugin(
+        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
+    )
+    expect_equal(get_module_paths(ctx), [resources_path])
+
+
+def _assert_db_path(
+    plugin: TargetPlugin,
+    get_module_paths: Callable[[object], list[str]],
+    tmp_path: Path,
+    resources_path: str,
+) -> None:
+    ctx_db = build_target_context_for_plugin(plugin, tmp_path)
+    records = module_records_for_paths([resources_path], ctx_db.repo_root)
+    seed_modules_and_repo_map(ctx_db, [record.rel_path for record in records])
+    expect_equal(get_module_paths(ctx_db), [resources_path])
+
+
+def _assert_gateway_failure(
+    plugin: TargetPlugin,
+    get_module_paths: Callable[[object], list[str]],
+    tmp_path: Path,
+) -> None:
+    failing_gateway = FailingGateway("db down")
+    ctx_fail = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(
+            gateway=failing_gateway,
+            resources=TargetResourceOverrides(modules=()),
+        ),
+    )
+    expect_equal(get_module_paths(ctx_fail), [])

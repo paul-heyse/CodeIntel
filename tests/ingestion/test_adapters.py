@@ -33,6 +33,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
+from tests._helpers.ingestion import write_pytest_report
 
 # Test constants
 ROWS_WRITTEN_100 = 100
@@ -634,13 +635,11 @@ def test_tool_runner_adapter_run_pytest_with_report(
     """ToolRunnerAdapter.run_pytest should parse existing report."""
     json_path = tmp_path / "report.json"
 
-    # Create a valid report
-    json_path.write_text(
-        (
-            '{"tests": [{"nodeid": "test::a", "outcome": "passed", "duration": 0.1}], '
-            '"summary": {"passed": 1}}'
-        ),
-        encoding="utf-8",
+    write_pytest_report(
+        tmp_path,
+        tests=[{"nodeid": "test::a", "outcome": "passed", "call": {"duration": 0.1}}],
+        summary={"passed": 1},
+        filename="report.json",
     )
 
     result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))

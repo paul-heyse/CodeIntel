@@ -2,33 +2,23 @@
 
 from __future__ import annotations
 
-import pytest
-
 from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
 from codeintel.serving.backend.subsystem_backend import SubsystemQueryLayer
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_true
+from tests._helpers.backend_components import build_backend_components
 
 
 def _expect(*, condition: bool, message: str) -> None:
-    """Fail the test when a condition is not met."""
-    if not condition:
-        pytest.fail(message)
+    """Delegate to shared assertion helper."""
+    expect_true(condition, message=message)
 
 
 def _build_components(
     gateway: StorageGateway, limits: BackendLimits | None = None
 ) -> tuple[BackendContext, DuckDBRepositories]:
-    repo = gateway.config.repo or "demo/repo"
-    commit = gateway.config.commit or "deadbeef"
-    context = BackendContext(
-        gateway=gateway,
-        repo=repo,
-        commit=commit,
-        limits=limits or BackendLimits(),
-        graph_engine=None,
-    )
-    repositories = DuckDBRepositories(gateway, context.repo, context.commit)
-    return context, repositories
+    components = build_backend_components(gateway, limits=limits)
+    return components.context, components.repositories
 
 
 def test_list_subsystems_respects_backend_limits(
