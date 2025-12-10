@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext, ParameterError
+from codeintel.cli.handlers.context import ParameterError
 from codeintel.cli.handlers.subsystem import (
     SubsystemCoverageResult,
     SubsystemListResult,
@@ -22,9 +20,6 @@ from codeintel.cli.handlers.subsystem import (
     subsystem_profiles_handler,
     subsystem_show_handler,
 )
-from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
     ModuleWithSubsystemRow,
     ResponseMeta,
@@ -36,20 +31,24 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
     SubsystemSummaryRow,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.serving_contexts import ProvisionedServiceContext
+from tests.cli.handlers.conftest import HandlerContextBuilder
 
 HTTP_NOT_FOUND = 404
 TEST_REPO = "test/repo"
 TEST_COMMIT = "abc123"
 
 
-def test_subsystem_list_handler_returns_ok_with_subsystems() -> None:
+def test_subsystem_list_handler_returns_ok_with_subsystems(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result with subsystem list."""
     mock_response = SubsystemSummaryResponse(
         subsystems=[
@@ -65,12 +64,21 @@ def test_subsystem_list_handler_returns_ok_with_subsystems() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.list_subsystems.return_value = mock_response
-        ctx = _build_test_context(params={})
-
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend,
+            "list_subsystems",
+            return_value=mock_response,
+        ) as list_subsystems,
+    ):
+        ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
         result = subsystem_list_handler(ctx)
 
+    list_subsystems.assert_called_once_with(limit=0, role=None, q=None)
     expect_true(result.success)
     expect_is_not_none(result.data)
     expect_is_instance(result.data, SubsystemListResult)
@@ -79,23 +87,42 @@ def test_subsystem_list_handler_returns_ok_with_subsystems() -> None:
         expect_equal(result.data.subsystems[0]["subsystem_id"], "core")
 
 
-def test_subsystem_list_handler_passes_filter_params() -> None:
+def test_subsystem_list_handler_passes_filter_params(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler passes role, query, and limit params to backend."""
     mock_response = SubsystemSummaryResponse(
         subsystems=[],
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.list_subsystems.return_value = mock_response
-        ctx = _build_test_context(params={"role": "model", "query": "search", "limit": 10})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend,
+            "list_subsystems",
+            return_value=mock_response,
+        ) as list_subsystems,
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {"role": "model", "query": "search", "limit": 10},
+        )
 
         subsystem_list_handler(ctx)
 
-    mock_backend.list_subsystems.assert_called_once_with(limit=10, role="model", q="search")
+    list_subsystems.assert_called_once_with(limit=10, role="model", q="search")
 
 
-def test_subsystem_show_handler_returns_ok_when_found() -> None:
+def test_subsystem_show_handler_returns_ok_when_found(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result when subsystem is found."""
     mock_response = SubsystemModulesResponse(
         found=True,
@@ -126,9 +153,22 @@ def test_subsystem_show_handler_returns_ok_when_found() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.get_subsystem_modules.return_value = mock_response
-        ctx = _build_test_context(params={"subsystem_id": "core"})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend,
+            "get_subsystem_modules",
+            return_value=mock_response,
+        ),
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {"subsystem_id": "core"},
+        )
 
         result = subsystem_show_handler(ctx)
 
@@ -140,7 +180,10 @@ def test_subsystem_show_handler_returns_ok_when_found() -> None:
         expect_equal(len(result.data.modules), 2)
 
 
-def test_subsystem_show_handler_returns_fail_when_not_found() -> None:
+def test_subsystem_show_handler_returns_fail_when_not_found(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns failure result when subsystem not found."""
     mock_response = SubsystemModulesResponse(
         found=False,
@@ -149,9 +192,22 @@ def test_subsystem_show_handler_returns_fail_when_not_found() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.get_subsystem_modules.return_value = mock_response
-        ctx = _build_test_context(params={"subsystem_id": "nonexistent"})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend,
+            "get_subsystem_modules",
+            return_value=mock_response,
+        ),
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {"subsystem_id": "nonexistent"},
+        )
 
         result = subsystem_show_handler(ctx)
 
@@ -164,18 +220,21 @@ def test_subsystem_show_handler_returns_fail_when_not_found() -> None:
             expect_true("nonexistent" in result.error.detail)
 
 
-def test_subsystem_show_handler_raises_when_id_missing() -> None:
+def test_subsystem_show_handler_raises_when_id_missing(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler raises ParameterError when subsystem_id is missing."""
-    from codeintel.cli.handlers.context import ParameterError
+    ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
 
-    with _mock_duckdb_backend():
-        ctx = _build_test_context(params={})
-
-        with pytest.raises(ParameterError, match="Required parameter 'subsystem_id' not provided"):
-            subsystem_show_handler(ctx)
+    with pytest.raises(ParameterError, match="Required parameter 'subsystem_id' not provided"):
+        subsystem_show_handler(ctx)
 
 
-def test_subsystem_profiles_handler_returns_ok() -> None:
+def test_subsystem_profiles_handler_returns_ok(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result with profile list."""
     mock_response = SubsystemProfileResponse(
         profiles=[
@@ -190,9 +249,22 @@ def test_subsystem_profiles_handler_returns_ok() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.service.list_subsystem_profiles.return_value = mock_response
-        ctx = _build_test_context(params={"limit": 5})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend.service,
+            "list_subsystem_profiles",
+            return_value=mock_response,
+        ),
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {"limit": 5},
+        )
 
         result = subsystem_profiles_handler(ctx)
 
@@ -203,7 +275,10 @@ def test_subsystem_profiles_handler_returns_ok() -> None:
         expect_equal(len(result.data.profiles), 1)
 
 
-def test_subsystem_coverage_handler_returns_ok() -> None:
+def test_subsystem_coverage_handler_returns_ok(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result with coverage data."""
     mock_response = SubsystemCoverageResponse(
         coverage=[
@@ -217,9 +292,22 @@ def test_subsystem_coverage_handler_returns_ok() -> None:
         meta=ResponseMeta(),
     )
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.service.list_subsystem_coverage.return_value = mock_response
-        ctx = _build_test_context(params={})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend.service,
+            "list_subsystem_coverage",
+            return_value=mock_response,
+        ),
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {},
+        )
 
         result = subsystem_coverage_handler(ctx)
 
@@ -230,7 +318,10 @@ def test_subsystem_coverage_handler_returns_ok() -> None:
         expect_equal(len(result.data.coverage), 1)
 
 
-def test_subsystem_memberships_handler_returns_ok() -> None:
+def test_subsystem_memberships_handler_returns_ok(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler returns success result with membership data."""
     mock_response = MagicMock()
     mock_response.found = True
@@ -245,9 +336,22 @@ def test_subsystem_memberships_handler_returns_ok() -> None:
     ]
     mock_response.meta = MagicMock(model_dump=lambda: {"total_count": 1})
 
-    with _mock_duckdb_backend() as mock_backend:
-        mock_backend.get_module_subsystems.return_value = mock_response
-        ctx = _build_test_context(params={"module": "pkg.mod"})
+    with (
+        patch(
+            "codeintel.cli.handlers.subsystem.build_backend_resource",
+            return_value=SimpleNamespace(backend=architecture_service_context.backend),
+        ),
+        patch.object(
+            architecture_service_context.backend,
+            "get_module_subsystems",
+            return_value=mock_response,
+        ),
+    ):
+        ctx = handler_context_builder(
+            architecture_service_context,
+            "subsystem.test",
+            {"module": "pkg.mod"},
+        )
 
         result = subsystem_module_memberships_handler(ctx)
 
@@ -259,13 +363,15 @@ def test_subsystem_memberships_handler_returns_ok() -> None:
         expect_equal(len(result.data.memberships), 1)
 
 
-def test_subsystem_memberships_handler_raises_when_module_missing() -> None:
+def test_subsystem_memberships_handler_raises_when_module_missing(
+    architecture_service_context: ProvisionedServiceContext,
+    handler_context_builder: HandlerContextBuilder,
+) -> None:
     """Handler raises ParameterError when module is missing."""
-    with _mock_duckdb_backend():
-        ctx = _build_test_context(params={})
+    ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
 
-        with pytest.raises(ParameterError, match="Required parameter 'module' not provided"):
-            subsystem_module_memberships_handler(ctx)
+    with pytest.raises(ParameterError, match="Required parameter 'module' not provided"):
+        subsystem_module_memberships_handler(ctx)
 
 
 def test_subsystem_list_result_to_dict() -> None:
@@ -330,57 +436,3 @@ def test_subsystem_membership_result_to_dict() -> None:
     expect_true(data["found"])
     expect_equal(data["memberships"], [{"module": "pkg.mod", "subsystem_id": "core"}])
     expect_equal(data["meta"], {"total_count": 1})
-
-
-@contextmanager
-def _mock_duckdb_backend() -> Iterator[MagicMock]:
-    """Create context manager that mocks DuckDB backend.
-
-    Yields
-    ------
-    MagicMock
-        Mock DuckDB backend.
-    """
-    mock_backend = MagicMock(spec=DuckDBBackend)
-    mock_backend.service = MagicMock()
-
-    mock_resource = MagicMock()
-    mock_resource.backend = mock_backend
-
-    with patch(
-        "codeintel.cli.handlers.subsystem.build_backend_resource",
-        return_value=mock_resource,
-    ):
-        yield mock_backend
-
-
-def _build_test_context(
-    params: dict[str, object],
-) -> HandlerContext:
-    """Build a test context with mocked dependencies.
-
-    Parameters
-    ----------
-    params
-        Handler parameters.
-
-    Returns
-    -------
-    HandlerContext
-        Test context.
-    """
-    mock_serving = MagicMock(spec=ServingConfig)
-    mock_runtime = MagicMock(spec=ResolvedRuntime)
-    mock_runtime.serving = mock_serving
-    mock_config = MagicMock(spec=CliConfig)
-    mock_gateway = MagicMock(spec=StorageGateway)
-    mock_graph_runtime = MagicMock()
-
-    return HandlerContext(
-        config=mock_config,
-        operation_id="subsystem.test",
-        _params=params,
-        _runtime=mock_runtime,
-        _gateway=mock_gateway,
-        _graph_runtime=mock_graph_runtime,
-    )

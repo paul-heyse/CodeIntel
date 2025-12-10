@@ -3,13 +3,11 @@
 This module provides bootstrap_cli(), the idempotent initialization function
 that all CLI entry points should call. It consolidates:
 
-- Logging configuration (from handlers/base.py)
+- Logging configuration
 - Signal handler registration
 - Configuration loading
 
 Call bootstrap_cli() once at CLI startup. Subsequent calls are no-ops.
-
-WARNING: This module is part of the CLI migration (Phase 1).
 """
 
 from __future__ import annotations

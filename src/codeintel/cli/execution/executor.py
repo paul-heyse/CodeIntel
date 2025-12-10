@@ -44,11 +44,9 @@ from codeintel.cli.rendering.types import OutputFormat
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from codeintel.cli.execution.resilience import ResilienceConfig
+    from codeintel.cli.execution.retry import RetryPolicy
     from codeintel.cli.introspection.validation import ValidationSchema
-    from codeintel.cli.resilience import (
-        ResilienceConfig,
-        RetryPolicy,
-    )
 
 
 _RESILIENCE_MODULE: types.ModuleType | None = None
@@ -64,7 +62,7 @@ def _get_resilience_module() -> types.ModuleType:
     """
     global _RESILIENCE_MODULE  # noqa: PLW0603
     if _RESILIENCE_MODULE is None:
-        _RESILIENCE_MODULE = importlib.import_module("codeintel.cli.resilience")
+        _RESILIENCE_MODULE = importlib.import_module("codeintel.cli.execution.resilience")
     return _RESILIENCE_MODULE
 
 

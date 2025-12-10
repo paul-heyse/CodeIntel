@@ -26,8 +26,6 @@ from tests.serving.mcp.conftest import McpBackendComponents
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 
-pytest_plugins = ["tests.serving.mcp.conftest"]
-
 
 @pytest.fixture
 def make_http_app(

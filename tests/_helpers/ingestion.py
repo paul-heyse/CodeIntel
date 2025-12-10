@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +66,7 @@ __all__ = [
     "build_scip_ingest_context",
     "build_scip_repo_fixture",
     "build_target_context_for_plugin",
+    "closing_gateway",
     "create_scan_and_docstring_steps",
     "create_scan_step",
     "make_resource_case_params",
@@ -670,6 +672,21 @@ def module_inventory_context(
         storage=storage,
         discovery=discovery,
     )
+
+
+@contextmanager
+def closing_gateway(gateway: StorageGateway) -> Generator[StorageGateway]:
+    """Ensure storage gateways are closed after use.
+
+    Yields
+    ------
+    StorageGateway
+        The provided gateway, guaranteed to be closed on exit.
+    """
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 def seed_modules_and_repo_map(

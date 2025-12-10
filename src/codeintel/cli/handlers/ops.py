@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import uvicorn
 
@@ -22,6 +22,7 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
 )
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers._utilities import resolved_to_project_runtime
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import ProjectRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
@@ -30,11 +31,7 @@ from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
-from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.validation import collect_contract_issues
-
-if TYPE_CHECKING:
-    from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
 
@@ -96,32 +93,6 @@ def _parse_param_value(value: str) -> str | int | float | bool:
     except ValueError:
         pass
     return value
-
-
-def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
-    """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
-
-    Parameters
-    ----------
-    runtime
-        ResolvedRuntime from handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Compatible ProjectRuntime instance.
-    """
-    gateway = open_gateway(StorageConfig.for_readonly(runtime.paths.db_path))
-    return ProjectRuntime(
-        root=runtime.root,
-        project=runtime.project,
-        cfg=runtime.config,
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        gateway=gateway,
-        tools=runtime.config.tools,
-        serving=runtime.serving,
-    )
 
 
 def _setup_serving_env(runtime: ProjectRuntime, *, auto_pipeline: bool) -> None:
@@ -237,7 +208,7 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
         key, value = param_str.split("=", 1)
         kwargs[key] = _parse_param_value(value)
 
-    project_runtime = _resolved_to_project_runtime(ctx.runtime)
+    project_runtime = resolved_to_project_runtime(ctx.runtime)
 
     if not skip_prereqs:
         run_operation_prereqs(
@@ -401,7 +372,7 @@ def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
     CliResult[DatasetListResult]
         List of datasets.
     """
-    project_runtime = _resolved_to_project_runtime(ctx.runtime)
+    project_runtime = resolved_to_project_runtime(ctx.runtime)
     registry = project_runtime.gateway.datasets
     meta = registry.meta or {}
 
@@ -455,7 +426,7 @@ def dataset_verify_handler(
         Verification result.
     """
     table_key = ctx.param_str("table_key")
-    project_runtime = _resolved_to_project_runtime(ctx.runtime)
+    project_runtime = resolved_to_project_runtime(ctx.runtime)
 
     issues = collect_contract_issues(project_runtime.gateway.con)
 
@@ -491,7 +462,7 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
     reload = ctx.param_bool("reload", default=False)
 
-    project_runtime = _resolved_to_project_runtime(ctx.runtime)
+    project_runtime = resolved_to_project_runtime(ctx.runtime)
 
     _setup_serving_env(project_runtime, auto_pipeline=auto_pipeline)
 
@@ -545,7 +516,7 @@ def serve_mcp_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     """
     auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
 
-    project_runtime = _resolved_to_project_runtime(ctx.runtime)
+    project_runtime = resolved_to_project_runtime(ctx.runtime)
 
     _setup_serving_env(project_runtime, auto_pipeline=auto_pipeline)
 

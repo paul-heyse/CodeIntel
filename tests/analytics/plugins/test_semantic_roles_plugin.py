@@ -14,6 +14,7 @@ from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.harnesses import plugin_harness_with_packs
+from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.seeds import CORE_PACK
 
@@ -36,37 +37,33 @@ def _seed_test_module(repo_root: Path) -> None:
     )
 
 
-def _make_catalog(repo: str, commit: str) -> FunctionCatalogService:
-    """Construct a catalog aligned with the seeded test module.
-
-    Returns
-    -------
-    FunctionCatalogService
-        Catalog provider for the test function.
-    """
-    functions = [
-        function_meta(
-            goid=7101,
-            rel_path="tests/test_sample.py",
-            qualname="test_example",
-            snapshot=(repo, commit),
-            line_span=(1, 2),
-        )
-    ]
-    catalog = FunctionCatalog(
-        functions=functions,
-        module_by_path={"tests/test_sample.py": "tests.test_sample"},
+def _catalog_with_tests(ctx) -> FunctionCatalogService:
+    """Construct a catalog using canonical AST artifacts plus a test function."""
+    artifacts = canonical_ast_artifacts(ctx)
+    test_function = function_meta(
+        goid=7101,
+        rel_path="tests/test_sample.py",
+        qualname="test_example",
+        snapshot=(ctx.repo, ctx.commit),
+        line_span=(1, 2),
     )
+    module_by_path = dict(artifacts.catalog.module_by_path)
+    module_by_path["tests/test_sample.py"] = "tests.test_sample"
+    catalog = FunctionCatalog(functions=[test_function], module_by_path=module_by_path)
     return FunctionCatalogService(catalog)
 
 
-def _insert_function_metrics(ctx, created_at: datetime) -> None:
+def _apply_catalog(ctx, catalog_provider: FunctionCatalogService) -> None:
+    """Ensure GOIDs are seeded for the provided catalog."""
+    ensure_catalog_with_goids(ctx, catalog_provider)
+
+def _insert_function_metrics(ctx, created_at: datetime, goid: int) -> None:
     """Insert minimal function metrics for the test function."""
     insert_rows(
         ctx.gateway,
         [
             function_metrics_row(
-                goid=7101,
+                goid=goid,
                 rel_path="tests/test_sample.py",
                 qualname="test_example",
                 snapshot=(ctx.repo, ctx.commit),
@@ -94,11 +91,11 @@ def test_semantic_roles_plugin_classifies_tests(tmp_path: Path) -> None:
     """SemanticRolesPlugin should classify test functions by path/name heuristics."""
     with plugin_harness_with_packs(tmp_path, CORE_PACK) as harness:
         _seed_test_module(harness.ctx.repo_root)
-        catalog_provider = _make_catalog(harness.ctx.repo, harness.ctx.commit)
-        ensure_catalog_with_goids(harness.ctx, catalog_provider)
+        catalog_provider = _catalog_with_tests(harness.ctx)
+        _apply_catalog(harness.ctx, catalog_provider)
 
         now = datetime.now(tz=UTC)
-        _insert_function_metrics(harness.ctx, now)
+        _insert_function_metrics(harness.ctx, now, goid=7101)
         _insert_module_row(harness.ctx)
 
         resources = TargetResourceOverrides(catalog=catalog_provider)

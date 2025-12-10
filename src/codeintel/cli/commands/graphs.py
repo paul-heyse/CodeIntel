@@ -1,18 +1,17 @@
 """Cyclopts wiring for graph commands.
 
-This module wires Cyclopts command classes to unified handlers via command_context.
+Graph analytics plugin commands using the @cli_command decorator.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands._common import OutputFmt, Verbose
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.graphs import (
     graph_plugins_list_handler,
     graph_plugins_plan_handler,
@@ -25,25 +24,49 @@ graphs_app = App(
     help="Graph analytics plugin commands.",
 )
 
+# Configuration for graph commands - no runtime/gateway needed
+_GRAPH_CONFIG = CommandConfig(
+    require_runtime=False,
+    require_gateway=False,
+)
 
-@graphs_app.command(name="plugins")
+
+@graphs_app.command(name="plugins-list")
+@cli_command("graph.plugins.list", handler=graph_plugins_list_handler, config=_GRAPH_CONFIG)
 @dataclass
-class GraphPluginsCommand:
-    """List registered graph plugins or display an execution plan."""
+class GraphPluginsListCommand:
+    """List registered graph plugins."""
 
-    plan: Annotated[
-        bool,
-        Parameter(
-            name="--plan",
-            help="Show planned execution order instead of a simple list.",
-            negative=(),
-        ),
-    ] = False
     names: Annotated[
         list[str] | None,
         Parameter(
             name="--names",
-            help="Explicit plugin names to plan/list (repeatable).",
+            help="Explicit plugin names to filter (repeatable).",
+        ),
+    ] = None
+    include_disabled: Annotated[
+        bool,
+        Parameter(
+            name="--include-disabled",
+            help="Include disabled plugins in the listing.",
+            negative=("--exclude-disabled",),
+        ),
+    ] = True
+    output_format: OutputFmt = OutputFormat.TEXT
+    verbose: Verbose = 0
+
+
+@graphs_app.command(name="plugins-plan")
+@cli_command("graph.plugins.plan", handler=graph_plugins_plan_handler, config=_GRAPH_CONFIG)
+@dataclass
+class GraphPluginsPlanCommand:
+    """Display an execution plan for graph plugins."""
+
+    names: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--names",
+            help="Explicit plugin names to plan (repeatable).",
         ),
     ] = None
     enable: Annotated[
@@ -76,62 +99,12 @@ class GraphPluginsCommand:
             show_default=True,
         ),
     ] = DependencyPolicy.STRICT
-    validate_plan: Annotated[
-        bool,
-        Parameter(
-            name="--validate-plan",
-            help="Validate plan strictly (selection/dependency strict).",
-            negative=(),
-        ),
-    ] = False
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
-
-    def __call__(self) -> None:
-        """Execute the graph plugins command."""
-        # Build runtime and output CLI objects
-        runtime_cli = RuntimeCLI(verbose=self.verbose)
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        # Build params dict
-        params: dict[str, object] = {
-            "names": tuple(self.names) if self.names else None,
-            "enable": tuple(self.enable) if self.enable else None,
-            "disable": tuple(self.disable) if self.disable else (),
-            "selection_policy": self.selection_policy.value,
-            "dependency_policy": self.dependency_policy.value,
-            "include_disabled": True,  # Include all when listing
-        }
-
-        with command_context(
-            "graph.plugins",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,  # No project needed for listing plugins
-        ) as (ctx, renderer):
-            # Choose handler based on mode and render
-            if self.plan or self.validate_plan:
-                plan_result = graph_plugins_plan_handler(ctx)
-                exit_code = renderer.render_result(plan_result)
-            else:
-                list_result = graph_plugins_list_handler(ctx)
-                exit_code = renderer.render_result(list_result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    output_format: OutputFmt = OutputFormat.TEXT
+    verbose: Verbose = 0
 
 
-__all__ = ["graphs_app"]
+__all__ = [
+    "GraphPluginsListCommand",
+    "GraphPluginsPlanCommand",
+    "graphs_app",
+]

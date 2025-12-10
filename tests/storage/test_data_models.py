@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.storage.gateway import StorageGateway
+import pytest
+
 from codeintel.storage.repositories.data_models import (
     DataModelFieldRow,
     DataModelRelationshipRow,
@@ -31,6 +32,63 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
+from tests._helpers.context import TestContext
+from tests._helpers.rows import (
+    DataModelFieldSeed,
+    DataModelRelationshipSeed,
+    DataModelSeed,
+    data_model_field_row,
+    data_model_relationship_row,
+    data_model_row,
+)
+from tests._helpers.seeds import DATA_MODELS_PACK
+
+
+@pytest.fixture
+def data_models_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide a TestContext seeded with data models pack for realistic layout."""
+    test_ctx.require(DATA_MODELS_PACK)
+    return test_ctx
+
+
+def _insert_models(ctx: TestContext, seeds: list[DataModelSeed]) -> None:
+    """Insert data model rows using canonical seed helpers."""
+    ctx.gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_models (
+            repo, commit, model_id, goid_h128, model_name, module, rel_path,
+            model_kind, base_classes_json, doc_short, doc_long, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [data_model_row(seed) for seed in seeds],
+    )
+
+
+def _insert_fields(ctx: TestContext, seeds: list[DataModelFieldSeed]) -> None:
+    """Insert data model field rows using canonical seed helpers."""
+    ctx.gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_model_fields (
+            repo, commit, model_id, field_name, field_type, required, has_default,
+            default_expr, constraints_json, source, rel_path, lineno, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [data_model_field_row(seed) for seed in seeds],
+    )
+
+
+def _insert_relationships(ctx: TestContext, seeds: list[DataModelRelationshipSeed]) -> None:
+    """Insert data model relationship rows using canonical seed helpers."""
+    ctx.gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_model_relationships (
+            repo, commit, source_model_id, target_model_id, target_module,
+            target_model_name, field_name, relationship_kind, multiplicity, via,
+            evidence_json, rel_path, lineno, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [data_model_relationship_row(seed) for seed in seeds],
+    )
 
 # Test constants to avoid magic value warnings
 EXPECTED_INT_42 = 42
@@ -299,82 +357,82 @@ def test_normalized_data_model_stores_nested_data() -> None:
 # =============================================================================
 
 
-def test_fetch_models_returns_empty_list(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_models returns empty list when no data."""
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_is_instance(result, list)
     expect_length(result, 0)
 
 
-def test_fetch_models_filters_by_repo_commit(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_filters_by_repo_commit(data_models_ctx: TestContext) -> None:
     """Verify fetch_models filters by repo and commit."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_models(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            None,
-            "TestModel",
-            "test.module",
-            "test/module.py",
-            "dataclass",
-            "[]",
-            "Short doc",
-            None,
-            now,
+            DataModelSeed(
+                model_id="model_1",
+                model_name="TestModel",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                goid=None,
+                doc_short="Short doc",
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            ),
+            DataModelSeed(
+                model_id="model_other",
+                model_name="Other",
+                module="other.module",
+                rel_path="other/module.py",
+                model_kind="pydantic",
+                repo="other/repo",
+                commit="def456",
+                created_at=now,
+            ),
         ],
     )
 
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_length(result, 1)
 
-    result_other = fetch_models(fresh_gateway, "other/repo", "def456")
-    expect_length(result_other, 0)
+    result_other = fetch_models(data_models_ctx.gateway, "other/repo", "def456")
+    expect_length(result_other, 1)
 
 
-def test_fetch_models_parses_all_fields(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_parses_all_fields(data_models_ctx: TestContext) -> None:
     """Verify fetch_models correctly parses all fields."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_models(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            EXPECTED_GOID,
-            "TestModel",
-            "test.module",
-            "test/module.py",
-            "pydantic",
-            '[{"name": "BaseModel", "qualname": "pydantic.BaseModel"}]',
-            "Short doc",
-            "Long documentation",
-            now,
+            DataModelSeed(
+                model_id="model_1",
+                model_name="TestModel",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="pydantic",
+                goid=EXPECTED_GOID,
+                base_classes_json=[{"name": "BaseModel", "qualname": "pydantic.BaseModel"}],
+                doc_short="Short doc",
+                doc_long="Long documentation",
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_length(result, 1)
 
     model = result[0]
-    expect_equal(model.repo, "test/repo")
-    expect_equal(model.commit, "abc123")
+    expect_equal(model.repo, data_models_ctx.repo)
+    expect_equal(model.commit, data_models_ctx.commit)
     expect_equal(model.model_id, "model_1")
     expect_equal(model.goid_h128, EXPECTED_GOID)
     expect_equal(model.model_name, "TestModel")
@@ -388,108 +446,88 @@ def test_fetch_models_parses_all_fields(fresh_gateway: StorageGateway) -> None:
 
 
 def test_fetch_models_parses_base_classes_from_json(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_models correctly parses base_classes_json."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    # Multiple base classes
-    con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_models(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            None,
-            "TestModel",
-            "test.module",
-            "test/module.py",
-            "dataclass",
-            '[{"name": "Base1", "qualname": "m.Base1"}, {"name": "Base2", "qualname": "m.Base2"}]',
-            None,
-            None,
-            now,
+            DataModelSeed(
+                model_id="model_1",
+                model_name="TestModel",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                base_classes_json=[
+                    {"name": "Base1", "qualname": "m.Base1"},
+                    {"name": "Base2", "qualname": "m.Base2"},
+                ],
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     model = result[0]
     expect_length(model.base_classes, EXPECTED_COUNT_2)
     expect_equal(model.base_classes[0]["name"], "Base1")
     expect_equal(model.base_classes[1]["name"], "Base2")
 
 
-def test_fetch_models_handles_goid_as_decimal(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_handles_goid_as_decimal(data_models_ctx: TestContext) -> None:
     """Verify fetch_models handles goid_h128 Decimal conversion."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    # Insert with a large goid value
-    con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_models(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            123456789012345,  # Large number that might be stored as Decimal
-            "TestModel",
-            "test.module",
-            "test/module.py",
-            "dataclass",
-            "[]",
-            None,
-            None,
-            now,
+            DataModelSeed(
+                model_id="model_1",
+                model_name="TestModel",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                goid=123456789012345,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     model = result[0]
     expect_is_not_none(model.goid_h128)
     expect_is_instance(model.goid_h128, int)
 
 
-def test_fetch_models_returns_multiple(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_returns_multiple(data_models_ctx: TestContext) -> None:
     """Verify fetch_models returns multiple models."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    for i in range(EXPECTED_COUNT_3):
-        con.execute(
-            """
-            INSERT INTO analytics.data_models (
-                repo, commit, model_id, goid_h128, model_name, module, rel_path,
-                model_kind, base_classes_json, doc_short, doc_long, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                "test/repo",
-                "abc123",
-                f"model_{i}",
-                1000 + i,
-                f"Model{i}",
-                "test.module",
-                "test/module.py",
-                "dataclass",
-                "[]",
-                None,
-                None,
-                now,
-            ],
-        )
+    _insert_models(
+        data_models_ctx,
+        [
+            DataModelSeed(
+                model_id=f"model_{i}",
+                model_name=f"Model{i}",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                goid=1000 + i,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+            for i in range(EXPECTED_COUNT_3)
+        ],
+    )
 
-    result = fetch_models(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_length(result, EXPECTED_COUNT_3)
 
 
@@ -498,48 +536,43 @@ def test_fetch_models_returns_multiple(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_fetch_fields_returns_empty_list(fresh_gateway: StorageGateway) -> None:
+def test_fetch_fields_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_fields returns empty list when no data."""
-    result = fetch_fields(fresh_gateway, "test/repo", "abc123")
+    result = fetch_fields(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_is_instance(result, list)
     expect_length(result, 0)
 
 
-def test_fetch_fields_parses_all_fields(fresh_gateway: StorageGateway) -> None:
+def test_fetch_fields_parses_all_fields(data_models_ctx: TestContext) -> None:
     """Verify fetch_fields correctly parses all fields."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_fields (
-            repo, commit, model_id, field_name, field_type, required, has_default,
-            default_expr, constraints_json, source, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_fields(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "name",
-            "str",
-            True,
-            False,
-            None,
-            '{"max_length": 100}',
-            "annotation",
-            "test/module.py",
-            EXPECTED_LINENO_10,
-            now,
+            DataModelFieldSeed(
+                model_id="model_1",
+                field_name="name",
+                field_type="str",
+                required=True,
+                has_default=False,
+                constraints_json={"max_length": 100},
+                source="annotation",
+                rel_path="test/module.py",
+                lineno=EXPECTED_LINENO_10,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_fields(fresh_gateway, "test/repo", "abc123")
+    result = fetch_fields(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     expect_length(result, 1)
 
     field = result[0]
-    expect_equal(field.repo, "test/repo")
-    expect_equal(field.commit, "abc123")
+    expect_equal(field.repo, data_models_ctx.repo)
+    expect_equal(field.commit, data_models_ctx.commit)
     expect_equal(field.model_id, "model_1")
     expect_equal(field.name, "name")
     expect_equal(field.field_type, "str")
@@ -552,39 +585,35 @@ def test_fetch_fields_parses_all_fields(fresh_gateway: StorageGateway) -> None:
     expect_equal(field.lineno, EXPECTED_LINENO_10)
 
 
-def test_fetch_fields_filters_by_model_ids(fresh_gateway: StorageGateway) -> None:
+def test_fetch_fields_filters_by_model_ids(data_models_ctx: TestContext) -> None:
     """Verify fetch_fields filters by model_ids when provided."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    # Insert fields for multiple models
-    for model_id in ["model_1", "model_2", "model_3"]:
-        con.execute(
-            """
-            INSERT INTO analytics.data_model_fields (
-                repo, commit, model_id, field_name, field_type, required, has_default,
-                default_expr, constraints_json, source, rel_path, lineno, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                "test/repo",
-                "abc123",
-                model_id,
-                "field",
-                "str",
-                True,
-                False,
-                None,
-                "{}",
-                "annotation",
-                "test.py",
-                1,
-                now,
-            ],
-        )
+    _insert_fields(
+        data_models_ctx,
+        [
+            DataModelFieldSeed(
+                model_id=model_id,
+                field_name="field",
+                field_type="str",
+                required=True,
+                has_default=False,
+                rel_path="test.py",
+                lineno=1,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+            for model_id in ["model_1", "model_2", "model_3"]
+        ],
+    )
 
-    # Fetch only for model_1 and model_2
-    result = fetch_fields(fresh_gateway, "test/repo", "abc123", model_ids=["model_1", "model_2"])
+    result = fetch_fields(
+        data_models_ctx.gateway,
+        data_models_ctx.repo,
+        data_models_ctx.commit,
+        model_ids=["model_1", "model_2"],
+    )
     expect_length(result, EXPECTED_COUNT_2)
 
     model_ids = {f.model_id for f in result}
@@ -594,71 +623,59 @@ def test_fetch_fields_filters_by_model_ids(fresh_gateway: StorageGateway) -> Non
 
 
 def test_fetch_fields_without_model_ids_returns_all(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_fields returns all fields when model_ids is None."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    for model_id in ["model_1", "model_2"]:
-        con.execute(
-            """
-            INSERT INTO analytics.data_model_fields (
-                repo, commit, model_id, field_name, field_type, required, has_default,
-                default_expr, constraints_json, source, rel_path, lineno, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                "test/repo",
-                "abc123",
-                model_id,
-                "field",
-                "str",
-                True,
-                False,
-                None,
-                "{}",
-                "annotation",
-                "test.py",
-                1,
-                now,
-            ],
-        )
-
-    result = fetch_fields(fresh_gateway, "test/repo", "abc123")
-    expect_length(result, EXPECTED_COUNT_2)
-
-
-def test_fetch_fields_parses_constraints_json(fresh_gateway: StorageGateway) -> None:
-    """Verify fetch_fields correctly parses constraints_json."""
-    con = fresh_gateway.con
-    now = datetime.now(tz=UTC)
-
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_fields (
-            repo, commit, model_id, field_name, field_type, required, has_default,
-            default_expr, constraints_json, source, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_fields(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "email",
-            "str",
-            True,
-            False,
-            None,
-            '{"pattern": "^.+@.+$", "max_length": 255}',
-            "annotation",
-            "test.py",
-            1,
-            now,
+            DataModelFieldSeed(
+                model_id=model_id,
+                field_name="field",
+                field_type="str",
+                required=True,
+                has_default=False,
+                rel_path="test.py",
+                lineno=1,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+            for model_id in ["model_1", "model_2"]
         ],
     )
 
-    result = fetch_fields(fresh_gateway, "test/repo", "abc123")
+    result = fetch_fields(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
+    expect_length(result, EXPECTED_COUNT_2)
+
+
+def test_fetch_fields_parses_constraints_json(data_models_ctx: TestContext) -> None:
+    """Verify fetch_fields correctly parses constraints_json."""
+    now = datetime.now(tz=UTC)
+
+    _insert_fields(
+        data_models_ctx,
+        [
+            DataModelFieldSeed(
+                model_id="model_1",
+                field_name="email",
+                field_type="str",
+                required=True,
+                has_default=False,
+                constraints_json={"pattern": "^.+@.+$", "max_length": 255},
+                source="annotation",
+                rel_path="test.py",
+                lineno=1,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+        ],
+    )
+
+    result = fetch_fields(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
     field = result[0]
     expect_equal(field.constraints, {"pattern": "^.+@.+$", "max_length": 255})
 
@@ -669,53 +686,52 @@ def test_fetch_fields_parses_constraints_json(fresh_gateway: StorageGateway) -> 
 
 
 def test_fetch_relationships_returns_empty_list(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_relationships returns empty list when no data."""
-    result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
+    result = fetch_relationships(
+        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
+    )
     expect_is_instance(result, list)
     expect_length(result, 0)
 
 
 def test_fetch_relationships_parses_all_fields(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_relationships correctly parses all fields."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_relationships (
-            repo, commit, source_model_id, target_model_id, target_module,
-            target_model_name, field_name, relationship_kind, multiplicity, via,
-            evidence_json, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_relationships(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "model_2",
-            "target.module",
-            "TargetModel",
-            "items",
-            "has_many",
-            "many",
-            "foreign_key",
-            '{"confidence": 0.9}',
-            "test/module.py",
-            EXPECTED_LINENO_25,
-            now,
+            DataModelRelationshipSeed(
+                source_model_id="model_1",
+                target_model_id="model_2",
+                target_module="target.module",
+                target_model_name="TargetModel",
+                field_name="items",
+                relationship_kind="has_many",
+                multiplicity="many",
+                via="foreign_key",
+                evidence_json={"confidence": 0.9},
+                rel_path="test/module.py",
+                lineno=EXPECTED_LINENO_25,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
+    result = fetch_relationships(
+        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
+    )
     expect_length(result, 1)
 
     rel = result[0]
-    expect_equal(rel.repo, "test/repo")
-    expect_equal(rel.commit, "abc123")
+    expect_equal(rel.repo, data_models_ctx.repo)
+    expect_equal(rel.commit, data_models_ctx.commit)
     expect_equal(rel.source_model_id, "model_1")
     expect_equal(rel.target_model_id, "model_2")
     expect_equal(rel.target_module, "target.module")
@@ -730,78 +746,74 @@ def test_fetch_relationships_parses_all_fields(
 
 
 def test_fetch_relationships_filters_by_model_ids(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_relationships filters by source model_ids when provided."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    for src_model in ["model_1", "model_2", "model_3"]:
-        con.execute(
-            """
-            INSERT INTO analytics.data_model_relationships (
-                repo, commit, source_model_id, target_model_id, target_module,
-                target_model_name, field_name, relationship_kind, multiplicity, via,
-                evidence_json, rel_path, lineno, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                "test/repo",
-                "abc123",
-                src_model,
-                "target",
-                "target.mod",
-                "Target",
-                "ref",
-                "has_one",
-                "one",
-                None,
-                "{}",
-                "test.py",
-                1,
-                now,
-            ],
-        )
+    _insert_relationships(
+        data_models_ctx,
+        [
+            DataModelRelationshipSeed(
+                source_model_id=src_model,
+                target_model_id="target",
+                target_module="target.mod",
+                target_model_name="Target",
+                field_name="ref",
+                relationship_kind="has_one",
+                multiplicity="one",
+                evidence_json={},
+                rel_path="test.py",
+                lineno=1,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+            for src_model in ["model_1", "model_2", "model_3"]
+        ],
+    )
 
-    result = fetch_relationships(fresh_gateway, "test/repo", "abc123", model_ids=["model_1"])
+    result = fetch_relationships(
+        data_models_ctx.gateway,
+        data_models_ctx.repo,
+        data_models_ctx.commit,
+        model_ids=["model_1"],
+    )
     expect_length(result, 1)
     expect_equal(result[0].source_model_id, "model_1")
 
 
 def test_fetch_relationships_handles_nullable_fields(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_relationships handles null optional fields."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_relationships (
-            repo, commit, source_model_id, target_model_id, target_module,
-            target_model_name, field_name, relationship_kind, multiplicity, via,
-            evidence_json, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_relationships(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "model_2",
-            None,  # nullable
-            None,  # nullable
-            "field_ref",  # NOT NULL - must provide a value
-            "references",
-            None,  # nullable
-            None,  # nullable
-            "{}",
-            "test.py",
-            None,  # nullable
-            now,
+            DataModelRelationshipSeed(
+                source_model_id="model_1",
+                target_model_id="model_2",
+                target_module=None,
+                target_model_name=None,
+                field_name="field_ref",
+                relationship_kind="references",
+                multiplicity=None,
+                via=None,
+                evidence_json={},
+                rel_path="test.py",
+                lineno=None,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    result = fetch_relationships(fresh_gateway, "test/repo", "abc123")
+    result = fetch_relationships(
+        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
+    )
     rel = result[0]
     expect_is_none(rel.target_module)
     expect_is_none(rel.target_model_name)
@@ -817,96 +829,80 @@ def test_fetch_relationships_handles_nullable_fields(
 
 
 def test_fetch_models_normalized_returns_empty_list(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_models_normalized returns empty list when no data."""
-    result = fetch_models_normalized(fresh_gateway, "test/repo", "abc123")
+    result = fetch_models_normalized(
+        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
+    )
     expect_is_instance(result, list)
     expect_length(result, 0)
 
 
-def test_fetch_models_normalized_joins_data(fresh_gateway: StorageGateway) -> None:
+def test_fetch_models_normalized_joins_data(data_models_ctx: TestContext) -> None:
     """Verify fetch_models_normalized returns joined fields and relationships."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    # Insert a data model
-    con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    _insert_models(
+        data_models_ctx,
         [
-            "test/repo",
-            "abc123",
-            "model_1",
-            EXPECTED_GOID,
-            "TestModel",
-            "test.module",
-            "test/module.py",
-            "dataclass",
-            "[]",
-            "Short doc",
-            None,
-            now,
+            DataModelSeed(
+                model_id="model_1",
+                model_name="TestModel",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                goid=EXPECTED_GOID,
+                doc_short="Short doc",
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+        ],
+    )
+    _insert_fields(
+        data_models_ctx,
+        [
+            DataModelFieldSeed(
+                model_id="model_1",
+                field_name="name",
+                field_type="str",
+                required=True,
+                has_default=False,
+                constraints_json={},
+                source="annotation",
+                rel_path="test/module.py",
+                lineno=EXPECTED_LINENO_10,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+        ],
+    )
+    _insert_relationships(
+        data_models_ctx,
+        [
+            DataModelRelationshipSeed(
+                source_model_id="model_1",
+                target_model_id="model_2",
+                target_module="target.mod",
+                target_model_name="Target",
+                field_name="ref",
+                relationship_kind="has_one",
+                multiplicity="one",
+                evidence_json={},
+                rel_path="test/module.py",
+                lineno=20,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
         ],
     )
 
-    # Insert a field
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_fields (
-            repo, commit, model_id, field_name, field_type, required, has_default,
-            default_expr, constraints_json, source, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "name",
-            "str",
-            True,
-            False,
-            None,
-            "{}",
-            "annotation",
-            "test/module.py",
-            EXPECTED_LINENO_10,
-            now,
-        ],
+    result = fetch_models_normalized(
+        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
     )
-
-    # Insert a relationship
-    con.execute(
-        """
-        INSERT INTO analytics.data_model_relationships (
-            repo, commit, source_model_id, target_model_id, target_module,
-            target_model_name, field_name, relationship_kind, multiplicity, via,
-            evidence_json, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            "test/repo",
-            "abc123",
-            "model_1",
-            "model_2",
-            "target.mod",
-            "Target",
-            "ref",
-            "has_one",
-            "one",
-            None,
-            "{}",
-            "test/module.py",
-            20,
-            now,
-        ],
-    )
-
-    result = fetch_models_normalized(fresh_gateway, "test/repo", "abc123")
     expect_length(result, 1)
 
     model = result[0]
@@ -919,38 +915,34 @@ def test_fetch_models_normalized_joins_data(fresh_gateway: StorageGateway) -> No
 
 
 def test_fetch_models_normalized_filters_by_model_ids(
-    fresh_gateway: StorageGateway,
+    data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_models_normalized filters by model_ids."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    for i in range(EXPECTED_COUNT_3):
-        con.execute(
-            """
-            INSERT INTO analytics.data_models (
-                repo, commit, model_id, goid_h128, model_name, module, rel_path,
-                model_kind, base_classes_json, doc_short, doc_long, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                "test/repo",
-                "abc123",
-                f"model_{i}",
-                1000 + i,
-                f"Model{i}",
-                "test.module",
-                "test/module.py",
-                "dataclass",
-                "[]",
-                None,
-                None,
-                now,
-            ],
-        )
+    _insert_models(
+        data_models_ctx,
+        [
+            DataModelSeed(
+                model_id=f"model_{i}",
+                model_name=f"Model{i}",
+                module="test.module",
+                rel_path="test/module.py",
+                model_kind="dataclass",
+                goid=1000 + i,
+                created_at=now,
+                repo=data_models_ctx.repo,
+                commit=data_models_ctx.commit,
+            )
+            for i in range(EXPECTED_COUNT_3)
+        ],
+    )
 
     result = fetch_models_normalized(
-        fresh_gateway, "test/repo", "abc123", model_ids=["model_0", "model_1"]
+        data_models_ctx.gateway,
+        data_models_ctx.repo,
+        data_models_ctx.commit,
+        model_ids=["model_0", "model_1"],
     )
     expect_length(result, EXPECTED_COUNT_2)
 

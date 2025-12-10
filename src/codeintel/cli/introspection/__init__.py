@@ -7,21 +7,11 @@ This package provides:
 - ``Validator``: Input validation framework
 - ``HelpRenderer``: Help system utilities
 - Operation discovery and search
-
-Note: Phase 6 Migration Complete - LEGACY registry has been removed.
-All registry functions now use the unified handler-based registry from
-``codeintel.cli.execution.registry``.
 """
 
 from __future__ import annotations
 
-# Provide backward-compatible legacy registry for old code paths
-# Note: The legacy operations/*.py files have been deleted, so this registry
-# is empty. Code using the old executor.execute() flow should be migrated to
-# use the @cli_command decorator pattern instead.
-from codeintel.cli.execution.executor import get_executor as _get_executor
-
-# Registry is now unified in execution layer
+# Registry from execution layer
 from codeintel.cli.execution.registry import (
     OperationRegistry,
     OperationSpec,
@@ -63,22 +53,8 @@ from codeintel.cli.introspection.validation import (
     Validator,
 )
 
-
-def get_operation_registry() -> OperationRegistry:
-    """Get the operation registry (legacy compatibility).
-
-    Returns
-    -------
-    OperationRegistry
-        The unified operation registry.
-
-    Notes
-    -----
-    This function is provided for backward compatibility. New code should
-    use ``get_registry()`` from ``codeintel.cli.execution.registry``.
-    """
-    return get_registry()
-
+# Alias for backward compatibility
+get_operation_registry = get_registry
 
 __all__ = [
     "CliParamSpec",
@@ -94,7 +70,6 @@ __all__ = [
     "ValidationResult",
     "ValidationSchema",
     "Validator",
-    "_get_executor",
     "build_cli_param_spec",
     "build_cli_param_specs_for_operation",
     "build_operation_cli_metadata",

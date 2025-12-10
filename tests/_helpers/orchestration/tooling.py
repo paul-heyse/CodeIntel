@@ -252,6 +252,20 @@ def tooling_outputs(tmp_path: Path) -> ToolingOutputs:
     return run_static_tooling(context)
 
 
+@pytest.fixture(scope="session")
+def tooling_outputs_session(tmp_path_factory: pytest.TempPathFactory) -> ToolingOutputs:
+    """Session-scoped variant to avoid re-running expensive tooling setup.
+
+    Returns
+    -------
+    ToolingOutputs
+        Aggregated diagnostics and coverage results.
+    """
+    base_dir = tmp_path_factory.mktemp("tooling-session")
+    context = build_tooling_context(base_dir)
+    return run_static_tooling(context)
+
+
 @dataclass(frozen=True)
 class GitRepoContext:
     """Git repository seeded with multiple commits for history tests."""

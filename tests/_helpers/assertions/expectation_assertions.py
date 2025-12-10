@@ -133,6 +133,28 @@ def expect_not_in(
     failure_message = f"{_prefix(label)}{value!r} unexpectedly found in {container!r}"
     raise AssertionError(failure_message)
 
+def expect_row_count(rows: Sequence[object], expected: int, *, label: str | None = None) -> None:
+    """Raise AssertionError when a row sequence length differs from expected.
+
+    Parameters
+    ----------
+    rows
+        Sequence of row-like objects.
+    expected
+        Expected number of rows.
+    label
+        Optional label prefix for the failure message.
+
+    Raises
+    ------
+    AssertionError
+        If the sequence length does not match ``expected``.
+    """
+    actual = len(rows)
+    if actual != expected:
+        failure_message = f"{_prefix(label)}expected {expected} rows, got {actual}"
+        raise AssertionError(failure_message)
+
 
 def expect_is_not(actual: object, unexpected: object, *, label: str | None = None) -> None:
     """

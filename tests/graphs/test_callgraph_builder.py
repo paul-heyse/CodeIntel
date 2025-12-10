@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
+from tests._helpers.assertions import expect_in, expect_true
 from tests._helpers.builders import insert_symbol_use_edges
 
 
@@ -39,22 +40,20 @@ def _assert_resolved_edge(
     resolution_message: str,
 ) -> None:
     edges = _edge_to(edge_records, callee)
-    if not edges:
-        message = missing_message
-        raise AssertionError(message)
-    if not any(edge["resolved_via"] in allowed_resolutions for edge in edges):
-        message = resolution_message
-        raise AssertionError(message)
+    expect_true(edges, message=missing_message)
+    expect_true(
+        any(edge["resolved_via"] in allowed_resolutions for edge in edges),
+        message=resolution_message,
+    )
 
 
 def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
     edges = _edge_to(edge_records, None)
-    if not edges:
-        message = "expected unresolved edge for unknown call"
-        raise AssertionError(message)
-    if not all(edge["kind"] == "unresolved" for edge in edges):
-        message = "expected unresolved edges to have kind 'unresolved'"
-        raise AssertionError(message)
+    expect_true(edges, message="expected unresolved edge for unknown call")
+    expect_true(
+        all(edge["kind"] == "unresolved" for edge in edges),
+        message="expected unresolved edges to have kind 'unresolved'",
+    )
     for edge in edges:
         evidence = edge.get("evidence_json")
         evidence_obj: dict[str, object] | None
@@ -64,13 +63,12 @@ def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
             evidence_obj = cast("dict[str, object]", evidence)
         else:
             evidence_obj = None
-        if evidence_obj is None:
-            message = "expected evidence_json on unresolved edge"
-            raise AssertionError(message)
+        expect_true(evidence_obj is not None, message="expected evidence_json on unresolved edge")
         scip_candidates = evidence_obj.get("scip_candidates")
-        if scip_candidates != ["pkg/a.py"]:
-            message = f"expected SCIP candidates ['pkg/a.py'], got {scip_candidates}"
-            raise AssertionError(message)
+        expect_true(
+            scip_candidates == ["pkg/a.py"],
+            message=f"expected SCIP candidates ['pkg/a.py'], got {scip_candidates}",
+        )
 
 
 def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:

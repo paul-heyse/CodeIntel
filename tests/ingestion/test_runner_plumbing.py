@@ -14,23 +14,15 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
     TypingIngestStep,
 )
+from tests._helpers.assertions import expect_equal, expect_rows_equal
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import ScanSetupOptions, make_scan_setup
-from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
+from tests._helpers.ingestion import ScanSetupOptions, closing_gateway, make_scan_setup
+from tests._helpers.orchestration.tooling import ToolingOutputs, build_tooling_context
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-
-def _setup_gateway() -> StorageGateway:
-    """Create a gateway with default factory settings.
-
-    Returns
-    -------
-    StorageGateway
-        Gateway instance opened for tests.
-    """
-    return GatewayFactory().with_macros().open()
+pytest_plugins = ["tests._helpers.orchestration.tooling"]
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
@@ -46,7 +38,7 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
         ),
     )
 
-    try:
+    with closing_gateway(setup.gateway):
         setup.scan_step.execute(
             repo="r",
             commit="c",
@@ -55,19 +47,17 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
         )
 
         rows = setup.gateway.con.table("core.modules").select("path").fetchall()
-        if rows != [("keep/a.py",)]:
-            pytest.fail(f"Unexpected modules: {rows}")
-    finally:
-        setup.gateway.close()
+        expect_rows_equal(rows, [("keep/a.py",)], message="Unexpected modules from repo_scan")
 
 
-def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
+def test_coverage_ingest_uses_runner(
+    tooling_outputs_session: ToolingOutputs, ingestion_gateway: StorageGateway
+) -> None:
     """Verify coverage ingestion prefers the shared runner path."""
-    context = build_tooling_context(tmp_path)
-    tooling_outputs = run_static_tooling(context)
-    repo_root = context.repo_root
-    tool_service = context.service
-    gateway = GatewayFactory().open()
+    tooling_outputs = tooling_outputs_session
+    repo_root = tooling_outputs.context.repo_root
+    tool_service = tooling_outputs.context.service
+    gateway = ingestion_gateway
     expected_lines = sum(
         len(report.executed_lines | report.missing_lines)
         for report in tooling_outputs.coverage_reports
@@ -84,7 +74,7 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
             repo="r",
             commit="c",
             repo_root=repo_root,
-            coverage_file=context.coverage_file,
+            coverage_file=tooling_outputs.context.coverage_file,
         )
     )
 
@@ -94,8 +84,7 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
 
     row = gateway.con.table("analytics.coverage_lines").aggregate("count(*)").fetchone()
     count = row[0] if row is not None else 0
-    if count != expected_lines:
-        pytest.fail(f"Expected {expected_lines} coverage rows, got {count}")
+    expect_equal(count, expected_lines, label="coverage_line_count")
 
 
 @pytest.mark.skip(

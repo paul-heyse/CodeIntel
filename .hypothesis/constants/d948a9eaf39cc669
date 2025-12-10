@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/__init__.py
+# hypothesis_version: 6.148.7
+
+['app', 'build_app', 'cyclopts_ops', 'dataset_app', 'datasets_ext_app', 'docs_app', 'graphs_app', 'history_app', 'ide_app', 'main', 'op_app', 'serve_app', 'storage_app', 'subsystem_app']

@@ -35,9 +35,6 @@ from codeintel.cli.commands.app import app, main
 from codeintel.cli.commands.build import build_app
 from codeintel.cli.commands.completions import completions_app
 from codeintel.cli.commands.config import config_app
-
-# Context manager
-from codeintel.cli.commands.context import command_context
 from codeintel.cli.commands.dataset_ops import dataset_app
 from codeintel.cli.commands.datasets import datasets_ext_app
 from codeintel.cli.commands.docs import docs_app
@@ -58,7 +55,6 @@ __all__ = [
     "RuntimeCLI",
     "app",
     "build_app",
-    "command_context",
     "completions_app",
     "config_app",
     "dataset_app",

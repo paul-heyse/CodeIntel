@@ -2,37 +2,27 @@
 
 This package provides:
 
-1. Base utilities (logging, context) in `handlers.base`
+1. Shared utilities in `handlers._utilities`
 2. Domain-specific handlers in `handlers.<domain>`
-3. Unified HandlerContext in `handlers.context` (NEW - Phase 1+)
+3. Unified HandlerContext in `handlers.context`
 
 Examples
 --------
->>> from codeintel.cli.handlers import setup_logging
->>> from codeintel.cli.handlers.context import HandlerContext
+>>> from codeintel.cli.handlers import setup_logging, HandlerContext
+>>> from codeintel.cli.handlers.build import build_status_handler
 >>> setup_logging(verbosity=1)
-
-Note: Phase 6 Migration - The unified HandlerContext is now in
-handlers/context.py. Legacy context types in handlers/base.py and
-handlers/protocol.py are retained for backward compatibility but
-should not be used in new code.
 """
 
 from __future__ import annotations
 
-# Legacy context types - retained for backward compatibility
-# New code should use handlers.context.HandlerContext instead
-from codeintel.cli.handlers.base import (
-    HandlerContext as LegacyHandlerContext,
-)
-
-# Base utilities (setup_logging is still the canonical location)
-from codeintel.cli.handlers.base import (
-    build_handler_context,
+# Utilities
+from codeintel.cli.handlers._utilities import (
     get_handler_logger,
     open_handler_gateway,
     setup_logging,
 )
+
+# Domain handlers and result types
 from codeintel.cli.handlers.build import (
     BuildHistoryResult,
     BuildRunResult,
@@ -42,7 +32,7 @@ from codeintel.cli.handlers.build import (
     build_status_handler,
 )
 
-# NEW: Unified handler context (Phase 1+)
+# Unified handler context
 from codeintel.cli.handlers.context import (
     HandlerContext,
     HandlerContextOptions,
@@ -127,11 +117,6 @@ from codeintel.cli.handlers.plugins import (
     plugins_test_handler,
     plugins_validate_handler,
 )
-from codeintel.cli.handlers.protocol import (
-    EnhancedHandlerContext,
-    HandlerProtocol,
-    handler_context,
-)
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
     MacroRequirement,
@@ -168,15 +153,12 @@ __all__ = [
     "DatasetsListResult",
     "DocsExportResult",
     "DocsValidateResult",
-    # Context types - Legacy (backward compat)
-    "EnhancedHandlerContext",
     "GenerateMacrosResult",
     "GraphPlanResult",
     "GraphPluginsResult",
-    # Context types - NEW unified context (Phase 1+)
+    # Context types
     "HandlerContext",
     "HandlerContextOptions",
-    "HandlerProtocol",
     "HealthCheckResult",
     "HistoryTimeseriesResult",
     "IdeHintsResult",
@@ -185,7 +167,6 @@ __all__ = [
     "JobStatusResult",
     "JobsCleanupResult",
     "JobsListResult",
-    "LegacyHandlerContext",
     "MacroRequirement",
     "OperationCallResult",
     "OperationListResult",
@@ -205,7 +186,6 @@ __all__ = [
     "SubsystemProfilesResult",
     "SubsystemShowResult",
     "ValidateMacrosResult",
-    "build_handler_context",
     # Handler functions
     "build_history_handler",
     "build_run_handler",
@@ -224,7 +204,6 @@ __all__ = [
     "get_handler_logger",
     "graph_plugins_list_handler",
     "graph_plugins_plan_handler",
-    "handler_context",
     "handler_context_manager",
     "health_check_handler",
     "history_timeseries_handler",

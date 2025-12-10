@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
@@ -21,11 +21,7 @@ from codeintel.cli.project import (
     find_project_root,
 )
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.validation import collect_contract_issues
-
-if TYPE_CHECKING:
-    from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
 
@@ -156,32 +152,6 @@ class DatasetDiffResult:
             "changed": self.changed,
             "has_differences": self.has_differences,
         }
-
-
-def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
-    """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
-
-    Parameters
-    ----------
-    runtime
-        ResolvedRuntime from handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Compatible ProjectRuntime instance.
-    """
-    gateway = open_gateway(StorageConfig.for_readonly(runtime.paths.db_path))
-    return ProjectRuntime(
-        root=runtime.root,
-        project=runtime.project,
-        cfg=runtime.config,
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        gateway=gateway,
-        tools=runtime.config.tools,
-        serving=runtime.serving,
-    )
 
 
 def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:

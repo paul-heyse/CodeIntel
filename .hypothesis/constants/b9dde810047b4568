@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/_common.py
+# hypothesis_version: 6.148.7
+
+['*', '--build-dir', '--commit', '--db-path', '--dry-run', '--gpu', '--json', '--output-format', '--repo', '--repo-root', '--root', '--verbose', '-n', '-r', '-v', 'CommonOptions', 'ExistingDir', 'ExistingPath', 'JsonFlag', 'Output format.', 'OutputFmt', 'OutputFormat', 'OutputFormatCLI', 'OutputParam', 'OutputPath', 'ProjectCLI', 'ProjectRoot', 'RuntimeCLI', 'RuntimeCliError', 'RuntimeParam', 'StorageCLI', 'Verbose', 'build_dir', 'call_if_callable', 'codeintel', 'commit', 'db_path', 'document_output_dir', 'dry_run', 'get_output_format', 'get_verbose', 'make_root_app', 'output_field', 'output_format', 'parameter', 'project_root', 'repo', 'repo_root', 'return_value', 'runtime_field', 'use_gpu', 'verbose']
