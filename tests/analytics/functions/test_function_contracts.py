@@ -252,9 +252,9 @@ def test_compute_function_contracts_with_raise(
         catalog=None,
     )
 
-    # Verify table exists and is accessible
+    # No contracts should be recorded when catalog is absent
     result = count_rows(memory_gateway.con, "SELECT COUNT(*) FROM analytics.function_contracts", [])
-    expect_true(result >= 0)
+    expect_equal(result, 0)
 
 
 def test_compute_function_contracts_with_isinstance_check(
@@ -288,7 +288,7 @@ def test_compute_function_contracts_with_isinstance_check(
         "SELECT name FROM (SHOW TABLES) WHERE name = 'function_contracts'"
     ).fetchall()
 
-    expect_true(len(tables) >= 0)  # Table exists
+    expect_equal(len(tables), 1)
 
 
 def test_compute_function_contracts_with_len_guard(
@@ -784,7 +784,7 @@ def test_compute_function_contracts_idempotent(
         "SELECT COUNT(*) FROM analytics.function_contracts",
         [],
     )
-    expect_true(total >= 0)
+    expect_equal(total, 0)
 
 
 def test_compute_function_contracts_complex_assertions(

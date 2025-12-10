@@ -23,7 +23,7 @@ from tests._helpers.builders import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.networkx_graphs import chain_graph
+from tests._helpers.fakes.networkx_graphs import chain_graph, empty_digraph
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 ISOLATED_NODE: Final[int] = 3
@@ -133,7 +133,7 @@ def test_cache_get_returns_cached_graph() -> None:
     def loader() -> nx.DiGraph:
         nonlocal call_count
         call_count += 1
-        return nx.DiGraph()
+        return empty_digraph()
 
     result = cache.get(GraphKind.CALL_GRAPH, loader)
 

@@ -34,11 +34,13 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     dag_to_cycle_graph,
     diamond_graph,
+    empty_digraph,
     fork_join_cfg,
     nested_loop_graph,
     self_loop_graph,
     while_loop_cfg,
 )
+from tests.graphs.constants import CYCLE_SIZE_SWEEP
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -61,7 +63,7 @@ EXPECTED_PATH_LENGTH_THREE: Final[int] = 3
 
 def test_dominator_tree_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_dominator_tree(graph, entry="A")
     expect_equal(result, {})
 
@@ -78,7 +80,7 @@ def test_dominator_tree_single_node() -> None:
 
     NetworkX immediate_dominators returns empty dict for isolated node.
     """
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("A")
     result = compute_dominator_tree(graph, entry="A")
     expect_equal(result, {})
@@ -138,7 +140,7 @@ def test_dominator_tree_multiple_paths() -> None:
 
 def test_dominance_frontier_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_dominance_frontier(graph, entry="A")
     expect_equal(result, {})
 
@@ -253,7 +255,7 @@ def test_dominator_depths_from_chain_graph() -> None:
 
 def test_loop_headers_empty_graph_returns_empty() -> None:
     """Empty graph returns empty set."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = find_natural_loop_headers(graph, entry="A")
     expect_equal(result, set())
 
@@ -315,14 +317,14 @@ def test_loop_headers_while_loop_pattern() -> None:
 
 def test_longest_path_empty_graph_returns_zero() -> None:
     """Empty graph returns 0."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_cfg_longest_path(graph)
     expect_equal(result, 0)
 
 
 def test_longest_path_single_node_returns_zero() -> None:
     """Single node (no edges) returns 0."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("A")
     result = compute_cfg_longest_path(graph)
     expect_equal(result, 0)
@@ -368,7 +370,7 @@ def test_longest_path_mixed_dag_and_cycle() -> None:
 
 def test_all_dominance_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_all_dominance(graph, entry="A")
     expect_equal(result, {})
 
@@ -426,7 +428,7 @@ def test_all_dominance_cyclic_graph_identifies_headers() -> None:
 
 def test_all_dominance_complex_cfg() -> None:
     """Complex CFG with multiple features."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # entry -> if -> then -> join -> exit
     #            -> else -> join
     #       -> loop -> body -> loop (back edge)
@@ -494,7 +496,7 @@ def test_chain_graph_depths_parametrized(node_count: int, expected_max_depth: in
 
 @pytest.mark.parametrize(
     "cycle_size",
-    [2, 3, 5, 10],
+    CYCLE_SIZE_SWEEP,
 )
 def test_cycle_graphs_have_loop_headers(cycle_size: int) -> None:
     """Cycle graphs of various sizes have loop headers."""

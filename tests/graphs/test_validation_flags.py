@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import networkx as nx
-
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
 from tests._helpers.graphs import build_graph_engine_double
 
 
@@ -24,12 +23,12 @@ def _runtime_options(
         engine=build_graph_engine_double(
             env.gateway,
             env.snapshot,
-            call_graph=nx.DiGraph(),
-            import_graph=nx.DiGraph(),
-            symbol_module_graph=nx.Graph(),
-            symbol_function_graph=nx.Graph(),
-            config_graph=nx.Graph(),
-            test_function_graph=nx.Graph(),
+            call_graph=empty_digraph(),
+            import_graph=empty_digraph(),
+            symbol_module_graph=empty_graph(),
+            symbol_function_graph=empty_graph(),
+            config_graph=empty_graph(),
+            test_function_graph=empty_graph(),
         ),
     )
 

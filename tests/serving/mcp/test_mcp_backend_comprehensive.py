@@ -1,7 +1,4 @@
-"""Comprehensive tests for MCP backend implementations.
-
-This module tests the DuckDBBackend using real gateways.
-"""
+"""Comprehensive tests for MCP backend implementations."""
 
 from __future__ import annotations
 
@@ -56,13 +53,7 @@ CUSTOM_MAX_ROWS = 250
 def test_duckdb_backend_creation(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend can be constructed with provisioned gateway.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify DuckDBBackend can be constructed with provisioned gateway."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -77,13 +68,7 @@ def test_duckdb_backend_creation(
 def test_duckdb_backend_with_custom_limits(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend respects custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify DuckDBBackend respects custom limits."""
     custom_limits = BackendLimits(
         default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_ROWS
     )
@@ -101,13 +86,7 @@ def test_duckdb_backend_with_custom_limits(
 def test_duckdb_backend_with_service(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend accepts a service parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify DuckDBBackend accepts a service parameter."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -136,13 +115,7 @@ def test_duckdb_backend_with_service(
 def test_duckdb_backend_list_datasets(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_datasets returns dataset descriptors.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_datasets returns dataset descriptors."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -167,13 +140,7 @@ def test_duckdb_backend_list_datasets(
 def test_duckdb_backend_dataset_specs(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify dataset_specs returns spec descriptors.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify dataset_specs returns spec descriptors."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -203,13 +170,7 @@ def test_duckdb_backend_dataset_specs(
 def test_duckdb_backend_list_high_risk_functions(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_high_risk_functions works with real gateway.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_high_risk_functions works with real gateway."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -234,13 +195,7 @@ def test_duckdb_backend_list_high_risk_functions(
 def test_duckdb_backend_list_high_risk_functions_with_tested_only(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_high_risk_functions accepts tested_only filter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_high_risk_functions accepts tested_only filter."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -270,13 +225,7 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
 def test_duckdb_backend_list_subsystems(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify list_subsystems works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify list_subsystems works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -301,13 +250,7 @@ def test_duckdb_backend_list_subsystems(
 def test_duckdb_backend_list_subsystems_with_role_filter(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify list_subsystems accepts role filter.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify list_subsystems accepts role filter."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -332,13 +275,7 @@ def test_duckdb_backend_list_subsystems_with_role_filter(
 def test_duckdb_backend_list_subsystems_with_query_filter(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify list_subsystems accepts query filter.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify list_subsystems accepts query filter."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -363,13 +300,7 @@ def test_duckdb_backend_list_subsystems_with_query_filter(
 def test_duckdb_backend_search_subsystems(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify search_subsystems works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify search_subsystems works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -399,13 +330,7 @@ def test_duckdb_backend_search_subsystems(
 def test_duckdb_backend_service_attribute(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend exposes service attribute.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify DuckDBBackend exposes service attribute."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -428,13 +353,7 @@ def test_duckdb_backend_service_attribute(
 def test_duckdb_backend_limits_attribute(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify DuckDBBackend exposes limits attribute.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify DuckDBBackend exposes limits attribute."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -454,13 +373,7 @@ def test_duckdb_backend_limits_attribute(
 def test_duckdb_backend_get_function_summary(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_function_summary works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_function_summary works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -498,13 +411,7 @@ def test_duckdb_backend_get_function_summary(
 def test_duckdb_backend_get_callgraph_neighbors(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighbors works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighbors works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -537,13 +444,7 @@ def test_duckdb_backend_get_callgraph_neighbors(
 def test_duckdb_backend_get_callgraph_neighbors_direction_in(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighbors works with direction=in.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighbors works with direction=in."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -576,13 +477,7 @@ def test_duckdb_backend_get_callgraph_neighbors_direction_in(
 def test_duckdb_backend_get_callgraph_neighborhood(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighborhood works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighborhood works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -616,13 +511,7 @@ def test_duckdb_backend_get_callgraph_neighborhood(
 def test_duckdb_backend_get_tests_for_function(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_tests_for_function works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_tests_for_function works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -655,13 +544,7 @@ def test_duckdb_backend_get_tests_for_function(
 def test_duckdb_backend_get_file_summary(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_file_summary works with rel_path.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_file_summary works with rel_path."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -703,13 +586,7 @@ def test_duckdb_backend_get_file_summary(
 def test_duckdb_backend_get_function_profile(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_function_profile works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_function_profile works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -746,13 +623,7 @@ def test_duckdb_backend_get_function_profile(
 def test_duckdb_backend_get_file_profile(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_file_profile works with rel_path.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_file_profile works with rel_path."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -789,13 +660,7 @@ def test_duckdb_backend_get_file_profile(
 def test_duckdb_backend_get_module_profile(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_module_profile works with module name.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_module_profile works with module name."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -832,13 +697,7 @@ def test_duckdb_backend_get_module_profile(
 def test_duckdb_backend_get_function_architecture(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_function_architecture works with goid_h128.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_function_architecture works with goid_h128."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -875,13 +734,7 @@ def test_duckdb_backend_get_function_architecture(
 def test_duckdb_backend_get_module_architecture(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_module_architecture works with module name.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_module_architecture works with module name."""
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -923,13 +776,7 @@ def test_duckdb_backend_get_module_architecture(
 def test_duckdb_backend_get_module_subsystems(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_module_subsystems works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_module_subsystems works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -964,13 +811,7 @@ def test_duckdb_backend_get_module_subsystems(
 def test_duckdb_backend_get_file_hints(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_file_hints works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_file_hints works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -1005,13 +846,7 @@ def test_duckdb_backend_get_file_hints(
 def test_duckdb_backend_get_subsystem_modules(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_subsystem_modules works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_subsystem_modules works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -1048,13 +883,7 @@ def test_duckdb_backend_get_subsystem_modules(
 def test_duckdb_backend_summarize_subsystem(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify summarize_subsystem works with architecture gateway.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify summarize_subsystem works with architecture gateway."""
     query = build_duckdb_query_service(
         architecture_gateway,
         repo="demo/repo",
@@ -1096,13 +925,7 @@ def test_duckdb_backend_summarize_subsystem(
 def test_callgraph_neighbors_direction_incoming(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighbors accepts 'incoming' direction.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighbors accepts 'incoming' direction."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1125,13 +948,7 @@ def test_callgraph_neighbors_direction_incoming(
 def test_callgraph_neighbors_direction_outgoing(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighbors accepts 'outgoing' direction.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighbors accepts 'outgoing' direction."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1159,13 +976,7 @@ def test_callgraph_neighbors_direction_outgoing(
 def test_duckdb_backend_get_function_summary_missing_identifier(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_function_summary raises when no identifier provided.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_function_summary raises when no identifier provided."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1179,13 +990,7 @@ def test_duckdb_backend_get_function_summary_missing_identifier(
 def test_duckdb_backend_get_tests_for_function_missing_identifier(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_tests_for_function raises when no identifier provided.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_tests_for_function raises when no identifier provided."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1199,13 +1004,7 @@ def test_duckdb_backend_get_tests_for_function_missing_identifier(
 def test_duckdb_backend_get_callgraph_neighbors_invalid_direction(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_callgraph_neighbors raises for invalid direction.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_callgraph_neighbors raises for invalid direction."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1220,13 +1019,7 @@ def test_duckdb_backend_get_callgraph_neighbors_invalid_direction(
 def test_duckdb_backend_get_import_boundary(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_import_boundary returns response.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_import_boundary returns response."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1241,13 +1034,7 @@ def test_duckdb_backend_get_import_boundary(
 def test_duckdb_backend_read_dataset_rows(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify read_dataset_rows works for valid datasets.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify read_dataset_rows works for valid datasets."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1266,13 +1053,7 @@ def test_duckdb_backend_read_dataset_rows(
 def test_duckdb_backend_read_dataset_rows_nonexistent(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify read_dataset_rows raises for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify read_dataset_rows raises for nonexistent dataset."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1286,13 +1067,7 @@ def test_duckdb_backend_read_dataset_rows_nonexistent(
 def test_duckdb_backend_dataset_schema(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify dataset_schema works for valid datasets.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify dataset_schema works for valid datasets."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1311,13 +1086,7 @@ def test_duckdb_backend_dataset_schema(
 def test_duckdb_backend_dataset_schema_nonexistent(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify dataset_schema raises for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify dataset_schema raises for nonexistent dataset."""
     backend = build_duckdb_backend(
         provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -1336,13 +1105,7 @@ def test_duckdb_backend_dataset_schema_nonexistent(
 def test_build_backend_resource_local_db_mode(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify build_backend_resource creates DuckDBBackend in local_db mode.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify build_backend_resource creates DuckDBBackend in local_db mode."""
     cfg = ServingConfig(
         mode="local_db",
         repo=provisioned_repo.repo,
@@ -1357,13 +1120,7 @@ def test_build_backend_resource_local_db_mode(
 def test_serving_config_remote_api_missing_url_raises(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify ServingConfig raises when api_base_url missing in remote mode.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify ServingConfig raises when api_base_url missing in remote mode."""
     with pytest.raises(ValidationError, match="api_base_url is required"):
         ServingConfig(
             mode="remote_api",
@@ -1405,14 +1162,7 @@ class _DatasetService(LocalQueryService):
         )
 
     def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
-        """
-        Return mixed descriptor variants to exercise normalization paths.
-
-        Returns
-        -------
-        list[dm.DatasetDescriptorDomain]
-            Dataset descriptors as domain, model, and dict variants.
-        """
+        """"""
         return cast(
             "list[dm.DatasetDescriptorDomain]",
             self._call("list_datasets", self._list_datasets),

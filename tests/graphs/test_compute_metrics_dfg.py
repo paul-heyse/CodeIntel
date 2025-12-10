@@ -34,11 +34,13 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
+    empty_digraph,
     nested_loop_graph,
     self_loop_graph,
     star_graph,
     two_cycle_graph,
 )
+from tests.graphs.constants import CYCLE_SIZE_SWEEP
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -71,7 +73,7 @@ CYCLE_LIMIT_ONE: Final[int] = 1
 
 def test_path_lengths_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_dfg_path_lengths(graph)
     expect_equal(result, {})
 
@@ -176,7 +178,7 @@ def test_path_lengths_returns_dataclass() -> None:
 
 def test_dfg_components_empty_graph_returns_empty() -> None:
     """Empty graph returns empty component lists."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     scc, wcc = compute_dfg_components(graph)
     expect_equal(scc, [])
     expect_equal(wcc, [])
@@ -227,7 +229,7 @@ def test_dfg_components_disconnected_graph() -> None:
 
 def test_dfg_components_mixed_graph() -> None:
     """Graph with both cycle and dag parts."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Cycle: A -> B -> C -> A
     graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
     # DAG part: D -> E
@@ -250,14 +252,14 @@ def test_dfg_components_mixed_graph() -> None:
 
 def test_def_use_chains_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_def_use_chains(graph)
     expect_equal(result, {})
 
 
 def test_def_use_chains_single_node() -> None:
     """Single node has empty chain."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("def")
     result = compute_def_use_chains(graph)
 
@@ -313,14 +315,14 @@ def test_def_use_chains_diamond_graph() -> None:
 
 def test_use_def_chains_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_use_def_chains(graph)
     expect_equal(result, {})
 
 
 def test_use_def_chains_single_node() -> None:
     """Single node has empty chain."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("use")
     result = compute_use_def_chains(graph)
 
@@ -367,14 +369,14 @@ def test_use_def_chains_star_inward() -> None:
 
 def test_dfg_density_empty_graph_returns_zero() -> None:
     """Empty graph returns zero density."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_dfg_density(graph)
     expect_equal(result, DENSITY_ZERO)
 
 
 def test_dfg_density_single_node_returns_zero() -> None:
     """Single node graph returns zero density."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("A")
     result = compute_dfg_density(graph)
     expect_equal(result, DENSITY_ZERO)
@@ -426,7 +428,7 @@ def test_dfg_density_two_node_graph() -> None:
 
 def test_find_cycles_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = find_dfg_cycles(graph)
     expect_equal(result, [])
 
@@ -469,7 +471,7 @@ def test_find_cycles_multiple_cycles() -> None:
 
 def test_find_cycles_limit_respected() -> None:
     """Limit parameter caps number of cycles returned."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Multiple small cycles
     for i in range(5):
         graph.add_edge(f"A{i}", f"B{i}")
@@ -492,7 +494,7 @@ def test_find_cycles_nested_cycles() -> None:
 
 def test_find_cycles_with_dag_part() -> None:
     """Graph with both cycle and DAG parts."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # DAG part
     graph.add_edges_from([("start", "A"), ("end", "exit")])
     # Cycle part
@@ -545,7 +547,7 @@ def test_path_lengths_various_chains(chain_length: int, expected_max_from_first:
 
 @pytest.mark.parametrize(
     "cycle_size",
-    [2, 3, 5, 10],
+    CYCLE_SIZE_SWEEP,
 )
 def test_cycles_detected_various_sizes(cycle_size: int) -> None:
     """Cycles of various sizes are detected."""
@@ -565,7 +567,7 @@ def test_cycles_detected_various_sizes(cycle_size: int) -> None:
 )
 def test_density_various_graphs(node_count: int, edge_count: int, expected_density: float) -> None:
     """Density calculation for various graph configurations."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     for i in range(node_count):
         graph.add_node(i)
     edges_added = 0

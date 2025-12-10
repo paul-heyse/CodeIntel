@@ -76,6 +76,8 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
+    empty_digraph,
+    empty_graph,
     god_module_graph,
     hub_dependencies_graph,
     independent_modules_graph,
@@ -84,6 +86,7 @@ from tests._helpers.fakes.networkx_graphs import (
     two_cycle_graph,
     two_sccs_graph,
 )
+from tests.graphs.constants import CYCLE_SIZE_SWEEP
 
 # ---------------------------------------------------------------------------
 # Constants for magic value compliance
@@ -127,7 +130,7 @@ CORE_NUMBER_K4: Final[int] = 3
 
 def test_pagerank_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_pagerank(graph)
     expect_true(result == {})
 
@@ -176,7 +179,7 @@ def test_pagerank_chain_graph_probability_distribution() -> None:
 
 def test_pagerank_single_node_graph() -> None:
     """Single node graph assigns all rank to that node."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("solo")
 
     result = compute_pagerank(graph)
@@ -197,7 +200,7 @@ def test_pagerank_outward_star_hub_has_low_rank() -> None:
 
 def test_betweenness_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_betweenness(graph)
     expect_true(result == {})
 
@@ -238,7 +241,7 @@ def test_betweenness_disconnected_graph_has_entries_for_all_nodes() -> None:
 
 def test_closeness_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_closeness(graph)
     expect_true(result == {})
 
@@ -273,7 +276,7 @@ def test_closeness_disconnected_graph_returns_all_nodes() -> None:
 
 def test_degree_centrality_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_degree_centrality(graph)
     expect_true(result == {})
 
@@ -289,7 +292,7 @@ def test_in_degree_centrality() -> None:
 
 def test_in_degree_centrality_empty_graph() -> None:
     """Empty graph returns empty in-degree centrality."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_in_degree_centrality(graph)
 
     expect_true(result == {})
@@ -306,7 +309,7 @@ def test_out_degree_centrality() -> None:
 
 def test_out_degree_centrality_empty_graph() -> None:
     """Empty graph returns empty out-degree centrality."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_out_degree_centrality(graph)
 
     expect_true(result == {})
@@ -314,14 +317,14 @@ def test_out_degree_centrality_empty_graph() -> None:
 
 def test_all_centralities_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_all_centralities(graph)
     expect_true(result == {})
 
 
 def test_all_centralities_single_node_returns_zero_degrees() -> None:
     """Single node graph returns zero degrees."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("solo")
     result = compute_all_centralities(graph)
 
@@ -390,7 +393,7 @@ def test_centrality_to_rows_converts_metrics() -> None:
 
 def test_scc_empty_graph_returns_empty() -> None:
     """Empty graph returns empty result."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = find_strongly_connected(graph)
 
     expect_true(result.components == ())
@@ -398,13 +401,14 @@ def test_scc_empty_graph_returns_empty() -> None:
     expect_true(result.condensation is None)
 
 
-def test_scc_simple_cycle_is_one_scc() -> None:
-    """Simple cycle is one SCC."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+@pytest.mark.parametrize("cycle_size", CYCLE_SIZE_SWEEP)
+def test_scc_simple_cycle_is_one_scc(cycle_size: int) -> None:
+    """Simple cycles are single SCCs."""
+    graph = cyclic_graph(cycle_size)
     result = find_strongly_connected(graph)
 
     expect_true(len(result.components) == EXPECTED_SINGLE_COMPONENT)
-    expect_true(result.components[0].size == EXPECTED_CYCLE_NODES)
+    expect_true(result.components[0].size == cycle_size)
 
 
 def test_scc_disconnected_nodes_are_separate() -> None:
@@ -466,7 +470,7 @@ def test_scc_complex_component_mix() -> None:
 
 def test_scc_single_node_component() -> None:
     """Single node graph returns one SCC."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node("solo")
     result = find_strongly_connected(graph)
 
@@ -476,7 +480,7 @@ def test_scc_single_node_component() -> None:
 
 def test_wcc_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = find_weakly_connected(graph)
     expect_true(result == [])
 
@@ -505,7 +509,7 @@ def test_wcc_component_info_structure() -> None:
 
 def test_connected_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = find_connected(graph)
     expect_true(result == [])
 
@@ -520,7 +524,7 @@ def test_connected_graph_is_one_component() -> None:
 
 def test_bridges_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = find_bridges(graph)
     expect_true(result == [])
 
@@ -544,7 +548,7 @@ def test_bridges_cycle_has_no_bridges() -> None:
 
 def test_articulation_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = find_articulation_points(graph)
     expect_true(result == [])
 
@@ -595,24 +599,20 @@ def test_component_stats_computes_correct() -> None:
 
 def test_cycles_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = find_cycles(graph)
     expect_true(result == [])
 
 
-def test_cycles_simple_cycle_detected() -> None:
+@pytest.mark.parametrize("cycle_size", CYCLE_SIZE_SWEEP)
+def test_cycles_simple_cycle_detected(cycle_size: int) -> None:
     """Simple cycle is detected."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    graph = cyclic_graph(cycle_size)
     result = find_cycles(graph)
 
     expect_true(len(result) >= 1)
-    # The cycle contains nodes 1, 2, 3
     cycle_nodes = set(result[0])
-    expect_true(
-        1 in cycle_nodes
-        or EXPECTED_NODE_COUNT_TWO in cycle_nodes
-        or EXPECTED_CYCLE_NODES in cycle_nodes
-    )
+    expect_equal(len(cycle_nodes), cycle_size)
 
 
 def test_cycles_limit_parameter_respected() -> None:
@@ -637,7 +637,7 @@ def test_cycles_dag_has_no_cycles() -> None:
 
 def test_topological_layers_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = topological_layers(graph)
     expect_true(result == {})
 
@@ -666,7 +666,7 @@ def test_topological_layers_root_nodes_layer_zero() -> None:
 def test_condensation_layers_no_condensation_returns_empty() -> None:
     """No condensation returns empty dict."""
     scc_result = SCCResult(components=(), node_to_component={}, condensation=None)
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = condensation_layers(graph, scc_result)
 
     expect_true(result == {})
@@ -700,7 +700,7 @@ def test_condensation_layers_respects_component_order() -> None:
 
 def test_coupling_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_coupling(graph)
     expect_true(result == {})
 
@@ -726,7 +726,7 @@ def test_coupling_instability_calculation() -> None:
 
 def test_coupling_isolated_node_zero_instability() -> None:
     """Isolated node has zero instability."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_node(1)
     result = compute_coupling(graph)
 
@@ -858,14 +858,14 @@ def test_distance_main_sequence_key_scenarios(
 
 def test_louvain_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = detect_communities_louvain(graph)
     expect_true(result == [])
 
 
 def test_louvain_disconnected_separate_communities() -> None:
     """Disconnected components are separate communities."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edges_from([(1, 2), (2, 3)])
     graph.add_edges_from([(10, 11), (11, 12)])
     result = detect_communities_louvain(graph)
@@ -888,7 +888,7 @@ def test_louvain_returns_community_dataclass() -> None:
 
 def test_label_propagation_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = detect_communities_label_propagation(graph)
     expect_true(result == [])
 
@@ -905,7 +905,7 @@ def test_label_propagation_returns_communities() -> None:
 
 def test_modularity_empty_graph_returns_zero() -> None:
     """Empty graph returns zero modularity."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_modularity(graph, [])
     expect_true(result == 0.0)
 
@@ -919,7 +919,7 @@ def test_modularity_empty_communities_returns_zero() -> None:
 
 def test_modularity_in_valid_range() -> None:
     """Modularity is in valid range."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edges_from([(1, 2), (2, 3), (10, 11), (11, 12)])
     communities = [
         Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE),
@@ -932,7 +932,7 @@ def test_modularity_in_valid_range() -> None:
 
 def test_clustering_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_clustering_coefficient(graph)
     expect_true(result == {})
 
@@ -956,14 +956,14 @@ def test_average_clustering() -> None:
 
 def test_average_clustering_empty_graph() -> None:
     """Empty graph returns zero average clustering."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_average_clustering(graph)
     expect_true(result == 0.0)
 
 
 def test_hub_nodes_empty_graph_returns_empty() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = find_hub_nodes(graph)
     expect_true(result == [])
 
@@ -989,14 +989,14 @@ def test_hub_nodes_threshold_ratio_parameter() -> None:
 
 def test_boundary_nodes_empty_communities_returns_empty() -> None:
     """Empty communities returns empty list."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = find_boundary_nodes(graph, [])
     expect_true(result == [])
 
 
 def test_boundary_nodes_finds_boundary() -> None:
     """Finds nodes at community boundaries."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # Two communities with bridge node
     graph.add_edges_from([(1, 2), (2, 3), (3, 10), (10, 11), (11, 12)])
     communities = [
@@ -1059,7 +1059,7 @@ def test_structural_core_number_chain_graph() -> None:
 
 def test_structural_constraint_single_node_zero() -> None:
     """Constraint for isolated node is zero."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_node("solo")
     result = compute_constraint(graph)
 
@@ -1089,7 +1089,7 @@ def test_all_structural_complete_graph_metrics() -> None:
 
 def test_all_structural_empty_graph_returns_empty() -> None:
     """Empty graph returns empty structural metrics."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_all_structural(graph)
 
     expect_true(result == {})
@@ -1138,7 +1138,7 @@ def test_community_frozen() -> None:
 def test_scc_result_frozen() -> None:
     """SCCResult is frozen."""
     result = SCCResult(components=(), node_to_component={})
-    assert_cannot_setattr(result, "condensation", nx.DiGraph())
+    assert_cannot_setattr(result, "condensation", empty_digraph())
 
 
 # ===========================================================================
@@ -1162,7 +1162,7 @@ def _build_realistic_call_graph() -> nx.DiGraph:
     nx.DiGraph
         A directed graph with hub functions, layered architecture, and SCCs.
     """
-    g = nx.DiGraph()
+    g = empty_digraph()
 
     # Layer 0: Core utilities (no internal deps)
     core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
@@ -1210,7 +1210,7 @@ def _build_realistic_import_graph() -> nx.DiGraph:
     nx.DiGraph
         A directed graph representing module imports.
     """
-    g = nx.DiGraph()
+    g = empty_digraph()
 
     # Core modules
     core = ["core.utils", "core.types", "core.errors", "core.config"]

@@ -22,7 +22,11 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.fakes.networkx_graphs import bipartite_graph, shared_neighbors_graph
+from tests._helpers.fakes.networkx_graphs import (
+    bipartite_graph,
+    empty_graph,
+    shared_neighbors_graph,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -61,7 +65,7 @@ def _require_projection(graph: nx.Graph | None) -> nx.Graph:
 
 def test_bipartite_degrees_empty_graph() -> None:
     """Empty graph returns empty metrics."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_bipartite_degrees(graph, set(), set())
 
     expect_equal(result.degree, {})
@@ -72,7 +76,7 @@ def test_bipartite_degrees_empty_graph() -> None:
 
 def test_bipartite_degrees_empty_primary_partition() -> None:
     """Empty primary partition returns empty centrality."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_nodes_from([1, 2, 3])
     graph.add_edges_from([(1, 2), (2, 3)])
 
@@ -85,7 +89,7 @@ def test_bipartite_degrees_empty_primary_partition() -> None:
 
 def test_bipartite_degrees_empty_secondary_partition() -> None:
     """Empty secondary partition returns empty centrality."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_nodes_from([1, 2, 3])
     graph.add_edges_from([(1, 2), (2, 3)])
 
@@ -132,7 +136,7 @@ def test_bipartite_degrees_unweighted() -> None:
 
 def test_bipartite_degrees_weighted() -> None:
     """Weighted degree computation."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edge(1, "a", weight=WEIGHT_VALUE)
     graph.add_edge(1, "b", weight=1.0)
     graph.add_edge(2, "b", weight=WEIGHT_VALUE)
@@ -187,7 +191,7 @@ def test_bipartite_degrees_returns_dataclass() -> None:
 
 def test_bipartite_degrees_no_weight_attribute() -> None:
     """Weight parameter with no weight attribute uses 1.0."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edge(1, "a")
     graph.add_edge(1, "b")
     primary = {1}
@@ -281,7 +285,7 @@ def test_weighted_projection_weights() -> None:
 
 def test_weighted_projection_partial_overlap() -> None:
     """Partial overlap creates weighted edges."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # 1 connects to a, b, c
     # 2 connects to b, c, d
     # 3 connects to c, d, e
@@ -312,7 +316,7 @@ def test_weighted_projection_partial_overlap() -> None:
 
 def test_weighted_projection_secondary_partition() -> None:
     """Project onto secondary partition."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edges_from(
         [
             (1, "a"),
@@ -333,7 +337,7 @@ def test_weighted_projection_secondary_partition() -> None:
 
 def test_weighted_projection_single_node() -> None:
     """Single node partition."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edges_from([(1, "a"), (1, "b")])
     primary = {1}
 
@@ -457,7 +461,7 @@ def test_complete_bipartite_projection_edges(
 )
 def test_projection_with_varying_shared_neighbors(shared_count: int) -> None:
     """Projection edge weight varies with shared neighbor count."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # Nodes 1 and 2 share 'shared_count' neighbors
     for i in range(shared_count):
         graph.add_edge(1, f"s{i}")

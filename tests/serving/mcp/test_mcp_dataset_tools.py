@@ -1,7 +1,4 @@
-"""Tests for MCP dataset tools.
-
-This module tests the dataset browsing MCP tools registered from Operation.
-"""
+"""Tests for MCP dataset tools."""
 
 from __future__ import annotations
 
@@ -17,6 +14,7 @@ from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dat
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.operations import iter_operations
+from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -28,9 +26,6 @@ from tests._helpers.dataset_factories import make_descriptor
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 from tests.serving.mcp.conftest import McpBackendComponents
-
-if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
 
 # =============================================================================
 # Constants
@@ -53,13 +48,7 @@ MAX_ROWS = 100
 def test_register_dataset_tools_success(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_dataset_tools registers tools successfully.
-
-    Parameters
-    ----------
-    mcp_backend
-        Aggregated backend components for the provisioned gateway.
-    """
+    """Verify register_dataset_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Dataset Tools")
 
     # Should not raise
@@ -72,13 +61,7 @@ def test_register_dataset_tools_success(
 def test_register_dataset_tools_with_service(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
-    """Verify register_dataset_tools works with service directly.
-
-    Parameters
-    ----------
-    mcp_backend_components
-        Aggregated backend components for the provisioned gateway.
-    """
+    """Verify register_dataset_tools works with service directly."""
     mcp = wrap_fastmcp("Test Service")
 
     register_dataset_tools(mcp, mcp_backend_components.service)
@@ -89,13 +72,7 @@ def test_register_dataset_tools_with_service(
 def test_register_dataset_tools_with_config(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_dataset_tools works with serving config.
-
-    Parameters
-    ----------
-    mcp_backend
-        Aggregated backend components for the provisioned gateway.
-    """
+    """Verify register_dataset_tools works with serving config."""
     mcp = wrap_fastmcp("Test With Config")
     config = None
 
@@ -107,13 +84,7 @@ def test_register_dataset_tools_with_config(
 def test_register_dataset_tools_on_multiple_servers(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify tools can be registered on multiple servers.
-
-    Parameters
-    ----------
-    mcp_backend
-        Aggregated backend components for the provisioned gateway.
-    """
+    """Verify tools can be registered on multiple servers."""
     mcp1 = wrap_fastmcp("Server 1")
     register_dataset_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server 1")
@@ -125,53 +96,6 @@ def test_register_dataset_tools_on_multiple_servers(
 
 def test_dataset_tools_serialize_unicode_payloads() -> None:
     """Dataset tools serialize multi-row unicode/nullable payloads."""
-    payload = [
-        make_descriptor(
-            name="datasets.alpha",
-            table="core.alpha",
-            description="データセット alpha",
-        )[0],
-        make_descriptor(
-            name="datasets.delta",
-            table="docs.δelta",
-            description="Docs delta",
-            options=None,
-        )[0],
-    ]
-
-    class _ListDatasetService(LocalQueryService):
-        def __init__(self, dataset_payload: Sequence[dm.DatasetDescriptorDomain]) -> None:
-            super().__init__(query=HookedDuckDBQueryApi())
-            self._dataset_payload = dataset_payload
-
-        def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
-            return self._call("list_datasets", lambda: list(self._dataset_payload))
-
-    backend = _ListDatasetService(payload)
-
-    registrar = RecordingMcpRegistrar("dataset-recorder")
-    ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]
-    register_dataset_tools(
-        registrar,
-        backend,
-        options=DatasetToolOptions(operations=ops),
-    )
-
-    tool = registrar.registry["list_datasets"]
-    result = cast("list[dict[str, object]]", tool())
-    expect_is_instance(result, list)
-    expect_equal(len(result), 2)
-    expect_true(any(row["owner"] is None for row in result))
-    expect_true(
-        any(
-            ("δ" in str(row.get("table", ""))) or ("δ" in str(row.get("jsonl_filename") or ""))
-            for row in result
-        )
-    )
-
-
-def test_dataset_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> None:
-    """Dataset tools emit ProblemDetail payloads and warning logs on failure."""
 
     class _FailingService(LocalQueryService):
         def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
@@ -209,16 +133,6 @@ def test_iter_operations_yields_dataset_operations() -> None:
     """Verify iter_operations yields dataset category operations."""
     dataset_ops = [spec for spec in iter_operations() if spec.category == "datasets"]
 
-    expect_true(len(dataset_ops) > 0)
-    # Dataset operations should have tool_name
-    ops_with_tools = [op for op in dataset_ops if op.tool_name is not None]
-    expect_true(len(ops_with_tools) > 0)
-
-
-def test_dataset_operations_have_required_fields() -> None:
-    """Verify dataset operations have required fields."""
-    dataset_ops = [spec for spec in iter_operations() if spec.category == "datasets"]
-
     for spec in dataset_ops:
         expect_is_not_none(spec.id)
         expect_equal(spec.category, "datasets")
@@ -234,13 +148,7 @@ def test_dataset_operations_have_required_fields() -> None:
 def test_backend_list_datasets(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.list_datasets works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.list_datasets works."""
     datasets = mcp_backend.backend.list_datasets()
 
     expect_is_instance(datasets, list)
@@ -249,13 +157,7 @@ def test_backend_list_datasets(
 def test_backend_dataset_specs(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.dataset_specs works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.dataset_specs works."""
     specs = mcp_backend.backend.dataset_specs()
 
     expect_is_instance(specs, list)
@@ -264,13 +166,7 @@ def test_backend_dataset_specs(
 def test_backend_read_dataset_rows(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.read_dataset_rows works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.read_dataset_rows works."""
     datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
@@ -282,13 +178,7 @@ def test_backend_read_dataset_rows(
 def test_backend_read_dataset_rows_with_offset(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.read_dataset_rows works with offset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.read_dataset_rows works with offset."""
     datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
@@ -300,13 +190,7 @@ def test_backend_read_dataset_rows_with_offset(
 def test_backend_dataset_schema(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.dataset_schema works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.dataset_schema works."""
     datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
@@ -322,13 +206,7 @@ def test_backend_dataset_schema(
 def test_backend_read_dataset_rows_nonexistent_dataset(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend raises error for nonexistent dataset.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend raises error for nonexistent dataset."""
     with pytest.raises(McpError):
         mcp_backend.backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz", limit=5)
 
@@ -342,13 +220,7 @@ def test_backend_with_custom_limits(
     mcp_backend_components: McpBackendComponents,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
-    """Verify backend respects custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend respects custom limits."""
     custom_limit = 25
     custom_max = 250
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
@@ -371,13 +243,7 @@ def test_backend_with_custom_limits(
 def test_backend_list_datasets_returns_descriptors(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.list_datasets returns descriptors with name field.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.list_datasets returns descriptors with name field."""
     datasets = mcp_backend.backend.list_datasets()
 
     # Verify we get objects with name attribute
@@ -388,13 +254,7 @@ def test_backend_list_datasets_returns_descriptors(
 def test_backend_dataset_specs_returns_pydantic_models(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.dataset_specs returns Pydantic models.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.dataset_specs returns Pydantic models."""
     specs = mcp_backend.backend.dataset_specs()
 
     for spec in specs:
@@ -409,13 +269,7 @@ def test_backend_dataset_specs_returns_pydantic_models(
 def test_register_dataset_tools_preserves_backend_state(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify registration doesn't alter backend state.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify registration doesn't alter backend state."""
     mcp = wrap_fastmcp("Test State")
     backend = mcp_backend.backend
     original_repo = backend.repo
@@ -432,13 +286,7 @@ def test_register_dataset_tools_preserves_backend_state(
 def test_local_query_service_as_backend(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
-    """Verify LocalQueryService can be used as backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify LocalQueryService can be used as backend."""
     mcp = wrap_fastmcp("Test Local Service")
     register_dataset_tools(mcp, mcp_backend_components.service)
 

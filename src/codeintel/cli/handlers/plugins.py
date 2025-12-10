@@ -239,7 +239,7 @@ def plugins_list_handler(ctx: HandlerContext) -> CliResult[PluginsListResult]:
     CliResult[PluginsListResult]
         List of installed plugins.
     """
-    _ = ctx._params  # Acknowledge params
+    _ = ctx.params  # Acknowledge params
     LOG.info("Listing installed plugins")
 
     manager = get_plugin_manager()
@@ -265,7 +265,7 @@ def plugins_discover_handler(
     CliResult[PluginsDiscoverResult]
         Discovered plugins and search paths.
     """
-    _ = ctx._params  # Acknowledge params
+    _ = ctx.params  # Acknowledge params
     LOG.info("Discovering available plugins")
 
     manager = get_plugin_manager()
@@ -294,7 +294,7 @@ def plugins_discover_handler(
     )
 
 
-def plugins_info_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginInfoResult]:
+def plugins_info_handler(ctx: HandlerContext) -> CliResult[PluginInfoResult]:
     """Get details about a plugin.
 
     Parameters
@@ -308,7 +308,7 @@ def plugins_info_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginInfoRes
     CliResult[PluginInfoResult]
         Plugin details.
     """
-    name = _require_str_param(ctx, "name")
+    name = ctx.require_str("name")
     LOG.info("Getting info for plugin: %s", name)
 
     manager = get_plugin_manager()
@@ -336,7 +336,7 @@ def plugins_info_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginInfoRes
     )
 
 
-def plugins_paths_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginPathsResult]:
+def plugins_paths_handler(ctx: HandlerContext) -> CliResult[PluginPathsResult]:
     """Show plugin search paths.
 
     Parameters
@@ -362,7 +362,7 @@ def plugins_paths_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginPathsR
     return CliResult.ok(PluginPathsResult(paths=paths))
 
 
-def plugins_new_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginNewResult]:
+def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
     """Create a new plugin scaffold.
 
     Parameters
@@ -379,9 +379,8 @@ def plugins_new_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginNewResul
     """
     import re  # noqa: PLC0415
 
-    name = _require_str_param(ctx, "name")
-    output_str = _get_str_param(ctx, "output")
-    output_dir = Path(output_str) if output_str else Path.cwd()
+    name = ctx.require_str("name")
+    output_dir = ctx.param_path("output") or Path.cwd()
 
     LOG.info("Creating plugin scaffold: %s in %s", name, output_dir)
 
@@ -402,7 +401,7 @@ def plugins_new_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginNewResul
     return CliResult.ok(PluginNewResult(plugin_dir=str(plugin_dir), name=name))
 
 
-def plugins_test_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginTestResult]:
+def plugins_test_handler(ctx: HandlerContext) -> CliResult[PluginTestResult]:
     """Test a plugin.
 
     Parameters
@@ -416,8 +415,7 @@ def plugins_test_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginTestRes
     CliResult[PluginTestResult]
         Test results.
     """
-    path_str = _require_str_param(ctx, "path")
-    path = Path(path_str)
+    path = ctx.param_path("path") or Path.cwd()
 
     LOG.info("Testing plugin at: %s", path)
 
@@ -467,7 +465,7 @@ def plugins_test_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginTestRes
 
 
 def plugins_validate_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[PluginValidateResult]:
     """Validate a plugin manifest.
 
@@ -482,8 +480,7 @@ def plugins_validate_handler(
     CliResult[PluginValidateResult]
         Validation results.
     """
-    path_str = _require_str_param(ctx, "path")
-    path = Path(path_str)
+    path = ctx.param_path("path") or Path.cwd()
 
     LOG.info("Validating plugin at: %s", path)
 

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from codeintel.cli.config.model import CliConfig
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
@@ -18,7 +20,6 @@ from codeintel.cli.handlers.datasets import (
     datasets_list_handler,
     datasets_snapshot_handler,
 )
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -26,8 +27,8 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 
-def _make_mock_context(params: dict[str, Any]) -> EnhancedHandlerContext:
-    """Create a mock EnhancedHandlerContext for testing.
+def _make_mock_context(params: dict[str, Any]) -> HandlerContext:
+    """Create a HandlerContext for testing.
 
     Parameters
     ----------
@@ -36,13 +37,15 @@ def _make_mock_context(params: dict[str, Any]) -> EnhancedHandlerContext:
 
     Returns
     -------
-    EnhancedHandlerContext
-        Mock context with provided params.
+    HandlerContext
+        Test context with provided params.
     """
-    ctx = MagicMock(spec=EnhancedHandlerContext)
-    ctx.params = params
-    ctx.logger = logging.getLogger("test")
-    return ctx
+    mock_config = MagicMock(spec=CliConfig)
+    return HandlerContext(
+        config=mock_config,
+        operation_id="datasets.test",
+        _params=params,
+    )
 
 
 def test_datasets_list_result_to_dict() -> None:

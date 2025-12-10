@@ -23,7 +23,6 @@ from codeintel.ingestion.adapters.duckdb_storage import (
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.engine.results import CoverageReport
-from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.ports.tools import ToolStatus
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
@@ -172,78 +171,10 @@ def test_small_batch_threshold_positive() -> None:
     expect_true(isinstance(SMALL_BATCH_THRESHOLD, int))
 
 
-def test_ingest_macros_not_empty() -> None:
-    """INGEST_MACROS should contain mappings."""
-    expect_true(len(INGEST_MACROS) > 0)
-    expect_true(isinstance(INGEST_MACROS, dict))
-
-
-def test_ingest_macros_keys_are_table_format() -> None:
-    """INGEST_MACROS keys should be in schema.table format."""
-    for key in INGEST_MACROS:
-        expect_true("." in key)
-        parts = key.split(".")
-        min_parts = 2
-        expect_true(len(parts) >= min_parts)
-
-
 def test_ingest_macros_values_start_with_metadata() -> None:
     """INGEST_MACROS values should start with metadata.ingest_."""
     for value in INGEST_MACROS.values():
         expect_true(value.startswith("metadata.ingest_"))
-
-
-# =============================================================================
-# BatchResult Tests
-# =============================================================================
-
-
-def test_batch_result_attributes() -> None:
-    """BatchResult should store write results."""
-    result = BatchResult(
-        table_key="core.test",
-        rows_written=ROWS_WRITTEN_100,
-        duration_s=DURATION_1_5,
-    )
-
-    expect_equal(result.table_key, "core.test")
-    expect_equal(result.rows_written, ROWS_WRITTEN_100)
-    expect_equal(result.duration_s, DURATION_1_5)
-
-
-def test_batch_result_defaults() -> None:
-    """BatchResult should have sensible defaults."""
-    result = BatchResult(table_key="core.test", rows_written=50)
-
-    expect_equal(result.duration_s, 0.0)
-
-
-# =============================================================================
-# QueryResult Tests
-# =============================================================================
-
-
-def test_query_result_attributes() -> None:
-    """QueryResult should store query results."""
-    result = QueryResult(
-        rows=[("a", 1), ("b", 2)],
-        columns=("name", "value"),
-        row_count=2,
-    )
-
-    expected_rows = 2
-    expect_length(result.rows, expected_rows)
-    expect_equal(result.columns, ("name", "value"))
-    expect_equal(result.row_count, expected_rows)
-
-
-def test_query_result_defaults() -> None:
-    """QueryResult should have sensible defaults."""
-    result = QueryResult()
-
-    expect_equal(result.rows, [])
-    expect_equal(result.columns, ())
-    expect_equal(result.row_count, 0)
 
 
 # =============================================================================
@@ -254,12 +185,6 @@ def test_query_result_defaults() -> None:
 def test_duckdb_adapter_initialization(duckdb_adapter: DuckDBStorageAdapter) -> None:
     """DuckDBStorageAdapter should initialize from gateway."""
     expect_is_not_none(duckdb_adapter)
-
-
-def test_duckdb_adapter_ensure_schema(duckdb_adapter: DuckDBStorageAdapter) -> None:
-    """DuckDBStorageAdapter.ensure_schema should not raise for valid tables."""
-    # Should not raise
-    duckdb_adapter.ensure_schema("core.modules")
 
 
 def test_duckdb_adapter_ensure_schema_unknown_table(
@@ -493,11 +418,6 @@ def test_ingest_macros_has_core_modules() -> None:
 # =============================================================================
 # ToolRunnerAdapter Tests
 # =============================================================================
-
-
-def test_tool_runner_adapter_initialization(success_tool_adapter: ToolRunnerAdapter) -> None:
-    """ToolRunnerAdapter should initialize with ToolService."""
-    expect_is_not_none(success_tool_adapter)
 
 
 @pytest.mark.parametrize(

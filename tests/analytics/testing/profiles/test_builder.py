@@ -26,7 +26,6 @@ from codeintel.analytics.testing.profiles.builder import (
     EMPTY_TEST_METRICS,
     PRIMARY_COVERAGE_THRESHOLD,
     BehavioralProfile,
-    build_behavioral_coverage,
     build_test_profile,
     infer_behavior_tags,
 )
@@ -452,18 +451,7 @@ class TestBuildTestProfile:
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
         )
         # COVERAGE_PACK seeds 4 tests
-        expect_true(count >= 0)  # At least 0, possibly more depending on processing
-
-
-class TestBuildBehavioralCoverage:
-    """Tests for build_behavioral_coverage function."""
-
-    @staticmethod
-    def test_build_behavioral_coverage_imports_correctly() -> None:
-        """Verify build_behavioral_coverage is importable and callable."""
-        # The function requires specific loaders for test records
-        # so we just verify it's importable
-        expect_true(callable(build_behavioral_coverage))
+        expect_equal(count, 4)
 
 
 class TestCoverageInputTypes:

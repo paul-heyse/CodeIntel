@@ -22,6 +22,11 @@ def test_entrypoints_plugin_handles_empty_features(plugin_harness: PluginTestHar
 
     result = plugin_harness.execute_plugin(EntrypointsPlugin(), resources=resources)
     expect_true(result.success)
-    # Tables should exist even if empty.
-    expect_true(plugin_harness.ctx.query_count("analytics.entrypoints") >= 0)
-    expect_true(plugin_harness.ctx.query_count("analytics.entrypoint_tests") >= 0)
+    expect_true(
+        plugin_harness.ctx.query_count("analytics.entrypoints") == 0,
+        message="Entrypoints table should be created but empty for an empty catalog",
+    )
+    expect_true(
+        plugin_harness.ctx.query_count("analytics.entrypoint_tests") == 0,
+        message="Entrypoint tests table should be created but empty for an empty catalog",
+    )

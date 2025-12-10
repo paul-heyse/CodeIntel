@@ -1,7 +1,4 @@
-"""Tests for MCP profile tools.
-
-This module tests the profile-oriented MCP tools using real gateways.
-"""
+"""Tests for MCP profile tools."""
 
 from __future__ import annotations
 
@@ -11,21 +8,20 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
+from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests.serving.mcp.conftest import McpBackendComponents
-
-if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-    from tests.serving.mcp.conftest import McpBackendComponents
 
 # =============================================================================
 # Constants
@@ -43,13 +39,7 @@ MAX_ROWS = 100
 def test_register_profile_tools_success(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_profile_tools registers tools successfully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_profile_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Profile Tools")
 
     # Should not raise
@@ -79,13 +69,7 @@ def test_profile_tools_return_problem_detail_on_missing_function(
 def test_register_profile_tools_with_service(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
-    """Verify register_profile_tools works with service directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_profile_tools works with service directly."""
     mcp = wrap_fastmcp("Test Service")
 
     register_profile_tools(mcp, mcp_backend_components.service)
@@ -96,13 +80,7 @@ def test_register_profile_tools_with_service(
 def test_register_profile_tools_with_config(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_profile_tools works with serving config.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_profile_tools works with serving config."""
     mcp = wrap_fastmcp("Test With Config")
     config = ServingConfig()
 
@@ -114,13 +92,7 @@ def test_register_profile_tools_with_config(
 def test_register_profile_tools_on_multiple_servers(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify tools can be registered on multiple servers.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify tools can be registered on multiple servers."""
     mcp1 = wrap_fastmcp("Server 1")
     register_profile_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server 1")
@@ -169,13 +141,7 @@ def test_profile_operations_have_backend_method() -> None:
 def test_backend_get_function_profile(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.get_function_profile works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.get_function_profile works."""
     result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -193,13 +159,7 @@ def test_backend_get_function_profile(
 def test_backend_get_file_profile(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.get_file_profile works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.get_file_profile works."""
     result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -217,13 +177,7 @@ def test_backend_get_file_profile(
 def test_backend_get_module_profile(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend.get_module_profile works.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend.get_module_profile works."""
     result_obj = mcp_backend.backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -246,13 +200,7 @@ def test_backend_get_module_profile(
 def test_backend_get_function_profile_not_found(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend raises McpError for nonexistent function.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend raises McpError for nonexistent function."""
     nonexistent_goid = 99999999999999999
 
     with pytest.raises(McpError):
@@ -262,13 +210,7 @@ def test_backend_get_function_profile_not_found(
 def test_backend_get_file_profile_not_found(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend handles nonexistent file gracefully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend handles nonexistent file gracefully."""
     result = mcp_backend.backend.get_file_profile(rel_path="nonexistent/path/to/file.py")
     # Should return result with found=False or empty
     expect_is_not_none(result)
@@ -277,13 +219,7 @@ def test_backend_get_file_profile_not_found(
 def test_backend_get_module_profile_not_found(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify backend raises McpError for nonexistent module.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend raises McpError for nonexistent module."""
     with pytest.raises(McpError):
         mcp_backend.backend.get_module_profile(module="nonexistent.module.path")
 
@@ -297,13 +233,7 @@ def test_backend_with_custom_limits(
     mcp_backend: McpBackendComponents,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
-    """Verify backend respects custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify backend respects custom limits."""
     custom_limit = 25
     custom_max = 250
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
@@ -326,13 +256,7 @@ def test_backend_with_custom_limits(
 def test_register_profile_tools_preserves_backend_state(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify registration doesn't alter backend state.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify registration doesn't alter backend state."""
     mcp = wrap_fastmcp("Test State")
     backend = mcp_backend.backend
 
@@ -355,13 +279,7 @@ def test_register_profile_tools_preserves_backend_state(
 def test_local_query_service_as_backend(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify LocalQueryService can be used as backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify LocalQueryService can be used as backend."""
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -388,13 +306,7 @@ def test_local_query_service_as_backend(
 def test_function_profile_response_structure(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify function profile response contains expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify function profile response contains expected fields."""
     backend = _build_backend(provisioned_repo)
 
     # Get a valid goid from the backend
@@ -418,13 +330,7 @@ def test_function_profile_response_structure(
 def test_file_profile_response_structure(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify file profile response contains expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify file profile response contains expected fields."""
     backend = _build_backend(provisioned_repo)
 
     # Get a valid path from the backend
@@ -448,13 +354,7 @@ def test_file_profile_response_structure(
 def test_module_profile_response_structure(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify module profile response contains expected fields.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify module profile response contains expected fields."""
     backend = _build_backend(provisioned_repo)
 
     # Get a valid module from the backend

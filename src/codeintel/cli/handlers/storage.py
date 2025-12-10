@@ -161,11 +161,9 @@ def validate_macros_handler(
     db_path_str = ctx.param_str("db_path")
     db_path = ctx.runtime.paths.db_path if db_path_str is None else Path(db_path_str)
 
-    macro_req_raw = ctx._params.get("macro_requirement", MacroRequirement.REQUIRE)
-    if isinstance(macro_req_raw, MacroRequirement):
-        macro_requirement = macro_req_raw
-    else:
-        macro_requirement = MacroRequirement(str(macro_req_raw))
+    macro_requirement = ctx.param_enum(
+        "macro_requirement", MacroRequirement, MacroRequirement.REQUIRE
+    )
 
     try:
         gateway = open_gateway(StorageConfig.for_readonly(db_path))

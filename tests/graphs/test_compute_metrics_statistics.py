@@ -43,7 +43,7 @@ from tests._helpers.fakes.networkx_graphs import (
     single_node_digraph,
     star_graph,
 )
-from tests.graphs.constants import CYCLE_SCC_SIZES, SMALL_COMPLETE_GRAPH_SIZES
+from tests.graphs.constants import CYCLE_SCC_SIZES, CYCLE_SIZE_SWEEP, SMALL_COMPLETE_GRAPH_SIZES
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -373,9 +373,10 @@ def test_condensation_layers_chain_graph() -> None:
     expect_equal(result, EXPECTED_LAYER_COUNT_FOUR)
 
 
-def test_condensation_layers_cycle_graph() -> None:
+@pytest.mark.parametrize("cycle_size", CYCLE_SIZE_SWEEP)
+def test_condensation_layers_cycle_graph(cycle_size: int) -> None:
     """Cycle graph has 1 layer (all nodes in one SCC)."""
-    graph = cyclic_graph(4)
+    graph = cyclic_graph(cycle_size)
     result = compute_condensation_layer_count(graph)
     expect_equal(result, EXPECTED_LAYER_COUNT_ONE)
 
