@@ -1,18 +1,30 @@
 """Cyclopts wiring for IDE helper commands.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
+Commands use the command_context() helper for standardized infrastructure:
+
+- Configuration loading via ConfigService
+- Runtime resolution
+- Logging setup based on verbosity
+- Unified rendering via UnifiedRenderer
+- Automatic resource cleanup
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.execution.adapter import CycloptsAdapter
-from codeintel.cli.ide_handlers import ide_hints_ctx
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    command_context,
+)
+from codeintel.cli.handlers.ide import ide_hints_handler
 
 ide_app = App(
     name="ide",
@@ -47,10 +59,29 @@ class IdeHintsCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the IDE hints command."""
-        CycloptsAdapter("ide.hints", ide_hints_ctx)(self)
+        # Build RuntimeCLI from individual params
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+
+        params: dict[str, object] = {"rel_path": self.rel_path}
+
+        with command_context("ide.hints", runtime_cli, self.output_format, params=params) as (
+            ctx,
+            renderer,
+        ):
+            result = ide_hints_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["ide_app"]

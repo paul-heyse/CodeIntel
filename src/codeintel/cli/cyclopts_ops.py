@@ -26,6 +26,7 @@ from cyclopts import App, Group, Parameter
 
 from codeintel.cli.cli_errors import ValidationError
 from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.command_context import command_context
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
@@ -38,23 +39,24 @@ from codeintel.cli.cyclopts_common import (
 from codeintel.cli.cyclopts_help import _AppCallKwargs
 from codeintel.cli.dry_run import plan_dry_run, render_dry_run
 from codeintel.cli.execution import ExecutionContext, get_middleware_stack
-from codeintel.cli.execution.adapter import CycloptsAdapter
+from codeintel.cli.handlers.ops import (
+    dataset_describe_handler,
+    dataset_list_handler,
+    dataset_verify_handler,
+    op_call_handler,
+    op_list_handler,
+    serve_http_handler,
+    serve_mcp_handler,
+)
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
     build_operation_cli_metadata,
     get_operations_with_cli_support,
 )
-from codeintel.cli.ops_handlers import (
-    dataset_describe_ctx,
-    dataset_list_ctx,
-    dataset_verify_ctx,
-    invoke_operation,
-    op_call_ctx,
-    op_list_ctx,
-    serve_http_ctx,
-    serve_mcp_ctx,
-)
+
+# Legacy import for invoke_operation used in dynamic operation calls
+from codeintel.cli.ops_handlers import invoke_operation
 from codeintel.cli.output import OutputEnvelope, iter_stdin_records, merge_stdin_with_args
 from codeintel.cli.project import ProjectRuntime
 from codeintel.serving.auto_pipeline import run_operation_prereqs
@@ -270,7 +272,24 @@ class OpListCommand:
 
     def __call__(self) -> None:
         """Execute the op list command."""
-        CycloptsAdapter("op.list", op_list_ctx)(self)
+        runtime_cli = RuntimeCLI(verbose=self.verbose)
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {
+            "category": self.category,
+        }
+
+        with command_context(
+            "op.list",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,  # No project needed for listing operations
+        ) as (ctx, renderer):
+            result = op_list_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @op_app.command(name="call")
@@ -318,7 +337,28 @@ class OpCallCommand:
 
     def __call__(self) -> None:
         """Execute the op call command."""
-        CycloptsAdapter("op.call", op_call_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI()
+
+        params: dict[str, object] = {
+            "op_id": self.op_id,
+            "params": self.params,
+            "skip_prereqs": self.skip_prereqs,
+        }
+
+        with command_context(
+            "op.call",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = op_call_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
@@ -1017,7 +1057,25 @@ class DatasetListCommand:
 
     def __call__(self) -> None:
         """Execute the dataset list command."""
-        CycloptsAdapter("dataset.list", dataset_list_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {}
+
+        with command_context(
+            "dataset.list",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,  # No project needed for listing datasets
+        ) as (ctx, renderer):
+            result = dataset_list_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @dataset_app.command(name="describe")
@@ -1051,7 +1109,24 @@ class DatasetDescribeCommand:
 
     def __call__(self) -> None:
         """Execute the dataset describe command."""
-        CycloptsAdapter("dataset.describe", dataset_describe_ctx)(self)
+        runtime_cli = RuntimeCLI(verbose=self.verbose)
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {
+            "table_key": self.table_key,
+        }
+
+        with command_context(
+            "dataset.describe",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,  # No project needed for describing contracts
+        ) as (ctx, renderer):
+            result = dataset_describe_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @dataset_app.command(name="verify")
@@ -1084,7 +1159,26 @@ class DatasetVerifyCommand:
 
     def __call__(self) -> None:
         """Execute the dataset verify command."""
-        CycloptsAdapter("dataset.verify", dataset_verify_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI()
+
+        params: dict[str, object] = {
+            "table_key": self.table_key,
+        }
+
+        with command_context(
+            "dataset.verify",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = dataset_verify_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 # -----------------------------------------------------------------------------
@@ -1145,7 +1239,29 @@ class ServeHttpCommand:
 
     def __call__(self) -> None:
         """Execute the serve http command."""
-        CycloptsAdapter("serve.http", serve_http_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI()
+
+        params: dict[str, object] = {
+            "host": self.host,
+            "port": self.port,
+            "auto_pipeline": self.auto_pipeline,
+            "reload": self.reload,
+        }
+
+        with command_context(
+            "serve.http",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = serve_http_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @serve_app.command(name="mcp")
@@ -1179,7 +1295,26 @@ class ServeMcpCommand:
 
     def __call__(self) -> None:
         """Execute the serve mcp command."""
-        CycloptsAdapter("serve.mcp", serve_mcp_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI()
+
+        params: dict[str, object] = {
+            "auto_pipeline": self.auto_pipeline,
+        }
+
+        with command_context(
+            "serve.mcp",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = serve_mcp_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 register_dynamic_operations()

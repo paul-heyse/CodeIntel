@@ -3,12 +3,16 @@
 These helpers keep operational logic while allowing Cyclopts to invoke
 them without importing Typer. All user-facing errors surface as
 :class:`~codeintel.cli.cli_errors.ValidationError`.
+
+.. deprecated:: 2.0
+    This module is deprecated. Use codeintel.cli.handlers.build instead.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -39,6 +43,12 @@ from codeintel.cli.results import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.execution.context import ExecutionContext
+
+warnings.warn(
+    "codeintel.cli.build_handlers is deprecated. Use codeintel.cli.handlers.build instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG = logging.getLogger(__name__)
 

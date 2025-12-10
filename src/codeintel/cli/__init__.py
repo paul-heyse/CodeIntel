@@ -1,7 +1,20 @@
-"""CodeIntel unified CLI entry point (Cyclopts-based)."""
+"""CodeIntel unified CLI entry point (Cyclopts-based).
+
+This module provides:
+
+1. CLI apps for each domain (build, datasets, docs, graphs, etc.)
+2. Re-exports from the handlers package for programmatic use
+3. The main entry point for the ``codeintel`` command
+
+Examples
+--------
+>>> from codeintel.cli import app, main
+>>> from codeintel.cli.handlers import ide_hints_handler, EnhancedHandlerContext
+"""
 
 from __future__ import annotations
 
+from codeintel.cli.command_context import command_context
 from codeintel.cli.cyclopts_app import app
 from codeintel.cli.cyclopts_build import build_app
 from codeintel.cli.cyclopts_datasets import datasets_ext_app
@@ -22,6 +35,7 @@ def main() -> None:
 __all__ = [
     "app",
     "build_app",
+    "command_context",
     "dataset_app",
     "datasets_ext_app",
     "docs_app",

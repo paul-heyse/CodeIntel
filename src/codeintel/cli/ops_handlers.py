@@ -4,6 +4,9 @@ These helpers keep the operational logic formerly hosted in ``cli.main`` while
 allowing Cyclopts to invoke them without importing Typer. All user-facing
 errors surface as :class:`~codeintel.cli.cli_errors.ValidationError` so the
 CLI runner can normalize exit codes and stderr output consistently.
+
+.. deprecated:: 2.0
+    This module is deprecated. Use codeintel.cli.handlers.ops instead.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,6 +50,12 @@ from codeintel.storage.validation import collect_contract_issues
 if TYPE_CHECKING:
     from codeintel.cli.execution.context import ExecutionContext
     from codeintel.cli.resolution.types import ResolvedRuntime
+
+warnings.warn(
+    "codeintel.cli.ops_handlers is deprecated. Use codeintel.cli.handlers.ops instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG = logging.getLogger(__name__)
 
