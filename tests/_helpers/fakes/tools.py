@@ -15,8 +15,11 @@ from typing import Any
 
 from anyio import to_thread
 
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.engine.infrastructure import (
+    ToolExecutionError,
     ToolName,
+    ToolNotFoundError,
     ToolRunner,
     ToolRunResult,
 )
@@ -147,6 +150,55 @@ def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tupl
     index_scip.write_text("scip-binary", encoding="utf8")
     index_json.write_text(index_content, encoding="utf8")
     return index_scip, index_json
+
+
+class PresetRunner(ToolRunner):
+    """ToolRunner that returns preset results without invoking subprocesses."""
+
+    def __init__(self, result: ToolRunResult | Exception) -> None:
+        """Initialize with preset result."""
+        self._result = result
+        super().__init__(tools_config=ToolsConfig.default(), cache_dir=Path("build/.tool_cache"))
+
+    async def run_async(
+        self,
+        tool: ToolName | str,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        output_path: Path | None = None,
+        timeout_s: float | None = None,
+    ) -> ToolRunResult:
+        """Return a preset ToolRunResult or raise the configured exception.
+
+        Returns
+        -------
+        ToolRunResult
+            The configured result when no error is raised.
+
+        Raises
+        ------
+        ToolNotFoundError
+            When initialized with a ToolNotFoundError.
+        ToolExecutionError
+            When initialized with a generic exception.
+        """
+        del tool, args, cwd, timeout_s
+        if isinstance(self._result, ToolNotFoundError):
+            raise ToolNotFoundError(self._result.tool, self._result.configured_path)
+        if isinstance(self._result, Exception):
+            raise ToolExecutionError(
+                make_tool_run_result(
+                    ToolName.PYRIGHT,
+                    options=ToolRunOptions(
+                        returncode=1,
+                        stderr="dummy error",
+                        output_path=output_path,
+                        duration_s=0.1,
+                    ),
+                )
+            ) from self._result
+        return self._result
 
 
 @dataclass(frozen=True)
@@ -507,6 +559,7 @@ __all__ = [
     "FakeToolRunner",
     "FakeToolService",
     "FakeToolServiceConfig",
+    "PresetRunner",
     "ToolRunOptions",
     "make_scip_index_result",
     "make_tool_run_result",

@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
 from codeintel.core.plugins.types.result import PluginResult
@@ -367,22 +368,46 @@ class GraphPluginBuilder:
         return self
 
     def with_resource_hints(self, hints: PluginResourceHints | None) -> GraphPluginBuilder:
-        """Set resource hints for metadata."""
+        """Set resource hints for metadata.
+
+        Returns
+        -------
+        GraphPluginBuilder
+            Self for chaining.
+        """
         self.resource_hints = hints
         return self
 
     def with_options_default(self, options: object | None) -> GraphPluginBuilder:
-        """Set default options for metadata."""
+        """Set default options for metadata.
+
+        Returns
+        -------
+        GraphPluginBuilder
+            Self for chaining.
+        """
         self.options_default = options
         return self
 
     def with_input_hash(self, input_hash: str | None) -> GraphPluginBuilder:
-        """Set input hash returned on success."""
+        """Set input hash returned on success.
+
+        Returns
+        -------
+        GraphPluginBuilder
+            Self for chaining.
+        """
         self.input_hash = input_hash
         return self
 
     def with_options_hash(self, options_hash: str | None) -> GraphPluginBuilder:
-        """Set options hash returned on success."""
+        """Set options hash returned on success.
+
+        Returns
+        -------
+        GraphPluginBuilder
+            Self for chaining.
+        """
         self.options_hash = options_hash
         return self
 
@@ -523,9 +548,120 @@ def make_functional_plugin(
     return builder.build()
 
 
+def make_graph_plugin(
+    name: str,
+    *,
+    prefix: str = "",
+    metadata: Mapping[str, object] | None = None,
+    runtime: Mapping[str, object] | None = None,
+) -> GraphPluginProtocol:
+    """Create a configurable graph plugin using the fluent builder.
+
+    This helper centralizes common plugin setup for tests to avoid
+    bespoke builders in individual modules.
+
+    Parameters
+    ----------
+    name
+        Plugin name (without prefix).
+    prefix
+        Optional prefix to prepend to the name (useful for test isolation).
+    metadata
+        Optional mapping of metadata attributes (kind, stage, depends_on,
+        provides, requires, produces_tables, options_default, severity,
+        resource_hints).
+    runtime
+        Optional mapping of runtime behaviors (delay_ms, input_hash,
+        options_hash, row_counts, succeed, exception_type).
+
+    Returns
+    -------
+    GraphPluginProtocol
+        Configured plugin instance.
+    """
+    metadata = metadata or {}
+    runtime = runtime or {}
+    builder = GraphPluginBuilder(name=f"{prefix}{name}")
+
+    metadata_handlers: dict[str, tuple[object, callable]] = {
+        "kind": (metadata.get("kind"), lambda b, v: b.with_kind(cast("GraphPluginKind", v))),
+        "stage": (metadata.get("stage"), lambda b, v: b.with_stage(cast("GraphPluginStage", v))),
+        "depends_on": (
+            metadata.get("depends_on"),
+            lambda b, v: b.with_dependencies(*cast("tuple[str, ...]", v)),
+        ),
+        "provides": (
+            metadata.get("provides"),
+            lambda b, v: b.with_provides(*cast("tuple[str, ...]", v)),
+        ),
+        "requires": (
+            metadata.get("requires"),
+            lambda b, v: b.with_requires(*cast("tuple[str, ...]", v)),
+        ),
+        "produces_tables": (
+            metadata.get("produces_tables"),
+            lambda b, v: b.with_produces_tables(*cast("tuple[str, ...]", v)),
+        ),
+        "options_default": (
+            metadata.get("options_default"),
+            lambda b, v: b.with_options_default(v),
+        ),
+        "severity": (
+            metadata.get("severity"),
+            lambda b, v: b.with_severity(cast("PluginSeverity", v)),
+        ),
+        "resource_hints": (
+            metadata.get("resource_hints"),
+            lambda b, v: b.with_resource_hints(cast("PluginResourceHints | None", v)),
+        ),
+    }
+
+    for value, handler in metadata_handlers.values():
+        if value:
+            builder = handler(builder, value)
+
+    runtime_handlers: dict[str, tuple[object, callable]] = {
+        "delay_ms": (
+            runtime.get("delay_ms"),
+            lambda b, v: b.with_delay(cast(int, v)),
+        ),
+        "input_hash": (
+            runtime.get("input_hash"),
+            lambda b, v: b.with_input_hash(cast(str, v)),
+        ),
+        "options_hash": (
+            runtime.get("options_hash"),
+            lambda b, v: b.with_options_hash(cast(str, v)),
+        ),
+        "row_counts": (
+            runtime.get("row_counts"),
+            lambda b, v: b.with_row_counts(cast("dict[str, int]", v)),
+        ),
+        "exception_type": (
+            runtime.get("exception_type"),
+            lambda b, v: b.raising(
+                cast("type[Exception]", v),
+                str(runtime.get("exception_message")) if runtime.get("exception_message") else "Test exception",
+            ),
+        ),
+    }
+
+    for value, handler in runtime_handlers.values():
+        if value:
+            builder = handler(builder, value)
+
+    succeed = runtime.get("succeed")
+    if isinstance(succeed, bool) and not succeed:
+        error_message = runtime.get("error_message")
+        builder = builder.failing(str(error_message) if error_message else "Plugin failed")
+
+    return builder.build()
+
+
 __all__ = [
     "FakeGraphPlugin",
     "GraphPluginBuilder",
     "make_functional_plugin",
+    "make_graph_plugin",
     "plugin_registrar",
 ]

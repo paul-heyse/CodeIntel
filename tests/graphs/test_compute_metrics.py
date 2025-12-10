@@ -50,20 +50,22 @@ from codeintel.graphs.compute.metrics.coupling import (
     find_boundary_nodes,
     find_hub_nodes,
 )
+from codeintel.graphs.compute.metrics.structural import (
+    StructuralMetrics,
+    compute_all_structural,
+    compute_constraint,
+    compute_core_number,
+    compute_effective_size,
+    compute_triangles,
+)
+from codeintel.graphs.compute.metrics.structural import (
+    compute_clustering_coefficient as compute_structural_clustering,
+)
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
     expect_is_not_none,
     expect_true,
-)
-from codeintel.graphs.compute.metrics.structural import (
-    StructuralMetrics,
-    compute_all_structural,
-    compute_clustering_coefficient as compute_structural_clustering,
-    compute_constraint,
-    compute_core_number,
-    compute_effective_size,
-    compute_triangles,
 )
 from tests._helpers.fakes.networkx_graphs import (
     bidirectional_deps_graph,

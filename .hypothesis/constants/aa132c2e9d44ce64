@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/execution/types.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.1, 100.0, 'AnyHandler', 'AsyncHandler', 'ProgressConfig', 'ProgressEvent', 'ProgressState', 'StreamingHandler', 'StreamingResult', 'SyncHandler', 'T', 'async', 'cancelled', 'completed', 'details', 'failed', 'get_handler_type', 'is_async_handler', 'is_streaming_handler', 'items_completed', 'items_total', 'message', 'operation_id', 'paused', 'pending', 'percentage', 'progress', 'running', 'state', 'streaming', 'sync', 'timestamp']

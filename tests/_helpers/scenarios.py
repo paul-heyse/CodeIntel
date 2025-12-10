@@ -16,6 +16,8 @@ from tests._helpers.env_options import EnvOptions
 from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
+from tests._helpers.seeds.function_types import FunctionTypesPack
+from tests._helpers.seeds.profile import ProfilePack
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack
@@ -108,6 +110,19 @@ class TestScenario:
         return scenario
 
     @classmethod
+    def with_function_types(cls) -> TestScenario:
+        """Create scenario with core and function types seeds.
+
+        Returns
+        -------
+        TestScenario
+            Scenario configured with CORE_PACK and FunctionTypesPack.
+        """
+        scenario = cls()
+        scenario.config.seed_packs.extend([CORE_PACK, FunctionTypesPack()])
+        return scenario
+
+    @classmethod
     def with_ast_metrics(cls) -> TestScenario:
         """Create scenario with core data and AST metrics seeds.
 
@@ -118,6 +133,13 @@ class TestScenario:
         """
         scenario = cls()
         scenario.config.seed_packs.extend([CORE_PACK, AST_METRICS_PACK])
+        return scenario
+
+    @classmethod
+    def with_profiles(cls) -> TestScenario:
+        """Create scenario with comprehensive profile seeds."""
+        scenario = cls()
+        scenario.config.seed_packs.extend([ProfilePack()])
         return scenario
 
     @classmethod

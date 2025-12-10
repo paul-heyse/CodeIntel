@@ -10,18 +10,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 import pytest
-from fastapi import FastAPI, status
-from fastapi.testclient import TestClient
+from fastapi import status
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import BackendResource, create_app
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import GraphScopePayload
 from codeintel.serving.services.base import BaseFunctionQueries, BaseSubsystemQueries
 from codeintel.serving.services.errors import ProblemDetail, ProblemError
-from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.serving.services.transport import HttpTransport, LocalTransport
 from tests._helpers.assertions import (
     expect_equal,
@@ -30,19 +25,17 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.serving_harnesses import RecordingObservability
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.serving_apps import ServiceApp
 
 # =============================================================================
 # Constants
 # =============================================================================
 
 DEFAULT_LIMIT = 10
-MAX_ROWS = 100
 
 T = TypeVar("T")
 MIN_RISK_THRESHOLD = 0.7
@@ -55,102 +48,22 @@ MAX_NODES_LARGE = 50
 
 
 # =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _create_test_app(provisioned_repo: ProvisionedGateway) -> FastAPI:
-    """Create a test FastAPI app with the provisioned gateway.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    FastAPI
-        Configured FastAPI application.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    return create_app(config_loader=load_config, backend_factory=backend_factory)
-
-
-def _build_local_query_service(
-    provisioned_repo: ProvisionedGateway,
-) -> LocalQueryService:
-    """Build a LocalQueryService for direct testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    LocalQueryService
-        Configured local query service.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
-
-# =============================================================================
 # get_function_summary Tests (via HTTP)
 # =============================================================================
 
 
 def test_get_function_summary_with_goid_h128(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary works with goid_h128 parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
     # First get a valid goid_h128 from the database
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -159,8 +72,7 @@ def test_get_function_summary_with_goid_h128(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/summary?goid_h128={goid_h128}")
 
     # May return 404 if function doesn't exist, or 200 if found
@@ -168,17 +80,17 @@ def test_get_function_summary_with_goid_h128(
 
 
 def test_get_function_summary_with_rel_path_and_qualname(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary works with rel_path and qualname.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
     # Get a rel_path from repo_map
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -187,8 +99,7 @@ def test_get_function_summary_with_rel_path_and_qualname(
 
     rel_path = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/summary?rel_path={rel_path}&qualname=test_function")
 
     # May return 404 if function doesn't exist, or 200 if found
@@ -196,17 +107,16 @@ def test_get_function_summary_with_rel_path_and_qualname(
 
 
 def test_get_function_summary_no_params_returns_error(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary returns 400 when no identifier provided.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/function/summary")
 
     expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -218,17 +128,16 @@ def test_get_function_summary_no_params_returns_error(
 
 
 def test_list_high_risk_functions_default(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions returns results with defaults.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/functions/high-risk")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -237,17 +146,16 @@ def test_list_high_risk_functions_default(
 
 
 def test_list_high_risk_functions_with_low_min_risk(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions with low min_risk returns more results.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/functions/high-risk?min_risk={LOW_RISK_THRESHOLD}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -256,17 +164,16 @@ def test_list_high_risk_functions_with_low_min_risk(
 
 
 def test_list_high_risk_functions_with_high_min_risk(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions with high min_risk filters results.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/functions/high-risk?min_risk={HIGH_RISK_THRESHOLD}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -275,17 +182,16 @@ def test_list_high_risk_functions_with_high_min_risk(
 
 
 def test_list_high_risk_functions_tested_only_true(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions with tested_only=true.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/functions/high-risk?tested_only=true")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -294,17 +200,16 @@ def test_list_high_risk_functions_tested_only_true(
 
 
 def test_list_high_risk_functions_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions respects limit parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/functions/high-risk?limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -319,17 +224,17 @@ def test_list_high_risk_functions_with_limit(
 
 
 def test_get_callgraph_neighbors_direction_both(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=both.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
     # Get a valid goid_h128
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -338,8 +243,7 @@ def test_get_callgraph_neighbors_direction_both(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=both")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -348,16 +252,16 @@ def test_get_callgraph_neighbors_direction_both(
 
 
 def test_get_callgraph_neighbors_direction_in(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=in.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -366,24 +270,23 @@ def test_get_callgraph_neighbors_direction_in(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=in")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_direction_out(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=out.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -392,24 +295,23 @@ def test_get_callgraph_neighbors_direction_out(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=out")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors respects limit parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -418,8 +320,7 @@ def test_get_callgraph_neighbors_with_limit(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/callgraph?goid_h128={goid_h128}&limit=3")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -431,16 +332,16 @@ def test_get_callgraph_neighbors_with_limit(
 
 
 def test_get_callgraph_neighborhood_radius_one(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighborhood with radius=1.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -449,8 +350,7 @@ def test_get_callgraph_neighborhood_radius_one(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_ONE}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -460,16 +360,16 @@ def test_get_callgraph_neighborhood_radius_one(
 
 
 def test_get_callgraph_neighborhood_radius_two(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighborhood with radius=2.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -478,24 +378,23 @@ def test_get_callgraph_neighborhood_radius_two(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_TWO}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighborhood_with_max_nodes(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighborhood respects max_nodes parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -504,8 +403,7 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(
             f"/graph/call/neighborhood?goid_h128={goid_h128}&max_nodes={MAX_NODES_SMALL}"
         )
@@ -521,17 +419,17 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
 
 def test_get_import_boundary_with_subsystem_id(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary with a subsystem_id.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
     # Try to find a subsystem ID
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
     ).fetchone()
 
@@ -540,8 +438,7 @@ def test_get_import_boundary_with_subsystem_id(
 
     subsystem_id = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -551,16 +448,16 @@ def test_get_import_boundary_with_subsystem_id(
 
 
 def test_get_import_boundary_with_max_edges(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary respects max_edges parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
     ).fetchone()
 
@@ -569,25 +466,23 @@ def test_get_import_boundary_with_max_edges(
 
     subsystem_id = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}&max_edges=10")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_import_boundary_nonexistent_subsystem(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary handles nonexistent subsystem.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/graph/import/boundary?subsystem_id=nonexistent_subsystem")
 
     # Should return empty result or 404
@@ -600,16 +495,16 @@ def test_get_import_boundary_nonexistent_subsystem(
 
 
 def test_get_tests_for_function_with_goid_h128(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function with goid_h128.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -618,8 +513,7 @@ def test_get_tests_for_function_with_goid_h128(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/tests?goid_h128={goid_h128}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -628,16 +522,16 @@ def test_get_tests_for_function_with_goid_h128(
 
 
 def test_get_tests_for_function_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function respects limit parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -646,25 +540,23 @@ def test_get_tests_for_function_with_limit(
 
     goid_h128 = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/function/tests?goid_h128={goid_h128}&limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_tests_for_function_no_params_returns_error(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function returns error when no identifier provided.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/function/tests")
 
     # Should return 400 because no identifier was provided
@@ -677,16 +569,16 @@ def test_get_tests_for_function_no_params_returns_error(
 
 
 def test_get_file_summary_with_rel_path(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_summary with rel_path parameter.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -695,8 +587,7 @@ def test_get_file_summary_with_rel_path(
 
     rel_path = result[0]
 
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(f"/file/summary?rel_path={rel_path}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -705,17 +596,16 @@ def test_get_file_summary_with_rel_path(
 
 
 def test_get_file_summary_nonexistent_file(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_summary handles nonexistent file.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/file/summary?rel_path=nonexistent/path/file.py")
 
     # Should return empty result or 404
@@ -723,17 +613,16 @@ def test_get_file_summary_nonexistent_file(
 
 
 def test_get_file_summary_missing_param(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_summary returns error when rel_path missing.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/file/summary")
 
     # Should return 422 validation error (missing required param)
@@ -746,19 +635,19 @@ def test_get_file_summary_missing_param(
 
 
 def test_local_query_service_get_function_summary(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.get_function_summary works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
     # Get a valid goid_h128
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -772,16 +661,16 @@ def test_local_query_service_get_function_summary(
 
 
 def test_local_query_service_list_high_risk_functions(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.list_high_risk_functions works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK_THRESHOLD, limit=5)
     expect_is_not_none(result)
@@ -789,18 +678,18 @@ def test_local_query_service_list_high_risk_functions(
 
 
 def test_local_query_service_get_callgraph_neighbors(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.get_callgraph_neighbors works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -814,18 +703,18 @@ def test_local_query_service_get_callgraph_neighbors(
 
 
 def test_local_query_service_get_callgraph_neighborhood(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.get_callgraph_neighborhood works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -843,18 +732,18 @@ def test_local_query_service_get_callgraph_neighborhood(
 
 
 def test_local_query_service_get_file_summary(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.get_file_summary works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -868,18 +757,18 @@ def test_local_query_service_get_file_summary(
 
 
 def test_local_query_service_get_tests_for_function(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify LocalQueryService.get_tests_for_function works directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    service = _build_local_query_service(provisioned_repo)
+    service = provisioned_service_app.service
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -899,17 +788,16 @@ def test_local_query_service_get_tests_for_function(
 
 
 def test_high_risk_functions_with_all_params(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify high_risk_functions with all parameters combined.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get(
             f"/functions/high-risk?min_risk={LOW_RISK_THRESHOLD}&limit=3&tested_only=true"
         )
@@ -920,17 +808,16 @@ def test_high_risk_functions_with_all_params(
 
 
 def test_callgraph_neighbors_missing_goid_h128(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify callgraph_neighbors returns error when goid_h128 missing.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/function/callgraph")
 
     # Should return 422 validation error (missing required param)
@@ -938,17 +825,16 @@ def test_callgraph_neighbors_missing_goid_h128(
 
 
 def test_callgraph_neighborhood_missing_goid_h128(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify callgraph_neighborhood returns error when goid_h128 missing.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/graph/call/neighborhood")
 
     # Should return 422 validation error (missing required param)
@@ -956,17 +842,16 @@ def test_callgraph_neighborhood_missing_goid_h128(
 
 
 def test_import_boundary_missing_subsystem_id(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify import_boundary returns error when subsystem_id missing.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_service_app
+        Provisioned service app fixture.
     """
-    app = _create_test_app(provisioned_repo)
-    with TestClient(app) as client:
+    with provisioned_service_app.client() as client:
         response = client.get("/graph/import/boundary")
 
     # Should return 422 validation error (missing required param)

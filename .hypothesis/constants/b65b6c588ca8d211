@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/ops.py
+# hypothesis_version: 6.148.7
+
+[400, 404, 8000, '1', '127.0.0.1', '=', 'AUTO_PIPELINE_ENV', 'CODEINTEL_COMMIT', 'CODEINTEL_DB_PATH', 'CODEINTEL_REPO', 'CODEINTEL_REPO_ROOT', 'Dataset Not Found', 'DatasetListResult', 'DatasetVerifyResult', 'OperationCallResult', 'OperationListResult', 'ServeStartResult', 'Unknown Operation', '__dict__', 'auto_pipeline', 'category', 'commit', 'dataset_list_handler', 'db_path', 'false', 'host', 'http', 'http_path', 'id', 'invoke_operation', 'is_view', 'json', 'model_dump', 'name', 'nullable', 'op_call_handler', 'op_id', 'op_list_handler', 'op_list_structured', 'owner_package', 'params', 'port', 'reload', 'repo', 'result', 'serve_http_handler', 'serve_mcp_handler', 'server_type', 'skip_prereqs', 'summary', 'table_key', 'tool_name', 'true', 'type', 'yes']

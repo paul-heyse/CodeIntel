@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
+from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin, StepFactory
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_plugins import (
     StepCallCapture,
@@ -25,7 +26,10 @@ def _make_plugin(
     result: StepResult | None = None,
 ) -> AstExtractPlugin:
     storage_factory, discovery_factory = make_recording_adapter_factories(capture)
-    step_factory = make_recording_step_factory(capture, table_key=table_key, result=result)
+    step_factory = cast(
+        "StepFactory",
+        make_recording_step_factory(capture, table_key=table_key, result=result),
+    )
     return AstExtractPlugin(
         storage_adapter_factory=storage_factory,
         discovery_adapter_factory=discovery_factory,
@@ -39,7 +43,7 @@ async def test_ast_extract_wiring_scenarios(tmp_path: Path, scenario: str) -> No
     """Shared wiring coverage for AstExtractPlugin."""
     await run_sync_plugin_wiring_scenario(
         scenario,
-        lambda capture: _make_plugin(capture),
+        _make_plugin,
         tmp_path,
         table_key="core.ast_nodes",
     )

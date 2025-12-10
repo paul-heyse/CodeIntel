@@ -47,7 +47,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
+from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -96,15 +96,14 @@ def _make_test_plugin(
     GraphPluginProtocol
         Configured test plugin.
     """
-    builder = GraphPluginBuilder(name=name).with_dependencies(*depends_on).with_provides(
-        *provides
-    )
-    builder = (
-        builder.with_severity(severity)
-        .with_resource_hints(resource_hints)
-        .with_options_default(options_default)
-    )
-    return builder.build()
+    metadata = {
+        "depends_on": depends_on,
+        "provides": provides,
+        "severity": severity,
+        "resource_hints": resource_hints,
+        "options_default": options_default,
+    }
+    return make_graph_plugin(name, metadata=metadata)
 
 
 def test_resolve_plugin_options_map_uses_default() -> None:

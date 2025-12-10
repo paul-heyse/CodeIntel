@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
 
 
 class RecordingConnection:
@@ -82,6 +82,14 @@ class ConnectionRecordingGateway:
     def __init__(self, gateway: StorageGateway) -> None:
         self._gateway = gateway
         self.executions: list[tuple[str, list[object]]] = []
+        self.analytics = gateway.analytics
+        self.build = gateway.build
+        self.config = gateway.config
+        self.core = gateway.core
+        self.datasets = gateway.datasets
+        self.docs = gateway.docs
+        self.graph = gateway.graph
+        self.runs = gateway.runs
         self._recording_con = RecordingConnection(gateway.con, self.executions)
 
     @property
@@ -94,6 +102,14 @@ class ConnectionRecordingGateway:
             Recording connection that tracks executions.
         """
         return cast("DuckDBConnection", self._recording_con)
+
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
+        """Delegate SQL execution to the underlying gateway."""
+        return self._gateway.execute(sql, params)
+
+    def table(self, name: str) -> DuckDBRelation:
+        """Return a relation from the underlying gateway."""
+        return self._gateway.table(name)
 
     def close(self) -> None:
         """Close the underlying gateway."""
@@ -135,9 +151,18 @@ class FailingGateway:
     but raises RuntimeError on execute to simulate database failures.
     """
 
-    def __init__(self, error_message: str = "db down") -> None:
+    def __init__(self, gateway: StorageGateway, error_message: str = "db down") -> None:
+        self._gateway = gateway
         self._error_message = error_message
         self.records: list[tuple[str, tuple[object, ...]]] = []
+        self.analytics = gateway.analytics
+        self.build = gateway.build
+        self.config = gateway.config
+        self.core = gateway.core
+        self.datasets = gateway.datasets
+        self.docs = gateway.docs
+        self.graph = gateway.graph
+        self.runs = gateway.runs
 
     @property
     def con(self) -> DuckDBConnection:
@@ -150,7 +175,7 @@ class FailingGateway:
         """
         return cast("DuckDBConnection", _FailingConnectionProxy(self._error_message))
 
-    def execute(self, sql: str, params: Iterable[object] | None = None) -> DuckDBConnection:
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
         """Record and raise on SQL execution.
 
         Raises
@@ -161,8 +186,14 @@ class FailingGateway:
         self.records.append((sql, tuple(params or ())))
         raise RuntimeError(self._error_message)
 
+    def table(self, name: str) -> DuckDBRelation:
+        """Raise when attempting to access a table."""
+        _ = name
+        raise RuntimeError(self._error_message)
+
     def close(self) -> None:
-        """No-op close."""
+        """Close the underlying gateway."""
+        self._gateway.close()
 
 
 __all__ = [

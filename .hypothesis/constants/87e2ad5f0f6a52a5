@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/rendering/types.py
+# hypothesis_version: 6.148.7
+
+['JustifyMethod', 'OutputFormat', 'RenderContext', 'center', 'default', 'full', 'json', 'jsonl', 'left', 'right', 'text']

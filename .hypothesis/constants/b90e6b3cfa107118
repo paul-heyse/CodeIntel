@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/operations/docs_operations.py
+# hypothesis_version: 6.148.7
+
+[60.0, 'DOCS_GENERATE_SPEC', 'DOCS_STATUS_SPEC', 'docs.generate', 'docs.status']

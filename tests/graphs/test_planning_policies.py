@@ -11,7 +11,7 @@ from codeintel.graphs.core.registry import (
     plan_graph_plugins,
 )
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
+from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
 
 
 def test_lenient_selection_skips_unknown_plugin() -> None:
@@ -49,7 +49,14 @@ def test_dependency_skip_records_missing_dependency() -> None:
     """Skip dependency policy records missing_dependency instead of raising."""
     main_name = "missing_dep_test"
     missing_dep = "missing_dep_missing"
-    with plugin_registrar([GraphPluginBuilder(name=main_name, depends_on=(missing_dep,)).build()]):
+    with plugin_registrar(
+        [
+            make_graph_plugin(
+                main_name,
+                metadata={"depends_on": (missing_dep,)},
+            )
+        ]
+    ):
         plan = plan_graph_plugins(
             plugin_names=(main_name,),
             plan_options=PlanningOptions(

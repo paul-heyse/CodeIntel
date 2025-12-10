@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/operations/storage_operations.py
+# hypothesis_version: 6.148.7
+
+['STORAGE_INFO_SPEC', 'StorageInfoResult', 'db_path', 'db_size_bytes', 'storage.info', 'table_count', 'view_count']

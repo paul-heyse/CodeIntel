@@ -46,7 +46,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
+from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
 
 
 class _MockFunctionCatalogProvider(FunctionCatalogProvider):
@@ -124,15 +124,19 @@ def _make_test_plugin(
     GraphPluginProtocol
         Configured test plugin instance.
     """
-    builder = GraphPluginBuilder(name=name).with_delay(delay_ms).with_input_hash(input_hash)
-    builder = builder.with_options_hash(options_hash)
-    if row_counts is not None:
-        builder = builder.with_row_counts(dict(row_counts))
-    if raise_exception is not None:
-        builder = builder.raising(raise_exception)
-    if not succeed:
-        builder = builder.failing(f"Plugin {name} failed")
-    return builder.build()
+    runtime: dict[str, object] = {
+        "delay_ms": delay_ms,
+        "input_hash": input_hash,
+        "options_hash": options_hash,
+        "row_counts": dict(row_counts) if row_counts is not None else None,
+        "exception_type": raise_exception,
+        "exception_message": f"{name} exception",
+        "succeed": succeed,
+        "error_message": f"Plugin {name} failed",
+    }
+    # Strip None values to avoid runtime type noise
+    runtime = {k: v for k, v in runtime.items() if v is not None}
+    return make_graph_plugin(name, runtime=runtime)
 
 
 def test_status_counts_aggregates_correctly() -> None:

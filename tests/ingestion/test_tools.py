@@ -13,9 +13,7 @@ and real tooling execution via build_tooling_context for realistic tests.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
 from pathlib import Path
-from typing import override
 
 import pytest
 
@@ -26,7 +24,6 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunner,
-    ToolRunResult,
 )
 from codeintel.ingestion.engine.pyright import PyrightPlugin
 from codeintel.ingestion.engine.pytest import PytestPlugin
@@ -70,12 +67,11 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
-from tests._helpers.orchestration.tooling import (
-    ToolingOutputs,
-    build_tooling_context,
-    run_static_tooling,
-)
+from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
+from tests._helpers.ingestion import write_pytest_report
+from tests._helpers.orchestration.tooling import ToolingOutputs
+
+pytest_plugins = ["tests._helpers.orchestration.tooling"]
 
 # =============================================================================
 # Test Constants
@@ -95,103 +91,8 @@ EXPECTED_COVERAGE_RATIO = 0.6
 
 
 # =============================================================================
-# PresetRunner - Protocol-based Test Double
-# =============================================================================
-
-
-class PresetRunner(ToolRunner):
-    """ToolRunner that returns preset results without invoking subprocesses.
-
-    This runner is realistic enough to flow through plugin logic while avoiding
-    external binaries; it can be configured with either a ToolRunResult or an
-    Exception to simulate failure modes.
-
-    This is a legitimate protocol-based test double per the Testing Charter -
-    it implements the same interface and can be used in dev/staging environments.
-    """
-
-    def __init__(self, result: ToolRunResult | Exception) -> None:
-        """Initialize with preset result.
-
-        Parameters
-        ----------
-        result
-            Either a ToolRunResult to return or an Exception to raise.
-        """
-        self._result = result
-        super().__init__(tools_config=ToolsConfig.default(), cache_dir=Path("build/.tool_cache"))
-
-    @override
-    async def run_async(
-        self,
-        tool: ToolName | str,
-        args: Iterable[str],
-        *,
-        cwd: Path | None = None,
-        output_path: Path | None = None,
-        timeout_s: float | None = None,
-    ) -> ToolRunResult:
-        """Return a preset ToolRunResult or raise the configured exception.
-
-        Parameters
-        ----------
-        tool
-            Tool name (ignored).
-        args
-            Tool arguments (ignored).
-        cwd
-            Working directory (ignored).
-        output_path
-            Output file path (passed through to error result).
-        timeout_s
-            Timeout (ignored).
-
-        Returns
-        -------
-        ToolRunResult
-            Pre-baked result configured for the runner.
-
-        Raises
-        ------
-        ToolExecutionError
-            Raised when configured with a generic exception.
-        ToolNotFoundError
-            Raised when configured with ToolNotFoundError.
-        """
-        del tool, args, cwd, timeout_s
-        if isinstance(self._result, ToolNotFoundError):
-            raise ToolNotFoundError(self._result.tool, self._result.configured_path)
-        if isinstance(self._result, Exception):
-            raise ToolExecutionError(
-                make_tool_run_result(
-                    ToolName.PYRIGHT,
-                    options=ToolRunOptions(
-                        returncode=1,
-                        stderr="dummy error",
-                        output_path=output_path,
-                        duration_s=0.1,
-                    ),
-                )
-            ) from self._result
-        return self._result
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def tooling_outputs(tmp_path: Path) -> ToolingOutputs:
-    """Run the real tooling stack against a minimal repo.
-
-    Returns
-    -------
-    ToolingOutputs
-        Diagnostics and coverage reports produced by the tooling services.
-    """
-    context = build_tooling_context(tmp_path)
-    return run_static_tooling(context)
+# Helper classes/fixtures are provided via tests._helpers.fakes.tools and
+# tests._helpers.orchestration.tooling.
 
 
 # =============================================================================
@@ -906,8 +807,7 @@ def test_tool_service_run_pytest_raises_not_found(tmp_path: Path) -> None:
 
 def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
     """ToolService.run_pytest_report should skip if report exists."""
-    json_path = tmp_path / "report.json"
-    json_path.write_text('{"tests": []}')
+    json_path = write_pytest_report(tmp_path, filename="report.json")
     run = make_tool_run_result(
         ToolName.PYTEST,
         options=ToolRunOptions(
@@ -1442,7 +1342,7 @@ def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) 
 
 def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     """ToolService.run_pytest_report should create JSON report file."""
-    json_path = tmp_path / "new_report.json"
+    json_path = write_pytest_report(tmp_path, filename="new_report.json")
     run = make_tool_run_result(
         ToolName.PYTEST,
         options=ToolRunOptions(
@@ -1454,9 +1354,6 @@ def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     )
     runner = PresetRunner(run)
     service = ToolService(runner)
-
-    # Create a file so the check succeeds after execution
-    json_path.write_text('{"tests": [], "summary": {}}')
 
     executed = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
 

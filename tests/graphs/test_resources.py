@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, ClassVar, Final, cast
 
 import pytest
 
@@ -475,143 +475,228 @@ def test_resource_provider_base_protocol_conformance() -> None:
     expect_is_instance(provider, ResourceProvider)
 
 
+# ---------------------------------------------------------------------------
+# StorageResource fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def storage_resource(graph_gateway: StorageGateway, tmp_path: Path) -> StorageResource:
+    """Provide a reusable StorageResource instance for graph tests.
+
+    Returns
+    -------
+    StorageResource
+        Storage resource bound to the graph gateway and tmp_path.
+    """
+    return StorageResource(gateway=graph_gateway, _repo_root=tmp_path)
+
+
+@pytest.fixture
+def storage_registry(storage_resource: StorageResource) -> ResourceRegistry:
+    """Provide a registry pre-loaded with StorageResource.
+
+    Returns
+    -------
+    ResourceRegistry
+        Registry containing the storage resource provider.
+    """
+    registry = ResourceRegistry()
+    registry.register_provider(storage_resource)
+    return registry
+
+
 # ===========================================================================
 # StorageResource Tests
 # ===========================================================================
 
 
-def test_storage_resource_creation(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_creation(storage_resource: StorageResource, tmp_path: Path) -> None:
     """StorageResource can be created."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
+    expect_equal(storage_resource.resource_name, STORAGE_RESOURCE_NAME)
+    expect_equal(storage_resource.repo_root, tmp_path)
+    expect_true(storage_resource.gateway is not None)
 
-    expect_equal(resource.resource_name, STORAGE_RESOURCE_NAME)
-    expect_equal(resource.repo_root, tmp_path)
+
+def test_storage_resource_resource_name_constant() -> None:
+    """StorageResource exposes RESOURCE_NAME constant."""
+    expect_equal(StorageResource.RESOURCE_NAME, STORAGE_RESOURCE_NAME)
 
 
-def test_storage_resource_get_returns_self(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_get_returns_self(storage_resource: StorageResource) -> None:
     """StorageResource.get returns self."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    result = resource.get()
+    result = storage_resource.get()
 
-    expect_true(result is resource)
+    expect_true(result is storage_resource)
 
 
-def test_storage_resource_invalidate_noop(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_invalidate_noop(storage_resource: StorageResource) -> None:
     """StorageResource.invalidate is a no-op."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-
-    # Should not raise
-    resource.invalidate()
+    storage_resource.invalidate()
 
 
-def test_storage_resource_read_source(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_gateway_access(storage_resource: StorageResource) -> None:
+    """StorageResource exposes gateway and connection."""
+    expect_true(storage_resource.gateway.con is not None)
+
+
+def test_storage_resource_path_absolute(storage_resource: StorageResource) -> None:
+    """StorageResource repo_root is absolute path."""
+    expect_true(storage_resource.repo_root.is_absolute())
+
+
+def test_storage_resource_path_is_pathlib(storage_resource: StorageResource) -> None:
+    """StorageResource repo_root is pathlib.Path."""
+    expect_is_instance(storage_resource.repo_root, Path)
+
+
+def test_storage_resource_read_source(storage_resource: StorageResource, tmp_path: Path) -> None:
     """StorageResource reads source files."""
-    # Create a test file
     test_file = tmp_path / "test.py"
     test_content = "print('hello')"
     test_file.write_text(test_content)
 
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    result = resource.read_source("test.py")
+    result = storage_resource.read_source("test.py")
 
     expect_equal(result, test_content)
 
 
 def test_storage_resource_read_source_not_found(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    storage_resource: StorageResource,
 ) -> None:
     """StorageResource returns None for missing files."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    result = resource.read_source("nonexistent.py")
+    result = storage_resource.read_source("nonexistent.py")
 
     expect_true(result is None)
 
 
-def test_storage_resource_execute_query(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_execute_query(storage_resource: StorageResource) -> None:
     """StorageResource executes queries."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    result = resource.execute_query("SELECT 1 as value")
+    result = storage_resource.execute_query("SELECT 1 as value")
 
     expect_equal(len(result.rows), EXPECTED_ONE)
 
 
-def test_storage_resource_execute_query_with_params(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_storage_resource_execute_query_with_params(storage_resource: StorageResource) -> None:
     """StorageResource executes queries with parameters."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    result = resource.execute_query("SELECT ? + ? as value", [1, 2])
+    result = storage_resource.execute_query("SELECT ? + ? as value", [1, 2])
 
     expect_equal(len(result.rows), EXPECTED_ONE)
     expect_equal(result.rows[0][0], EXPECTED_THREE)
 
 
-def test_storage_resource_execute_query_empty_result(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_storage_resource_execute_query_empty_result(storage_resource: StorageResource) -> None:
     """StorageResource handles queries with empty results."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-    # Query that returns no rows
-    fresh_gateway.con.execute("CREATE TEMP TABLE test_empty (id INT)")
-    result = resource.execute_query("SELECT * FROM test_empty WHERE id > 999")
+    storage_resource.gateway.con.execute("CREATE TEMP TABLE test_empty (id INT)")
+    result = storage_resource.execute_query("SELECT * FROM test_empty WHERE id > 999")
 
     expect_equal(len(result.rows), 0)
 
 
-def test_storage_resource_execute_mutation(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_storage_resource_execute_mutation(storage_resource: StorageResource) -> None:
     """StorageResource executes mutations."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
+    storage_resource.gateway.con.execute("CREATE TEMP TABLE test_mut (id INT, name VARCHAR)")
+    mutation_sql = "INSERT INTO test_mut VALUES (1, 'test') RETURNING id"
+    result = storage_resource.execute_mutation(mutation_sql)
 
-    # Create a temp table and insert
-    fresh_gateway.con.execute("CREATE TEMP TABLE test_mut (id INT, name VARCHAR)")
-    result = resource.execute_mutation("INSERT INTO test_mut VALUES (1, 'test') RETURNING id")
-
-    # execute_mutation returns the result of fetchone()[0]
     expect_equal(result, EXPECTED_ONE)
 
 
 def test_storage_resource_execute_mutation_with_params(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    storage_resource: StorageResource,
 ) -> None:
     """StorageResource executes mutations with parameters."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-
-    # Create a temp table
-    fresh_gateway.con.execute("CREATE TEMP TABLE test_mut2 (id INT, name VARCHAR)")
-    result = resource.execute_mutation(
+    storage_resource.gateway.con.execute("CREATE TEMP TABLE test_mut2 (id INT, name VARCHAR)")
+    result = storage_resource.execute_mutation(
         "INSERT INTO test_mut2 VALUES (?, ?) RETURNING id", [42, "test"]
     )
 
-    # execute_mutation returns the result of fetchone()[0]
     expect_equal(result, EXPECTED_FORTY_TWO)
 
 
 def test_storage_resource_execute_mutation_multiple_rows(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    storage_resource: StorageResource,
 ) -> None:
     """StorageResource handles multi-row mutations."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
-
-    # Create a temp table and insert multiple rows
-    fresh_gateway.con.execute("CREATE TEMP TABLE test_mut3 (id INT, name VARCHAR)")
-    fresh_gateway.con.execute("INSERT INTO test_mut3 VALUES (1, 'a'), (2, 'b'), (3, 'c')")
-
-    # Update multiple rows and return count
-    result = resource.execute_mutation(
-        "UPDATE test_mut3 SET name = 'updated' WHERE id > 0 RETURNING id"
+    storage_resource.gateway.con.execute("CREATE TEMP TABLE test_mut3 (id INT, name VARCHAR)")
+    storage_resource.gateway.con.execute(
+        "INSERT INTO test_mut3 VALUES (1, 'a'), (2, 'b'), (3, 'c')"
     )
 
-    # First row returned should be 1 (first updated id)
+    update_sql = "UPDATE test_mut3 SET name = 'updated' WHERE id > 0 RETURNING id"
+    result = storage_resource.execute_mutation(update_sql)
+
     expect_equal(result, EXPECTED_ONE)
 
 
-def test_storage_resource_protocol_conformance(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """StorageResource conforms to ResourceProvider protocol."""
-    resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
+def test_storage_resource_registration(storage_registry: ResourceRegistry) -> None:
+    """StorageResource can be registered in registry."""
+    expect_true(storage_registry.has_by_name(StorageResource.RESOURCE_NAME))
 
-    expect_is_instance(resource, ResourceProvider)
+
+def test_storage_resource_retrieval(storage_registry: ResourceRegistry) -> None:
+    """StorageResource can be retrieved from registry."""
+    retrieved = storage_registry.get_by_name(StorageResource.RESOURCE_NAME)
+
+    expect_true(retrieved is not None)
+    if retrieved is None:
+        return
+
+    typed_retrieved = cast(StorageResource, retrieved)
+    expect_true(typed_retrieved.resource_name == STORAGE_RESOURCE_NAME)
+
+
+def test_storage_resource_require(storage_registry: ResourceRegistry) -> None:
+    """StorageResource can be required from registry."""
+    required = storage_registry.require_by_name(StorageResource.RESOURCE_NAME)
+
+    expect_true(required is not None)
+
+
+def test_storage_resource_not_registered() -> None:
+    """Registry raises for unregistered storage."""
+    registry = ResourceRegistry()
+
+    with pytest.raises(KeyError):
+        registry.get_by_name(StorageResource.RESOURCE_NAME)
+
+
+def test_storage_resource_require_missing_raises() -> None:
+    """Require raises KeyError for missing storage resource."""
+    registry = ResourceRegistry()
+
+    with pytest.raises(KeyError):
+        registry.require_by_name(StorageResource.RESOURCE_NAME)
+
+
+def test_storage_resource_multiple_resources_same_gateway(
+    graph_gateway: StorageGateway, tmp_path: Path
+) -> None:
+    """Multiple resources can share same gateway."""
+    path1 = tmp_path / "repo1"
+    path2 = tmp_path / "repo2"
+    path1.mkdir()
+    path2.mkdir()
+
+    resource1 = StorageResource(graph_gateway, path1)
+    resource2 = StorageResource(graph_gateway, path2)
+
+    expect_true(resource1.gateway.con is resource2.gateway.con)
+    expect_true(resource1.repo_root != resource2.repo_root)
+
+
+def test_storage_resource_connection_usable(storage_resource: StorageResource) -> None:
+    """StorageResource gateway connection is usable."""
+    result = storage_resource.gateway.con.execute("SELECT 1 AS value").fetchone()
+
+    expect_true(result is not None)
+    if result is not None:
+        expect_equal(result[0], EXPECTED_ONE)
+
+
+def test_storage_resource_protocol_conformance(storage_resource: StorageResource) -> None:
+    """StorageResource conforms to ResourceProvider protocol."""
+    expect_is_instance(storage_resource, ResourceProvider)
 
 
 # ===========================================================================

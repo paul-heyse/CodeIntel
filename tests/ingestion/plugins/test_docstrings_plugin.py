@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
+from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin, StepFactory
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -17,6 +18,7 @@ from tests._helpers.fakes.ingestion_plugins import (
     make_recording_step_factory,
 )
 from tests._helpers.fakes.recording_gateways import FailingGateway
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import TargetContextConfig, build_target_context_for_plugin
 from tests.ingestion.plugins._wiring import run_sync_plugin_wiring_scenario
 
@@ -28,7 +30,10 @@ def _make_plugin(
     result: StepResult | None = None,
 ) -> DocstringsIngestPlugin:
     storage_factory, discovery_factory = make_recording_adapter_factories(capture)
-    step_factory = make_recording_step_factory(capture, table_key=table_key, result=result)
+    step_factory = cast(
+        "StepFactory",
+        make_recording_step_factory(capture, table_key=table_key, result=result),
+    )
     return DocstringsIngestPlugin(
         storage_adapter_factory=storage_factory,
         discovery_adapter_factory=discovery_factory,
@@ -42,7 +47,7 @@ async def test_docstrings_wiring_scenarios(tmp_path: Path, scenario: str) -> Non
     """Shared wiring coverage for DocstringsIngestPlugin."""
     await run_sync_plugin_wiring_scenario(
         scenario,
-        lambda capture: _make_plugin(capture),
+        _make_plugin,
         tmp_path,
         table_key="core.docstrings",
     )
@@ -53,22 +58,25 @@ async def test_gateway_errors_log_warning(tmp_path: Path, caplog: pytest.LogCapt
     """Database lookup failures should be logged and yield an empty module set."""
     capture = StepCallCapture()
     plugin = _make_plugin(capture)
-    failing_gateway = FailingGateway("db down")
+    failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
     caplog.set_level("WARNING")
 
-    ctx = build_target_context_for_plugin(
-        plugin,
-        tmp_path,
-        config=TargetContextConfig(
-            gateway=failing_gateway,
-            resources=TargetResourceOverrides(modules=()),
-        ),
-    )
-    result = await plugin.execute(ctx)
+    try:
+        ctx = build_target_context_for_plugin(
+            plugin,
+            tmp_path,
+            config=TargetContextConfig(
+                gateway=failing_gateway,
+                resources=TargetResourceOverrides(modules=()),
+            ),
+        )
+        result = await plugin.execute(ctx)
 
-    expect_true(result.success)
-    expect_equal(capture.modules, [])
-    assert_logged(caplog.records, level="WARNING", containing="gateway error")
+        expect_true(result.success)
+        expect_equal(capture.modules, [])
+        assert_logged(caplog.records, level="WARNING", containing="gateway error")
+    finally:
+        failing_gateway.close()
 
 
 @pytest.mark.anyio
