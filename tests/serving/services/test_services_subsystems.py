@@ -30,7 +30,7 @@ from tests._helpers.http_payloads import (
 from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDelegateHarness
 
 if TYPE_CHECKING:
-    from tests._helpers.serving_apps import ServiceApp
+    from tests._helpers.serving_apps import ServiceContext
 
 # =============================================================================
 # Subsystem Route Tests (covers service delegates)
@@ -38,16 +38,16 @@ if TYPE_CHECKING:
 
 
 def test_list_subsystems_returns_data(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
 ) -> None:
     """Verify subsystem listing returns results.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     """
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get("/architecture/subsystems")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -56,36 +56,36 @@ def test_list_subsystems_returns_data(
 
 
 def test_list_subsystems_with_limit(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
 ) -> None:
     """Verify subsystem listing respects limit parameter.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     """
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get("/architecture/subsystems?limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_subsystem_modules(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
     architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify subsystem modules endpoint functions.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     architecture_samples
         Sample analytics identifiers for architecture subsystem.
     """
     # Try to get modules for a subsystem
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get(
             f"/architecture/subsystem?subsystem_id={architecture_samples.subsystem_id}"
         )
@@ -102,19 +102,19 @@ def test_get_subsystem_modules(
 
 
 def test_get_module_subsystems(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
     architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify module subsystems endpoint functions.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     architecture_samples
         Sample analytics identifiers for architecture module.
     """
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get(
             f"/architecture/module-subsystems?module={architecture_samples.module}"
         )
@@ -131,32 +131,32 @@ def test_get_module_subsystems(
 
 
 def test_subsystem_coverage_endpoint(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
 ) -> None:
     """Verify subsystem coverage endpoint returns data.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     """
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get("/architecture/subsystem-coverage")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_subsystem_profiles_endpoint(
-    architecture_service_app: ServiceApp,
+    architecture_service_ctx: ServiceContext,
 ) -> None:
     """Verify subsystem profiles endpoint returns data.
 
     Parameters
     ----------
-    architecture_service_app
+    architecture_service_ctx
         Service app wired to architecture data.
     """
-    with architecture_service_app.client() as client:
+    with architecture_service_ctx.client() as client:
         response = client.get("/architecture/subsystem-profiles")
 
     expect_equal(response.status_code, status.HTTP_200_OK)

@@ -23,6 +23,11 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
+from tests._helpers.ingestion import (
+    RepoVariantOptions,
+    build_ingestion_context_bundle,
+    module_records_for_paths,
+)
 
 # Test constants for magic values
 EXPECTED_START_LINE = 5
@@ -62,21 +67,18 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
 
 def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
     """Test creating ResolvedScipConfig with module records."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-
-    module = ModuleRecord(
-        rel_path="src/main.py",
-        module_name="src.main",
-        file_path=repo_root / "src" / "main.py",
-        index=1,
-        total=1,
+    context = build_ingestion_context_bundle(
+        tmp_path,
+        variants=RepoVariantOptions(
+            repo_structure={"src/main.py": "def main() -> None:\n    pass\n"}
+        ),
     )
+    module = module_records_for_paths(["src/main.py"], context.repo_root)[0]
 
     config = ResolvedScipConfig(
         repo="test-org/test-repo",
         commit="abc123",
-        repo_root=repo_root,
+        repo_root=context.repo_root,
         build_dir=tmp_path / "build",
         document_output_dir=tmp_path / "docs",
         scip_python_bin="/usr/bin/scip-python",
@@ -187,8 +189,8 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
 
 def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
     """Test resolving with explicit ScipResolverInput.build()."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    context = build_ingestion_context_bundle(tmp_path)
+    repo_root = context.repo_root
     build_dir = tmp_path / "build"
     doc_dir = tmp_path / "docs"
 
@@ -215,8 +217,8 @@ def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
     """Test resolving with ScipResolverInput dataclass."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    context = build_ingestion_context_bundle(tmp_path)
+    repo_root = context.repo_root
     build_dir = tmp_path / "build"
     doc_dir = tmp_path / "docs"
 

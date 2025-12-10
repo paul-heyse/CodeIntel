@@ -11,10 +11,11 @@ from codeintel.analytics.plugins.semantic_roles.compute import SemanticRolesPlug
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
-from tests._helpers.context import TestContext
 from tests._helpers.fakes.contexts import TargetResourceOverrides
+from tests._helpers.harnesses import plugin_harness_with_packs
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
-from tests.analytics.conftest import PluginTestHarness
+from tests._helpers.seeds import CORE_PACK
 
 MIN_ROLE_CONFIDENCE = 0.5
 
@@ -59,7 +60,7 @@ def _make_catalog(repo: str, commit: str) -> FunctionCatalogService:
     return FunctionCatalogService(catalog)
 
 
-def _insert_function_metrics(ctx: TestContext, created_at: datetime) -> None:
+def _insert_function_metrics(ctx, created_at: datetime) -> None:
     """Insert minimal function metrics for the test function."""
     insert_rows(
         ctx.gateway,
@@ -75,7 +76,7 @@ def _insert_function_metrics(ctx: TestContext, created_at: datetime) -> None:
     )
 
 
-def _insert_module_row(ctx: TestContext) -> None:
+def _insert_module_row(ctx) -> None:
     """Insert module metadata for the test module."""
     insert_rows(
         ctx.gateway,
@@ -89,39 +90,41 @@ def _insert_module_row(ctx: TestContext) -> None:
     )
 
 
-def test_semantic_roles_plugin_classifies_tests(plugin_harness: PluginTestHarness) -> None:
+def test_semantic_roles_plugin_classifies_tests(tmp_path: Path) -> None:
     """SemanticRolesPlugin should classify test functions by path/name heuristics."""
-    _seed_test_module(plugin_harness.ctx.repo_root)
-    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
+    with plugin_harness_with_packs(tmp_path, CORE_PACK) as harness:
+        _seed_test_module(harness.ctx.repo_root)
+        catalog_provider = _make_catalog(harness.ctx.repo, harness.ctx.commit)
+        ensure_catalog_with_goids(harness.ctx, catalog_provider)
 
-    now = datetime.now(tz=UTC)
-    _insert_function_metrics(plugin_harness.ctx, now)
-    _insert_module_row(plugin_harness.ctx)
+        now = datetime.now(tz=UTC)
+        _insert_function_metrics(harness.ctx, now)
+        _insert_module_row(harness.ctx)
 
-    resources = TargetResourceOverrides(catalog=catalog_provider)
-    result = plugin_harness.execute_plugin(SemanticRolesPlugin(), resources=resources)
-    expect_true(result.success)
+        resources = TargetResourceOverrides(catalog=catalog_provider)
+        result = harness.execute_plugin(SemanticRolesPlugin(), resources=resources)
+        expect_true(result.success)
 
-    role_row = plugin_harness.ctx.query(
-        """
-        SELECT role, role_confidence
-        FROM analytics.semantic_roles_functions
-        WHERE function_goid_h128 = ?
-        """,
-        [7101],
-    )[0]
-    expect_equal(role_row.role, "test")
-    confidence = role_row.role_confidence
-    if not isinstance(confidence, float):
-        pytest.fail(f"Expected float role_confidence, got {type(confidence)}")
-    expect_true(confidence > MIN_ROLE_CONFIDENCE)
+        role_row = harness.ctx.query(
+            """
+            SELECT role, role_confidence
+            FROM analytics.semantic_roles_functions
+            WHERE function_goid_h128 = ?
+            """,
+            [7101],
+        )[0]
+        expect_equal(role_row.role, "test")
+        confidence = role_row.role_confidence
+        if not isinstance(confidence, float):
+            pytest.fail(f"Expected float role_confidence, got {type(confidence)}")
+        expect_true(confidence > MIN_ROLE_CONFIDENCE)
 
-    module_rows = plugin_harness.ctx.query(
-        """
-        SELECT role
-        FROM analytics.semantic_roles_modules
-        WHERE module = ?
-        """,
-        ["tests.test_sample"],
-    )
-    expect_true(module_rows, message="expected semantic role entry for module")
+        module_rows = harness.ctx.query(
+            """
+            SELECT role
+            FROM analytics.semantic_roles_modules
+            WHERE module = ?
+            """,
+            ["tests.test_sample"],
+        )
+        expect_true(module_rows, message="expected semantic role entry for module")

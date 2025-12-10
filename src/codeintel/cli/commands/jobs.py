@@ -6,14 +6,12 @@ for long-running operations.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.jobs import (
     jobs_cancel_handler,
     jobs_cleanup_handler,
@@ -25,7 +23,11 @@ from codeintel.cli.rendering.types import OutputFormat
 
 jobs_app = App(name="jobs", help="Manage background jobs")
 
+# Config for jobs commands - no runtime or gateway needed
+_JOBS_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
+
+@cli_command("jobs.list", handler=jobs_list_handler, config=_JOBS_CONFIG)
 @jobs_app.command(name="list")
 @dataclass
 class JobsListCommand:
@@ -44,30 +46,10 @@ class JobsListCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the jobs list command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {
-            "status": self.status,
-            "limit": self.limit,
-        }
-
-        with command_context(
-            "jobs.list",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = jobs_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
+@cli_command("jobs.status", handler=jobs_status_handler, config=_JOBS_CONFIG)
 @jobs_app.command(name="status")
 @dataclass
 class JobsStatusCommand:
@@ -82,27 +64,10 @@ class JobsStatusCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the jobs status command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"job_id": self.job_id}
-
-        with command_context(
-            "jobs.status",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = jobs_status_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
+@cli_command("jobs.output", handler=jobs_output_handler, config=_JOBS_CONFIG)
 @jobs_app.command(name="output")
 @dataclass
 class JobsOutputCommand:
@@ -117,27 +82,10 @@ class JobsOutputCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the jobs output command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"job_id": self.job_id}
-
-        with command_context(
-            "jobs.output",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = jobs_output_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
+@cli_command("jobs.cancel", handler=jobs_cancel_handler, config=_JOBS_CONFIG)
 @jobs_app.command(name="cancel")
 @dataclass
 class JobsCancelCommand:
@@ -152,27 +100,10 @@ class JobsCancelCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the jobs cancel command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"job_id": self.job_id}
-
-        with command_context(
-            "jobs.cancel",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = jobs_cancel_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
+@cli_command("jobs.cleanup", handler=jobs_cleanup_handler, config=_JOBS_CONFIG)
 @jobs_app.command(name="cleanup")
 @dataclass
 class JobsCleanupCommand:
@@ -187,25 +118,7 @@ class JobsCleanupCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the jobs cleanup command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"max_age_days": self.max_age_days}
-
-        with command_context(
-            "jobs.cleanup",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = jobs_cleanup_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
 __all__ = [

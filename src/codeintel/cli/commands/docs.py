@@ -1,11 +1,10 @@
 """Cyclopts wiring for docs export commands.
 
-This module wires Cyclopts command classes to unified handlers via command_context.
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,8 +12,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.docs import docs_export_handler
 from codeintel.cli.rendering.types import OutputFormat
 
@@ -68,6 +66,11 @@ class PrereqMode(Enum):
     SKIP = "skip"
 
 
+# Config for docs commands - requires runtime and gateway
+_DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+
+
+@cli_command("docs.export", handler=docs_export_handler, config=_DOCS_CONFIG)
 @docs_app.command(name="export")
 @dataclass
 class DocsExportCommand:
@@ -184,39 +187,6 @@ class DocsExportCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the docs export command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            repo=self.repo,
-            commit=self.commit,
-            db_path=self.db_path,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {
-            "validation": self.validation_mode.value,
-            "macro_requirement": self.macro_requirement.value,
-            "schemas": self.schemas,
-            "datasets": self.datasets,
-            "dry_run": self.run_mode == DryRunMode.DRY_RUN,
-            "skip_prereqs": self.prereq_mode == PrereqMode.SKIP,
-            "nx_backend": self.nx_backend.value,
-            "nx_gpu_mode": self.nx_gpu_mode.value,
-        }
-
-        with command_context(
-            "docs.export",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = docs_export_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 __all__ = ["docs_app"]

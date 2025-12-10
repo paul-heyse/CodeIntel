@@ -15,7 +15,7 @@ from codeintel.ingestion import (
     TypingIngestStep,
 )
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import build_scan_profile, create_scan_step
+from tests._helpers.ingestion import ScanSetupOptions, make_scan_setup
 from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 
 if TYPE_CHECKING:
@@ -35,23 +35,30 @@ def _setup_gateway() -> StorageGateway:
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     """Ensure repo_scan respects ignore lists from ScanProfile."""
-    repo_root = tmp_path / "repo"
-    keep_dir = repo_root / "keep"
-    ignore_dir = repo_root / "ignore"
-    keep_dir.mkdir(parents=True, exist_ok=True)
-    ignore_dir.mkdir(parents=True, exist_ok=True)
-    (keep_dir / "a.py").write_text("print('ok')\n", encoding="utf8")
-    (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
+    setup = make_scan_setup(
+        tmp_path,
+        options=ScanSetupOptions(
+            repo_structure={
+                "keep/a.py": "print('ok')\n",
+                "ignore/b.py": "print('skip')\n",
+            },
+            ignore_dirs=("ignore",),
+        ),
+    )
 
-    gateway = GatewayFactory().with_macros().open()
-    profile = build_scan_profile(repo_root, ignore_dirs=("ignore",))
+    try:
+        setup.scan_step.execute(
+            repo="r",
+            commit="c",
+            repo_root=setup.repo_root,
+            profile=setup.profile,
+        )
 
-    step, _, _ = create_scan_step(gateway, repo_root, tmp_path)
-    step.execute(repo="r", commit="c", repo_root=repo_root, profile=profile)
-
-    rows = gateway.con.table("core.modules").select("path").fetchall()
-    if rows != [("keep/a.py",)]:
-        pytest.fail(f"Unexpected modules: {rows}")
+        rows = setup.gateway.con.table("core.modules").select("path").fetchall()
+        if rows != [("keep/a.py",)]:
+            pytest.fail(f"Unexpected modules: {rows}")
+    finally:
+        setup.gateway.close()
 
 
 def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
@@ -97,20 +104,25 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
 def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
     context = build_tooling_context(tmp_path)
-    gateway = _setup_gateway()
-    scan_profile = build_scan_profile(context.repo_root)
-
-    scan_step, storage, discovery = create_scan_step(gateway, context.repo_root, tmp_path)
+    scan_setup = make_scan_setup(
+        tmp_path,
+        options=ScanSetupOptions(
+            repo_structure={"pkg/mod.py": "def add(x, y):\n    return x + y\n"},
+            gateway_factory=GatewayFactory(),
+        ),
+    )
+    gateway = scan_setup.gateway
+    scan_step, storage, discovery = scan_setup.scan_step, scan_setup.storage, scan_setup.discovery
     tools = ToolRunnerAdapter(context.service)
 
     _, modules, _ = scan_step.execute(
-        repo="r", commit="c", repo_root=context.repo_root, profile=scan_profile
+        repo="r", commit="c", repo_root=scan_setup.repo_root, profile=scan_setup.profile
     )
 
     typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
     result = asyncio.run(
         typing_step.execute_async(
-            list(modules), repo="r", commit="c", repo_root=str(context.repo_root)
+            list(modules), repo="r", commit="c", repo_root=str(scan_setup.repo_root)
         )
     )
 

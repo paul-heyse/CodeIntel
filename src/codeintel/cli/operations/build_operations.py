@@ -1,7 +1,10 @@
 """Build command operation specifications.
 
-Define and register operations for the build command group including
+Define operation specs for the build command group including
 status, run, and history commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/build.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import BuildHistoryResult, BuildStatusResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _build_status_handler() -> CliResult[BuildStatusResult]:
@@ -25,7 +28,6 @@ def _build_status_handler() -> CliResult[BuildStatusResult]:
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Return empty result - actual implementation in cyclopts_build
     return CliResult.ok(
         BuildStatusResult(
             targets=[],
@@ -60,17 +62,16 @@ def _build_history_handler(
     runtime context which is passed from the cyclopts command layer.
     The limit and run_id parameters will be used by the actual impl.
     """
-    # Use limit and run_id in returned result to satisfy linter
     _ = run_id  # Will filter to specific run in actual impl
     return CliResult.ok(
         BuildHistoryResult(
             runs=[],
-            count=min(0, limit),  # Placeholder uses limit
+            count=min(0, limit),
         )
     )
 
 
-# Build Status Operation
+# Build Status Operation (registers to LEGACY registry)
 BUILD_STATUS_SPEC: OperationSpec[BuildStatusResult] = register_operation(
     OperationSpec(
         operation_id="build.status",
@@ -82,7 +83,7 @@ BUILD_STATUS_SPEC: OperationSpec[BuildStatusResult] = register_operation(
     )
 )
 
-# Build History Operation
+# Build History Operation (registers to LEGACY registry)
 BUILD_HISTORY_SPEC: OperationSpec[BuildHistoryResult] = register_operation(
     OperationSpec(
         operation_id="build.history",

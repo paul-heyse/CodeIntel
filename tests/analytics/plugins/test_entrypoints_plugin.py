@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from codeintel.analytics.plugins.entrypoints.build import EntrypointsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_false, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
+from tests._helpers.plugin_harness import PluginHarnessFactory
 from tests.analytics.conftest import PluginTestHarness
 
 
@@ -15,18 +18,20 @@ def test_entrypoints_plugin_requires_catalog(plugin_harness: PluginTestHarness) 
     expect_false(result.success)
 
 
-def test_entrypoints_plugin_handles_empty_features(plugin_harness: PluginTestHarness) -> None:
+def test_entrypoints_plugin_handles_empty_features(tmp_path: Path) -> None:
     """Plugin should succeed with an empty catalog and no modules."""
-    catalog = FunctionCatalogService(FunctionCatalog(functions=[], module_by_path={}))
-    resources = TargetResourceOverrides(catalog=catalog)
+    factory = PluginHarnessFactory(tmp_path)
+    with factory.entrypoints() as harness:
+        catalog = FunctionCatalogService(FunctionCatalog(functions=[], module_by_path={}))
+        resources = TargetResourceOverrides(catalog=catalog)
 
-    result = plugin_harness.execute_plugin(EntrypointsPlugin(), resources=resources)
-    expect_true(result.success)
-    expect_true(
-        plugin_harness.ctx.query_count("analytics.entrypoints") == 0,
-        message="Entrypoints table should be created but empty for an empty catalog",
-    )
-    expect_true(
-        plugin_harness.ctx.query_count("analytics.entrypoint_tests") == 0,
-        message="Entrypoint tests table should be created but empty for an empty catalog",
-    )
+        result = harness.execute_plugin(EntrypointsPlugin(), resources=resources)
+        expect_true(result.success)
+        expect_true(
+            harness.ctx.query_count("analytics.entrypoints") == 0,
+            message="Entrypoints table should be created but empty for an empty catalog",
+        )
+        expect_true(
+            harness.ctx.query_count("analytics.entrypoint_tests") == 0,
+            message="Entrypoint tests table should be created but empty for an empty catalog",
+        )

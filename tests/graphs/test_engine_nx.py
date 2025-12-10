@@ -11,7 +11,12 @@ import networkx as nx
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
-from tests._helpers.assertions import expect_equal, expect_is_none, expect_true
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_graph_equal,
+    expect_is_none,
+    expect_true,
+)
 from tests._helpers.builders import (
     CallGraphNodeRow,
     ConfigValueRow,
@@ -37,14 +42,7 @@ def _edge_payload(graph: nx.Graph) -> set[tuple[object, object, object]]:
 
 
 def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None:
-    expect_true(
-        _node_payload(expected) == _node_payload(actual),
-        message=f"{name} nodes differ between engine and nx_views",
-    )
-    expect_true(
-        _edge_payload(expected) == _edge_payload(actual),
-        message=f"{name} edges differ between engine and nx_views",
-    )
+    expect_graph_equal(actual, expected, message=f"{name} differs between engine and nx_views")
 
 
 def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:

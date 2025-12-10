@@ -10,112 +10,100 @@ from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.config.datasets import (
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesRow,
-)
+from codeintel.config.datasets import GraphMetricsFunctionsRow, GraphMetricsModulesRow
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.rows.analytics import (
     AnalyticsTestCatalogRow,
     AnalyticsTestCoverageEdgesRow,
 )
-from tests._helpers.builders import insert_symbol_use_edges
+from tests._helpers.builders import (
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    ConfigValueRow,
+    CoverageFunctionRow,
+    CoverageLineRow,
+    FunctionMetricsRow,
+    GoidRow,
+    GraphMetricsModulesExtRow,
+    ImportGraphEdgeRow,
+    ModuleRow,
+    RepoMapRow,
+    RiskFactorRow,
+    StaticDiagnosticsRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    TypednessRow,
+    insert_symbol_use_edges,
+)
+from tests._helpers.builders.row_protocol import insert_rows
+from tests._helpers.context import TestContext
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
 
 
-def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> None:
+def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     """Insert helpers should populate tables without manual SQL."""
-    gateway = fresh_gateway
+    gateway = test_ctx.gateway
     con = gateway.con
     now = datetime.now(tz=UTC)
     now_str = now.isoformat()
 
-    gateway.core.insert_repo_map(
+    insert_rows(
+        gateway,
         [
-            {
-                "repo": "r",
-                "commit": "c",
-                "modules": "{}",
-                "overlays": "{}",
-                "generated_at": now_str,
-            }
-        ]
-    )
-    gateway.core.insert_modules(
-        [
-            {
-                "module": "m",
-                "path": "m.py",
-                "repo": "r",
-                "commit": "c",
-                "language": "python",
-                "tags": "[]",
-                "owners": "[]",
-            }
-        ]
-    )
-    gateway.core.insert_goids(
-        [
-            (
-                1,
-                "urn:fn",
-                "r",
-                "c",
-                "m.py",
-                "python",
-                "function",
-                "m.fn",
-                1,
-                2,
-                now_str,
-            )
-        ]
+            RepoMapRow(repo="r", commit="c", modules={}, overlays={}, generated_at=now),
+            ModuleRow(module="m", path="m.py", repo="r", commit="c"),
+            GoidRow(
+                goid_h128=1,
+                urn="urn:fn",
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                kind="function",
+                qualname="m.fn",
+                start_line=1,
+                end_line=2,
+                created_at=now,
+            ),
+        ],
     )
 
-    gateway.graph.insert_call_graph_nodes(
+    insert_rows(
+        gateway,
         [
-            {
-                "goid_h128": 1.0,
-                "language": "python",
-                "kind": "function",
-                "arity": 0,
-                "is_public": True,
-                "rel_path": "m.py",
-            }
-        ]
-    )
-    gateway.graph.insert_call_graph_edges(
-        [
-            {
-                "repo": "r",
-                "commit": "c",
-                "caller_goid_h128": 1.0,
-                "callee_goid_h128": None,
-                "callsite_path": "m.py",
-                "callsite_line": 1,
-                "callsite_col": 0,
-                "language": "python",
-                "kind": "direct",
-                "resolved_via": "local_name",
-                "confidence": 1.0,
-                "evidence_json": "{}",
-            }
-        ]
-    )
-    gateway.graph.insert_import_graph_edges(
-        [
-            {
-                "repo": "r",
-                "commit": "c",
-                "src_module": "m",
-                "dst_module": "m",
-                "src_fan_out": 1,
-                "dst_fan_in": 1,
-                "cycle_group": 1,
-                "module_layer": None,
-            }
-        ]
+            CallGraphNodeRow(
+                goid_h128=1,
+                language="python",
+                kind="function",
+                arity=0,
+                is_public=True,
+                rel_path="m.py",
+            ),
+            CallGraphEdgeRow(
+                repo="r",
+                commit="c",
+                caller_goid_h128=1,
+                callee_goid_h128=None,
+                callsite_path="m.py",
+                callsite_line=1,
+                callsite_col=0,
+                language="python",
+                kind="direct",
+                resolved_via="local_name",
+                confidence=1.0,
+                evidence={},
+            ),
+            ImportGraphEdgeRow(
+                repo="r",
+                commit="c",
+                src_module="m",
+                dst_module="m",
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=1,
+                module_layer=None,
+            ),
+        ],
     )
     insert_symbol_use_edges(
         gateway,
@@ -135,167 +123,141 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
     gateway.graph.insert_cfg_edges([(1, "b0", "b0", "fallthrough")])
     gateway.graph.insert_dfg_edges([(1, "b0", "b0", "x", "y", "assign", False, "read")])
 
-    function_metrics_row = (
-        1,
-        "urn:fn",
-        "r",
-        "c",
-        "m.py",
-        "python",
-        "function",
-        "m.fn",
-        1,
-        2,
-        4,
-        3,
-        0,
-        0,
-        0,
-        False,
-        False,
-        False,
-        False,
-        1,
-        0,
-        0,
-        1,
-        1,
-        1,
-        0,
-        True,
-        "low",
-        now_str,
-    )
-    if len(function_metrics_row) != EXPECTED_FUNCTION_METRICS_LEN:
+    metrics_rows = [
+        FunctionMetricsRow(
+            function_goid_h128=1,
+            urn="urn:fn",
+            repo="r",
+            commit="c",
+            rel_path="m.py",
+            language="python",
+            kind="function",
+            qualname="m.fn",
+            start_line=1,
+            end_line=2,
+            loc=4,
+            logical_loc=3,
+            param_count=0,
+            positional_params=0,
+            keyword_only_params=0,
+            has_varargs=False,
+            has_varkw=False,
+            is_async=False,
+            is_generator=False,
+            return_count=1,
+            yield_count=0,
+            raise_count=0,
+            cyclomatic_complexity=1,
+            max_nesting_depth=1,
+            stmt_count=1,
+            decorator_count=0,
+            has_docstring=True,
+            complexity_bucket="low",
+            created_at=now,
+        )
+    ]
+    if len(metrics_rows[0].to_tuple()) != EXPECTED_FUNCTION_METRICS_LEN:
         pytest.fail(
-            f"Unexpected function_metrics row length: {len(function_metrics_row)} "
+            f"Unexpected function_metrics row length: {len(metrics_rows[0].to_tuple())} "
             f"(expected {EXPECTED_FUNCTION_METRICS_LEN})"
         )
-    gateway.analytics.insert_function_metrics([function_metrics_row])
-    gateway.analytics.insert_coverage_functions(
+    insert_rows(gateway, metrics_rows)
+    insert_rows(
+        gateway,
         [
-            (
-                1,
-                "urn:fn",
-                "r",
-                "c",
-                "m.py",
-                "python",
-                "function",
-                "m.fn",
-                1,
-                2,
-                2,
-                2,
-                1.0,
-                True,
-                "",
-                now_str,
-            )
-        ]
+            CoverageFunctionRow(
+                function_goid_h128=1,
+                urn="urn:fn",
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                language="python",
+                kind="function",
+                qualname="m.fn",
+                start_line=1,
+                end_line=2,
+                executable_lines=2,
+                covered_lines=2,
+                coverage_ratio=1.0,
+                tested=True,
+                last_status="",
+                created_at=now,
+            ),
+            CoverageLineRow(
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                line=1,
+                is_executable=True,
+                is_covered=True,
+                hits=1,
+                context_count=1,
+                created_at=now,
+            ),
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="urn:fn",
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                language="python",
+                kind="function",
+                qualname="m.fn",
+                loc=4,
+                logical_loc=3,
+                cyclomatic_complexity=1,
+                risk_score=0.0,
+                risk_level="low",
+                typedness_bucket="typed",
+                hotspot_reason="analysis",
+                typedness_score=1.0,
+                complexity_score=0.0,
+                hotspot_score=0.0,
+                has_tests=True,
+                coverage_functions=2,
+                coverage_lines=2,
+                coverage_ratio=1.0,
+                tested=True,
+                total_tests=1,
+                flaky_tests=0,
+                last_status="passed",
+                risk_weight=0.1,
+                risk_component_coverage="low",
+                risk_component_static="[]",
+                risk_component_hotspot="[]",
+                created_at=now,
+            ),
+            ConfigValueRow(
+                repo="r",
+                commit="c",
+                path="cfg.yaml",
+                format="yaml",
+                key="feature.flag",
+                raw_value="[]",
+                parsed_value='["pkg.m"]',
+                version=1,
+            ),
+            TypednessRow(
+                repo="r",
+                commit="c",
+                path="m.py",
+                type_error_count=0,
+                annotation_ratio='{"params":1}',
+                untyped_defs=0,
+                overlay_needed=False,
+            ),
+            StaticDiagnosticsRow(
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                type_error_count=0,
+                lint_error_count=0,
+                format_error_count=0,
+                security_error_count=0,
+                has_blocking_errors=False,
+            ),
+        ],
     )
-    gateway.analytics.insert_coverage_lines(
-        [
-            {
-                "repo": "r",
-                "commit": "c",
-                "rel_path": "m.py",
-                "line": 1,
-                "is_executable": True,
-                "is_covered": True,
-                "hits": 1,
-                "context_count": 1,
-                "created_at": now_str,
-            }
-        ]
-    )
-    catalog_row: AnalyticsTestCatalogRow = {
-        "test_id": "t::id",
-        "test_goid_h128": 2,
-        "urn": "urn:test",
-        "repo": "r",
-        "commit": "c",
-        "rel_path": "m.py",
-        "qualname": "pkg.m.fn",
-        "kind": "function",
-        "status": "passed",
-        "duration_ms": 5,
-        "markers": "[]",
-        "parametrized": False,
-        "flaky": False,
-        "created_at": now_str,
-    }
-    gateway.analytics.insert_test_catalog([catalog_row])
-
-    coverage_edge_row: AnalyticsTestCoverageEdgesRow = {
-        "test_id": "t::id",
-        "test_goid_h128": 2,
-        "function_goid_h128": 1,
-        "urn": "urn:fn",
-        "repo": "r",
-        "commit": "c",
-        "rel_path": "m.py",
-        "qualname": "pkg.m.fn",
-        "covered_lines": 2,
-        "executable_lines": 2,
-        "coverage_ratio": 1.0,
-        "last_status": "passed",
-        "created_at": now_str,
-    }
-    gateway.analytics.insert_test_coverage_edges([coverage_edge_row])
-    gateway.analytics.insert_goid_risk_factors(
-        [
-            (
-                1,
-                "urn:fn",
-                "r",
-                "c",
-                "m.py",
-                "python",
-                "function",
-                "m.fn",
-                4,
-                3,
-                1,
-                "low",
-                "typed",
-                "analysis",
-                0.0,
-                1.0,
-                0,
-                False,
-                2,
-                2,
-                1.0,
-                True,
-                1,
-                0,
-                "passed",
-                0.1,
-                "low",
-                "[]",
-                "[]",
-                now_str,
-            )
-        ]
-    )
-    gateway.analytics.insert_config_values(
-        [("r", "c", "cfg.yaml", "yaml", "feature.flag", "[]", '["pkg.m"]', 1)]
-    )
-    gateway.analytics.insert_typedness(
-        [
-            {
-                "repo": "r",
-                "commit": "c",
-                "path": "m.py",
-                "type_error_count": 0,
-                "annotation_ratio": '{"params":1}',
-                "untyped_defs": 0,
-                "overlay_needed": False,
-            }
-        ]
-    )
-    gateway.analytics.insert_static_diagnostics([("r", "c", "m.py", 0, 0, 0, 0, False)])
     function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
     module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
     insert_analytics_rows(
@@ -344,31 +306,44 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
             )
         ],
     )
-    gateway.analytics.insert_subsystems(
+    insert_rows(
+        gateway,
         [
-            (
-                "r",
-                "c",
-                "sub1",
-                "Subsystem",
-                None,
-                1,
-                '["m"]',
-                "[]",
-                1,
-                0,
-                1,
-                0,
-                1,
-                0.1,
-                0.1,
-                0,
-                "low",
-                now_str,
-            )
-        ]
+            SubsystemRow(
+                repo="r",
+                commit="c",
+                subsystem_id="sub1",
+                name="Subsystem",
+                description=None,
+                module_count=1,
+                modules_json='["m"]',
+                entrypoints_json="[]",
+                internal_edge_count=1,
+                external_edge_count=0,
+                fan_in=1,
+                fan_out=0,
+                function_count=1,
+                avg_risk_score=0.1,
+                max_risk_score=0.1,
+                high_risk_function_count=0,
+                risk_level="low",
+                import_in_degree=None,
+                import_out_degree=None,
+                import_pagerank=None,
+                import_betweenness=None,
+                import_closeness=None,
+                import_layer=None,
+                created_at=now,
+            ),
+            SubsystemModuleRow(
+                repo="r",
+                commit="c",
+                subsystem_id="sub1",
+                module="m",
+                member_kind="member",
+            ),
+        ],
     )
-    gateway.analytics.insert_subsystem_modules([("r", "c", "sub1", "m", "member")])
 
     def _count(query: str) -> int:
         row = con.execute(query).fetchone()

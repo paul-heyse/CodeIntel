@@ -12,8 +12,10 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.graphs import build_graph_engine_double
+from tests._helpers.harnesses import plugin_harness_with_packs
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta
-from tests.analytics.conftest import PluginTestHarness
+from tests._helpers.seeds import CORE_PACK
 
 
 def _seed_effect_sources(repo_root: Path) -> None:
@@ -79,44 +81,46 @@ def _call_graph() -> nx.DiGraph:
 
 
 def test_function_effects_plugin_detects_transitive_effects(
-    plugin_harness: PluginTestHarness,
+    tmp_path: Path,
 ) -> None:
     """FunctionEffectsPlugin should mark direct and transitive side effects."""
-    _seed_effect_sources(plugin_harness.ctx.repo_root)
-    catalog_provider = _make_catalog(plugin_harness.ctx.repo, plugin_harness.ctx.commit)
+    with plugin_harness_with_packs(tmp_path, CORE_PACK) as harness:
+        _seed_effect_sources(harness.ctx.repo_root)
+        catalog_provider = _make_catalog(harness.ctx.repo, harness.ctx.commit)
+        ensure_catalog_with_goids(harness.ctx, catalog_provider)
 
-    engine = build_graph_engine_double(
-        plugin_harness.ctx.gateway,
-        plugin_harness.ctx.snapshot,
-        call_graph=_call_graph(),
-    )
-    runtime = GraphRuntime(
-        options=GraphRuntimeOptions(snapshot=plugin_harness.ctx.snapshot),
-        engine=engine,
-    )
-    resources = TargetResourceOverrides(catalog=catalog_provider, graph_runtime=runtime)
-    result = plugin_harness.execute_plugin(FunctionEffectsPlugin(), resources=resources)
-    expect_true(result.success)
+        engine = build_graph_engine_double(
+            harness.ctx.gateway,
+            harness.ctx.snapshot,
+            call_graph=_call_graph(),
+        )
+        runtime = GraphRuntime(
+            options=GraphRuntimeOptions(snapshot=harness.ctx.snapshot),
+            engine=engine,
+        )
+        resources = TargetResourceOverrides(catalog=catalog_provider, graph_runtime=runtime)
+        result = harness.execute_plugin(FunctionEffectsPlugin(), resources=resources)
+        expect_true(result.success)
 
-    helper_row = plugin_harness.ctx.query(
-        """
-        SELECT is_pure, modifies_globals, has_transitive_effects
-        FROM analytics.function_effects
-        WHERE function_goid_h128 = ?
-        """,
-        [7001],
-    )[0]
-    expect_true(helper_row.is_pure is False)
-    expect_true(helper_row.modifies_globals is True)
-    expect_true(helper_row.has_transitive_effects is False)
+        helper_row = harness.ctx.query(
+            """
+            SELECT is_pure, modifies_globals, has_transitive_effects
+            FROM analytics.function_effects
+            WHERE function_goid_h128 = ?
+            """,
+            [7001],
+        )[0]
+        expect_true(helper_row.is_pure is False)
+        expect_true(helper_row.modifies_globals is True)
+        expect_true(helper_row.has_transitive_effects is False)
 
-    main_row = plugin_harness.ctx.query(
-        """
-        SELECT is_pure, has_transitive_effects
-        FROM analytics.function_effects
-        WHERE function_goid_h128 = ?
-        """,
-        [7002],
-    )[0]
-    expect_true(main_row.is_pure is False)
-    expect_true(main_row.has_transitive_effects is True)
+        main_row = harness.ctx.query(
+            """
+            SELECT is_pure, has_transitive_effects
+            FROM analytics.function_effects
+            WHERE function_goid_h128 = ?
+            """,
+            [7002],
+        )[0]
+        expect_true(main_row.is_pure is False)
+        expect_true(main_row.has_transitive_effects is True)

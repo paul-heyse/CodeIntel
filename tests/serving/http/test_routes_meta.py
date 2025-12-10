@@ -48,27 +48,10 @@ def test_build_meta_router_returns_router() -> None:
 
 
 def test_meta_datasets_returns_list(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    meta_http_client: TestClient,
 ) -> None:
-    """Verify /meta/datasets returns a list of dataset metadata.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/meta/datasets")
+    """/meta/datasets returns a list of dataset metadata."""
+    response = meta_http_client.get("/meta/datasets")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -124,27 +107,10 @@ def test_meta_datasets_includes_limit_info(
 
 
 def test_meta_operations_returns_list(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    meta_http_client: TestClient,
 ) -> None:
-    """Verify /meta/operations returns a list of operation metadata.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/meta/operations")
+    """/meta/operations returns a list of operation metadata."""
+    response = meta_http_client.get("/meta/operations")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -158,27 +124,10 @@ def test_meta_operations_returns_list(
 
 
 def test_meta_operations_includes_http_details(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    meta_http_client: TestClient,
 ) -> None:
-    """Verify /meta/operations includes HTTP method and path.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/meta/operations")
+    """/meta/operations includes HTTP method and path."""
+    response = meta_http_client.get("/meta/operations")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -196,27 +145,10 @@ def test_meta_operations_includes_http_details(
 
 
 def test_meta_dataflow_returns_graph(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    meta_http_client: TestClient,
 ) -> None:
-    """Verify /meta/dataflow returns nodes and edges.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/meta/dataflow")
+    """/meta/dataflow returns nodes and edges."""
+    response = meta_http_client.get("/meta/dataflow")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()

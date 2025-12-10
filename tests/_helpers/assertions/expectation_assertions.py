@@ -301,6 +301,82 @@ def require_rows[S: Sequence[object]](rows: S | None, *, message: str | None = N
     return cast("S", seq)
 
 
+def require_non_empty_sequence[S: Sequence[object]](
+    sequence: S | None,
+    *,
+    message: str | None = None,
+) -> S:
+    """Ensure a generic sequence exists and has at least one element.
+
+    Returns
+    -------
+    S
+        The provided sequence when present and non-empty.
+
+    Raises
+    ------
+    AssertionError
+        If the sequence is ``None`` or empty.
+    """
+    seq = expect_is_not_none(sequence, message=message)
+    if len(seq) == 0:
+        raise AssertionError(message or "Expected non-empty sequence")
+    return cast("S", seq)
+
+
+def expect_row_value(
+    row: Sequence[object] | None,
+    index: int,
+    expected: object,
+    *,
+    message: str | None = None,
+) -> Sequence[object]:
+    """Validate a fetched row has an expected value at an index.
+
+    Returns
+    -------
+    Sequence[object]
+        The provided row when it is present and contains the expected value.
+
+    Raises
+    ------
+    AssertionError
+        If the row is missing, too short, or the value does not match.
+    """
+    seq = require_row(row, message=message)
+    if index >= len(seq):
+        raise AssertionError(message or f"Row length {len(seq)} shorter than expected index {index}")
+    expect_equal(seq[index], expected, label=message or f"row[{index}]")
+    return seq
+
+
+def expect_rows_equal(
+    rows: Sequence[Sequence[object]] | None,
+    expected: Sequence[Sequence[object]],
+    *,
+    message: str | None = None,
+) -> Sequence[Sequence[object]]:
+    """Validate a list of rows matches the expected rows.
+
+    Returns
+    -------
+    Sequence[Sequence[object]]
+        The provided rows when present and matching the expected rows.
+
+    Raises
+    ------
+    AssertionError
+        If rows are missing, have different lengths, or differ in content.
+    """
+    actual = expect_is_not_none(rows, message=message)
+    if len(actual) != len(expected):
+        raise AssertionError(message or f"Expected {len(expected)} rows, got {len(actual)}")
+    for idx, (act_row, exp_row) in enumerate(zip(actual, expected, strict=True)):
+        if tuple(act_row) != tuple(exp_row):
+            raise AssertionError(message or f"Row {idx} expected {exp_row!r}, got {act_row!r}")
+    return actual
+
+
 __all__ = [
     "expect_empty",
     "expect_equal",
@@ -308,12 +384,17 @@ __all__ = [
     "expect_in",
     "expect_is_instance",
     "expect_is_none",
+    "expect_is_not",
     "expect_is_not_none",
     "expect_length",
     "expect_not_empty",
     "expect_not_equal",
     "expect_not_in",
+    "expect_row_value",
+    "expect_rows_equal",
     "expect_true",
+    "require_non_empty_sequence",
     "require_row",
+    "require_rows",
     "unwrap_optional",
 ]

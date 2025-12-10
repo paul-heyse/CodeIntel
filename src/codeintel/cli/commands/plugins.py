@@ -5,15 +5,13 @@ Provide commands to discover, list, and inspect CLI plugins.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.plugins import (
     plugins_discover_handler,
     plugins_info_handler,
@@ -27,7 +25,11 @@ from codeintel.cli.rendering.types import OutputFormat
 
 plugins_app = App(name="plugins", help="Manage CLI plugins")
 
+# Config for plugins commands - no runtime or gateway needed
+_PLUGINS_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
+
+@cli_command("plugins.list", handler=plugins_list_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="list")
 @dataclass
 class PluginsListCommand:
@@ -41,25 +43,13 @@ class PluginsListCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins list command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        with command_context(
-            "plugins.list",
-            runtime_cli,
-            output_cli,
-            params={},
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.discover", handler=plugins_discover_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="discover")
 @dataclass
 class PluginsDiscoverCommand:
@@ -73,25 +63,13 @@ class PluginsDiscoverCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins discover command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        with command_context(
-            "plugins.discover",
-            runtime_cli,
-            output_cli,
-            params={},
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_discover_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.info", handler=plugins_info_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="info")
 @dataclass
 class PluginsInfoCommand:
@@ -106,27 +84,13 @@ class PluginsInfoCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins info command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"name": self.name}
-
-        with command_context(
-            "plugins.info",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_info_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.paths", handler=plugins_paths_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="paths")
 @dataclass
 class PluginsPathsCommand:
@@ -140,25 +104,13 @@ class PluginsPathsCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins paths command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        with command_context(
-            "plugins.paths",
-            runtime_cli,
-            output_cli,
-            params={},
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_paths_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.new", handler=plugins_new_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="new")
 @dataclass
 class PluginsNewCommand:
@@ -177,30 +129,13 @@ class PluginsNewCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins new command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {
-            "name": self.name,
-            "output": str(self.output) if self.output else None,
-        }
-
-        with command_context(
-            "plugins.new",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_new_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.test", handler=plugins_test_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="test")
 @dataclass
 class PluginsTestCommand:
@@ -215,27 +150,13 @@ class PluginsTestCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins test command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"path": str(self.path)}
-
-        with command_context(
-            "plugins.test",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_test_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
+@cli_command("plugins.validate", handler=plugins_validate_handler, config=_PLUGINS_CONFIG)
 @plugins_app.command(name="validate")
 @dataclass
 class PluginsValidateCommand:
@@ -250,25 +171,10 @@ class PluginsValidateCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the plugins validate command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {"path": str(self.path)}
-
-        with command_context(
-            "plugins.validate",
-            runtime_cli,
-            output_cli,
-            params=params,
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = plugins_validate_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[
+        int,
+        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
+    ] = 0
 
 
 __all__ = [

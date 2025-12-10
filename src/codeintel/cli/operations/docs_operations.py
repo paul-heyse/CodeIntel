@@ -1,7 +1,10 @@
 """Documentation operation specifications.
 
-Define and register operations for the docs command group including
+Define operation specs for the docs command group including
 status and generate commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/docs.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import DocsGenerateResult, DocsStatusResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _docs_status_handler() -> CliResult[DocsStatusResult]:
@@ -59,7 +62,6 @@ def _docs_generate_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameters to avoid unused variable warnings
     _ = targets
     _ = force
     return CliResult.ok(
@@ -71,7 +73,7 @@ def _docs_generate_handler(
     )
 
 
-# Docs Status Operation
+# Docs Status Operation (registers to LEGACY registry)
 DOCS_STATUS_SPEC: OperationSpec[DocsStatusResult] = register_operation(
     OperationSpec(
         operation_id="docs.status",
@@ -83,7 +85,7 @@ DOCS_STATUS_SPEC: OperationSpec[DocsStatusResult] = register_operation(
     )
 )
 
-# Docs Generate Operation
+# Docs Generate Operation (registers to LEGACY registry)
 DOCS_GENERATE_SPEC: OperationSpec[DocsGenerateResult] = register_operation(
     OperationSpec(
         operation_id="docs.generate",

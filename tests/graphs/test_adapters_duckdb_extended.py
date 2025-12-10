@@ -24,6 +24,7 @@ from tests._helpers.assertions import (
     expect_in,
     expect_is_not_none,
     expect_length,
+    expect_row_value,
     expect_true,
 )
 
@@ -176,10 +177,7 @@ def test_duckdb_adapter_execute_simple_query(graph_gateway: StorageGateway) -> N
 
     expect_is_not_none(result)
     row = result.fetchone()
-    expect_is_not_none(row, message="Expected a row from SELECT")
-    if row is None:
-        return
-    expect_equal(row[0], 1)
+    expect_row_value(row, 0, 1, message="Expected a row from SELECT")
 
 
 def test_duckdb_adapter_execute_with_params(graph_gateway: StorageGateway) -> None:
@@ -189,10 +187,7 @@ def test_duckdb_adapter_execute_with_params(graph_gateway: StorageGateway) -> No
     result = adapter.execute("SELECT ? AS value", [PARAM_VALUE])
 
     row = result.fetchone()
-    expect_is_not_none(row, message="Expected a row from parameterized query")
-    if row is None:
-        return
-    expect_equal(row[0], PARAM_VALUE)
+    expect_row_value(row, 0, PARAM_VALUE, message="Expected a row from parameterized query")
 
 
 def test_duckdb_adapter_execute_fetch_all(graph_gateway: StorageGateway) -> None:
@@ -222,10 +217,7 @@ def test_duckdb_adapter_create_temp_table(graph_gateway: StorageGateway) -> None
     count_sql, params = QueryBuilder.count(TABLE_BASE)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    expect_is_not_none(count, message="Expected count row from QueryBuilder.count")
-    if count is None:
-        return
-    expect_equal(count[0], 0)
+    expect_row_value(count, 0, 0, message="Expected count row from QueryBuilder.count")
 
 
 def test_duckdb_adapter_insert_and_select(graph_gateway: StorageGateway) -> None:
@@ -268,10 +260,7 @@ def test_duckdb_adapter_batch_insert(graph_gateway: StorageGateway) -> None:
     count_sql, params = QueryBuilder.count(TABLE_BATCH)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    expect_is_not_none(count, message="Expected count row for batch insert")
-    if count is None:
-        return
-    expect_equal(count[0], BATCH_SIZE)
+    expect_row_value(count, 0, BATCH_SIZE, message="Expected count row for batch insert")
 
 
 # ---------------------------------------------------------------------------
@@ -351,10 +340,7 @@ def test_duckdb_adapter_transaction_commit(graph_gateway: StorageGateway) -> Non
     count_sql, params = QueryBuilder.count(TABLE_TX)
     result = adapter.execute(count_sql, params)
     count = result.fetchone()
-    expect_is_not_none(count, message="Expected count row after transaction")
-    if count is None:
-        return
-    expect_equal(count[0], 1)
+    expect_row_value(count, 0, 1, message="Expected count row after transaction")
 
 
 # ---------------------------------------------------------------------------

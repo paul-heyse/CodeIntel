@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
-from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.datasets.catalog import (
     SamplingConfig,
     build_catalog,
@@ -15,41 +13,15 @@ from codeintel.storage.datasets.catalog import (
     write_markdown_catalog,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.dataset_factories import sample_dataset_registry
 
-# Constants
 SAMPLE_ROWS_1 = 1
 SAMPLE_ROWS_2 = 2
 
 
-def _sample_registry() -> DatasetRegistry:
-    table_key = "core.ast_nodes"
-    contract = get_dataset_contracts_by_table_key()[table_key]
-    dataset = DatasetContract(
-        table_key=table_key,
-        name="ast_nodes",
-        schema=contract.schema,
-        json_schema_id="ast_nodes",
-        jsonl_filename="ast_nodes.jsonl",
-        parquet_filename="ast_nodes.parquet",
-        owner="team-data",
-        freshness_sla="daily",
-        retention_policy="90d",
-        schema_version="1",
-        stable_id="ast_nodes",
-        upstream_dependencies=("core.modules",),
-        validation_profile="strict",
-    )
-    return DatasetRegistry(
-        by_name={"ast_nodes": dataset},
-        by_table_key={table_key: dataset},
-        jsonl_datasets={table_key: "ast_nodes.jsonl"},
-        parquet_datasets={table_key: "ast_nodes.parquet"},
-    )
-
-
 def test_catalog_generation_writes_files(tmp_path: Path) -> None:
     """Catalog generation writes both Markdown and HTML outputs."""
-    registry = _sample_registry()
+    registry = sample_dataset_registry(tmp_path)
     entries = build_catalog(registry, con=None, sampling=SamplingConfig(sample_rows=0))
     md_path = write_markdown_catalog(tmp_path, entries)
     html_path = write_html_catalog(tmp_path, entries)
@@ -72,7 +44,7 @@ def test_catalog_generation_writes_files(tmp_path: Path) -> None:
 
 def test_catalog_handles_missing_samples(tmp_path: Path) -> None:
     """Catalog includes placeholder text when no samples are available."""
-    registry = _sample_registry()
+    registry = sample_dataset_registry(tmp_path)
     entries = build_catalog(registry, con=None, sampling=SamplingConfig(sample_rows=0))
     path = write_markdown_catalog(tmp_path, entries)
     data = path.read_text(encoding="utf-8")
@@ -84,7 +56,7 @@ def test_catalog_sampling_gracefully_falls_back(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """Sampling errors should not crash catalog generation."""
-    registry = _sample_registry()
+    registry = sample_dataset_registry(tmp_path)
     warnings: list[str] = []
     entries = build_catalog(
         registry,
@@ -104,7 +76,7 @@ def test_catalog_sampling_gracefully_falls_back(
 
 def test_catalog_sampling_strict_raises(fresh_gateway: StorageGateway) -> None:
     """Strict sampling should raise when macros are unavailable."""
-    registry = _sample_registry()
+    registry = sample_dataset_registry(tmp_path=None)
     with pytest.raises(RuntimeError):
         build_catalog(
             registry,

@@ -204,9 +204,7 @@ def test_graph_plugin_execution_context_require_graphs_by_type_and_name(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """require_graphs resolves resources by type and name; errors when missing."""
-    engine = build_graph_engine_double(
-        graph_executor_env.gateway, graph_executor_env.snapshot
-    )
+    engine = build_graph_engine_double(graph_executor_env.gateway, graph_executor_env.snapshot)
     engine_resource = GraphResource(engine=engine)
     base_builder = GraphPluginExecutionContextBuilder(
         gateway=graph_executor_env.gateway,
@@ -249,9 +247,7 @@ def test_graph_plugin_execution_context_builder_wiring(graph_executor_env: Graph
     """Builder should propagate scope, catalog provider, and registered resources."""
     scope = GraphRunScope(paths=("a.py",))
     catalog_provider = _MockFunctionCatalogProvider()
-    engine = build_graph_engine_double(
-        graph_executor_env.gateway, graph_executor_env.snapshot
-    )
+    engine = build_graph_engine_double(graph_executor_env.gateway, graph_executor_env.snapshot)
     resource = GraphResource(engine=engine)
 
     builder = GraphPluginExecutionContextBuilder(

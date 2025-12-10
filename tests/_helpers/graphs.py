@@ -7,11 +7,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.builders import (
@@ -55,6 +57,11 @@ from tests._helpers.repo import (
     MOD_UTIL_PATH,
     write_canonical_repo,
 )
+from tests._helpers.rows import function_meta
+from tests._helpers.seeds import AST_METRICS_PACK, CORE_PACK
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 @dataclass
@@ -111,6 +118,21 @@ def symbol_star_graph(spokes: int = DEFAULT_SPOKES) -> nx.Graph:
         Undirected star graph.
     """
     return nx.Graph(star_graph(spokes, inward=False))
+
+
+def call_graph_fixture(edges: Sequence[tuple[str, str]] | None = None) -> nx.DiGraph:
+    """Create a small call graph for tests, defaulting to a simple chain.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed call graph containing the provided edges.
+    """
+    if edges is None:
+        edges = [("func_a", "func_b"), ("func_b", "func_c")]
+    g = nx.DiGraph()
+    g.add_edges_from(edges)
+    return g
 
 
 def standard_graph_fixtures(
@@ -182,10 +204,66 @@ def build_canonical_ast_lookup(repo_root: Path) -> dict[int, FunctionAst]:
     return build_ast_map(paths, goids, repo_root, target_names=target_names)
 
 
+def canonical_ast_map(ctx: TestContext) -> dict[int, FunctionAst]:
+    """Return canonical AST map for a context already seeded with AST metrics.
+
+    Returns
+    -------
+    dict[int, FunctionAst]
+        Mapping from GOID to parsed FunctionAst.
+    """
+    return build_canonical_ast_lookup(ctx.repo_root)
+
+
+@dataclass(frozen=True)
+class CanonicalAstArtifacts:
+    """Bundle canonical FunctionCatalog plus AST map for analytics tests."""
+
+    catalog: FunctionCatalog
+    ast_map: dict[int, FunctionAst]
+
+
+def canonical_ast_artifacts(ctx: TestContext) -> CanonicalAstArtifacts:
+    """Ensure core/AST packs are applied and return catalog + AST map.
+
+    Returns
+    -------
+    CanonicalAstArtifacts
+        Bundled catalog and AST map for canonical fixtures.
+    """
+    canonical = write_canonical_repo(ctx.repo_root)
+    ctx.require(CORE_PACK, AST_METRICS_PACK)
+    functions = [
+        function_meta(
+            goid=meta.goid,
+            rel_path=meta.rel_path,
+            qualname=meta.qualname,
+            snapshot=(ctx.repo, ctx.commit),
+            line_span=(meta.start_line, meta.end_line),
+        )
+        for meta in canonical.functions.values()
+    ]
+    module_by_path = {path: module for module, path in canonical.module_paths.items()}
+    catalog = FunctionCatalog(functions=functions, module_by_path=module_by_path)
+    return CanonicalAstArtifacts(catalog=catalog, ast_map=canonical_ast_map(ctx))
+
+
 def _function_node(
     tree: ast.AST,
     target: str,
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef:
+    """Find a function/class node in an AST by fully qualified name suffix.
+
+    Returns
+    -------
+    ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        Matching function or class node.
+
+    Raises
+    ------
+    ValueError
+        If no matching node is found.
+    """
     target_name = target.rsplit(".", maxsplit=1)[-1]
     for node in ast.walk(tree):
         if (
@@ -556,6 +634,7 @@ def build_module_map(
 
 
 __all__ = [
+    "CanonicalAstArtifacts",
     "CountingGraphEngineAdapter",
     "GraphEngineAdapter",
     "GraphFixtures",
@@ -566,6 +645,9 @@ __all__ = [
     "build_module_map",
     "build_sample_graphs",
     "build_source_files",
+    "call_graph_fixture",
+    "canonical_ast_artifacts",
+    "canonical_ast_map",
     "insert_config_values",
     "insert_entrypoints",
     "insert_goids",

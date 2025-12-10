@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 import httpx
@@ -32,10 +33,10 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.dataset_factories import make_descriptor, sample_dataset_specs
 from tests._helpers.fakes.serving_backends import build_serving_backend
-from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
 from tests._helpers.http_payloads import make_problem_detail_payload, make_retry_sequence
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -45,63 +46,73 @@ CUSTOM_DEFAULT_LIMIT = 25
 CUSTOM_MAX_ROWS = 250
 
 
+def _build_arch_backend(
+    architecture_gateway: StorageGateway,
+    factory: Callable[..., McpBackendComponents],
+) -> DuckDBBackend:
+    """Build backend components for the seeded architecture gateway.
+
+    Returns
+    -------
+    DuckDBBackend
+        Backend bound to the architecture gateway snapshot.
+    """
+    return factory(
+        gateway=architecture_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    ).backend
+
+
 # =============================================================================
 # DuckDBBackend Construction Tests
 # =============================================================================
 
 
 def test_duckdb_backend_creation(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify DuckDBBackend can be constructed with provisioned gateway."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
-    expect_true(backend.gateway is provisioned_repo.gateway)
-    expect_equal(backend.repo, provisioned_repo.repo)
-    expect_equal(backend.commit, provisioned_repo.commit)
+    expect_true(backend.gateway is mcp_backend_components.gateway)
+    expect_equal(backend.repo, mcp_backend_components.repo)
+    expect_equal(backend.commit, mcp_backend_components.commit)
 
 
 def test_duckdb_backend_with_custom_limits(
     provisioned_repo: ProvisionedGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify DuckDBBackend respects custom limits."""
     custom_limits = BackendLimits(
         default_limit=CUSTOM_DEFAULT_LIMIT, max_rows_per_call=CUSTOM_MAX_ROWS
     )
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
+    backend = mcp_backend_factory(
+        gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
         commit=provisioned_repo.commit,
-        options=BackendOptions(limits=custom_limits),
-    )
+        limits=custom_limits,
+    ).backend
 
     expect_equal(backend.limits.default_limit, CUSTOM_DEFAULT_LIMIT)
     expect_equal(backend.limits.max_rows_per_call, CUSTOM_MAX_ROWS)
 
 
 def test_duckdb_backend_with_service(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify DuckDBBackend accepts a service parameter."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
     service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+        query=mcp_backend_components.query,
+        dataset_tables=dict(mcp_backend_components.gateway.datasets.mapping),
     )
 
     backend = DuckDBBackend(
         service=service,
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        gateway=mcp_backend_components.gateway,
+        repo=mcp_backend_components.repo,
+        commit=mcp_backend_components.commit,
     )
 
     expect_true(backend.service is service)
@@ -113,51 +124,19 @@ def test_duckdb_backend_with_service(
 
 
 def test_duckdb_backend_list_datasets(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify list_datasets returns dataset descriptors."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend_components.backend.list_datasets()
 
     expect_is_instance(datasets, list)
 
 
 def test_duckdb_backend_dataset_specs(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify dataset_specs returns spec descriptors."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
-
-    specs = backend.dataset_specs()
+    specs = mcp_backend_components.backend.dataset_specs()
 
     expect_is_instance(specs, list)
 
@@ -168,51 +147,21 @@ def test_duckdb_backend_dataset_specs(
 
 
 def test_duckdb_backend_list_high_risk_functions(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify list_high_risk_functions works with real gateway."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
-
-    response = backend.list_high_risk_functions(min_risk=0.5, limit=10)
+    response = mcp_backend_components.backend.list_high_risk_functions(min_risk=0.5, limit=10)
 
     expect_true(hasattr(response, "functions"))
 
 
 def test_duckdb_backend_list_high_risk_functions_with_tested_only(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify list_high_risk_functions accepts tested_only filter."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+    response = mcp_backend_components.backend.list_high_risk_functions(
+        min_risk=0.5, limit=10, tested_only=True
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
-
-    response = backend.list_high_risk_functions(min_risk=0.5, limit=10, tested_only=True)
 
     expect_true(hasattr(response, "functions"))
 
@@ -224,23 +173,10 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
 
 def test_duckdb_backend_list_subsystems(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify list_subsystems works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     response = backend.list_subsystems(limit=10)
 
@@ -249,23 +185,10 @@ def test_duckdb_backend_list_subsystems(
 
 def test_duckdb_backend_list_subsystems_with_role_filter(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify list_subsystems accepts role filter."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     response = backend.list_subsystems(limit=10, role="test_role")
 
@@ -274,23 +197,10 @@ def test_duckdb_backend_list_subsystems_with_role_filter(
 
 def test_duckdb_backend_list_subsystems_with_query_filter(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify list_subsystems accepts query filter."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     response = backend.list_subsystems(limit=10, q="test")
 
@@ -299,23 +209,10 @@ def test_duckdb_backend_list_subsystems_with_query_filter(
 
 def test_duckdb_backend_search_subsystems(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify search_subsystems works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     response = backend.search_subsystems(limit=10)
 
@@ -328,37 +225,17 @@ def test_duckdb_backend_search_subsystems(
 
 
 def test_duckdb_backend_service_attribute(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify DuckDBBackend exposes service attribute."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
-
-    expect_is_not_none(backend.service)
+    expect_is_not_none(mcp_backend_components.backend.service)
 
 
 def test_duckdb_backend_limits_attribute(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify DuckDBBackend exposes limits attribute."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     expect_is_not_none(backend.limits)
     expect_true(hasattr(backend.limits, "default_limit"))
@@ -371,27 +248,13 @@ def test_duckdb_backend_limits_attribute(
 
 
 def test_duckdb_backend_get_function_summary(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_function_summary works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
     # Get a valid goid_h128
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -409,26 +272,12 @@ def test_duckdb_backend_get_function_summary(
 
 
 def test_duckdb_backend_get_callgraph_neighbors(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighbors works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -442,26 +291,12 @@ def test_duckdb_backend_get_callgraph_neighbors(
 
 
 def test_duckdb_backend_get_callgraph_neighbors_direction_in(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighbors works with direction=in."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -475,26 +310,12 @@ def test_duckdb_backend_get_callgraph_neighbors_direction_in(
 
 
 def test_duckdb_backend_get_callgraph_neighborhood(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighborhood works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -509,26 +330,12 @@ def test_duckdb_backend_get_callgraph_neighborhood(
 
 
 def test_duckdb_backend_get_tests_for_function(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_tests_for_function works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -542,26 +349,12 @@ def test_duckdb_backend_get_tests_for_function(
 
 
 def test_duckdb_backend_get_file_summary(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_file_summary works with rel_path."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -584,26 +377,12 @@ def test_duckdb_backend_get_file_summary(
 
 
 def test_duckdb_backend_get_function_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_function_profile works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -621,26 +400,12 @@ def test_duckdb_backend_get_function_profile(
 
 
 def test_duckdb_backend_get_file_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_file_profile works with rel_path."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -658,26 +423,12 @@ def test_duckdb_backend_get_file_profile(
 
 
 def test_duckdb_backend_get_module_profile(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_module_profile works with module name."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -695,26 +446,12 @@ def test_duckdb_backend_get_module_profile(
 
 
 def test_duckdb_backend_get_function_architecture(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_function_architecture works with goid_h128."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -732,26 +469,12 @@ def test_duckdb_backend_get_function_architecture(
 
 
 def test_duckdb_backend_get_module_architecture(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_module_architecture works with module name."""
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        service=service,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -775,23 +498,10 @@ def test_duckdb_backend_get_module_architecture(
 
 def test_duckdb_backend_get_module_subsystems(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_module_subsystems works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute("SELECT module FROM core.modules LIMIT 1").fetchone()
 
@@ -810,23 +520,10 @@ def test_duckdb_backend_get_module_subsystems(
 
 def test_duckdb_backend_get_file_hints(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_file_hints works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute("SELECT path FROM core.modules LIMIT 1").fetchone()
 
@@ -845,23 +542,10 @@ def test_duckdb_backend_get_file_hints(
 
 def test_duckdb_backend_get_subsystem_modules(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_subsystem_modules works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
@@ -882,23 +566,10 @@ def test_duckdb_backend_get_subsystem_modules(
 
 def test_duckdb_backend_summarize_subsystem(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify summarize_subsystem works with architecture gateway."""
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        service=service,
-    )
+    backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
     result = architecture_gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
@@ -923,16 +594,12 @@ def test_duckdb_backend_summarize_subsystem(
 
 
 def test_callgraph_neighbors_direction_incoming(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighbors accepts 'incoming' direction."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -946,16 +613,12 @@ def test_callgraph_neighbors_direction_incoming(
 
 
 def test_callgraph_neighbors_direction_outgoing(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighbors accepts 'outgoing' direction."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
-    result = provisioned_repo.gateway.con.execute(
+    result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -974,42 +637,30 @@ def test_callgraph_neighbors_direction_outgoing(
 
 
 def test_duckdb_backend_get_function_summary_missing_identifier(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_function_summary raises when no identifier provided."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     with pytest.raises(McpError):
         backend.get_function_summary()
 
 
 def test_duckdb_backend_get_tests_for_function_missing_identifier(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_tests_for_function raises when no identifier provided."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     with pytest.raises(McpError):
         backend.get_tests_for_function()
 
 
 def test_duckdb_backend_get_callgraph_neighbors_invalid_direction(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_callgraph_neighbors raises for invalid direction."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     goid_h128 = 123456
     with pytest.raises(McpError):
@@ -1017,14 +668,10 @@ def test_duckdb_backend_get_callgraph_neighbors_invalid_direction(
 
 
 def test_duckdb_backend_get_import_boundary(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_import_boundary returns response."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     # Test with nonexistent subsystem - should return empty boundary
     response = backend.get_import_boundary(subsystem_id="nonexistent_subsystem")
@@ -1032,14 +679,10 @@ def test_duckdb_backend_get_import_boundary(
 
 
 def test_duckdb_backend_read_dataset_rows(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify read_dataset_rows works for valid datasets."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     datasets = backend.list_datasets()
     if not datasets:
@@ -1051,28 +694,20 @@ def test_duckdb_backend_read_dataset_rows(
 
 
 def test_duckdb_backend_read_dataset_rows_nonexistent(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify read_dataset_rows raises for nonexistent dataset."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     with pytest.raises(McpError):
         backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz")
 
 
 def test_duckdb_backend_dataset_schema(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify dataset_schema works for valid datasets."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     datasets = backend.list_datasets()
     if not datasets:
@@ -1084,14 +719,10 @@ def test_duckdb_backend_dataset_schema(
 
 
 def test_duckdb_backend_dataset_schema_nonexistent(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify dataset_schema raises for nonexistent dataset."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     with pytest.raises(McpError):
         backend.dataset_schema(dataset_name="nonexistent_dataset_xyz")
@@ -1162,7 +793,13 @@ class _DatasetService(LocalQueryService):
         )
 
     def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
-        """"""
+        """Return dataset descriptors for the hooked dataset service.
+
+        Returns
+        -------
+        list[dm.DatasetDescriptorDomain]
+            Descriptor rows produced by the dataset hook.
+        """
         return cast(
             "list[dm.DatasetDescriptorDomain]",
             self._call("list_datasets", self._list_datasets),
@@ -1394,13 +1031,11 @@ def test_dataset_backend_problem_error_translated() -> None:
 # =============================================================================
 
 
-def test_duckdb_backend_identifier_validation(provisioned_repo: ProvisionedGateway) -> None:
+def test_duckdb_backend_identifier_validation(
+    mcp_backend_components: McpBackendComponents,
+) -> None:
     """Ensure identifier validation errors are raised."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
     with pytest.raises(errors.McpError):
         _ = backend.get_function_summary()
@@ -1414,24 +1049,20 @@ def test_duckdb_backend_identifier_validation(provisioned_repo: ProvisionedGatew
 # =============================================================================
 
 
-def test_duckdb_backend_domain_conversions(provisioned_repo: ProvisionedGateway) -> None:
+def test_duckdb_backend_domain_conversions(mcp_backend_components: McpBackendComponents) -> None:
     """Exercise DuckDBBackend conversions using real gateway data."""
-    backend = build_duckdb_backend(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-    )
+    backend = mcp_backend_components.backend
 
-    goid_row = provisioned_repo.gateway.con.execute(
+    goid_row = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
-    module_row = provisioned_repo.gateway.con.execute(
+    module_row = mcp_backend_components.gateway.con.execute(
         "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
-    file_row = provisioned_repo.gateway.con.execute(
+    file_row = mcp_backend_components.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
-    subsystem_row = provisioned_repo.gateway.con.execute(
+    subsystem_row = mcp_backend_components.gateway.con.execute(
         "SELECT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 

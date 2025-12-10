@@ -2,134 +2,90 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.infrastructure.scanning import (
-    ScanProfile,
-    default_code_profile,
-)
-from tests._helpers import build_repo_tree
+from codeintel.ingestion import DocstringsExtractStep
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import (
-    build_scan_profile,
-    create_scan_and_docstring_steps,
-)
-
-if TYPE_CHECKING:
-    from codeintel.config.primitives import SnapshotRef
-    from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.storage.gateway import StorageGateway
-
-
-def _code_profile_ignoring_dir(snapshot_repo_root: Path, ignored_dir_name: str) -> ScanProfile:
-    """Build a scan profile that ignores an extra directory.
-
-    Returns
-    -------
-    ScanProfile
-        Profile that mirrors the default code profile but skips the provided directory name.
-    """
-    base = default_code_profile(snapshot_repo_root)
-    ignore_dirs = (*base.ignore_dirs, ignored_dir_name)
-    return build_scan_profile(
-        snapshot_repo_root,
-        include_globs=base.include_globs,
-        ignore_dirs=ignore_dirs,
-        log_every=base.log_every,
-        log_interval=base.log_interval,
-    )
-
-
-def _scan_and_extract_docstrings(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    profile: ScanProfile,
-    *,
-    tmp_path: Path,
-    module_filter: Iterable[ModuleRecord] | None = None,
-) -> list[str]:
-    """Scan modules and extract docstrings, returning list of rel_paths.
-
-    Returns
-    -------
-    list[str]
-        List of relative paths where docstrings were extracted.
-    """
-    scan_step, doc_step = create_scan_and_docstring_steps(gateway, snapshot.repo_root, tmp_path)
-
-    _, modules, _ = scan_step.execute(
-        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root, profile=profile
-    )
-
-    target_modules = list(module_filter) if module_filter is not None else list(modules)
-    doc_step.execute(target_modules, repo=snapshot.repo, commit=snapshot.commit)
-
-    rows = gateway.con.execute(
-        "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
-    ).fetchall()
-    return [row[0] for row in rows]
+from tests._helpers.ingestion import ScanSetupOptions, make_scan_setup
 
 
 def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -> None:
     """Ensure docstrings ingest honors scan profile filters and module inventory."""
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
-        {
-            "src/pkg/a.py": '"""doc A"""\n',
-            "src/pkg/b.py": '"""doc B"""\n',
-            "src/ignored/c.py": '"""ignored doc"""\n',
-        },
+    setup = make_scan_setup(
+        tmp_path,
+        options=ScanSetupOptions(
+            repo_structure={
+                "src/pkg/a.py": '"""doc A"""\n',
+                "src/pkg/b.py": '"""doc B"""\n',
+                "src/ignored/c.py": '"""ignored doc"""\n',
+            },
+            ignore_dirs=("ignored",),
+            gateway_factory=GatewayFactory(),
+        ),
     )
+    snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=setup.repo_root)
+    doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
 
-    snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=repo_root)
-    code_profile = _code_profile_ignoring_dir(snapshot.repo_root, "ignored")
-    gateway = GatewayFactory().open()
+    try:
+        _, modules, _ = setup.scan_step.execute(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            repo_root=snapshot.repo_root,
+            profile=setup.profile,
+        )
+        doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
+        rows = setup.gateway.con.execute(
+            "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
+        ).fetchall()
+        rel_paths = [row[0] for row in rows]
+        expected_paths = ["src/pkg/a.py", "src/pkg/b.py"]
 
-    rel_paths = _scan_and_extract_docstrings(gateway, snapshot, code_profile, tmp_path=tmp_path)
-    expected_paths = ["src/pkg/a.py", "src/pkg/b.py"]
-
-    if rel_paths != expected_paths:
-        pytest.fail(f"Unexpected docstring paths {rel_paths}, expected {expected_paths}")
-    if not all("/" in rel_path for rel_path in rel_paths):
-        pytest.fail(f"Non-POSIX paths observed: {rel_paths}")
+        if rel_paths != expected_paths:
+            pytest.fail(f"Unexpected docstring paths {rel_paths}, expected {expected_paths}")
+        if not all("/" in rel_path for rel_path in rel_paths):
+            pytest.fail(f"Non-POSIX paths observed: {rel_paths}")
+    finally:
+        setup.gateway.close()
 
 
 def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) -> None:
     """Verify docstrings ingest trusts core.modules instead of re-scanning the filesystem."""
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
-        {
-            "src/pkg/visible.py": '"""visible doc"""\n',
-            "src/pkg/ghost.py": '"""ghost doc"""\n',
-        },
+    setup = make_scan_setup(
+        tmp_path,
+        options=ScanSetupOptions(
+            repo_structure={
+                "src/pkg/visible.py": '"""visible doc"""\n',
+                "src/pkg/ghost.py": '"""ghost doc"""\n',
+            },
+            gateway_factory=GatewayFactory(),
+        ),
     )
+    snapshot = make_snapshot(repo="demo/docstrings", repo_root=setup.repo_root)
+    doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
+    try:
+        _, modules, _ = setup.scan_step.execute(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            repo_root=setup.repo_root,
+            profile=setup.profile,
+        )
 
-    snapshot = make_snapshot(repo="demo/docstrings", repo_root=repo_root)
-    code_profile = default_code_profile(snapshot.repo_root)
-    gateway = GatewayFactory().open()
+        setup.gateway.con.execute(
+            "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND path = ?",
+            [snapshot.repo, snapshot.commit, "src/pkg/ghost.py"],
+        )
+        filtered_modules = [m for m in modules if m.rel_path != "src/pkg/ghost.py"]
 
-    scan_step, doc_step = create_scan_and_docstring_steps(gateway, repo_root, tmp_path)
-    _, modules, _ = scan_step.execute(
-        repo=snapshot.repo, commit=snapshot.commit, repo_root=repo_root, profile=code_profile
-    )
+        doc_step.execute(filtered_modules, repo=snapshot.repo, commit=snapshot.commit)
 
-    # Delete ghost.py from inventory and filter from modules
-    gateway.con.execute(
-        "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND path = ?",
-        [snapshot.repo, snapshot.commit, "src/pkg/ghost.py"],
-    )
-    filtered_modules = [m for m in modules if m.rel_path != "src/pkg/ghost.py"]
-
-    doc_step.execute(filtered_modules, repo=snapshot.repo, commit=snapshot.commit)
-
-    rows = gateway.con.execute(
-        "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
-    ).fetchall()
-    rel_paths = [row[0] for row in rows]
-    if rel_paths != ["src/pkg/visible.py"]:
-        pytest.fail(f"Docstrings ingested for unexpected paths: {rel_paths}")
+        rows = setup.gateway.con.execute(
+            "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
+        ).fetchall()
+        rel_paths = [row[0] for row in rows]
+        if rel_paths != ["src/pkg/visible.py"]:
+            pytest.fail(f"Docstrings ingested for unexpected paths: {rel_paths}")
+    finally:
+        setup.gateway.close()

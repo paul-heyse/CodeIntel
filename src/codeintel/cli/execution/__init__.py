@@ -57,6 +57,15 @@ from codeintel.cli.execution.progress import (
     progress_generator,
     stream_progress,
 )
+from codeintel.cli.execution.registry import (
+    OperationRegistry,
+    get_registry,
+    register_operation,
+    reset_registry,
+)
+from codeintel.cli.execution.registry import (
+    OperationSpec as HandlerOperationSpec,
+)
 from codeintel.cli.execution.types import (
     AnyHandler,
     AsyncHandler,
@@ -76,12 +85,14 @@ __all__ = [
     "AsyncHandler",
     "ExecutionContext",
     "ExecutionResult",
+    "HandlerOperationSpec",
     "LoggingMiddleware",
     "MetricsMiddleware",
     "Middleware",
     "MiddlewareStack",
     "OperationCategory",
     "OperationExecutor",
+    "OperationRegistry",
     "OperationSpec",
     "ProgressConfig",
     "ProgressEvent",
@@ -102,11 +113,14 @@ __all__ = [
     "get_handler_type",
     "get_middleware_stack",
     "get_progress_tracker",
+    "get_registry",
     "is_async_handler",
     "is_streaming_handler",
     "iter_with_progress",
     "progress_context",
     "progress_generator",
+    "register_operation",
+    "reset_registry",
     "run_async_operation",
     "run_sync",
     "stream_progress",

@@ -1,20 +1,17 @@
 """Cyclopts wiring for storage commands.
 
-This module wires Cyclopts command classes to unified handler functions
-via command_context().
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
     MacroRequirement,
     generate_macros_handler,
@@ -28,7 +25,11 @@ storage_app = App(
     help="Storage validation utilities.",
 )
 
+# Config for storage commands - requires runtime and gateway
+_STORAGE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+
+@cli_command("storage.validate_macros", handler=validate_macros_handler, config=_STORAGE_CONFIG)
 @storage_app.command(name="validate-macros")
 @dataclass
 class ValidateMacrosCommand:
@@ -72,32 +73,8 @@ class ValidateMacrosCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the storage validate-macros command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            db_path=self.db_path,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "db_path": str(self.db_path) if self.db_path else None,
-            "macro_requirement": self.macro_requirement,
-        }
-
-        with command_context(
-            "storage.validate_macros",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = validate_macros_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("storage.generate_macros", handler=generate_macros_handler, config=_STORAGE_CONFIG)
 @storage_app.command(name="generate-macros")
 @dataclass
 class GenerateMacrosCommand:
@@ -133,30 +110,8 @@ class GenerateMacrosCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the storage generate-macros command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "tables": self.tables,
-        }
-
-        with command_context(
-            "storage.generate_macros",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = generate_macros_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
 @storage_app.command(name="profile")
 @dataclass
 class ProfileStorageCommand:
@@ -206,32 +161,6 @@ class ProfileStorageCommand:
             count=True,
         ),
     ] = 0
-
-    def __call__(self) -> None:
-        """Execute the storage profile command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            db_path=self.db_path,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        params: dict[str, object] = {
-            "db_path": str(self.db_path) if self.db_path else None,
-            "output_dir": str(self.output_dir),
-            "include_views": self.include_views,
-        }
-
-        with command_context(
-            "storage.profile",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = profile_storage_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
 
 
 __all__ = ["storage_app"]

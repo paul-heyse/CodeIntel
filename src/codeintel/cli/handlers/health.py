@@ -309,7 +309,7 @@ def _check_registry() -> CheckResult:
         Check result.
     """
     registry = get_operation_registry()
-    count = len(registry.operations)
+    count = len(registry)
 
     if count > 0:
         return CheckResult(

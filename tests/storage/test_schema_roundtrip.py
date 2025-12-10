@@ -111,11 +111,11 @@ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None
 
 
 def test_generate_export_schemas_writes_files(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    schema_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """Codegen should write schemas for datasets with row bindings."""
-    bootstrap_metadata_datasets(fresh_gateway.con)
-    registry = load_dataset_registry(fresh_gateway.con)
+    bootstrap_metadata_datasets(schema_gateway.con)
+    registry = load_dataset_registry(schema_gateway.con)
     written = generate_export_schemas(
         registry,
         output_dir=tmp_path,

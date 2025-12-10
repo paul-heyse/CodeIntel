@@ -1,9 +1,9 @@
 # CLI Unified Architecture Specification
 
-> **Status:** Active (Phase 3 Complete)  
+> **Status:** Active (Phase 4 Complete)  
 > **Author:** Architecture Team  
 > **Date:** December 2024  
-> **Last Updated:** December 2024 (Post-Phase 3)  
+> **Last Updated:** December 2024 (Post-Phase 4)  
 > **Scope:** `src/codeintel/cli/` consolidation
 
 ## Executive Summary
@@ -640,18 +640,40 @@ result = middleware_stack.execute_after(ctx, result, mw_contexts)
 
 ### 8.1 Design Goals
 
-Provide a **single registry** that:
+Provide a **unified handler-based registry** while maintaining **backward compatibility** during migration:
 1. Maps operation IDs to handler functions
-2. Stores metadata (category, description, param schema)
+2. Stores metadata (group, resource requirements)
 3. Supports discovery for help/introspection
 4. Enables programmatic execution
 
-### 8.2 Registry Structure
+### 8.2 Dual Registry Architecture (Phase 4 Implementation)
+
+The Phase 4 implementation maintains **two separate registries** for backward compatibility:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     NEW Handler Registry                             │
+│               execution/registry.py (Target State)                   │
+│  - OperationSpec with: group, require_runtime, require_gateway, etc │
+│  - Populated by: handlers/*.py module-level registrations           │
+│  - Access via: get_registry(), register_operation()                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                     LEGACY Registry                                  │
+│             introspection/registry.py (Backward Compat)             │
+│  - OperationSpec with: category (enum), param_schema, etc           │
+│  - Populated by: operations/*.py module-level registrations         │
+│  - Access via: get_operation_registry(), register_operation()       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Rationale:** The dual registry allows gradual migration. New handler-based code uses the new registry, while existing tests and introspection code continue to work with the legacy registry until Phase 6 cleanup.
+
+### 8.3 NEW OperationSpec (execution/registry.py)
 
 ```python
 @dataclass(frozen=True)
 class OperationSpec:
-    """Specification for a registered operation."""
+    """Specification for a registered handler-based operation."""
     
     operation_id: str                                    # e.g., "build.run", "jobs.list"
     name: str                                            # Display name
@@ -659,7 +681,7 @@ class OperationSpec:
     handler: Callable[[HandlerContext], CliResult[Any]] # Handler function
     group: str                                           # Command group (e.g., "jobs", "build")
     
-    # Resource requirements
+    # Resource requirements (inform lazy resolution)
     require_runtime: bool = True                         # Needs ResolvedRuntime
     require_gateway: bool = True                         # Needs StorageGateway
     require_graph_runtime: bool = False                  # Needs GraphRuntime
@@ -669,23 +691,57 @@ class OperationSpec:
     hidden: bool = False                                 # Hidden from help output
 
 class OperationRegistry:
-    """Central registry for all CLI operations."""
+    """Central registry for handler-based CLI operations."""
+    
+    _operations: dict[str, OperationSpec]               # Private storage
     
     def register(self, spec: OperationSpec) -> OperationSpec: ...
     def get(self, operation_id: str) -> OperationSpec | None: ...
-    def require(self, operation_id: str) -> OperationSpec: ...  # Raises if not found
+    def require(self, operation_id: str) -> OperationSpec: ...  # Raises KeyError if not found
     def list_operations(self, *, group: str | None = None, include_hidden: bool = False) -> list[OperationSpec]: ...
     def list_groups(self) -> list[str]: ...
+    def unregister(self, operation_id: str) -> bool: ...
+    def clear(self) -> None: ...
+    def __len__(self) -> int: ...
+    def __contains__(self, operation_id: str) -> bool: ...
 ```
 
 **Design Note:** We use `group: str` rather than an enum because command groups are extensible and correspond directly to CLI subcommand names (e.g., `codeintel jobs list` → group="jobs"). The `tags` field provides additional categorization if needed.
 
-### 8.3 Registration Patterns
+### 8.4 LEGACY OperationSpec (execution/executor.py)
 
-**Explicit registration (in handler modules):**
+The legacy registry uses a different `OperationSpec` type:
+
 ```python
-# In handlers/jobs.py (at module level, after handler definitions)
-from codeintel.cli.execution.registry import register_operation, OperationSpec
+@dataclass
+class OperationSpec(Generic[T]):
+    """Legacy operation specification (kept for backward compat)."""
+    
+    operation_id: str
+    handler: Callable[..., CliResult[T]]        # Different signature
+    category: OperationCategory                  # Enum, not string
+    param_schema: ValidationSchema | None
+    requires_progress: bool = False
+    estimated_duration: float | None = None
+    description: str = ""
+```
+
+**Key differences from NEW spec:**
+- `category: OperationCategory` (enum) vs `group: str`
+- `param_schema` for validation vs resource requirement booleans
+- `requires_progress` and `estimated_duration` vs `tags` and `hidden`
+- Different handler signature expectations
+
+### 8.5 Import Patterns
+
+**For new handler-based code (recommended):**
+```python
+# In handlers/*.py
+from codeintel.cli.execution.registry import (
+    OperationSpec,
+    register_operation,
+    get_registry,
+)
 
 register_operation(OperationSpec(
     operation_id="jobs.list",
@@ -698,23 +754,79 @@ register_operation(OperationSpec(
 ))
 ```
 
-**Via decorator (when using @cli_command):**
+**For backward-compatible code:**
 ```python
-# @cli_command automatically registers the operation
-# The decorator extracts description from class docstring
+# In operations/*.py (legacy)
+from codeintel.cli.execution import OperationCategory, OperationSpec  # OLD type
+from codeintel.cli.introspection.registry import register_operation    # LEGACY registry
+
+register_operation(OperationSpec(
+    operation_id="build.status",
+    handler=_build_status_handler,
+    category=OperationCategory.BUILD,
+    param_schema=None,
+    requires_progress=False,
+    description="Show build target status",
+))
+```
+
+**Via introspection exports (supports both):**
+```python
+from codeintel.cli.introspection import (
+    # Legacy exports (backward compatible)
+    OperationRegistry,           # Legacy registry class
+    get_operation_registry,      # Legacy global getter
+    register_operation,          # Legacy register function
+    
+    # New exports (for gradual migration)
+    HandlerOperationRegistry,    # New registry class
+    HandlerOperationSpec,        # New spec dataclass
+    get_handler_registry,        # New global getter
+    register_handler_operation,  # New register function
+    reset_handler_registry,      # New reset function
+)
+```
+
+### 8.6 Registration Patterns
+
+**Handler module registration (NEW registry):**
+```python
+# In handlers/jobs.py (at module level, after handler definitions)
+from codeintel.cli.execution.registry import OperationSpec, register_operation
+
+# -----------------------------------------------------------------------------
+# Operation Registrations (NEW handler registry)
+# -----------------------------------------------------------------------------
+register_operation(
+    OperationSpec(
+        operation_id="jobs.list",
+        name="List Jobs",
+        description="List background jobs with optional status filtering",
+        handler=jobs_list_handler,
+        group="jobs",
+        require_runtime=False,
+        require_gateway=False,
+    )
+)
+```
+
+**Via `@cli_command` decorator (Phase 5):**
+```python
+# @cli_command automatically registers with NEW registry
 @cli_command("jobs.list", handler=jobs_list_handler, require_runtime=False)
 class JobsListCommand:
     """List background jobs."""  # Becomes operation description
     ...
 ```
 
-**Note:** With the `@cli_command` decorator pattern, explicit registration in handler modules is optional—the decorator handles registration automatically. Explicit registration is useful for operations that don't have a corresponding command class (e.g., programmatic-only operations).
+### 8.7 Phase 6 Cleanup
 
-### 8.4 Elimination of `operations/*_operations.py`
+In Phase 6, the following will be deleted:
+- `introspection/registry.py` (legacy registry)
+- All `operations/*.py` files (legacy registrations)
+- Legacy exports from `introspection/__init__.py`
 
-The current `operations/*.py` files contain placeholder specs that wrap handlers. These are **eliminated** in favor of:
-1. Direct registration in handler modules, or
-2. Automatic registration via `@cli_command`
+The NEW registry in `execution/registry.py` becomes the single source of truth.
 
 ---
 
@@ -968,16 +1080,19 @@ After consolidation (Phase 6):
 | `execution/adapter.py` | Superseded by `commands/decorators.py` |
 | `commands/context.py` | Superseded by decorator internals |
 | `rendering/renderers.py` | Merged into `rendering/service.py` |
-| `introspection/registry.py` | Moved to `execution/registry.py` |
-| `operations/build_operations.py` | Registrations move to handlers |
-| `operations/dataset_operations.py` | Registrations move to handlers |
-| `operations/docs_operations.py` | Registrations move to handlers |
-| `operations/graph_operations.py` | Registrations move to handlers |
-| `operations/history_operations.py` | Registrations move to handlers |
-| `operations/ide_operations.py` | Registrations move to handlers |
-| `operations/op_operations.py` | Registrations move to handlers |
-| `operations/storage_operations.py` | Registrations move to handlers |
-| `operations/subsystem_operations.py` | Registrations move to handlers |
+| `introspection/registry.py` | LEGACY registry, superseded by `execution/registry.py` |
+| `operations/__init__.py` | LEGACY registration trigger |
+| `operations/build_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/dataset_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/docs_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/graph_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/history_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/ide_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/op_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/storage_operations.py` | LEGACY registrations (handlers now register) |
+| `operations/subsystem_operations.py` | LEGACY registrations (handlers now register) |
+
+**Note:** The `operations/*.py` files currently contain LEGACY registrations that populate the old `introspection/registry.py` for backward compatibility. These are removed in Phase 6 when the dual registry is consolidated.
 
 **Note:** `_common.py` is retained but simplified—`RuntimeCLI` and `OutputFormatCLI` classes can be removed as they're no longer needed with the decorator pattern. The file keeps `make_root_app()` and `Annotated` type aliases used in command definitions.
 
@@ -1002,8 +1117,8 @@ After consolidation (Phase 6):
 | Phase 1 | Foundation Layer | `HandlerContext`, `bootstrap_cli()` | 3-4 days | ✅ Complete |
 | Phase 2 | Rendering Consolidation | Single `UnifiedRenderer` stack | 2-3 days | ✅ Complete |
 | Phase 3 | Handler Migration | All handlers use new context | 5-7 days | ✅ Complete |
-| Phase 4 | Registry Unification | Single `OperationRegistry` | 2-3 days | 🔄 Next |
-| Phase 5 | Command Decorator | `@cli_command` + migrate commands | 5-7 days | ⬜ Pending |
+| Phase 4 | Registry Unification | Dual registry (NEW + LEGACY compat) | 2-3 days | ✅ Complete |
+| Phase 5 | Command Decorator | `@cli_command` + migrate commands | 5-7 days | 🔄 Next |
 | Phase 6 | Legacy Cleanup | Delete all superseded files | 2-3 days | ⬜ Pending |
 
 **Total:** 4-6 weeks (20-29 working days)
@@ -1042,7 +1157,7 @@ Each plan includes:
 | New context available | 1 | `HandlerContext` unit tests pass | ✅ |
 | Rendering unified | 2 | `renderers.py` deleted, all output works | ✅ |
 | All handlers migrated | 3 | No `_get_*_param` helpers remain, all use `ctx.param_*()` | ✅ |
-| Registry unified | 4 | Operations registered in handlers | ⬜ |
+| Registry unified | 4 | NEW registry in `execution/registry.py`, handlers register, LEGACY maintained for compat | ✅ |
 | All commands migrated | 5 | No manual `__call__` methods remain | ⬜ |
 | Migration complete | 6 | All legacy files deleted, full tests pass | ⬜ |
 
@@ -1109,6 +1224,28 @@ Each plan includes:
 - Decorator handles registration automatically
 - Reduces indirection
 - Introspection uses registry, not separate files
+
+### 13.6 Why Dual Registry Architecture (Phase 4)?
+
+**Problem:** The existing codebase has tests and introspection code that depend on the legacy `OperationSpec` type (with `category: OperationCategory` enum), but the new handler architecture needs a different spec type (with `group: str` and resource requirement booleans).
+
+**Decision:** Maintain two separate registries during migration:
+- **NEW registry** (`execution/registry.py`): Handler-based registrations with new `OperationSpec`
+- **LEGACY registry** (`introspection/registry.py`): Backward-compatible registrations with old `OperationSpec`
+
+**Rationale:**
+- Allows gradual migration without breaking existing tests
+- Handler modules can register to NEW registry immediately
+- Existing tests using `get_operation_registry()` continue to work
+- Clean deletion path in Phase 6 (remove LEGACY, keep NEW)
+- Avoids complex type aliasing or adapter patterns
+
+**Implementation Notes:**
+- `introspection/__init__.py` exports from BOTH registries with distinct names
+- Legacy: `OperationRegistry`, `get_operation_registry`, `register_operation`
+- New: `HandlerOperationRegistry`, `HandlerOperationSpec`, `get_handler_registry`, etc.
+- The `operations/*.py` files continue to register to LEGACY (for tests)
+- The `handlers/*.py` files register to NEW (for production)
 
 ---
 

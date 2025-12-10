@@ -1,7 +1,10 @@
 """Graph operation specifications.
 
-Define and register operations for the graph command group including
+Define operation specs for the graph command group including
 stats, query, and plugins commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/graphs.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from codeintel.cli.core.result_types import (
     GraphStatsResult,
 )
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _graph_stats_handler(
@@ -37,7 +40,6 @@ def _graph_stats_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameter to avoid unused variable warning
     _ = graph_type
     return CliResult.ok(
         GraphStatsResult(
@@ -74,7 +76,6 @@ def _graph_query_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameters to avoid unused variable warnings
     _ = limit
     return CliResult.ok(
         GraphQueryResult(
@@ -106,7 +107,7 @@ def _graph_plugins_handler() -> CliResult[GraphPluginsResult]:
     )
 
 
-# Graph Stats Operation
+# Graph Stats Operation (registers to LEGACY registry)
 GRAPH_STATS_SPEC: OperationSpec[GraphStatsResult] = register_operation(
     OperationSpec(
         operation_id="graph.stats",
@@ -118,7 +119,7 @@ GRAPH_STATS_SPEC: OperationSpec[GraphStatsResult] = register_operation(
     )
 )
 
-# Graph Query Operation
+# Graph Query Operation (registers to LEGACY registry)
 GRAPH_QUERY_SPEC: OperationSpec[GraphQueryResult] = register_operation(
     OperationSpec(
         operation_id="graph.query",
@@ -130,7 +131,7 @@ GRAPH_QUERY_SPEC: OperationSpec[GraphQueryResult] = register_operation(
     )
 )
 
-# Graph Plugins Operation
+# Graph Plugins Operation (registers to LEGACY registry)
 GRAPH_PLUGINS_SPEC: OperationSpec[GraphPluginsResult] = register_operation(
     OperationSpec(
         operation_id="graph.plugins",

@@ -1,7 +1,10 @@
 """Op command operation specifications.
 
-Define and register operations for the op command group including
+Define operation specs for the op command group including
 listing and calling serving operations.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/ops.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -10,7 +13,8 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import OperationListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.handlers.ops import op_list_structured
-from codeintel.cli.introspection import StringValidator, ValidationSchema, register_operation
+from codeintel.cli.introspection import StringValidator, ValidationSchema
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _op_list_handler(*, category: str | None = None) -> CliResult[OperationListResult]:
@@ -29,7 +33,7 @@ def _op_list_handler(*, category: str | None = None) -> CliResult[OperationListR
     return op_list_structured(category=category)
 
 
-# Op List Operation
+# Op List Operation (registers to LEGACY registry)
 OP_LIST_SPEC: OperationSpec[OperationListResult] = register_operation(
     OperationSpec(
         operation_id="op.list",

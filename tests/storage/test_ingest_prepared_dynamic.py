@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
-from codeintel.ingestion.infrastructure.macros import (
-    INGEST_MACRO_TABLES,
-    macro_exists,
-)
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import prepared_statements_dynamic
+from tests._helpers.macros import assert_ingest_macros_registered
 
 
-def test_dynamic_prepared_statements_match_registry(fresh_gateway: StorageGateway) -> None:
+def test_dynamic_prepared_statements_match_registry(macro_gateway: StorageGateway) -> None:
     """
     Dynamic prepared statements should use the registry column order.
 
@@ -21,7 +16,7 @@ def test_dynamic_prepared_statements_match_registry(fresh_gateway: StorageGatewa
     AssertionError
         If placeholders and registry column counts diverge.
     """
-    con = fresh_gateway.con
+    con = macro_gateway.con
     stmts = prepared_statements_dynamic(con, "analytics.function_metrics")
     registry_cols = con.execute(
         """
@@ -38,11 +33,6 @@ def test_dynamic_prepared_statements_match_registry(fresh_gateway: StorageGatewa
         raise AssertionError(message)
 
 
-def test_ingest_macros_registered(fresh_gateway: StorageGateway) -> None:
+def test_ingest_macros_registered(macro_gateway: StorageGateway) -> None:
     """Macro-backed ingest tables must have their macros present after bootstrap."""
-    con = fresh_gateway.con
-    for table_key in sorted(INGEST_MACRO_TABLES):
-        if not macro_exists(con, table_key):
-            _, table_name = table_key.split(".", maxsplit=1)
-            macro_name = f"metadata.ingest_{table_name}"
-            pytest.fail(f"Missing ingest macro {macro_name} for {table_key}")
+    assert_ingest_macros_registered(macro_gateway.con)

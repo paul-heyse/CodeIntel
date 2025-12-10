@@ -1,7 +1,10 @@
 """Storage command operation specifications.
 
-Define and register operations for the storage command group including
+Define operation specs for the storage command group including
 info and query commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/storage.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 @dataclass
@@ -74,7 +77,7 @@ def _storage_info_handler() -> CliResult[StorageInfoResult]:
     )
 
 
-# Storage Info Operation
+# Storage Info Operation (registers to LEGACY registry)
 STORAGE_INFO_SPEC: OperationSpec[StorageInfoResult] = register_operation(
     OperationSpec(
         operation_id="storage.info",

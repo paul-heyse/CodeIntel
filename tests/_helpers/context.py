@@ -23,6 +23,7 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.macros import ensure_ingest_macros
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.repo import write_canonical_repo
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
 
@@ -468,6 +469,41 @@ def create_test_context(
     )
 
 
+def _ensure_sample_repo(repo_root: Path) -> None:
+    """Write a minimal canonical repo to the provided repo_root."""
+    write_canonical_repo(repo_root)
+
+
+def coverage_ready_context(tmp_path: Path) -> TestContext:
+    """Create a TestContext seeded with core + coverage packs and sample files."""
+    from tests._helpers.seeds import COVERAGE_LINES_PACK, COVERAGE_PACK, CORE_PACK
+
+    ctx = create_test_context(tmp_path)
+    _ensure_sample_repo(ctx.repo_root)
+    ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK)
+    return ctx
+
+
+def graph_ready_context(tmp_path: Path) -> TestContext:
+    """Create a TestContext seeded with core + graph packs and sample files."""
+    from tests._helpers.seeds import CORE_PACK, GRAPH_PACK
+
+    ctx = create_test_context(tmp_path)
+    _ensure_sample_repo(ctx.repo_root)
+    ctx.require(CORE_PACK, GRAPH_PACK)
+    return ctx
+
+
+def coverage_and_graph_context(tmp_path: Path) -> TestContext:
+    """Create a TestContext with both coverage and graph packs pre-applied."""
+    from tests._helpers.seeds import COVERAGE_LINES_PACK, COVERAGE_PACK, CORE_PACK, GRAPH_PACK
+
+    ctx = create_test_context(tmp_path)
+    _ensure_sample_repo(ctx.repo_root)
+    ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK, GRAPH_PACK)
+    return ctx
+
+
 def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
     """Create a StorageGateway with schema/views/macros ensured.
 
@@ -537,5 +573,8 @@ __all__ = [
     "SeedPack",
     "TestContext",
     "build_test_gateway",
+    "coverage_and_graph_context",
+    "coverage_ready_context",
     "create_test_context",
+    "graph_ready_context",
 ]

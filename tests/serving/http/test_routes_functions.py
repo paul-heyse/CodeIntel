@@ -18,8 +18,6 @@ from tests._helpers.assertions import expect_equal, expect_false, expect_in, exp
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 
-HttpAppFactory = Callable[..., FastAPI]
-
 
 # =============================================================================
 # High Risk Functions Tests
@@ -27,27 +25,10 @@ HttpAppFactory = Callable[..., FastAPI]
 
 
 def test_high_risk_functions_endpoint(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    functions_http_client: TestClient,
 ) -> None:
-    """Verify /functions/high-risk endpoint returns results.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/functions/high-risk")
+    """/functions/high-risk endpoint returns results."""
+    response = functions_http_client.get("/functions/high-risk")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -55,79 +36,28 @@ def test_high_risk_functions_endpoint(
 
 
 def test_high_risk_functions_with_min_risk(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    functions_http_client: TestClient,
 ) -> None:
-    """Verify /functions/high-risk accepts min_risk parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/functions/high-risk?min_risk=0.5")
+    """/functions/high-risk accepts min_risk parameter."""
+    response = functions_http_client.get("/functions/high-risk?min_risk=0.5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_high_risk_functions_with_limit(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    functions_http_client: TestClient,
 ) -> None:
-    """Verify /functions/high-risk accepts limit parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/functions/high-risk?limit=5")
+    """/functions/high-risk accepts limit parameter."""
+    response = functions_http_client.get("/functions/high-risk?limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_high_risk_functions_with_tested_only(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    functions_http_client: TestClient,
 ) -> None:
-    """Verify /functions/high-risk accepts tested_only parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/functions/high-risk?tested_only=true")
+    """/functions/high-risk accepts tested_only parameter."""
+    response = functions_http_client.get("/functions/high-risk?tested_only=true")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
@@ -138,27 +68,10 @@ def test_high_risk_functions_with_tested_only(
 
 
 def test_function_summary_missing_params(
-    provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    functions_http_client: TestClient,
 ) -> None:
-    """Verify /function/summary returns error when no identifier provided.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/function/summary")
+    """/function/summary returns error when no identifier provided."""
+    response = functions_http_client.get("/function/summary")
 
     # Should return 400 because no identifier was provided
     expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -183,17 +96,9 @@ def test_router_options_with_auto_pipeline() -> None:
 
 def test_app_with_auto_pipeline_options(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
+    make_http_app: Callable[..., FastAPI],
 ) -> None:
-    """Verify create_app works with auto_pipeline option.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
-    """
+    """Verify create_app works with auto_pipeline option."""
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     app = make_http_app(
         gateway=provisioned_repo.gateway,

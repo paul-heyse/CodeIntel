@@ -7,7 +7,7 @@ methods record call names for assertions.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
@@ -16,8 +16,9 @@ import networkx as nx
 from duckdb import Error as DuckDBError
 
 from codeintel.analytics.resources.graphs import GraphRuntimeLike
+from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.engine.protocol import GraphEngine
+from codeintel.graphs.engine.protocol import GraphEngine, GraphKind
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
@@ -563,6 +564,57 @@ def build_graph_engine_double(
     return GraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
 
+def graph_engine_with_cache(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    seed: Mapping[GraphKind, nx.Graph],
+    *,
+    copy_graphs: bool = True,
+) -> GraphEngineAdapter:
+    """Build an engine double seeded from a GraphKind -> graph mapping.
+
+    Returns
+    -------
+    GraphEngineAdapter
+        Adapter seeded with provided graphs and ready for cache assertions.
+    """
+    kind_to_kwarg: dict[GraphKind, str] = {
+        GraphKind.CALL_GRAPH: "call_graph",
+        GraphKind.IMPORT_GRAPH: "import_graph",
+        GraphKind.CFG_GRAPH: "cfg_graph",
+        GraphKind.SYMBOL_MODULE_GRAPH: "symbol_module_graph",
+        GraphKind.SYMBOL_FUNCTION_GRAPH: "symbol_function_graph",
+        GraphKind.CONFIG_MODULE_BIPARTITE: "config_graph",
+        GraphKind.TEST_FUNCTION_BIPARTITE: "test_function_graph",
+    }
+    seed_kwargs: dict[str, object] = {"copy_graphs": copy_graphs}
+
+    for kind, graph in seed.items():
+        for flag, kwarg in kind_to_kwarg.items():
+            if kind & flag:
+                seed_kwargs[kwarg] = graph
+
+    seeded_graphs = cast("GraphEngineSeedKwargs", seed_kwargs)
+    return build_graph_engine_double(gateway, snapshot, **seeded_graphs)
+
+
+def runtime_with_graphs(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    **graphs: Unpack[GraphEngineSeedKwargs],
+) -> tuple[GraphRuntimeOptions, GraphEngineAdapter]:
+    """Build GraphRuntimeOptions and engine double from provided graph seeds.
+
+    Returns
+    -------
+    tuple[GraphRuntimeOptions, GraphEngineAdapter]
+        Runtime options bound to the seeded engine, and the engine itself.
+    """
+    engine = build_graph_engine_double(gateway, snapshot, **graphs)
+    options = GraphRuntimeOptions(snapshot=snapshot, engine=engine)
+    return options, engine
+
+
 # ---------------------------------------------------------------------------
 # Convenience factory functions (migrated from deprecated graph_runtimes.py)
 # ---------------------------------------------------------------------------
@@ -677,5 +729,7 @@ __all__ = [
     "create_mock_runtime_with_call_graph",
     "create_mock_runtime_with_import_graph",
     "create_mock_runtime_with_standard_graphs",
+    "graph_engine_with_cache",
+    "runtime_with_graphs",
 ]
 _GraphT = TypeVar("_GraphT", bound=nx.Graph)

@@ -1,11 +1,10 @@
 """Cyclopts wiring for dataset management commands.
 
-This module wires Cyclopts command classes to unified handlers via command_context.
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,8 +12,7 @@ from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.datasets import (
     datasets_diff_handler,
     datasets_lint_handler,
@@ -55,6 +53,11 @@ class BootstrapSnippet(Enum):
     SKIP = "skip"
 
 
+# Config for datasets commands - requires runtime and gateway
+_DATASETS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+
+
+@cli_command("datasets.lint", handler=datasets_lint_handler, config=_DATASETS_CONFIG)
 @datasets_ext_app.command(name="lint")
 @dataclass
 class LintCommand:
@@ -97,31 +100,8 @@ class LintCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the datasets lint command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "schema_dir": str(self.schema_dir),
-            "sampling": self.sampling,
-        }
-
-        with command_context(
-            "datasets.lint",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = datasets_lint_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("datasets.list", handler=datasets_list_handler, config=_DATASETS_CONFIG)
 @datasets_ext_app.command(name="list")
 @dataclass
 class ListDatasetsCommand:
@@ -171,32 +151,8 @@ class ListDatasetsCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the datasets list command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "docs_view": self.docs_view,
-            "read_only": self.read_only,
-            "max_description": self.max_description,
-        }
-
-        with command_context(
-            "datasets.list",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = datasets_list_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("datasets.snapshot", handler=datasets_snapshot_handler, config=_DATASETS_CONFIG)
 @datasets_ext_app.command(name="snapshot")
 @dataclass
 class SnapshotCommand:
@@ -232,30 +188,8 @@ class SnapshotCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the datasets snapshot command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        params: dict[str, object] = {
-            "output": str(self.output),
-        }
-
-        with command_context(
-            "datasets.snapshot",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = datasets_snapshot_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
+@cli_command("datasets.diff", handler=datasets_diff_handler, config=_DATASETS_CONFIG)
 @datasets_ext_app.command(name="diff")
 @dataclass
 class DiffCommand:
@@ -312,37 +246,5 @@ class DiffCommand:
         ),
     ] = 0
 
-    def __call__(self) -> None:
-        """Execute the datasets diff command."""
-        runtime_cli = RuntimeCLI(
-            project_root=self.project_root,
-            verbose=self.verbose,
-        )
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        # Use baseline if provided, otherwise construct from baseline_path
-        baseline_file = self.baseline or self.baseline_path
-        params: dict[str, object] = {
-            "baseline_path": str(baseline_file),
-            "output": str(self.output) if self.output else None,
-            "against_ref": self.against_ref,
-        }
-
-        with command_context(
-            "datasets.diff",
-            runtime_cli,
-            output_cli,
-            params=params,
-        ) as (ctx, renderer):
-            result = datasets_diff_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
-
-
-# Note: The following commands (conformance, generate-schemas, catalog, scaffold,
-# validate-files) require more complex handlers that are not yet fully migrated.
-# They are temporarily removed from this module.
-# To restore them, add handlers to codeintel.cli.handlers.datasets.
 
 __all__ = ["datasets_ext_app"]

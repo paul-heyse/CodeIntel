@@ -1,11 +1,10 @@
 """Cyclopts wiring for history commands.
 
-This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
+This module wires Cyclopts command classes to unified handlers via @cli_command.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,9 +12,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.history import history_timeseries_handler
+from codeintel.cli.rendering.types import OutputFormat
 
 history_app = App(
     name="history",
@@ -39,6 +38,11 @@ class SelectionStrategy(Enum):
     HOTSPOT_SCORE = "hotspot_score"
 
 
+# Config for history commands - no runtime required (uses explicit paths)
+_HISTORY_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+
+
+@cli_command("history.timeseries", handler=history_timeseries_handler, config=_HISTORY_CONFIG)
 @history_app.command(name="timeseries")
 @dataclass
 class HistoryTimeseriesCommand:
@@ -100,34 +104,21 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    runtime: RuntimeCLI | None = None
-    output: OutputFormatCLI | None = None
-
-    def __call__(self) -> None:
-        """Execute the history timeseries command."""
-        runtime_cli = self.runtime or RuntimeCLI()
-        output_cli = self.output or OutputFormatCLI()
-
-        with command_context(
-            "history.timeseries",
-            runtime_cli,
-            output_cli,
-            require_runtime=False,
-            params={
-                "repo": self.repo,
-                "commits": self.commits,
-                "db_dir": self.db_dir,
-                "output_db": self.output_db,
-                "entity_kind": self.entity_kind,
-                "max_entities": self.max_entities,
-                "selection_strategy": self.selection_strategy,
-                "repo_root": self.repo_root or runtime_cli.repo_root,
-            },
-        ) as (ctx, renderer):
-            result = history_timeseries_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
 
 __all__ = ["history_app"]

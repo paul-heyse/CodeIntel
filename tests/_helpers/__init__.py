@@ -63,6 +63,7 @@ from tests._helpers.build import (
     sample_target_graph,
     write_build_config,
 )
+from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
 from tests._helpers.configs.provisioning_config import (
     CallgraphFixtureOptions,
     GatewayOptions,
@@ -76,10 +77,14 @@ from tests._helpers.context import (
     QueryRow,
     SeedPack,
     TestContext,
+    coverage_and_graph_context,
+    coverage_ready_context,
     create_test_context,
+    graph_ready_context,
 )
 from tests._helpers.coverage import build_fake_coverage, seed_coverage_pack
 from tests._helpers.env import build_test_gateway, create_test_env
+from tests._helpers.evidence import build_entrypoint_evidence
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
     RecordingGateway,
@@ -126,6 +131,7 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_mcp_backend,
     seed_profile_data,
 )
+from tests._helpers.plugin_harness import PluginHarnessFactory
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.scenarios import (
     ScenarioConfig,
@@ -166,6 +172,7 @@ __all__ = [
     "GraphTestEnv",
     "ManifestParams",
     "ModelLike",
+    "PluginHarnessFactory",
     "ProvisionedGateway",
     "ProvisioningConfig",
     "QueryRow",
@@ -181,6 +188,7 @@ __all__ = [
     "assert_all_frozen",
     "assert_frozen",
     "build_callgraph_fixture_repo",
+    "build_entrypoint_evidence",
     "build_fake_coverage",
     "build_plugin_execution_context",
     "build_repo_tree",
@@ -188,18 +196,22 @@ __all__ = [
     "build_test_gateway",
     "chain_graph",
     "complete_digraph",
+    "coverage_and_graph_context",
     "coverage_context",
+    "coverage_ready_context",
     "create_test_context",
     "create_test_env",
     "cyclic_graph",
     "diamond_graph",
     "disconnected_graph",
     "docs_views_ready_gateway",
+    "ensure_catalog_with_goids",
     "full_context",
     "function_meta",
     "function_metrics_row",
     "graph_context",
     "graph_metrics_ready_gateway",
+    "graph_ready_context",
     "make_build_config",
     "make_build_paths",
     "make_functional_plugin",
@@ -220,6 +232,7 @@ __all__ = [
     "seed_docs_export_invalid_profile",
     "seed_docs_export_minimal",
     "seed_function_graph_cycle",
+    "seed_goids_from_catalog",
     "seed_graph_validation_gaps",
     "seed_mcp_backend",
     "seed_module_graph_inputs",

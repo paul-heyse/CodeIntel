@@ -1,7 +1,10 @@
 """IDE operation specifications.
 
-Define and register operations for the ide command group including
+Define operation specs for the ide command group including
 status and config commands.
+
+Note: These register to the LEGACY registry for backward compatibility.
+New handler registrations are in handlers/ide.py (NEW registry).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import IdeConfigResult, IdeStatusResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.introspection import register_operation
+from codeintel.cli.introspection.registry import register_operation
 
 
 def _ide_status_handler() -> CliResult[IdeStatusResult]:
@@ -56,7 +59,6 @@ def _ide_config_handler(
     This is a placeholder handler. The actual implementation requires
     runtime context which is passed from the cyclopts command layer.
     """
-    # Use parameter to avoid unused variable warning
     _ = key
     return CliResult.ok(
         IdeConfigResult(
@@ -66,7 +68,7 @@ def _ide_config_handler(
     )
 
 
-# IDE Status Operation
+# IDE Status Operation (registers to LEGACY registry)
 IDE_STATUS_SPEC: OperationSpec[IdeStatusResult] = register_operation(
     OperationSpec(
         operation_id="ide.status",
@@ -78,7 +80,7 @@ IDE_STATUS_SPEC: OperationSpec[IdeStatusResult] = register_operation(
     )
 )
 
-# IDE Config Operation
+# IDE Config Operation (registers to LEGACY registry)
 IDE_CONFIG_SPEC: OperationSpec[IdeConfigResult] = register_operation(
     OperationSpec(
         operation_id="ide.config",

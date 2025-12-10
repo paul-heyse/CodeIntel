@@ -12,6 +12,12 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.context import TestContext
+from tests._helpers.builders import (
+    CoverageFunctionRow,
+    TestCatalogRow,
+    TestCoverageEdgeRow,
+    insert_rows,
+)
 from tests._helpers.fakes.coverage import FakeCoverage, build_fake_coverage_from_gateway
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
 
@@ -142,3 +148,81 @@ def build_fake_coverage(ctx: TestContext) -> FakeCoverage:
         Coverage-compatible shim backed by seeded tables.
     """
     return build_fake_coverage_from_gateway(ctx.gateway, ctx.snapshot)
+
+
+def synthesize_coverage_edges(
+    ctx: TestContext, edges: list[tuple[str, int]], *, status: str = "passed"
+) -> None:
+    """Create minimal test_catalog + coverage_edges + coverage_functions rows."""
+    now = ctx.gateway.con.execute("SELECT NOW()").fetchone()[0]
+    tests = {
+        test_id: TestCatalogRow(
+            test_id=test_id,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            rel_path=test_id.split("::")[0],
+            qualname=test_id.split("::")[-1],
+            status=status,
+            kind="unit",
+            duration_ms=0,
+            markers="[]",
+            parametrized=False,
+            flaky=False,
+            created_at=now,
+        )
+        for test_id, _ in edges
+    }
+    edge_rows: list[TestCoverageEdgeRow] = []
+    coverage_rows: list[CoverageFunctionRow] = []
+    coverage_counts: dict[int, int] = {}
+    first_span: dict[int, tuple[str, str]] = {}
+    for test_id, goid in edges:
+        rel_path = test_id.split("::")[0]
+        qualname = test_id.split("::")[-1]
+        urn = f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}"
+        coverage_counts[goid] = coverage_counts.get(goid, 0) + 1
+        first_span.setdefault(goid, (rel_path, qualname))
+        edge_rows.append(
+            TestCoverageEdgeRow(
+                test_id=test_id,
+                test_goid_h128=None,
+                function_goid_h128=goid,
+                urn=urn,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=rel_path,
+                qualname=qualname,
+                covered_lines=1,
+                executable_lines=1,
+                coverage_ratio=1.0,
+                last_status=status,
+                created_at=now,
+            )
+        )
+
+    for goid, count in coverage_counts.items():
+        rel_path, qualname = first_span[goid]
+        coverage_rows.append(
+            CoverageFunctionRow(
+                function_goid_h128=goid,
+                urn=f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}",
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=rel_path,
+                language="python",
+                kind="function",
+                qualname=qualname,
+                start_line=1,
+                end_line=1,
+                executable_lines=count,
+                covered_lines=count,
+                coverage_ratio=1.0,
+                tested=True,
+                untested_reason=None,
+                created_at=now,
+            )
+        )
+
+    insert_rows(ctx.gateway, tests.values())
+    insert_rows(ctx.gateway, edge_rows)
+    insert_rows(ctx.gateway, coverage_rows)

@@ -24,43 +24,56 @@ from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute import DocstringsExtractStep, RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
-from codeintel.ingestion.infrastructure.scanning import ScanProfile
+from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
-from tests._helpers import build_repo_tree
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.contexts import (
     EnvOverrides,
     ExecutionContextBuilder,
     TargetResourceOverrides,
     make_test_output_target,
 )
+from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
+    "IngestionContextBundle",
+    "ModuleInventoryContext",
+    "RepoVariantOptions",
+    "ScanSetup",
+    "ScanSetupOptions",
     "ScipIngestContext",
     "TargetContextConfig",
     "build_ingestion_adapters",
+    "build_ingestion_context_bundle",
     "build_repo_target",
     "build_repo_tree",
     "build_repo_with_configs",
+    "build_repo_with_variants",
     "build_scan_profile",
+    "build_scan_setup",
     "build_scip_ingest_context",
+    "build_scip_repo_fixture",
     "build_target_context_for_plugin",
     "create_scan_and_docstring_steps",
     "create_scan_step",
+    "make_resource_case_params",
+    "make_scan_setup",
+    "module_inventory_context",
     "module_paths_from_context",
     "module_records_for_paths",
     "seed_foreign_key_tables",
+    "seed_ingestion_tables",
     "seed_inventory_from_paths",
     "seed_modules_and_repo_map",
     "seed_numeric_table",
@@ -83,6 +96,68 @@ class TargetContextConfig:
     gateway_factory: GatewayFactory | None = None
     snapshot: tuple[str, str] | None = None
     resources: TargetResourceOverrides | None = None
+
+
+@dataclass(frozen=True)
+class IngestionContextBundle:
+    """Bundle of adapters, gateway, and module metadata for ingestion tests."""
+
+    repo_root: Path
+    gateway: StorageGateway
+    ctx: TargetExecutionContext
+    storage: DuckDBStorageAdapter
+    discovery: FilesystemDiscoveryAdapter
+    change_detection: HashChangeDetectionAdapter
+    tools: BuildToolAdapter
+    module_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RepoVariantOptions:
+    """Options for constructing sample repositories."""
+
+    repo_structure: Mapping[str, str] | None = None
+    include_invalid: bool = False
+    include_macros: bool = False
+    include_symlinks: bool = False
+    module_paths: Sequence[str] | None = None
+
+
+@dataclass(frozen=True)
+class ScanSetup:
+    """Shared scan/profile wiring for ingestion pipelines."""
+
+    repo_root: Path
+    gateway: StorageGateway
+    profile: ScanProfile
+    scan_step: RepoScanStep
+    storage: DuckDBStorageAdapter
+    discovery: FilesystemDiscoveryAdapter
+
+
+@dataclass(frozen=True)
+class ModuleInventoryContext:
+    """Pre-baked context for module inventory round-trip tests."""
+
+    snapshot: SnapshotRef
+    gateway: StorageGateway
+    profile: ScanProfile
+    scan_step: RepoScanStep
+    storage: DuckDBStorageAdapter
+    discovery: FilesystemDiscoveryAdapter
+
+
+@dataclass(frozen=True)
+class ScanSetupOptions:
+    """Options controlling scan/profile setup."""
+
+    repo_structure: Mapping[str, str] | None = None
+    include_invalid: bool = False
+    include_globs: Sequence[str] = ("*.py",)
+    ignore_dirs: Sequence[str] = ()
+    log_every: int | None = None
+    log_interval: float | None = None
+    gateway_factory: GatewayFactory | None = None
 
 
 def build_target_context_for_plugin(
@@ -147,6 +222,92 @@ def build_ingestion_adapters(
         test_reporter=ctx.resources.test_reporter,
     )
     return storage, discovery, change_detection, tools
+
+
+def build_repo_with_variants(
+    tmp_path: Path,
+    *,
+    include_invalid: bool = False,
+    include_macros: bool = False,
+    include_symlinks: bool = False,
+) -> Path:
+    """Construct a sample repository with optional invalid files, macros, and symlinks.
+
+    Returns
+    -------
+    Path
+        Path to the created repository root.
+    """
+    structure: dict[str, str] = {
+        "pkg/__init__.py": "",
+        "pkg/mod.py": "def add(x: int, y: int) -> int:\n    return x + y\n",
+        "README.md": "# Sample repo\n",
+    }
+    if include_invalid:
+        structure["pkg/invalid.py"] = "this is not valid python"
+    if include_macros:
+        structure["macros/ingest.sql"] = "-- macros for ingestion\n"
+    repo_root = build_repo_tree(tmp_path / "repo", structure)
+    if include_symlinks:
+        target = repo_root / "pkg" / "mod.py"
+        symlink_path = repo_root / "pkg" / "mod_link.py"
+        if not symlink_path.exists():
+            symlink_path.symlink_to(target)
+    return repo_root
+
+
+def build_ingestion_context_bundle(
+    tmp_path: Path,
+    *,
+    variants: RepoVariantOptions | None = None,
+    gateway_factory: GatewayFactory | None = None,
+) -> IngestionContextBundle:
+    """Build a fully wired ingestion context bundle from a repo spec.
+
+    Returns
+    -------
+    IngestionContextBundle
+        Bundle containing repo root, gateway, adapters, and seeded module paths.
+    """
+    opts = variants or RepoVariantOptions()
+    repo_root = (
+        build_repo_tree(tmp_path / "repo", opts.repo_structure)
+        if opts.repo_structure is not None
+        else build_repo_with_variants(
+            tmp_path,
+            include_invalid=opts.include_invalid,
+            include_macros=opts.include_macros,
+            include_symlinks=opts.include_symlinks,
+        )
+    )
+    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    plugin = RepoScanPlugin()
+    ctx = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
+    )
+    storage, discovery, change_detection, tools = build_ingestion_adapters(ctx)
+    if opts.module_paths is not None:
+        seeded_paths = tuple(opts.module_paths)
+    elif opts.repo_structure is not None:
+        seeded_paths = tuple(path for path in opts.repo_structure if str(path).endswith(".py"))
+    else:
+        seeded_paths = tuple(
+            path.relative_to(repo_root).as_posix() for path in repo_root.rglob("*.py")
+        )
+    if seeded_paths:
+        seed_modules_and_repo_map(ctx, seeded_paths)
+    return IngestionContextBundle(
+        repo_root=repo_root,
+        gateway=gateway,
+        ctx=ctx,
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+        tools=tools,
+        module_paths=seeded_paths,
+    )
 
 
 def write_coverage_file(
@@ -321,6 +482,58 @@ def create_scan_step(
     return scan_step, storage, discovery
 
 
+def make_scan_setup(
+    tmp_path: Path,
+    *,
+    options: ScanSetupOptions | None = None,
+) -> ScanSetup:
+    """Build a repo, profile, and scan step bundle for reuse across tests.
+
+    Returns
+    -------
+    ScanSetup
+        Bundle containing repo root, gateway, profile, and scan adapters.
+    """
+    opts = options or ScanSetupOptions()
+    repo_root = (
+        build_repo_tree(tmp_path / "repo", opts.repo_structure)
+        if opts.repo_structure is not None
+        else build_repo_with_variants(tmp_path, include_invalid=opts.include_invalid)
+    )
+    gateway = (opts.gateway_factory or GatewayFactory().with_macros()).open()
+    profile = build_scan_profile(
+        repo_root,
+        include_globs=opts.include_globs,
+        ignore_dirs=opts.ignore_dirs,
+        log_every=opts.log_every,
+        log_interval=opts.log_interval,
+    )
+    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    return ScanSetup(
+        repo_root=repo_root,
+        gateway=gateway,
+        profile=profile,
+        scan_step=scan_step,
+        storage=storage,
+        discovery=discovery,
+    )
+
+
+def build_scan_setup(
+    tmp_path: Path,
+    *,
+    options: ScanSetupOptions | None = None,
+) -> ScanSetup:
+    """Alias for make_scan_setup to keep older call sites working.
+
+    Returns
+    -------
+    ScanSetup
+        Bundle containing repo root, gateway, profile, and scan adapters.
+    """
+    return make_scan_setup(tmp_path, options=options)
+
+
 def create_scan_and_docstring_steps(
     gateway: StorageGateway,
     repo_root: Path,
@@ -386,6 +599,19 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     )
 
 
+def build_scip_repo_fixture(tmp_path: Path) -> ScipIngestContext:
+    """Variant of build_scip_ingest_context that also seeds dummy SCIP artifacts.
+
+    Returns
+    -------
+    ScipIngestContext
+        Context pre-seeded with dummy SCIP artifacts.
+    """
+    context = build_scip_ingest_context(tmp_path)
+    write_dummy_scip_files(context.build_dir)
+    return context
+
+
 def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:
     """Fetch module paths using the shared helper.
 
@@ -409,6 +635,41 @@ def module_records_for_paths(
         Module records containing module names and file paths.
     """
     return paths_to_modules(paths, repo_root)
+
+
+def module_inventory_context(
+    tmp_path: Path,
+    *,
+    repo_structure: Mapping[str, str] | None = None,
+    gateway_factory: GatewayFactory | None = None,
+) -> ModuleInventoryContext:
+    """Create a ready-to-use module inventory context.
+
+    Returns
+    -------
+    ModuleInventoryContext
+        Snapshot, gateway, profile, and adapters for inventory round-trips.
+    """
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        repo_structure
+        or {
+            "src/pkg/a.py": "print('a')\n",
+            "src/pkg/b.py": "print('b')\n",
+        },
+    )
+    snapshot = make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
+    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    profile = default_code_profile(repo_root)
+    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    return ModuleInventoryContext(
+        snapshot=snapshot,
+        gateway=gateway,
+        profile=profile,
+        scan_step=scan_step,
+        storage=storage,
+        discovery=discovery,
+    )
 
 
 def seed_modules_and_repo_map(
@@ -479,6 +740,37 @@ def seed_inventory_from_paths(
         repo_root=repo_root,
     )
     seed_modules_and_repo_map(cast("TargetExecutionContext", dummy_context), paths)
+
+
+def seed_ingestion_tables(
+    ctx: TargetExecutionContext,
+    *,
+    module_paths: Sequence[str] | None = None,
+    numeric_tables: Mapping[str, Sequence[float]] | None = None,
+    varchar_tables: Mapping[str, Sequence[tuple[int, str | None]]] | None = None,
+    foreign_keys: Sequence[
+        tuple[str, str, Sequence[tuple[int, str]], Sequence[tuple[int, int | None]]]
+    ]
+    | None = None,
+) -> None:
+    """Seed common ingestion tables in a single call."""
+    if module_paths:
+        seed_modules_and_repo_map(ctx, module_paths)
+    if numeric_tables:
+        for table, values in numeric_tables.items():
+            seed_numeric_table(ctx.gateway, table, values)
+    if varchar_tables:
+        for table, values in varchar_tables.items():
+            seed_varchar_table(ctx.gateway, table, values)
+    if foreign_keys:
+        for parent_table, child_table, parent_rows, child_rows in foreign_keys:
+            seed_foreign_key_tables(
+                ctx.gateway,
+                parent_table=parent_table,
+                child_table=child_table,
+                parent_rows=parent_rows,
+                child_rows=child_rows,
+            )
 
 
 def seed_foreign_key_tables(
@@ -700,3 +992,39 @@ def seed_varchar_table(
     gateway.con.execute(delete_sql)
     if values:
         gateway.con.executemany(insert_sql, list(values))
+
+
+def make_resource_case_params() -> tuple[tuple[str, dict[str, bool]], ...]:
+    """Provide standard resource/gateway failure cases for parametrized tests.
+
+    Returns
+    -------
+    tuple[tuple[str, dict[str, bool]], ...]
+        Parametrization tuples describing resource and gateway failure modes.
+    """
+    return (
+        (
+            "resources modules",
+            {
+                "simulate_resources": True,
+                "simulate_db_fallback": False,
+                "simulate_gateway_failure": False,
+            },
+        ),
+        (
+            "db fallback",
+            {
+                "simulate_resources": False,
+                "simulate_db_fallback": True,
+                "simulate_gateway_failure": False,
+            },
+        ),
+        (
+            "gateway failure",
+            {
+                "simulate_resources": False,
+                "simulate_db_fallback": False,
+                "simulate_gateway_failure": True,
+            },
+        ),
+    )

@@ -10,6 +10,7 @@ import pytest
 
 from codeintel.serving.backend import BackendLimits, DuckDBQueryService
 from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
@@ -31,6 +32,7 @@ class McpBackendComponents:
     limits: BackendLimits
     query: DuckDBQueryService
     service: LocalQueryService
+    observability: ServiceObservability | None
     backend: DuckDBBackend
 
 
@@ -40,6 +42,7 @@ def _build_components(
     repo: str,
     commit: str,
     limits: BackendLimits | None = None,
+    observability: ServiceObservability | None = None,
 ) -> McpBackendComponents:
     """Construct query/service/backend trio for a gateway snapshot.
 
@@ -48,7 +51,9 @@ def _build_components(
     McpBackendComponents
         Aggregated gateway, query, service, and backend.
     """
-    effective_limits = limits or BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
+    effective_limits = limits or BackendLimits(
+        default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS
+    )
     query = build_duckdb_query_service(
         gateway,
         repo=repo,
@@ -58,6 +63,7 @@ def _build_components(
     service = LocalQueryService(
         query=query,
         dataset_tables=dict(gateway.datasets.mapping),
+        observability=observability,
     )
     backend = build_duckdb_backend(
         gateway,
@@ -73,6 +79,7 @@ def _build_components(
         limits=effective_limits,
         query=query,
         service=service,
+        observability=observability,
         backend=backend,
     )
 
@@ -86,19 +93,23 @@ def mcp_backend_factory() -> Callable[..., McpBackendComponents]:
     Callable[..., McpBackendComponents]
         Factory that produces backend components given gateway, repo, and commit.
     """
+
     def _build(
         *,
         gateway: StorageGateway,
         repo: str,
         commit: str,
         limits: BackendLimits | None = None,
+        observability: ServiceObservability | None = None,
     ) -> McpBackendComponents:
         return _build_components(
             gateway,
             repo=repo,
             commit=commit,
             limits=limits,
+            observability=observability,
         )
+
     return _build
 
 
@@ -122,15 +133,15 @@ def mcp_backend_components(
 
 
 @pytest.fixture
-def mcp_backend(mcp_backend_components: McpBackendComponents) -> DuckDBBackend:
-    """Return DuckDBBackend bound to the provisioned gateway snapshot.
+def mcp_backend(mcp_backend_components: McpBackendComponents) -> McpBackendComponents:
+    """Return aggregated backend components for the provisioned gateway snapshot.
 
     Returns
     -------
-    DuckDBBackend
-        Backend constructed from the provisioned gateway snapshot.
+    McpBackendComponents
+        Aggregated components constructed from the provisioned gateway snapshot.
     """
-    return mcp_backend_components.backend
+    return mcp_backend_components
 
 
 @pytest.fixture

@@ -25,6 +25,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.macros import assert_all_ingest_macros
 
 
 def _require(condition: object, message: str) -> None:
@@ -155,6 +156,7 @@ def test_ingest_macro_coverage_returns_present_and_missing(
 ) -> None:
     """Verify ingest_macro_coverage returns tuple of missing and present lists."""
     con = fresh_gateway.con
+    assert_all_ingest_macros(con)
 
     missing, present = ingest_macro_coverage(con)
 
@@ -162,7 +164,7 @@ def test_ingest_macro_coverage_returns_present_and_missing(
     expect_is_instance(missing, list)
     expect_is_instance(present, list)
 
-    # On a bootstrapped DB, most/all macros should be present
+    expect_true(len(missing) == 0, message="Expected no missing ingest macros")
     expect_not_empty(present)
 
 

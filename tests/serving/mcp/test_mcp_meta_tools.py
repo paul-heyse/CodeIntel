@@ -188,7 +188,13 @@ def _register_with_options(
 
 @pytest.fixture
 def backend(mcp_service: LocalQueryService) -> LocalQueryService:
-    """Backend (query service) for meta tool tests."""
+    """Backend (query service) for meta tool tests.
+
+    Returns
+    -------
+    LocalQueryService
+        Provisioned query service for exercising meta tools.
+    """
     return mcp_service
 
 

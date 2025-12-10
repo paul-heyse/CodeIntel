@@ -6,20 +6,22 @@ configured and all dependencies are available.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFormatCLI, RuntimeCLI
-from codeintel.cli.commands.context import command_context
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.health import health_check_handler
 from codeintel.cli.rendering.types import OutputFormat
 
 health_app = App(name="health", help="Check CLI environment health")
 
+# Config for health commands - no runtime or gateway needed
+_HEALTH_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
+
+@cli_command("health.check", handler=health_check_handler, config=_HEALTH_CONFIG)
 @health_app.default
 @dataclass
 class HealthCheckCommand:
@@ -34,23 +36,7 @@ class HealthCheckCommand:
         OutputFormat,
         Parameter(name="--format", help="Output format"),
     ] = OutputFormat.TEXT
-
-    def __call__(self) -> None:
-        """Execute the health check command."""
-        runtime_cli = RuntimeCLI()
-        output_cli = OutputFormatCLI(output_format=self.output_format)
-
-        with command_context(
-            "health.check",
-            runtime_cli,
-            output_cli,
-            params={},
-            require_runtime=False,
-        ) as (ctx, renderer):
-            result = health_check_handler(ctx)
-            exit_code = renderer.render_result(result)
-            if exit_code != 0:
-                sys.exit(exit_code)
+    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
 
 
 __all__ = [

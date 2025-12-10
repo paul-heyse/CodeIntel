@@ -910,6 +910,114 @@ def data_model_usage_row(seed: DataModelUsageSeed) -> tuple[object, ...]:
 
 
 @dataclass
+class DataModelSeed:
+    model_id: str
+    model_name: str
+    module: str
+    rel_path: str
+    model_kind: str
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    goid: int | None = None
+    base_classes_json: list[str] | None = None
+    doc_short: str | None = None
+    doc_long: str | None = None
+    created_at: datetime | None = None
+
+
+def data_model_row(seed: DataModelSeed) -> tuple[object, ...]:
+    """Row for analytics.data_models."""
+    return (
+        seed.repo,
+        seed.commit,
+        seed.model_id,
+        seed.goid,
+        seed.model_name,
+        seed.module,
+        seed.rel_path,
+        seed.model_kind,
+        seed.base_classes_json or [],
+        seed.doc_short,
+        seed.doc_long,
+        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+    )
+
+
+@dataclass
+class DataModelFieldSeed:
+    model_id: str
+    field_name: str
+    field_type: str | None
+    required: bool
+    has_default: bool
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    default_expr: str | None = None
+    constraints_json: dict[str, object] | None = None
+    source: str = "tests"
+    rel_path: str = "models.py"
+    lineno: int | None = 1
+    created_at: datetime | None = None
+
+
+def data_model_field_row(seed: DataModelFieldSeed) -> tuple[object, ...]:
+    """Row for analytics.data_model_fields."""
+    return (
+        seed.repo,
+        seed.commit,
+        seed.model_id,
+        seed.field_name,
+        seed.field_type,
+        seed.required,
+        seed.has_default,
+        seed.default_expr,
+        seed.constraints_json or {},
+        seed.source,
+        seed.rel_path,
+        seed.lineno,
+        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+    )
+
+
+@dataclass
+class DataModelRelationshipSeed:
+    source_model_id: str
+    target_model_id: str
+    field_name: str
+    relationship_kind: str
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    target_module: str | None = None
+    target_model_name: str | None = None
+    multiplicity: str | None = None
+    via: str | None = None
+    evidence_json: dict[str, object] | list[object] | None = None
+    rel_path: str = "models.py"
+    lineno: int | None = 1
+    created_at: datetime | None = None
+
+
+def data_model_relationship_row(seed: DataModelRelationshipSeed) -> tuple[object, ...]:
+    """Row for analytics.data_model_relationships."""
+    return (
+        seed.repo,
+        seed.commit,
+        seed.source_model_id,
+        seed.target_model_id,
+        seed.target_module,
+        seed.target_model_name,
+        seed.field_name,
+        seed.relationship_kind,
+        seed.multiplicity,
+        seed.via,
+        seed.evidence_json or {},
+        seed.rel_path,
+        seed.lineno,
+        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+    )
+
+
+@dataclass
 class AstMetricSeed:
     rel_path: str
     complexity: float
@@ -1374,6 +1482,9 @@ __all__ = [
     "AstMetricSeed",
     "ConfigValueSeed",
     "CoverageLineSeed",
+    "DataModelFieldSeed",
+    "DataModelRelationshipSeed",
+    "DataModelSeed",
     "DataModelUsagePayloadSeed",
     "DataModelUsageSeed",
     "DependencyAggregatePayloadSeed",
@@ -1396,6 +1507,9 @@ __all__ = [
     "ast_metric_row",
     "config_value_row",
     "coverage_line_row",
+    "data_model_field_row",
+    "data_model_relationship_row",
+    "data_model_row",
     "data_model_usage_payload",
     "data_model_usage_row",
     "dependency_aggregate_payload",
