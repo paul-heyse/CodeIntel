@@ -13,17 +13,15 @@ Commands use the command_context() helper for standardized infrastructure:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    RuntimeCLI,
-    command_context,
-)
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
 from codeintel.cli.handlers.subsystem import (
     subsystem_coverage_handler,
     subsystem_list_handler,
@@ -71,6 +69,13 @@ class SubsystemListCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -79,10 +84,6 @@ class SubsystemListCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem list command."""
@@ -90,16 +91,20 @@ class SubsystemListCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
         params: dict[str, object] = {
             "role": self.role,
             "query": self.query,
             "limit": self.limit,
         }
 
-        with command_context("subsystem.list", runtime_cli, self.output_format, params=params) as (
-            ctx,
-            renderer,
-        ):
+        with command_context(
+            "subsystem.list",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
             result = subsystem_list_handler(ctx)
             exit_code = renderer.render_result(result)
             if exit_code != 0:
@@ -125,6 +130,13 @@ class SubsystemShowCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -133,10 +145,6 @@ class SubsystemShowCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem show command."""
@@ -144,12 +152,16 @@ class SubsystemShowCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
         params: dict[str, object] = {"subsystem_id": self.subsystem_id}
 
-        with command_context("subsystem.show", runtime_cli, self.output_format, params=params) as (
-            ctx,
-            renderer,
-        ):
+        with command_context(
+            "subsystem.show",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
             result = subsystem_show_handler(ctx)
             exit_code = renderer.render_result(result)
             if exit_code != 0:
@@ -175,6 +187,13 @@ class SubsystemProfilesCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -183,10 +202,6 @@ class SubsystemProfilesCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem profiles command."""
@@ -194,10 +209,15 @@ class SubsystemProfilesCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
         params: dict[str, object] = {"limit": self.limit}
 
         with command_context(
-            "subsystem.profiles", runtime_cli, self.output_format, params=params
+            "subsystem.profiles",
+            runtime_cli,
+            output_cli,
+            params=params,
         ) as (ctx, renderer):
             result = subsystem_profiles_handler(ctx)
             exit_code = renderer.render_result(result)
@@ -224,6 +244,13 @@ class SubsystemCoverageCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -232,10 +259,6 @@ class SubsystemCoverageCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem coverage command."""
@@ -243,10 +266,15 @@ class SubsystemCoverageCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
         params: dict[str, object] = {"limit": self.limit}
 
         with command_context(
-            "subsystem.coverage", runtime_cli, self.output_format, params=params
+            "subsystem.coverage",
+            runtime_cli,
+            output_cli,
+            params=params,
         ) as (ctx, renderer):
             result = subsystem_coverage_handler(ctx)
             exit_code = renderer.render_result(result)
@@ -273,6 +301,13 @@ class SubsystemMembershipCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -281,10 +316,6 @@ class SubsystemMembershipCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem module-memberships command."""
@@ -292,10 +323,15 @@ class SubsystemMembershipCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
         params: dict[str, object] = {"module": self.module}
 
         with command_context(
-            "subsystem.module_memberships", runtime_cli, self.output_format, params=params
+            "subsystem.module_memberships",
+            runtime_cli,
+            output_cli,
+            params=params,
         ) as (ctx, renderer):
             result = subsystem_module_memberships_handler(ctx)
             exit_code = renderer.render_result(result)

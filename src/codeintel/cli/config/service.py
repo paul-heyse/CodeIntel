@@ -2,23 +2,33 @@
 
 This module provides ConfigService, the single source of truth for all
 CLI configuration loading, validation, and access.
+
+Also provides config building utilities for constructing CodeIntelConfig
+from CLI options.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cyclopts import config as cyclopts_config
 
+from codeintel.cli.cli_types import BackendFlags
 from codeintel.cli.config.loader import apply_overrides, load_config
 from codeintel.cli.config.model import CliConfig
+from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
+from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 
 if TYPE_CHECKING:
     from cyclopts import App
+
+
+LOG = logging.getLogger(__name__)
 
 
 # Environment variable prefix (canonical location)
@@ -246,9 +256,139 @@ class ConfigService:
         )
 
 
+# -----------------------------------------------------------------------------
+# CodeIntelConfig Building Utilities
+# -----------------------------------------------------------------------------
+
+
+def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:
+    """Build graph backend configuration from CLI options.
+
+    Parameters
+    ----------
+    flags
+        Backend preferences collected from CLI flags.
+
+    Returns
+    -------
+    GraphBackendConfig
+        Configured graph backend settings.
+    """
+    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
+    if flags.backend == "cpu":
+        backend = "cpu"
+    elif flags.backend == "nx-cugraph":
+        backend = "nx-cugraph"
+    return GraphBackendConfig(
+        use_gpu=flags.use_gpu,
+        backend=backend,
+        strict=flags.strict,
+    )
+
+
+def _parse_env_flag(value: str | None, *, default: bool | None = None) -> bool | None:
+    """Parse a boolean-ish environment string.
+
+    Parameters
+    ----------
+    value
+        Environment variable value.
+    default
+        Default value if parsing fails.
+
+    Returns
+    -------
+    bool | None
+        Parsed boolean or default.
+    """
+    if value is None:
+        return default
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
+    """Construct GraphFeatureFlags from CODEINTEL_* environment variables.
+
+    Returns
+    -------
+    GraphFeatureFlags
+        Feature flags derived from environment variables.
+    """
+    eager = (
+        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_EAGER"))
+        if "CODEINTEL_GRAPH_EAGER" in os.environ
+        else None
+    )
+    community_limit = (
+        int(os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"])
+        if "CODEINTEL_GRAPH_COMMUNITY_LIMIT" in os.environ
+        else None
+    )
+    validation_strict = (
+        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"))
+        if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
+        else None
+    )
+    return GraphFeatureFlags(
+        eager_hydration=eager,
+        community_detection_limit=community_limit,
+        validation_strict=validation_strict,
+    )
+
+
+def build_config_from_options(
+    repo: str,
+    commit: str,
+    paths_cfg: CliPathsInput,
+    backend: BackendFlags,
+) -> CodeIntelConfig:
+    """Build CodeIntelConfig from explicit CLI options.
+
+    Parameters
+    ----------
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+    paths_cfg
+        CLI paths input describing repo root, build directory, and storage.
+    backend
+        Graph backend flags captured from CLI.
+
+    Returns
+    -------
+    CodeIntelConfig
+        Configured CodeIntel settings.
+    """
+    graph_backend = build_graph_backend_config(backend)
+    graph_features = build_graph_feature_flags_from_env()
+    LOG.info(
+        "cli.runtime.config repo=%s commit=%s backend=%s use_gpu=%s features=%s",
+        repo,
+        commit,
+        graph_backend.backend,
+        graph_backend.use_gpu,
+        graph_features,
+    )
+    repo_cfg = RepoConfig(repo=repo, commit=commit)
+    return CodeIntelConfig.from_cli_args(
+        repo_cfg=repo_cfg,
+        paths_cfg=paths_cfg,
+        options=CliConfigOptions(graph_backend=graph_backend, graph_features=graph_features),
+    )
+
+
 __all__ = [
     "CONFIG_ENV_PREFIX",
     "CONFIG_PATH_ENV_VAR",
     "TOML_CONFIG_PATHS",
     "ConfigService",
+    "build_config_from_options",
+    "build_graph_backend_config",
+    "build_graph_feature_flags_from_env",
 ]

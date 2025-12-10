@@ -1,10 +1,11 @@
 """Cyclopts wiring for history commands.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,8 +13,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.execution.adapter import CycloptsAdapter
-from codeintel.cli.history_handlers import history_timeseries_ctx
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
+from codeintel.cli.handlers.history import history_timeseries_handler
 
 history_app = App(
     name="history",
@@ -98,18 +100,34 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    runtime: RuntimeCLI | None = None
+    output: OutputFormatCLI | None = None
 
     def __call__(self) -> None:
         """Execute the history timeseries command."""
-        CycloptsAdapter("history.timeseries", history_timeseries_ctx)(self)
+        runtime_cli = self.runtime or RuntimeCLI()
+        output_cli = self.output or OutputFormatCLI()
+
+        with command_context(
+            "history.timeseries",
+            runtime_cli,
+            output_cli,
+            require_runtime=False,
+            params={
+                "repo": self.repo,
+                "commits": self.commits,
+                "db_dir": self.db_dir,
+                "output_db": self.output_db,
+                "entity_kind": self.entity_kind,
+                "max_entities": self.max_entities,
+                "selection_strategy": self.selection_strategy,
+                "repo_root": self.repo_root or runtime_cli.repo_root,
+            },
+        ) as (ctx, renderer):
+            result = history_timeseries_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["history_app"]

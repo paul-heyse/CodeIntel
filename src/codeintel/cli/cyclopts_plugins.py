@@ -5,26 +5,25 @@ Provide commands to discover, list, and inspect CLI plugins.
 
 from __future__ import annotations
 
-import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from cyclopts import App, Parameter
-from rich.console import Console
-from rich.table import Table
 
-from codeintel.cli.plugins import (
-    PluginManifest,
-    PluginTestHarness,
-    create_plugin_scaffold,
-    get_plugin_manager,
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
+from codeintel.cli.handlers.plugins import (
+    plugins_discover_handler,
+    plugins_info_handler,
+    plugins_list_handler,
+    plugins_new_handler,
+    plugins_paths_handler,
+    plugins_test_handler,
+    plugins_validate_handler,
 )
-
-# Plugin name validation pattern
-_PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 plugins_app = App(name="plugins", help="Manage CLI plugins")
 
@@ -39,40 +38,26 @@ class PluginsListCommand:
     """
 
     output_format: Annotated[
-        Literal["text", "json"],
+        OutputFormat,
         Parameter(name="--format", help="Output format"),
-    ] = "text"
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
         """Execute the plugins list command."""
-        manager = get_plugin_manager()
-        plugins = manager.list_plugins()
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        if self.output_format == "json":
-            sys.stdout.write(json.dumps([p.to_dict() for p in plugins], indent=2))
-            sys.stdout.write("\n")
-            return
-
-        if not plugins:
-            sys.stdout.write("No plugins installed\n")
-            return
-
-        console = Console()
-        table = Table(title="Installed Plugins")
-        table.add_column("Name", style="cyan")
-        table.add_column("Version")
-        table.add_column("Operations", justify="right")
-        table.add_column("Description")
-
-        for plugin in plugins:
-            table.add_row(
-                plugin.name,
-                plugin.version,
-                str(plugin.operations),
-                plugin.description,
-            )
-
-        console.print(table)
+        with command_context(
+            "plugins.list",
+            runtime_cli,
+            output_cli,
+            params={},
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_list_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="discover")
@@ -84,26 +69,27 @@ class PluginsDiscoverCommand:
     their loading status.
     """
 
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
+
     def __call__(self) -> None:
         """Execute the plugins discover command."""
-        manager = get_plugin_manager()
-        paths = manager.discover()
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        if not paths:
-            sys.stdout.write("No plugins found\n")
-            sys.stdout.write("\nPlugin directories searched:\n")
-            for plugin_dir in manager.plugin_dirs:
-                sys.stdout.write(f"  • {plugin_dir}\n")
-            return
-
-        sys.stdout.write("Available plugins:\n")
-        loaded_names = {p.name for p in manager.loaded_plugins.values()}
-
-        for path in paths:
-            # Check if plugin is loaded by looking for its stem in loaded plugins
-            is_loaded = any(path.stem in name or name in path.stem for name in loaded_names)
-            status = "✓ loaded" if is_loaded else "○ available"
-            sys.stdout.write(f"  {status} {path.name}\n")
+        with command_context(
+            "plugins.discover",
+            runtime_cli,
+            output_cli,
+            params={},
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_discover_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="info")
@@ -116,29 +102,29 @@ class PluginsInfoCommand:
     """
 
     name: Annotated[str, Parameter(help="Plugin name")]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the plugins info command.
+        """Execute the plugins info command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If the plugin is not found.
-        """
-        manager = get_plugin_manager()
-        plugin = manager.get_plugin(self.name)
+        params: dict[str, object] = {"name": self.name}
 
-        if plugin is None:
-            sys.stdout.write(f"Plugin not found: {self.name}\n")
-            raise SystemExit(1)
-
-        console = Console()
-        console.print(f"[bold]Name:[/bold] {plugin.name}")
-        console.print(f"[bold]Version:[/bold] {plugin.version}")
-        console.print(f"[bold]Description:[/bold] {plugin.description}")
-        console.print(f"[bold]Path:[/bold] {plugin.path}")
-        console.print(f"[bold]Operations:[/bold] {plugin.operations}")
-        console.print(f"[bold]Enabled:[/bold] {plugin.enabled}")
+        with command_context(
+            "plugins.info",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_info_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="paths")
@@ -150,14 +136,27 @@ class PluginsPathsCommand:
     with indicators for which paths exist.
     """
 
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
+
     def __call__(self) -> None:
         """Execute the plugins paths command."""
-        manager = get_plugin_manager()
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        sys.stdout.write("Plugin directories:\n")
-        for plugin_dir in manager.plugin_dirs:
-            exists = "\u2713" if plugin_dir.exists() else "\u2717"
-            sys.stdout.write(f"  {exists} {plugin_dir}\n")
+        with command_context(
+            "plugins.paths",
+            runtime_cli,
+            output_cli,
+            params={},
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_paths_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="new")
@@ -174,31 +173,32 @@ class PluginsNewCommand:
         Path | None,
         Parameter(name="--output", help="Output directory"),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the plugins new command.
+        """Execute the plugins new command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If plugin name is invalid.
-        """
-        output_dir = self.output or Path.cwd()
+        params: dict[str, object] = {
+            "name": self.name,
+            "output": str(self.output) if self.output else None,
+        }
 
-        # Validate name
-        if not _PLUGIN_NAME_PATTERN.match(self.name):
-            sys.stderr.write(
-                "Error: Plugin name must be lowercase alphanumeric with hyphens/underscores\n",
-            )
-            raise SystemExit(1)
-
-        plugin_dir = create_plugin_scaffold(self.name, output_dir)
-        sys.stdout.write(f"Created plugin scaffold at: {plugin_dir}\n")
-        sys.stdout.write("\nNext steps:\n")
-        sys.stdout.write(f"  1. cd {plugin_dir}\n")
-        sys.stdout.write(f"  2. Edit {self.name}/main.py to add your operations\n")
-        sys.stdout.write("  3. Run tests: pytest tests/\n")
-        sys.stdout.write(f"  4. Install: cp -r {self.name} ~/.codeintel/plugins/\n")
+        with command_context(
+            "plugins.new",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_new_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="test")
@@ -211,48 +211,29 @@ class PluginsTestCommand:
     """
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the plugins test command.
+        """Execute the plugins test command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If plugin.json not found or tests fail.
-        """
-        manifest_path = self.path / "plugin.json"
-        if not manifest_path.exists():
-            sys.stderr.write(f"Error: No plugin.json found in {self.path}\n")
-            raise SystemExit(1)
+        params: dict[str, object] = {"path": str(self.path)}
 
-        manifest = PluginManifest.load(manifest_path)
-        harness = PluginTestHarness(manifest)
-        results = harness.run_all_tests()
-
-        sys.stdout.write(f"Testing plugin: {manifest.name} v{manifest.version}\n\n")
-
-        all_passed = True
-        for result in results:
-            status = "\u2713" if result.success else "\u2717"
-            sys.stdout.write(f"  {status} {result.message}\n")
-
-            for error in result.errors:
-                sys.stdout.write(f"      Error: {error}\n")
-                all_passed = False
-
-            for warning in result.warnings:
-                sys.stdout.write(f"      Warning: {warning}\n")
-
-        sys.stdout.write("\n")
-        summary = harness.get_summary()
-        sys.stdout.write(f"Tests: {summary['passed']}/{summary['tests_run']} passed\n")
-
-        if summary["registered_operations"]:
-            ops = ", ".join(summary["registered_operations"])
-            sys.stdout.write(f"Operations: {ops}\n")
-
-        if not all_passed:
-            raise SystemExit(1)
+        with command_context(
+            "plugins.test",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_test_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @plugins_app.command(name="validate")
@@ -265,42 +246,29 @@ class PluginsValidateCommand:
     """
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the plugins validate command.
+        """Execute the plugins validate command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If plugin.json not found or validation fails.
-        """
-        manifest_path = self.path / "plugin.json"
-        if not manifest_path.exists():
-            sys.stderr.write(f"Error: No plugin.json found in {self.path}\n")
-            raise SystemExit(1)
+        params: dict[str, object] = {"path": str(self.path)}
 
-        try:
-            manifest = PluginManifest.load(manifest_path)
-        except (KeyError, ValueError) as e:
-            sys.stderr.write(f"Error loading manifest: {e}\n")
-            raise SystemExit(1) from None
-
-        errors = manifest.validate()
-
-        if errors:
-            sys.stderr.write("Manifest validation failed:\n")
-            for error in errors:
-                sys.stderr.write(f"  - {error}\n")
-            raise SystemExit(1)
-
-        sys.stdout.write("\u2713 Manifest is valid\n")
-        sys.stdout.write(f"  Name: {manifest.name}\n")
-        sys.stdout.write(f"  Version: {manifest.version}\n")
-        sys.stdout.write(f"  API Version: {manifest.api_version}\n")
-
-        if manifest.capabilities:
-            caps = ", ".join(cap.value for cap in manifest.capabilities)
-            sys.stdout.write(f"  Capabilities: {caps}\n")
+        with command_context(
+            "plugins.validate",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = plugins_validate_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = [

@@ -1,15 +1,7 @@
 """Runtime resolution - single source of truth for project/runtime resolution.
 
-This module consolidates all runtime resolution logic previously scattered across:
-- cyclopts_common.py:build_runtime_from_cli
-- common_handlers.py:build_runtime_from_cli
-- datasets_handlers.py:build_runtime_from_cli
-- subsystem_handlers.py:build_runtime_from_cli
-- ide_handlers.py:build_runtime_from_cli
-- build_handlers.py:build_runtime_from_cli
-- ops_handlers.py:_build_runtime_or_error
-
-The RuntimeResolver provides a single, unified implementation that handles:
+This module consolidates all runtime resolution logic. The RuntimeResolver
+provides a single, unified implementation that handles:
 1. Project file discovery (codeintel.yaml)
 2. Fallback to explicit CLI parameters
 3. Construction of ResolvedRuntime with all necessary configuration

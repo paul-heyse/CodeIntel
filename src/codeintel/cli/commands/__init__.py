@@ -27,7 +27,6 @@ from codeintel.cli.cyclopts_build import build_app
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
-    make_handler_context,
     make_root_app,
 )
 
@@ -66,7 +65,6 @@ __all__ = [
     "ide_app",
     "jobs_app",
     "main",
-    "make_handler_context",
     "make_root_app",
     "op_app",
     "plugins_app",

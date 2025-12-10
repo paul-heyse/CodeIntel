@@ -38,9 +38,6 @@ ENV_MAPPINGS: dict[str, tuple[str, type]] = {
     "PROJECT_REPO": ("project.repo", str),
     "PROJECT_ROOT": ("project.root", Path),
     "PROJECT_COMMIT": ("project.commit", str),
-    # Legacy flat mappings for backward compatibility
-    "PROGRESS": ("progress.enabled", bool),
-    "TELEMETRY": ("telemetry.enabled", bool),
 }
 
 

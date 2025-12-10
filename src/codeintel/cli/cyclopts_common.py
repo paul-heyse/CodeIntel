@@ -16,28 +16,15 @@ dataclasses with ``__call__`` will run naturally under this policy.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_types import BackendFlags, OutputFormat
+from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.command_context import command_context
-from codeintel.cli.common_handlers import RuntimeCliOptions, build_config_from_options
 from codeintel.cli.config import ConfigService
-from codeintel.cli.project import (
-    ProjectConfig,
-    ProjectNotFoundError,
-    ProjectRuntime,
-    StorageProjectConfig,
-    build_project_runtime,
-)
-from codeintel.config.models import CliPathsInput
-from codeintel.config.primitives import SnapshotRef
-from codeintel.config.serving_models import ServingConfig
-from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
 def make_root_app() -> App:
@@ -256,176 +243,6 @@ def resolve_output_format(
     return default
 
 
-def runtime_cli_to_options(
-    cli: RuntimeCLI | None, *, backend: BackendFlags | None = None
-) -> RuntimeCliOptions:
-    """Convert a RuntimeCLI dataclass to RuntimeCliOptions.
-
-    .. deprecated:: 2.0
-        Use ``RuntimeParams.from_cyclopts()`` instead.
-        This function will be removed in version 3.0.
-
-    Returns
-    -------
-    RuntimeCliOptions
-        Options object suitable for runtime construction.
-    """
-    warnings.warn(
-        "runtime_cli_to_options is deprecated. Use RuntimeParams.from_cyclopts() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    resolved_cli = cli or RuntimeCLI()
-    return RuntimeCliOptions(
-        project_root=resolved_cli.project_root,
-        repo=resolved_cli.repo,
-        commit=resolved_cli.commit,
-        db_path=resolved_cli.db_path,
-        build_dir=resolved_cli.build_dir,
-        repo_root=resolved_cli.repo_root,
-        document_output_dir=resolved_cli.document_output_dir,
-        backend=backend or BackendFlags(),
-    )
-
-
-def _runtime_cli_to_options_internal(
-    cli: RuntimeCLI | None, *, backend: BackendFlags | None = None
-) -> RuntimeCliOptions:
-    """Convert a RuntimeCLI dataclass to RuntimeCliOptions (internal, no warning).
-
-    Parameters
-    ----------
-    cli
-        RuntimeCLI instance or None.
-    backend
-        Backend flags or None.
-
-    Returns
-    -------
-    RuntimeCliOptions
-        Options object suitable for runtime construction.
-    """
-    resolved_cli = cli or RuntimeCLI()
-    return RuntimeCliOptions(
-        project_root=resolved_cli.project_root,
-        repo=resolved_cli.repo,
-        commit=resolved_cli.commit,
-        db_path=resolved_cli.db_path,
-        build_dir=resolved_cli.build_dir,
-        repo_root=resolved_cli.repo_root,
-        document_output_dir=resolved_cli.document_output_dir,
-        backend=backend or BackendFlags(),
-    )
-
-
-def build_runtime_from_cli(
-    options: RuntimeCliOptions | RuntimeCLI | None,
-    *,
-    allow_fallback: bool = True,
-) -> ProjectRuntime:
-    """Build a :class:`ProjectRuntime` from CLI options without Typer exits.
-
-    .. deprecated:: 2.0
-        Use ``RuntimeResolver.resolve(RuntimeParams)`` instead.
-        This function will be removed in version 3.0.
-
-    Returns
-    -------
-    ProjectRuntime
-        Constructed runtime context.
-
-    Raises
-    ------
-    RuntimeCliError
-        If a project cannot be resolved from the provided options.
-    """
-    warnings.warn(
-        "build_runtime_from_cli is deprecated. Use RuntimeResolver.resolve(RuntimeParams) instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if options is None:
-        options = RuntimeCLI()
-    if isinstance(options, RuntimeCLI):
-        options = _runtime_cli_to_options_internal(options)
-
-    try:
-        return build_project_runtime(options.project_root)
-    except ProjectNotFoundError:
-        if not allow_fallback:
-            message = "No codeintel.yaml found and fallback disabled."
-            raise RuntimeCliError(message) from None
-
-    if options.repo is None or options.commit is None:
-        msg = (
-            "No codeintel.yaml found. Provide --repo and --commit explicitly, "
-            "or create a project file."
-        )
-        raise RuntimeCliError(msg)
-
-    resolved_repo_root = options.repo_root or Path.cwd()
-    resolved_db_path = options.db_path or Path("build/db/codeintel.duckdb")
-    resolved_build_dir = options.build_dir or Path("build")
-
-    paths_cfg = CliPathsInput(
-        repo_root=resolved_repo_root,
-        build_dir=resolved_build_dir,
-        db_path=resolved_db_path,
-        document_output_dir=options.document_output_dir,
-    )
-
-    cfg = build_config_from_options(
-        repo=options.repo,
-        commit=options.commit,
-        paths_cfg=paths_cfg,
-        backend=options.backend,
-    )
-
-    snapshot = SnapshotRef(
-        repo=cfg.repo.repo,
-        commit=cfg.repo.commit,
-        repo_root=cfg.paths.repo_root,
-    )
-    paths = cfg.build_paths
-    paths.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    storage_cfg = StorageConfig.for_ingest(db_path=paths.db_path)
-    gateway = open_gateway(storage_cfg)
-
-    project = ProjectConfig(
-        repo=cfg.repo.repo,
-        storage=StorageProjectConfig(db_path=paths.db_path),
-    )
-
-    serving = ServingConfig(
-        mode="local_db",
-        repo_root=cfg.paths.repo_root,
-        repo=cfg.repo.repo,
-        commit=cfg.repo.commit,
-        db_path=paths.db_path,
-        read_only=True,
-    )
-
-    return ProjectRuntime(
-        root=resolved_repo_root,
-        project=project,
-        cfg=cfg,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=cfg.tools,
-        serving=serving,
-    )
-
-
-@dataclass(frozen=True)
-class RuntimeWithFormat:
-    """Bundle runtime options with output formatting toggles."""
-
-    runtime: RuntimeCliOptions
-    output_format: OutputFormat
-
-
 def get_verbose(cli: RuntimeCLI) -> int:
     """Extract verbosity count from RuntimeCLI.
 
@@ -454,25 +271,6 @@ def get_output_format(
     )
 
 
-def make_handler_context(
-    runtime_cli: RuntimeCLI,
-    output_cli: OutputFormatCLI,
-    *,
-    default_output: OutputFormat,
-) -> tuple[RuntimeCliOptions, int, OutputFormat]:
-    """Return runtime options, verbosity, and output format for handlers.
-
-    Returns
-    -------
-    tuple[RuntimeCliOptions, int, OutputFormat]
-        Runtime options, verbosity count, and output format.
-    """
-    runtime_opts = _runtime_cli_to_options_internal(runtime_cli)
-    verbose = get_verbose(runtime_cli)
-    output_format = get_output_format(output_cli, default=default_output)
-    return runtime_opts, verbose, output_format
-
-
 # command_context is imported from codeintel.cli.command_context
 # and re-exported here for backwards compatibility and convenience
 
@@ -480,7 +278,6 @@ def make_handler_context(
 __all__ = [
     "OUTPUT_PARAM_METADATA",
     "RUNTIME_PARAM_METADATA",
-    "BackendFlags",
     "ExistingDir",
     "ExistingPath",
     "JsonFlag",
@@ -493,19 +290,14 @@ __all__ = [
     "ProjectRoot",
     "RuntimeCLI",
     "RuntimeCliError",
-    "RuntimeCliOptions",
     "RuntimeParam",
-    "RuntimeWithFormat",
     "StorageCLI",
     "Verbose",
-    "build_runtime_from_cli",
     "command_context",
     "get_output_format",
     "get_verbose",
-    "make_handler_context",
     "make_root_app",
     "output_field",
     "resolve_output_format",
-    "runtime_cli_to_options",
     "runtime_field",
 ]

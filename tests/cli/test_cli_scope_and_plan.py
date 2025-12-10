@@ -15,10 +15,12 @@ def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
     if result.exit_code != 0:
         message = f"CLI plan command should exit successfully: {result.output}"
         pytest.fail(message)
-    payload = json.loads(result.output)
-    # New handler outputs plan_id, plugins, and skipped
-    if "plan_id" not in payload and "plugins" not in payload:
-        message = "Plan JSON should include plan_id or plugins"
+    envelope = json.loads(result.output)
+    # Handler outputs are wrapped in {"data": {...}} envelope
+    payload = envelope.get("data", envelope)
+    # New handler outputs stages with plugins
+    if "stages" not in payload and "plugins" not in payload and "plan_id" not in payload:
+        message = f"Plan JSON should include stages, plugins, or plan_id. Got: {list(payload.keys())}"
         pytest.fail(message)
 
 
@@ -28,14 +30,16 @@ def test_cli_plugins_json_includes_enriched_metadata() -> None:
     if result.exit_code != 0:
         message = f"CLI plugins command should exit successfully: {result.output}"
         pytest.fail(message)
-    payload = json.loads(result.output)
+    envelope = json.loads(result.output)
+    # Handler outputs are wrapped in {"data": {...}} envelope
+    payload = envelope.get("data", envelope)
     plugins = payload.get("plugins", [])
     if not plugins:
-        message = "CLI plugins JSON should include plugin entries"
+        message = f"CLI plugins JSON should include plugin entries. Got: {list(payload.keys())}"
         pytest.fail(message)
     # New handler outputs plugins as a list with basic metadata
     plugin_any = plugins[0]
-    required = ("name", "stage", "output_tables")
+    required = ("name", "stage")  # Core fields in new handler output
     missing = tuple(field for field in required if field not in plugin_any)
     if missing:
         message = f"CLI plugins JSON missing metadata fields: {missing}"

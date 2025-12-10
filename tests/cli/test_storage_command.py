@@ -40,7 +40,7 @@ def test_storage_validate_macros_failure(
         raise RuntimeError
 
     monkeypatch.setattr("codeintel.storage.metadata.validate_macro_registry", _fail_validation)
-    monkeypatch.setattr("codeintel.cli.storage_handlers.validate_macro_registry", _fail_validation)
+    monkeypatch.setattr("codeintel.cli.handlers.storage.validate_macro_registry", _fail_validation)
 
     result = cli_project_runner(["storage", "validate-macros", "--db-path", str(db_path)])
     assert_exit(result, 1)

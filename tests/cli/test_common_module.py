@@ -1,4 +1,4 @@
-"""Tests for shared CLI utilities in common_handlers and cyclopts_common."""
+"""Tests for shared CLI utilities in config/service and cyclopts_common."""
 
 from __future__ import annotations
 
@@ -8,29 +8,45 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.cli_errors import ValidationError, runtime_required
-from codeintel.cli.common_handlers import (
-    BackendFlags,
-    OutputFormat,
-    RuntimeCliOptions,
+from codeintel.cli.cli_types import BackendFlags, OutputFormat
+from codeintel.cli.config import (
     build_config_from_options,
     build_graph_backend_config,
     build_graph_feature_flags_from_env,
-    build_runtime_from_cli,
-    resolve_flag,
 )
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
-    make_handler_context,
+    get_output_format,
+    get_verbose,
+    resolve_output_format,
 )
 from codeintel.config.models import CliPathsInput
 from tests._helpers.assertions import expect_equal, expect_true
 
 
+def _resolve_flag(value: object) -> bool:
+    """Resolve an optional flag value to a boolean (local helper for test).
+
+    Parameters
+    ----------
+    value
+        Flag value (may be None, bool, or other).
+
+    Returns
+    -------
+    bool
+        True if value is truthy and not None, False otherwise.
+    """
+    if value is None:
+        return False
+    return bool(value)
+
+
 def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Flag resolution and backend config selection behave as expected."""
-    expect_true(resolve_flag(value=None) is False)
-    expect_true(resolve_flag(value=True) is True)
+    expect_true(_resolve_flag(value=None) is False)
+    expect_true(_resolve_flag(value=True) is True)
     backend = build_graph_backend_config(BackendFlags(use_gpu=True, backend="cpu", strict=True))
     expect_true(backend.use_gpu is True)
     expect_equal(backend.backend, "cpu")
@@ -69,34 +85,8 @@ def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
     expect_equal(cfg.build_paths.db_path, db_path)
 
 
-def test_build_runtime_from_cli_fallback_and_missing(tmp_path: Path) -> None:
-    """Fallback options succeed; missing options raise ValidationError."""
-    repo_root = tmp_path / "repo"
-    build_dir = tmp_path / "build"
-    db_path = build_dir / "db" / "codeintel.duckdb"
-    build_dir.mkdir(parents=True, exist_ok=True)
-    repo_root.mkdir(parents=True, exist_ok=True)
-
-    runtime = build_runtime_from_cli(
-        RuntimeCliOptions(
-            project_root=None,
-            repo="demo/repo",
-            commit="deadbeef",
-            db_path=db_path,
-            build_dir=build_dir,
-            repo_root=repo_root,
-        )
-    )
-    expect_equal(runtime.snapshot.repo, "demo/repo")
-    expect_equal(runtime.snapshot.commit, "deadbeef")
-    runtime.gateway.close()
-
-    with pytest.raises(ValidationError):
-        build_runtime_from_cli(RuntimeCliOptions(project_root=tmp_path))
-
-
 # ---------------------------------------------------------------------------
-# Tests for cyclopts_common field helpers and make_handler_context
+# Tests for cyclopts_common field helpers and output format resolution
 # ---------------------------------------------------------------------------
 
 
@@ -129,37 +119,49 @@ def test_output_field_returns_none_by_default() -> None:
     expect_true(instance.output is None)
 
 
-def test_make_handler_context_extracts_all_fields() -> None:
-    """Verify make_handler_context returns runtime_opts, verbose, output_format."""
-    runtime_cli = RuntimeCLI(
-        project_root=Path("/test"),
-        repo="org/repo",
-        commit="abc123",
-        verbose=2,
+def test_get_verbose_extracts_verbose_level() -> None:
+    """Verify get_verbose extracts verbosity count from RuntimeCLI."""
+    cli = RuntimeCLI(verbose=2)
+    expect_equal(get_verbose(cli), 2)
+
+    cli_default = RuntimeCLI()
+    expect_equal(get_verbose(cli_default), 0)
+
+
+def test_get_output_format_resolves_correctly() -> None:
+    """Verify get_output_format resolves format with correct precedence."""
+    # Default format
+    output_cli = OutputFormatCLI()
+    expect_equal(get_output_format(output_cli), OutputFormat.TEXT)
+
+    # Explicit JSON format
+    output_cli_json = OutputFormatCLI(output_format=OutputFormat.JSON)
+    expect_equal(get_output_format(output_cli_json), OutputFormat.JSON)
+
+    # JSON flag overrides explicit format
+    output_cli_flag = OutputFormatCLI(output_format=OutputFormat.TEXT, json=True)
+    expect_equal(get_output_format(output_cli_flag), OutputFormat.JSON)
+
+
+def test_resolve_output_format_precedence() -> None:
+    """Verify resolve_output_format handles precedence correctly."""
+    # JSON flag takes highest precedence
+    expect_equal(
+        resolve_output_format(json_flag=True, explicit=OutputFormat.TEXT, default=OutputFormat.TEXT),
+        OutputFormat.JSON,
     )
-    output_cli = OutputFormatCLI(output_format=OutputFormat.JSON, json=False)
 
-    runtime_opts, verbose, output_format = make_handler_context(
-        runtime_cli, output_cli, default_output=OutputFormat.TEXT
+    # Explicit format takes precedence over default
+    expect_equal(
+        resolve_output_format(json_flag=False, explicit=OutputFormat.JSON, default=OutputFormat.TEXT),
+        OutputFormat.JSON,
     )
 
-    expect_equal(runtime_opts.project_root, Path("/test"))
-    expect_equal(runtime_opts.repo, "org/repo")
-    expect_equal(runtime_opts.commit, "abc123")
-    expect_equal(verbose, 2)
-    expect_equal(output_format, OutputFormat.JSON)
-
-
-def test_make_handler_context_json_flag_overrides_format() -> None:
-    """Verify json flag takes precedence in make_handler_context."""
-    runtime_cli = RuntimeCLI()
-    output_cli = OutputFormatCLI(output_format=OutputFormat.TEXT, json=True)
-
-    _, _, output_format = make_handler_context(
-        runtime_cli, output_cli, default_output=OutputFormat.TEXT
+    # Default is used when no override
+    expect_equal(
+        resolve_output_format(json_flag=False, explicit=None, default=OutputFormat.TEXT),
+        OutputFormat.TEXT,
     )
-
-    expect_equal(output_format, OutputFormat.JSON)
 
 
 def test_runtime_required_raises_for_missing_fields() -> None:

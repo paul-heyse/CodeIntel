@@ -53,6 +53,9 @@ from codeintel.cli.config.service import (
     CONFIG_PATH_ENV_VAR,
     TOML_CONFIG_PATHS,
     ConfigService,
+    build_config_from_options,
+    build_graph_backend_config,
+    build_graph_feature_flags_from_env,
 )
 from codeintel.cli.config.validation import validate_config, validate_with_json_schema
 
@@ -75,6 +78,9 @@ __all__ = [
     "StorageConfigSection",
     "TelemetryConfig",
     "apply_overrides",
+    "build_config_from_options",
+    "build_graph_backend_config",
+    "build_graph_feature_flags_from_env",
     "config_to_dict",
     "dict_to_config",
     "export_schema",

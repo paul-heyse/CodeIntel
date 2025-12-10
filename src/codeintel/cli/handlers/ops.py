@@ -15,6 +15,13 @@ import uvicorn
 
 from codeintel.cli.cli_errors import ProblemDetail, ValidationError
 from codeintel.cli.project import ProjectRuntime
+from codeintel.cli.result_types import (
+    DatasetDescribeResult,
+    DatasetListResult,
+    DatasetVerifyResult,
+    OperationCallResult,
+    OperationListResult,
+)
 from codeintel.cli.results import CliResult
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
@@ -32,121 +39,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 AUTO_PIPELINE_ENV = "CODEINTEL_AUTO_PIPELINE"
-
-
-@dataclass(frozen=True)
-class OpListResult:
-    """Result from listing operations."""
-
-    operations: list[dict[str, object]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "operations": self.operations,
-            "count": self.count,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetListResult:
-    """Result from listing datasets."""
-
-    datasets: list[dict[str, object]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "datasets": self.datasets,
-            "count": self.count,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetDescribeResult:
-    """Result from describing a dataset."""
-
-    table_key: str
-    name: str
-    description: str | None
-    owner_package: str
-    columns: list[dict[str, str | bool]]
-    row_count: int | None
-    upstream_dependencies: list[str]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "table_key": self.table_key,
-            "name": self.name,
-            "description": self.description,
-            "owner_package": self.owner_package,
-            "columns": self.columns,
-            "row_count": self.row_count,
-            "upstream_dependencies": self.upstream_dependencies,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetVerifyResult:
-    """Result from verifying datasets."""
-
-    verified: bool
-    issues: list[str]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "verified": self.verified,
-            "issues": self.issues,
-        }
-
-
-@dataclass(frozen=True)
-class OpCallResult:
-    """Result from invoking an operation."""
-
-    op_id: str
-    result: dict[str, object]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "op_id": self.op_id,
-            "result": self.result,
-        }
 
 
 @dataclass(frozen=True)
@@ -364,27 +256,24 @@ def _setup_serving_env(runtime: ProjectRuntime, *, auto_pipeline: bool) -> None:
         os.environ[AUTO_PIPELINE_ENV] = "1"
 
 
-def op_list_handler(ctx: EnhancedHandlerContext) -> CliResult[OpListResult]:
-    """List available serving operations.
+def op_list_structured(*, category: str | None) -> CliResult[OperationListResult]:
+    """List available serving operations (structured, no context needed).
 
     Parameters
     ----------
-    ctx
-        Handler context with params:
-        - category: Optional category filter
+    category
+        Optional category filter.
 
     Returns
     -------
-    CliResult[OpListResult]
+    CliResult[OperationListResult]
         List of operations matching the filter.
     """
-    category = _get_str_param(ctx, "category")
-
     operations = list(iter_operations())
     if category:
         operations = [op for op in operations if op.category == category]
 
-    operation_dicts: list[dict[str, object]] = [
+    operation_dicts: list[dict[str, str | None]] = [
         {
             "id": op.id,
             "category": op.category,
@@ -395,10 +284,28 @@ def op_list_handler(ctx: EnhancedHandlerContext) -> CliResult[OpListResult]:
         for op in sorted(operations, key=lambda o: o.id)
     ]
 
-    return CliResult.ok(OpListResult(operations=operation_dicts, count=len(operations)))
+    return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
 
 
-def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OpCallResult]:
+def op_list_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationListResult]:
+    """List available serving operations.
+
+    Parameters
+    ----------
+    ctx
+        Handler context with params:
+        - category: Optional category filter
+
+    Returns
+    -------
+    CliResult[OperationListResult]
+        List of operations matching the filter.
+    """
+    category = _get_str_param(ctx, "category")
+    return op_list_structured(category=category)
+
+
+def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OperationCallResult]:
     """Invoke an operation end-to-end with optional prerequisites.
 
     Parameters
@@ -411,7 +318,7 @@ def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OpCallResult]:
 
     Returns
     -------
-    CliResult[OpCallResult]
+    CliResult[OperationCallResult]
         Operation result.
     """
     op_id = _require_str_param(ctx, "op_id")
@@ -461,14 +368,14 @@ def op_call_handler(ctx: EnhancedHandlerContext) -> CliResult[OpCallResult]:
         )
 
     result = _invoke_operation_structured(op_id, kwargs, project_runtime)
-    return CliResult.ok(OpCallResult(op_id=op_id, result=result))
+    return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
 
 def _invoke_operation_structured(
     op_id: str,
     kwargs: dict[str, Any],
     runtime: ProjectRuntime,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Invoke operation and return structured result.
 
     Parameters
@@ -482,7 +389,7 @@ def _invoke_operation_structured(
 
     Returns
     -------
-    dict[str, object]
+    dict[str, Any]
         Operation result as dictionary.
 
     Raises
@@ -517,6 +424,89 @@ def _invoke_operation_structured(
         stack.close()
 
 
+def invoke_operation(
+    op_id: str,
+    kwargs: dict[str, Any],
+    runtime: ProjectRuntime,
+) -> None:
+    """Invoke a serving operation and render the JSON result.
+
+    This is a legacy compatibility function used by dynamic command generation.
+    New code should use the handler functions (e.g., op_call_handler) instead.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    kwargs
+        Operation parameters.
+    runtime
+        Project runtime context.
+
+    Raises
+    ------
+    ValidationError
+        When the operation is unknown or cannot be executed.
+    """
+    import json  # noqa: PLC0415
+
+    stdout = sys.stdout
+    op = get_operation(op_id)
+    if op is None:
+        error = f"Unknown operation: {op_id}"
+        raise ValidationError(error)
+
+    stdout.write(f"Invoking operation '{op_id}'...\n")
+
+    result = _invoke_operation_structured(op_id, kwargs, runtime)
+    stdout.write(json.dumps(result, indent=2, default=str))
+    stdout.write("\n")
+
+
+def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeResult]:
+    """Show contract details for a dataset (structured, no context needed).
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+
+    Returns
+    -------
+    CliResult[DatasetDescribeResult]
+        Dataset details.
+    """
+    contracts = get_dataset_contracts_by_table_key()
+    contract = contracts.get(table_key)
+    if contract is None:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:ops:dataset-not-found",
+                title="Dataset Not Found",
+                detail=f"Dataset not found: {table_key}",
+                status=404,
+            )
+        )
+
+    columns = contract.schema.columns if contract.schema else []
+
+    column_dicts: list[dict[str, str | bool]] = [
+        {"name": col.name, "type": col.type, "nullable": col.nullable} for col in columns
+    ]
+
+    return CliResult.ok(
+        DatasetDescribeResult(
+            table_key=contract.table_key,
+            columns=column_dicts,
+            row_count=None,
+            name=contract.name,
+            description=contract.description,
+            owner_package=contract.owner_package,
+            upstream_dependencies=list(contract.upstream_dependencies),
+        )
+    )
+
+
 def dataset_list_handler(ctx: EnhancedHandlerContext) -> CliResult[DatasetListResult]:
     """List datasets from the registry.
 
@@ -534,7 +524,7 @@ def dataset_list_handler(ctx: EnhancedHandlerContext) -> CliResult[DatasetListRe
     registry = project_runtime.gateway.datasets
     meta = registry.meta or {}
 
-    dataset_dicts: list[dict[str, object]] = [
+    dataset_dicts: list[dict[str, str | None]] = [
         {
             "name": name,
             "table_key": contract.table_key,
@@ -564,36 +554,7 @@ def dataset_describe_handler(
         Dataset details.
     """
     table_key = _require_str_param(ctx, "table_key")
-
-    contracts = get_dataset_contracts_by_table_key()
-    contract = contracts.get(table_key)
-    if contract is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:ops:dataset-not-found",
-                title="Dataset Not Found",
-                detail=f"Dataset not found: {table_key}",
-                status=404,
-            )
-        )
-
-    columns = contract.schema.columns if contract.schema else []
-
-    column_dicts: list[dict[str, str | bool]] = [
-        {"name": col.name, "type": col.type, "nullable": col.nullable} for col in columns
-    ]
-
-    return CliResult.ok(
-        DatasetDescribeResult(
-            table_key=contract.table_key,
-            name=contract.name,
-            description=contract.description,
-            owner_package=contract.owner_package or "",
-            columns=column_dicts,
-            row_count=None,
-            upstream_dependencies=list(contract.upstream_dependencies),
-        )
-    )
+    return dataset_describe_structured(table_key=table_key)
 
 
 def dataset_verify_handler(
@@ -718,14 +679,17 @@ __all__ = [
     "DatasetDescribeResult",
     "DatasetListResult",
     "DatasetVerifyResult",
-    "OpCallResult",
-    "OpListResult",
+    "OperationCallResult",
+    "OperationListResult",
     "ServeStartResult",
     "dataset_describe_handler",
+    "dataset_describe_structured",
     "dataset_list_handler",
     "dataset_verify_handler",
+    "invoke_operation",
     "op_call_handler",
     "op_list_handler",
+    "op_list_structured",
     "serve_http_handler",
     "serve_mcp_handler",
 ]
