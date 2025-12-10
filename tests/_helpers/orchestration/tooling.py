@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from coverage import Coverage
 
 from codeintel.config.models import ToolsConfig
@@ -175,6 +176,19 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
         coverage_reports=coverage_report.files,
         context=context,
     )
+
+
+@pytest.fixture
+def tooling_outputs(tmp_path: Path) -> ToolingOutputs:
+    """Fixture that runs the real tooling stack against a minimal repo.
+
+    Returns
+    -------
+    ToolingOutputs
+        Aggregated diagnostics and coverage results.
+    """
+    context = build_tooling_context(tmp_path)
+    return run_static_tooling(context)
 
 
 @dataclass(frozen=True)

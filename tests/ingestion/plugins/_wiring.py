@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.plugin import TargetPlugin
 from tests._helpers import build_repo_tree
@@ -18,6 +19,10 @@ from tests._helpers.ingestion import (
     module_records_for_paths,
     seed_modules_and_repo_map,
 )
+
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
+    from codeintel.storage.gateway import StorageGateway
 
 
 async def run_sync_plugin_wiring_scenario(
@@ -94,26 +99,29 @@ async def run_sync_plugin_wiring_scenario(
     if scenario == "gateway_failure":
         capture = StepCallCapture()
         plugin = plugin_factory(capture)
-        failing_gateway = FailingGateway("db down")
-        ctx = build_target_context_for_plugin(
-            plugin,
-            tmp_path,
-            config=TargetContextConfig(
-                repo_root=repo_root,
-                gateway=failing_gateway,
-                resources=TargetResourceOverrides(modules=()),
-            ),
-        )
+        failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
+        try:
+            ctx = build_target_context_for_plugin(
+                plugin,
+                tmp_path,
+                config=TargetContextConfig(
+                    repo_root=repo_root,
+                    gateway=cast("StorageGateway", failing_gateway),
+                    resources=TargetResourceOverrides(modules=()),
+                ),
+            )
 
-        result = await plugin.execute(ctx)
+            result = await plugin.execute(ctx)
 
-        expect_true(result.success)
-        expect_equal(result.row_counts.get(table_key, 0), 0)
-        expect_equal(capture.modules, [])
-        expect_equal(capture.repo, ctx.repo)
-        expect_equal(capture.commit, ctx.commit)
-        expect_equal(capture.repo_root, repo_root)
-        return
+            expect_true(result.success)
+            expect_equal(result.row_counts.get(table_key, 0), 0)
+            expect_equal(capture.modules, [])
+            expect_equal(capture.repo, ctx.repo)
+            expect_equal(capture.commit, ctx.commit)
+            expect_equal(capture.repo_root, repo_root)
+            return
+        finally:
+            failing_gateway.close()
 
     message = f"Unknown scenario '{scenario}'"
     raise ValueError(message)
@@ -121,7 +129,7 @@ async def run_sync_plugin_wiring_scenario(
 
 def run_module_path_resolution_scenarios(
     plugin_factory: Callable[[StepCallCapture], TargetPlugin],
-    get_module_paths: Callable[[object], list[str]],
+    get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
     *,
     resources_path: str,
@@ -158,7 +166,7 @@ def run_module_path_resolution_scenarios(
 
 def _assert_resources_path(
     plugin: TargetPlugin,
-    get_module_paths: Callable[[object], list[str]],
+    get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
     resources_path: str,
 ) -> None:
@@ -171,7 +179,7 @@ def _assert_resources_path(
 
 def _assert_db_path(
     plugin: TargetPlugin,
-    get_module_paths: Callable[[object], list[str]],
+    get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
     resources_path: str,
 ) -> None:
@@ -183,16 +191,19 @@ def _assert_db_path(
 
 def _assert_gateway_failure(
     plugin: TargetPlugin,
-    get_module_paths: Callable[[object], list[str]],
+    get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
 ) -> None:
-    failing_gateway = FailingGateway("db down")
-    ctx_fail = build_target_context_for_plugin(
-        plugin,
-        tmp_path,
-        config=TargetContextConfig(
-            gateway=failing_gateway,
-            resources=TargetResourceOverrides(modules=()),
-        ),
-    )
-    expect_equal(get_module_paths(ctx_fail), [])
+    failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
+    try:
+        ctx_fail = build_target_context_for_plugin(
+            plugin,
+            tmp_path,
+            config=TargetContextConfig(
+                gateway=cast("StorageGateway", failing_gateway),
+                resources=TargetResourceOverrides(modules=()),
+            ),
+        )
+        expect_equal(get_module_paths(ctx_fail), [])
+    finally:
+        failing_gateway.close()

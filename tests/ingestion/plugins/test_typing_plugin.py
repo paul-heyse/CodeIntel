@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from textwrap import dedent
+from typing import cast
 
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
+from codeintel.ingestion.plugins.typing_plugin import StepFactory, TypingIngestPlugin
 from tests._helpers import build_repo_tree
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -37,7 +38,10 @@ def _make_plugin(
 ) -> TypingIngestPlugin:
     checker = type_checker if type_checker is not None else RecordingTypeChecker()
     storage_factory, discovery_factory = make_recording_adapter_factories(capture)
-    step_factory = make_recording_async_step_factory(capture, result=result)
+    step_factory = cast(
+        "StepFactory",
+        make_recording_async_step_factory(capture, result=result),
+    )
     return TypingIngestPlugin(
         storage_adapter_factory=storage_factory,
         discovery_adapter_factory=discovery_factory,

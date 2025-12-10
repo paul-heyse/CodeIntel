@@ -10,16 +10,12 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
-DEFAULT_LIMIT: Final = 10
-MAX_ROWS: Final = 100
 LIMIT_FIVE: Final = 5
 
 
@@ -30,26 +26,10 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Build a LocalQueryService for direct testing.
-
-    Returns
-    -------
-    LocalQueryService
-        Configured local query service.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
+    """Return the shared LocalQueryService from the provisioned service app."""
+    return provisioned_service_app.service
 
 
 # =============================================================================
@@ -58,10 +38,10 @@ def _build_local_service(
 
 
 def test_list_subsystems_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystems returns domain SubsystemSummaryResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystems()
 
@@ -72,10 +52,10 @@ def test_list_subsystems_returns_domain_result(
 
 
 def test_list_subsystems_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystems with limit parameter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystems(limit=LIMIT_FIVE)
 
@@ -86,10 +66,10 @@ def test_list_subsystems_with_limit(
 
 
 def test_list_subsystems_with_role_filter(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystems with role filter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystems(role="api")
 
@@ -100,10 +80,10 @@ def test_list_subsystems_with_role_filter(
 
 
 def test_list_subsystems_with_query(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystems with query filter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystems(q="test")
 
@@ -114,12 +94,12 @@ def test_list_subsystems_with_query(
 
 
 def test_get_module_subsystems_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_subsystems returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT module FROM analytics.subsystem_modules LIMIT 1"
     ).fetchone()
 
@@ -136,10 +116,10 @@ def test_get_module_subsystems_returns_domain_result(
 
 
 def test_get_module_subsystems_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_subsystems handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     subsystems = service.get_module_subsystems(module="nonexistent.module.xyz")
 
@@ -150,12 +130,12 @@ def test_get_module_subsystems_not_found(
 
 
 def test_get_file_hints_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_hints returns domain FileHintsResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -172,10 +152,10 @@ def test_get_file_hints_returns_domain_result(
 
 
 def test_get_file_hints_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_hints handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     hints = service.get_file_hints(rel_path="nonexistent/path/file.py")
 
@@ -186,12 +166,12 @@ def test_get_file_hints_not_found(
 
 
 def test_get_subsystem_modules_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_subsystem_modules returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -208,12 +188,12 @@ def test_get_subsystem_modules_returns_domain_result(
 
 
 def test_get_subsystem_modules_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_subsystem_modules with module_limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -230,10 +210,10 @@ def test_get_subsystem_modules_with_limit(
 
 
 def test_get_subsystem_modules_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_subsystem_modules handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     modules = service.get_subsystem_modules(subsystem_id="nonexistent_subsystem")
 
@@ -244,10 +224,10 @@ def test_get_subsystem_modules_not_found(
 
 
 def test_search_subsystems_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify search_subsystems returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.search_subsystems()
 
@@ -258,10 +238,10 @@ def test_search_subsystems_returns_domain_result(
 
 
 def test_search_subsystems_with_query(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify search_subsystems with query filter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.search_subsystems(q="test")
 
@@ -272,10 +252,10 @@ def test_search_subsystems_with_query(
 
 
 def test_search_subsystems_with_role(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify search_subsystems with role filter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.search_subsystems(role="api")
 
@@ -286,12 +266,12 @@ def test_search_subsystems_with_role(
 
 
 def test_summarize_subsystem_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify summarize_subsystem returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -308,12 +288,12 @@ def test_summarize_subsystem_returns_domain_result(
 
 
 def test_summarize_subsystem_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify summarize_subsystem with module_limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -330,10 +310,10 @@ def test_summarize_subsystem_with_limit(
 
 
 def test_list_subsystem_profiles_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystem_profiles returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystem_profiles()
 
@@ -344,10 +324,10 @@ def test_list_subsystem_profiles_returns_domain_result(
 
 
 def test_list_subsystem_profiles_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystem_profiles with limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystem_profiles(limit=LIMIT_FIVE)
 
@@ -358,10 +338,10 @@ def test_list_subsystem_profiles_with_limit(
 
 
 def test_list_subsystem_coverage_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystem_coverage returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystem_coverage()
 
@@ -372,10 +352,10 @@ def test_list_subsystem_coverage_returns_domain_result(
 
 
 def test_list_subsystem_coverage_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_subsystem_coverage with limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_subsystem_coverage(limit=LIMIT_FIVE)
 

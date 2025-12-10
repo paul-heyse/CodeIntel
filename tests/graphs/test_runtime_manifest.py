@@ -17,7 +17,6 @@ from typing import Final
 import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.runtime.manifest import (
     GraphPluginManifest,
     InputHashPayload,
@@ -36,29 +35,10 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
-from tests._helpers.fakes.graph_plugins import GraphPluginBuilder
+from tests._helpers.fakes.graph_plugins import make_graph_plugin
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
-
-
-# Test Helpers
-
-
-def _make_test_plugin(name: str) -> GraphPluginProtocol:
-    """Create a minimal test plugin.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-    return GraphPluginBuilder(name=name).build()
 
 
 def test_compute_input_hash_scope_paths_included() -> None:
@@ -157,7 +137,7 @@ def test_compute_input_hash_varies_with_commit() -> None:
 
 def test_compute_options_hash_with_dict_options() -> None:
     """Options hash computed for dictionary options."""
-    plugin = _make_test_plugin("opt_plugin")
+    plugin = make_graph_plugin("opt_plugin")
     options = {"key": "value", "count": 42, "enabled": True}
 
     hash_val = compute_options_hash(plugin, options)
@@ -170,7 +150,7 @@ def test_compute_options_hash_with_dict_options() -> None:
 
 def test_compute_options_hash_none_returns_none() -> None:
     """Options hash is None when options are None."""
-    plugin = _make_test_plugin("none_opt_plugin")
+    plugin = make_graph_plugin("none_opt_plugin")
 
     hash_val = compute_options_hash(plugin, None)
 
@@ -179,7 +159,7 @@ def test_compute_options_hash_none_returns_none() -> None:
 
 def test_compute_options_hash_deterministic() -> None:
     """Options hash is deterministic for same options."""
-    plugin = _make_test_plugin("det_opt_plugin")
+    plugin = make_graph_plugin("det_opt_plugin")
     options = {"alpha": 1, "beta": 2}
 
     hash1 = compute_options_hash(plugin, options)
@@ -190,7 +170,7 @@ def test_compute_options_hash_deterministic() -> None:
 
 def test_compute_options_hash_serialization_failure_returns_none() -> None:
     """Non-serializable options return None without raising."""
-    plugin = _make_test_plugin("fail_serial_plugin")
+    plugin = make_graph_plugin("fail_serial_plugin")
 
     class NonSerializable:
         def __str__(self) -> str:
@@ -206,7 +186,7 @@ def test_compute_options_hash_serialization_failure_returns_none() -> None:
 
 def test_compute_options_hash_varies_with_options() -> None:
     """Options hash changes when options change."""
-    plugin = _make_test_plugin("vary_opt_plugin")
+    plugin = make_graph_plugin("vary_opt_plugin")
 
     hash1 = compute_options_hash(plugin, {"value": 1})
     hash2 = compute_options_hash(plugin, {"value": 2})

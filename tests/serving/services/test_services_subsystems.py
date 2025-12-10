@@ -5,17 +5,12 @@ This module tests subsystem query delegates via LocalQueryService.
 
 from __future__ import annotations
 
-from fastapi import status
-from fastapi.testclient import TestClient
+from typing import TYPE_CHECKING
 
-from codeintel.config.serving_models import ServingConfig
+from fastapi import status
+
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
     ModuleSubsystemResponse,
@@ -26,15 +21,15 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
-from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.http_payloads import (
     RequestRecorder,
     make_subsystem_http_responses,
 )
 from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDelegateHarness
+
+if TYPE_CHECKING:
+    from tests._helpers.serving_apps import ServiceApp
 
 # =============================================================================
 # Subsystem Route Tests (covers service delegates)
@@ -42,49 +37,16 @@ from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDele
 
 
 def test_list_subsystems_returns_data(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify subsystem listing returns results.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/subsystems")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -93,99 +55,33 @@ def test_list_subsystems_returns_data(
 
 
 def test_list_subsystems_with_limit(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify subsystem listing respects limit parameter.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/subsystems?limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_subsystem_modules(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify subsystem modules endpoint functions.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
     # Try to get modules for a subsystem
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/subsystem?subsystem_id=test_subsystem")
 
     # May be 200 with empty data or 400/404 if no such subsystem - both are valid
@@ -200,49 +96,16 @@ def test_get_subsystem_modules(
 
 
 def test_get_module_subsystems(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify module subsystems endpoint functions.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/module-subsystems?module=test.module")
 
     # May be 200 with data or 400/404 if not found
@@ -257,98 +120,32 @@ def test_get_module_subsystems(
 
 
 def test_subsystem_coverage_endpoint(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify subsystem coverage endpoint returns data.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/subsystem-coverage")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_subsystem_profiles_endpoint(
-    architecture_gateway: StorageGateway,
+    architecture_service_app: ServiceApp,
 ) -> None:
     """Verify subsystem profiles endpoint returns data.
 
     Parameters
     ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
+    architecture_service_app
+        Service app wired to architecture data.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(architecture_gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo="demo/repo",
-            commit="deadbeef",
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
+    with architecture_service_app.client() as client:
         response = client.get("/architecture/subsystem-profiles")
 
     expect_equal(response.status_code, status.HTTP_200_OK)

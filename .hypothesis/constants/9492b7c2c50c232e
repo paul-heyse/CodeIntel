@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/graphs.py
+# hypothesis_version: 6.148.7
+
+['--dependency-policy', '--disable', '--enable', '--names', '--output-format', '--plan', '--selection-policy', '--validate-plan', '--verbose', '-v', 'dependency_policy', 'disable', 'enable', 'graph', 'graph.plugins', 'graphs_app', 'include_disabled', 'names', 'plugins', 'selection_policy']

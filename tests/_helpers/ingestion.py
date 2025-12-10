@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget
+from codeintel.config.models import ToolsConfig
 from codeintel.config.datasets.primitives import TableSchema
 from codeintel.ingestion import (
     BuildToolAdapter,
@@ -25,6 +26,11 @@ from tests._helpers.fakes.contexts import (
     make_test_output_target,
 )
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.fakes.tools import write_dummy_scip_files as write_dummy_scip_files
+from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -40,12 +46,15 @@ __all__ = [
     "build_ingestion_adapters",
     "build_repo_target",
     "build_target_context_for_plugin",
+    "build_scip_ingest_context",
+    "ScipIngestContext",
     "module_paths_from_context",
     "module_records_for_paths",
     "seed_modules_and_repo_map",
     "write_coverage_file",
     "write_pytest_report",
     "write_scip_index",
+    "write_dummy_scip_files",
 ]
 
 
@@ -192,6 +201,52 @@ def write_scip_index(
     typed_documents = [dict(doc) for doc in documents]
     index_path.write_text(json.dumps({"documents": typed_documents}), encoding="utf-8")
     return index_path
+
+
+@dataclass(frozen=True)
+class ScipIngestContext:
+    """Bundle of SCIP ingest fixtures reused across tests."""
+
+    repo_root: Path
+    gateway: StorageGateway
+    storage: DuckDBStorageAdapter
+    tools: BuildToolAdapter
+    build_dir: Path
+
+
+def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
+    """Create a repo, gateway, and adapters for SCIP ingest tests.
+
+    Returns
+    -------
+    ScipIngestContext
+        Context containing repo_root, gateway, adapters, and build_dir.
+    """
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/__init__.py": "", "pkg/mod.py": "def foo(x: int) -> int:\n    return x + 1\n"},
+    )
+    build_dir = repo_root / "build"
+    gateway = GatewayFactory().with_macros().open()
+    plugin = TestsIngestPlugin()
+    ctx = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
+    )
+    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    _ = discovery, change_detection
+    tools_config = ToolsConfig.default()
+    runner = ToolRunner(tools_config=tools_config, cache_dir=build_dir / ".tool_cache")
+    service = ToolService(runner, tools_config)
+    tool_adapter = ToolRunnerAdapter(service)
+    return ScipIngestContext(
+        repo_root=repo_root,
+        gateway=gateway,
+        storage=storage,
+        tools=tool_adapter,
+        build_dir=build_dir,
+    )
 
 
 def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:

@@ -11,11 +11,25 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from codeintel.graphs.catalog import FunctionMeta
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+
+
+def list_public_exports(module: object) -> tuple[str, ...]:
+    """Return a stable tuple of public export names for a module.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Publicly exported attribute names.
+    """
+    exports_attr: Any = getattr(module, "__all__", None)
+    if isinstance(exports_attr, (list, tuple)):
+        return tuple(exports_attr)
+    return tuple(sorted(name for name in dir(module) if not name.startswith("_")))
 
 
 def _coerce_int(value: object) -> int:

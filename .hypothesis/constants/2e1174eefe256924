@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/resolution/params.py
+# hypothesis_version: 6.148.7
+
+['BackendFlags', 'RuntimeParams', 'auto', 'backend', 'build_dir', 'commit', 'db_path', 'document_output_dir', 'project_root', 'repo', 'repo_root', 'strict', 'use_gpu']

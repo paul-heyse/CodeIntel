@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/serve.py
+# hypothesis_version: 6.148.7
+
+[8000, '--auto-pipeline', '--host', '--port', '--reload', '--root', '--verbose', '-h', '-p', '-r', '-v', '127.0.0.1', 'Host to bind to.', 'Port to bind to.', 'ServeHttpCommand', 'ServeMcpCommand', 'auto_pipeline', 'host', 'http', 'mcp', 'port', 'reload', 'serve', 'serve.http', 'serve.mcp', 'serve_app']

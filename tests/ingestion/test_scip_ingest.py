@@ -9,72 +9,27 @@ from pathlib import Path
 import pytest
 
 from codeintel.config import BuildLayoutOptions, BuildPaths
-from codeintel.config.models import ToolsConfig
-from codeintel.ingestion import (
-    DuckDBStorageAdapter,
-    ScipIngestStep,
-    ToolRunnerAdapter,
-)
+from codeintel.ingestion import ScipIngestStep
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestResult
-from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.ingestion.engine.service import ToolService
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.ingestion import (
+    ScipIngestContext,
+    build_scip_ingest_context,
+    write_dummy_scip_files,
+)
 from tests._helpers.sql import count_table_rows
 
 
-def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
-    """Set up test repository structure.
-
-    Returns
-    -------
-    tuple[Path, Path]
-        Repository root path and database path.
-    """
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-    (repo_root / ".git").mkdir()
-
-    pkg_dir = repo_root / "pkg"
-    pkg_dir.mkdir()
-    (pkg_dir / "__init__.py").write_text("", encoding="utf8")
-    (pkg_dir / "mod.py").write_text("def foo(x: int) -> int:\n    return x + 1\n", encoding="utf8")
-
-    build_dir = repo_root / "build"
-    db_path = build_dir / "db" / "codeintel.duckdb"
+@pytest.fixture
+def scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
+    """Provision repo, gateway, and adapters for SCIP ingest tests."""
+    context = build_scip_ingest_context(tmp_path)
+    db_path = context.build_dir / "db" / "codeintel.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    return repo_root, db_path
-
-
-def _create_scip_adapters(
-    gateway: StorageGateway,
-    repo_root: Path,
-) -> tuple[DuckDBStorageAdapter, ToolRunnerAdapter]:
-    """Create storage and tool adapters for SCIP ingestion.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing DuckDB connection.
-    repo_root
-        Path to the repository root directory.
-
-    Returns
-    -------
-    tuple[DuckDBStorageAdapter, ToolRunnerAdapter]
-        Storage and tool adapters configured for SCIP ingestion.
-    """
-    storage = DuckDBStorageAdapter(gateway)
-    tools_config = ToolsConfig.default()
-    cache_dir = repo_root / "build" / ".tool_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    runner = ToolRunner(tools_config=tools_config, cache_dir=cache_dir)
-    tool_service = ToolService(runner, tools_config)
-    tools = ToolRunnerAdapter(tool_service)
-    return storage, tools
+    return context
 
 
-def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
+def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) -> None:
     """Ensure scip_ingest generates SCIP artifacts and registers scip_index_view.
 
     Skip if scip-python or scip binaries are unavailable.
@@ -82,9 +37,12 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     if shutil.which("scip-python") is None or shutil.which("scip") is None:
         pytest.skip("scip-python or scip not available on PATH")
 
-    repo_root, db_path = _setup_repo_structure(tmp_path)
-    build_dir = repo_root / "build"
+    context = scip_ingest_context
+    repo_root = context.repo_root
+    gateway = context.gateway
+    build_dir = context.build_dir
     document_output_dir = repo_root / "document_output"
+    db_path = gateway.config.db_path
 
     _ = BuildPaths.from_layout(
         repo_root=repo_root,
@@ -99,9 +57,8 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
     try:
-        storage, tools = _create_scip_adapters(gateway, repo_root)
         scip_dir = build_dir / "scip"
-        scip_dir.mkdir(parents=True, exist_ok=True)
+        write_dummy_scip_files(build_dir)  # ensure artifact paths exist
 
         config = ScipIngestConfig(
             repo="demo/repo",
@@ -111,7 +68,7 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
             output_json=scip_dir / "index.scip.json",
         )
 
-        step = ScipIngestStep(storage=storage, tools=tools)
+        step = ScipIngestStep(storage=context.storage, tools=context.tools)
         result = asyncio.run(step.execute_async([], config))
 
         if not result.success:

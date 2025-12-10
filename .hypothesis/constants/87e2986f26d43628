@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/loader.py
+# hypothesis_version: 6.148.7
+
+['*.py', '.py', '0.0.0', '; ', 'Legacy plugin format', 'LoadedPlugin', 'PluginLoadResult', 'PluginLoader', '_', 'create_plugin', 'def create_plugin', 'get_plugin_loader', 'plugin.json', 'utf-8']

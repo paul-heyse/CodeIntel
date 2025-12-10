@@ -23,7 +23,6 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
 )
 from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.http_payloads import (
     RequestRecorder,
     assert_scope_serialized,
@@ -36,11 +35,9 @@ from tests._helpers.serving_harnesses import (
 )
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
-DEFAULT_LIMIT: Final = 10
-MAX_ROWS: Final = 100
 LOW_RISK: Final = 0.3
 RADIUS_ONE: Final = 1
 GOID_ONE: Final = 1
@@ -54,26 +51,10 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Build a LocalQueryService for direct testing.
-
-    Returns
-    -------
-    LocalQueryService
-        Configured local query service.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
+    """Return the shared LocalQueryService from the provisioned service app."""
+    return provisioned_service_app.service
 
 
 # =============================================================================
@@ -82,12 +63,12 @@ def _build_local_service(
 
 
 def test_get_function_summary_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary returns domain FunctionSummaryResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -104,12 +85,12 @@ def test_get_function_summary_returns_domain_result(
 
 
 def test_get_function_summary_with_urn(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary with URN parameter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT urn FROM core.goids WHERE urn IS NOT NULL LIMIT 1"
     ).fetchone()
 
@@ -126,12 +107,12 @@ def test_get_function_summary_with_urn(
 
 
 def test_get_function_summary_with_rel_path_qualname(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary with rel_path and qualname."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT rel_path, qualname FROM analytics.function_metrics LIMIT 1"
     ).fetchone()
 
@@ -148,10 +129,10 @@ def test_get_function_summary_with_rel_path_qualname(
 
 
 def test_list_high_risk_functions_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK)
 
@@ -166,10 +147,10 @@ def test_list_high_risk_functions_returns_domain_result(
 
 
 def test_list_high_risk_functions_with_tested_only(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions with tested_only filter."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK, tested_only=True)
 
@@ -180,10 +161,10 @@ def test_list_high_risk_functions_with_tested_only(
 
 
 def test_list_high_risk_functions_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify list_high_risk_functions respects limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     limit_value = 5
     result = service.list_high_risk_functions(min_risk=LOW_RISK, limit=limit_value)
@@ -199,12 +180,12 @@ def test_list_high_risk_functions_with_limit(
 
 
 def test_get_callgraph_neighbors_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -221,12 +202,12 @@ def test_get_callgraph_neighbors_returns_domain_result(
 
 
 def test_get_callgraph_neighbors_direction_incoming(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with incoming direction."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -243,12 +224,12 @@ def test_get_callgraph_neighbors_direction_incoming(
 
 
 def test_get_callgraph_neighbors_direction_outgoing(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with outgoing direction."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -265,12 +246,12 @@ def test_get_callgraph_neighbors_direction_outgoing(
 
 
 def test_get_tests_for_function_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -287,12 +268,12 @@ def test_get_tests_for_function_returns_domain_result(
 
 
 def test_get_tests_for_function_with_urn(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function with URN."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT urn FROM core.goids WHERE urn IS NOT NULL LIMIT 1"
     ).fetchone()
 
@@ -309,12 +290,12 @@ def test_get_tests_for_function_with_urn(
 
 
 def test_get_callgraph_neighborhood_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighborhood returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -331,12 +312,12 @@ def test_get_callgraph_neighborhood_returns_domain_result(
 
 
 def test_get_callgraph_neighborhood_with_max_nodes(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighborhood with max_nodes."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -356,12 +337,12 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
 
 def test_get_import_boundary_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -378,12 +359,12 @@ def test_get_import_boundary_returns_domain_result(
 
 
 def test_get_import_boundary_with_max_edges(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary with max_edges."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
     ).fetchone()
 
@@ -401,12 +382,12 @@ def test_get_import_boundary_with_max_edges(
 
 
 def test_get_file_summary_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_summary returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -428,10 +409,10 @@ def test_get_file_summary_returns_domain_result(
 
 
 def test_get_function_summary_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_summary handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     # Use a nonexistent goid_h128
     nonexistent_goid = 99999999
@@ -444,12 +425,12 @@ def test_get_function_summary_not_found(
 
 
 def test_get_callgraph_neighbors_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_callgraph_neighbors with limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -467,12 +448,12 @@ def test_get_callgraph_neighbors_with_limit(
 
 
 def test_get_tests_for_function_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_tests_for_function with limit."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
 
@@ -490,10 +471,10 @@ def test_get_tests_for_function_with_limit(
 
 
 def test_get_import_boundary_nonexistent_subsystem(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_import_boundary handles nonexistent subsystem."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     boundary = service.get_import_boundary(subsystem_id="nonexistent_subsystem_xyz")
 

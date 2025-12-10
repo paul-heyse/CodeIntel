@@ -621,9 +621,9 @@ def test_tool_runner_adapter_run_pytest_no_report(
     success_tool_adapter: ToolRunnerAdapter, tmp_path: Path
 ) -> None:
     """ToolRunnerAdapter.run_pytest should return OK when report doesn't exist."""
-    json_path = tmp_path / "report.json"
+    json_path = tmp_path / "test-results" / "report.json"
 
-    result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(success_tool_adapter.run_pytest(tmp_path, json_report_path=json_path))
 
     expect_equal(result.status, ToolStatus.OK)
     expect_equal(result.tests, [])
@@ -633,16 +633,14 @@ def test_tool_runner_adapter_run_pytest_with_report(
     success_tool_adapter: ToolRunnerAdapter, tmp_path: Path
 ) -> None:
     """ToolRunnerAdapter.run_pytest should parse existing report."""
-    json_path = tmp_path / "report.json"
-
-    write_pytest_report(
+    json_path = write_pytest_report(
         tmp_path,
         tests=[{"nodeid": "test::a", "outcome": "passed", "call": {"duration": 0.1}}],
         summary={"passed": 1},
         filename="report.json",
     )
 
-    result = asyncio.run(success_tool_adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(success_tool_adapter.run_pytest(tmp_path, json_report_path=json_path))
 
     expect_equal(result.status, ToolStatus.OK)
     expect_length(result.tests, 1)
@@ -652,9 +650,9 @@ def test_tool_runner_adapter_run_pytest_failure(
     failing_tool_adapter: ToolRunnerAdapter, tmp_path: Path
 ) -> None:
     """ToolRunnerAdapter.run_pytest should handle failures."""
-    json_path = tmp_path / "report.json"
+    json_path = tmp_path / "test-results" / "report.json"
 
-    result = asyncio.run(failing_tool_adapter.run_pytest(Path(), json_report_path=json_path))
+    result = asyncio.run(failing_tool_adapter.run_pytest(tmp_path, json_report_path=json_path))
 
     expect_equal(result.status, ToolStatus.FAILED)
     expect_true("pytest failed" in (result.error or ""))

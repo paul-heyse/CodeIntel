@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/__init__.py
+# hypothesis_version: 6.148.7
+
+['ALLOWED_MODULES', 'CAPABILITY_MODULES', 'CLI_API_VERSION', 'DEFAULT_PLUGIN_PATHS', 'DiscoveredPlugin', 'LoadedPlugin', 'PluginCapability', 'PluginDependency', 'PluginInfo', 'PluginLoadResult', 'PluginLoader', 'PluginManager', 'PluginManifest', 'PluginProtocol', 'PluginSandbox', 'PluginTestHarness', 'PluginTestResult', 'SandboxConfig', 'SandboxedImporter', 'SemanticVersion', 'discover_plugins', 'get_plugin_loader', 'get_plugin_manager', 'initialize_plugins', 'register_all_plugins']

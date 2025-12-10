@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/plugins.py
+# hypothesis_version: 6.148.7
+
+[400, 404, 'Invalid Plugin Name', 'No Plugin Manifest', 'Plugin Not Found', 'PluginInfo', 'PluginInfoResult', 'PluginNewResult', 'PluginPathsResult', 'PluginTestResult', 'PluginValidateResult', 'PluginsListResult', '^[a-z][a-z0-9_-]*$', 'all_passed', 'api_version', 'available', 'capabilities', 'count', 'description', 'discovered', 'enabled', 'errors', 'exists', 'loaded', 'message', 'name', 'operations', 'output', 'passed', 'path', 'paths', 'plugin.json', 'plugin_dir', 'plugin_dirs', 'plugin_name', 'plugin_version', 'plugins', 'plugins_info_handler', 'plugins_list_handler', 'plugins_new_handler', 'plugins_test_handler', 'results', 'status', 'success', 'tests_run', 'valid', 'version', 'warnings']

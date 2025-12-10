@@ -19,12 +19,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.core.protocol import (
-    GraphPluginKind,
-    GraphPluginProtocol,
-    GraphPluginSkip,
-    GraphPluginStage,
-)
+from codeintel.graphs.core.protocol import GraphPluginSkip
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     GraphPluginRegistry,
@@ -42,59 +37,10 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.graph_plugins import GraphPluginBuilder
+from tests._helpers.fakes.graph_plugins import make_graph_plugin
 
 # Constants
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"
-
-
-# Test Helpers
-
-
-def _make_test_plugin(
-    name: str,
-    *,
-    kind: GraphPluginKind = "builder",
-    stage: GraphPluginStage = "goid",
-    depends_on: tuple[str, ...] = (),
-    requires: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-) -> GraphPluginProtocol:
-    """Create a configurable test plugin.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    kind
-        Plugin kind to set on metadata.
-    stage
-        Pipeline stage for metadata.
-    depends_on
-        Plugin dependencies.
-    requires
-        Required capabilities.
-    provides
-        Provided capabilities.
-    produces_tables
-        Tables produced by the plugin.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-    builder = (
-        GraphPluginBuilder(name=f"{TEST_PLUGIN_PREFIX}{name}")
-        .with_kind(kind)
-        .with_stage(stage)
-        .with_dependencies(*depends_on)
-        .with_requires(*requires)
-        .with_provides(*provides)
-        .with_produces_tables(*produces_tables)
-    )
-    return builder.build()
 
 
 @pytest.fixture
@@ -131,7 +77,7 @@ def cleanup_test_plugins() -> Iterator[None]:
 
 def test_register_plugin_basic(fresh_registry: GraphPluginRegistry) -> None:
     """Register a plugin successfully."""
-    plugin = _make_test_plugin("basic")
+    plugin = make_graph_plugin("basic", prefix=TEST_PLUGIN_PREFIX)
 
     fresh_registry.register(plugin)
 
@@ -140,8 +86,8 @@ def test_register_plugin_basic(fresh_registry: GraphPluginRegistry) -> None:
 
 def test_register_plugin_duplicate_raises(fresh_registry: GraphPluginRegistry) -> None:
     """Registering duplicate plugin name raises ValueError."""
-    plugin1 = _make_test_plugin("duplicate")
-    plugin2 = _make_test_plugin("duplicate")
+    plugin1 = make_graph_plugin("duplicate", prefix=TEST_PLUGIN_PREFIX)
+    plugin2 = make_graph_plugin("duplicate", prefix=TEST_PLUGIN_PREFIX)
 
     fresh_registry.register(plugin1)
 
@@ -151,7 +97,11 @@ def test_register_plugin_duplicate_raises(fresh_registry: GraphPluginRegistry) -
 
 def test_register_plugin_indexes_by_capability(fresh_registry: GraphPluginRegistry) -> None:
     """Registered plugin is indexed by capabilities."""
-    plugin = _make_test_plugin("cap", provides=("test_capability",))
+    plugin = make_graph_plugin(
+        "cap",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"provides": ("test_capability",)},
+    )
 
     fresh_registry.register(plugin)
 
@@ -161,7 +111,11 @@ def test_register_plugin_indexes_by_capability(fresh_registry: GraphPluginRegist
 
 def test_register_plugin_indexes_by_kind(fresh_registry: GraphPluginRegistry) -> None:
     """Registered plugin is indexed by kind."""
-    plugin = _make_test_plugin("kind", kind="metric")
+    plugin = make_graph_plugin(
+        "kind",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"kind": "metric"},
+    )
 
     fresh_registry.register(plugin)
 
@@ -171,7 +125,11 @@ def test_register_plugin_indexes_by_kind(fresh_registry: GraphPluginRegistry) ->
 
 def test_register_plugin_indexes_by_stage(fresh_registry: GraphPluginRegistry) -> None:
     """Registered plugin is indexed by stage."""
-    plugin = _make_test_plugin("stage", stage="core")
+    plugin = make_graph_plugin(
+        "stage",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"stage": "core"},
+    )
 
     fresh_registry.register(plugin)
 
@@ -181,7 +139,11 @@ def test_register_plugin_indexes_by_stage(fresh_registry: GraphPluginRegistry) -
 
 def test_register_plugin_indexes_by_table(fresh_registry: GraphPluginRegistry) -> None:
     """Registered plugin is indexed by produced tables."""
-    plugin = _make_test_plugin("table", produces_tables=("analytics.test_table",))
+    plugin = make_graph_plugin(
+        "table",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"produces_tables": ("analytics.test_table",)},
+    )
 
     fresh_registry.register(plugin)
 
@@ -194,7 +156,7 @@ def test_register_plugin_indexes_by_table(fresh_registry: GraphPluginRegistry) -
 
 def test_unregister_plugin_removes(fresh_registry: GraphPluginRegistry) -> None:
     """Unregister removes plugin from registry."""
-    plugin = _make_test_plugin("unregister")
+    plugin = make_graph_plugin("unregister", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     fresh_registry.unregister(plugin.metadata.name)
@@ -204,12 +166,15 @@ def test_unregister_plugin_removes(fresh_registry: GraphPluginRegistry) -> None:
 
 def test_unregister_removes_from_indexes(fresh_registry: GraphPluginRegistry) -> None:
     """Unregister removes plugin from all indexes."""
-    plugin = _make_test_plugin(
+    plugin = make_graph_plugin(
         "unregister_idx",
-        kind="metric",
-        stage="core",
-        provides=("test_cap",),
-        produces_tables=("test_table",),
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={
+            "kind": "metric",
+            "stage": "core",
+            "provides": ("test_cap",),
+            "produces_tables": ("test_table",),
+        },
     )
     fresh_registry.register(plugin)
 
@@ -232,7 +197,7 @@ def test_unregister_nonexistent_silent(fresh_registry: GraphPluginRegistry) -> N
 
 def test_get_plugin_returns_registered(fresh_registry: GraphPluginRegistry) -> None:
     """Get returns registered plugin."""
-    plugin = _make_test_plugin("get")
+    plugin = make_graph_plugin("get", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     retrieved = fresh_registry.get(plugin.metadata.name)
@@ -248,7 +213,7 @@ def test_get_plugin_unknown_raises(fresh_registry: GraphPluginRegistry) -> None:
 
 def test_contains_returns_true_for_registered(fresh_registry: GraphPluginRegistry) -> None:
     """Contains returns True for registered plugin."""
-    plugin = _make_test_plugin("contains")
+    plugin = make_graph_plugin("contains", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     expect_true(fresh_registry.contains(plugin.metadata.name))
@@ -265,9 +230,9 @@ def test_contains_returns_false_for_unknown(fresh_registry: GraphPluginRegistry)
 def test_list_all_returns_registered(fresh_registry: GraphPluginRegistry) -> None:
     """List all returns all registered plugins."""
     plugins = [
-        _make_test_plugin("list1"),
-        _make_test_plugin("list2"),
-        _make_test_plugin("list3"),
+        make_graph_plugin("list1", prefix=TEST_PLUGIN_PREFIX),
+        make_graph_plugin("list2", prefix=TEST_PLUGIN_PREFIX),
+        make_graph_plugin("list3", prefix=TEST_PLUGIN_PREFIX),
     ]
 
     for plugin in plugins:
@@ -282,8 +247,8 @@ def test_list_all_returns_registered(fresh_registry: GraphPluginRegistry) -> Non
 def test_list_names_returns_names(fresh_registry: GraphPluginRegistry) -> None:
     """List names returns plugin names."""
     plugins = [
-        _make_test_plugin("name1"),
-        _make_test_plugin("name2"),
+        make_graph_plugin("name1", prefix=TEST_PLUGIN_PREFIX),
+        make_graph_plugin("name2", prefix=TEST_PLUGIN_PREFIX),
     ]
 
     for plugin in plugins:
@@ -325,8 +290,12 @@ def test_list_by_stage_empty_for_unknown_stage(
 def test_resolve_dependencies_explicit(fresh_registry: GraphPluginRegistry) -> None:
     """Dependencies resolved via explicit depends_on."""
     dep_name = f"{TEST_PLUGIN_PREFIX}dependency"
-    dep_plugin = _make_test_plugin("dependency")
-    main_plugin = _make_test_plugin("main", depends_on=(dep_name,))
+    dep_plugin = make_graph_plugin("dependency", prefix=TEST_PLUGIN_PREFIX)
+    main_plugin = make_graph_plugin(
+        "main",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (dep_name,)},
+    )
 
     fresh_registry.register(dep_plugin)
     fresh_registry.register(main_plugin)
@@ -340,7 +309,11 @@ def test_resolve_dependencies_explicit(fresh_registry: GraphPluginRegistry) -> N
 
 def test_resolve_dependencies_missing_raises(fresh_registry: GraphPluginRegistry) -> None:
     """Missing dependency raises ValueError."""
-    main_plugin = _make_test_plugin("missing_dep", depends_on=(f"{TEST_PLUGIN_PREFIX}nonexistent",))
+    main_plugin = make_graph_plugin(
+        "missing_dep",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (f"{TEST_PLUGIN_PREFIX}nonexistent",)},
+    )
     fresh_registry.register(main_plugin)
 
     with pytest.raises(ValueError, match=r"depends on.*not registered"):
@@ -390,7 +363,11 @@ def test_missing_dependency_policy_controls_skip(
 ) -> None:
     """Missing dependencies can be skipped or raised depending on policy."""
     dep_name = f"{TEST_PLUGIN_PREFIX}missing_dep"
-    main_plugin = _make_test_plugin("needs_missing", depends_on=(dep_name,))
+    main_plugin = make_graph_plugin(
+        "needs_missing",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (dep_name,)},
+    )
     fresh_registry.register(main_plugin)
 
     plan_opts = PlanningOptions(
@@ -410,8 +387,16 @@ def test_missing_dependency_policy_controls_skip(
 
 def test_resolve_dependencies_by_capability(fresh_registry: GraphPluginRegistry) -> None:
     """Dependencies resolved via requires capability."""
-    provider = _make_test_plugin("provider", provides=("test_data",))
-    consumer = _make_test_plugin("consumer", requires=("test_data",))
+    provider = make_graph_plugin(
+        "provider",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"provides": ("test_data",)},
+    )
+    consumer = make_graph_plugin(
+        "consumer",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"requires": ("test_data",)},
+    )
 
     fresh_registry.register(provider)
     fresh_registry.register(consumer)
@@ -428,7 +413,11 @@ def test_resolve_dependencies_missing_capability_raises(
     fresh_registry: GraphPluginRegistry,
 ) -> None:
     """Missing required capability raises ValueError."""
-    consumer = _make_test_plugin("cap_consumer", requires=("missing_cap",))
+    consumer = make_graph_plugin(
+        "cap_consumer",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"requires": ("missing_cap",)},
+    )
     fresh_registry.register(consumer)
 
     with pytest.raises(ValueError, match=r"requires capability.*no provider"):
@@ -439,9 +428,21 @@ def test_resolve_dependencies_ambiguous_capability_raises(
     fresh_registry: GraphPluginRegistry,
 ) -> None:
     """Ambiguous capability provider raises ValueError."""
-    provider1 = _make_test_plugin("provider1", provides=("shared_cap",))
-    provider2 = _make_test_plugin("provider2", provides=("shared_cap",))
-    consumer = _make_test_plugin("ambig_consumer", requires=("shared_cap",))
+    provider1 = make_graph_plugin(
+        "provider1",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"provides": ("shared_cap",)},
+    )
+    provider2 = make_graph_plugin(
+        "provider2",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"provides": ("shared_cap",)},
+    )
+    consumer = make_graph_plugin(
+        "ambig_consumer",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"requires": ("shared_cap",)},
+    )
 
     fresh_registry.register(provider1)
     fresh_registry.register(provider2)
@@ -466,9 +467,17 @@ def test_topological_sort_orders_dependencies(fresh_registry: GraphPluginRegistr
     p2_name = f"{TEST_PLUGIN_PREFIX}sort2"
     p3_name = f"{TEST_PLUGIN_PREFIX}sort3"
 
-    p1 = _make_test_plugin("sort1")  # No deps
-    p2 = _make_test_plugin("sort2", depends_on=(p1_name,))  # Depends on p1
-    p3 = _make_test_plugin("sort3", depends_on=(p2_name,))  # Depends on p2
+    p1 = make_graph_plugin("sort1", prefix=TEST_PLUGIN_PREFIX)  # No deps
+    p2 = make_graph_plugin(
+        "sort2",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p1_name,)},
+    )  # Depends on p1
+    p3 = make_graph_plugin(
+        "sort3",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p2_name,)},
+    )  # Depends on p2
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -487,8 +496,16 @@ def test_topological_sort_cycle_detection(fresh_registry: GraphPluginRegistry) -
     p2_name = f"{TEST_PLUGIN_PREFIX}cycle2"
 
     # Create a cycle: p1 -> p2 -> p1
-    p1 = _make_test_plugin("cycle1", depends_on=(p2_name,))
-    p2 = _make_test_plugin("cycle2", depends_on=(p1_name,))
+    p1 = make_graph_plugin(
+        "cycle1",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p2_name,)},
+    )
+    p2 = make_graph_plugin(
+        "cycle2",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p1_name,)},
+    )
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -502,7 +519,7 @@ def test_topological_sort_cycle_detection(fresh_registry: GraphPluginRegistry) -
 
 def test_plan_includes_plan_id(fresh_registry: GraphPluginRegistry) -> None:
     """Plan includes a unique plan ID."""
-    plugin = _make_test_plugin("plan_id")
+    plugin = make_graph_plugin("plan_id", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     plan = fresh_registry.plan(plugin_names=[plugin.metadata.name])
@@ -516,8 +533,12 @@ def test_plan_includes_dep_graph(fresh_registry: GraphPluginRegistry) -> None:
     p1_name = f"{TEST_PLUGIN_PREFIX}dep1"
     p2_name = f"{TEST_PLUGIN_PREFIX}dep2"
 
-    p1 = _make_test_plugin("dep1")
-    p2 = _make_test_plugin("dep2", depends_on=(p1_name,))
+    p1 = make_graph_plugin("dep1", prefix=TEST_PLUGIN_PREFIX)
+    p2 = make_graph_plugin(
+        "dep2",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p1_name,)},
+    )
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -530,7 +551,7 @@ def test_plan_includes_dep_graph(fresh_registry: GraphPluginRegistry) -> None:
 
 def test_plan_tracks_skipped_plugins(fresh_registry: GraphPluginRegistry) -> None:
     """Plan tracks skipped plugins with reasons."""
-    plugin = _make_test_plugin("skipped_disabled")
+    plugin = make_graph_plugin("skipped_disabled", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     plan = fresh_registry.plan(
@@ -560,7 +581,7 @@ def test_plan_skips_unknown_plugins(fresh_registry: GraphPluginRegistry) -> None
 
 def test_plan_duplicate_plugin_raises(fresh_registry: GraphPluginRegistry) -> None:
     """Plan raises for duplicate plugin names."""
-    plugin = _make_test_plugin("dup_plan")
+    plugin = make_graph_plugin("dup_plan", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     with pytest.raises(ValueError, match="listed more than once"):
@@ -569,8 +590,8 @@ def test_plan_duplicate_plugin_raises(fresh_registry: GraphPluginRegistry) -> No
 
 def test_plan_with_enabled_overrides_defaults(fresh_registry: GraphPluginRegistry) -> None:
     """Plan with enabled parameter overrides defaults."""
-    p1 = _make_test_plugin("enabled1")
-    p2 = _make_test_plugin("enabled2")
+    p1 = make_graph_plugin("enabled1", prefix=TEST_PLUGIN_PREFIX)
+    p2 = make_graph_plugin("enabled2", prefix=TEST_PLUGIN_PREFIX)
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -598,7 +619,7 @@ def test_get_graph_registry_returns_singleton() -> None:
 
 def test_register_graph_plugin_uses_global() -> None:
     """register_graph_plugin adds to global registry."""
-    plugin = _make_test_plugin("global_register")
+    plugin = make_graph_plugin("global_register", prefix=TEST_PLUGIN_PREFIX)
 
     register_graph_plugin(plugin)
 
@@ -607,7 +628,7 @@ def test_register_graph_plugin_uses_global() -> None:
 
 def test_unregister_graph_plugin_uses_global() -> None:
     """unregister_graph_plugin removes from global registry."""
-    plugin = _make_test_plugin("global_unregister")
+    plugin = make_graph_plugin("global_unregister", prefix=TEST_PLUGIN_PREFIX)
     register_graph_plugin(plugin)
 
     unregister_graph_plugin(plugin.metadata.name)
@@ -620,7 +641,11 @@ def test_unregister_graph_plugin_uses_global() -> None:
 
 def test_metadata_for_returns_metadata(fresh_registry: GraphPluginRegistry) -> None:
     """metadata_for returns plugin metadata."""
-    plugin = _make_test_plugin("metadata", kind="metric", stage="core", provides=("test_cap",))
+    plugin = make_graph_plugin(
+        "metadata",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"kind": "metric", "stage": "core", "provides": ("test_cap",)},
+    )
     fresh_registry.register(plugin)
 
     meta = fresh_registry.metadata_for(plugin.metadata.name)
@@ -634,8 +659,12 @@ def test_metadata_for_returns_metadata(fresh_registry: GraphPluginRegistry) -> N
 def test_dependency_graph_returns_deps(fresh_registry: GraphPluginRegistry) -> None:
     """dependency_graph returns mapping of dependencies."""
     p1_name = f"{TEST_PLUGIN_PREFIX}dep_graph1"
-    p1 = _make_test_plugin("dep_graph1")
-    p2 = _make_test_plugin("dep_graph2", depends_on=(p1_name,))
+    p1 = make_graph_plugin("dep_graph1", prefix=TEST_PLUGIN_PREFIX)
+    p2 = make_graph_plugin(
+        "dep_graph2",
+        prefix=TEST_PLUGIN_PREFIX,
+        metadata={"depends_on": (p1_name,)},
+    )
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -652,7 +681,7 @@ def test_dependency_graph_returns_deps(fresh_registry: GraphPluginRegistry) -> N
 
 def test_graph_plugin_plan_plugins_tuple(fresh_registry: GraphPluginRegistry) -> None:
     """GraphPluginPlan.plugins is a tuple."""
-    plugin = _make_test_plugin("plan_tuple")
+    plugin = make_graph_plugin("plan_tuple", prefix=TEST_PLUGIN_PREFIX)
     fresh_registry.register(plugin)
 
     plan = fresh_registry.plan(plugin_names=[plugin.metadata.name])

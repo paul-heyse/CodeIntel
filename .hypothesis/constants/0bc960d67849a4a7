@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/rendering/service.py
+# hypothesis_version: 6.148.7
+
+[500, ' | ', '#', '-', 'CODEINTEL_THEME', 'ERROR:', 'INFO:', 'OK:', 'RenderingService', 'T', 'UnifiedRenderer', 'WARNING:', '[error]x[/error]', '[info]i[/info]', '[success]v[/success]', '[warning]![/warning]', '__dict__', 'bold', 'bold blue', 'bold green', 'bold magenta', 'bold red', 'current', 'cyan', 'data', 'dim', 'error', 'heading', 'info', 'key', 'message', 'metadata', 'muted', 'progress', 'status', 'success', 'to_dict', 'total', 'type', 'value', 'warning', 'white', 'yellow']

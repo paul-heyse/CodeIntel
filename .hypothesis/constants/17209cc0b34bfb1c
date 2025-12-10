@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/operations/subsystem_operations.py
+# hypothesis_version: 6.148.7
+
+['List subsystems', 'SUBSYSTEM_LIST_SPEC', 'SUBSYSTEM_SHOW_SPEC', 'subsystem.list', 'subsystem.show']

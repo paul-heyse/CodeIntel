@@ -5,22 +5,18 @@ This module directly tests the _ProfileQueryDelegates to achieve higher coverage
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
-DEFAULT_LIMIT: Final = 10
-MAX_ROWS: Final = 100
 
 
 def _expect(*, condition: bool, message: str) -> None:
@@ -30,26 +26,10 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Build a LocalQueryService for direct testing.
-
-    Returns
-    -------
-    LocalQueryService
-        Configured local query service.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
+    """Return the shared LocalQueryService from the provisioned service app."""
+    return provisioned_service_app.service
 
 
 # =============================================================================
@@ -58,12 +38,12 @@ def _build_local_service(
 
 
 def test_get_function_profile_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_profile returns domain FunctionProfileResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT function_goid_h128 FROM analytics.function_profile LIMIT 1"
     ).fetchone()
 
@@ -80,10 +60,10 @@ def test_get_function_profile_returns_domain_result(
 
 
 def test_get_function_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_profile handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     # Use a nonexistent goid_h128 - should raise an error
     nonexistent_goid = 99999999
@@ -102,12 +82,12 @@ def test_get_function_profile_not_found(
 
 
 def test_get_file_profile_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_profile returns domain FileProfileResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
     ).fetchone()
 
@@ -124,10 +104,10 @@ def test_get_file_profile_returns_domain_result(
 
 
 def test_get_file_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_file_profile handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     profile = service.get_file_profile(rel_path="nonexistent/path/file.py")
 
@@ -142,12 +122,12 @@ def test_get_file_profile_not_found(
 
 
 def test_get_module_profile_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_profile returns domain ModuleProfileResult."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT module FROM analytics.module_profile LIMIT 1"
     ).fetchone()
 
@@ -164,10 +144,10 @@ def test_get_module_profile_returns_domain_result(
 
 
 def test_get_module_profile_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_profile handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     # Use nonexistent module - should raise McpError
     try:
@@ -184,12 +164,12 @@ def test_get_module_profile_not_found(
 
 
 def test_get_function_architecture_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_architecture returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT function_goid_h128 FROM analytics.graph_metrics_functions LIMIT 1"
     ).fetchone()
 
@@ -206,10 +186,10 @@ def test_get_function_architecture_returns_domain_result(
 
 
 def test_get_function_architecture_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_function_architecture handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     # Use nonexistent goid_h128 - should raise McpError
     nonexistent_goid = 99999999
@@ -227,12 +207,12 @@ def test_get_function_architecture_not_found(
 
 
 def test_get_module_architecture_returns_domain_result(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_architecture returns domain result."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_repo.gateway.con.execute(
+    result = provisioned_service_app.gateway.con.execute(
         "SELECT module FROM analytics.graph_metrics_modules LIMIT 1"
     ).fetchone()
 
@@ -249,10 +229,10 @@ def test_get_module_architecture_returns_domain_result(
 
 
 def test_get_module_architecture_not_found(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_service_app: ServiceApp,
 ) -> None:
     """Verify get_module_architecture handles not found case."""
-    service = _build_local_service(provisioned_repo)
+    service = _build_local_service(provisioned_service_app)
 
     # Use nonexistent module - should raise McpError
     try:
