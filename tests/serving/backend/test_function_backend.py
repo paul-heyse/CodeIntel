@@ -15,6 +15,8 @@ from codeintel.serving.backend.core import GraphEngineProvider
 from codeintel.serving.backend.function_backend import FunctionQueryLayer
 from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.backend_components import build_backend_components
 
 # Test constants
 EDGE_COUNT_TWO: Final = 2
@@ -24,9 +26,22 @@ CALLEE_GOID: Final = 2
 
 
 def _expect(*, condition: bool, message: str) -> None:
-    """Fail the test when a condition is not met."""
-    if not condition:
-        pytest.fail(message)
+    """Delegate assertions through shared helpers."""
+    expect_true(condition, message=message)
+
+
+def _build_components(
+    gateway: StorageGateway,
+    *,
+    limits: BackendLimits | None = None,
+    graph_engine: GraphEngine | None = None,
+) -> tuple[BackendContext, DuckDBRepositories, GraphEngineProvider]:
+    components = build_backend_components(
+        gateway,
+        limits=limits,
+        graph_engine=graph_engine,
+    )
+    return components.context, components.repositories, components.provider
 
 
 @dataclass
@@ -42,62 +57,36 @@ class _FakeGraphEngine:
         return self.graph
 
 
-def _build_components(
-    gateway: StorageGateway,
-    *,
-    limits: BackendLimits | None = None,
-    graph_engine: GraphEngine | None = None,
-) -> tuple[BackendContext, DuckDBRepositories, GraphEngineProvider]:
-    repo = gateway.config.repo or "demo/repo"
-    commit = gateway.config.commit or "deadbeef"
-    context = BackendContext(
-        gateway=gateway,
-        repo=repo,
-        commit=commit,
-        limits=limits or BackendLimits(),
-        graph_engine=graph_engine,
-    )
-    repositories = DuckDBRepositories(gateway, context.repo, context.commit)
-    engine_provider = GraphEngineProvider(context=context, graph_engine=graph_engine)
-    return context, repositories, engine_provider
-
-
 def test_get_function_summary_requires_identifier(architecture_gateway: StorageGateway) -> None:
     """Verify missing identifiers raise an invalid-argument problem."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.get_function_summary()
 
-    _expect(
-        condition=excinfo.value.detail.code == "invalid-argument",
-        message="Missing identifiers should raise invalid-argument",
-    )
+    expect_equal(excinfo.value.detail.code, "invalid-argument")
 
 
 def test_get_function_summary_found(architecture_gateway: StorageGateway) -> None:
     """Return function summary for seeded GOID."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_function_summary(goid_h128=1)
 
-    _expect(condition=result.found is True, message="Function should be found")
+    expect_true(result.found is True)
     if result.summary is None:
         pytest.fail("Function summary should not be None for seeded function")
-    _expect(
-        condition=result.summary.get("function_goid_h128") == 1,
-        message="Seeded GOID should be returned in summary",
-    )
+    expect_equal(result.summary.get("function_goid_h128"), 1)
 
 
 def test_get_callgraph_neighborhood_truncates(
@@ -107,20 +96,21 @@ def test_get_callgraph_neighborhood_truncates(
     graph = nx.DiGraph()
     graph.add_edge(1, 1)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
-        architecture_gateway, graph_engine=graph_engine
+    components = build_backend_components(
+        architecture_gateway,
+        graph_engine=graph_engine,
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     neighborhood = backend.get_callgraph_neighborhood(goid_h128=1, max_nodes=0)
 
-    _expect(condition=neighborhood.meta.truncated is True, message="Neighborhood should truncate")
-    _expect(condition=neighborhood.nodes == [], message="No nodes should remain after truncation")
-    _expect(condition=neighborhood.edges == [], message="No edges should remain after truncation")
+    expect_true(neighborhood.meta.truncated is True)
+    expect_true(neighborhood.nodes == [])
+    expect_true(neighborhood.edges == [])
 
 
 # -----------------------------------------------------------------------------
@@ -132,41 +122,35 @@ def test_get_function_summary_not_found_returns_message(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Return not_found message when function doesn't exist."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Use a GOID that doesn't exist
     nonexistent_goid = 999999
     result = backend.get_function_summary(goid_h128=nonexistent_goid)
 
-    _expect(condition=result.found is False, message="Should not find nonexistent function")
-    _expect(
-        condition=any(msg.code == "not_found" for msg in result.meta.messages),
-        message="Should have not_found message",
-    )
+    expect_true(result.found is False)
+    expect_true(any(msg.code == "not_found" for msg in result.meta.messages))
 
 
 def test_get_function_summary_by_urn(architecture_gateway: StorageGateway) -> None:
     """Resolve function by URN."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # This may or may not find a function depending on fixture state
     result = backend.get_function_summary(urn="test:urn")
 
     # Should return a result either way (found or not_found)
-    _expect(
-        condition=result is not None,
-        message="Should return a result object",
-    )
+    expect_true(result is not None)
 
 
 # -----------------------------------------------------------------------------

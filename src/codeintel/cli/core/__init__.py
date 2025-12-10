@@ -10,7 +10,7 @@ This package provides fundamental abstractions used across the CLI:
 
 from __future__ import annotations
 
-from codeintel.cli.core.options import CommonOptions
+from codeintel.cli.options.common import CommonOptions
 from codeintel.cli.core.output import (
     OutputEnvelope,
     iter_stdin_records,

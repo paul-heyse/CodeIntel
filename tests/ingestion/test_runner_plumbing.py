@@ -20,12 +20,12 @@ from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from tests._helpers import build_repo_tree
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_ingestion_adapters,
     build_target_context_for_plugin,
 )
+from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -87,16 +87,7 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
         ignore_dirs=("ignore",),
     )
 
-    # Use Step-based API
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-
-    step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
-    )
+    step, _, _ = _create_scan_step(gateway, repo_root)
     step.execute(repo="r", commit="c", repo_root=repo_root, profile=profile)
 
     rows = gateway.con.table("core.modules").select("path").fetchall()

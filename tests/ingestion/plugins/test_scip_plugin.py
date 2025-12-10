@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
@@ -20,16 +20,12 @@ from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_scip_documents
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeProviders
-from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
-    seed_modules_and_repo_map,
     write_scip_index,
 )
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
 
 
 def test_paths_to_modules_creates_records(tmp_path: Path) -> None:
@@ -43,47 +39,16 @@ def test_paths_to_modules_creates_records(tmp_path: Path) -> None:
     expect_equal(modules[1].module_name, "pkg.util.b")
 
 
-def test_get_module_paths_uses_resources(tmp_path: Path) -> None:
-    """resources.modules should be returned directly."""
-    plugin = ScipIngestPlugin()
-    overrides = TargetResourceOverrides(modules=("pkg/a.py",))
-    ctx = build_target_context_for_plugin(
-        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
-    )
-    ctx.gateway.con.execute("DELETE FROM core.modules")
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/a.py"])
-
-
-def test_get_module_paths_reads_database(tmp_path: Path) -> None:
-    """Database rows are used when resources are empty."""
-    plugin = ScipIngestPlugin()
-    ctx = build_target_context_for_plugin(plugin, tmp_path)
-    seed_modules_and_repo_map(ctx, ["pkg/a.py"])
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/a.py"])
-
-
-def test_get_module_paths_handles_gateway_error(tmp_path: Path) -> None:
-    """Gateway failures should not raise."""
-    plugin = ScipIngestPlugin()
-    failing_gateway = FailingGateway("db down")
-    ctx = build_target_context_for_plugin(
-        plugin,
+@pytest.mark.parametrize("scenario", ["resources", "db_fallback", "gateway_failure"])
+def test_module_path_resolution_scenarios(tmp_path: Path, scenario: str) -> None:
+    """Shared module path resolution coverage for ScipIngestPlugin."""
+    run_module_path_resolution_scenarios(
+        lambda _capture: ScipIngestPlugin(),
+        get_module_paths,
         tmp_path,
-        config=TargetContextConfig(
-            gateway=cast("StorageGateway", failing_gateway),
-            resources=TargetResourceOverrides(modules=()),
-        ),
+        resources_path="pkg/a.py",
+        scenario=scenario,
     )
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, [])
 
 
 @pytest.mark.anyio

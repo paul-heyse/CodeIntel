@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
@@ -16,6 +16,8 @@ from tests._helpers.assertions import expect_equal, expect_is_instance, expect_t
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+
+HttpAppFactory = Callable[..., FastAPI]
 
 
 # =============================================================================
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
 
 def test_datasets_list_endpoint(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets endpoint returns list of datasets.
 
@@ -53,7 +55,7 @@ def test_datasets_list_endpoint(
 
 def test_datasets_specs_endpoint(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets/specs endpoint returns dataset specs.
 
@@ -86,7 +88,7 @@ def test_datasets_specs_endpoint(
 
 def test_dataset_rows_not_found(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets/{name} returns 400 for unknown dataset.
 
@@ -114,7 +116,7 @@ def test_dataset_rows_not_found(
 
 def test_dataset_schema_not_found(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets/{name}/schema returns 400 for unknown dataset.
 
@@ -145,7 +147,7 @@ def test_dataset_schema_not_found(
 
 def test_dataset_rows_with_limit(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets/{name} accepts limit parameter.
 
@@ -186,7 +188,7 @@ def test_dataset_rows_with_limit(
 
 def test_dataset_rows_with_offset(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /datasets/{name} accepts offset parameter.
 

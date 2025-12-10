@@ -19,25 +19,13 @@ from tests._helpers.gateway import build_duckdb_query_service
 
 @pytest.fixture
 def make_http_app() -> Callable[..., FastAPI]:
-    """Build a FastAPI app wired to a DuckDB backend for HTTP route tests.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing DuckDB access.
-    snapshot
-        Tuple of (repo, commit) used to construct ServingConfig.
-    limits
-        Optional pagination limits for the backend.
-    config_overrides
-        Additional ServingConfig fields to override for the app.
-    auto_pipeline
-        Whether to enable auto-pipeline routing on the app.
+    """Build a FastAPI app factory wired to a DuckDB backend for HTTP route tests.
 
     Returns
     -------
     Callable[..., FastAPI]
-        Factory that constructs configured FastAPI applications.
+        Factory that constructs configured FastAPI applications given gateway, snapshot,
+        optional limits, config overrides, and auto-pipeline settings.
     """
 
     def _build(

@@ -16,19 +16,17 @@ from codeintel.ingestion.plugins.coverage_plugin import (
     paths_to_modules,
     resolve_coverage_file,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import build_repo_tree
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.fake_providers import FakeCoverageCollector, FakeProviders
-from tests._helpers.fakes.recording_gateways import FailingGateway
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
-    seed_modules_and_repo_map,
     write_coverage_file,
 )
+from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
 
 
 def test_paths_to_modules_builds_metadata(tmp_path: Path) -> None:
@@ -44,47 +42,16 @@ def test_paths_to_modules_builds_metadata(tmp_path: Path) -> None:
     expect_equal(modules[1].module_name, "pkg.util.helpers")
 
 
-def test_get_module_paths_prefers_resources(tmp_path: Path) -> None:
-    """When modules are provided in resources, DB is not consulted."""
-    plugin = CoverageIngestPlugin()
-    overrides = TargetResourceOverrides(modules=("pkg/mod.py",))
-    ctx = build_target_context_for_plugin(
-        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
-    )
-    ctx.gateway.con.execute("DELETE FROM core.modules")
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/mod.py"])
-
-
-def test_get_module_paths_reads_database_when_missing(tmp_path: Path) -> None:
-    """DB rows are used when resources.modules is empty."""
-    plugin = CoverageIngestPlugin()
-    ctx = build_target_context_for_plugin(plugin, tmp_path)
-    seed_modules_and_repo_map(ctx, ["pkg/mod.py"])
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, ["pkg/mod.py"])
-
-
-def test_get_module_paths_handles_gateway_errors(tmp_path: Path) -> None:
-    """Gateway errors should result in an empty module list."""
-    plugin = CoverageIngestPlugin()
-    failing_gateway = FailingGateway("db down")
-    ctx = build_target_context_for_plugin(
-        plugin,
+@pytest.mark.parametrize("scenario", ["resources", "db_fallback", "gateway_failure"])
+def test_module_path_resolution_scenarios(tmp_path: Path, scenario: str) -> None:
+    """Shared coverage of module path resolution for CoverageIngestPlugin."""
+    run_module_path_resolution_scenarios(
+        lambda _capture: CoverageIngestPlugin(),
+        get_module_paths,
         tmp_path,
-        config=TargetContextConfig(
-            gateway=cast("StorageGateway", failing_gateway),
-            resources=TargetResourceOverrides(modules=()),
-        ),
+        resources_path="pkg/mod.py",
+        scenario=scenario,
     )
-
-    paths = get_module_paths(ctx)
-
-    expect_equal(paths, [])
 
 
 @pytest.mark.anyio

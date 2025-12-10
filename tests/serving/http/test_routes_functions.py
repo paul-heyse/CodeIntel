@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
@@ -18,6 +18,8 @@ from tests._helpers.assertions import expect_equal, expect_false, expect_in, exp
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
 
+HttpAppFactory = Callable[..., FastAPI]
+
 
 # =============================================================================
 # High Risk Functions Tests
@@ -26,7 +28,7 @@ if TYPE_CHECKING:
 
 def test_high_risk_functions_endpoint(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /functions/high-risk endpoint returns results.
 
@@ -54,7 +56,7 @@ def test_high_risk_functions_endpoint(
 
 def test_high_risk_functions_with_min_risk(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /functions/high-risk accepts min_risk parameter.
 
@@ -80,7 +82,7 @@ def test_high_risk_functions_with_min_risk(
 
 def test_high_risk_functions_with_limit(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /functions/high-risk accepts limit parameter.
 
@@ -106,7 +108,7 @@ def test_high_risk_functions_with_limit(
 
 def test_high_risk_functions_with_tested_only(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /functions/high-risk accepts tested_only parameter.
 
@@ -137,7 +139,7 @@ def test_high_risk_functions_with_tested_only(
 
 def test_function_summary_missing_params(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /function/summary returns error when no identifier provided.
 
@@ -181,7 +183,7 @@ def test_router_options_with_auto_pipeline() -> None:
 
 def test_app_with_auto_pipeline_options(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify create_app works with auto_pipeline option.
 

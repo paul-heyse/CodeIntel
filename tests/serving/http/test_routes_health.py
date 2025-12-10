@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
@@ -21,6 +21,8 @@ from tests._helpers.assertions import (
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+
+HttpAppFactory = Callable[..., FastAPI]
 
 
 # =============================================================================
@@ -48,7 +50,7 @@ def test_build_health_router_returns_router() -> None:
 
 def test_health_endpoint_returns_status_ok(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health returns status: ok with repo and commit info.
 
@@ -80,7 +82,7 @@ def test_health_endpoint_returns_status_ok(
 
 def test_health_endpoint_includes_limits(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health includes limits when service has them.
 
@@ -112,7 +114,7 @@ def test_health_endpoint_includes_limits(
 
 def test_health_endpoint_read_only_false(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health reflects read_only=False when configured.
 
@@ -141,7 +143,7 @@ def test_health_endpoint_read_only_false(
 
 def test_health_endpoint_database_connectivity_verified(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health actually probes DuckDB connectivity.
 

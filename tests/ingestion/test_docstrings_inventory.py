@@ -53,7 +53,13 @@ def _create_scan_steps(
     repo_root: Path,
     tmp_path: Path,
 ) -> tuple[RepoScanStep, DocstringsExtractStep]:
-    """Create scan and docstring steps from gateway and repo root."""
+    """Create scan and docstring steps from gateway and repo root.
+
+    Returns
+    -------
+    tuple[RepoScanStep, DocstringsExtractStep]
+        Configured scan and docstring ingestion steps.
+    """
     ctx = build_target_context_for_plugin(
         RepoScanPlugin(),
         tmp_path,

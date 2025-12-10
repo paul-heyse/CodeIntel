@@ -6,8 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion import DocstringsExtractStep, RepoScanStep
+from codeintel.ingestion import (
+    DocstringsExtractStep,
+    DuckDBStorageAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
+)
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import (
@@ -22,7 +28,6 @@ from tests._helpers.ingestion import (
     build_ingestion_adapters,
     build_target_context_for_plugin,
 )
-from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 
 
 def _module(rel_path: str) -> ModuleRecord:

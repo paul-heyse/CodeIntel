@@ -16,6 +16,8 @@ from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 
+HttpAppFactory = Callable[..., FastAPI]
+
 # =============================================================================
 # Constants
 # =============================================================================
@@ -26,11 +28,29 @@ MAX_ROWS = 100
 
 def _build_architecture_app(
     gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
     limits: BackendLimits | None = None,
+    *,
     auto_pipeline: bool = False,
 ) -> FastAPI:
-    """Construct an app for architecture-backed subsystem routes."""
+    """Construct an app for architecture-backed subsystem routes.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway with architecture data.
+    make_http_app
+        Factory fixture that builds FastAPI apps for HTTP route tests.
+    limits
+        Optional pagination limits for the backend.
+    auto_pipeline
+        Whether to enable auto-pipeline on the constructed app.
+
+    Returns
+    -------
+    FastAPI
+        Configured application for subsystem route tests.
+    """
     effective_limits = limits or BackendLimits(
         default_limit=DEFAULT_LIMIT,
         max_rows_per_call=MAX_ROWS,
@@ -50,7 +70,7 @@ def _build_architecture_app(
 
 def test_list_subsystems_endpoint(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems endpoint returns results.
 
@@ -72,7 +92,7 @@ def test_list_subsystems_endpoint(
 
 def test_list_subsystems_with_limit(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/subsystems accepts limit parameter.
 
@@ -94,7 +114,7 @@ def test_list_subsystems_with_limit(
 
 def test_list_subsystems_with_role_filter(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/subsystems accepts role filter.
 
@@ -116,7 +136,7 @@ def test_list_subsystems_with_role_filter(
 
 def test_list_subsystems_with_query_filter(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/subsystems accepts query filter.
 
@@ -143,7 +163,7 @@ def test_list_subsystems_with_query_filter(
 
 def test_module_subsystems_endpoint(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/module endpoint returns results.
 
@@ -172,7 +192,7 @@ def test_module_subsystems_endpoint(
 
 def test_module_subsystems_missing_module(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/module-subsystems returns error when module missing.
 
@@ -198,7 +218,7 @@ def test_module_subsystems_missing_module(
 
 def test_subsystem_detail_endpoint(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/{subsystem_id} endpoint returns results.
 
@@ -229,7 +249,7 @@ def test_subsystem_detail_endpoint(
 
 def test_subsystem_detail_with_module_limit(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/subsystem accepts module_limit.
 
@@ -259,7 +279,7 @@ def test_subsystem_detail_with_module_limit(
 
 def test_subsystem_detail_nonexistent(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /architecture/subsystem handles nonexistent subsystem.
 
@@ -285,7 +305,7 @@ def test_subsystem_detail_nonexistent(
 
 def test_subsystem_profiles_endpoint(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/profiles endpoint.
 
@@ -315,7 +335,7 @@ def test_subsystem_profiles_endpoint(
 
 def test_subsystem_profiles_with_limit(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/profiles accepts limit.
 
@@ -350,7 +370,7 @@ def test_subsystem_profiles_with_limit(
 
 def test_subsystem_coverage_endpoint(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/coverage endpoint.
 
@@ -380,7 +400,7 @@ def test_subsystem_coverage_endpoint(
 
 def test_subsystem_coverage_with_limit(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/coverage accepts limit.
 
@@ -416,7 +436,7 @@ def test_subsystem_coverage_with_limit(
 @pytest.mark.skip(reason="auto_pipeline mode not fully configured for subsystem routes")
 def test_router_with_auto_pipeline(
     architecture_gateway: StorageGateway,
-    make_http_app: Callable[..., object],
+    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify subsystem routes work with auto_pipeline enabled.
 
