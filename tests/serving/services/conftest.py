@@ -25,6 +25,8 @@ from tests._helpers.serving_contexts import (
 from tests._helpers.serving_harnesses import RecordingObservability
 from tests.serving.mcp.conftest import (
     McpBackendComponents,
+)
+from tests.serving.mcp.conftest import (
     mcp_backend_factory as _mcp_backend_factory,
 )
 

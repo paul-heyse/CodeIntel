@@ -131,17 +131,14 @@ def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, tabl
     expect_is_none(result)
 
 
-def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_returns_correct_count(ingestion_ctx_bundle) -> None:
     """safe_count should return accurate row counts."""
-    _seed_modules(
-        fresh_gateway,
-        tmp_path,
-        repo="test",
-        commit="abc",
-        paths=["a.py", "b.py"],
+    seed_ingestion_tables(
+        ingestion_ctx_bundle.ctx,
+        module_paths=["a.py", "b.py"],
     )
 
-    result = safe_count(fresh_gateway, "core.modules")
+    result = safe_count(ingestion_ctx_bundle.gateway, "core.modules")
 
     expect_equal(result, EXPECTED_COUNT_2)
 
@@ -152,27 +149,30 @@ def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway, tmp_pat
 
 
 def test_safe_count_with_scope_filters_by_snapshot(
-    fresh_gateway: StorageGateway,
+    ingestion_ctx_bundle,
     tmp_path: Path,
 ) -> None:
     """safe_count_with_scope should count only matching repo/commit."""
-    _seed_modules(
-        fresh_gateway,
-        tmp_path,
-        repo="repo1",
-        commit="commit1",
-        paths=["a.py", "b.py"],
+    bundle = ingestion_ctx_bundle
+    target_repo = bundle.ctx.snapshot.repo
+    target_commit = bundle.ctx.snapshot.commit
+    seed_ingestion_tables(
+        bundle.ctx,
+        module_paths=["a.py", "b.py"],
     )
-    _seed_modules(
-        fresh_gateway,
+    other_ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
         tmp_path,
-        repo="repo2",
-        commit="commit2",
-        paths=["c.py"],
+        config=TargetContextConfig(
+            repo_root=bundle.repo_root,
+            gateway=bundle.gateway,
+            snapshot=("other/repo", "other-commit"),
+        ),
     )
+    seed_ingestion_tables(other_ctx, module_paths=["c.py"])
 
-    snapshot = make_snapshot(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
-    result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
+    snapshot = make_snapshot(repo=target_repo, commit=target_commit, repo_root=bundle.repo_root)
+    result = safe_count_with_scope(bundle.gateway, "core.modules", snapshot)
 
     expect_equal(result, EXPECTED_COUNT_2)
 
@@ -296,17 +296,14 @@ def test_safe_get_columns_nonexistent_or_invalid(
 # =============================================================================
 
 
-def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_nulls_no_nulls(ingestion_ctx_bundle) -> None:
     """safe_count_nulls should return 0 when no NULL values exist."""
-    _seed_modules(
-        fresh_gateway,
-        tmp_path,
-        repo="test",
-        commit="abc",
-        paths=["a.py", "b.py"],
+    seed_ingestion_tables(
+        ingestion_ctx_bundle.ctx,
+        module_paths=["a.py", "b.py"],
     )
 
-    result = safe_count_nulls(fresh_gateway, "core.modules", "module")
+    result = safe_count_nulls(ingestion_ctx_bundle.gateway, "core.modules", "module")
 
     expect_equal(result, 0)
 
@@ -706,24 +703,3 @@ def test_safe_macro_exists_builtin_function(fresh_gateway: StorageGateway) -> No
     result = safe_macro_exists(fresh_gateway, "count")
 
     expect_true(result)
-
-
-def _seed_modules(
-    gateway: StorageGateway,
-    tmp_path: Path,
-    *,
-    repo: str,
-    commit: str,
-    paths: list[str],
-) -> None:
-    """Seed core.modules and repo_map via shared helpers."""
-    ctx = build_target_context_for_plugin(
-        RepoScanPlugin(),
-        tmp_path,
-        config=TargetContextConfig(
-            repo_root=tmp_path / f"{repo}-{commit}",
-            gateway=gateway,
-            snapshot=(repo, commit),
-        ),
-    )
-    seed_ingestion_tables(ctx, module_paths=paths)

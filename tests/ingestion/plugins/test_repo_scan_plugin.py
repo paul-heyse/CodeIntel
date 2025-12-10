@@ -12,7 +12,6 @@ from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_repo_target,
@@ -24,7 +23,9 @@ MODULE_COUNT_WITH_INIT = 3
 
 
 @pytest.mark.anyio
-async def test_execute_populates_modules_and_repo_map(tmp_path: Path) -> None:
+async def test_execute_populates_modules_and_repo_map(
+    tmp_path: Path, ingestion_gateway
+) -> None:
     """Repo scan should write modules, create change tracker, and populate repo_map."""
     repo_root = build_repo_tree(
         tmp_path / "repo",
@@ -46,7 +47,7 @@ async def test_execute_populates_modules_and_repo_map(tmp_path: Path) -> None:
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
-            gateway_factory=GatewayFactory().with_macros(),
+            gateway=ingestion_gateway,
         ),
         target=build_repo_target(plugin, tables),
     )
@@ -82,7 +83,7 @@ async def test_execute_populates_modules_and_repo_map(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_compute_row_counts_handles_missing_table(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway
 ) -> None:
     """Row count computation should return 0 for tables that are absent."""
     repo_root = build_repo_tree(
@@ -96,7 +97,7 @@ async def test_compute_row_counts_handles_missing_table(
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
-            gateway_factory=GatewayFactory().with_macros(),
+            gateway=ingestion_gateway,
         ),
         target=build_repo_target(
             plugin,
@@ -119,7 +120,7 @@ async def test_compute_row_counts_handles_missing_table(
 
 @pytest.mark.anyio
 async def test_row_counts_ignore_absent_tables_without_errors(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway
 ) -> None:
     """Missing tables should not raise and should return zero counts."""
     repo_root = build_repo_tree(
@@ -133,7 +134,7 @@ async def test_row_counts_ignore_absent_tables_without_errors(
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
-            gateway_factory=GatewayFactory().with_macros(),
+            gateway=ingestion_gateway,
         ),
         target=build_repo_target(
             plugin,

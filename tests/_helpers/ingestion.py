@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,6 +74,9 @@ __all__ = [
     "module_inventory_context",
     "module_paths_from_context",
     "module_records_for_paths",
+    "repo_variants",
+    "run_ingestion_plugin",
+    "run_ingestion_scenario",
     "seed_foreign_key_tables",
     "seed_ingestion_tables",
     "seed_inventory_from_paths",
@@ -199,6 +202,46 @@ def build_target_context_for_plugin(
     return builder.build_target_context(target=effective_target, resources=resource_overrides)
 
 
+async def run_ingestion_plugin(
+    plugin: TargetPlugin,
+    tmp_path: Path,
+    *,
+    config: TargetContextConfig | None = None,
+) -> tuple[TargetExecutionContext, object]:
+    """Execute a plugin with a built target context and return both.
+
+    Returns
+    -------
+    tuple
+        The constructed target execution context and the plugin result.
+    """
+    ctx = build_target_context_for_plugin(plugin, tmp_path, config=config)
+    result = await plugin.execute(ctx)
+    return ctx, result
+
+
+async def run_ingestion_scenario(
+    plugin_factory: Callable[[], TargetPlugin],
+    tmp_path: Path,
+    *,
+    seed_fn: Callable[[TargetExecutionContext], None] | None = None,
+    config: TargetContextConfig | None = None,
+) -> tuple[TargetExecutionContext, object]:
+    """Build a plugin from a factory, optionally seed context, and execute.
+
+    Returns
+    -------
+    tuple
+        The constructed target execution context and the plugin result.
+    """
+    plugin = plugin_factory()
+    ctx = build_target_context_for_plugin(plugin, tmp_path, config=config)
+    if seed_fn is not None:
+        seed_fn(ctx)
+    result = await plugin.execute(ctx)
+    return ctx, result
+
+
 def build_ingestion_adapters(
     ctx: TargetExecutionContext,
 ) -> tuple[
@@ -232,6 +275,7 @@ def build_repo_with_variants(
     include_invalid: bool = False,
     include_macros: bool = False,
     include_symlinks: bool = False,
+    extra_structure: Mapping[str, str] | None = None,
 ) -> Path:
     """Construct a sample repository with optional invalid files, macros, and symlinks.
 
@@ -249,6 +293,8 @@ def build_repo_with_variants(
         structure["pkg/invalid.py"] = "this is not valid python"
     if include_macros:
         structure["macros/ingest.sql"] = "-- macros for ingestion\n"
+    if extra_structure:
+        structure.update(extra_structure)
     repo_root = build_repo_tree(tmp_path / "repo", structure)
     if include_symlinks:
         target = repo_root / "pkg" / "mod.py"
@@ -256,6 +302,37 @@ def build_repo_with_variants(
         if not symlink_path.exists():
             symlink_path.symlink_to(target)
     return repo_root
+
+
+def repo_variants(
+    base_structure: Mapping[str, str] | None = None,
+    *,
+    invalid_structure: Mapping[str, str] | None = None,
+    macro_structure: Mapping[str, str] | None = None,
+) -> dict[str, RepoVariantOptions]:
+    """Construct common repo variants with invalid files, macros, and symlinks.
+
+    Returns
+    -------
+    dict[str, RepoVariantOptions]
+        Variants keyed by label (base, with_invalid, with_macros, with_invalid_and_macros, with_symlink).
+    """
+    structure = base_structure or {
+        "pkg/__init__.py": "",
+        "pkg/mod.py": "def add(x: int, y: int) -> int:\n    return x + y\n",
+    }
+    invalid = invalid_structure or {"pkg/invalid.py": "this is not valid python"}
+    macros = macro_structure or {"macros/ingest.sql": "-- macros for ingestion\n"}
+
+    return {
+        "base": RepoVariantOptions(repo_structure=structure),
+        "with_invalid": RepoVariantOptions(repo_structure={**structure, **invalid}),
+        "with_macros": RepoVariantOptions(repo_structure={**structure, **macros}),
+        "with_invalid_and_macros": RepoVariantOptions(
+            repo_structure={**structure, **invalid, **macros}
+        ),
+        "with_symlink": RepoVariantOptions(repo_structure=structure, include_symlinks=True),
+    }
 
 
 def build_ingestion_context_bundle(
@@ -639,16 +716,17 @@ def module_records_for_paths(
     return paths_to_modules(paths, repo_root)
 
 
+@contextmanager
 def module_inventory_context(
     tmp_path: Path,
     *,
     repo_structure: Mapping[str, str] | None = None,
     gateway_factory: GatewayFactory | None = None,
-) -> ModuleInventoryContext:
+) -> Generator[ModuleInventoryContext]:
     """Create a ready-to-use module inventory context.
 
-    Returns
-    -------
+    Yields
+    ------
     ModuleInventoryContext
         Snapshot, gateway, profile, and adapters for inventory round-trips.
     """
@@ -664,7 +742,7 @@ def module_inventory_context(
     gateway = (gateway_factory or GatewayFactory().with_macros()).open()
     profile = default_code_profile(repo_root)
     scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
-    return ModuleInventoryContext(
+    ctx = ModuleInventoryContext(
         snapshot=snapshot,
         gateway=gateway,
         profile=profile,
@@ -672,6 +750,8 @@ def module_inventory_context(
         storage=storage,
         discovery=discovery,
     )
+    with closing_gateway(gateway):
+        yield ctx
 
 
 @contextmanager
@@ -769,17 +849,25 @@ def seed_ingestion_tables(
         tuple[str, str, Sequence[tuple[int, str]], Sequence[tuple[int, int | None]]]
     ]
     | None = None,
+    include_defaults: bool = True,
+    include_orphans: bool = False,
+    include_duplicates: bool = False,
 ) -> None:
     """Seed common ingestion tables in a single call."""
     if module_paths:
         seed_modules_and_repo_map(ctx, module_paths)
+
+    tables_seeded = False
     if numeric_tables:
+        tables_seeded = True
         for table, values in numeric_tables.items():
             seed_numeric_table(ctx.gateway, table, values)
     if varchar_tables:
+        tables_seeded = True
         for table, values in varchar_tables.items():
             seed_varchar_table(ctx.gateway, table, values)
     if foreign_keys:
+        tables_seeded = True
         for parent_table, child_table, parent_rows, child_rows in foreign_keys:
             seed_foreign_key_tables(
                 ctx.gateway,
@@ -788,6 +876,29 @@ def seed_ingestion_tables(
                 parent_rows=parent_rows,
                 child_rows=child_rows,
             )
+
+    if include_defaults and not tables_seeded:
+        seed_numeric_table(
+            ctx.gateway,
+            "core.test_numeric",
+            [10.5, 5.0, 20.0, 5.0] if include_duplicates else [10.5, 5.0, 20.0],
+        )
+        seed_varchar_table(
+            ctx.gateway,
+            "core.test_varchar",
+            ["alpha", "beta", "gamma", "beta"] if include_duplicates else ["alpha", "beta", "gamma"],
+        )
+        parent_rows = [("p1", "Parent 1"), ("p2", "Parent 2")]
+        child_rows: list[tuple[int | str, int | str | None]] = [("c1", "p1"), ("c2", "p1")]
+        if include_orphans:
+            child_rows.append(("c_orphan", "missing"))
+        seed_foreign_key_tables(
+            ctx.gateway,
+            parent_table="core.test_parent",
+            child_table="core.test_child",
+            parent_rows=parent_rows,
+            child_rows=cast("Sequence[tuple[int, int | None]]", child_rows),
+        )
 
 
 def seed_foreign_key_tables(

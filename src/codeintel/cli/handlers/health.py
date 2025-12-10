@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
 
 if TYPE_CHECKING:
@@ -308,7 +308,7 @@ def _check_registry() -> CheckResult:
     CheckResult
         Check result.
     """
-    registry = get_operation_registry()
+    registry = get_registry()
     count = len(registry)
 
     if count > 0:

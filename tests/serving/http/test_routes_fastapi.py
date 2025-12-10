@@ -25,6 +25,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -312,10 +313,12 @@ def test_exception_handler_problem_error(
     # Request a non-existent dataset to trigger ProblemError
     response = provisioned_http_client.get("/datasets/nonexistent_dataset")
 
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+    assert_problem_detail_response(
+        response,
+        status_code=status.HTTP_400_BAD_REQUEST,
+    )
     payload = response.json()
-    expect_in("code", payload)
-    expect_equal(payload["code"], "dataset-not-found")
+    expect_equal(payload.get("code"), "dataset-not-found")
 
 
 def test_exception_handler_validation_error(
@@ -331,9 +334,12 @@ def test_exception_handler_validation_error(
     # Request with invalid limit value to trigger validation error
     response = provisioned_http_client.get("/functions/high-risk?limit=invalid")
 
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(
+        response,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+    )
     payload = response.json()
-    expect_equal(payload["code"], "invalid-request")
+    expect_equal(payload.get("code"), "invalid-request")
 
 
 # =============================================================================

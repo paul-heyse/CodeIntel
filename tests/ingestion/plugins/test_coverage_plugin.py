@@ -25,6 +25,7 @@ from tests._helpers.ingestion import (
     build_repo_tree,
     build_target_context_for_plugin,
     make_resource_case_params,
+    run_ingestion_scenario,
     write_coverage_file,
 )
 from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
@@ -51,7 +52,9 @@ RESOURCE_CASES = make_resource_case_params()
     [params for _, params in RESOURCE_CASES],
     ids=[name for name, _ in RESOURCE_CASES],
 )
-def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
+def test_module_path_resolution_scenarios(
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+) -> None:
     """Shared coverage of module path resolution for CoverageIngestPlugin."""
     run_module_path_resolution_scenarios(
         lambda _capture: CoverageIngestPlugin(),
@@ -59,6 +62,7 @@ def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, boo
         tmp_path,
         resources_path="pkg/mod.py",
         options=options,
+        gateway=ingestion_gateway,
     )
 
 
@@ -67,16 +71,14 @@ async def test_execute_skips_when_no_coverage_file(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """When no coverage file is found, plugin should log and return empty counts."""
-    plugin = CoverageIngestPlugin()
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
-    ctx = build_target_context_for_plugin(
-        plugin,
+    caplog.set_level(logging.INFO)
+
+    ctx, result = await run_ingestion_scenario(
+        CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
     )
-    caplog.set_level(logging.INFO)
-
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
@@ -104,13 +106,12 @@ def test_resolve_coverage_file_prefers_repo_dot_coverage(tmp_path: Path) -> None
 @pytest.mark.anyio
 async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> None:
     """Happy path: coverage rows are written using the fake collector."""
-    plugin = CoverageIngestPlugin()
     repo_root = build_repo_tree(
         tmp_path / "repo",
         {"pkg/mod.py": "x = 1\n", "pkg/naïve.py": "y = 2\n"},
     )
     coverage_payload = sample_coverage_payload()
-    coverage_file = write_coverage_file(repo_root, filename=".coverage", content=coverage_payload)
+    coverage_file = repo_root / ".coverage"
 
     fake_providers = FakeProviders()
     fake_providers.coverage_collector.coverage_data = {
@@ -129,13 +130,17 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
         providers=cast("Providers", fake_providers),
         modules=("pkg/mod.py", "pkg/naïve.py"),
     )
-    ctx = build_target_context_for_plugin(
-        plugin,
+
+    ctx, result = await run_ingestion_scenario(
+        CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
+        seed_fn=lambda _ctx: write_coverage_file(
+            coverage_file.parent,
+            filename=coverage_file.name,
+            content=coverage_payload,
+        ),
     )
-
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expected_rows = 6
@@ -184,13 +189,13 @@ async def test_execute_fails_when_collector_missing(
     write_coverage_file(repo_root, filename=".coverage", content="{}")
     overrides = TargetResourceOverrides(providers=None, modules=("pkg/mod.py",))
     caplog.set_level(logging.WARNING)
-    ctx = build_target_context_for_plugin(
-        plugin,
+
+    ctx, result = await run_ingestion_scenario(
+        CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
+        seed_fn=lambda _ctx: write_coverage_file(repo_root, filename=".coverage", content="{}"),
     )
-
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is False)
     expect_true("Coverage ingest failed" in (result.error_message or ""))
@@ -201,9 +206,7 @@ async def test_execute_fails_when_collector_missing(
 @pytest.mark.anyio
 async def test_execute_fails_when_collector_raises(tmp_path: Path) -> None:
     """Collector exceptions propagate as failed plugin results."""
-    plugin = CoverageIngestPlugin()
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
-    write_coverage_file(repo_root, filename=".coverage", content="{}")
 
     failing_providers = FakeProviders()
     failing_providers.coverage_collector = cast("FakeCoverageCollector", _FailingCollector())
@@ -211,13 +214,13 @@ async def test_execute_fails_when_collector_raises(tmp_path: Path) -> None:
         providers=cast("Providers", failing_providers),
         modules=("pkg/mod.py",),
     )
-    ctx = build_target_context_for_plugin(
-        plugin,
+
+    ctx, result = await run_ingestion_scenario(
+        CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
+        seed_fn=lambda _ctx: write_coverage_file(repo_root, filename=".coverage", content="{}"),
     )
-
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is False)
     expect_true("Coverage ingest failed" in (result.error_message or ""))

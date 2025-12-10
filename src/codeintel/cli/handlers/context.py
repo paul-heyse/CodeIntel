@@ -522,7 +522,7 @@ class HandlerContext:
 
         Notes
         -----
-        Propagates ResolutionError from RuntimeResolver if runtime cannot
+        Propagates ResolutionError from resolve_from_params if runtime cannot
         be resolved (e.g., no project file and missing required params).
         """
         if self._runtime is None:
@@ -670,27 +670,18 @@ class HandlerContext:
 
         Notes
         -----
-        Uses RuntimeResolver directly, constructing a minimal ExecutionContext
-        for resolution. This eliminates the intermediate _lazy_resources module.
+        Uses resolve_from_params directly with no intermediate context objects.
         """
-        # Import here to avoid circular imports (ExecutionContext imports from resolution)
-        from codeintel.cli.execution.context import ExecutionContext  # noqa: PLC0415
-        from codeintel.cli.resolution.runtime import RuntimeResolver  # noqa: PLC0415
+        from codeintel.cli.resolution.runtime import resolve_from_params  # noqa: PLC0415
 
         # Build params dict with project_root and db_path
-        exec_params: dict[str, object] = dict(self._params)
+        params: dict[str, object] = dict(self._params)
         if self.project_root is not None:
-            exec_params["project_root"] = self.project_root
+            params["project_root"] = self.project_root
         if self.database_path is not None:
-            exec_params["db_path"] = self.database_path
+            params["db_path"] = self.database_path
 
-        # Create minimal execution context for resolution
-        exec_ctx = ExecutionContext(
-            operation_id=self.operation_id,
-            params=exec_params,
-        )
-
-        return RuntimeResolver.resolve(exec_ctx)
+        return resolve_from_params(params)
 
     def _open_gateway(self) -> StorageGateway:
         """Open storage gateway.

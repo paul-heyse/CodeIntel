@@ -38,7 +38,9 @@ RESOURCE_CASES = make_resource_case_params()
     [params for _, params in RESOURCE_CASES],
     ids=[name for name, _ in RESOURCE_CASES],
 )
-def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
+def test_module_path_resolution_scenarios(
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+) -> None:
     """Shared module path resolution coverage for TestsIngestPlugin."""
     run_module_path_resolution_scenarios(
         lambda _capture: TestsIngestPlugin(),
@@ -46,6 +48,7 @@ def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, boo
         tmp_path,
         resources_path="pkg/mod.py",
         options=options,
+        gateway=ingestion_gateway,
     )
 
 

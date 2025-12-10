@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
 import pytest
+from cyclopts import Group, Parameter
 from cyclopts.exceptions import UnknownCommandError
 
-from codeintel.cli import cyclopts_ops
+from codeintel.cli.commands import ops
 from codeintel.cli.introspection import (
     CliParamSpec,
     OperationCliMetadata,
@@ -233,7 +234,7 @@ def test_dynamic_op_parses_and_forwards_params() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(float_spec)
+    field_def = ops.build_param_field_for_spec(float_spec)
     # Field tuple is (name, type_annotation, field_object)
     expect_equal(field_def[0], "min_risk")
 
@@ -248,7 +249,7 @@ def test_dynamic_op_parses_and_forwards_params() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(int_spec)
+    field_def = ops.build_param_field_for_spec(int_spec)
     expect_equal(field_def[0], "limit")
 
     # Test bool parameter (skip_prereqs flag)
@@ -262,7 +263,7 @@ def test_dynamic_op_parses_and_forwards_params() -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(bool_spec)
+    field_def = ops.build_param_field_for_spec(bool_spec)
     expect_equal(field_def[0], "skip_prereqs")
 
 
@@ -282,7 +283,7 @@ def test_dynamic_op_prereq_toggle_default_and_flag() -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(bool_spec)
+    field_def = ops.build_param_field_for_spec(bool_spec)
 
     # Verify the field name
     expect_equal(field_def[0], "skip_prereqs")
@@ -310,7 +311,7 @@ def test_dynamic_op_skip_prereqs_defaults_false() -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(bool_spec)
+    field_def = ops.build_param_field_for_spec(bool_spec)
 
     # Field should have 3 elements when there's a default
     expect_equal(len(field_def), 3)
@@ -320,12 +321,12 @@ def test_dynamic_op_skip_prereqs_defaults_false() -> None:
     expect_true(field_list[2] is False)
 
 
-def _extract_parameter(metadata: tuple[object, ...]) -> cyclopts_ops.Parameter:
+def _extract_parameter(metadata: tuple[object, ...]) -> Parameter:
     """Return the first Cyclopts Parameter from Annotated metadata.
 
     Returns
     -------
-    cyclopts_ops.Parameter
+    Parameter
         The embedded Cyclopts parameter metadata.
 
     Raises
@@ -334,7 +335,7 @@ def _extract_parameter(metadata: tuple[object, ...]) -> cyclopts_ops.Parameter:
         If no parameter metadata is found.
     """
     for meta in metadata:
-        if isinstance(meta, cyclopts_ops.Parameter):
+        if isinstance(meta, Parameter):
             return meta
     message = "Parameter metadata not found"
     raise AssertionError(message)
@@ -355,7 +356,7 @@ def _register_test_op(cli_name: str, params: tuple[CliParamSpec, ...]) -> None:
         help_text="test op",
         params=params,
     )
-    cyclopts_ops.register_dynamic_operation_for_tests(metadata)
+    ops.register_dynamic_operation_for_tests(metadata)
 
 
 def _make_spec(
@@ -393,7 +394,7 @@ def test_dynamic_param_literal_shows_choices() -> None:
         cli_name="function-summary",
         help_text="summary",
         params=(
-            cyclopts_ops.CliParamSpec(
+            CliParamSpec(
                 name="kind",
                 cli_name="kind",
                 python_type=cast("type[Any]", Literal["a", "b"]),
@@ -406,7 +407,7 @@ def test_dynamic_param_literal_shows_choices() -> None:
         ),
     ).params[0]
 
-    field_def = cyclopts_ops.build_param_field_for_spec(spec)
+    field_def = ops.build_param_field_for_spec(spec)
     annotated = field_def[1]
     metadata = get_args(annotated)[1:]
     parameter = _extract_parameter(metadata)
@@ -415,7 +416,7 @@ def test_dynamic_param_literal_shows_choices() -> None:
 
 def test_dynamic_param_env_path_defaults_to_venv(tmp_path: Path) -> None:
     """Env-like path params should default to .venv and require existing dir."""
-    spec = cyclopts_ops.CliParamSpec(
+    spec = CliParamSpec(
         name="venv_path",
         cli_name="venv-path",
         python_type=Path,
@@ -426,7 +427,7 @@ def test_dynamic_param_env_path_defaults_to_venv(tmp_path: Path) -> None:
         is_optional=True,
     )
 
-    default_val, validator = cyclopts_ops.path_defaults_and_validator(spec)
+    default_val, validator = ops.path_defaults_and_validator(spec)
     expect_equal(default_val, Path(".venv"))
     expect_is_not(validator, None)
     if validator is None:
@@ -441,7 +442,7 @@ def test_dynamic_param_env_path_defaults_to_venv(tmp_path: Path) -> None:
 
 def test_dynamic_param_output_path_allows_missing_file(tmp_path: Path) -> None:
     """Output-like paths should allow non-existent targets when parent exists."""
-    spec = cyclopts_ops.CliParamSpec(
+    spec = CliParamSpec(
         name="output_file",
         cli_name="output-file",
         python_type=Path,
@@ -451,7 +452,7 @@ def test_dynamic_param_output_path_allows_missing_file(tmp_path: Path) -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    default_val, validator = cyclopts_ops.path_defaults_and_validator(spec)
+    default_val, validator = ops.path_defaults_and_validator(spec)
     expect_equal(default_val, None)
     expect_is_not(validator, None)
     if validator is None:
@@ -483,10 +484,10 @@ def test_dynamic_param_groups_match_role_titles() -> None:
             role=role,
             is_optional=True,
         )
-        field_def = cyclopts_ops.build_param_field_for_spec(spec)
+        field_def = ops.build_param_field_for_spec(spec)
         annotated = field_def[1]
         metadata = get_args(annotated)[1:]
-        group = next((m for m in metadata if isinstance(m, cyclopts_ops.Group)), None)
+        group = next((m for m in metadata if isinstance(m, Group)), None)
         expect_is_not(group, None)
         if group is None:
             pytest.fail("Expected Group metadata for dynamic param")
@@ -581,7 +582,7 @@ def test_dynamic_op_path_and_literal_handling_end_to_end(tmp_path: Path) -> None
         help_panel="Advanced Options",
         is_optional=True,
     )
-    default_val, validator = cyclopts_ops.path_defaults_and_validator(env_spec)
+    default_val, validator = ops.path_defaults_and_validator(env_spec)
 
     # Env paths should default to .venv
     expect_equal(default_val, Path(".venv"))
@@ -615,7 +616,7 @@ def test_dynamic_op_env_default_requires_existing_venv(tmp_path: Path) -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    _, validator = cyclopts_ops.path_defaults_and_validator(env_spec)
+    _, validator = ops.path_defaults_and_validator(env_spec)
     expect_is_not(validator, None)
 
     if validator is not None:
@@ -640,7 +641,7 @@ def test_dynamic_op_env_default_uses_existing_venv(tmp_path: Path) -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    default_val, validator = cyclopts_ops.path_defaults_and_validator(env_spec)
+    default_val, validator = ops.path_defaults_and_validator(env_spec)
 
     # Default should be .venv
     expect_equal(default_val, Path(".venv"))
@@ -669,7 +670,7 @@ def test_dynamic_op_returns_kwargs_with_converted_types() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    float_field = cyclopts_ops.build_param_field_for_spec(float_spec)
+    float_field = ops.build_param_field_for_spec(float_spec)
     expect_equal(float_field[0], "min_risk")
 
     # Int type should be preserved
@@ -683,7 +684,7 @@ def test_dynamic_op_returns_kwargs_with_converted_types() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    int_field = cyclopts_ops.build_param_field_for_spec(int_spec)
+    int_field = ops.build_param_field_for_spec(int_spec)
     expect_equal(int_field[0], "limit")
 
     # Path type should be preserved
@@ -697,7 +698,7 @@ def test_dynamic_op_returns_kwargs_with_converted_types() -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    path_field = cyclopts_ops.build_param_field_for_spec(path_spec)
+    path_field = ops.build_param_field_for_spec(path_spec)
     expect_equal(path_field[0], "env")
 
 
@@ -713,7 +714,7 @@ def test_dynamic_op_literal_choice_parsing() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(literal_spec)
+    field_def = ops.build_param_field_for_spec(literal_spec)
 
     # Extract Parameter metadata from the Annotated type
     annotated = field_def[1]
@@ -740,7 +741,7 @@ def test_dynamic_op_bool_flag_without_negative() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    field_def = cyclopts_ops.build_param_field_for_spec(bool_spec)
+    field_def = ops.build_param_field_for_spec(bool_spec)
 
     # Verify the field is created with correct structure
     expect_equal(field_def[0], "flag")
@@ -766,7 +767,7 @@ def test_dynamic_op_numeric_coercion_and_failure() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    int_field = cyclopts_ops.build_param_field_for_spec(int_spec)
+    int_field = ops.build_param_field_for_spec(int_spec)
     expect_equal(int_field[0], "limit")
 
     # Float parameter
@@ -780,7 +781,7 @@ def test_dynamic_op_numeric_coercion_and_failure() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    float_field = cyclopts_ops.build_param_field_for_spec(float_spec)
+    float_field = ops.build_param_field_for_spec(float_spec)
     expect_equal(float_field[0], "threshold")
 
 
@@ -797,7 +798,7 @@ def test_dynamic_op_required_vs_optional() -> None:
         help_panel="Selection Options",
         is_optional=False,
     )
-    required_field = cyclopts_ops.build_param_field_for_spec(required_spec)
+    required_field = ops.build_param_field_for_spec(required_spec)
     expect_equal(required_field[0], "required_arg")
     # Required fields should have only 2 elements (no default)
     expect_equal(len(required_field), 2)
@@ -813,7 +814,7 @@ def test_dynamic_op_required_vs_optional() -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    optional_field = cyclopts_ops.build_param_field_for_spec(optional_spec)
+    optional_field = ops.build_param_field_for_spec(optional_spec)
     expect_equal(optional_field[0], "optional_arg")
     # Optional fields should have 3 elements with the default value
     expect_equal(len(optional_field), 3)
@@ -838,7 +839,7 @@ def test_dynamic_op_env_path_heuristics(tmp_path: Path) -> None:
         help_panel="Advanced Options",
         is_optional=True,
     )
-    default_val, validator = cyclopts_ops.path_defaults_and_validator(env_spec)
+    default_val, validator = ops.path_defaults_and_validator(env_spec)
 
     # Should default to .venv
     expect_equal(default_val, Path(".venv"))
@@ -875,7 +876,7 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
         help_panel="Filtering Options",
         is_optional=True,
     )
-    output_default, output_validator = cyclopts_ops.path_defaults_and_validator(output_spec)
+    output_default, output_validator = ops.path_defaults_and_validator(output_spec)
 
     # Output paths should have no default (uses spec default)
     expect_equal(output_default, None)
@@ -904,7 +905,7 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
         help_panel="Selection Options",
         is_optional=False,
     )
-    input_default, input_validator = cyclopts_ops.path_defaults_and_validator(input_spec)
+    input_default, input_validator = ops.path_defaults_and_validator(input_spec)
 
     # Input paths should have no default
     expect_equal(input_default, inspect.Parameter.empty)
@@ -929,13 +930,13 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
 
 def test_op_list_succeeds_with_defaults() -> None:
     """Verify op list succeeds without requiring runtime args."""
-    ns = cyclopts_ops.app_proxy(["op", "list"], result_action="return_value")
+    ns = ops.app_proxy(["op", "list"], result_action="return_value")
     expect_is_not_none(ns)
 
 
 def test_run_cli_embedding_returns_parsed_command() -> None:
     """Verify run_cli with result_action returns parsed command result."""
-    result = cyclopts_ops.app_proxy(
+    result = ops.app_proxy(
         ["op", "list", "--category", "core"],
         result_action="return_value",
         exit_on_error=False,
@@ -949,7 +950,7 @@ def test_run_cli_embedding_returns_parsed_command() -> None:
 
 def test_get_app_returns_root_application() -> None:
     """Verify get_app returns the initialized App instance (or proxy)."""
-    app = cyclopts_ops.get_app()
+    app = ops.get_app()
     # The app may be wrapped in PatchedAppProxy, so check for App-like behavior
     expect_true(hasattr(app, "command"), message="App should have 'command' method")
     expect_true(hasattr(app, "_commands"), message="App should have '_commands' attribute")
@@ -959,7 +960,7 @@ def test_get_app_returns_root_application() -> None:
 def test_app_proxy_with_invalid_command_raises() -> None:
     """Verify app_proxy raises appropriate error for invalid commands."""
     with pytest.raises(UnknownCommandError):
-        cyclopts_ops.app_proxy(
+        ops.app_proxy(
             ["invalid-command"],
             result_action="return_value",
             exit_on_error=False,

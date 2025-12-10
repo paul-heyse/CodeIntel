@@ -2,34 +2,62 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from codeintel.ingestion import DocstringsExtractStep
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import ScanSetupOptions, closing_gateway, make_scan_setup
+from tests._helpers.ingestion import (
+    build_repo_with_variants,
+    build_scan_profile,
+    create_scan_step,
+)
 
 
-def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -> None:
-    """Ensure docstrings ingest honors scan profile filters and module inventory."""
-    setup = make_scan_setup(
-        tmp_path,
-        options=ScanSetupOptions(
-            repo_structure={
-                "src/pkg/a.py": '"""doc A"""\n',
-                "src/pkg/b.py": '"""doc B"""\n',
-                "src/ignored/c.py": '"""ignored doc"""\n',
-            },
-            ignore_dirs=("ignored",),
-            gateway_factory=GatewayFactory(),
-        ),
+@contextmanager
+def _docstrings_setup(
+    tmp_path: Path,
+    *,
+    gateway,
+    repo_structure: dict[str, str],
+    ignore_dirs: tuple[str, ...] = (),
+) -> Iterator[SimpleNamespace]:
+    repo_root = build_repo_with_variants(tmp_path, extra_structure=repo_structure)
+    profile = build_scan_profile(repo_root, ignore_dirs=ignore_dirs)
+    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    ctx = SimpleNamespace(
+        repo_root=repo_root,
+        gateway=gateway,
+        profile=profile,
+        scan_step=scan_step,
+        storage=storage,
+        discovery=discovery,
     )
-    snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=setup.repo_root)
-    doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
+    yield ctx
 
-    with closing_gateway(setup.gateway):
+
+def test_docstrings_respects_scan_profile_and_module_inventory(
+    tmp_path: Path, ingestion_gateway
+) -> None:
+    """Ensure docstrings ingest honors scan profile filters and module inventory."""
+    structure = {
+        "src/pkg/a.py": '"""doc A"""\n',
+        "src/pkg/b.py": '"""doc B"""\n',
+        "src/ignored/c.py": '"""ignored doc"""\n',
+    }
+    with _docstrings_setup(
+        tmp_path,
+        gateway=ingestion_gateway,
+        repo_structure=structure,
+        ignore_dirs=("ignored",),
+    ) as setup:
+        snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=setup.repo_root)
+        doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
+
         _, modules, _ = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,
@@ -49,21 +77,21 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
             pytest.fail(f"Non-POSIX paths observed: {rel_paths}")
 
 
-def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) -> None:
+def test_docstrings_uses_module_inventory_not_filesystem_scan(
+    tmp_path: Path, ingestion_gateway
+) -> None:
     """Verify docstrings ingest trusts core.modules instead of re-scanning the filesystem."""
-    setup = make_scan_setup(
+    structure = {
+        "src/pkg/visible.py": '"""visible doc"""\n',
+        "src/pkg/ghost.py": '"""ghost doc"""\n',
+    }
+    with _docstrings_setup(
         tmp_path,
-        options=ScanSetupOptions(
-            repo_structure={
-                "src/pkg/visible.py": '"""visible doc"""\n',
-                "src/pkg/ghost.py": '"""ghost doc"""\n',
-            },
-            gateway_factory=GatewayFactory(),
-        ),
-    )
-    snapshot = make_snapshot(repo="demo/docstrings", repo_root=setup.repo_root)
-    doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
-    with closing_gateway(setup.gateway):
+        gateway=ingestion_gateway,
+        repo_structure=structure,
+    ) as setup:
+        snapshot = make_snapshot(repo="demo/docstrings", repo_root=setup.repo_root)
+        doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
         _, modules, _ = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,

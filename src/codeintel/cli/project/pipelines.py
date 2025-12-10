@@ -18,7 +18,9 @@ import yaml
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.execution.registry import execute_operation
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
+from codeintel.cli.rendering.service import UnifiedRenderer
+from codeintel.cli.rendering.types import RenderContext
 
 
 @dataclass
@@ -43,66 +45,31 @@ class PipelineConfig:
     max_parallel: int = 1
 
 
-class StreamingRenderer:
-    """Render results as JSON Lines for streaming.
+def _get_streaming_renderer(output: TextIO | None = None) -> UnifiedRenderer:
+    """Get renderer configured for streaming output.
 
     Parameters
     ----------
     output
-        Output stream.
+        Output stream (defaults to stdout).
+
+    Returns
+    -------
+    UnifiedRenderer
+        Renderer configured for streaming.
     """
+    ctx = RenderContext.auto_detect()
+    if output is not None:
+        # Create context with custom writer
+        from codeintel.cli.rendering.types import OutputFormat  # noqa: PLC0415
 
-    def __init__(self, output: TextIO | None = None) -> None:
-        """Initialize renderer."""
-        self._output = output or sys.stdout
-
-    def emit(self, result: CliResult[Any]) -> None:
-        """Emit result as JSON line.
-
-        Parameters
-        ----------
-        result
-            Result to emit.
-        """
-        data = result.to_dict()
-        self._output.write(json.dumps(data))
-        self._output.write("\n")
-        self._output.flush()
-
-    def emit_progress(self, index: int, total: int, operation_id: str) -> None:
-        """Emit progress indicator.
-
-        Parameters
-        ----------
-        index
-            Current index.
-        total
-            Total items.
-        operation_id
-            Current operation.
-        """
-        data = {
-            "type": "progress",
-            "index": index,
-            "total": total,
-            "operation_id": operation_id,
-        }
-        self._output.write(json.dumps(data))
-        self._output.write("\n")
-        self._output.flush()
-
-    def emit_summary(self, summary: dict[str, Any]) -> None:
-        """Emit summary at end of batch.
-
-        Parameters
-        ----------
-        summary
-            Summary data.
-        """
-        data = {"type": "summary", **summary}
-        self._output.write(json.dumps(data))
-        self._output.write("\n")
-        self._output.flush()
+        ctx = RenderContext(
+            format=OutputFormat.JSONL,
+            color=False,
+            writer=output,
+            err_writer=sys.stderr,
+        )
+    return UnifiedRenderer(ctx)
 
 
 @dataclass
@@ -250,8 +217,8 @@ def execute_batch(
         Batch execution result.
     """
     config = config or PipelineConfig()
-    registry = get_operation_registry()
-    renderer = StreamingRenderer() if config.stream_output else None
+    registry = get_registry()
+    renderer = _get_streaming_renderer() if config.stream_output else None
 
     items: list[BatchItemResult] = []
     succeeded = 0
@@ -266,7 +233,7 @@ def execute_batch(
 
         # Emit progress
         if renderer:
-            renderer.emit_progress(i, len(operations), batch_op.operation_id)
+            renderer.emit_stream_progress(i, len(operations), batch_op.operation_id)
 
         # Get operation spec
         spec = registry.get(batch_op.operation_id)
@@ -292,7 +259,7 @@ def execute_batch(
         items.append(BatchItemResult(operation=batch_op, result=result, index=i))
 
         if renderer:
-            renderer.emit(result)
+            renderer.emit_stream_result(result)
 
     batch_result = BatchResult(
         total=len(operations),
@@ -303,7 +270,7 @@ def execute_batch(
     )
 
     if renderer:
-        renderer.emit_summary(batch_result.to_dict())
+        renderer.emit_stream_summary(batch_result.to_dict())
 
     return batch_result
 
@@ -359,10 +326,10 @@ def stream_results(
     int
         Number of results streamed.
     """
-    renderer = StreamingRenderer(output=output)
+    renderer = _get_streaming_renderer(output)
     count = 0
     for result in results:
-        renderer.emit(result)
+        renderer.emit_stream_result(result)
         count += 1
     return count
 
@@ -372,7 +339,6 @@ __all__ = [
     "BatchOperation",
     "BatchResult",
     "PipelineConfig",
-    "StreamingRenderer",
     "execute_batch",
     "load_batch",
     "read_stdin_operations",

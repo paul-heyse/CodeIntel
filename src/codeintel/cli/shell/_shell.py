@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import (
-    get_operation_registry,
+    get_registry,
     list_all_operations,
     search_operations,
 )
@@ -90,7 +90,7 @@ class ShellCompleter:
 
     def refresh_operations(self) -> None:
         """Refresh operation list from registry."""
-        registry = get_operation_registry()
+        registry = get_registry()
         self.operations = [spec.operation_id for spec in registry.list_operations()]
 
     def complete(self, text: str, state: int) -> str | None:
@@ -266,7 +266,7 @@ class InteractiveShell:
         operation_id = args[0]
         params = self.parse_params(" ".join(args[1:]))
 
-        registry = get_operation_registry()
+        registry = get_registry()
         spec = registry.get(operation_id)
 
         if spec is None:

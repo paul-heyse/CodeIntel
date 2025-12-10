@@ -32,13 +32,9 @@ from codeintel.cli.commands import (
     subsystem_app,
 )
 
-# Re-export ops module as cyclopts_ops for backward compatibility
-from codeintel.cli.commands import ops as cyclopts_ops
-
 __all__ = [
     "app",
     "build_app",
-    "cyclopts_ops",
     "dataset_app",
     "datasets_ext_app",
     "docs_app",

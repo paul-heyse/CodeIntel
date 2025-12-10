@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Protocol, runtime_checkable
 
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from tests._helpers.assertions.expectation_assertions import (
@@ -96,8 +97,14 @@ def assert_http_success(
     return body
 
 
+def assert_ok_or_not_found(response: SupportsJsonResponse) -> None:
+    """Assert a response is either 200 OK or 404 Not Found."""
+    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+
+
 __all__ = [
     "assert_http_success",
+    "assert_ok_or_not_found",
     "assert_problem_detail_response",
     "assert_success_meta",
 ]

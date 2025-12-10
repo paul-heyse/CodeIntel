@@ -25,7 +25,7 @@ from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import execute_operation
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
 
 
 @dataclass
@@ -503,7 +503,7 @@ class OperationTestHarness:
             Result of execution.
         """
         params = params or {}
-        registry = get_operation_registry()
+        registry = get_registry()
         spec = registry.get(operation_id)
 
         if spec is None:

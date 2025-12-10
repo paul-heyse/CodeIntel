@@ -51,34 +51,34 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
-    ctx = module_inventory_context(tmp_path)
-    _, modules, _ = ctx.scan_step.execute(
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        repo_root=ctx.snapshot.repo_root,
-        profile=ctx.profile,
-    )
-
-    module_map = load_module_map(
-        ctx.gateway,
-        ctx.snapshot.repo,
-        ctx.snapshot.commit,
-        language="python",
-        logger=None,
-    )
-    records = list(
-        FilesystemDiscoveryAdapter.iter_modules(
-            module_map, ctx.snapshot.repo_root, logger=None, scan_profile=ctx.profile
+    with module_inventory_context(tmp_path) as ctx:
+        _, modules, _ = ctx.scan_step.execute(
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+            repo_root=ctx.snapshot.repo_root,
+            profile=ctx.profile,
         )
-    )
 
-    rel_paths = sorted(record.rel_path for record in records)
-    expected = ["src/pkg/a.py", "src/pkg/b.py"]
-    if rel_paths != expected:
-        pytest.fail(f"Unexpected module paths {rel_paths}, expected {expected}")
-    if not all("/" in rel_path for rel_path in rel_paths):
-        pytest.fail(f"Non-POSIX module paths: {rel_paths}")
+        module_map = load_module_map(
+            ctx.gateway,
+            ctx.snapshot.repo,
+            ctx.snapshot.commit,
+            language="python",
+            logger=None,
+        )
+        records = list(
+            FilesystemDiscoveryAdapter.iter_modules(
+                module_map, ctx.snapshot.repo_root, logger=None, scan_profile=ctx.profile
+            )
+        )
 
-    scan_paths = sorted(module.rel_path for module in modules)
-    if scan_paths != rel_paths:
-        pytest.fail(f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}")
+        rel_paths = sorted(record.rel_path for record in records)
+        expected = ["src/pkg/a.py", "src/pkg/b.py"]
+        if rel_paths != expected:
+            pytest.fail(f"Unexpected module paths {rel_paths}, expected {expected}")
+        if not all("/" in rel_path for rel_path in rel_paths):
+            pytest.fail(f"Non-POSIX module paths: {rel_paths}")
+
+        scan_paths = sorted(module.rel_path for module in modules)
+        if scan_paths != rel_paths:
+            pytest.fail(f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}")

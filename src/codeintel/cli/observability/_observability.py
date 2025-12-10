@@ -1,30 +1,16 @@
 """Observability integration for CLI operations.
 
-Provide automatic tracing, metrics, and structured logging
-for all operations flowing through the executor.
+Provide structured logging configuration for CLI operations.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any
 
-from codeintel.cli.core.results import CliResult
-from codeintel.cli.execution import ExecutionContext, Middleware
-from codeintel.cli.observability._telemetry import (
-    OperationMetrics,
-    TelemetryProvider,
-    get_operation_metrics,
-    get_telemetry_provider,
-)
-
 LOG = logging.getLogger(__name__)
-
-# Maximum length for parameter values before truncation
-_MAX_PARAM_VALUE_LENGTH = 100
 
 # Try to import OpenTelemetry trace module (optional dependency)
 try:
@@ -59,266 +45,6 @@ class ObservabilityConfig:
     structured_logging: bool = True
     log_params: bool = False
     log_results: bool = False
-
-
-class ObservabilityMiddleware(Middleware):
-    """Middleware that adds comprehensive observability.
-
-    Parameters
-    ----------
-    config
-        Observability configuration.
-    telemetry
-        Telemetry provider.
-    metrics
-        Metrics collector.
-    """
-
-    def __init__(
-        self,
-        config: ObservabilityConfig | None = None,
-        telemetry: TelemetryProvider | None = None,
-        metrics: OperationMetrics | None = None,
-    ) -> None:
-        """Initialize middleware."""
-        self._config = config or ObservabilityConfig()
-        self._telemetry = telemetry or get_telemetry_provider()
-        self._metrics = metrics or get_operation_metrics()
-
-    def before_invoke(
-        self,
-        ctx: ExecutionContext,
-    ) -> dict[str, Any]:
-        """Start observability context.
-
-        Parameters
-        ----------
-        ctx
-            Execution context with operation_id and params.
-
-        Returns
-        -------
-        dict[str, Any]
-            Context for after_invoke.
-        """
-        context: dict[str, Any] = {
-            "start_time": time.monotonic(),
-            "operation_id": ctx.operation_id,
-        }
-
-        # Start trace span
-        if self._config.tracing_enabled:
-            span = self._start_span(ctx.operation_id, ctx.params)
-            context["span"] = span
-
-        # Log operation start
-        if self._config.structured_logging:
-            extra: dict[str, Any] = {"operation_id": ctx.operation_id}
-            if self._config.log_params:
-                extra["params"] = _sanitize_params(ctx.params)
-            LOG.info("Operation started", extra=extra)
-
-        return context
-
-    def after_invoke(
-        self,
-        ctx: ExecutionContext,
-        result: CliResult[Any],
-        mw_context: dict[str, Any],
-    ) -> CliResult[Any]:
-        """Complete observability context.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-        result
-            Operation result.
-        mw_context
-            Context from before_invoke.
-
-        Returns
-        -------
-        CliResult[Any]
-            Unmodified result.
-        """
-        start_time = mw_context.get("start_time")
-        if not isinstance(start_time, float):
-            return result
-
-        duration = time.monotonic() - start_time
-
-        # Record metrics
-        if self._config.metrics_enabled:
-            self._metrics.record_operation(
-                ctx.operation_id,
-                success=True,
-                duration_seconds=duration,
-            )
-
-        # End trace span
-        span = mw_context.get("span")
-        if span is not None:
-            _end_span(span, success=True, duration=duration)
-
-        # Log completion
-        if self._config.structured_logging:
-            extra: dict[str, Any] = {
-                "operation_id": ctx.operation_id,
-                "duration_ms": duration * 1000,
-                "success": True,
-            }
-            if self._config.log_results and result is not None:
-                extra["result_type"] = type(result).__name__
-            LOG.info("Operation completed", extra=extra)
-
-        return result
-
-    def on_error(
-        self,
-        ctx: ExecutionContext,
-        exc: Exception,
-        mw_context: dict[str, Any],
-    ) -> Exception | None:
-        """Record error in observability context.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-        exc
-            Exception that occurred.
-        mw_context
-            Context from before_invoke.
-
-        Returns
-        -------
-        Exception
-            The original exception.
-        """
-        start_time = mw_context.get("start_time")
-        if not isinstance(start_time, float):
-            return exc
-
-        duration = time.monotonic() - start_time
-
-        # Record metrics
-        if self._config.metrics_enabled:
-            self._metrics.record_operation(
-                ctx.operation_id,
-                success=False,
-                duration_seconds=duration,
-            )
-
-        # End trace span with error
-        span = mw_context.get("span")
-        if span is not None:
-            _end_span(span, success=False, duration=duration, error=exc)
-
-        # Log error
-        if self._config.structured_logging:
-            extra: dict[str, Any] = {
-                "operation_id": ctx.operation_id,
-                "duration_ms": duration * 1000,
-                "success": False,
-                "error_type": type(exc).__name__,
-            }
-            LOG.error("Operation failed", extra=extra, exc_info=exc)
-
-        return exc
-
-    def _start_span(
-        self,
-        op_id: str,
-        params: dict[str, Any],
-    ) -> object | None:
-        """Start a trace span for operation.
-
-        Parameters
-        ----------
-        op_id
-            Operation identifier.
-        params
-            Operation parameters.
-
-        Returns
-        -------
-        object | None
-            Started span or None.
-        """
-        tracer = self._telemetry.tracer
-        if tracer is None:
-            return None
-
-        return tracer.start_span(
-            f"cli.operation.{op_id}",
-            attributes={
-                "cli.operation_id": op_id,
-                "cli.param_count": len(params),
-            },
-        )
-
-
-def _end_span(
-    span: object,
-    *,
-    success: bool,
-    duration: float,
-    error: Exception | None = None,
-) -> None:
-    """End a span with attributes.
-
-    Parameters
-    ----------
-    span
-        Span to end.
-    success
-        Whether operation succeeded.
-    duration
-        Operation duration in seconds.
-    error
-        Exception if failed.
-    """
-    set_attr = getattr(span, "set_attribute", None)
-    if callable(set_attr):
-        set_attr("cli.success", success)
-        set_attr("cli.duration_ms", duration * 1000)
-        if error:
-            set_attr("cli.error_type", type(error).__name__)
-
-    if error:
-        record_exc = getattr(span, "record_exception", None)
-        if callable(record_exc):
-            record_exc(error)
-
-    end_method = getattr(span, "end", None)
-    if callable(end_method):
-        end_method()
-
-
-def _sanitize_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Remove sensitive data from params for logging.
-
-    Parameters
-    ----------
-    params
-        Parameters to sanitize.
-
-    Returns
-    -------
-    dict[str, Any]
-        Sanitized parameters.
-    """
-    sensitive_keys = {"password", "token", "secret", "key", "credential", "auth"}
-    sanitized: dict[str, Any] = {}
-    for key, value in params.items():
-        if any(s in key.lower() for s in sensitive_keys):
-            sanitized[key] = "[REDACTED]"
-        elif isinstance(value, str) and len(value) > _MAX_PARAM_VALUE_LENGTH:
-            sanitized[key] = f"{value[:_MAX_PARAM_VALUE_LENGTH]}... (truncated)"
-        else:
-            sanitized[key] = value
-    return sanitized
 
 
 class StructuredLogFormatter(logging.Formatter):
@@ -416,28 +142,8 @@ def configure_structured_logging(
     root.addHandler(handler)
 
 
-def get_observability_middleware(
-    config: ObservabilityConfig | None = None,
-) -> ObservabilityMiddleware:
-    """Get observability middleware with default configuration.
-
-    Parameters
-    ----------
-    config
-        Optional configuration.
-
-    Returns
-    -------
-    ObservabilityMiddleware
-        Configured middleware.
-    """
-    return ObservabilityMiddleware(config=config)
-
-
 __all__ = [
     "ObservabilityConfig",
-    "ObservabilityMiddleware",
     "StructuredLogFormatter",
     "configure_structured_logging",
-    "get_observability_middleware",
 ]

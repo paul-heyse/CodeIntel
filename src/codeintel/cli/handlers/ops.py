@@ -22,15 +22,16 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
 )
 from codeintel.cli.errors import ProblemDetail, ValidationError
-from codeintel.cli.handlers._utilities import resolved_to_project_runtime
+from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.project import ProjectRuntime
+from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.validation import collect_contract_issues
 
 LOG = logging.getLogger(__name__)
@@ -95,13 +96,13 @@ def _parse_param_value(value: str) -> str | int | float | bool:
     return value
 
 
-def _setup_serving_env(runtime: ProjectRuntime, *, auto_pipeline: bool) -> None:
+def _setup_serving_env(runtime: ResolvedRuntime, *, auto_pipeline: bool) -> None:
     """Configure environment variables for serving operations.
 
     Parameters
     ----------
     runtime
-        Project runtime with repo and path information.
+        Resolved runtime with repo and path information.
     auto_pipeline
         Whether to enable automatic prerequisite pipeline execution.
     """
@@ -208,25 +209,27 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
         key, value = param_str.split("=", 1)
         kwargs[key] = _parse_param_value(value)
 
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
+    runtime = ctx.runtime
 
-    if not skip_prereqs:
-        run_operation_prereqs(
-            op_id=op_id,
-            gateway=project_runtime.gateway,
-            snapshot=project_runtime.snapshot,
-            paths=project_runtime.paths,
-            tools=project_runtime.tools,
-        )
+    with runtime_gateway(runtime) as gateway:
+        if not skip_prereqs:
+            run_operation_prereqs(
+                op_id=op_id,
+                gateway=gateway,
+                snapshot=runtime.snapshot,
+                paths=runtime.paths,
+                tools=runtime.tools,
+            )
 
-    result = _invoke_operation_structured(op_id, kwargs, project_runtime)
-    return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
+        result = _invoke_operation_structured(op_id, kwargs, runtime, gateway)
+        return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
 
 def _invoke_operation_structured(
     op_id: str,
     kwargs: dict[str, Any],
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
 ) -> dict[str, Any]:
     """Invoke operation and return structured result.
 
@@ -237,7 +240,9 @@ def _invoke_operation_structured(
     kwargs
         Operation parameters.
     runtime
-        Project runtime.
+        Resolved runtime.
+    gateway
+        Open storage gateway.
 
     Returns
     -------
@@ -256,7 +261,7 @@ def _invoke_operation_structured(
 
     stack = build_service_stack(
         config=runtime.serving,
-        gateway=runtime.gateway,
+        gateway=gateway,
     )
 
     try:
@@ -274,45 +279,6 @@ def _invoke_operation_structured(
         return {"result": result}
     finally:
         stack.close()
-
-
-def invoke_operation(
-    op_id: str,
-    kwargs: dict[str, Any],
-    runtime: ProjectRuntime,
-) -> None:
-    """Invoke a serving operation and render the JSON result.
-
-    This is a legacy compatibility function used by dynamic command generation.
-    New code should use the handler functions (e.g., op_call_handler) instead.
-
-    Parameters
-    ----------
-    op_id
-        Operation identifier.
-    kwargs
-        Operation parameters.
-    runtime
-        Project runtime context.
-
-    Raises
-    ------
-    ValidationError
-        When the operation is unknown or cannot be executed.
-    """
-    import json  # noqa: PLC0415
-
-    stdout = sys.stdout
-    op = get_operation(op_id)
-    if op is None:
-        error = f"Unknown operation: {op_id}"
-        raise ValidationError(error)
-
-    stdout.write(f"Invoking operation '{op_id}'...\n")
-
-    result = _invoke_operation_structured(op_id, kwargs, runtime)
-    stdout.write(json.dumps(result, indent=2, default=str))
-    stdout.write("\n")
 
 
 def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeResult]:
@@ -372,21 +338,21 @@ def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
     CliResult[DatasetListResult]
         List of datasets.
     """
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
-    registry = project_runtime.gateway.datasets
-    meta = registry.meta or {}
+    with runtime_gateway(ctx.runtime) as gateway:
+        registry = gateway.datasets
+        meta = registry.meta or {}
 
-    dataset_dicts: list[dict[str, str | None]] = [
-        {
-            "name": name,
-            "table_key": contract.table_key,
-            "is_view": str(contract.is_view),
-            "owner_package": contract.owner_package,
-        }
-        for name, contract in sorted(meta.items())
-    ]
+        dataset_dicts: list[dict[str, str | None]] = [
+            {
+                "name": name,
+                "table_key": contract.table_key,
+                "is_view": str(contract.is_view),
+                "owner_package": contract.owner_package,
+            }
+            for name, contract in sorted(meta.items())
+        ]
 
-    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
+        return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
 
 
 def dataset_describe_handler(
@@ -426,14 +392,14 @@ def dataset_verify_handler(
         Verification result.
     """
     table_key = ctx.param_str("table_key")
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
 
-    issues = collect_contract_issues(project_runtime.gateway.con)
+    with runtime_gateway(ctx.runtime) as gateway:
+        issues = collect_contract_issues(gateway.con)
 
-    if table_key:
-        issues = [issue for issue in issues if table_key in issue]
+        if table_key:
+            issues = [issue for issue in issues if table_key in issue]
 
-    return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
+        return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
 def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
@@ -462,9 +428,9 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
     reload = ctx.param_bool("reload", default=False)
 
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
+    runtime = ctx.runtime
 
-    _setup_serving_env(project_runtime, auto_pipeline=auto_pipeline)
+    _setup_serving_env(runtime, auto_pipeline=auto_pipeline)
 
     LOG.info(
         "Starting HTTP server at http://%s:%d (auto_pipeline=%s)",
@@ -481,11 +447,12 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
             reload=True,
         )
     else:
-        app = create_http_app(
-            gateway=project_runtime.gateway,
-            auto_pipeline=auto_pipeline,
-        )
-        uvicorn.run(app, host=host, port=port)
+        with runtime_gateway(runtime, read_only=False) as gateway:
+            app = create_http_app(
+                gateway=gateway,
+                auto_pipeline=auto_pipeline,
+            )
+            uvicorn.run(app, host=host, port=port)
 
     return CliResult.ok(
         ServeStartResult(
@@ -493,9 +460,9 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
             host=host,
             port=port,
             auto_pipeline=auto_pipeline,
-            repo=ctx.runtime.repo,
-            commit=ctx.runtime.commit,
-            db_path=str(ctx.runtime.paths.db_path),
+            repo=runtime.repo,
+            commit=runtime.commit,
+            db_path=str(runtime.paths.db_path),
         )
     )
 
@@ -516,9 +483,7 @@ def serve_mcp_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     """
     auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
 
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
-
-    _setup_serving_env(project_runtime, auto_pipeline=auto_pipeline)
+    _setup_serving_env(ctx.runtime, auto_pipeline=auto_pipeline)
 
     LOG.info("Starting MCP server (auto_pipeline=%s)", auto_pipeline)
 
@@ -538,7 +503,6 @@ __all__ = [
     "dataset_describe_structured",
     "dataset_list_handler",
     "dataset_verify_handler",
-    "invoke_operation",
     "op_call_handler",
     "op_list_handler",
     "op_list_structured",

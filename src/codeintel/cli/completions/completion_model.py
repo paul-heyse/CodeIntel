@@ -187,10 +187,10 @@ def build_completion_model() -> CompletionModel:
     """
     # Import here to avoid circular import
     from codeintel.cli.introspection import (  # noqa: PLC0415
-        get_operation_registry,
+        get_registry,
     )
 
-    registry = get_operation_registry()
+    registry = get_registry()
 
     # Build subcommands from registry
     command_groups: dict[str, list[CommandSpec]] = {}

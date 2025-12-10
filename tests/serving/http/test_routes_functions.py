@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.functions import RouterOptions, build_functions_router
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
 
@@ -24,42 +26,30 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
+@pytest.mark.parametrize(
+    ("query", "expect_payload_key"),
+    [
+        ("", "functions"),
+        ("min_risk=0.5", "functions"),
+        ("limit=5", "functions"),
+        ("tested_only=true", "functions"),
+    ],
+)
 def test_high_risk_functions_endpoint(
     functions_http_client: TestClient,
+    query: str,
+    expect_payload_key: str,
 ) -> None:
-    """/functions/high-risk endpoint returns results."""
-    response = functions_http_client.get("/functions/high-risk")
+    """/functions/high-risk endpoint returns results with optional filters."""
+    path = "/functions/high-risk"
+    if query:
+        path = f"{path}?{query}"
+
+    response = functions_http_client.get(path)
 
     expect_equal(response.status_code, status.HTTP_200_OK)
-    data = response.json()
-    expect_in("functions", data)
-
-
-def test_high_risk_functions_with_min_risk(
-    functions_http_client: TestClient,
-) -> None:
-    """/functions/high-risk accepts min_risk parameter."""
-    response = functions_http_client.get("/functions/high-risk?min_risk=0.5")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
-
-
-def test_high_risk_functions_with_limit(
-    functions_http_client: TestClient,
-) -> None:
-    """/functions/high-risk accepts limit parameter."""
-    response = functions_http_client.get("/functions/high-risk?limit=5")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
-
-
-def test_high_risk_functions_with_tested_only(
-    functions_http_client: TestClient,
-) -> None:
-    """/functions/high-risk accepts tested_only parameter."""
-    response = functions_http_client.get("/functions/high-risk?tested_only=true")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
+    payload = response.json()
+    expect_in(expect_payload_key, payload)
 
 
 # =============================================================================
@@ -73,8 +63,7 @@ def test_function_summary_missing_params(
     """/function/summary returns error when no identifier provided."""
     response = functions_http_client.get("/function/summary")
 
-    # Should return 400 because no identifier was provided
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+    assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================

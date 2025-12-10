@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codeintel.cli.commands import RuntimeCLI
-    from codeintel.cli.execution.context import ExecutionContext
 
 
 @dataclass(frozen=True)
@@ -89,55 +88,6 @@ class RuntimeParams:
     backend: BackendFlags = field(default_factory=BackendFlags)
 
     # --- Factory Methods ---
-
-    @classmethod
-    def from_context(cls, ctx: ExecutionContext) -> RuntimeParams:
-        """Extract RuntimeParams from ExecutionContext.params dict.
-
-        The context params may contain any subset of fields.
-        Missing fields use defaults.
-
-        Parameters
-        ----------
-        ctx
-            Execution context with params dict.
-
-        Returns
-        -------
-        RuntimeParams
-            Extracted parameters.
-
-        Examples
-        --------
-        >>> from codeintel.cli.execution.context import ExecutionContext
-        >>> ctx = ExecutionContext.for_sync("op", {"repo": "org/repo"})
-        >>> params = RuntimeParams.from_context(ctx)  # doctest: +SKIP
-        >>> params.repo  # doctest: +SKIP
-        'org/repo'
-        """
-        params = ctx.params
-
-        backend_raw = params.get("backend", {})
-        backend = (
-            BackendFlags(
-                use_gpu=_get_bool(backend_raw, "use_gpu", default=False),
-                backend=_get_str(backend_raw, "backend", default="auto"),
-                strict=_get_bool(backend_raw, "strict", default=False),
-            )
-            if isinstance(backend_raw, dict)
-            else BackendFlags()
-        )
-
-        return cls(
-            project_root=_to_path(params.get("project_root")),
-            repo=_to_str(params.get("repo")),
-            commit=_to_str(params.get("commit")),
-            db_path=_to_path(params.get("db_path")),
-            build_dir=_to_path(params.get("build_dir")),
-            repo_root=_to_path(params.get("repo_root")),
-            document_output_dir=_to_path(params.get("document_output_dir")),
-            backend=backend,
-        )
 
     @classmethod
     def from_cyclopts(cls, runtime_cli: RuntimeCLI) -> RuntimeParams:

@@ -23,6 +23,8 @@ from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_sa
 from tests._helpers.serving_routes import RouteApp, service_app_factory_with_routes
 from tests.serving.mcp.conftest import (
     McpBackendComponents,
+)
+from tests.serving.mcp.conftest import (
     mcp_backend_factory as _mcp_backend_factory,
 )
 

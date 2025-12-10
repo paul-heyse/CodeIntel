@@ -22,7 +22,7 @@ from tests._helpers.fakes.ingestion_plugins import (
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_repo_tree,
-    build_target_context_for_plugin,
+    run_ingestion_scenario,
 )
 
 TYPED_SOURCE = dedent(
@@ -59,17 +59,16 @@ async def test_typing_plugin_skips_without_type_checker(
 ) -> None:
     """When no type checker is provided, the plugin should skip work."""
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
-    ctx = build_target_context_for_plugin(
-        TypingIngestPlugin(),
+    caplog.set_level("INFO")
+
+    ctx, result = await run_ingestion_scenario(
+        TypingIngestPlugin,
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
             resources=TargetResourceOverrides(modules=("pkg/typed.py",)),
         ),
     )
-    caplog.set_level("INFO")
-
-    result = await TypingIngestPlugin().execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
@@ -85,18 +84,16 @@ async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> Non
     )
     # Use RecordingTypeChecker (a proper double) instead of object()
     checker = RecordingTypeChecker()
-    ctx = build_target_context_for_plugin(
-        TypingIngestPlugin(),
+    captured = StepCallCapture()
+
+    ctx, result = await run_ingestion_scenario(
+        lambda: _make_plugin(captured, type_checker=checker),
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
             resources=TargetResourceOverrides(modules=("pkg/typed.py", "pkg/naive.py")),
         ),
     )
-    captured = StepCallCapture()
-
-    # Pass the checker directly rather than via ctx.resources.type_checker
-    result = await _make_plugin(captured, type_checker=checker).execute(ctx)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {"analytics.typedness": 2})
@@ -120,24 +117,18 @@ async def test_typing_plugin_reports_failure(
     )
     # Use RecordingTypeChecker (a proper double) instead of object()
     checker = RecordingTypeChecker()
-    ctx = build_target_context_for_plugin(
-        TypingIngestPlugin(),
+    captured = StepCallCapture()
+    failing_result = StepResult.fail("typing blew up")
+    caplog.set_level("WARNING")
+
+    ctx, result = await run_ingestion_scenario(
+        lambda: _make_plugin(captured, result=failing_result, type_checker=checker),
         tmp_path,
         config=TargetContextConfig(
             repo_root=repo_root,
             resources=TargetResourceOverrides(modules=("pkg/typed.py", "pkg/unicode/delta.py")),
         ),
     )
-    captured = StepCallCapture()
-    failing_result = StepResult.fail("typing blew up")
-    caplog.set_level("WARNING")
-
-    # Pass the checker directly rather than via ctx.resources.type_checker
-    result = await _make_plugin(
-        captured,
-        result=failing_result,
-        type_checker=checker,
-    ).execute(ctx)
 
     expect_true(result.success is False)
     expect_equal(result.error_message, "Typing ingest failed: typing blew up")

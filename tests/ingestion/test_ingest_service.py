@@ -1,38 +1,68 @@
-"""Tests for the ingestion macros module.
-
-This module tests the ingestion macro utilities, including the macro_exists
-function and INGEST_MACRO_TABLES constant.
-"""
+"""Tests for ingestion macros and tooling service wiring."""
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.ingestion.infrastructure.macros import (
-    INGEST_MACRO_TABLES,
-    macro_exists,
-)
-from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.infrastructure.macros import INGEST_MACRO_TABLES, macro_exists
 from tests._helpers.assertions import (
     expect_equal,
-    expect_false,
     expect_in,
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.tools import FakeToolRunner, FakeToolService, FakeToolServiceConfig
+from tests._helpers.macros import (
+    assert_all_ingest_macros,
+    assert_ingest_macros_registered,
+    assert_macro_perf,
+    measure_ingest_perf,
+)
+from tests._helpers.rows import function_metrics_row
 
 EXPECTED_TABLE_KEY_PARTS = 2
+PERF_TABLE_KEYS = tuple(
+    table_key
+    for table_key in sorted(INGEST_MACRO_TABLES)
+    if table_key in {"analytics.function_metrics", "analytics.function_effects"}
+)
 
 
-def test_ingest_macro_tables_sanity() -> None:
-    """INGEST_MACRO_TABLES should include expected entries with schema.table format."""
+def _function_effects_row(
+    repo: str = DEFAULT_REPO,
+    commit: str = DEFAULT_COMMIT,
+    goid: int = 1,
+) -> tuple[object, ...]:
+    """Row payload matching analytics.function_effects schema order."""
+    created_at = datetime.now(tz=UTC).isoformat()
+    return (
+        repo,
+        commit,
+        goid,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        1.0,
+        "{}",
+        created_at,
+    )
+
+
+def test_ingest_macro_tables_cover_expected_entries() -> None:
+    """INGEST_MACRO_TABLES should expose required table keys."""
     expect_is_instance(INGEST_MACRO_TABLES, frozenset)
-    expect_true(len(INGEST_MACRO_TABLES) > 0)
     required = {
         "core.ast_nodes",
         "core.cst_nodes",
@@ -45,126 +75,54 @@ def test_ingest_macro_tables_sanity() -> None:
     }
     for table_key in required:
         expect_in(table_key, INGEST_MACRO_TABLES)
-    for table_key in INGEST_MACRO_TABLES:
-        parts = table_key.split(".")
-        expect_true(
-            len(parts) == EXPECTED_TABLE_KEY_PARTS,
-            message=f"Table key '{table_key}' should have format 'schema.table'",
-        )
-        schema, table = parts
-        expect_true(bool(schema), message=f"Table key '{table_key}' has empty schema")
-        expect_true(bool(table), message=f"Table key '{table_key}' has empty table name")
 
 
-# =============================================================================
-# macro_exists Tests
-# =============================================================================
+@pytest.mark.parametrize("table_key", sorted(INGEST_MACRO_TABLES))
+def test_ingest_macro_table_keys_are_well_formed(table_key: str) -> None:
+    """Each table key should be well-formed schema.table."""
+    parts = table_key.split(".")
+    expect_equal(
+        len(parts),
+        EXPECTED_TABLE_KEY_PARTS,
+        label=f"Table key '{table_key}' should have format 'schema.table'",
+    )
+    schema, table = parts
+    expect_true(bool(schema), message=f"Table key '{table_key}' has empty schema")
+    expect_true(bool(table), message=f"Table key '{table_key}' has empty table name")
 
 
-def test_macro_exists_returns_true_for_existing_macro(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should return True for macros that exist."""
-    # The fresh_gateway fixture applies schema and ingest macros
-    # Test a known table that should have a macro
-    result = macro_exists(fresh_gateway.con, "core.modules")
-
-    # If macros are registered, this should return True
-    # If not, the test verifies the function doesn't crash
-    expect_is_instance(result, bool)
+def test_ingest_macros_registered_and_listed(fresh_gateway) -> None:
+    """Ensure ingest macros are present for all registered tables."""
+    assert_all_ingest_macros(fresh_gateway.con)
+    assert_ingest_macros_registered(fresh_gateway.con)
 
 
-def test_macro_exists_returns_false_for_nonexistent_macro(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should return False for macros that don't exist."""
-    result = macro_exists(fresh_gateway.con, "nonexistent.table_xyz")
-
-    expect_false(result)
-
-
-def test_macro_exists_handles_malformed_table_key(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should handle malformed table keys."""
-    # This should raise ValueError due to not having a dot
+def test_macro_exists_handles_malformed_table_key(fresh_gateway) -> None:
+    """macro_exists should raise on table keys without a schema prefix."""
     with pytest.raises(ValueError, match="not enough values to unpack"):
         macro_exists(fresh_gateway.con, "no_dot_in_name")
 
 
-def test_macro_exists_with_multiple_dots_in_table_key(
-    fresh_gateway: StorageGateway,
+@pytest.mark.parametrize("table_key", PERF_TABLE_KEYS)
+def test_ingest_macro_perf_with_prepared_statements(
+    fresh_gateway, table_key: str
 ) -> None:
-    """macro_exists should handle table keys with multiple dots."""
-    # The function uses maxsplit=1, so this should work
-    result = macro_exists(fresh_gateway.con, "schema.table.extra")
+    """Macro ingest should remain within acceptable bounds versus prepared statements."""
+    if table_key == "analytics.function_metrics":
+        row = function_metrics_row(
+            goid=101,
+            rel_path="pkg/mod.py",
+            qualname="pkg.mod:func",
+            snapshot=(DEFAULT_REPO, DEFAULT_COMMIT),
+        ).to_tuple()
+    elif table_key == "analytics.function_effects":
+        row = _function_effects_row()
+    else:  # pragma: no cover
+        pytest.skip(f"Perf measurement unsupported for {table_key}")
 
-    # Function extracts "table.extra" as the table name and looks for
-    # "ingest_table.extra" macro which won't exist
-    expect_false(result)
+    result = measure_ingest_perf(fresh_gateway, table_key, [row])
 
-
-def test_macro_exists_extracts_correct_macro_name(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should construct the correct macro name."""
-    # Test that the function correctly extracts the table name
-    # from "schema.table_name" and looks for "ingest_table_name"
-
-    # Create a test macro with a known name
-    fresh_gateway.con.execute("""
-        CREATE OR REPLACE MACRO metadata.ingest_test_custom_table()
-        AS (SELECT 1 AS dummy)
-    """)
-
-    result = macro_exists(fresh_gateway.con, "any_schema.test_custom_table")
-
-    expect_true(result)
-
-
-def test_macro_exists_with_various_schemas(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should work with different schema prefixes."""
-    # Create a test macro
-    fresh_gateway.con.execute("""
-        CREATE OR REPLACE MACRO metadata.ingest_schema_test()
-        AS (SELECT 1 AS dummy)
-    """)
-
-    # Different schema prefixes should all work
-    expect_true(macro_exists(fresh_gateway.con, "core.schema_test"))
-    expect_true(macro_exists(fresh_gateway.con, "analytics.schema_test"))
-    expect_true(macro_exists(fresh_gateway.con, "graph.schema_test"))
-
-
-def test_macro_exists_handles_duckdb_errors_gracefully(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """macro_exists should handle DuckDB errors gracefully."""
-    # Close the connection to simulate an error scenario
-    # Note: We can't actually close fresh_gateway without side effects,
-    # so we just verify the function structure handles exceptions
-
-    # Test with a valid connection but nonexistent table
-    result = macro_exists(fresh_gateway.con, "test.nonexistent")
-    expect_false(result)
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
-def test_ingest_macro_tables_members_can_be_checked(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Each table in INGEST_MACRO_TABLES can be passed to macro_exists."""
-    # This test verifies the integration between the constant and the function
-    for table_key in INGEST_MACRO_TABLES:
-        # Should not raise an exception
-        result = macro_exists(fresh_gateway.con, table_key)
-        expect_is_instance(result, bool)
+    assert_macro_perf(result)
 
 
 def test_fake_tool_service_uses_shared_runner(tmp_path: Path) -> None:

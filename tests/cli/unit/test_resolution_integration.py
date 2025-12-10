@@ -1,19 +1,19 @@
 """Integration tests for the resolution layer.
 
-Tests verify that the resolution/ package and ExecutionContext enhancements
-work correctly together.
+Tests verify that the resolution/ package and HandlerContext work correctly together.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
-from codeintel.cli.execution.context import ExecutionContext
 from codeintel.cli.commands._common import CommonOptions
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.rendering.types import OutputFormat
-from codeintel.cli.resolution import ResolutionError
+from codeintel.cli.resolution import ResolutionError, resolve_from_params
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
@@ -25,65 +25,64 @@ EXPECTED_VERBOSITY = 2
 
 def test_resolution_from_explicit_params() -> None:
     """Test runtime resolution from explicit params."""
-    ctx = ExecutionContext.for_sync(
-        "test.op",
-        {
-            "repo": "test/repo",
-            "commit": "abc123def456789",
-            "db_path": str(Path.cwd() / "build" / "test.duckdb"),
-            "repo_root": str(Path.cwd()),
-        },
-    )
+    params = {
+        "repo": "test/repo",
+        "commit": "abc123def456789",
+        "db_path": str(Path.cwd() / "build" / "test.duckdb"),
+        "repo_root": str(Path.cwd()),
+    }
 
-    runtime = ctx.require_runtime()
+    runtime = resolve_from_params(params)
     expect_equal(runtime.repo, "test/repo")
     expect_equal(runtime.commit, "abc123def456789")
 
 
 def test_resolution_missing_params_raises_error() -> None:
     """Test resolution fails with missing params."""
-    ctx = ExecutionContext.for_sync("test.op", {})
-
     with pytest.raises(ResolutionError):
-        ctx.require_runtime()
+        resolve_from_params({})
 
 
-def test_context_creation() -> None:
-    """Test basic context creation."""
-    ctx = ExecutionContext.for_sync(
-        "test.operation",
-        {"verbose": 1, "target": "all"},
+def test_handler_context_creation() -> None:
+    """Test basic HandlerContext creation."""
+    config = MagicMock()
+    config.log_level = "WARNING"
+    ctx = HandlerContext(
+        config=config,
+        operation_id="test.operation",
+        _params={"verbose": 1, "target": "all"},
     )
 
     expect_equal(ctx.operation_id, "test.operation")
-    expect_equal(ctx.verbosity, 1)
-    expect_equal(ctx.get_str_param("target", "default"), "all")
+    expect_equal(ctx.param_str("target", "default"), "all")
 
 
-def test_str_param_with_default() -> None:
-    """Test get_str_param with default."""
-    ctx = ExecutionContext.for_sync("test.op", {})
+def test_handler_context_str_param_with_default() -> None:
+    """Test param_str with default."""
+    config = MagicMock()
+    ctx = HandlerContext(
+        config=config,
+        operation_id="test.op",
+        _params={},
+    )
 
     # Missing param returns default
-    result = ctx.get_str_param("missing", "fallback")
+    result = ctx.param_str("missing", "fallback")
     expect_equal(result, "fallback")
 
     # Missing param with no default returns None
-    result_none = ctx.get_str_param("missing")
+    result_none = ctx.param_str("missing")
     expect_is_none(result_none)
 
 
-def test_require_str_param_raises() -> None:
-    """Test require_str_param raises for missing."""
-    ctx = ExecutionContext.for_sync("test.op", {})
-
-    with pytest.raises(ValueError, match="Required parameter"):
-        ctx.require_str_param("missing")
-
-
-def test_context_close_is_idempotent() -> None:
+def test_handler_context_close_is_idempotent() -> None:
     """Test close() is safe to call multiple times."""
-    ctx = ExecutionContext.for_sync("test.op", {})
+    config = MagicMock()
+    ctx = HandlerContext(
+        config=config,
+        operation_id="test.op",
+        _params={},
+    )
 
     # Close multiple times should be safe
     ctx.close()

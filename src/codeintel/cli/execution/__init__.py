@@ -1,8 +1,7 @@
 """Unified execution pipeline for CLI operations.
 
 This package provides a single execution infrastructure that supports
-handler-based operations with consistent middleware, resilience, and
-progress tracking.
+handler-based operations with consistent progress tracking.
 
 The canonical `OperationSpec` is defined in `execution/registry.py` and
 is used by `@cli_command` decorator and the introspection system.
@@ -28,21 +27,6 @@ Register an operation:
 >>> register_operation(spec)  # doctest: +SKIP
 """
 
-from codeintel.cli.execution.context import (
-    ExecutionContext,
-    ExecutionResult,
-)
-from codeintel.cli.execution.middleware import (
-    LoggingMiddleware,
-    MetricsMiddleware,
-    Middleware,
-    MiddlewareStack,
-    ProgressMiddleware,
-    TimingMiddleware,
-    TracingMiddleware,
-    configure_default_middleware,
-    get_middleware_stack,
-)
 from codeintel.cli.execution.progress import (
     ProgressRenderer,
     ProgressStreamConfig,
@@ -79,17 +63,10 @@ from codeintel.cli.execution.types import (
 __all__ = [
     "AnyHandler",
     "AsyncHandler",
-    "ExecutionContext",
-    "ExecutionResult",
-    "LoggingMiddleware",
-    "MetricsMiddleware",
-    "Middleware",
-    "MiddlewareStack",
     "OperationRegistry",
     "OperationSpec",
     "ProgressConfig",
     "ProgressEvent",
-    "ProgressMiddleware",
     "ProgressRenderer",
     "ProgressState",
     "ProgressStreamConfig",
@@ -97,13 +74,9 @@ __all__ = [
     "StreamingHandler",
     "StreamingResult",
     "SyncHandler",
-    "TimingMiddleware",
-    "TracingMiddleware",
-    "configure_default_middleware",
     "configure_progress",
     "execute_operation",
     "get_handler_type",
-    "get_middleware_stack",
     "get_progress_tracker",
     "get_registry",
     "is_async_handler",

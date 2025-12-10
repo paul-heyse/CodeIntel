@@ -18,13 +18,11 @@ from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.project import (
-    ProjectNotFoundError,
-    ProjectRuntime,
-    build_project_runtime,
-    find_project_root,
-)
+from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.cli.resolution.types import ResolvedRuntime
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.build.manifest import BuildRunRecord
@@ -113,34 +111,6 @@ class BuildHistoryResult:
             "runs": self.runs,
             "count": self.count,
         }
-
-
-def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from handler context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Resolved project runtime.
-
-    Raises
-    ------
-    ValidationError
-        If project cannot be resolved.
-    """
-    project_root = ctx.param_path("project_root")
-
-    try:
-        project_root_resolved = find_project_root(project_root)
-        return build_project_runtime(project_root_resolved)
-    except ProjectNotFoundError as exc:
-        msg = f"Project not found: {exc}"
-        raise ValidationError(msg) from exc
 
 
 def _resolve_goals(
@@ -272,7 +242,8 @@ def _build_status_result(state: DatabaseState) -> BuildStatusResult:
 
 
 def _execute_build(
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
     goals: list[str],
     force_targets: list[str] | None,
     run_mode: RunMode,
@@ -282,7 +253,9 @@ def _execute_build(
     Parameters
     ----------
     runtime
-        Project runtime context.
+        Resolved runtime context.
+    gateway
+        Open storage gateway.
     goals
         Target names to build.
     force_targets
@@ -298,7 +271,7 @@ def _execute_build(
     graph = get_target_graph()
 
     LOG.info("build.cli.validate_state goals=%s", goals)
-    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
+    validator = StateValidator(graph, gateway, runtime.snapshot)
     state = validator.validate()
 
     LOG.info("build.cli.resolve force=%s", force_targets)
@@ -316,7 +289,7 @@ def _execute_build(
     LOG.info("build.cli.execute stages=%d", len(plan.stages))
     executor = BuildExecutor(
         graph=graph,
-        gateway=runtime.gateway,
+        gateway=gateway,
         snapshot=runtime.snapshot,
         paths=runtime.paths,
         tools=runtime.tools,
@@ -326,15 +299,18 @@ def _execute_build(
 
 
 def _lookup_run_by_id(
-    runtime: ProjectRuntime,
+    gateway: StorageGateway,
+    repo: str,
     run_id: str,
 ) -> BuildRunRecord:
     """Look up a build run by ID or prefix.
 
     Parameters
     ----------
-    runtime
-        Project runtime with gateway access.
+    gateway
+        Open storage gateway.
+    repo
+        Repository slug for filtering runs.
     run_id
         Exact run ID or prefix to match.
 
@@ -348,11 +324,11 @@ def _lookup_run_by_id(
     ValidationError
         If run is not found or prefix is ambiguous.
     """
-    record = runtime.gateway.build.fetch_run(run_id)
+    record = gateway.build.fetch_run(run_id)
     if record is not None:
         return record
 
-    all_runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=100)
+    all_runs = gateway.build.list_runs(repo=repo, limit=100)
     matches = [r for r in all_runs if r.run_id.startswith(run_id)]
 
     if len(matches) == 1:
@@ -386,8 +362,8 @@ def build_status_handler(
     module = ctx.param_str("module")
 
     try:
-        runtime = _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        runtime = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:build:project-error",
@@ -405,8 +381,9 @@ def build_status_handler(
         runtime.snapshot.commit,
     )
 
-    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
-    state = validator.validate()
+    with runtime_gateway(runtime) as gateway:
+        validator = StateValidator(graph, gateway, runtime.snapshot)
+        state = validator.validate()
 
     if module:
         valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
@@ -542,8 +519,8 @@ def build_run_handler(
         return validation_error
 
     try:
-        runtime = _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        runtime = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:build:project-error",
@@ -580,7 +557,7 @@ def build_run_handler(
 
 
 def _execute_and_format_result(
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
     goals: list[str],
     force: list[str] | None,
     run_mode: RunMode,
@@ -590,7 +567,7 @@ def _execute_and_format_result(
     Parameters
     ----------
     runtime
-        Project runtime.
+        Resolved runtime.
     goals
         Target goals.
     force
@@ -604,7 +581,8 @@ def _execute_and_format_result(
         Build result.
     """
     try:
-        result, _plan = _execute_build(runtime, goals, force, run_mode)
+        with runtime_gateway(runtime, read_only=False) as gateway:
+            result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
     except Exception as exc:
         LOG.exception("build.run.error")
         return CliResult.fail(
@@ -658,8 +636,8 @@ def build_history_handler(
     limit = ctx.param_int("limit", 10)
 
     try:
-        runtime = _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        runtime = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:build:project-error",
@@ -669,33 +647,34 @@ def build_history_handler(
             )
         )
 
-    if run_id:
-        try:
-            record = _lookup_run_by_id(runtime, run_id)
-        except ValidationError as e:
-            return CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:build:run-not-found",
-                    title="Run Not Found",
-                    detail=str(e),
-                    status=404,
+    with runtime_gateway(runtime) as gateway:
+        if run_id:
+            try:
+                record = _lookup_run_by_id(gateway, runtime.snapshot.repo, run_id)
+            except ValidationError as e:
+                return CliResult.fail(
+                    ProblemDetail(
+                        type="urn:codeintel:build:run-not-found",
+                        title="Run Not Found",
+                        detail=str(e),
+                        status=404,
+                    )
+                )
+            return CliResult.ok(
+                BuildHistoryResult(
+                    runs=[record.to_dict()],
+                    count=1,
                 )
             )
+
+        runs = gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
+
         return CliResult.ok(
             BuildHistoryResult(
-                runs=[record.to_dict()],
-                count=1,
+                runs=[r.to_dict() for r in runs],
+                count=len(runs),
             )
         )
-
-    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
-
-    return CliResult.ok(
-        BuildHistoryResult(
-            runs=[r.to_dict() for r in runs],
-            count=len(runs),
-        )
-    )
 
 
 __all__ = [
