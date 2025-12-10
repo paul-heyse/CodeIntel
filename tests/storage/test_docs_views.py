@@ -83,9 +83,7 @@ def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -
 def test_docs_view_readable_via_dataset_rows(docs_views_gateway: StorageGateway) -> None:
     """Docs views remain readable through metadata.dataset_rows slices."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
-    repo = DatasetReadRepository(
-        gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef"
-    )
+    repo = DatasetReadRepository(gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef")
     rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
     if not isinstance(rows, list):
         pytest.fail("Expected list from dataset_rows")
@@ -144,9 +142,9 @@ def test_call_graph_view_scopes_edges_to_repo_commit(tmp_path: Path) -> None:
 def test_subsystem_profile_columns(docs_views_gateway: StorageGateway) -> None:
     """Subsystem profile view exposes expected columns for typed contracts."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
-    rel_df = (
-        docs_views_gateway.con.execute("SELECT * FROM docs.v_subsystem_profile LIMIT 0").fetchdf()
-    )
+    rel_df = docs_views_gateway.con.execute(
+        "SELECT * FROM docs.v_subsystem_profile LIMIT 0"
+    ).fetchdf()
     cols = [c.lower() for c in rel_df.columns]
     expected = {
         "repo",
@@ -184,9 +182,9 @@ def test_subsystem_profile_columns(docs_views_gateway: StorageGateway) -> None:
 def test_subsystem_coverage_columns(docs_views_gateway: StorageGateway) -> None:
     """Subsystem coverage view exposes expected columns for typed contracts."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
-    rel_df = (
-        docs_views_gateway.con.execute("SELECT * FROM docs.v_subsystem_coverage LIMIT 0").fetchdf()
-    )
+    rel_df = docs_views_gateway.con.execute(
+        "SELECT * FROM docs.v_subsystem_coverage LIMIT 0"
+    ).fetchdf()
     cols = [c.lower() for c in rel_df.columns]
     expected = {
         "repo",

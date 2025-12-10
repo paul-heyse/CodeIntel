@@ -15,6 +15,7 @@ from __future__ import annotations
 from codeintel.cli.execution.registry import (
     OperationRegistry,
     OperationSpec,
+    create_spec_from_serving_operation,
     get_registry,
     register_operation,
     reset_registry,
@@ -73,6 +74,7 @@ __all__ = [
     "classify_param_role",
     "coerce_params_from_strings",
     "coerce_string_param",
+    "create_spec_from_serving_operation",
     "get_backend_signature_for_operation",
     "get_help_panel_for_role",
     "get_help_renderer",

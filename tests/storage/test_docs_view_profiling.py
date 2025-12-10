@@ -121,9 +121,7 @@ def test_run_profile_creates_artifacts(docs_profile_db: Path, tmp_path: Path) ->
     expect_true(len(coverage_explain.read_text()) > 0)
 
 
-def test_run_profile_analyze_mode_creates_artifacts(
-    docs_profile_db: Path, tmp_path: Path
-) -> None:
+def test_run_profile_analyze_mode_creates_artifacts(docs_profile_db: Path, tmp_path: Path) -> None:
     """Verify run_profile with analyze=True creates EXPLAIN ANALYZE artifacts."""
     output_dir = tmp_path / "profiling_output"
 

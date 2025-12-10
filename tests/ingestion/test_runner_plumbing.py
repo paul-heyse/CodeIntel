@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     """Ensure repo_scan respects ignore lists from ScanProfile."""
     setup = make_scan_setup(

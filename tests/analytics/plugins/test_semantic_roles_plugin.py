@@ -13,8 +13,8 @@ from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
-from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.graphs import canonical_ast_artifacts
+from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.seeds import CORE_PACK
 
@@ -56,6 +56,7 @@ def _catalog_with_tests(ctx) -> FunctionCatalogService:
 def _apply_catalog(ctx, catalog_provider: FunctionCatalogService) -> None:
     """Ensure GOIDs are seeded for the provided catalog."""
     ensure_catalog_with_goids(ctx, catalog_provider)
+
 
 def _insert_function_metrics(ctx, created_at: datetime, goid: int) -> None:
     """Insert minimal function metrics for the test function."""

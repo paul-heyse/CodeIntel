@@ -13,7 +13,6 @@ from fastapi import status
 from codeintel.serving.mcp.errors import McpError
 from tests._helpers.assertions import (
     assert_problem_detail_response,
-    expect_in,
     expect_is_instance,
     expect_is_not_none,
 )

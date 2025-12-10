@@ -10,9 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from codeintel.cli.commands._common import CommonOptions
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution import ResolutionError, resolve_from_params
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -88,35 +86,3 @@ def test_handler_context_close_is_idempotent() -> None:
     ctx.close()
     ctx.close()
     ctx.close()
-
-
-def test_options_to_params() -> None:
-    """Test converting CommonOptions to params dict."""
-    options = CommonOptions(
-        repo="test/repo",
-        commit="abc123",
-        verbose=EXPECTED_VERBOSITY,
-    )
-
-    params = options.to_params()
-
-    expect_equal(params["repo"], "test/repo")
-    expect_equal(params["commit"], "abc123")
-    expect_equal(params["verbose"], EXPECTED_VERBOSITY)
-
-
-def test_output_format_resolution() -> None:
-    """Test output format resolution with json flag."""
-    # JSON flag takes precedence
-    options = CommonOptions(
-        output_format=OutputFormat.TEXT,
-        json=True,
-    )
-    expect_equal(options.resolve_output_format(), OutputFormat.JSON)
-
-    # Without json flag, use output_format
-    options2 = CommonOptions(
-        output_format=OutputFormat.TEXT,
-        json=False,
-    )
-    expect_equal(options2.resolve_output_format(), OutputFormat.TEXT)

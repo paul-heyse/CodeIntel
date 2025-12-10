@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
-from tests._helpers.assertions import expect_in, expect_true
+from tests._helpers.assertions import expect_true
 from tests._helpers.builders import insert_symbol_use_edges
 
 

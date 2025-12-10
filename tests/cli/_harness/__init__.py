@@ -514,7 +514,15 @@ class OperationTestHarness:
             )
 
         # Execute operation through the standard registry path
-        result = execute_operation(spec, params)
+        try:
+            result = execute_operation(spec, params)
+        except Exception as exc:
+            # Catch any exception from the handler and convert to error result
+            return CliInvocationResult(
+                exit_code=1,
+                stdout="",
+                stderr=str(exc),
+            )
 
         if result.success:
             data = result.data
@@ -534,6 +542,7 @@ class OperationTestHarness:
             stdout="",
             stderr=str(error_msg),
         )
+
 
 __all__ = [
     "CliInvocationResult",

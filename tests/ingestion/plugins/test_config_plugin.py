@@ -41,7 +41,7 @@ def _assert_config_rows(ctx: TargetExecutionContext) -> int:
 async def test_execute_with_no_config_files_returns_empty_result(tmp_path: Path) -> None:
     """When no config files are found, plugin should succeed with no rows."""
     ctx, raw_result = await run_ingestion_scenario(ConfigIngestPlugin, tmp_path)
-    result = cast(TargetResult, raw_result)
+    result = cast("TargetResult", raw_result)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
@@ -60,7 +60,7 @@ async def test_execute_ingests_valid_configs_and_logs_invalid(
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
     )
-    result = cast(TargetResult, raw_result)
+    result = cast("TargetResult", raw_result)
 
     expect_true(result.success is True)
     ingested_rows = _assert_config_rows(ctx)
@@ -85,7 +85,7 @@ async def test_execute_only_invalid_configs_fails(tmp_path: Path) -> None:
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
     )
-    result = cast(TargetResult, raw_result)
+    result = cast("TargetResult", raw_result)
 
     expect_true(result.success is False)
     error_message = expect_is_not_none(result.error_message)

@@ -13,6 +13,7 @@ import types
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Union, get_args, get_origin, get_type_hints
 
+from codeintel.cli.core.parsing import parse_bool
 from codeintel.serving.backend import query_api
 from codeintel.serving.operations.catalog import Operation, iter_operations
 
@@ -687,7 +688,7 @@ def coerce_string_param(
         return float(value)
 
     if base_type is bool:
-        return value.lower() in {"true", "1", "yes", "on"}
+        return parse_bool(value)
 
     # For complex types (like enums, dataclasses), return as string
     # and let the backend handle conversion

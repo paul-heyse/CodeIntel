@@ -22,6 +22,7 @@ from codeintel.analytics.runtime import (
     GraphRuntimeOptions,
     build_graph_runtime,
 )
+from codeintel.cli.core.parsing import is_truthy_string
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
@@ -84,7 +85,7 @@ class HandlerContextOptions:
     database_path: Path | None = None
 
 
-@dataclass
+@dataclass  # noqa: PLR0904
 class HandlerContext:
     """Unified context for all CLI handler operations.
 
@@ -254,9 +255,9 @@ class HandlerContext:
             return default
         if isinstance(value, bool):
             return value
-        # Handle string representations
+        # Handle string representations using canonical parsing
         if isinstance(value, str):
-            return value.lower() in {"true", "1", "yes", "on"}
+            return is_truthy_string(value)
         return bool(value)
 
     def param_path(self, key: str, default: Path | None = None) -> Path | None:
@@ -617,6 +618,96 @@ class HandlerContext:
         handlers that need to acknowledge params exist without using them.
         """
         return self._params
+
+    # --- Serving Operation Invocation ---
+
+    def invoke_serving_operation(
+        self,
+        op_id: str,
+        params: dict[str, object],
+        *,
+        skip_prereqs: bool = False,
+    ) -> dict[str, object]:
+        """Invoke a serving operation through the unified stack.
+
+        Centralize serving operation invocation including:
+        - Prerequisite pipeline execution (optional)
+        - Service stack building
+        - Backend method invocation
+        - Result serialization
+
+        Parameters
+        ----------
+        op_id
+            Serving operation ID (e.g., "function.summary").
+        params
+            Operation parameters.
+        skip_prereqs
+            If True, skip prerequisite pipeline execution.
+
+        Returns
+        -------
+        dict[str, object]
+            Operation result as dictionary.
+
+        Raises
+        ------
+        ValueError
+            If the operation or backend method is not found.
+
+        Examples
+        --------
+        >>> ctx.invoke_serving_operation(  # doctest: +SKIP
+        ...     "function.summary",
+        ...     {"goid_h128": "abc123"},
+        ... )
+        {'function_goid_h128': 'abc123', 'name': 'foo', ...}
+        """
+        # Import here to avoid circular imports
+        from codeintel.serving.auto_pipeline import run_operation_prereqs  # noqa: PLC0415
+        from codeintel.serving.bootstrap import build_service_stack  # noqa: PLC0415
+        from codeintel.serving.operations.catalog import get_operation  # noqa: PLC0415
+
+        op = get_operation(op_id)
+        if op is None:
+            msg = f"Unknown serving operation: {op_id}"
+            raise ValueError(msg)
+
+        runtime = self.runtime
+        gateway = self.gateway
+
+        # Run prerequisites if needed
+        if not skip_prereqs:
+            run_operation_prereqs(
+                op_id=op_id,
+                gateway=gateway,
+                snapshot=runtime.snapshot,
+                paths=runtime.paths,
+                tools=runtime.tools,
+            )
+
+        # Build service stack and invoke
+        stack = build_service_stack(
+            config=runtime.serving,
+            gateway=gateway,
+        )
+
+        try:
+            method = getattr(stack.service, op.backend_method, None)
+            if method is None:
+                msg = f"Backend method not found: {op.backend_method}"
+                raise ValueError(msg)
+
+            result = method(**params)
+
+            # Serialize result to dictionary
+            if hasattr(result, "model_dump"):
+                return result.model_dump(mode="json")
+            if hasattr(result, "__dict__"):
+                return dict(result.__dict__)
+            return {"result": result}
+        finally:
+            stack.close()
 
     # --- Resource Management ---
 

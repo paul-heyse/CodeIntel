@@ -7,9 +7,10 @@ used during code ingestion.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
-from typing import Callable
+
 import pytest
 
 from codeintel.config.datasets import get_table_columns

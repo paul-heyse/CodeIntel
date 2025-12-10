@@ -9,11 +9,10 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any
 
 import uvicorn
 
-from codeintel.cli.core import CliResult
+from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
@@ -21,17 +20,14 @@ from codeintel.cli.core.result_types import (
     OperationCallResult,
     OperationListResult,
 )
-from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.serving.auto_pipeline import run_operation_prereqs
-from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.validation import collect_contract_issues
 
 LOG = logging.getLogger(__name__)
@@ -68,32 +64,6 @@ class ServeStartResult:
             "commit": self.commit,
             "db_path": self.db_path,
         }
-
-
-def _parse_param_value(value: str) -> str | int | float | bool:
-    """Parse CLI parameter text into a primitive Python type.
-
-    Parameters
-    ----------
-    value
-        Raw string value.
-
-    Returns
-    -------
-    str | int | float | bool
-        Parsed value.
-    """
-    if value.lower() in {"true", "false"}:
-        return value.lower() == "true"
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    return value
 
 
 def _setup_serving_env(runtime: ResolvedRuntime, *, auto_pipeline: bool) -> None:
@@ -184,6 +154,7 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
     params_list = ctx.param_list("params")
     skip_prereqs = ctx.param_bool("skip_prereqs", default=False)
 
+    # Validate operation exists first
     op = get_operation(op_id)
     if op is None:
         return CliResult.fail(
@@ -195,7 +166,8 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
             )
         )
 
-    kwargs: dict[str, str | int | float | bool] = {}
+    # Parse params list into kwargs
+    kwargs: dict[str, object] = {}
     for param_str in params_list:
         if "=" not in param_str:
             return CliResult.fail(
@@ -207,78 +179,11 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
                 )
             )
         key, value = param_str.split("=", 1)
-        kwargs[key] = _parse_param_value(value)
+        kwargs[key] = parse_cli_value(value)
 
-    runtime = ctx.runtime
-
-    with runtime_gateway(runtime) as gateway:
-        if not skip_prereqs:
-            run_operation_prereqs(
-                op_id=op_id,
-                gateway=gateway,
-                snapshot=runtime.snapshot,
-                paths=runtime.paths,
-                tools=runtime.tools,
-            )
-
-        result = _invoke_operation_structured(op_id, kwargs, runtime, gateway)
-        return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
-
-
-def _invoke_operation_structured(
-    op_id: str,
-    kwargs: dict[str, Any],
-    runtime: ResolvedRuntime,
-    gateway: StorageGateway,
-) -> dict[str, Any]:
-    """Invoke operation and return structured result.
-
-    Parameters
-    ----------
-    op_id
-        Operation ID.
-    kwargs
-        Operation parameters.
-    runtime
-        Resolved runtime.
-    gateway
-        Open storage gateway.
-
-    Returns
-    -------
-    dict[str, Any]
-        Operation result as dictionary.
-
-    Raises
-    ------
-    ValidationError
-        If the operation or backend method is not found.
-    """
-    op = get_operation(op_id)
-    if op is None:
-        msg = f"Unknown operation: {op_id}"
-        raise ValidationError(msg)
-
-    stack = build_service_stack(
-        config=runtime.serving,
-        gateway=gateway,
-    )
-
-    try:
-        method = getattr(stack.service, op.backend_method, None)
-        if method is None:
-            msg = f"Backend method not found: {op.backend_method}"
-            raise ValidationError(msg)
-
-        result = method(**kwargs)
-
-        if hasattr(result, "model_dump"):
-            return result.model_dump(mode="json")
-        if hasattr(result, "__dict__"):
-            return result.__dict__
-        return {"result": result}
-    finally:
-        stack.close()
+    # Use unified serving operation invocation
+    result = ctx.invoke_serving_operation(op_id, kwargs, skip_prereqs=skip_prereqs)
+    return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
 
 def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeResult]:
@@ -338,21 +243,21 @@ def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
     CliResult[DatasetListResult]
         List of datasets.
     """
-    with runtime_gateway(ctx.runtime) as gateway:
-        registry = gateway.datasets
-        meta = registry.meta or {}
+    gateway = ctx.gateway
+    registry = gateway.datasets
+    meta = registry.meta or {}
 
-        dataset_dicts: list[dict[str, str | None]] = [
-            {
-                "name": name,
-                "table_key": contract.table_key,
-                "is_view": str(contract.is_view),
-                "owner_package": contract.owner_package,
-            }
-            for name, contract in sorted(meta.items())
-        ]
+    dataset_dicts: list[dict[str, str | None]] = [
+        {
+            "name": name,
+            "table_key": contract.table_key,
+            "is_view": str(contract.is_view),
+            "owner_package": contract.owner_package,
+        }
+        for name, contract in sorted(meta.items())
+    ]
 
-        return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
+    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
 
 
 def dataset_describe_handler(
@@ -392,14 +297,13 @@ def dataset_verify_handler(
         Verification result.
     """
     table_key = ctx.param_str("table_key")
+    gateway = ctx.gateway
+    issues = collect_contract_issues(gateway.con)
 
-    with runtime_gateway(ctx.runtime) as gateway:
-        issues = collect_contract_issues(gateway.con)
+    if table_key:
+        issues = [issue for issue in issues if table_key in issue]
 
-        if table_key:
-            issues = [issue for issue in issues if table_key in issue]
-
-        return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
+    return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
 def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:

@@ -81,9 +81,7 @@ def test_list_nodes_returns_nodes(
     """Verify list_nodes returns dataflow nodes including seeded data."""
     nodes = dataflow_repo.list_nodes()
 
-    base_node_count, _ = cast(
-        "tuple[int, int]", dataflow_ctx.extra.get("dataflow_counts", (0, 0))
-    )
+    base_node_count, _ = cast("tuple[int, int]", dataflow_ctx.extra.get("dataflow_counts", (0, 0)))
     expect_length(nodes, base_node_count + len(DATAFLOW_NODES), label="node count")
 
     node_ids = [n["id"] for n in nodes]
@@ -111,9 +109,7 @@ def test_list_edges_returns_edges(
     """Verify list_edges returns edges including bootstrapped data."""
     edges = dataflow_repo.list_edges()
 
-    _, base_edge_count = cast(
-        "tuple[int, int]", dataflow_ctx.extra.get("dataflow_counts", (0, 0))
-    )
+    _, base_edge_count = cast("tuple[int, int]", dataflow_ctx.extra.get("dataflow_counts", (0, 0)))
     expect_length(edges, base_edge_count + len(DATAFLOW_EDGES), label="edge count")
 
 

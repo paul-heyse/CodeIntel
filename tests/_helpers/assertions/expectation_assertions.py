@@ -133,6 +133,7 @@ def expect_not_in(
     failure_message = f"{_prefix(label)}{value!r} unexpectedly found in {container!r}"
     raise AssertionError(failure_message)
 
+
 def expect_row_count(rows: Sequence[object], expected: int, *, label: str | None = None) -> None:
     """Raise AssertionError when a row sequence length differs from expected.
 
@@ -178,7 +179,7 @@ def expect_table_schema(
 ) -> None:
     """Assert that a table's schema matches expected column names/types."""
     rows = con.execute(f"PRAGMA table_info('{table}')").fetchall()
-    observed = {cast(str, row[1]): cast(str, row[2]) for row in rows} if rows else {}
+    observed = {cast("str", row[1]): cast("str", row[2]) for row in rows} if rows else {}
     expect_equal(observed, dict(expected_columns), label=label or f"{table}_schema")
 
 

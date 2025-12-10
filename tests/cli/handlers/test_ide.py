@@ -55,8 +55,8 @@ def test_ide_hints_handler_returns_ok_when_hints_found(
     expect_is_not_none(result.data)
     expect_is_instance(result.data, IdeHintsResult)
     if result.data is not None:
-            expect_equal(result.data.rel_path, "pkg/mod.py")
-            expect_equal(len(result.data.hints), 1)
+        expect_equal(result.data.rel_path, "pkg/mod.py")
+        expect_equal(len(result.data.hints), 1)
 
 
 def test_ide_hints_handler_returns_fail_when_no_hints(
