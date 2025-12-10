@@ -1,69 +1,34 @@
-"""Cyclopts wiring for the build command group."""
+"""Cyclopts wiring for the build command group.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.build_handlers import (
-    BuildHistoryOptions,
-    BuildRunContext,
-    BuildRunOptions,
-    BuildStatusOptions,
-    RunMode,
-    TargetScope,
-    build_history_handler,
-    build_run_handler,
-    build_status_handler,
+    build_history_ctx,
+    build_run_ctx,
+    build_status_ctx,
 )
-from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.cli_types import OutputFormat
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    RuntimeCLI,
-    make_handler_context,
-)
+from codeintel.cli.execution.adapter import CycloptsAdapter
 
 build_app = App(
     name="build",
     help="Build system commands for minimal-work target computation.",
 )
 
-MODULE_CHOICES = ("ingestion", "graphs", "analytics")
-
-
-def _validate_build_run_selection(
-    targets: list[str] | None, module: str | None, *, all_targets: bool
-) -> None:
-    """Enforce exactly one of targets/module/all_targets.
-
-    Raises
-    ------
-    ValidationError
-        If zero or multiple selection mechanisms are provided.
-    """
-    provided = [
-        bool(targets),
-        module is not None,
-        all_targets,
-    ]
-    if sum(provided) != 1:
-        message = "Provide exactly one of targets, --module, or --all."
-        raise ValidationError(message)
-
 
 @build_app.command(name="run")
 @dataclass
-class BuildRunCli:
-    """Build targets with automatic dependency resolution.
-
-    Raises
-    ------
-    ValidationError
-        If selection flags are invalid or module is unknown.
-    """
+class BuildRunCommand:
+    """Build targets with automatic dependency resolution."""
 
     targets: Annotated[
         list[str] | None,
@@ -103,38 +68,37 @@ class BuildRunCli:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        if self.module is not None and self.module not in MODULE_CHOICES:
-            valid = ", ".join(MODULE_CHOICES)
-            message = f"Unknown module: {self.module}. Valid: {valid}"
-            raise ValidationError(message)
-        _validate_build_run_selection(self.targets, self.module, all_targets=self.all_targets)
-        runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime or RuntimeCLI(),
-            self.output or OutputFormatCLI(),
-            default_output=OutputFormat.TEXT,
-        )
-        options = BuildRunOptions(
-            targets=self.targets,
-            module=self.module,
-            target_scope=TargetScope.ALL if self.all_targets else TargetScope.REQUESTED,
-            run_mode=RunMode.DRY_RUN if self.dry_run else RunMode.EXECUTE,
-            force=self.force,
-        )
-        ctx_opts = BuildRunContext(
-            runtime_options=runtime_opts,
-            verbose=verbose,
-            output_format=output_format,
-        )
-        run_handler(build_run_handler, options, ctx_opts)
+        """Execute the build run command."""
+        CycloptsAdapter("build.run", build_run_ctx)(self)
 
 
 @build_app.command(name="status")
 @dataclass
-class BuildStatusCli:
+class BuildStatusCommand:
     """Show current state of build targets."""
 
     module: Annotated[
@@ -145,31 +109,37 @@ class BuildStatusCli:
             show_choices=True,
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        if self.module is not None and self.module not in MODULE_CHOICES:
-            valid = ", ".join(MODULE_CHOICES)
-            message = f"Unknown module: {self.module}. Valid: {valid}"
-            raise ValidationError(message)
-        runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime or RuntimeCLI(),
-            self.output or OutputFormatCLI(),
-            default_output=OutputFormat.TEXT,
-        )
-        options = BuildStatusOptions(
-            module=self.module,
-            runtime_options=runtime_opts,
-            output_format=output_format,
-            verbose=verbose,
-        )
-        run_handler(build_status_handler, options)
+        """Execute the build status command."""
+        CycloptsAdapter("build.status", build_status_ctx)(self)
 
 
 @build_app.command(name="history")
 @dataclass
-class BuildHistoryCli:
+class BuildHistoryCommand:
     """Show build run history and details."""
 
     run_id: Annotated[
@@ -186,23 +156,32 @@ class BuildHistoryCli:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_opts, verbose, output_format = make_handler_context(
-            self.runtime or RuntimeCLI(),
-            self.output or OutputFormatCLI(),
-            default_output=OutputFormat.TEXT,
-        )
-        options = BuildHistoryOptions(
-            run_id=self.run_id,
-            limit=self.limit,
-            runtime_options=runtime_opts,
-            output_format=output_format,
-            verbose=verbose,
-        )
-        run_handler(build_history_handler, options)
+        """Execute the build history command."""
+        CycloptsAdapter("build.history", build_history_ctx)(self)
 
 
 __all__ = ["build_app"]

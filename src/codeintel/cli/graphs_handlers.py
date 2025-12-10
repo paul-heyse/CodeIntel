@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from textwrap import indent
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.cli.cli_types import OutputFormat
 from codeintel.cli.result_types import GraphPlanResult, GraphPluginInfo, GraphPluginsResult
@@ -31,6 +31,9 @@ from codeintel.graphs.core.registry import (
     list_graph_plugins,
     plan_graph_plugins,
 )
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 
 LOG = logging.getLogger(__name__)
 
@@ -517,6 +520,81 @@ def graph_plugins_handler_structured(
         _restore_registry_logger(registry_logger, previous_registry_level)
 
 
+# -----------------------------------------------------------------------------
+# ExecutionContext-based Handler
+# -----------------------------------------------------------------------------
+
+
+def _build_graph_options_from_ctx(ctx: ExecutionContext) -> GraphPluginsOptions:
+    """Build GraphPluginsOptions from ExecutionContext.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    GraphPluginsOptions
+        Options for graph plugin operations.
+    """
+    output_format = ctx.output_format
+    if ctx.get_bool_param("json"):
+        output_format = OutputFormat.JSON
+
+    names_raw = ctx.params.get("names")
+    enable_raw = ctx.params.get("enable")
+    disable_raw = ctx.params.get("disable")
+
+    selection_policy_raw = ctx.params.get("selection_policy", SelectionPolicy.LENIENT)
+    if isinstance(selection_policy_raw, SelectionPolicy):
+        selection_policy = selection_policy_raw
+    else:
+        selection_policy = SelectionPolicy(str(selection_policy_raw))
+
+    dependency_policy_raw = ctx.params.get("dependency_policy", DependencyPolicy.STRICT)
+    if isinstance(dependency_policy_raw, DependencyPolicy):
+        dependency_policy = dependency_policy_raw
+    else:
+        dependency_policy = DependencyPolicy(str(dependency_policy_raw))
+
+    return GraphPluginsOptions(
+        mode=PlanMode.PLAN if ctx.get_bool_param("plan") else PlanMode.LIST,
+        names=tuple(names_raw) if names_raw else None,
+        enable=tuple(enable_raw) if enable_raw else None,
+        disable=tuple(disable_raw) if disable_raw else (),
+        selection_policy=selection_policy,
+        dependency_policy=dependency_policy,
+        validation_mode=ctx.get_bool_param("validate_plan"),
+        output_format=output_format,
+    )
+
+
+def graph_plugins_ctx(ctx: ExecutionContext) -> CliResult[GraphPluginsResult | GraphPlanResult]:
+    """List registered graph plugins or display an execution plan.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - plan: Whether to show execution plan.
+        - names: Specific plugin names to include.
+        - enable: Plugins to enable.
+        - disable: Plugins to disable.
+        - selection_policy: Selection policy for plugins.
+        - dependency_policy: Dependency resolution policy.
+        - validate_plan: Whether to use strict validation.
+        - json: Output in JSON format.
+
+    Returns
+    -------
+    CliResult[GraphPluginsResult | GraphPlanResult]
+        Structured result with plugin list or execution plan.
+    """
+    options = _build_graph_options_from_ctx(ctx)
+    return graph_plugins_handler_structured(options)
+
+
 __all__ = [
     "DependencyPolicy",
     "GraphPluginsOptions",
@@ -525,6 +603,7 @@ __all__ = [
     "PlanMode",
     "SelectionPolicy",
     "bundle_graph_plugins",
+    "graph_plugins_ctx",
     "graph_plugins_handler",
     "graph_plugins_handler_structured",
     "parse_graph_options",

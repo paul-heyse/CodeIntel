@@ -1,32 +1,27 @@
-"""Cyclopts wiring for docs export commands."""
+"""Cyclopts wiring for docs export commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import ValidationError, run_handler
 from codeintel.cli.cli_types import OutputFormat
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    RuntimeCLI,
-    make_handler_context,
-)
 from codeintel.cli.docs_handlers import (
-    BackendOptions,
-    DocsExportOptions,
     DryRunMode,
     ExportValidationMode,
     MacroRequirement,
     NxGpuMode,
     PrereqMode,
-    ProjectOptions,
-    bundle_docs_export,
-    docs_export_handler,
+    docs_export_ctx,
 )
+from codeintel.cli.execution.adapter import CycloptsAdapter
 
 docs_app = App(
     name="docs",
@@ -34,17 +29,50 @@ docs_app = App(
 )
 
 
+class NxBackend(Enum):
+    """NetworkX backend selection."""
+
+    AUTO = "auto"
+    CPU = "cpu"
+    NX_CUGRAPH = "nx-cugraph"
+
+
+@docs_app.command(name="export")
 @dataclass
-class DocsBackendCli:
-    """Graph backend selection."""
+class DocsExportCommand:
+    """Export datasets to Document Output/."""
 
-    class NxBackend(Enum):
-        """NetworkX backend selection."""
+    # Project options
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    repo: Annotated[
+        str | None,
+        Parameter(
+            name="--repo",
+            help="Repository slug.",
+        ),
+    ] = None
+    commit: Annotated[
+        str | None,
+        Parameter(
+            name="--commit",
+            help="Commit SHA.",
+        ),
+    ] = None
+    db_path: Annotated[
+        Path | None,
+        Parameter(
+            name="--db-path",
+            help="Path to DuckDB database.",
+        ),
+    ] = None
 
-        AUTO = "auto"
-        CPU = "cpu"
-        NX_CUGRAPH = "nx-cugraph"
-
+    # Backend options
     nx_backend: Annotated[
         NxBackend,
         Parameter(
@@ -61,43 +89,23 @@ class DocsBackendCli:
         ),
     ] = NxGpuMode.DISABLED
 
-
-@dataclass
-class DocsExportCli:
-    """Export and validation options."""
-
+    # Export options
     validation_mode: Annotated[
-        ExportValidationMode | None,
+        ExportValidationMode,
         Parameter(
             name="--validation-mode",
             help="Validation strategy: required or skip.",
             show_choices=True,
         ),
-    ] = None
-    validate: Annotated[
-        bool,
-        Parameter(
-            name="--validate",
-            help="Require validation for exports (exit code 1 on failures).",
-            negative=(),
-        ),
-    ] = False
+    ] = ExportValidationMode.SKIP
     macro_requirement: Annotated[
-        MacroRequirement | None,
+        MacroRequirement,
         Parameter(
             name="--macro-requirement",
-            help="Normalized macro requirement policy: require_normalized or allow_partial.",
+            help="Normalized macro requirement policy.",
             show_choices=True,
         ),
-    ] = None
-    require_normalized_macros: Annotated[
-        bool,
-        Parameter(
-            name="--require-normalized-macros",
-            help="Require normalized macros during export.",
-            negative=(),
-        ),
-    ] = False
+    ] = MacroRequirement.ALLOW_PARTIAL
     schemas: Annotated[
         list[str] | None,
         Parameter(
@@ -112,153 +120,43 @@ class DocsExportCli:
             help="Dataset name to export (repeatable).",
         ),
     ] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
     run_mode: Annotated[
-        DryRunMode | None,
+        DryRunMode,
         Parameter(
             name="--run-mode",
             help="Execution mode for docs export.",
             show_choices=True,
         ),
-    ] = None
-    dry_run: Annotated[
-        bool,
-        Parameter(
-            name="--dry-run",
-            help="Show export plan without executing.",
-            negative=(),
-        ),
-    ] = False
+    ] = DryRunMode.EXECUTE
     prereq_mode: Annotated[
-        PrereqMode | None,
+        PrereqMode,
         Parameter(
             name="--prereq-mode",
             help="Prerequisite execution mode.",
             show_choices=True,
         ),
-    ] = None
-    skip_prereqs: Annotated[
-        bool,
+    ] = PrereqMode.RUN
+
+    # Output options
+    output_format: Annotated[
+        OutputFormat,
         Parameter(
-            name="--skip-prereqs",
-            help="Skip prerequisite pipeline execution.",
-            negative=(),
+            name="--output-format",
+            help="Output format (text or json).",
         ),
-    ] = False
-
-
-DEFAULT_BACKEND = DocsBackendCli()
-DEFAULT_EXPORT = DocsExportCli()
-
-
-@dataclass
-class DocsCli:
-    """Grouped CLI surface for docs export."""
-
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    backend: Annotated[DocsBackendCli | None, Parameter(name="*")] = None
-    export: Annotated[DocsExportCli | None, Parameter(name="*")] = None
-
-
-@dataclass(frozen=True)
-class DocsExportBundle:
-    """Typed bundle returned by docs export option normalization."""
-
-    project: ProjectOptions
-    backend: BackendOptions
-    export_options: DocsExportOptions
-    verbose: int
-
-
-@docs_app.command(name="export")
-@dataclass
-class DocsExportCommand:
-    """Export datasets to Document Output/.
-
-    Enforces mutually exclusive pairs:
-    - validation_mode vs --validate
-    - run_mode vs --dry-run
-    - prereq_mode vs --skip-prereqs
-    """
-
-    cfg: Annotated[DocsCli | None, Parameter(name="*")] = None
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        cfg = self.cfg
-        if cfg is None:
-            cfg = DocsCli()
-        project_cfg = cfg.runtime if cfg.runtime is not None else RuntimeCLI()
-        backend_cfg = cfg.backend if cfg.backend is not None else DocsBackendCli()
-        export_cfg = cfg.export if cfg.export is not None else DocsExportCli()
-        if export_cfg.validation_mode is not None and export_cfg.validate:
-            message = "Provide either --validation-mode or --validate, not both."
-            raise ValidationError(message)
-        if export_cfg.run_mode is not None and export_cfg.dry_run:
-            message = "Provide either --run-mode or --dry-run, not both."
-            raise ValidationError(message)
-        if export_cfg.prereq_mode is not None and export_cfg.skip_prereqs:
-            message = "Provide either --prereq-mode or --skip-prereqs, not both."
-            raise ValidationError(message)
-
-        validation_mode = export_cfg.validation_mode
-        if validation_mode is None:
-            validation_mode = (
-                ExportValidationMode.REQUIRED if export_cfg.validate else ExportValidationMode.SKIP
-            )
-        macro_requirement = export_cfg.macro_requirement
-        if macro_requirement is None:
-            macro_requirement = (
-                MacroRequirement.REQUIRE_NORMALIZED
-                if export_cfg.require_normalized_macros
-                else MacroRequirement.ALLOW_PARTIAL
-            )
-        run_mode = export_cfg.run_mode
-        if run_mode is None:
-            run_mode = DryRunMode.DRY_RUN if export_cfg.dry_run else DryRunMode.EXECUTE
-        prereq_mode = export_cfg.prereq_mode
-        if prereq_mode is None:
-            prereq_mode = PrereqMode.SKIP if export_cfg.skip_prereqs else PrereqMode.RUN
-
-        runtime_opts, verbose, output_format = make_handler_context(
-            project_cfg, export_cfg.output or OutputFormatCLI(), default_output=OutputFormat.TEXT
-        )
-
-        cli_kwargs = {
-            "project_root": runtime_opts.project_root,
-            "repo": runtime_opts.repo,
-            "commit": runtime_opts.commit,
-            "repo_root": runtime_opts.repo_root,
-            "db_path": runtime_opts.db_path,
-            "build_dir": runtime_opts.build_dir,
-            "document_output_dir": runtime_opts.document_output_dir,
-            "nx_backend": backend_cfg.nx_backend.value,
-            "nx_gpu_mode": backend_cfg.nx_gpu_mode,
-            "validation": validation_mode,
-            "macro_requirement": macro_requirement,
-            "schemas": export_cfg.schemas,
-            "datasets": export_cfg.datasets,
-            "output_format": output_format,
-            "run_mode": run_mode,
-            "prereq_mode": prereq_mode,
-            "verbose": verbose,
-        }
-        try:
-            bundled_mapping = bundle_docs_export(cli_kwargs)
-        except ValueError as exc:
-            raise ValidationError(str(exc)) from exc
-        bundle = DocsExportBundle(
-            project=bundled_mapping["project"],
-            backend=bundled_mapping["backend"],
-            export_options=bundled_mapping["export_options"],
-            verbose=bundled_mapping["verbose"],
-        )
-        run_handler(
-            docs_export_handler,
-            bundle.project,
-            bundle.backend,
-            bundle.export_options,
-            bundle.verbose,
-        )
+        """Execute the docs export command."""
+        CycloptsAdapter("docs.export", docs_export_ctx)(self)
 
 
 __all__ = ["docs_app"]

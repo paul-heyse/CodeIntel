@@ -14,12 +14,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from codeintel.cli.cli_errors import ValidationError
+from codeintel.cli.cli_errors import ProblemDetail, ValidationError
 
 # Import consolidated setup_logging from handlers.base
 from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
+from codeintel.cli.results import CliResult
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -1626,13 +1630,926 @@ def datasets_validate_files_handler(
     return exit_code
 
 
+# -----------------------------------------------------------------------------
+# Result Types
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DatasetsListResult:
+    """Result from datasets list operation.
+
+    Parameters
+    ----------
+    datasets
+        List of dataset information.
+    count
+        Total count of datasets.
+    """
+
+    datasets: list[dict[str, Any]]
+    count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation.
+        """
+        return {
+            "datasets": self.datasets,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True)
+class DatasetLintResult:
+    """Result from datasets lint operation.
+
+    Parameters
+    ----------
+    passed
+        Whether validation passed.
+    issue_count
+        Number of issues found.
+    issues
+        List of issue descriptions.
+    """
+
+    passed: bool
+    issue_count: int
+    issues: list[str]
+
+
+@dataclass(frozen=True)
+class DatasetSnapshotResult:
+    """Result from datasets snapshot operation.
+
+    Parameters
+    ----------
+    output_path
+        Path where snapshot was written.
+    datasets_count
+        Number of datasets in snapshot.
+    """
+
+    output_path: str
+    datasets_count: int
+
+
+@dataclass(frozen=True)
+class DatasetDiffResult:
+    """Result from datasets diff operation.
+
+    Parameters
+    ----------
+    added
+        List of added dataset names.
+    removed
+        List of removed dataset names.
+    changed
+        List of changed dataset names.
+    has_differences
+        Whether any differences were found.
+    """
+
+    added: list[str]
+    removed: list[str]
+    changed: list[str]
+    has_differences: bool
+
+
+@dataclass(frozen=True)
+class DatasetConformanceResult:
+    """Result from datasets conformance operation.
+
+    Parameters
+    ----------
+    passed
+        Whether conformance passed.
+    issue_count
+        Number of issues found.
+    issues
+        List of issue descriptions.
+    """
+
+    passed: bool
+    issue_count: int
+    issues: list[str]
+
+
+@dataclass(frozen=True)
+class DatasetGenerateSchemasResult:
+    """Result from datasets generate-schemas operation.
+
+    Parameters
+    ----------
+    written
+        List of written schema paths.
+    count
+        Number of schemas generated.
+    output_dir
+        Output directory.
+    """
+
+    written: list[str]
+    count: int
+    output_dir: str
+
+
+@dataclass(frozen=True)
+class DatasetCatalogResult:
+    """Result from datasets catalog operation.
+
+    Parameters
+    ----------
+    md_path
+        Path to generated Markdown catalog.
+    html_path
+        Path to generated HTML catalog.
+    entries_count
+        Number of catalog entries.
+    """
+
+    md_path: str
+    html_path: str
+    entries_count: int
+
+
+@dataclass(frozen=True)
+class DatasetScaffoldResult:
+    """Result from datasets scaffold operation.
+
+    Parameters
+    ----------
+    typed_dict
+        Path to TypedDict file.
+    row_binding
+        Path to row binding snippet.
+    json_schema
+        Path to JSON schema.
+    metadata
+        Path to metadata file.
+    bootstrap_snippet
+        Path to bootstrap snippet.
+    dry_run
+        Whether this was a dry run.
+    """
+
+    typed_dict: str
+    row_binding: str
+    json_schema: str
+    metadata: str
+    bootstrap_snippet: str
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class DatasetValidateFilesResult:
+    """Result from datasets validate-files operation.
+
+    Parameters
+    ----------
+    schema
+        Schema name.
+    files
+        List of validated files.
+    status
+        Status (ok, failed, skipped, planned).
+    exit_code
+        Exit code from validation.
+    """
+
+    schema: str
+    files: list[str]
+    status: str
+    exit_code: int
+
+
+# -----------------------------------------------------------------------------
+# ExecutionContext-based Handlers
+# -----------------------------------------------------------------------------
+
+
+def _build_runtime_from_ctx(ctx: ExecutionContext) -> ProjectRuntime:
+    """Build ProjectRuntime from execution context.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    ProjectRuntime
+        Resolved project runtime.
+
+    Raises
+    ------
+    RuntimeError
+        If project cannot be resolved.
+    """
+    project_root_raw = ctx.params.get("project_root")
+    project_root = Path(project_root_raw) if project_root_raw else None
+
+    try:
+        project_root_resolved = find_project_root(project_root)
+        return build_project_runtime(project_root_resolved)
+    except ProjectNotFoundError as exc:
+        msg = f"Project not found: {exc}"
+        raise RuntimeError(msg) from exc
+    except Exception as exc:
+        msg = f"Failed to load project: {exc}"
+        raise RuntimeError(msg) from exc
+
+
+def datasets_list_ctx(ctx: ExecutionContext) -> CliResult[DatasetsListResult]:
+    """List datasets with capabilities and optional filters.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - docs_view: Filter for docs views (include, only, exclude).
+        - read_only: Filter for read-only (include, only, exclude).
+        - max_description: Maximum description length.
+
+    Returns
+    -------
+    CliResult[DatasetsListResult]
+        Result with list of datasets.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+
+    docs_view_filter = ctx.get_str_param("docs_view", "include") or "include"
+    read_only_filter = ctx.get_str_param("read_only", "include") or "include"
+    max_description = ctx.get_int_param("max_description", 80)
+
+    datasets: list[dict[str, Any]] = []
+    for name, ds in sorted(registry.by_name.items()):
+        caps = ds.capabilities()
+        if not _caps_match(
+            caps,
+            docs_view_filter=docs_view_filter,
+            read_only_filter=read_only_filter,
+        ):
+            continue
+        datasets.append(
+            {
+                "name": name,
+                "table_key": ds.table_key,
+                "family": ds.family or "",
+                "capabilities": _format_capabilities(caps),
+                "description": _truncate(ds.description or "", max_description),
+            }
+        )
+
+    return CliResult.ok(
+        DatasetsListResult(
+            datasets=datasets,
+            count=len(datasets),
+        )
+    )
+
+
+def datasets_lint_ctx(ctx: ExecutionContext) -> CliResult[DatasetLintResult]:
+    """Validate dataset contract health.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - schema_dir: Schema directory.
+        - sampling: Sampling mode.
+
+    Returns
+    -------
+    CliResult[DatasetLintResult]
+        Result with validation status.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+
+    schema_dir_raw = ctx.params.get("schema_dir")
+    schema_dir = Path(schema_dir_raw) if schema_dir_raw else None
+    issues = collect_contract_issues(gateway.con, schema_base_dir=schema_dir)
+
+    sampling_raw = ctx.get_str_param("sampling", "disabled")
+    if sampling_raw == "enabled":
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:validation-error",
+                title="Invalid Option",
+                detail="Row sampling not supported in lint; use conformance command",
+                status=400,
+            )
+        )
+
+    if issues:
+        return CliResult.ok(
+            DatasetLintResult(
+                passed=False,
+                issue_count=len(issues),
+                issues=[str(issue) for issue in issues],
+            )
+        )
+
+    return CliResult.ok(
+        DatasetLintResult(
+            passed=True,
+            issue_count=0,
+            issues=[],
+        )
+    )
+
+
+def datasets_snapshot_ctx(ctx: ExecutionContext) -> CliResult[DatasetSnapshotResult]:
+    """Write current dataset specs to a JSON snapshot file.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - output: Output path.
+
+    Returns
+    -------
+    CliResult[DatasetSnapshotResult]
+        Result with snapshot information.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    specs = list_dataset_specs(load_dataset_registry(gateway.con))
+
+    output_raw = ctx.params.get("output")
+    if output_raw is None:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:validation-error",
+                title="Missing Parameter",
+                detail="Output path is required",
+                status=400,
+            )
+        )
+    output = Path(output_raw)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(specs, indent=2), encoding="utf-8")
+
+    return CliResult.ok(
+        DatasetSnapshotResult(
+            output_path=str(output),
+            datasets_count=len(specs),
+        )
+    )
+
+
+def _load_diff_baseline(
+    ctx: ExecutionContext,
+    runtime: ProjectRuntime,
+) -> list[dict[str, object]] | None:
+    """Load baseline specs for diff operation.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+    runtime
+        Project runtime.
+
+    Returns
+    -------
+    list[dict[str, object]] | None
+        Baseline specs or None if error.
+    """
+    against_ref = ctx.get_str_param("against_ref")
+    baseline_raw = ctx.params.get("baseline")
+    baseline_path_raw = ctx.params.get("baseline_path")
+
+    if against_ref:
+        baseline_path = (
+            Path(baseline_path_raw)
+            if baseline_path_raw
+            else Path("build/catalog/dataset_specs.json")
+        )
+        return _load_specs_from_ref(
+            repo_root=runtime.cfg.paths.repo_root,
+            ref=against_ref,
+            snapshot_path=baseline_path,
+        )
+
+    if baseline_raw is not None:
+        baseline = Path(baseline_raw)
+        if not baseline.exists():
+            return None
+        return cast(
+            "list[dict[str, object]]",
+            json.loads(baseline.read_text(encoding="utf-8")),
+        )
+
+    return None
+
+
+def datasets_diff_ctx(ctx: ExecutionContext) -> CliResult[DatasetDiffResult]:
+    """Diff current dataset specs against a baseline.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - baseline: Baseline file path.
+        - against_ref: Git ref to compare against.
+        - baseline_path: Path within ref for baseline.
+        - output: Optional output path for current specs.
+
+    Returns
+    -------
+    CliResult[DatasetDiffResult]
+        Result with diff information.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    current_specs = list_dataset_specs(load_dataset_registry(gateway.con))
+
+    baseline_specs = _load_diff_baseline(ctx, runtime)
+    if baseline_specs is None:
+        against_ref = ctx.get_str_param("against_ref")
+        baseline_raw = ctx.params.get("baseline")
+        if against_ref is None and baseline_raw is None:
+            return CliResult.fail(
+                ProblemDetail(
+                    type="urn:codeintel:cli:validation-error",
+                    title="Missing Parameter",
+                    detail="Provide either --baseline or --against-ref",
+                    status=400,
+                )
+            )
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:not-found",
+                title="File Not Found",
+                detail=f"Baseline file not found: {baseline_raw}",
+                status=404,
+            )
+        )
+
+    added, removed, changed = _diff_specs(current_specs, baseline_specs)
+
+    output_raw = ctx.params.get("output")
+    if output_raw is not None:
+        output = Path(output_raw)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(current_specs, indent=2), encoding="utf-8")
+
+    return CliResult.ok(
+        DatasetDiffResult(
+            added=list(added),
+            removed=list(removed),
+            changed=list(changed),
+            has_differences=bool(added or removed or changed),
+        )
+    )
+
+
+def datasets_conformance_ctx(
+    ctx: ExecutionContext,
+) -> CliResult[DatasetConformanceResult]:
+    """Run full dataset conformance checks.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - schema_dir: Schema directory.
+        - sampling: Sampling mode.
+        - sample_size: Sample size.
+
+    Returns
+    -------
+    CliResult[DatasetConformanceResult]
+        Result with conformance status.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+
+    schema_dir_raw = ctx.params.get("schema_dir")
+    schema_dir = Path(schema_dir_raw) if schema_dir_raw else DEFAULT_SCHEMA_ROOT
+    sampling_raw = ctx.get_str_param("sampling", "disabled")
+    sample_size = ctx.get_int_param("sample_size", 100)
+
+    try:
+        report = run_conformance(
+            gateway.con,
+            schema_base_dir=schema_dir,
+            sample_rows=sampling_raw == "enabled",
+            sample_size=sample_size,
+        )
+    except (DuckDBError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:operation-error",
+                title="Conformance Error",
+                detail=f"Conformance run failed: {exc}",
+                status=500,
+            )
+        )
+
+    if not report.ok:
+        issues = [f"[{issue.dataset or 'global'}] {issue.message}" for issue in report.issues]
+        return CliResult.ok(
+            DatasetConformanceResult(
+                passed=False,
+                issue_count=len(issues),
+                issues=issues,
+            )
+        )
+
+    return CliResult.ok(
+        DatasetConformanceResult(
+            passed=True,
+            issue_count=0,
+            issues=[],
+        )
+    )
+
+
+def datasets_generate_schemas_ctx(
+    ctx: ExecutionContext,
+) -> CliResult[DatasetGenerateSchemasResult]:
+    """Generate export JSON Schemas from TypedDict row models.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - datasets: Optional list of datasets to include.
+        - output_dir: Output directory.
+
+    Returns
+    -------
+    CliResult[DatasetGenerateSchemasResult]
+        Result with generation information.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+
+    datasets_raw = ctx.params.get("datasets")
+    include = set(datasets_raw) if datasets_raw else None
+    output_dir_raw = ctx.params.get("output_dir")
+    output_dir = Path(output_dir_raw) if output_dir_raw else Path("schema/export")
+
+    written = generate_export_schemas(
+        registry,
+        output_dir=output_dir,
+        include_datasets=include,
+    )
+
+    return CliResult.ok(
+        DatasetGenerateSchemasResult(
+            written=[str(path) for path in written],
+            count=len(written),
+            output_dir=str(output_dir),
+        )
+    )
+
+
+def datasets_catalog_ctx(ctx: ExecutionContext) -> CliResult[DatasetCatalogResult]:
+    """Generate Markdown/HTML dataset catalog.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - output_dir: Output directory.
+        - sample_rows_count: Number of sample rows.
+        - sample_rows_strict: Strictness policy.
+
+    Returns
+    -------
+    CliResult[DatasetCatalogResult]
+        Result with catalog information.
+    """
+    setup_logging(ctx.verbosity)
+
+    runtime = _build_runtime_from_ctx(ctx)
+    output_dir_raw = ctx.params.get("output_dir")
+    output_dir = Path(output_dir_raw) if output_dir_raw else Path("docs/datasets")
+    sample_rows_count = ctx.get_int_param("sample_rows_count", 5)
+    strict_raw = ctx.get_str_param("sample_rows_strict", "lenient")
+    strict = strict_raw == "strict"
+
+    if not runtime.paths.db_path.exists():
+        if strict:
+            return CliResult.fail(
+                ProblemDetail(
+                    type="urn:codeintel:cli:not-found",
+                    title="Database Not Found",
+                    detail=f"Database not found at {runtime.paths.db_path}",
+                    status=404,
+                )
+            )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        md = write_markdown_catalog(output_dir, [])
+        html = write_html_catalog(output_dir, [])
+        return CliResult.ok(
+            DatasetCatalogResult(
+                md_path=str(md),
+                html_path=str(html),
+                entries_count=0,
+            )
+        )
+
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+
+    try:
+        entries = build_catalog(
+            registry,
+            con=gateway.con,
+            sampling=SamplingConfig(
+                sample_rows=sample_rows_count,
+                sample_rows_strict=strict,
+            ),
+        )
+    except (DuckDBError, RuntimeError) as exc:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:operation-error",
+                title="Catalog Generation Error",
+                detail=f"Failed to generate catalog: {exc}",
+                status=500,
+            )
+        )
+
+    md = write_markdown_catalog(output_dir, entries)
+    html = write_html_catalog(output_dir, entries)
+
+    return CliResult.ok(
+        DatasetCatalogResult(
+            md_path=str(md),
+            html_path=str(html),
+            entries_count=len(entries),
+        )
+    )
+
+
+def datasets_scaffold_ctx(ctx: ExecutionContext) -> CliResult[DatasetScaffoldResult]:
+    """Create a new dataset scaffold.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - name: Dataset name.
+        - project_root: Optional project root override.
+        - registry_check: Whether to check registry.
+        - dry_run: Whether this is a dry run.
+        - Various scaffold options.
+
+    Returns
+    -------
+    CliResult[DatasetScaffoldResult]
+        Result with scaffold information.
+    """
+    setup_logging(ctx.verbosity)
+
+    name = ctx.params.get("name")
+    if name is None:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:validation-error",
+                title="Missing Parameter",
+                detail="Dataset name is required",
+                status=400,
+            )
+        )
+
+    registry: DatasetRegistry | None = None
+    registry_check_raw = ctx.get_str_param("registry_check", "enabled")
+    if registry_check_raw == "enabled":
+        runtime = _build_runtime_from_ctx(ctx)
+        gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+        registry = load_dataset_registry(gateway.con)
+
+    # Build scaffold CLI options from ctx params
+    options = _build_scaffold_cli_options(ctx)
+
+    try:
+        opts = build_scaffold_options(
+            name=name,
+            options=options,
+            registry=registry,
+        )
+    except ScaffoldConfigError as exc:
+        if exc.exit_code == 0:
+            return CliResult.ok(
+                DatasetScaffoldResult(
+                    typed_dict="",
+                    row_binding="",
+                    json_schema="",
+                    metadata="",
+                    bootstrap_snippet="",
+                    dry_run=ctx.dry_run,
+                )
+            )
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:validation-error",
+                title="Scaffold Error",
+                detail=str(exc),
+                status=400,
+            )
+        )
+
+    result = scaffold_dataset(opts)
+
+    return CliResult.ok(
+        DatasetScaffoldResult(
+            typed_dict=str(result.typed_dict),
+            row_binding=str(result.row_binding),
+            json_schema=str(result.json_schema),
+            metadata=str(result.metadata),
+            bootstrap_snippet=str(result.bootstrap_snippet),
+            dry_run=opts.dry_run,
+        )
+    )
+
+
+def _build_scaffold_cli_options(ctx: ExecutionContext) -> ScaffoldCliOptions:
+    """Build ScaffoldCliOptions from execution context.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    ScaffoldCliOptions
+        Scaffold CLI options.
+    """
+    output_dir_raw = ctx.params.get("output_dir")
+    specs_snapshot_raw = ctx.params.get("specs_snapshot")
+    overwrite_raw = ctx.get_str_param("overwrite_policy", "error")
+    bootstrap_raw = ctx.get_str_param("bootstrap", "skip")
+    registry_check_raw = ctx.get_str_param("registry_check", "disabled")
+
+    return ScaffoldCliOptions(
+        metadata=ScaffoldMetadataOptions(
+            kind=ctx.get_str_param("kind", "table") or "table",
+            table_key=ctx.get_str_param("table_key"),
+            owner=ctx.get_str_param("owner"),
+            freshness_sla=ctx.get_str_param("freshness_sla"),
+            retention_policy=ctx.get_str_param("retention_policy"),
+        ),
+        schema=ScaffoldSchemaOptions(
+            schema_version=ctx.get_str_param("schema_version", "1") or "1",
+            validation_profile=ctx.get_str_param("validation_profile", "strict") or "strict",
+            schema_id=ctx.get_str_param("schema_id"),
+        ),
+        files=ScaffoldFileOptions(
+            jsonl_filename=ctx.get_str_param("jsonl_filename"),
+            parquet_filename=ctx.get_str_param("parquet_filename"),
+            stable_id=ctx.get_str_param("stable_id"),
+        ),
+        io=ScaffoldIOOptions(
+            scaffold=DatasetScaffoldOptions(
+                output_dir=(
+                    Path(output_dir_raw) if output_dir_raw else Path("build/dataset_scaffolds")
+                ),
+                overwrite_policy=(
+                    OverwritePolicy(overwrite_raw) if overwrite_raw else OverwritePolicy.ERROR
+                ),
+            ),
+            specs_snapshot=(
+                Path(specs_snapshot_raw)
+                if specs_snapshot_raw
+                else Path("build/catalog/dataset_specs.json")
+            ),
+        ),
+        behavior=ScaffoldBehaviorOptions(
+            run_mode=DryRunMode.DRY_RUN if ctx.dry_run else DryRunMode.EXECUTE,
+            bootstrap=(BootstrapSnippet(bootstrap_raw) if bootstrap_raw else BootstrapSnippet.SKIP),
+            registry_check=(
+                RegistryCheck.ENABLED if registry_check_raw == "enabled" else RegistryCheck.DISABLED
+            ),
+        ),
+    )
+
+
+def datasets_validate_files_ctx(
+    ctx: ExecutionContext,
+) -> CliResult[DatasetValidateFilesResult]:
+    """Validate exported JSONL/Parquet files against JSON Schemas.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - schema: Schema name.
+        - files: Files to validate.
+        - schema_root: Schema root directory.
+        - validation: Validation mode.
+        - dry_run: Whether this is a dry run.
+
+    Returns
+    -------
+    CliResult[DatasetValidateFilesResult]
+        Result with validation information.
+    """
+    setup_logging(ctx.verbosity)
+
+    schema = ctx.params.get("schema")
+    if schema is None:
+        return CliResult.fail(
+            ProblemDetail(
+                type="urn:codeintel:cli:validation-error",
+                title="Missing Parameter",
+                detail="Schema name is required",
+                status=400,
+            )
+        )
+
+    files_raw = ctx.params.get("files", [])
+    files = [Path(f) for f in files_raw]
+
+    schema_root_raw = ctx.params.get("schema_root")
+    root = Path(schema_root_raw) if schema_root_raw else DEFAULT_SCHEMA_ROOT
+
+    validation_raw = ctx.get_str_param("validation", "required")
+
+    if ctx.dry_run:
+        return CliResult.ok(
+            DatasetValidateFilesResult(
+                schema=schema,
+                files=[str(f) for f in files],
+                status="planned",
+                exit_code=0,
+            )
+        )
+
+    if validation_raw == "skip":
+        return CliResult.ok(
+            DatasetValidateFilesResult(
+                schema=schema,
+                files=[str(f) for f in files],
+                status="skipped",
+                exit_code=0,
+            )
+        )
+
+    exit_code = validate_files(schema, files, schema_root=root)
+
+    return CliResult.ok(
+        DatasetValidateFilesResult(
+            schema=schema,
+            files=[str(f) for f in files],
+            status="ok" if exit_code == 0 else "failed",
+            exit_code=exit_code,
+        )
+    )
+
+
 __all__ = [
     "BootstrapSnippet",
     "BuildSelection",
     "CatalogOptions",
     "ConformanceOptions",
+    "DatasetCatalogResult",
+    "DatasetConformanceResult",
+    "DatasetDiffResult",
     "DatasetExportOptions",
+    "DatasetGenerateSchemasResult",
+    "DatasetLintResult",
     "DatasetScaffoldOptions",
+    "DatasetScaffoldResult",
+    "DatasetSnapshotResult",
+    "DatasetValidateFilesResult",
+    "DatasetsListResult",
     "DiffOptions",
     "DryRunMode",
     "ExportOutputOptions",
@@ -1668,14 +2585,23 @@ __all__ = [
     "bundle_scaffold",
     "bundle_snapshot",
     "bundle_validate_files",
+    "datasets_catalog_ctx",
     "datasets_catalog_handler",
+    "datasets_conformance_ctx",
     "datasets_conformance_handler",
+    "datasets_diff_ctx",
     "datasets_diff_handler",
+    "datasets_generate_schemas_ctx",
     "datasets_generate_schemas_handler",
+    "datasets_lint_ctx",
     "datasets_lint_handler",
+    "datasets_list_ctx",
     "datasets_list_handler",
+    "datasets_scaffold_ctx",
     "datasets_scaffold_handler",
+    "datasets_snapshot_ctx",
     "datasets_snapshot_handler",
+    "datasets_validate_files_ctx",
     "datasets_validate_files_handler",
     "setup_logging",
 ]

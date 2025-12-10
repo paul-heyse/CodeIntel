@@ -38,6 +38,7 @@ from codeintel.cli.cyclopts_common import (
 from codeintel.cli.cyclopts_help import _AppCallKwargs
 from codeintel.cli.dry_run import plan_dry_run, render_dry_run
 from codeintel.cli.execution import ExecutionContext, get_middleware_stack
+from codeintel.cli.execution.adapter import CycloptsAdapter
 from codeintel.cli.op_params import (
     CliParamSpec,
     OperationCliMetadata,
@@ -45,14 +46,14 @@ from codeintel.cli.op_params import (
     get_operations_with_cli_support,
 )
 from codeintel.cli.ops_handlers import (
-    dataset_describe_handler,
-    dataset_list_handler,
-    dataset_verify_handler,
+    dataset_describe_ctx,
+    dataset_list_ctx,
+    dataset_verify_ctx,
     invoke_operation,
-    op_call_handler,
-    op_list_handler,
-    serve_http_handler,
-    serve_mcp_handler,
+    op_call_ctx,
+    op_list_ctx,
+    serve_http_ctx,
+    serve_mcp_ctx,
 )
 from codeintel.cli.output import OutputEnvelope, iter_stdin_records, merge_stdin_with_args
 from codeintel.cli.project import ProjectRuntime
@@ -238,9 +239,10 @@ class OperationCliArgs(Protocol):
 # -----------------------------------------------------------------------------
 
 
+@op_app.command(name="list")
 @dataclass
-class OpListCli:
-    """CLI surface for `codeintel op list`."""
+class OpListCommand:
+    """List available serving operations."""
 
     category: Annotated[
         str | None,
@@ -249,36 +251,38 @@ class OpListCli:
             help="Filter by operation category.",
         ),
     ] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
-
-
-@op_app.command(name="list")
-@dataclass
-class OpListCommand:
-    """List available serving operations."""
-
-    cfg: Annotated[OpListCli | None, Parameter(name="*")] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format.",
+            show_choices=True,
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        cfg = self.cfg or OpListCli()
-        output_format = get_output_format(
-            cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
-        )
-        op_list_handler(
-            category=cfg.category,
-            output_format=output_format,
-        )
+        """Execute the op list command."""
+        CycloptsAdapter("op.list", op_list_ctx)(self)
 
 
+@op_app.command(name="call")
 @dataclass
-class OpCallCli:
-    """CLI surface for `codeintel op call`."""
+class OpCallCommand:
+    """Invoke a serving operation end-to-end."""
 
     op_id: Annotated[
         str,
         Parameter(
+            name=None,
             help="Operation ID to invoke.",
-            required=True,
         ),
     ]
     params: Annotated[
@@ -288,7 +292,6 @@ class OpCallCli:
             help="Operation parameters as key=value pairs.",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
     skip_prereqs: Annotated[
         bool,
         Parameter(
@@ -297,25 +300,25 @@ class OpCallCli:
             negative=(),
         ),
     ] = False
-
-
-@op_app.command(name="call")
-@dataclass
-class OpCallCommand:
-    """Invoke a serving operation end-to-end."""
-
-    cfg: Annotated[OpCallCli, Parameter(name="*")]
+    root: Annotated[
+        Path | None,
+        Parameter(
+            name=["--root", "-r"],
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime = self.cfg.runtime or RuntimeCLI()
-        project_runtime = _runtime_from_cli(runtime)
-        op_call_handler(
-            op_id=self.cfg.op_id,
-            params=self.cfg.params,
-            runtime=project_runtime,
-            skip_prereqs=self.cfg.skip_prereqs,
-            verbose=bool(get_verbose(runtime)),
-        )
+        """Execute the op call command."""
+        CycloptsAdapter("op.call", op_call_ctx)(self)
 
 
 def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
@@ -983,45 +986,38 @@ def unregister_dynamic_operation_for_tests(op_id: str) -> bool:
 # -----------------------------------------------------------------------------
 
 
-@dataclass
-class DatasetListCli:
-    """CLI surface for `codeintel dataset list`."""
-
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
-
-
 @dataset_app.command(name="list")
 @dataclass
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    cfg: Annotated[DatasetListCli | None, Parameter(name="*")] = None
+    root: Annotated[
+        Path | None,
+        Parameter(
+            name=["--root", "-r"],
+            help="Project root directory.",
+        ),
+    ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format.",
+            show_choices=True,
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        cfg = self.cfg or DatasetListCli()
-        runtime = _runtime_from_cli(cfg.runtime or RuntimeCLI())
-        output_format = get_output_format(
-            cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
-        )
-        dataset_list_handler(
-            runtime=runtime,
-            output_format=output_format,
-        )
-
-
-@dataclass
-class DatasetDescribeCli:
-    """CLI surface for `codeintel dataset describe`."""
-
-    table_key: Annotated[
-        str,
-        Parameter(
-            help="Dataset table key (e.g., 'core.goids').",
-            required=True,
-        ),
-    ]
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
+        """Execute the dataset list command."""
+        CycloptsAdapter("dataset.list", dataset_list_ctx)(self)
 
 
 @dataset_app.command(name="describe")
@@ -1029,18 +1025,39 @@ class DatasetDescribeCli:
 class DatasetDescribeCommand:
     """Show contract details for a dataset."""
 
-    cfg: Annotated[DatasetDescribeCli, Parameter(name="*")]
+    table_key: Annotated[
+        str,
+        Parameter(
+            name=None,
+            help="Dataset table key (e.g., 'core.goids').",
+        ),
+    ]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format.",
+            show_choices=True,
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        output_format = get_output_format(
-            self.cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT
-        )
-        dataset_describe_handler(table_key=self.cfg.table_key, output_format=output_format)
+        """Execute the dataset describe command."""
+        CycloptsAdapter("dataset.describe", dataset_describe_ctx)(self)
 
 
+@dataset_app.command(name="verify")
 @dataclass
-class DatasetVerifyCli:
-    """CLI surface for `codeintel dataset verify`."""
+class DatasetVerifyCommand:
+    """Verify dataset contracts against actual data."""
 
     table_key: Annotated[
         str | None,
@@ -1049,20 +1066,25 @@ class DatasetVerifyCli:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-
-
-@dataset_app.command(name="verify")
-@dataclass
-class DatasetVerifyCommand:
-    """Verify dataset contracts against actual data."""
-
-    cfg: Annotated[DatasetVerifyCli | None, Parameter(name="*")] = None
+    root: Annotated[
+        Path | None,
+        Parameter(
+            name=["--root", "-r"],
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        cfg = self.cfg or DatasetVerifyCli()
-        runtime = _runtime_from_cli(cfg.runtime or RuntimeCLI())
-        dataset_verify_handler(table_key=cfg.table_key, runtime=runtime)
+        """Execute the dataset verify command."""
+        CycloptsAdapter("dataset.verify", dataset_verify_ctx)(self)
 
 
 # -----------------------------------------------------------------------------
@@ -1105,17 +1127,25 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    root: Annotated[
+        Path | None,
+        Parameter(
+            name=["--root", "-r"],
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_obj = _runtime_from_cli(self.runtime or RuntimeCLI())
-        serve_http_handler(
-            host=self.host,
-            port=self.port,
-            auto_pipeline=self.auto_pipeline,
-            reload=self.reload,
-            runtime=runtime_obj,
-        )
+        """Execute the serve http command."""
+        CycloptsAdapter("serve.http", serve_http_ctx)(self)
 
 
 @serve_app.command(name="mcp")
@@ -1131,14 +1161,25 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    root: Annotated[
+        Path | None,
+        Parameter(
+            name=["--root", "-r"],
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_obj = _runtime_from_cli(self.runtime or RuntimeCLI())
-        serve_mcp_handler(
-            auto_pipeline=self.auto_pipeline,
-            runtime=runtime_obj,
-        )
+        """Execute the serve mcp command."""
+        CycloptsAdapter("serve.mcp", serve_mcp_ctx)(self)
 
 
 register_dynamic_operations()

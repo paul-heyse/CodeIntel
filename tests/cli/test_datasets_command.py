@@ -42,7 +42,7 @@ def test_datasets_scaffold_existing_name(
 ) -> None:
     """Scaffold should fail when dataset already exists in registry."""
     result = cli_project_runner(
-        ["datasets", "scaffold", "ast_nodes", "--check-registry", "--dry-run"]
+        ["datasets", "scaffold", "ast_nodes", "--registry-check", "enabled", "--dry-run"]
     )
     assert_exit(result, 1)
 

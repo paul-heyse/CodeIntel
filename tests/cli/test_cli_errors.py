@@ -25,7 +25,11 @@ def test_unknown_command_normalized(cli_ctx: CLIContext) -> None:
 
 def test_validation_error_exit_code(cli_ctx: CLIContext) -> None:
     """Domain validation failures map to exit code 1 with message surfaced."""
-    result = run_cli(["docs", "export", "--validate"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
+    result = run_cli(
+        ["docs", "export", "--validation-mode", "required"],
+        env=cli_ctx.env,
+        cwd=cli_ctx.repo_root,
+    )
 
     expect_equal(result.exit_code, CLI_EXIT_VALIDATION)
     expect_in("No codeintel.yaml found", result.stderr)

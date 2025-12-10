@@ -16,4 +16,4 @@ def test_history_timeseries_requires_commits(cli_ctx: CLIContext) -> None:
     )
 
     expect_equal(result.exit_code, CLI_EXIT_VALIDATION)
-    expect_in("At least one commit is required.", result.stderr)
+    expect_in("At least one commit is required", result.stderr)

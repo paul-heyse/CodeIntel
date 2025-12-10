@@ -1,60 +1,31 @@
-"""Cyclopts-based implementation of the extended datasets CLI."""
+"""Cyclopts wiring for dataset management commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import run_handler
-from codeintel.cli.cyclopts_common import (
-    ExistingDir,
-    ExistingPath,
-    OutputPath,
-    RuntimeCLI,
-    get_verbose,
-    runtime_cli_to_options,
-)
 from codeintel.cli.datasets_handlers import (
     BootstrapSnippet,
-    BuildSelection,
-    CatalogOptions,
-    ConformanceOptions,
-    DatasetExportOptions,
-    DatasetScaffoldOptions,
-    DiffOptions,
-    DryRunMode,
-    ExportValidationMode,
-    GenerateSchemasOptions,
-    LintOptions,
-    ListFilters,
-    MacroRequirement,
-    OutputFormat,
     OverwritePolicy,
-    ProjectSelection,
-    RegistryCheck,
-    RuntimeOptions,
-    SamplingMode,
     SamplingStrictness,
-    ScaffoldBehaviorOptions,
-    ScaffoldFileOptions,
-    ScaffoldIOOptions,
-    ScaffoldMetadataOptions,
-    ScaffoldSchemaOptions,
-    datasets_catalog_handler,
-    datasets_conformance_handler,
-    datasets_diff_handler,
-    datasets_generate_schemas_handler,
-    datasets_lint_handler,
-    datasets_list_handler,
-    datasets_scaffold_handler,
-    datasets_snapshot_handler,
+    datasets_catalog_ctx,
+    datasets_conformance_ctx,
+    datasets_diff_ctx,
+    datasets_generate_schemas_ctx,
+    datasets_lint_ctx,
+    datasets_list_ctx,
+    datasets_scaffold_ctx,
+    datasets_snapshot_ctx,
+    datasets_validate_files_ctx,
 )
-from codeintel.cli.datasets_handlers import (
-    ScaffoldCliOptions as ScaffoldCliOptionsHandler,
-)
+from codeintel.cli.execution.adapter import CycloptsAdapter
 
 datasets_ext_app = App(
     name="datasets",
@@ -62,51 +33,8 @@ datasets_ext_app = App(
 )
 
 
-@dataclass
-class DatasetRuntimeCli:
-    """Runtime selection shared by all datasets commands."""
-
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-
-
-def _runtime_from_cli(cli: DatasetRuntimeCli) -> RuntimeOptions:
-    options = runtime_cli_to_options(cli.runtime)
-    project = ProjectSelection(
-        project_root=options.project_root,
-        repo=options.repo,
-        commit=options.commit,
-        repo_root=options.repo_root,
-    )
-    build = BuildSelection(
-        db_path=options.db_path,
-        build_dir=options.build_dir,
-    )
-    return RuntimeOptions(project=project, build=build)
-
-
-def _runtime_verbose(cli: DatasetRuntimeCli) -> int:
-    return get_verbose(cli.runtime or RuntimeCLI())
-
-
-@dataclass
-class LintCliOptions:
-    """Options for ``codeintel datasets lint``."""
-
-    schema_dir: Annotated[
-        ExistingDir,
-        Parameter(
-            name="--schema-dir",
-            help="Directory containing export JSON Schemas.",
-        ),
-    ] = Path("src/codeintel/config/schemas/export")
-    sample_rows: Annotated[
-        bool,
-        Parameter(
-            name="--sample-rows",
-            help="Request row sampling (SamplingMode.ENABLED).",
-            negative=(),
-        ),
-    ] = False
+DocsFilterMode = Literal["include", "only", "exclude"]
+ReadOnlyFilterMode = Literal["include", "only", "exclude"]
 
 
 @datasets_ext_app.command(name="lint")
@@ -114,27 +42,45 @@ class LintCliOptions:
 class LintCommand:
     """Validate dataset contract health."""
 
-    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
-    options: Annotated[LintCliOptions | None, Parameter(name="*")] = None
+    schema_dir: Annotated[
+        Path,
+        Parameter(
+            name="--schema-dir",
+            help="Directory containing export JSON Schemas.",
+        ),
+    ] = Path("src/codeintel/config/schemas/export")
+    sampling: Annotated[
+        str,
+        Parameter(
+            name="--sampling",
+            help="Sampling mode: enabled or disabled.",
+        ),
+    ] = "disabled"
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        rt = self.runtime or DatasetRuntimeCli()
-        opts = self.options or LintCliOptions()
-        runtime_opts = _runtime_from_cli(rt)
-        lint_opts = LintOptions(
-            schema_dir=opts.schema_dir,
-            sampling=(SamplingMode.ENABLED if opts.sample_rows else SamplingMode.DISABLED),
-        )
-        run_handler(datasets_lint_handler, runtime_opts, lint_opts, _runtime_verbose(rt))
+        """Execute the datasets lint command."""
+        CycloptsAdapter("datasets.lint", datasets_lint_ctx)(self)
 
 
-DocsFilterMode = Literal["include", "only", "exclude"]
-ReadOnlyFilterMode = Literal["include", "only", "exclude"]
-
-
+@datasets_ext_app.command(name="list")
 @dataclass
-class ListCliFilters:
-    """Filters for ``codeintel datasets list``."""
+class ListDatasetsCommand:
+    """List datasets with capabilities and optional filters."""
 
     docs_view: Annotated[
         DocsFilterMode,
@@ -157,39 +103,25 @@ class ListCliFilters:
             help="Maximum description length before truncation.",
         ),
     ] = 80
-
-
-@datasets_ext_app.command(name="list")
-@dataclass
-class ListDatasetsCommand:
-    """List datasets with capabilities and optional filters."""
-
-    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
-    filters: Annotated[ListCliFilters | None, Parameter(name="*")] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        rt = self.runtime or DatasetRuntimeCli()
-        filters = self.filters or ListCliFilters()
-        runtime_opts = _runtime_from_cli(rt)
-        filter_opts = ListFilters(
-            docs_view=filters.docs_view,
-            read_only=filters.read_only,
-            max_description=filters.max_description,
-        )
-        run_handler(datasets_list_handler, runtime_opts, filter_opts, _runtime_verbose(rt))
-
-
-@dataclass
-class SnapshotCliOptions:
-    """Options for ``codeintel datasets snapshot``."""
-
-    output: Annotated[
-        OutputPath,
-        Parameter(
-            name="--output",
-            help="Output file path for JSON dataset specs.",
-        ),
-    ] = Path("build/dataset_specs.json")
+        """Execute the datasets list command."""
+        CycloptsAdapter("datasets.list", datasets_list_ctx)(self)
 
 
 @datasets_ext_app.command(name="snapshot")
@@ -197,34 +129,48 @@ class SnapshotCliOptions:
 class SnapshotCommand:
     """Write current dataset specs to a JSON snapshot file."""
 
-    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
-    options: Annotated[SnapshotCliOptions | None, Parameter(name="*")] = None
+    output: Annotated[
+        Path,
+        Parameter(
+            name="--output",
+            help="Output file path for JSON dataset specs.",
+        ),
+    ] = Path("build/dataset_specs.json")
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        rt = self.runtime or DatasetRuntimeCli()
-        opts = self.options or SnapshotCliOptions()
-        runtime_opts = _runtime_from_cli(rt)
-        run_handler(
-            datasets_snapshot_handler,
-            runtime_opts,
-            opts.output,
-            _runtime_verbose(rt),
-        )
+        """Execute the datasets snapshot command."""
+        CycloptsAdapter("datasets.snapshot", datasets_snapshot_ctx)(self)
 
 
+@datasets_ext_app.command(name="diff")
 @dataclass
-class DiffCliOptions:
-    """Options for ``codeintel datasets diff``."""
+class DiffCommand:
+    """Diff current dataset specs against a baseline."""
 
     baseline: Annotated[
-        ExistingPath | None,
+        Path | None,
         Parameter(
             name="--baseline",
             help="Path to JSON baseline from `codeintel datasets snapshot`.",
         ),
     ] = None
     output: Annotated[
-        OutputPath | None,
+        Path | None,
         Parameter(
             name="--output",
             help="Optional output file path for writing current specs.",
@@ -238,61 +184,31 @@ class DiffCliOptions:
         ),
     ] = None
     baseline_path: Annotated[
-        OutputPath,
+        Path,
         Parameter(
             name="--baseline-path",
             help="Path of the snapshot file inside the git ref.",
         ),
     ] = Path("build/dataset_specs.json")
-
-
-@datasets_ext_app.command(name="diff")
-@dataclass
-class DiffCommand:
-    """Diff current dataset specs against a baseline."""
-
-    runtime: Annotated[DatasetRuntimeCli | None, Parameter(name="*")] = None
-    options: Annotated[DiffCliOptions | None, Parameter(name="*")] = None
-
-    def __call__(self) -> None:
-        rt = self.runtime or DatasetRuntimeCli()
-        opts = self.options or DiffCliOptions()
-        runtime_opts = _runtime_from_cli(rt)
-        diff_opts = DiffOptions(
-            baseline=opts.baseline,
-            output=opts.output,
-            against_ref=opts.against_ref,
-            baseline_path=opts.baseline_path,
-        )
-        run_handler(datasets_diff_handler, runtime_opts, diff_opts, _runtime_verbose(rt))
-
-
-@dataclass
-class ConformanceCliOptions:
-    """Options for ``codeintel datasets conformance``."""
-
-    schema_dir: Annotated[
-        ExistingDir,
+    project_root: Annotated[
+        Path | None,
         Parameter(
-            name="--schema-dir",
-            help="Directory containing export JSON Schemas.",
+            name="--root",
+            help="Project root directory.",
         ),
-    ] = Path("src/codeintel/config/schemas/export")
-    sample_rows: Annotated[
-        bool,
-        Parameter(
-            name="--sample-rows",
-            help="Enable row sampling against JSON Schemas.",
-            negative=(),
-        ),
-    ] = False
-    sample_size: Annotated[
+    ] = None
+    verbose: Annotated[
         int,
         Parameter(
-            name="--sample-size",
-            help="Number of rows to sample when sampling is enabled.",
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
         ),
-    ] = 50
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the datasets diff command."""
+        CycloptsAdapter("datasets.diff", datasets_diff_ctx)(self)
 
 
 @datasets_ext_app.command(name="conformance")
@@ -300,96 +216,46 @@ class ConformanceCliOptions:
 class ConformanceCommand:
     """Run full dataset conformance checks."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[ConformanceCliOptions, Parameter(name="*")] = field(
-        default_factory=ConformanceCliOptions
-    )
-
-    def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
-        conf_opts = ConformanceOptions(
-            schema_dir=self.options.schema_dir,
-            sampling=(SamplingMode.ENABLED if self.options.sample_rows else SamplingMode.DISABLED),
-            sample_size=self.options.sample_size,
-        )
-        run_handler(
-            datasets_conformance_handler, runtime_opts, conf_opts, _runtime_verbose(self.runtime)
-        )
-
-
-@dataclass
-class ExportCliOptions:
-    """Shared export configuration for generate-schemas."""
-
-    validation: Annotated[
-        ExportValidationMode,
+    schema_dir: Annotated[
+        Path,
         Parameter(
-            name="--validation",
-            help="Validation strategy for exports.",
-        ),
-    ] = ExportValidationMode.REQUIRED
-    macro_requirement: Annotated[
-        MacroRequirement,
-        Parameter(
-            name="--macro-requirement",
-            help="Macro requirement policy for exports.",
-        ),
-    ] = MacroRequirement.REQUIRE_NORMALIZED
-    schemas: Annotated[
-        list[str] | None,
-        Parameter(
-            name="--schema",
-            help="Filter by export schema ID (repeatable).",
-        ),
-    ] = None
-    datasets: Annotated[
-        list[str] | None,
-        Parameter(
-            name="--dataset",
-            help="Filter by dataset name (repeatable).",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format for command metadata (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    dry_run: Annotated[
-        bool,
-        Parameter(
-            name="--dry-run",
-            help="Plan schema generation without writing files.",
-            negative=(),
-        ),
-    ] = False
-
-
-@dataclass
-class GenerateSchemasCliOptions:
-    """Options for ``codeintel datasets generate-schemas``."""
-
-    output_dir: Annotated[
-        OutputPath,
-        Parameter(
-            name="--output-dir",
-            help="Directory to write generated JSON Schemas.",
+            name="--schema-dir",
+            help="Directory containing export JSON Schemas.",
         ),
     ] = Path("src/codeintel/config/schemas/export")
+    sampling: Annotated[
+        str,
+        Parameter(
+            name="--sampling",
+            help="Sampling mode: enabled or disabled.",
+        ),
+    ] = "disabled"
+    sample_size: Annotated[
+        int,
+        Parameter(
+            name="--sample-size",
+            help="Number of rows to sample when sampling is enabled.",
+        ),
+    ] = 100
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
-
-def _export_from_cli(cfg: ExportCliOptions) -> DatasetExportOptions:
-    return DatasetExportOptions(
-        validation=cfg.validation,
-        macro_requirement=cfg.macro_requirement,
-        schemas=cfg.schemas,
-        datasets=cfg.datasets,
-        output_format=cfg.output_format,
-        run_mode=DryRunMode.DRY_RUN if cfg.dry_run else DryRunMode.EXECUTE,
-    )
+    def __call__(self) -> None:
+        """Execute the datasets conformance command."""
+        CycloptsAdapter("datasets.conformance", datasets_conformance_ctx)(self)
 
 
 @datasets_ext_app.command(name="generate-schemas")
@@ -397,35 +263,48 @@ def _export_from_cli(cfg: ExportCliOptions) -> DatasetExportOptions:
 class GenerateSchemasCommand:
     """Generate export JSON Schemas from TypedDict row models."""
 
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    export: Annotated[ExportCliOptions, Parameter(name="*")] = field(
-        default_factory=ExportCliOptions
-    )
-    schema: Annotated[GenerateSchemasCliOptions, Parameter(name="*")] = field(
-        default_factory=GenerateSchemasCliOptions
-    )
+    output_dir: Annotated[
+        Path,
+        Parameter(
+            name="--output-dir",
+            help="Directory to write generated JSON Schemas.",
+        ),
+    ] = Path("src/codeintel/config/schemas/export")
+    datasets: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--dataset",
+            help="Filter by dataset name (repeatable).",
+        ),
+    ] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
-        export_opts = _export_from_cli(self.export)
-        schema_opts = GenerateSchemasOptions(output_dir=self.schema.output_dir)
-        run_handler(
-            datasets_generate_schemas_handler,
-            runtime_opts,
-            export_opts,
-            schema_opts,
-            _runtime_verbose(self.runtime),
-        )
+        """Execute the datasets generate-schemas command."""
+        CycloptsAdapter("datasets.generate_schemas", datasets_generate_schemas_ctx)(self)
 
 
+@datasets_ext_app.command(name="catalog")
 @dataclass
-class CatalogCliOptions:
-    """Options for ``codeintel datasets catalog``."""
+class CatalogCommand:
+    """Generate Markdown/HTML dataset catalog."""
 
     output_dir: Annotated[
-        OutputPath,
+        Path,
         Parameter(
             name="--output-dir",
             help="Directory to write catalog artifacts (Markdown/HTML).",
@@ -445,36 +324,39 @@ class CatalogCliOptions:
             help="Sampling strictness: lenient or strict.",
         ),
     ] = SamplingStrictness.LENIENT
-
-
-@datasets_ext_app.command(name="catalog")
-@dataclass
-class CatalogCommand:
-    """Generate Markdown/HTML dataset catalog."""
-
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[CatalogCliOptions, Parameter(name="*")] = field(
-        default_factory=CatalogCliOptions
-    )
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
-        catalog_opts = CatalogOptions(
-            output_dir=self.options.output_dir,
-            sample_rows_count=self.options.sample_rows_count,
-            sample_rows_strict=self.options.sample_rows_strict,
-        )
-        run_handler(
-            datasets_catalog_handler, runtime_opts, catalog_opts, _runtime_verbose(self.runtime)
-        )
+        """Execute the datasets catalog command."""
+        CycloptsAdapter("datasets.catalog", datasets_catalog_ctx)(self)
 
 
+@datasets_ext_app.command(name="scaffold")
 @dataclass
-class ScaffoldCliOptions:
-    """Options for ``codeintel datasets scaffold``."""
+class ScaffoldCommand:
+    """Create a new dataset scaffold."""
 
+    name: Annotated[
+        str,
+        Parameter(
+            help="Name of the dataset to scaffold (TypedDict / logical dataset name).",
+            required=True,
+        ),
+    ] = ""
     kind: Annotated[
         str,
         Parameter(
@@ -553,7 +435,7 @@ class ScaffoldCliOptions:
         ),
     ] = None
     output_dir: Annotated[
-        OutputPath,
+        Path,
         Parameter(
             name="--output-dir",
             help="Directory to write scaffold files.",
@@ -567,7 +449,7 @@ class ScaffoldCliOptions:
         ),
     ] = OverwritePolicy.ERROR
     specs_snapshot: Annotated[
-        ExistingPath,
+        Path,
         Parameter(
             name="--specs-snapshot",
             help="Path to dataset specs snapshot used for bootstrap hints.",
@@ -589,84 +471,85 @@ class ScaffoldCliOptions:
         ),
     ] = BootstrapSnippet.SKIP
     registry_check: Annotated[
+        str,
+        Parameter(
+            name="--registry-check",
+            help="Registry check mode: enabled or disabled.",
+        ),
+    ] = "disabled"
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the datasets scaffold command."""
+        CycloptsAdapter("datasets.scaffold", datasets_scaffold_ctx)(self)
+
+
+@datasets_ext_app.command(name="validate-files")
+@dataclass
+class ValidateFilesCommand:
+    """Validate exported JSONL/Parquet files against JSON Schemas."""
+
+    schema: Annotated[
+        str,
+        Parameter(
+            help="Schema name to validate against.",
+            required=True,
+        ),
+    ] = ""
+    files: Annotated[
+        list[Path],
+        Parameter(
+            help="Files to validate (JSONL or Parquet).",
+        ),
+    ] = None  # type: ignore[assignment]
+    schema_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--schema-root",
+            help="Root directory for JSON Schemas.",
+        ),
+    ] = None
+    validation: Annotated[
+        str,
+        Parameter(
+            name="--validation",
+            help="Validation mode: required or skip.",
+        ),
+    ] = "required"
+    dry_run: Annotated[
         bool,
         Parameter(
-            name=["--registry-check", "--check-registry"],
-            help="Check existing dataset registry for conflicts.",
+            name="--dry-run",
+            help="Show validation plan without executing.",
             negative=(),
         ),
     ] = False
-
-
-def _scaffold_options_from_cli(cfg: ScaffoldCliOptions) -> ScaffoldCliOptionsHandler:
-    metadata = ScaffoldMetadataOptions(
-        kind=cfg.kind,
-        table_key=cfg.table_key,
-        owner=cfg.owner,
-        freshness_sla=cfg.freshness_sla,
-        retention_policy=cfg.retention_policy,
-    )
-    schema = ScaffoldSchemaOptions(
-        schema_version=cfg.schema_version,
-        validation_profile=cfg.validation_profile,
-        schema_id=cfg.schema_id,
-    )
-    files = ScaffoldFileOptions(
-        jsonl_filename=cfg.jsonl_filename,
-        parquet_filename=cfg.parquet_filename,
-        stable_id=cfg.stable_id,
-    )
-    dataset_opts = DatasetScaffoldOptions(
-        output_dir=cfg.output_dir,
-        overwrite_policy=cfg.overwrite_policy,
-    )
-    io_opts = ScaffoldIOOptions(
-        specs_snapshot=cfg.specs_snapshot,
-        scaffold=dataset_opts,
-    )
-    behavior = ScaffoldBehaviorOptions(
-        run_mode=DryRunMode.DRY_RUN if cfg.dry_run else DryRunMode.EXECUTE,
-        bootstrap=cfg.bootstrap,
-        registry_check=RegistryCheck.ENABLED if cfg.registry_check else RegistryCheck.DISABLED,
-    )
-    return ScaffoldCliOptionsHandler(
-        metadata=metadata,
-        schema=schema,
-        files=files,
-        io=io_opts,
-        behavior=behavior,
-    )
-
-
-@datasets_ext_app.command(name="scaffold")
-@dataclass
-class ScaffoldCommand:
-    """Create a new dataset scaffold."""
-
-    name: Annotated[
-        str,
+    verbose: Annotated[
+        int,
         Parameter(
-            help="Name of the dataset to scaffold (TypedDict / logical dataset name).",
-            required=True,
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
         ),
-    ]
-    runtime: Annotated[DatasetRuntimeCli, Parameter(name="*")] = field(
-        default_factory=DatasetRuntimeCli
-    )
-    options: Annotated[ScaffoldCliOptions, Parameter(name="*")] = field(
-        default_factory=ScaffoldCliOptions
-    )
+    ] = 0
 
     def __call__(self) -> None:
-        runtime_opts = _runtime_from_cli(self.runtime)
-        scaffold_opts = _scaffold_options_from_cli(self.options)
-        run_handler(
-            datasets_scaffold_handler,
-            self.name,
-            runtime_opts,
-            scaffold_opts,
-            _runtime_verbose(self.runtime),
-        )
+        """Execute the datasets validate-files command."""
+        CycloptsAdapter("datasets.validate_files", datasets_validate_files_ctx)(self)
 
 
 __all__ = ["datasets_ext_app"]

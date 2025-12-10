@@ -283,8 +283,11 @@ def storage_validate_macros_structured(
     else:
         db_path_resolved = Path(db_path)
 
-    macro_req_str = ctx.get_str_param("macro_requirement", "require")
-    macro_requirement = MacroRequirement(macro_req_str)
+    macro_req_raw = ctx.params.get("macro_requirement", MacroRequirement.REQUIRE)
+    if isinstance(macro_req_raw, MacroRequirement):
+        macro_requirement = macro_req_raw
+    else:
+        macro_requirement = MacroRequirement(str(macro_req_raw))
 
     try:
         gateway = open_gateway(StorageConfig.for_readonly(db_path_resolved))
@@ -375,9 +378,7 @@ def generate_macros_structured(
         raise RuntimeError(msg)
 
     rendered = [render_macro(table_key) for table_key in tables]
-    macro_dicts = [
-        {"macro_name": m.macro_name, "ddl": m.ddl} for m in rendered
-    ]
+    macro_dicts = [{"macro_name": m.macro_name, "ddl": m.ddl} for m in rendered]
 
     return CliResult.ok(
         MacroGenerationResult(

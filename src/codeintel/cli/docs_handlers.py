@@ -16,9 +16,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from codeintel.build import get_target_graph
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 from codeintel.build.executor import BuildExecutor
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.resolver import BuildResolver, ResolutionResult
@@ -34,6 +37,7 @@ from codeintel.cli.project import (
     find_project_root,
     load_project_config,
 )
+from codeintel.cli.results import CliResult
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import (
     BuildLayoutOptions,
@@ -984,12 +988,246 @@ def docs_export_handler(
         raise
 
 
+# -----------------------------------------------------------------------------
+# Result Types
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DocsExportResult:
+    """Result from docs export operation.
+
+    Parameters
+    ----------
+    status
+        Export status (ok, dry_run, failed).
+    validation
+        Validation mode used.
+    macro_requirement
+        Macro requirement mode used.
+    datasets
+        Datasets exported (or None for all).
+    schemas
+        Schemas exported (or None for all).
+    mode
+        Execution mode (build_system, direct, dry_run).
+    """
+
+    status: str
+    validation: str
+    macro_requirement: str
+    datasets: list[str] | None
+    schemas: list[str] | None
+    mode: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation.
+        """
+        return {
+            "status": self.status,
+            "validation": self.validation,
+            "macro_requirement": self.macro_requirement,
+            "datasets": self.datasets,
+            "schemas": self.schemas,
+            "mode": self.mode,
+        }
+
+
+# -----------------------------------------------------------------------------
+# ExecutionContext-based Handler
+# -----------------------------------------------------------------------------
+
+
+def _build_export_options_from_ctx(ctx: ExecutionContext) -> tuple[ProjectOptions, BackendOptions]:
+    """Build project and backend options from execution context.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    tuple[ProjectOptions, BackendOptions]
+        Project and backend options.
+    """
+    project_root_raw = ctx.params.get("project_root")
+    repo_root_raw = ctx.params.get("repo_root")
+    db_path_raw = ctx.params.get("db_path")
+    build_dir_raw = ctx.params.get("build_dir")
+    doc_output_raw = ctx.params.get("document_output_dir")
+
+    project = ProjectOptions(
+        project_root=Path(project_root_raw) if project_root_raw else None,
+        repo=ctx.get_str_param("repo"),
+        commit=ctx.get_str_param("commit"),
+        db_path=Path(db_path_raw) if db_path_raw else None,
+        build_dir=Path(build_dir_raw) if build_dir_raw else None,
+        repo_root=Path(repo_root_raw) if repo_root_raw else None,
+        document_output_dir=Path(doc_output_raw) if doc_output_raw else None,
+    )
+
+    nx_backend = ctx.get_str_param("nx_backend", "auto") or "auto"
+    gpu_mode_raw = ctx.params.get("nx_gpu_mode", NxGpuMode.DISABLED)
+    if isinstance(gpu_mode_raw, NxGpuMode):
+        nx_gpu_mode = gpu_mode_raw
+    else:
+        nx_gpu_mode = NxGpuMode(str(gpu_mode_raw))
+
+    backend = BackendOptions(nx_backend=nx_backend, nx_gpu_mode=nx_gpu_mode)
+    return project, backend
+
+
+def _build_docs_export_options_from_ctx(ctx: ExecutionContext) -> DocsExportOptions:
+    """Build docs export options from execution context.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    DocsExportOptions
+        Export options.
+    """
+    validation_raw = ctx.params.get("validation_mode", ExportValidationMode.SKIP)
+    if isinstance(validation_raw, ExportValidationMode):
+        validation = validation_raw
+    else:
+        validation = ExportValidationMode(str(validation_raw))
+
+    macro_raw = ctx.params.get("macro_requirement", MacroRequirement.ALLOW_PARTIAL)
+    if isinstance(macro_raw, MacroRequirement):
+        macro_requirement = macro_raw
+    else:
+        macro_requirement = MacroRequirement(str(macro_raw))
+
+    run_mode_raw = ctx.params.get("run_mode", DryRunMode.EXECUTE)
+    if isinstance(run_mode_raw, DryRunMode):
+        run_mode = run_mode_raw
+    else:
+        run_mode = DryRunMode(str(run_mode_raw))
+
+    prereq_mode_raw = ctx.params.get("prereq_mode", PrereqMode.RUN)
+    if isinstance(prereq_mode_raw, PrereqMode):
+        prereq_mode = prereq_mode_raw
+    else:
+        prereq_mode = PrereqMode(str(prereq_mode_raw))
+
+    datasets_raw = ctx.params.get("datasets")
+    schemas_raw = ctx.params.get("schemas")
+
+    return DocsExportOptions(
+        validation=validation,
+        macro_requirement=macro_requirement,
+        datasets=list(datasets_raw) if datasets_raw else None,
+        schemas=list(schemas_raw) if schemas_raw else None,
+        output_format=OutputFormat(ctx.output_format.value),
+        run_mode=run_mode,
+        prereq_mode=prereq_mode,
+    )
+
+
+def docs_export_ctx(ctx: ExecutionContext) -> CliResult[DocsExportResult]:
+    """Export Parquet + JSONL datasets from DuckDB into Document Output/.
+
+    By default, uses the build system for dependency-aware export, which
+    ensures all prerequisites (analytics, profiles) are computed first.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - repo: Repository slug.
+        - commit: Commit SHA.
+        - db_path: Database path.
+        - build_dir: Build directory.
+        - repo_root: Repository root.
+        - document_output_dir: Document output directory.
+        - nx_backend: NetworkX backend.
+        - nx_gpu_mode: GPU mode (disabled, enabled, strict).
+        - validation: Validation mode (required, skip).
+        - macro_requirement: Macro requirement (require_normalized, allow_partial).
+        - datasets: Dataset filter list.
+        - schemas: Schema filter list.
+        - run_mode: Run mode (execute, dry_run).
+        - prereq_mode: Prerequisite mode (run, skip).
+
+    Returns
+    -------
+    CliResult[DocsExportResult]
+        Export result.
+
+    Raises
+    ------
+    RuntimeError
+        If export fails.
+    """
+    setup_logging(ctx.verbosity)
+
+    project, backend = _build_export_options_from_ctx(ctx)
+    export_opts = _build_docs_export_options_from_ctx(ctx)
+
+    try:
+        cfg = _resolve_export_config(project, backend)
+    except ValidationError as exc:
+        msg = f"Configuration resolution failed: {exc}"
+        raise RuntimeError(msg) from exc
+
+    if export_opts.run_mode is DryRunMode.DRY_RUN:
+        return CliResult.ok(
+            DocsExportResult(
+                status="dry_run",
+                validation=export_opts.validation.value,
+                macro_requirement=export_opts.macro_requirement.value,
+                datasets=export_opts.datasets,
+                schemas=export_opts.schemas,
+                mode="dry_run",
+            )
+        )
+
+    try:
+        if export_opts.prereq_mode is PrereqMode.SKIP:
+            run_docs_export(
+                cfg=cfg,
+                options=export_opts,
+                validator=validate_dataset_registry,
+                export_runner=run_validated_exports,
+            )
+            mode = "direct"
+        else:
+            run_docs_export_via_build_system(cfg, options=export_opts)
+            mode = "build_system"
+    except (DocsValidationError, ValidationError) as exc:
+        msg = f"Export failed: {exc}"
+        raise RuntimeError(msg) from exc
+
+    return CliResult.ok(
+        DocsExportResult(
+            status="ok",
+            validation=export_opts.validation.value,
+            macro_requirement=export_opts.macro_requirement.value,
+            datasets=export_opts.datasets,
+            schemas=export_opts.schemas,
+            mode=mode,
+        )
+    )
+
+
 __all__ = [
     "BackendFlags",
     "BackendOptions",
     "DocsExecutionOptions",
     "DocsExportBundleMapping",
     "DocsExportOptions",
+    "DocsExportResult",
     "DocsSelectionOptions",
     "DocsValidationOptions",
     "DryRunMode",
@@ -1004,6 +1242,7 @@ __all__ = [
     "build_graph_backend_config",
     "build_graph_feature_flags_from_env",
     "bundle_docs_export",
+    "docs_export_ctx",
     "docs_export_handler",
     "open_gateway_from_config",
     "run_docs_export",

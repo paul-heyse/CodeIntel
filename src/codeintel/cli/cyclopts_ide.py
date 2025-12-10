@@ -1,19 +1,18 @@
-"""Cyclopts wiring for IDE helper commands."""
+"""Cyclopts wiring for IDE helper commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import run_handler
-from codeintel.cli.cyclopts_common import (
-    RuntimeCLI,
-    get_verbose,
-    runtime_cli_to_options,
-)
-from codeintel.cli.ide_handlers import IdeHintsOptions, RuntimeCliOptions, ide_hints_handler
+from codeintel.cli.execution.adapter import CycloptsAdapter
+from codeintel.cli.ide_handlers import ide_hints_ctx
 
 ide_app = App(
     name="ide",
@@ -33,18 +32,25 @@ class IdeHintsCommand:
             help="File path relative to repo root (e.g., pkg/module.py).",
         ),
     ] = ""
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        runtime = self.runtime or RuntimeCLI()
-        cli_opts = runtime_cli_to_options(runtime)
-        verbose = get_verbose(runtime)
-        options = IdeHintsOptions(
-            rel_path=self.rel_path,
-            runtime_options=RuntimeCliOptions(project_root=cli_opts.project_root),
-            verbose=verbose,
-        )
-        run_handler(ide_hints_handler, options)
+        """Execute the IDE hints command."""
+        CycloptsAdapter("ide.hints", ide_hints_ctx)(self)
 
 
 __all__ = ["ide_app"]

@@ -1,25 +1,23 @@
-"""Cyclopts wiring for subsystem exploration commands."""
+"""Cyclopts wiring for subsystem exploration commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_common import RuntimeCLI, runtime_cli_to_options
+from codeintel.cli.execution.adapter import CycloptsAdapter
 from codeintel.cli.subsystem_handlers import (
-    RuntimeCliOptions,
-    SubsystemCoverageOptions,
-    SubsystemIdOptions,
-    SubsystemListOptions,
-    SubsystemMembershipOptions,
-    SubsystemProfilesOptions,
-    SubsystemRuntime,
-    subsystem_coverage_handler,
-    subsystem_list_handler,
-    subsystem_module_memberships_handler,
-    subsystem_profiles_handler,
-    subsystem_show_handler,
+    subsystem_coverage_ctx,
+    subsystem_list_ctx,
+    subsystem_module_memberships_ctx,
+    subsystem_profiles_ctx,
+    subsystem_show_ctx,
 )
 
 subsystem_app = App(
@@ -28,119 +26,183 @@ subsystem_app = App(
 )
 
 
-def _runtime(cli: RuntimeCLI) -> SubsystemRuntime:
-    cli_opts = runtime_cli_to_options(cli)
-    return SubsystemRuntime(
-        runtime_options=RuntimeCliOptions(project_root=cli_opts.project_root),
-        verbose=cli.verbose,
-    )
-
-
 @subsystem_app.command(name="list")
-def list_subsystems(
-    runtime: RuntimeCLI | None = None,
+@dataclass
+class SubsystemListCommand:
+    """List inferred subsystems with role/risk metadata."""
+
     role: Annotated[
         str | None,
         Parameter(
             name="--role",
             help="Filter subsystems by role tag.",
         ),
-    ] = None,
+    ] = None
     query: Annotated[
         str | None,
         Parameter(
             name="--q",
             help="Search substring on name/description.",
         ),
-    ] = None,
+    ] = None
     limit: Annotated[
         int | None,
         Parameter(
             name="--limit",
             help="Limit the number of subsystems returned.",
         ),
-    ] = None,
-) -> None:
-    """List inferred subsystems with role/risk metadata."""
-    cfg = runtime or RuntimeCLI()
-    options = SubsystemListOptions(
-        runtime=_runtime(cfg),
-        role=role,
-        query=query,
-        limit=limit,
-    )
-    subsystem_list_handler(options)
+    ] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the subsystem list command."""
+        CycloptsAdapter("subsystem.list", subsystem_list_ctx)(self)
 
 
 @subsystem_app.command(name="show")
-def show_subsystem(
+@dataclass
+class SubsystemShowCommand:
+    """Show subsystem detail and modules."""
+
     subsystem_id: Annotated[
         str,
         Parameter(
             name=None,
             help="Subsystem identifier.",
         ),
-    ],
-    runtime: RuntimeCLI | None = None,
-) -> None:
-    """Show subsystem detail and modules."""
-    cfg = runtime or RuntimeCLI()
-    options = SubsystemIdOptions(
-        runtime=_runtime(cfg),
-        subsystem_id=subsystem_id,
-    )
-    subsystem_show_handler(options)
+    ] = ""
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the subsystem show command."""
+        CycloptsAdapter("subsystem.show", subsystem_show_ctx)(self)
 
 
 @subsystem_app.command(name="profiles")
-def list_profiles(
-    runtime: RuntimeCLI | None = None,
+@dataclass
+class SubsystemProfilesCommand:
+    """List subsystem profiles from docs.v_subsystem_profile."""
+
     limit: Annotated[
         int | None,
         Parameter(
             name="--limit",
             help="Limit the number of profiles returned.",
         ),
-    ] = None,
-) -> None:
-    """List subsystem profiles from docs.v_subsystem_profile."""
-    cfg = runtime or RuntimeCLI()
-    options = SubsystemProfilesOptions(runtime=_runtime(cfg), limit=limit)
-    subsystem_profiles_handler(options)
+    ] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the subsystem profiles command."""
+        CycloptsAdapter("subsystem.profiles", subsystem_profiles_ctx)(self)
 
 
 @subsystem_app.command(name="coverage")
-def list_coverage(
-    runtime: RuntimeCLI | None = None,
+@dataclass
+class SubsystemCoverageCommand:
+    """List subsystem coverage rollups from docs.v_subsystem_coverage."""
+
     limit: Annotated[
         int | None,
         Parameter(
             name="--limit",
             help="Limit the number of coverage rows returned.",
         ),
-    ] = None,
-) -> None:
-    """List subsystem coverage rollups from docs.v_subsystem_coverage."""
-    cfg = runtime or RuntimeCLI()
-    options = SubsystemCoverageOptions(runtime=_runtime(cfg), limit=limit)
-    subsystem_coverage_handler(options)
+    ] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the subsystem coverage command."""
+        CycloptsAdapter("subsystem.coverage", subsystem_coverage_ctx)(self)
 
 
 @subsystem_app.command(name="module-memberships")
-def module_memberships(
+@dataclass
+class SubsystemMembershipCommand:
+    """List subsystem memberships for a module."""
+
     module: Annotated[
         str,
         Parameter(
             name=None,
             help="Module name (e.g., pkg.mod).",
         ),
-    ],
-    runtime: RuntimeCLI | None = None,
-) -> None:
-    """List subsystem memberships for a module."""
-    cfg = runtime or RuntimeCLI()
-    options = SubsystemMembershipOptions(runtime=_runtime(cfg), module=module)
-    subsystem_module_memberships_handler(options)
+    ] = ""
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the subsystem module-memberships command."""
+        CycloptsAdapter("subsystem.module_memberships", subsystem_module_memberships_ctx)(self)
 
 
 __all__ = ["subsystem_app"]
