@@ -12,9 +12,9 @@ from tests._helpers.assertions import (
     assert_graph_counts,
     expect_equal,
 )
+from tests._helpers import create_test_context
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.networkx_graphs import chain_graph, cyclic_graph, disconnected_graph
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graph_runtime_harness import (
     GraphRuntimeHarness,
     run_graph_metrics_pipeline,
@@ -105,15 +105,13 @@ def test_filter_import_graph_noop_without_modules() -> None:
 
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
-    gateway = GatewayFactory().with_views().open()
-    try:
-        cfg_snapshot = make_snapshot(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
-        cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)
-        filters = build_graph_metric_filters(gateway, cfg)
-        expect_equal(filters.function_goids, None)
-        expect_equal(filters.modules, None)
-    finally:
-        gateway.close()
+    ctx = create_test_context(tmp_path)
+    cfg_snapshot = make_snapshot(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
+    cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)
+    filters = build_graph_metric_filters(ctx.gateway, cfg)
+    expect_equal(filters.function_goids, None)
+    expect_equal(filters.modules, None)
+    ctx.close()
 
 
 def test_filter_subsystem_memberships_respects_allowlists() -> None:

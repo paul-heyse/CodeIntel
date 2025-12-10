@@ -8,9 +8,9 @@ from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeatur
 from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.harnesses import plugin_harness_with_packs
-from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds import CORE_PACK
 

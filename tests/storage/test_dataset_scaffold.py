@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from codeintel.cli.datasets_handlers import (
     BootstrapSnippet,
     DatasetScaffoldOptions,
@@ -23,6 +22,7 @@ from codeintel.cli.datasets_handlers import (
     ScaffoldSchemaOptions,
     build_scaffold_options,
 )
+
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
 from tests._helpers.dataset_factories import sample_dataset_registry
 

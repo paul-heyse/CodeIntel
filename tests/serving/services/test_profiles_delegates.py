@@ -15,7 +15,7 @@ from codeintel.serving.services.query_service import LocalQueryService
 
 if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
-    from tests._helpers.serving_apps import ServiceApp
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 # Test constants
 
@@ -27,7 +27,7 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_service_app: ServiceApp,
+    service_ctx: ProvisionedServiceContext,
 ) -> LocalQueryService:
     """Return the shared LocalQueryService from the provisioned service app.
 
@@ -36,7 +36,7 @@ def _build_local_service(
     LocalQueryService
         Service instance wired to the provisioned gateway snapshot.
     """
-    return provisioned_service_app.service
+    return service_ctx.service  # type: ignore[no-any-return]
 
 
 # =============================================================================
@@ -45,11 +45,11 @@ def _build_local_service(
 
 
 def test_get_function_profile_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_profile returns domain FunctionProfileResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     profile = service.get_function_profile(goid_h128=analytics_samples.goid_h128)
 
@@ -60,10 +60,10 @@ def test_get_function_profile_returns_domain_result(
 
 
 def test_get_function_profile_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_function_profile handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     # Use a nonexistent goid_h128 - should raise an error
     nonexistent_goid = 99999999
@@ -82,11 +82,11 @@ def test_get_function_profile_not_found(
 
 
 def test_get_file_profile_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_profile returns domain FileProfileResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     profile = service.get_file_profile(rel_path=analytics_samples.rel_path)
 
@@ -97,10 +97,10 @@ def test_get_file_profile_returns_domain_result(
 
 
 def test_get_file_profile_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_file_profile handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     profile = service.get_file_profile(rel_path="nonexistent/path/file.py")
 
@@ -115,11 +115,11 @@ def test_get_file_profile_not_found(
 
 
 def test_get_module_profile_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_profile returns domain ModuleProfileResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     profile = service.get_module_profile(module=analytics_samples.module)
 
@@ -130,10 +130,10 @@ def test_get_module_profile_returns_domain_result(
 
 
 def test_get_module_profile_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_module_profile handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     # Use nonexistent module - should raise McpError
     try:
@@ -150,11 +150,11 @@ def test_get_module_profile_not_found(
 
 
 def test_get_function_architecture_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_architecture returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     architecture = service.get_function_architecture(goid_h128=analytics_samples.goid_h128)
 
@@ -165,7 +165,7 @@ def test_get_function_architecture_returns_domain_result(
 
 
 def test_get_function_architecture_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify get_function_architecture handles not found case."""
     service = _build_local_service(provisioned_service_app)
@@ -186,7 +186,7 @@ def test_get_function_architecture_not_found(
 
 
 def test_get_module_architecture_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_architecture returns domain result."""
@@ -201,7 +201,7 @@ def test_get_module_architecture_returns_domain_result(
 
 
 def test_get_module_architecture_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify get_module_architecture handles not found case."""
     service = _build_local_service(provisioned_service_app)

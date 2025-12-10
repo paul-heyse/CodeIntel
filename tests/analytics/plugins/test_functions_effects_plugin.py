@@ -10,10 +10,10 @@ from codeintel.analytics.plugins.functions.effects import FunctionEffectsPlugin
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_true
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.graphs import build_graph_engine_double
 from tests._helpers.harnesses import plugin_harness_with_packs
-from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds import CORE_PACK
 

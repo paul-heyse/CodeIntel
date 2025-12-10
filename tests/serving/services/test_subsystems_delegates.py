@@ -14,7 +14,7 @@ from codeintel.serving.services.query_service import LocalQueryService
 
 if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
-    from tests._helpers.serving_apps import ServiceApp
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 # Test constants
 LIMIT_FIVE: Final = 5
@@ -27,7 +27,7 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_service_app: ServiceApp,
+    service_ctx: ProvisionedServiceContext,
 ) -> LocalQueryService:
     """Return the shared LocalQueryService from the provisioned service app.
 
@@ -36,7 +36,7 @@ def _build_local_service(
     LocalQueryService
         Service instance wired to the provisioned gateway snapshot.
     """
-    return provisioned_service_app.service
+    return service_ctx.service  # type: ignore[no-any-return]
 
 
 # =============================================================================
@@ -45,10 +45,10 @@ def _build_local_service(
 
 
 def test_list_subsystems_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystems returns domain SubsystemSummaryResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_subsystems()
 
@@ -59,10 +59,10 @@ def test_list_subsystems_returns_domain_result(
 
 
 def test_list_subsystems_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystems with limit parameter."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_subsystems(limit=LIMIT_FIVE)
 
@@ -73,10 +73,10 @@ def test_list_subsystems_with_limit(
 
 
 def test_list_subsystems_with_role_filter(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystems with role filter."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_subsystems(role="api")
 
@@ -87,10 +87,10 @@ def test_list_subsystems_with_role_filter(
 
 
 def test_list_subsystems_with_query(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystems with query filter."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_subsystems(q="test")
 
@@ -101,11 +101,11 @@ def test_list_subsystems_with_query(
 
 
 def test_get_module_subsystems_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_subsystems returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     subsystems = service.get_module_subsystems(module=analytics_samples.module)
 
@@ -116,10 +116,10 @@ def test_get_module_subsystems_returns_domain_result(
 
 
 def test_get_module_subsystems_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_module_subsystems handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     subsystems = service.get_module_subsystems(module="nonexistent.module.xyz")
 
@@ -130,11 +130,11 @@ def test_get_module_subsystems_not_found(
 
 
 def test_get_file_hints_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_hints returns domain FileHintsResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     hints = service.get_file_hints(rel_path=analytics_samples.rel_path)
 
@@ -145,10 +145,10 @@ def test_get_file_hints_returns_domain_result(
 
 
 def test_get_file_hints_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_file_hints handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     hints = service.get_file_hints(rel_path="nonexistent/path/file.py")
 
@@ -159,7 +159,7 @@ def test_get_file_hints_not_found(
 
 
 def test_get_subsystem_modules_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_subsystem_modules returns domain result."""
@@ -174,7 +174,7 @@ def test_get_subsystem_modules_returns_domain_result(
 
 
 def test_get_subsystem_modules_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_subsystem_modules with module_limit."""
@@ -192,7 +192,7 @@ def test_get_subsystem_modules_with_limit(
 
 
 def test_get_subsystem_modules_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify get_subsystem_modules handles not found case."""
     service = _build_local_service(provisioned_service_app)
@@ -206,7 +206,7 @@ def test_get_subsystem_modules_not_found(
 
 
 def test_search_subsystems_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify search_subsystems returns domain result."""
     service = _build_local_service(provisioned_service_app)
@@ -220,7 +220,7 @@ def test_search_subsystems_returns_domain_result(
 
 
 def test_search_subsystems_with_query(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify search_subsystems with query filter."""
     service = _build_local_service(provisioned_service_app)
@@ -234,7 +234,7 @@ def test_search_subsystems_with_query(
 
 
 def test_search_subsystems_with_role(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify search_subsystems with role filter."""
     service = _build_local_service(provisioned_service_app)
@@ -248,7 +248,7 @@ def test_search_subsystems_with_role(
 
 
 def test_summarize_subsystem_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify summarize_subsystem returns domain result."""
@@ -263,7 +263,7 @@ def test_summarize_subsystem_returns_domain_result(
 
 
 def test_summarize_subsystem_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify summarize_subsystem with module_limit."""
@@ -281,7 +281,7 @@ def test_summarize_subsystem_with_limit(
 
 
 def test_list_subsystem_profiles_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystem_profiles returns domain result."""
     service = _build_local_service(provisioned_service_app)
@@ -295,7 +295,7 @@ def test_list_subsystem_profiles_returns_domain_result(
 
 
 def test_list_subsystem_profiles_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystem_profiles with limit."""
     service = _build_local_service(provisioned_service_app)
@@ -309,7 +309,7 @@ def test_list_subsystem_profiles_with_limit(
 
 
 def test_list_subsystem_coverage_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystem_coverage returns domain result."""
     service = _build_local_service(provisioned_service_app)
@@ -323,7 +323,7 @@ def test_list_subsystem_coverage_returns_domain_result(
 
 
 def test_list_subsystem_coverage_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_app: ProvisionedServiceContext,
 ) -> None:
     """Verify list_subsystem_coverage with limit."""
     service = _build_local_service(provisioned_service_app)

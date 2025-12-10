@@ -23,6 +23,7 @@ from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    make_resource_case_params,
     write_scip_index,
 )
 from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
@@ -39,15 +40,22 @@ def test_paths_to_modules_creates_records(tmp_path: Path) -> None:
     expect_equal(modules[1].module_name, "pkg.util.b")
 
 
-@pytest.mark.parametrize("scenario", ["resources", "db_fallback", "gateway_failure"])
-def test_module_path_resolution_scenarios(tmp_path: Path, scenario: str) -> None:
+RESOURCE_CASES = make_resource_case_params()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [params for _, params in RESOURCE_CASES],
+    ids=[name for name, _ in RESOURCE_CASES],
+)
+def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
     """Shared module path resolution coverage for ScipIngestPlugin."""
     run_module_path_resolution_scenarios(
         lambda _capture: ScipIngestPlugin(),
         get_module_paths,
         tmp_path,
         resources_path="pkg/a.py",
-        scenario=scenario,
+        options=options,
     )
 
 

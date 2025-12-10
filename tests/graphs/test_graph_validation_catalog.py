@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from codeintel.graphs.validation import run_graph_validations
 from tests._helpers import seed_graph_validation_gaps
-from tests._helpers.assertions import expect_equal
+from tests._helpers.assertions import expect_rows_equal
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
@@ -27,4 +27,4 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
         runtime=make_graph_runtime_options(snapshot=snapshot),
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
-    expect_equal(rows, [("pkg/a.py",)], label="graph_validation_paths")
+    expect_rows_equal(rows, [("pkg/a.py",)], message="graph_validation_paths")

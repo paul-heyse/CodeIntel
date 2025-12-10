@@ -7,14 +7,14 @@ manually constructing TestContext + ExecutionContextBuilder in each test.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.parameters import TargetParameters
 from codeintel.build.context import TargetResult
+from codeintel.build.parameters import TargetParameters
+from codeintel.build.plugin import TargetPlugin
 from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.seeds import (

@@ -11,13 +11,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers.context import TestContext
 from tests._helpers.builders import (
     CoverageFunctionRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
     insert_rows,
 )
+from tests._helpers.context import TestContext
 from tests._helpers.fakes.coverage import FakeCoverage, build_fake_coverage_from_gateway
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
 

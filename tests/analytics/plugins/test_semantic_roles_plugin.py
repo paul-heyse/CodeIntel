@@ -11,9 +11,9 @@ from codeintel.analytics.plugins.semantic_roles.compute import SemanticRolesPlug
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.harnesses import plugin_harness_with_packs
-from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.seeds import CORE_PACK
 

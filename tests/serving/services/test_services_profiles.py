@@ -12,6 +12,7 @@ from fastapi import status
 
 from codeintel.serving.mcp.errors import McpError
 from tests._helpers.assertions import (
+    assert_problem_detail_response,
     expect_equal,
     expect_in,
     expect_is_instance,
@@ -65,8 +66,7 @@ def test_get_function_profile_missing_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get("/profiles/function")
 
-    # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_function_profile_invalid_goid_h128(
@@ -125,8 +125,7 @@ def test_get_file_profile_missing_rel_path(
     with provisioned_service_app.client() as client:
         response = client.get("/profiles/file")
 
-    # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_file_profile_nonexistent_file(

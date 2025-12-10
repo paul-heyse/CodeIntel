@@ -9,10 +9,8 @@ from pathlib import Path
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.entrypoints.core import build_entrypoints
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import EntryPointsStepConfig
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
+from tests._helpers import coverage_and_graph_context
 from tests._helpers.assertions import (
     assert_mapping_value,
     expect_equal,
@@ -26,24 +24,22 @@ from tests._helpers.builders import (
     TestCoverageEdgeRow,
     insert_rows,
 )
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import build_ast_map, build_module_map, insert_goids, insert_modules
 
 
-def _seed_entrypoint_repo(
-    tmp_path: Path,
+def _seed_entrypoint_ctx(
+    ctx,
 ) -> tuple[
-    SnapshotRef,
     MockFunctionCatalog,
     dict[str, str],
     FunctionAstFeatures,
     Path,
     FunctionAst,
-    StorageGateway,
 ]:
-    repo_root = tmp_path / "repo"
-    module_path = repo_root / "pkg" / "api.py"
+    """Seed a coverage/graph-ready context with a FastAPI entrypoint."""
+    module_path = ctx.repo_root / "pkg" / "api.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
     module_path.write_text(
         "\n".join(
@@ -61,9 +57,6 @@ def _seed_entrypoint_repo(
         ),
         encoding="utf-8",
     )
-    snapshot = SnapshotRef(repo="demo", commit="entry", repo_root=repo_root)
-    gateway_factory = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit)
-    gateway = gateway_factory.open()
 
     paths = {"pkg.api": module_path}
     goids = {"list_items": 7001}
@@ -71,11 +64,11 @@ def _seed_entrypoint_repo(
     ast_map = build_ast_map(
         paths,
         goids,
-        snapshot.repo_root,
+        ctx.repo_root,
         target_names={"pkg.api": "list_items"},
     )
-    insert_modules(gateway, snapshot, paths)
-    insert_goids(gateway, snapshot, ast_map, now=datetime.now(tz=UTC))
+    insert_modules(ctx.gateway, ctx.snapshot, paths)
+    insert_goids(ctx.gateway, ctx.snapshot, ast_map, now=datetime.now(tz=UTC))
     module_map = build_module_map(ast_map, {goids["list_items"]: "pkg.api"})
     func_ast = ast_map[goids["list_items"]]
 
@@ -92,9 +85,6 @@ def _seed_entrypoint_repo(
         ],
         module_by_path={func_ast.rel_path: "pkg.api"},
     )
-    ensure_schema(gateway.con, "analytics.coverage_functions")
-    ensure_schema(gateway.con, "analytics.test_catalog")
-    ensure_schema(gateway.con, "analytics.test_coverage_edges")
     features = FunctionAstFeatures(
         goid=goids["list_items"],
         rel_path=func_ast.rel_path,
@@ -114,28 +104,25 @@ def _seed_entrypoint_repo(
         config_read_count=0,
         feature_flag_count=0,
     )
-    return snapshot, catalog, module_map, features, module_path, func_ast, gateway
+    return catalog, module_map, features, module_path, func_ast
 
 
 def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
     """Entry points and entrypoint_tests rows capture coverage and test meta."""
-    snapshot, catalog, module_map, features, module_path, func_ast, gateway = _seed_entrypoint_repo(
-        tmp_path
-    )
-    con = gateway.con
-    ensure_schema(con, "analytics.subsystem_modules")
-    ensure_schema(con, "analytics.subsystems")
+    ctx = coverage_and_graph_context(tmp_path)
+    catalog, module_map, features, module_path, func_ast = _seed_entrypoint_ctx(ctx)
+    con = ctx.gateway.con
 
     now = datetime.now(tz=UTC)
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             CoverageFunctionRow(
                 function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                 language="python",
                 kind="function",
                 qualname=features.qualname,
@@ -151,12 +138,12 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             TestCatalogRow(
                 test_id="tests/test_api.py::test_failed",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="tests/test_api.py",
                 qualname="test_failed",
                 status="failed",
@@ -166,8 +153,8 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
             ),
             TestCatalogRow(
                 test_id="tests/test_api.py::test_slow_flaky",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="tests/test_api.py",
                 qualname="test_slow_flaky",
                 status="passed",
@@ -178,15 +165,15 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             TestCoverageEdgeRow(
                 test_id="tests/test_api.py::test_failed",
                 function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                 qualname=features.qualname,
                 covered_lines=5,
                 executable_lines=10,
@@ -198,9 +185,9 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
                 test_id="tests/test_api.py::test_slow_flaky",
                 function_goid_h128=features.goid,
                 urn="urn:pkg.api.list_items",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                rel_path=module_path.relative_to(snapshot.repo_root).as_posix(),
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                 qualname=features.qualname,
                 covered_lines=4,
                 executable_lines=10,
@@ -213,21 +200,21 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
 
     try:
         build_entrypoints(
-            gateway,
-            EntryPointsStepConfig(snapshot=snapshot),
+            ctx.gateway,
+            EntryPointsStepConfig(snapshot=ctx.snapshot),
             catalog_provider=catalog,
             module_map=module_map,
             features_map={features.goid: features},
         )
 
-        entry_row = gateway.con.execute(
+        entry_row = ctx.gateway.con.execute(
             """
             SELECT tests_touching, failing_tests, slow_tests, flaky_tests,
                    entrypoint_coverage_ratio, last_test_status, extra
             FROM analytics.entrypoints
             WHERE repo = ? AND commit = ?
             """,
-            [snapshot.repo, snapshot.commit],
+            [ctx.repo, ctx.commit],
         ).fetchone()
         row = expect_is_not_none(entry_row)
         expect_equal(row[0], 2)
@@ -244,46 +231,44 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
         expect_true(extra_payload["uses_network"])
         expect_equal(extra_payload["http_server_libs"], ["fastapi"])
 
-        test_rows = gateway.con.execute(
+        test_rows = ctx.gateway.con.execute(
             """
             SELECT test_id, coverage_ratio, status, duration_ms
             FROM analytics.entrypoint_tests
             WHERE repo = ? AND commit = ?
             ORDER BY test_id
             """,
-            [snapshot.repo, snapshot.commit],
+            [ctx.repo, ctx.commit],
         ).fetchall()
         expect_length(test_rows, 2)
         expect_equal(test_rows[0][2], "failed")
         expect_equal(test_rows[1][3], 1500)
     finally:
-        gateway.close()
+        ctx.close()
 
 
 def test_entrypoints_no_modules_skip_detection(tmp_path: Path) -> None:
     """Early exit occurs when no module map or module context is available."""
-    snapshot, _, _, _, _, _, gateway = _seed_entrypoint_repo(tmp_path)
-    gateway.con.execute(
+    ctx = coverage_and_graph_context(tmp_path)
+    ctx.gateway.con.execute(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-        [snapshot.repo, snapshot.commit],
+        [ctx.repo, ctx.commit],
     )
 
-    try:
-        build_entrypoints(
-            gateway,
-            EntryPointsStepConfig(snapshot=snapshot),
-            catalog_provider=MockFunctionCatalog(),
-            module_map={},
-            features_map={},
-        )
+    build_entrypoints(
+        ctx.gateway,
+        EntryPointsStepConfig(snapshot=ctx.snapshot),
+        catalog_provider=MockFunctionCatalog(),
+        module_map={},
+        features_map={},
+    )
 
-        count = gateway.con.execute(
-            """
-            SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchone()
-        row = expect_is_not_none(count)
-        expect_equal(row[0], 0)
-    finally:
-        gateway.close()
+    count = ctx.gateway.con.execute(
+        """
+        SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?
+        """,
+        [ctx.repo, ctx.commit],
+    ).fetchone()
+    row = expect_is_not_none(count)
+    expect_equal(row[0], 0)
+    ctx.close()

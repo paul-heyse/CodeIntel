@@ -17,11 +17,6 @@ from codeintel.storage.gateway.accessors import (
     DocsViews,
     GraphTables,
 )
-from codeintel.storage.gateway.rows.analytics import (
-    AnalyticsCoverageLinesRow,
-    AnalyticsTestCatalogRow,
-    AnalyticsTypednessRow,
-)
 from codeintel.storage.gateway.rows.core import (
     CoreFileStateRow,
     CoreGoidsRow,
@@ -44,16 +39,16 @@ from tests._helpers.assertions import (
     expect_true,
     require_row,
 )
-from tests._helpers.rows import (
-    ConfigValueSeed,
-    StaticDiagnosticsSeed,
-    SubsystemModuleSeed,
-    SubsystemSeed,
-    config_value_row,
-    static_diagnostics_row,
-    subsystem_module_row,
-    subsystem_row,
+from tests._helpers.builders import (
+    ConfigValueRow,
+    CoverageLineRow,
+    StaticDiagnosticsRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    TestCatalogRow,
+    TypednessRow,
 )
+from tests._helpers.context import TestContext
 
 
 def _require_row(row: tuple[object, ...] | None, message: str) -> tuple[object, ...]:
@@ -629,61 +624,59 @@ def test_analytics_tables_test_coverage_edges_returns_relation(
     require_row(result, message="Expected test_coverage_edges count row")
 
 
-def test_analytics_tables_insert_coverage_lines(fresh_gateway: StorageGateway) -> None:
-    """Verify insert_coverage_lines inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
-    now = datetime.now(tz=UTC).isoformat()
-    # Schema: repo, commit, rel_path, line, is_executable, is_covered, hits, context_count, created_at
-    rows: list[AnalyticsCoverageLinesRow] = [
-        {
-            "repo": "test/repo",
-            "commit": "abc123",
-            "rel_path": "test.py",
-            "line": 10,
-            "is_executable": True,
-            "is_covered": False,
-            "hits": 0,
-            "context_count": 1,
-            "created_at": now,
-        },
+def test_analytics_tables_insert_coverage_lines(coverage_ctx: TestContext) -> None:
+    """Verify insert_coverage_lines inserts rows using coverage pack gateway."""
+    analytics = coverage_ctx.gateway.analytics
+    now = datetime.now(tz=UTC)
+    rows = [
+        CoverageLineRow(
+            repo=coverage_ctx.repo,
+            commit=coverage_ctx.commit,
+            rel_path="test.py",
+            line=10,
+            is_executable=True,
+            is_covered=False,
+            hits=0,
+            context_count=1,
+            created_at=now,
+        ).to_tuple(),
     ]
     analytics.insert_coverage_lines(rows)
 
-    result = fresh_gateway.con.execute(
+    result = coverage_ctx.con.execute(
         "SELECT line FROM analytics.coverage_lines WHERE repo = ?",
-        ["test/repo"],
+        [coverage_ctx.repo],
     ).fetchone()
     result = require_row(result, message="Expected coverage line row")
     expected_line = 10
     expect_equal(result[0], expected_line)
 
 
-def test_analytics_tables_insert_test_catalog(fresh_gateway: StorageGateway) -> None:
-    """Verify insert_test_catalog inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
-    now = datetime.now(tz=UTC).isoformat()
-    # Schema: test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind, status, duration_ms, markers, parametrized, flaky, created_at
-    rows: list[AnalyticsTestCatalogRow] = [
-        {
-            "test_id": "test_func",
-            "test_goid_h128": 1001.0,
-            "urn": "urn:test:test_func",
-            "repo": "test/repo",
-            "commit": "abc123",
-            "rel_path": "test.py",
-            "qualname": "test.test_func",
-            "kind": "test",
-            "status": "passed",
-            "duration_ms": 100.0,
-            "markers": "[]",
-            "parametrized": False,
-            "flaky": False,
-            "created_at": now,
-        }
+def test_analytics_tables_insert_test_catalog(coverage_ctx: TestContext) -> None:
+    """Verify insert_test_catalog inserts rows with coverage seed data."""
+    analytics = coverage_ctx.gateway.analytics
+    now = datetime.now(tz=UTC)
+    rows = [
+        TestCatalogRow(
+            test_id="test_func",
+            test_goid_h128=1001,
+            urn=f"urn:{coverage_ctx.repo}:{coverage_ctx.commit}:test.py#test_func",
+            repo=coverage_ctx.repo,
+            commit=coverage_ctx.commit,
+            rel_path="test.py",
+            qualname="test.test_func",
+            kind="unit",
+            status="passed",
+            duration_ms=100,
+            markers="[]",
+            parametrized=False,
+            flaky=False,
+            created_at=now,
+        ).to_tuple()
     ]
     analytics.insert_test_catalog(rows)
 
-    result = fresh_gateway.con.execute(
+    result = coverage_ctx.con.execute(
         "SELECT status FROM analytics.test_catalog WHERE test_id = ?",
         ["test_func"],
     ).fetchone()
@@ -691,86 +684,86 @@ def test_analytics_tables_insert_test_catalog(fresh_gateway: StorageGateway) -> 
     expect_equal(row[0], "passed")
 
 
-def test_analytics_tables_insert_typedness(fresh_gateway: StorageGateway) -> None:
-    """Verify insert_typedness inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
-    # Schema: repo, commit, path, type_error_count, annotation_ratio (JSON), untyped_defs, overlay_needed
-    rows: list[AnalyticsTypednessRow] = [
-        {
-            "repo": "test/repo",
-            "commit": "abc123",
-            "path": "test.py",
-            "type_error_count": 5,
-            "annotation_ratio": '{"ratio": 0.85}',
-            "untyped_defs": 2,
-            "overlay_needed": False,
-        },
+def test_analytics_tables_insert_typedness(metrics_ctx: TestContext) -> None:
+    """Verify insert_typedness inserts rows on metrics gateway."""
+    analytics = metrics_ctx.gateway.analytics
+    rows = [
+        TypednessRow(
+            repo=metrics_ctx.repo,
+            commit=metrics_ctx.commit,
+            path="test.py",
+            type_error_count=5,
+            annotation_ratio='{"ratio": 0.85}',
+            untyped_defs=2,
+            overlay_needed=False,
+        ).to_tuple(),
     ]
     analytics.insert_typedness(rows)
 
-    result = fresh_gateway.con.execute(
-        "SELECT type_error_count FROM analytics.typedness WHERE repo = ?",
-        ["test/repo"],
+    result = metrics_ctx.con.execute(
+        "SELECT type_error_count FROM analytics.typedness WHERE repo = ? AND path = ?",
+        [metrics_ctx.repo, "test.py"],
     ).fetchone()
     result = require_row(result, message="Expected typedness row")
     expected_errors = 5
     expect_equal(result[0], expected_errors)
 
 
-def test_analytics_tables_insert_static_diagnostics(fresh_gateway: StorageGateway) -> None:
-    """Verify insert_static_diagnostics inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
-    # Schema: repo, commit, rel_path, pyrefly_errors, pyright_errors, ruff_errors, total_errors, has_errors
+def test_analytics_tables_insert_static_diagnostics(metrics_ctx: TestContext) -> None:
+    """Verify insert_static_diagnostics inserts rows on metrics gateway."""
+    analytics = metrics_ctx.gateway.analytics
     rows = [
-        static_diagnostics_row(
-            StaticDiagnosticsSeed(
-                repo="test/repo",
-                commit="abc123",
-                rel_path="test.py",
-                pyrefly_errors=2,
-                pyright_errors=3,
-                ruff_errors=0,
-                total_errors=5,
-                has_errors=True,
-            )
-        ),
+        StaticDiagnosticsRow(
+            repo=metrics_ctx.repo,
+            commit=metrics_ctx.commit,
+            rel_path="test.py",
+            pyrefly_errors=2,
+            pyright_errors=3,
+            ruff_errors=0,
+            total_errors=5,
+            has_errors=True,
+        ).to_tuple(),
     ]
     analytics.insert_static_diagnostics(rows)
 
-    result = fresh_gateway.con.execute(
-        "SELECT total_errors FROM analytics.static_diagnostics WHERE repo = ?",
-        ["test/repo"],
+    result = metrics_ctx.con.execute(
+        "SELECT total_errors FROM analytics.static_diagnostics WHERE repo = ? AND rel_path = ?",
+        [metrics_ctx.repo, "test.py"],
     ).fetchone()
     result = require_row(result, message="Expected static_diagnostics row")
     expected_errors = 5
     expect_equal(result[0], expected_errors)
 
 
-def test_analytics_tables_insert_subsystems(fresh_gateway: StorageGateway) -> None:
-    """Verify insert_subsystems inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
-    # Schema: repo, commit, subsystem_id, name, description, module_count, modules_json, entrypoints_json,
-    #         internal_edge_count, external_edge_count, fan_in, fan_out, function_count,
-    #         avg_risk_score, max_risk_score, high_risk_function_count, risk_level, created_at
+def test_analytics_tables_insert_subsystems(test_ctx: TestContext) -> None:
+    """Verify insert_subsystems inserts rows using subsystem helpers."""
+    analytics = test_ctx.gateway.analytics
+    now = datetime.now(tz=UTC)
     rows = [
-        subsystem_row(
-            SubsystemSeed(
-                repo="test/repo",
-                commit="abc123",
-                subsystem_id="sub1",
-                name="Subsystem 1",
-                description="Core subsystem",
-                module_count=5,
-                modules_json="[]",
-                entrypoints_json="[]",
-                function_count=20,
-                risk_level="low",
-            )
-        )
+        SubsystemRow(
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+            subsystem_id="sub1",
+            name="Subsystem 1",
+            description="Core subsystem",
+            module_count=5,
+            modules_json="[]",
+            entrypoints_json="[]",
+            internal_edge_count=0,
+            external_edge_count=0,
+            fan_in=0,
+            fan_out=0,
+            function_count=20,
+            avg_risk_score=0.1,
+            max_risk_score=0.1,
+            high_risk_function_count=0,
+            risk_level="low",
+            created_at=now,
+        ).to_tuple()
     ]
     analytics.insert_subsystems(rows)
 
-    result = fresh_gateway.con.execute(
+    result = test_ctx.con.execute(
         "SELECT name FROM analytics.subsystems WHERE subsystem_id = ?",
         ["sub1"],
     ).fetchone()
@@ -778,52 +771,71 @@ def test_analytics_tables_insert_subsystems(fresh_gateway: StorageGateway) -> No
     expect_equal(row[0], "Subsystem 1")
 
 
-def test_analytics_tables_insert_subsystem_modules(fresh_gateway: StorageGateway) -> None:
+def test_analytics_tables_insert_subsystem_modules(test_ctx: TestContext) -> None:
     """Verify insert_subsystem_modules inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = test_ctx.gateway.analytics
     rows = [
-        subsystem_module_row(
-            SubsystemModuleSeed(
-                repo="test/repo",
-                commit="abc123",
-                subsystem_id="sub1",
-                module="test.mod",
-                role=None,
-            )
-        ),
+        SubsystemRow(
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+            subsystem_id="sub2",
+            name="Subsystem 2",
+            description="Subsystem 2",
+            module_count=1,
+            modules_json="[]",
+            entrypoints_json="[]",
+            internal_edge_count=0,
+            external_edge_count=0,
+            fan_in=0,
+            fan_out=0,
+            function_count=1,
+            avg_risk_score=0.0,
+            max_risk_score=0.0,
+            high_risk_function_count=0,
+            risk_level="low",
+            created_at=datetime.now(tz=UTC),
+        ).to_tuple(),
     ]
-    analytics.insert_subsystem_modules(rows)
+    analytics.insert_subsystems(rows)
+    module_rows = [
+        SubsystemModuleRow(
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+            subsystem_id="sub2",
+            module="test.mod",
+            role="member",
+        ).to_tuple(),
+    ]
+    analytics.insert_subsystem_modules(module_rows)
 
-    result = fresh_gateway.con.execute(
+    result = test_ctx.con.execute(
         "SELECT module FROM analytics.subsystem_modules WHERE subsystem_id = ?",
-        ["sub1"],
+        ["sub2"],
     ).fetchone()
     row = require_row(result, message="Expected subsystem module row")
     expect_equal(row[0], "test.mod")
 
 
-def test_analytics_tables_insert_config_values(fresh_gateway: StorageGateway) -> None:
+def test_analytics_tables_insert_config_values(test_ctx: TestContext) -> None:
     """Verify insert_config_values inserts rows."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = test_ctx.gateway.analytics
     rows = [
-        config_value_row(
-            ConfigValueSeed(
-                repo="test/repo",
-                commit="abc123",
-                config_path="config.yaml",
-                format="yaml",
-                key="key1",
-                value=None,
-                section=None,
-                seq_no=1,
-            )
-        ),
+        ConfigValueRow(
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+            config_path="config.yaml",
+            format="yaml",
+            key="key1",
+            reference_paths=["config.yaml"],
+            reference_modules=["mod"],
+            reference_count=1,
+        ).to_tuple(),
     ]
     analytics.insert_config_values(rows)
 
-    result = fresh_gateway.con.execute(
+    result = test_ctx.con.execute(
         "SELECT config_path FROM analytics.config_values WHERE repo = ?",
-        ["test/repo"],
+        [test_ctx.repo],
     ).fetchone()
     row = require_row(result, message="Expected config_values row")
     expect_equal(row[0], "config.yaml")

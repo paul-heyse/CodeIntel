@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from codeintel.analytics.plugins.coverage.functions import CoverageFunctionsPlugin
 from codeintel.analytics.plugins.coverage.test_edges import CoverageTestEdgesPlugin
@@ -12,9 +11,8 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_true,
 )
-from tests._helpers.seeds.core import CORE_PACK, GOID_FUNC_B
-from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests._helpers.harnesses import coverage_plugin_harness, plugin_harness_with_packs
+from tests._helpers.seeds.core import CORE_PACK, GOID_FUNC_B
 
 
 def test_coverage_functions_plugin_populates_function_metrics(tmp_path: Path) -> None:

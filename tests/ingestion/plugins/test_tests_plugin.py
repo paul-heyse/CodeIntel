@@ -18,6 +18,7 @@ from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
+    make_resource_case_params,
     write_pytest_report,
 )
 from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
@@ -29,15 +30,22 @@ EXPECTED_UNICODE_NODEID = SAMPLE_TESTS[1]["nodeid"]
 SAMPLE_SUMMARY = sample_pytest_summary()
 
 
-@pytest.mark.parametrize("scenario", ["resources", "db_fallback", "gateway_failure"])
-def test_module_path_resolution_scenarios(tmp_path: Path, scenario: str) -> None:
+RESOURCE_CASES = make_resource_case_params()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [params for _, params in RESOURCE_CASES],
+    ids=[name for name, _ in RESOURCE_CASES],
+)
+def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
     """Shared module path resolution coverage for TestsIngestPlugin."""
     run_module_path_resolution_scenarios(
         lambda _capture: TestsIngestPlugin(),
         get_module_paths,
         tmp_path,
         resources_path="pkg/mod.py",
-        scenario=scenario,
+        options=options,
     )
 
 

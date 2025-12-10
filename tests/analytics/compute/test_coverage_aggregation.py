@@ -20,6 +20,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.config_factory import coverage_analytics_cfg
+from tests._helpers import coverage_ready_context
 from tests._helpers.context import TestContext
 from tests._helpers.coverage import (
     CoverageLineSeedData,
@@ -29,8 +30,6 @@ from tests._helpers.coverage import (
     seed_coverage_lines_range,
     seed_goid,
 )
-from tests._helpers.scenarios import TestScenario
-from tests._helpers.seeds import METRICS_PACK
 
 EXPECTED_EXECUTABLE_5 = 5
 EXPECTED_EXECUTABLE_3 = 3
@@ -71,7 +70,7 @@ def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context with coverage and metrics seeds applied.
     """
-    ctx = TestScenario.with_coverage().with_seeds(METRICS_PACK).build(tmp_path)
+    ctx = coverage_ready_context(tmp_path)
     con = ctx.con
     con.execute("DELETE FROM analytics.coverage_functions")
     con.execute("DELETE FROM analytics.coverage_lines")

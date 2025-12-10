@@ -30,7 +30,7 @@ from tests._helpers.http_payloads import (
 from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDelegateHarness
 
 if TYPE_CHECKING:
-    from tests._helpers.serving_apps import ServiceContext
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 # =============================================================================
 # Subsystem Route Tests (covers service delegates)
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 
 def test_list_subsystems_returns_data(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify subsystem listing returns results.
 
@@ -56,7 +56,7 @@ def test_list_subsystems_returns_data(
 
 
 def test_list_subsystems_with_limit(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify subsystem listing respects limit parameter.
 
@@ -72,7 +72,7 @@ def test_list_subsystems_with_limit(
 
 
 def test_get_subsystem_modules(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
     architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify subsystem modules endpoint functions.
@@ -102,7 +102,7 @@ def test_get_subsystem_modules(
 
 
 def test_get_module_subsystems(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
     architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify module subsystems endpoint functions.
@@ -131,7 +131,7 @@ def test_get_module_subsystems(
 
 
 def test_subsystem_coverage_endpoint(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify subsystem coverage endpoint returns data.
 
@@ -147,7 +147,7 @@ def test_subsystem_coverage_endpoint(
 
 
 def test_subsystem_profiles_endpoint(
-    architecture_service_ctx: ServiceContext,
+    architecture_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify subsystem profiles endpoint returns data.
 

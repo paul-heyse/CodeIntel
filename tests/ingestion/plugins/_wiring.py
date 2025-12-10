@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -26,105 +26,19 @@ if TYPE_CHECKING:
 
 
 async def run_sync_plugin_wiring_scenario(
-    scenario: str,
     plugin_factory: Callable[[StepCallCapture], TargetPlugin],
     tmp_path: Path,
     *,
     table_key: str,
+    options: Mapping[str, bool],
 ) -> None:
-    """Execute a standard wiring scenario for a synchronous ingest plugin.
-
-    Raises
-    ------
-    ValueError
-        If an unknown scenario is provided.
-    """
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
-        {"pkg/mod.py": "x = 1\n"},
+    """Execute a standard wiring scenario for a synchronous ingest plugin."""
+    await _run_resource_case(
+        plugin_factory,
+        tmp_path,
+        table_key=table_key,
+        options=options,
     )
-
-    if scenario == "resources":
-        capture = StepCallCapture()
-        plugin = plugin_factory(capture)
-        ctx = build_target_context_for_plugin(
-            plugin,
-            tmp_path,
-            config=TargetContextConfig(
-                repo_root=repo_root,
-                resources=TargetResourceOverrides(modules=("pkg/mod.py",)),
-            ),
-        )
-
-        result = await plugin.execute(ctx)
-
-        expect_true(result.success)
-        expect_equal(result.row_counts, {table_key: 1})
-        expect_equal([record.rel_path for record in capture.modules], ["pkg/mod.py"])
-        expect_equal(capture.repo, ctx.repo)
-        expect_equal(capture.commit, ctx.commit)
-        expect_equal(capture.repo_root, repo_root)
-        return
-
-    if scenario == "db_fallback":
-        capture = StepCallCapture()
-        plugin = plugin_factory(capture)
-        gateway = GatewayFactory().with_macros().open()
-        recording_gateway = ConnectionRecordingGateway(gateway)
-        try:
-            ctx = build_target_context_for_plugin(
-                plugin,
-                tmp_path,
-                config=TargetContextConfig(
-                    repo_root=repo_root,
-                    gateway=recording_gateway,
-                    resources=TargetResourceOverrides(modules=()),
-                ),
-            )
-            seed_modules_and_repo_map(ctx, ["pkg/db_mod.py"])
-
-            result = await plugin.execute(ctx)
-
-            expect_true(result.success)
-            expect_equal(result.row_counts, {table_key: 1})
-            expect_true(recording_gateway.executions)
-            expect_equal([record.rel_path for record in capture.modules], ["pkg/db_mod.py"])
-            expect_equal(capture.repo, ctx.repo)
-            expect_equal(capture.commit, ctx.commit)
-            expect_equal(capture.repo_root, repo_root)
-        finally:
-            recording_gateway.close()
-        return
-
-    if scenario == "gateway_failure":
-        capture = StepCallCapture()
-        plugin = plugin_factory(capture)
-        failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
-        try:
-            ctx = build_target_context_for_plugin(
-                plugin,
-                tmp_path,
-                config=TargetContextConfig(
-                    repo_root=repo_root,
-                    gateway=cast("StorageGateway", failing_gateway),
-                    resources=TargetResourceOverrides(modules=()),
-                ),
-            )
-
-            result = await plugin.execute(ctx)
-
-            expect_true(result.success)
-            expect_equal(result.row_counts.get(table_key, 0), 0)
-            expect_equal(capture.modules, [])
-            expect_equal(capture.repo, ctx.repo)
-            expect_equal(capture.commit, ctx.commit)
-            expect_equal(capture.repo_root, repo_root)
-            return
-        finally:
-            failing_gateway.close()
-
-    message = f"Unknown scenario '{scenario}'"
-    raise ValueError(message)
 
 
 def run_module_path_resolution_scenarios(
@@ -133,77 +47,126 @@ def run_module_path_resolution_scenarios(
     tmp_path: Path,
     *,
     resources_path: str,
-    scenario: str | None = None,
+    options: Mapping[str, bool],
 ) -> None:
-    """Exercise module path resolution across resources, DB, and gateway failure.
+    """Exercise module path resolution across resources, DB, and gateway failure."""
+    _run_module_path_case(
+        plugin_factory,
+        get_module_paths,
+        tmp_path,
+        resources_path=resources_path,
+        options=options,
+    )
 
-    Raises
-    ------
-    ValueError
-        If an unknown scenario is provided.
-    """
+
+async def _run_resource_case(
+    plugin_factory: Callable[[StepCallCapture], TargetPlugin],
+    tmp_path: Path,
+    *,
+    table_key: str,
+    options: Mapping[str, bool],
+) -> None:
+    simulate_resources = options["simulate_resources"]
+    simulate_db_fallback = options["simulate_db_fallback"]
+    simulate_gateway_failure = options["simulate_gateway_failure"]
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {"pkg/mod.py": "x = 1\n"},
+    )
     capture = StepCallCapture()
     plugin = plugin_factory(capture)
+    base_gateway = GatewayFactory().with_macros().open()
+    gateway: StorageGateway
+    recording_gateway: ConnectionRecordingGateway | None = None
+    if simulate_gateway_failure:
+        gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
+    elif simulate_db_fallback:
+        recording_gateway = ConnectionRecordingGateway(base_gateway)
+        gateway = recording_gateway
+    else:
+        gateway = base_gateway
 
-    scenarios = {
-        "resources": lambda: _assert_resources_path(
-            plugin, get_module_paths, tmp_path, resources_path
-        ),
-        "db_fallback": lambda: _assert_db_path(plugin, get_module_paths, tmp_path, resources_path),
-        "gateway_failure": lambda: _assert_gateway_failure(plugin, get_module_paths, tmp_path),
-    }
-    if scenario is not None:
-        run = scenarios.get(scenario)
-        if run is None:
-            message = f"Unknown scenario '{scenario}'"
-            raise ValueError(message)
-        run()
-        return
-
-    for run in scenarios.values():
-        run()
-
-
-def _assert_resources_path(
-    plugin: TargetPlugin,
-    get_module_paths: Callable[[TargetExecutionContext], list[str]],
-    tmp_path: Path,
-    resources_path: str,
-) -> None:
-    overrides = TargetResourceOverrides(modules=(resources_path,))
-    ctx = build_target_context_for_plugin(
-        plugin, tmp_path, config=TargetContextConfig(resources=overrides)
+    resources = TargetResourceOverrides(
+        modules=("pkg/mod.py",) if simulate_resources else (),
     )
-    expect_equal(get_module_paths(ctx), [resources_path])
-
-
-def _assert_db_path(
-    plugin: TargetPlugin,
-    get_module_paths: Callable[[TargetExecutionContext], list[str]],
-    tmp_path: Path,
-    resources_path: str,
-) -> None:
-    ctx_db = build_target_context_for_plugin(plugin, tmp_path)
-    records = module_records_for_paths([resources_path], ctx_db.repo_root)
-    seed_modules_and_repo_map(ctx_db, [record.rel_path for record in records])
-    expect_equal(get_module_paths(ctx_db), [resources_path])
-
-
-def _assert_gateway_failure(
-    plugin: TargetPlugin,
-    get_module_paths: Callable[[TargetExecutionContext], list[str]],
-    tmp_path: Path,
-) -> None:
-    failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
     try:
-        ctx_fail = build_target_context_for_plugin(
+        ctx = build_target_context_for_plugin(
             plugin,
             tmp_path,
             config=TargetContextConfig(
-                gateway=cast("StorageGateway", failing_gateway),
-                resources=TargetResourceOverrides(modules=()),
+                repo_root=repo_root,
+                gateway=gateway,
+                resources=resources,
             ),
         )
-        expect_equal(get_module_paths(ctx_fail), [])
+        if simulate_db_fallback:
+            seed_modules_and_repo_map(ctx, ["pkg/db_mod.py"])
+
+        result = await plugin.execute(ctx)
     finally:
-        failing_gateway.close()
+        gateway.close()
+
+    expected_modules: list[str]
+    if simulate_gateway_failure:
+        expected_modules = []
+    elif simulate_resources:
+        expected_modules = ["pkg/mod.py"]
+    elif simulate_db_fallback:
+        expected_modules = ["pkg/db_mod.py"]
+    else:
+        expected_modules = []
+
+    expect_true(result.success)
+    expect_equal(result.row_counts.get(table_key, 0), len(expected_modules))
+    if simulate_db_fallback and recording_gateway is not None:
+        expect_true(recording_gateway.executions)
+    expect_equal([record.rel_path for record in capture.modules], expected_modules)
+    expect_equal(capture.repo, ctx.repo)
+    expect_equal(capture.commit, ctx.commit)
+    expect_equal(capture.repo_root, repo_root)
+
+
+def _run_module_path_case(
+    plugin_factory: Callable[[StepCallCapture], TargetPlugin],
+    get_module_paths: Callable[[TargetExecutionContext], list[str]],
+    tmp_path: Path,
+    *,
+    resources_path: str,
+    options: Mapping[str, bool],
+) -> None:
+    simulate_resources = options["simulate_resources"]
+    simulate_db_fallback = options["simulate_db_fallback"]
+    simulate_gateway_failure = options["simulate_gateway_failure"]
+    capture = StepCallCapture()
+    plugin = plugin_factory(capture)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    base_gateway = GatewayFactory().with_macros().open()
+    gateway: StorageGateway
+    if simulate_gateway_failure:
+        gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
+    else:
+        gateway = base_gateway
+
+    resources = TargetResourceOverrides(
+        modules=(resources_path,) if simulate_resources else (),
+    )
+    try:
+        ctx = build_target_context_for_plugin(
+            plugin,
+            tmp_path,
+            config=TargetContextConfig(
+                repo_root=repo_root,
+                gateway=gateway,
+                resources=resources,
+            ),
+        )
+        if simulate_db_fallback:
+            records = module_records_for_paths([resources_path], ctx.repo_root)
+            seed_modules_and_repo_map(ctx, [record.rel_path for record in records])
+        expected_modules = (
+            [resources_path] if (simulate_resources or simulate_db_fallback) else []
+        )
+        expect_equal(get_module_paths(ctx), expected_modules)
+    finally:
+        gateway.close()

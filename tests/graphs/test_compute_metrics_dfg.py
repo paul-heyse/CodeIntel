@@ -22,6 +22,8 @@ from codeintel.graphs.compute.metrics.dfg import (
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
+    expect_graph_is_dag,
+    expect_has_cycle,
     expect_in,
     expect_is_instance,
     expect_length,
@@ -195,6 +197,7 @@ def test_dfg_components_single_node() -> None:
 def test_dfg_components_chain_graph() -> None:
     """Chain graph has N SCCs (trivial) and 1 WCC."""
     graph = chain_graph(4)
+    expect_graph_is_dag(graph)
     scc, wcc = compute_dfg_components(graph)
 
     # Each node is its own SCC (no cycles)
@@ -206,6 +209,7 @@ def test_dfg_components_chain_graph() -> None:
 def test_dfg_components_cyclic_graph() -> None:
     """Cyclic graph has one non-trivial SCC."""
     graph = cyclic_graph(3)  # A -> B -> C -> A
+    expect_has_cycle(graph)
     scc, wcc = compute_dfg_components(graph)
 
     # One SCC containing all nodes
@@ -435,6 +439,7 @@ def test_find_cycles_empty_graph_returns_empty() -> None:
 def test_find_cycles_dag_returns_empty() -> None:
     """DAG has no cycles."""
     graph = chain_graph(5)
+    expect_graph_is_dag(graph)
     result = find_dfg_cycles(graph)
     expect_equal(result, [])
 
@@ -442,6 +447,7 @@ def test_find_cycles_dag_returns_empty() -> None:
 def test_find_cycles_simple_cycle() -> None:
     """Simple cycle is detected."""
     graph = cyclic_graph(3)  # A -> B -> C -> A
+    expect_has_cycle(graph)
     result = find_dfg_cycles(graph)
 
     expect_true(len(result) >= 1)
@@ -453,6 +459,7 @@ def test_find_cycles_simple_cycle() -> None:
 def test_find_cycles_self_loop() -> None:
     """Self-loop is detected as cycle."""
     graph = self_loop_graph("A")
+    expect_has_cycle(graph)
     result = find_dfg_cycles(graph)
 
     expect_true(len(result) >= 1)
@@ -462,6 +469,7 @@ def test_find_cycles_self_loop() -> None:
 def test_find_cycles_multiple_cycles() -> None:
     """Multiple cycles are detected."""
     graph = two_cycle_graph()
+    expect_has_cycle(graph)
 
     result = find_dfg_cycles(graph)
 
@@ -484,6 +492,7 @@ def test_find_cycles_limit_respected() -> None:
 def test_find_cycles_nested_cycles() -> None:
     """Nested cycles are detected."""
     graph = nested_loop_graph()
+    expect_has_cycle(graph)
 
     result = find_dfg_cycles(graph)
 
@@ -501,6 +510,7 @@ def test_find_cycles_with_dag_part() -> None:
     # Connection
     graph.add_edge("C", "end")
 
+    expect_has_cycle(graph)
     result = find_dfg_cycles(graph)
 
     # Should find the cycle

@@ -55,10 +55,10 @@ from tests._helpers.seeds.docs import (
     ProfileDataPack,
 )
 from tests._helpers.seeds.docstrings import DOCSTRING_PACK, DocstringPack
+from tests._helpers.seeds.entrypoints import ENTRYPOINTS_PACK, EntrypointsPack
 from tests._helpers.seeds.function_types import FUNCTION_TYPES_PACK, FunctionTypesPack
 from tests._helpers.seeds.graph import GRAPH_PACK, GraphPack
 from tests._helpers.seeds.metrics import METRICS_PACK, MetricsPack
-from tests._helpers.seeds.entrypoints import ENTRYPOINTS_PACK, EntrypointsPack
 from tests._helpers.seeds.subsystems import SUBSYSTEM_PACK, SubsystemPack
 from tests._helpers.seeds.subsystems_analytics import (
     SUBSYSTEM_ANALYTICS_PACK,
@@ -70,31 +70,31 @@ __all__ = [
     "AST_METRICS_PACK",
     "CONFIG_PACK",
     "CORE_PACK",
-    "COVERAGE_PACK",
     "COVERAGE_LINES_PACK",
+    "COVERAGE_PACK",
     "DATA_MODELS_PACK",
     "DOCSTRING_PACK",
     "DOCS_EXPORT_PACK",
+    "ENTRYPOINTS_PACK",
     "FUNCTION_TYPES_PACK",
     "GRAPH_PACK",
     "MCP_BACKEND_PACK",
     "METRICS_PACK",
-    "ENTRYPOINTS_PACK",
     "PROFILE_DATA_PACK",
     "SUBSYSTEM_ANALYTICS_PACK",
     "SUBSYSTEM_PACK",
     "SYMBOL_PACK",
+    "AstMetricsPack",
     "ConfigPack",
     "CorePack",
-    "CoveragePack",
-    "AstMetricsPack",
     "CoverageLinesPack",
+    "CoveragePack",
     "DataModelsPack",
     "DocsExportPack",
     "DocstringPack",
+    "EntrypointsPack",
     "FunctionTypesPack",
     "GraphPack",
-    "EntrypointsPack",
     "McpBackendPack",
     "MetricsPack",
     "ProfileDataPack",

@@ -1004,7 +1004,7 @@ def make_resource_case_params() -> tuple[tuple[str, dict[str, bool]], ...]:
     """
     return (
         (
-            "resources modules",
+            "resources",
             {
                 "simulate_resources": True,
                 "simulate_db_fallback": False,
@@ -1012,7 +1012,7 @@ def make_resource_case_params() -> tuple[tuple[str, dict[str, bool]], ...]:
             },
         ),
         (
-            "db fallback",
+            "db_fallback",
             {
                 "simulate_resources": False,
                 "simulate_db_fallback": True,
@@ -1020,7 +1020,7 @@ def make_resource_case_params() -> tuple[tuple[str, dict[str, bool]], ...]:
             },
         ),
         (
-            "gateway failure",
+            "gateway_failure",
             {
                 "simulate_resources": False,
                 "simulate_db_fallback": False,

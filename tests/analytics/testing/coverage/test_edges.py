@@ -30,8 +30,8 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.factories import make_snapshot
 
 # =============================================================================

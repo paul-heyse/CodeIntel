@@ -6,11 +6,6 @@ classes to reduce code duplication.
 
 from __future__ import annotations
 
-from tests._helpers.harnesses.base import (
-    BaseResultAssertions,
-    BaseTestHarness,
-    ResultLike,
-)
 from tests._helpers.harnesses.analytics import (
     AnalyticsPluginHarness,
     coverage_plugin_harness,
@@ -18,6 +13,11 @@ from tests._helpers.harnesses.analytics import (
     entrypoints_plugin_harness,
     graph_plugin_harness,
     plugin_harness_with_packs,
+)
+from tests._helpers.harnesses.base import (
+    BaseResultAssertions,
+    BaseTestHarness,
+    ResultLike,
 )
 
 __all__ = [
