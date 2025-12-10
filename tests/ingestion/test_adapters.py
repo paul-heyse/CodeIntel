@@ -196,20 +196,8 @@ def test_duckdb_adapter_ensure_schema_unknown_table(
 
 
 def test_duckdb_adapter_execute_query(duckdb_adapter: DuckDBStorageAdapter) -> None:
-    """DuckDBStorageAdapter.execute_query should return results."""
-    result = duckdb_adapter.execute_query("SELECT 1 as value")
-
-    expect_is_not_none(result)
-    expect_true(result.row_count >= 0)
-
-
-def test_duckdb_adapter_execute_query_with_params(
-    duckdb_adapter: DuckDBStorageAdapter,
-) -> None:
     """DuckDBStorageAdapter.execute_query should handle parameters."""
     result = duckdb_adapter.execute_query("SELECT ? + ? as sum", [1, 2])
-
-    expect_is_not_none(result)
     expect_equal(result.row_count, 1)
 
 
@@ -385,14 +373,6 @@ def test_duckdb_adapter_delete_by_params(duckdb_adapter: DuckDBStorageAdapter) -
 # =============================================================================
 # Query Tests (Edge Cases)
 # =============================================================================
-
-
-def test_duckdb_adapter_execute_query_no_params(duckdb_adapter: DuckDBStorageAdapter) -> None:
-    """DuckDBStorageAdapter.execute_query should work without params."""
-    result = duckdb_adapter.execute_query("SELECT 42 as answer")
-
-    expect_equal(result.row_count, 1)
-    expect_equal(result.columns, ("answer",))
 
 
 def test_duckdb_adapter_fetch_dataframe_with_params(

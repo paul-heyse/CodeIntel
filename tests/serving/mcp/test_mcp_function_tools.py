@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
@@ -287,21 +287,19 @@ def test_backend_with_custom_limits(
 
 
 def test_register_function_tools_preserves_backend_state(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify registration doesn't alter backend state."""
     mcp = wrap_fastmcp("Test State")
-    backend = _build_backend(provisioned_repo)
+    original_repo = mcp_backend.backend.repo
+    original_commit = mcp_backend.backend.commit
+    original_limits = mcp_backend.backend.limits
 
-    original_repo = backend.repo
-    original_commit = backend.commit
-    original_limits = backend.limits
+    register_function_tools(mcp, mcp_backend.backend)
 
-    register_function_tools(mcp, backend)
-
-    expect_equal(backend.repo, original_repo)
-    expect_equal(backend.commit, original_commit)
-    expect_equal(backend.limits, original_limits)
+    expect_equal(mcp_backend.backend.repo, original_repo)
+    expect_equal(mcp_backend.backend.commit, original_commit)
+    expect_equal(mcp_backend.backend.limits, original_limits)
 
 
 # =============================================================================
@@ -310,23 +308,11 @@ def test_register_function_tools_preserves_backend_state(
 
 
 def test_local_query_service_as_backend(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify LocalQueryService can be used as backend."""
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
     mcp = wrap_fastmcp("Test Local Service")
-    register_function_tools(mcp, service)
+    register_function_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Local Service")
 
@@ -418,10 +404,10 @@ def test_function_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> 
 
 
 def test_backend_get_callgraph_neighbors_incoming(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_callgraph_neighbors works with incoming direction."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
@@ -441,10 +427,10 @@ def test_backend_get_callgraph_neighbors_incoming(
 
 
 def test_backend_get_callgraph_neighbors_outgoing(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_callgraph_neighbors works with outgoing direction."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
@@ -469,10 +455,10 @@ def test_backend_get_callgraph_neighbors_outgoing(
 
 
 def test_high_risk_functions_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify high risk functions response contains expected fields."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     result = backend.list_high_risk_functions(limit=DEFAULT_LIMIT)
 
@@ -483,10 +469,10 @@ def test_high_risk_functions_response_structure(
 
 
 def test_function_summary_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify function summary response contains expected fields."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)

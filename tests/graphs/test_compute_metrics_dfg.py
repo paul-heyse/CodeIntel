@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.graphs.compute.metrics.dfg import (

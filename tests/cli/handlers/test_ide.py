@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.handlers.context import HandlerContext, ParameterError
 from codeintel.cli.handlers.ide import IdeHintsResult, ide_hints_handler
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.serving_models import ServingConfig
@@ -77,8 +77,6 @@ def test_ide_hints_handler_returns_fail_when_no_hints() -> None:
 
 def test_ide_hints_handler_raises_when_rel_path_missing() -> None:
     """Handler raises ParameterError when rel_path is missing."""
-    from codeintel.cli.handlers.context import ParameterError
-
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
     with _mock_backend_returning(mock_response):

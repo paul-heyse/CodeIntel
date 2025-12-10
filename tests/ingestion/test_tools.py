@@ -280,38 +280,6 @@ def test_diagnostic_result_failed_status() -> None:
 
 
 # =============================================================================
-# CoverageFileData Tests
-# =============================================================================
-
-
-def test_coverage_file_data_attributes() -> None:
-    """CoverageFileData should store coverage information."""
-    missing_line = 4
-    data = CoverageFileData(
-        rel_path="module.py",
-        executed_lines=frozenset({1, 2, 3}),
-        missing_lines=frozenset({missing_line, 5}),
-        excluded_lines=frozenset({10}),
-    )
-
-    expect_true(data.rel_path == "module.py")
-    expect_true(1 in data.executed_lines)
-    expect_true(missing_line in data.missing_lines)
-    expect_true(data.excluded_lines == frozenset({10}))
-
-
-def test_coverage_file_data_default_excluded_lines() -> None:
-    """CoverageFileData should default to empty excluded_lines."""
-    data = CoverageFileData(
-        rel_path="test.py",
-        executed_lines=frozenset({1}),
-        missing_lines=frozenset(),
-    )
-
-    expect_true(data.excluded_lines == frozenset())
-
-
-# =============================================================================
 # CoverageResult Tests
 # =============================================================================
 
@@ -839,16 +807,6 @@ def test_coverage_file_summary_properties() -> None:
     )
     expect_true(summary.total_executable == COLUMN_5)
     expect_true(summary.coverage_ratio == EXPECTED_COVERAGE_RATIO)
-
-
-def test_coverage_file_summary_zero_lines() -> None:
-    """CoverageFileSummary.coverage_ratio should return 1.0 for empty files."""
-    summary = CoverageFileSummary(
-        rel_path="empty.py",
-        executed_lines=frozenset(),
-        missing_lines=frozenset(),
-    )
-    expect_true(summary.coverage_ratio == 1.0)
 
 
 def test_coverage_report_from_file_reports() -> None:

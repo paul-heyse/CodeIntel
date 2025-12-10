@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/config/service.py
+# hypothesis_version: 6.148.7
+
+['.codeintel', '0', '1', 'Any', 'App', 'CODEINTEL_', 'CONFIG_ENV_PREFIX', 'CONFIG_PATH_ENV_VAR', 'ConfigService', 'TOML_CONFIG_PATHS', 'auto', 'codeintel.toml', 'config.toml', 'cpu', 'false', 'n', 'no', 'nx-cugraph', 'off', 'on', 'overrides', 'true', 'y', 'yes']

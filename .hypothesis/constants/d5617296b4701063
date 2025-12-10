@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/jobs.py
+# hypothesis_version: 6.148.7
+
+[400, 404, 'Cancel Failed', 'Cancelling job: %s', 'Job Not Completed', 'Job Not Found', 'JobCancelResult', 'JobInfo', 'JobOutputResult', 'JobStatusResult', 'JobsCleanupResult', 'JobsListResult', 'cancelled', 'cleaned_count', 'completed_at', 'count', 'created_at', 'error', 'has_output', 'job_id', 'jobs', 'jobs_cancel_handler', 'jobs_cleanup_handler', 'jobs_list_handler', 'jobs_output_handler', 'jobs_status_handler', 'limit', 'max_age_days', 'operation_id', 'output', 'started_at', 'status']

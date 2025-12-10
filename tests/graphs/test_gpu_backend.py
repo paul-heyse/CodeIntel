@@ -6,6 +6,7 @@ import pytest
 
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
+from tests._helpers.assertions import expect_true
 
 
 def test_enable_nx_cugraph_backend_missing_module() -> None:
@@ -29,10 +30,8 @@ def test_enable_nx_cugraph_backend_invokes_setter() -> None:
 
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
     result = maybe_enable_nx_gpu(cfg, enabler=_enabler)
-    if not called["set"]:
-        pytest.fail("Expected set_default_backend to be invoked")
-    if not result.gpu_enabled or result.effective_backend != "nx-cugraph":
-        pytest.fail("Expected GPU backend to be enabled")
+    expect_true(called["set"], message="Expected set_default_backend to be invoked")
+    expect_true(result.gpu_enabled and result.effective_backend == "nx-cugraph")
 
 
 def test_maybe_enable_nx_gpu_falls_back_when_missing() -> None:
@@ -44,10 +43,11 @@ def test_maybe_enable_nx_gpu_falls_back_when_missing() -> None:
 
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
     result = maybe_enable_nx_gpu(cfg, enabler=_failing_enabler)
-    if result.effective_backend != "cpu" or result.gpu_enabled:
-        pytest.fail("Expected CPU fallback when enabler fails in non-strict mode")
-    if result.fallback_reason is None:
-        pytest.fail("Expected fallback reason to be populated")
+    expect_true(
+        result.effective_backend == "cpu" and not result.gpu_enabled,
+        message="Expected CPU fallback when enabler fails in non-strict mode",
+    )
+    expect_true(result.fallback_reason is not None, message="Expected fallback reason to be populated")
 
 
 def test_maybe_enable_nx_gpu_raises_when_strict() -> None:
