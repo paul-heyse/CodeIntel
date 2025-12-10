@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from codeintel.cli.core.parsing import parse_bool
+
 # Mapping of environment variables to config paths and types
 ENV_MAPPINGS: dict[str, tuple[str, type]] = {
     # Top-level
@@ -83,29 +85,13 @@ def _convert_value(value: str, target_type: type) -> str | bool | int | float:
         Converted value.
     """
     if target_type is bool:
-        return _parse_bool(value)
+        return parse_bool(value)
     if target_type is int:
         return int(value)
     if target_type is float:
         return float(value)
     # Path and str both return string for config dict
     return value
-
-
-def _parse_bool(value: str) -> bool:
-    """Parse boolean from string.
-
-    Parameters
-    ----------
-    value
-        String value.
-
-    Returns
-    -------
-    bool
-        Parsed boolean.
-    """
-    return value.lower() in {"true", "1", "yes", "on"}
 
 
 def _set_nested(

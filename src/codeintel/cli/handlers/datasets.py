@@ -13,7 +13,6 @@ from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
@@ -226,7 +225,8 @@ def datasets_lint_handler(
         Lint result with any issues found.
     """
     try:
-        runtime = ctx.runtime
+        # Trigger runtime resolution for early error detection
+        _ = ctx.runtime
     except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
@@ -239,8 +239,8 @@ def datasets_lint_handler(
 
     LOG.info("Linting datasets")
 
-    with runtime_gateway(runtime) as gateway:
-        issues = collect_contract_issues(gateway.con)
+    gateway = ctx.gateway
+    issues = collect_contract_issues(gateway.con)
 
     passed = len(issues) == 0
 

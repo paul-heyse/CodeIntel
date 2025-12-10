@@ -24,8 +24,8 @@ from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
     make_resource_case_params,
-    write_scip_index,
     run_ingestion_scenario,
+    write_scip_index,
 )
 from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
 

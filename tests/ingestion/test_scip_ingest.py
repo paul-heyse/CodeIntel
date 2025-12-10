@@ -83,7 +83,6 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
             pytest.fail("core.scip_symbols is empty; expected rows after ingest")
 
 
-
 def test_scip_ingest_result_factory() -> None:
     """Verify ScipIngestResult factory methods work correctly."""
     # Test success result

@@ -104,9 +104,7 @@ def test_macro_exists_handles_malformed_table_key(fresh_gateway) -> None:
 
 
 @pytest.mark.parametrize("table_key", PERF_TABLE_KEYS)
-def test_ingest_macro_perf_with_prepared_statements(
-    fresh_gateway, table_key: str
-) -> None:
+def test_ingest_macro_perf_with_prepared_statements(fresh_gateway, table_key: str) -> None:
     """Macro ingest should remain within acceptable bounds versus prepared statements."""
     if table_key == "analytics.function_metrics":
         row = function_metrics_row(

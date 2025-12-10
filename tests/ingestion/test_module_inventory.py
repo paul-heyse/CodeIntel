@@ -81,4 +81,6 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
 
         scan_paths = sorted(module.rel_path for module in modules)
         if scan_paths != rel_paths:
-            pytest.fail(f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}")
+            pytest.fail(
+                f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}"
+            )

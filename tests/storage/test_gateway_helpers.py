@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers.context import TestContext
 from tests._helpers.builders import (
     CoverageLineRow,
     insert_rows,
 )
+from tests._helpers.context import TestContext
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_LINES_PACK,
@@ -17,6 +17,7 @@ from tests._helpers.seeds import (
     METRICS_PACK,
     SUBSYSTEM_ANALYTICS_PACK,
 )
+
 
 def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     """Insert helpers should populate tables without manual SQL."""

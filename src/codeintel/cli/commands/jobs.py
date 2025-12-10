@@ -44,9 +44,11 @@ class JobsListCommand:
     limit: Annotated[int, Parameter(help="Maximum jobs to show")] = 20
     output_format: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format"),
+        Parameter(name="--output-format", help="Output format"),
     ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    verbose: Annotated[
+        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
+    ] = 0
 
 
 @cli_command("jobs.status", handler=jobs_status_handler, config=_JOBS_CONFIG)
@@ -62,9 +64,11 @@ class JobsStatusCommand:
     job_id: Annotated[str, Parameter(help="Job ID")]
     output_format: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format"),
+        Parameter(name="--output-format", help="Output format"),
     ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    verbose: Annotated[
+        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
+    ] = 0
 
 
 @cli_command("jobs.output", handler=jobs_output_handler, config=_JOBS_CONFIG)
@@ -80,9 +84,11 @@ class JobsOutputCommand:
     job_id: Annotated[str, Parameter(help="Job ID")]
     output_format: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format"),
+        Parameter(name="--output-format", help="Output format"),
     ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    verbose: Annotated[
+        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
+    ] = 0
 
 
 @cli_command("jobs.cancel", handler=jobs_cancel_handler, config=_JOBS_CONFIG)
@@ -98,9 +104,11 @@ class JobsCancelCommand:
     job_id: Annotated[str, Parameter(help="Job ID")]
     output_format: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format"),
+        Parameter(name="--output-format", help="Output format"),
     ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    verbose: Annotated[
+        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
+    ] = 0
 
 
 @cli_command("jobs.cleanup", handler=jobs_cleanup_handler, config=_JOBS_CONFIG)
@@ -116,9 +124,11 @@ class JobsCleanupCommand:
     max_age_days: Annotated[int, Parameter(help="Maximum age in days")] = 7
     output_format: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format"),
+        Parameter(name="--output-format", help="Output format"),
     ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    verbose: Annotated[
+        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
+    ] = 0
 
 
 __all__ = [

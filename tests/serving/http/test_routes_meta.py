@@ -213,6 +213,7 @@ def test_meta_debug_prereqs_unknown_operation(
     expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
     payload = response.json()
     if "code" in payload:
+
         class _ResponseWrapper:
             def __init__(self, json_payload: dict[str, object]) -> None:
                 self.status_code = status.HTTP_404_NOT_FOUND
@@ -221,7 +222,9 @@ def test_meta_debug_prereqs_unknown_operation(
             def json(self) -> dict[str, object]:
                 return self._payload
 
-        assert_problem_detail_response(_ResponseWrapper(payload), status_code=status.HTTP_404_NOT_FOUND)
+        assert_problem_detail_response(
+            _ResponseWrapper(payload), status_code=status.HTTP_404_NOT_FOUND
+        )
     else:
         expect_in("detail", payload)
         expect_in("nonexistent.op", payload["detail"])

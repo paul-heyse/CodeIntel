@@ -48,8 +48,8 @@ class OperationSpec:
 
     This is the single, canonical OperationSpec for all CLI operations.
     Core fields are required. Resource requirements default to True for
-    backward compatibility. Execution hints are optional for future
-    middleware integration.
+    backward compatibility. Execution hints and serving integration fields
+    are optional.
 
     Parameters
     ----------
@@ -79,6 +79,14 @@ class OperationSpec:
         Whether the operation can be retried on failure.
     estimated_duration
         Optional estimated duration in seconds (for progress display).
+    serving_op_id
+        ID in the serving operations catalog (for bridged operations).
+    http_path
+        HTTP endpoint path (for serving operations).
+    tool_name
+        MCP tool name (for serving operations).
+    backend_method
+        Backend method name (for serving operations).
 
     Examples
     --------
@@ -119,6 +127,12 @@ class OperationSpec:
     timeout: float | None = None
     retryable: bool = False
     estimated_duration: float | None = None
+
+    # Serving integration (optional, for bridged operations)
+    serving_op_id: str | None = None
+    http_path: str | None = None
+    tool_name: str | None = None
+    backend_method: str | None = None
 
 
 @dataclass
@@ -378,6 +392,76 @@ def reset_registry() -> None:
     _REGISTRY = None
 
 
+def create_spec_from_serving_operation(
+    serving_op_id: str,
+    handler: Callable[[HandlerContext], CliResult[Any]],
+    *,
+    cli_operation_id: str | None = None,
+    group: str | None = None,
+) -> OperationSpec:
+    """Create an OperationSpec from a serving operation.
+
+    Bridge function that looks up a serving operation by ID and creates
+    an OperationSpec with the relevant metadata populated.
+
+    Parameters
+    ----------
+    serving_op_id
+        ID in the serving operations catalog (e.g., "function.summary").
+    handler
+        Handler function to execute for this CLI operation.
+    cli_operation_id
+        CLI operation ID. Defaults to "op.<serving_op_id>" if not provided.
+    group
+        CLI group. Defaults to "op" if not provided.
+
+    Returns
+    -------
+    OperationSpec
+        Specification with serving metadata populated.
+
+    Raises
+    ------
+    ValueError
+        If the serving operation is not found.
+
+    Examples
+    --------
+    >>> from codeintel.cli.execution.registry import create_spec_from_serving_operation
+    >>> spec = create_spec_from_serving_operation(  # doctest: +SKIP
+    ...     "function.summary",
+    ...     my_handler,
+    ... )
+    >>> spec.serving_op_id
+    'function.summary'
+    """
+    # Import here to avoid circular imports
+    from codeintel.serving.operations.catalog import get_operation  # noqa: PLC0415
+
+    serving_op = get_operation(serving_op_id)
+    if serving_op is None:
+        msg = f"Serving operation not found: {serving_op_id}"
+        raise ValueError(msg)
+
+    effective_cli_id = cli_operation_id or f"op.{serving_op_id.replace('.', '-')}"
+    effective_group = group or "op"
+
+    return OperationSpec(
+        operation_id=effective_cli_id,
+        name=serving_op.summary,
+        description=serving_op.description or serving_op.summary,
+        handler=handler,
+        group=effective_group,
+        require_runtime=True,
+        require_gateway=True,
+        require_graph_runtime=bool(serving_op.required_graphs),
+        serving_op_id=serving_op_id,
+        http_path=serving_op.http_path,
+        tool_name=serving_op.tool_name,
+        backend_method=serving_op.backend_method,
+    )
+
+
 def execute_operation(
     spec: OperationSpec,
     params: dict[str, Any],
@@ -432,6 +516,7 @@ def execute_operation(
 __all__ = [
     "OperationRegistry",
     "OperationSpec",
+    "create_spec_from_serving_operation",
     "execute_operation",
     "get_registry",
     "register_operation",

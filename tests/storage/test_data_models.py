@@ -90,6 +90,7 @@ def _insert_relationships(ctx: TestContext, seeds: list[DataModelRelationshipSee
         [data_model_relationship_row(seed) for seed in seeds],
     )
 
+
 # Test constants to avoid magic value warnings
 EXPECTED_INT_42 = 42
 EXPECTED_INT_123 = 123

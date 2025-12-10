@@ -20,6 +20,7 @@ from cyclopts import config as cyclopts_config
 
 from codeintel.cli.config.loader import apply_overrides, load_config
 from codeintel.cli.config.model import CliConfig
+from codeintel.cli.core.parsing import parse_bool_or_none
 from codeintel.cli.resolution.params import BackendFlags
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
@@ -286,31 +287,6 @@ def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:
     )
 
 
-def _parse_env_flag(value: str | None, *, default: bool | None = None) -> bool | None:
-    """Parse a boolean-ish environment string.
-
-    Parameters
-    ----------
-    value
-        Environment variable value.
-    default
-        Default value if parsing fails.
-
-    Returns
-    -------
-    bool | None
-        Parsed boolean or default.
-    """
-    if value is None:
-        return default
-    lowered = value.strip().lower()
-    if lowered in {"1", "true", "yes", "y", "on"}:
-        return True
-    if lowered in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
-
-
 def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
     """Construct GraphFeatureFlags from CODEINTEL_* environment variables.
 
@@ -320,7 +296,7 @@ def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
         Feature flags derived from environment variables.
     """
     eager = (
-        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_EAGER"))
+        parse_bool_or_none(os.environ.get("CODEINTEL_GRAPH_EAGER"))
         if "CODEINTEL_GRAPH_EAGER" in os.environ
         else None
     )
@@ -330,7 +306,7 @@ def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
         else None
     )
     validation_strict = (
-        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"))
+        parse_bool_or_none(os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"))
         if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
         else None
     )

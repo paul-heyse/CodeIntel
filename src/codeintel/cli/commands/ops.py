@@ -613,7 +613,17 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ResolvedRuntime:
         If runtime resolution fails.
     """
     try:
-        params: dict[str, object] = {"project_root": cli.project_root}
+        # Pass ALL RuntimeCLI fields to enable fallback to explicit params
+        # when no project file exists
+        params: dict[str, object] = {
+            "project_root": cli.project_root,
+            "repo": cli.repo,
+            "commit": cli.commit,
+            "db_path": cli.db_path,
+            "build_dir": cli.build_dir,
+            "repo_root": cli.repo_root,
+            "document_output_dir": cli.document_output_dir,
+        }
         return resolve_from_params(params)
     except (ProjectNotFoundError, ResolutionError) as exc:
         msg = str(exc) or "No codeintel.yaml found. Provide --root or create a project file."

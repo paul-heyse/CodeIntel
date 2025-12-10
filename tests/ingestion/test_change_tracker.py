@@ -20,14 +20,13 @@ from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
+    ScanSetupOptions,
     build_repo_tree,
     closing_gateway,
     make_scan_setup,
     module_records_for_paths,
-    ScanSetupOptions,
     seed_inventory_from_paths,
 )
-
 
 ModuleFilter = Callable[[ModuleRecord], bool]
 
@@ -141,7 +140,9 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
         "change_set": lambda modules: ChangeSet(
             added=[modules[0]], modified=[modules[1]], deleted=[]
         ),
-        "policy": lambda: IncrementalIngestPolicy(max_changed_ratio=0.5, min_total_modules_for_ratio=1),
+        "policy": lambda: IncrementalIngestPolicy(
+            max_changed_ratio=0.5, min_total_modules_for_ratio=1
+        ),
         "module_filter": lambda modules: None,
         "expected_use_full": True,
         "expected_reparse": lambda modules: modules,
@@ -155,7 +156,9 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
             "tests/c.py": "z = 3\n",
         },
         "full_rebuild": False,
-        "change_set": lambda modules: ChangeSet(added=[modules[0]], modified=[], deleted=[modules[2]]),
+        "change_set": lambda modules: ChangeSet(
+            added=[modules[0]], modified=[], deleted=[modules[2]]
+        ),
         "policy": lambda: IncrementalIngestPolicy(min_total_modules_for_ratio=10),
         "module_filter": lambda modules: (
             lambda module: module.rel_path.endswith(".py") and module.rel_path.startswith("src/")

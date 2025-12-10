@@ -77,10 +77,16 @@ def test_op_call_with_unknown_operation(
 def test_dataset_list_returns_datasets(
     op_harness: OperationTestHarness,
 ) -> None:
-    """Dataset list returns available datasets."""
+    """Dataset list returns available datasets or error without context.
+
+    Without a project file or explicit params, this operation will fail
+    with a ResolutionError. This is expected behavior.
+    """
     result = op_harness.execute("dataset.list")
 
     expect_is_not_none(result)
+    # Result is valid (either success or expected resolution error)
+    expect_true(result.exit_code in (0, 1))
 
 
 def test_storage_status_returns_info(

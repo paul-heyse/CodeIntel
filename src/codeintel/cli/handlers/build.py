@@ -381,9 +381,9 @@ def build_status_handler(
         runtime.snapshot.commit,
     )
 
-    with runtime_gateway(runtime) as gateway:
-        validator = StateValidator(graph, gateway, runtime.snapshot)
-        state = validator.validate()
+    gateway = ctx.gateway
+    validator = StateValidator(graph, gateway, runtime.snapshot)
+    state = validator.validate()
 
     if module:
         valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
@@ -647,34 +647,34 @@ def build_history_handler(
             )
         )
 
-    with runtime_gateway(runtime) as gateway:
-        if run_id:
-            try:
-                record = _lookup_run_by_id(gateway, runtime.snapshot.repo, run_id)
-            except ValidationError as e:
-                return CliResult.fail(
-                    ProblemDetail(
-                        type="urn:codeintel:build:run-not-found",
-                        title="Run Not Found",
-                        detail=str(e),
-                        status=404,
-                    )
-                )
-            return CliResult.ok(
-                BuildHistoryResult(
-                    runs=[record.to_dict()],
-                    count=1,
+    gateway = ctx.gateway
+    if run_id:
+        try:
+            record = _lookup_run_by_id(gateway, runtime.snapshot.repo, run_id)
+        except ValidationError as e:
+            return CliResult.fail(
+                ProblemDetail(
+                    type="urn:codeintel:build:run-not-found",
+                    title="Run Not Found",
+                    detail=str(e),
+                    status=404,
                 )
             )
-
-        runs = gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
-
         return CliResult.ok(
             BuildHistoryResult(
-                runs=[r.to_dict() for r in runs],
-                count=len(runs),
+                runs=[record.to_dict()],
+                count=1,
             )
         )
+
+    runs = gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
+
+    return CliResult.ok(
+        BuildHistoryResult(
+            runs=[r.to_dict() for r in runs],
+            count=len(runs),
+        )
+    )
 
 
 __all__ = [

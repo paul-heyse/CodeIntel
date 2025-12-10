@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.functions import RouterOptions, build_functions_router
-from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
 
 if TYPE_CHECKING:

@@ -23,9 +23,7 @@ MODULE_COUNT_WITH_INIT = 3
 
 
 @pytest.mark.anyio
-async def test_execute_populates_modules_and_repo_map(
-    tmp_path: Path, ingestion_gateway
-) -> None:
+async def test_execute_populates_modules_and_repo_map(tmp_path: Path, ingestion_gateway) -> None:
     """Repo scan should write modules, create change tracker, and populate repo_map."""
     repo_root = build_repo_tree(
         tmp_path / "repo",

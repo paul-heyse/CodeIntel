@@ -886,7 +886,9 @@ def seed_ingestion_tables(
         seed_varchar_table(
             ctx.gateway,
             "core.test_varchar",
-            ["alpha", "beta", "gamma", "beta"] if include_duplicates else ["alpha", "beta", "gamma"],
+            ["alpha", "beta", "gamma", "beta"]
+            if include_duplicates
+            else ["alpha", "beta", "gamma"],
         )
         parent_rows = [("p1", "Parent 1"), ("p2", "Parent 2")]
         child_rows: list[tuple[int | str, int | str | None]] = [("c1", "p1"), ("c2", "p1")]
