@@ -452,9 +452,8 @@ class TestContextManager:
             config=mock_config,
             operation_id="test",
         )
-        with ctx:
-            with pytest.raises(ValueError, match="test error"):
-                raise ValueError("test error")
+        with ctx, pytest.raises(ValueError, match="test error"):
+            raise ValueError("test error")
         expect_true(ctx.is_closed)
 
     @staticmethod

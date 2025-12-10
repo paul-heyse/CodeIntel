@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -14,13 +14,31 @@ from tests._helpers.assertions import (
 )
 
 
+def _make_target(
+    name: str,
+    module: str,
+    plugin: str,
+    tables: tuple[str, ...],
+    dependencies: tuple[str, ...] = (),
+    description: str = "",
+) -> OutputTarget:
+    """Create targets using the contract-based factory for legacy tests."""
+    return OutputTarget.from_tables(
+        name=name,
+        module=module,
+        plugin=plugin,
+        tables=tables,
+        options=TargetOptions(dependencies=dependencies, description=description),
+    )
+
+
 class TestOutputTarget:
     """Tests for OutputTarget dataclass."""
 
     @staticmethod
     def test_create_target_with_required_fields() -> None:
         """Create a target with only required fields."""
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="ingestion",
             plugin="test_plugin",
@@ -38,7 +56,7 @@ class TestOutputTarget:
     @staticmethod
     def test_create_target_with_all_fields() -> None:
         """Create a target with all optional fields."""
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="analytics",
             plugin="test_plugin",
@@ -55,7 +73,7 @@ class TestOutputTarget:
     @staticmethod
     def test_target_is_frozen() -> None:
         """Verify target is immutable."""
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="graphs",
             plugin="test_plugin",
@@ -71,7 +89,7 @@ class TestTargetGraph:
     def test_register_target() -> None:
         """Register a target in the graph."""
         graph = TargetGraph()
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="ingestion",
             plugin="test_plugin",
@@ -86,7 +104,7 @@ class TestTargetGraph:
     def test_register_duplicate_raises() -> None:
         """Registering the same target twice raises ValueError."""
         graph = TargetGraph()
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="ingestion",
             plugin="test_plugin",
@@ -101,7 +119,7 @@ class TestTargetGraph:
     def test_get_target() -> None:
         """Get a registered target by name."""
         graph = TargetGraph()
-        target = OutputTarget(
+        target = _make_target(
             name="test_target",
             module="ingestion",
             plugin="test_plugin",
@@ -124,13 +142,13 @@ class TestTargetGraph:
     def test_all_targets() -> None:
         """Get all registered targets."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
@@ -148,13 +166,13 @@ class TestTargetGraph:
     def test_dependencies_of() -> None:
         """Get direct dependencies of a target."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
@@ -171,20 +189,20 @@ class TestTargetGraph:
     def test_transitive_deps() -> None:
         """Get transitive dependencies of a target."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
             dependencies=("target1",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
@@ -202,20 +220,20 @@ class TestTargetGraph:
     def test_dependents_of() -> None:
         """Get dependents of a target."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
             dependencies=("target1",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
@@ -233,20 +251,20 @@ class TestTargetGraph:
     def test_topological_order_simple() -> None:
         """Topological sort of targets."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
             dependencies=("target1",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
@@ -266,19 +284,19 @@ class TestTargetGraph:
     def test_topological_order_multiple_roots() -> None:
         """Topological sort with multiple independent roots."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="ingestion",
             plugin="plugin2",
             tables=("core.t2",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
@@ -299,21 +317,21 @@ class TestTargetGraph:
         """Topological sort with cycle raises ValueError."""
         graph = TargetGraph()
         # Create a cycle: t1 -> t2 -> t3 -> t1
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
             dependencies=("target3",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
             dependencies=("target1",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",

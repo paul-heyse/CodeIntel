@@ -10,7 +10,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import (
+    fail_job_cancel_failed,
+    fail_job_not_completed,
+    fail_job_not_found,
+)
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.jobs import JobStatus, get_job_manager
 
@@ -224,14 +228,7 @@ def jobs_status_handler(ctx: HandlerContext) -> CliResult[JobStatusResult]:
     job = manager.get_status(job_id)
 
     if job is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:jobs:not-found",
-                title="Job Not Found",
-                detail=f"Job not found: {job_id}",
-                status=404,
-            )
-        )
+        return fail_job_not_found(job_id)
 
     return CliResult.ok(
         JobStatusResult(
@@ -268,24 +265,10 @@ def jobs_output_handler(ctx: HandlerContext) -> CliResult[JobOutputResult]:
     job = manager.get_status(job_id)
 
     if job is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:jobs:not-found",
-                title="Job Not Found",
-                detail=f"Job not found: {job_id}",
-                status=404,
-            )
-        )
+        return fail_job_not_found(job_id)
 
     if job.status != JobStatus.COMPLETED:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:jobs:not-completed",
-                title="Job Not Completed",
-                detail=f"Job is not completed (status: {job.status.value})",
-                status=400,
-            )
-        )
+        return fail_job_not_completed(job_id, job.status.value)
 
     output = manager.get_output(job_id)
 
@@ -320,14 +303,7 @@ def jobs_cancel_handler(ctx: HandlerContext) -> CliResult[JobCancelResult]:
     cancelled = manager.cancel(job_id)
 
     if not cancelled:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:jobs:cancel-failed",
-                title="Cancel Failed",
-                detail=f"Could not cancel job {job_id}",
-                status=400,
-            )
-        )
+        return fail_job_cancel_failed(job_id)
 
     return CliResult.ok(JobCancelResult(job_id=job_id, cancelled=True))
 

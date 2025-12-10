@@ -64,7 +64,7 @@ def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
         else:
             evidence_obj = None
         if evidence_obj is None:
-            expect_true(False, message="expected evidence_json on unresolved edge")
+            expect_true(evidence_obj is not None, message="expected evidence_json on unresolved edge")
             continue
         scip_candidates = evidence_obj.get("scip_candidates")
         expect_true(

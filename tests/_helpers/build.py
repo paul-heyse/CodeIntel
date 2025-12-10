@@ -15,7 +15,7 @@ from codeintel.build.plan import MODULE_ORDER, BuildPlan, PlanStage, PlanStep
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.result import TargetResult
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
@@ -375,37 +375,33 @@ def _format_toml_value(value: object) -> str:
 
 
 def _default_targets() -> tuple[OutputTarget, ...]:
-    ingestion_modules = OutputTarget(
+    ingestion_modules = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
         plugin="repo_scan",
         tables=("core.modules",),
-        dependencies=(),
-        description="Repository module index",
+        options=TargetOptions(description="Repository module index"),
     )
-    ast_target = OutputTarget(
+    ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
         plugin="ast_extract",
         tables=("core.ast_nodes",),
-        dependencies=("modules",),
-        description="AST extraction",
+        options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
-    goids_target = OutputTarget(
+    goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
         plugin="goid_builder",
         tables=("core.goids",),
-        dependencies=("ast",),
-        description="GOID construction",
+        options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
-    metrics_target = OutputTarget(
+    metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
         plugin="function_metrics",
         tables=("analytics.function_metrics",),
-        dependencies=("goids",),
-        description="Function metrics",
+        options=TargetOptions(dependencies=("goids",), description="Function metrics"),
     )
     return (ingestion_modules, ast_target, goids_target, metrics_target)
 

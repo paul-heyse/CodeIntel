@@ -762,6 +762,26 @@ class HandlerContext:
         with runtime_gateway(self.runtime, read_only=read_only) as gw:
             yield gw
 
+    @contextmanager
+    def write_gateway(self) -> Iterator[StorageGateway]:
+        """Context manager for write-enabled gateway access.
+
+        Convenience method that opens a gateway with write access enabled.
+        Use this when you need to modify data in the storage layer.
+
+        Yields
+        ------
+        StorageGateway
+            Write-enabled storage gateway that will be closed on exit.
+
+        Examples
+        --------
+        >>> with ctx.write_gateway() as gw:
+        ...     gw.execute("INSERT INTO test VALUES (1)")
+        """
+        with self.gateway_scope(read_only=False) as gw:
+            yield gw
+
     def __enter__(self) -> Self:
         """Enter context manager.
 
