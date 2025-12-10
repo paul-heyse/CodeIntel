@@ -26,10 +26,6 @@ from tests._helpers.rows import (
     data_model_field_row,
     data_model_relationship_row,
     data_model_row,
-    insert_rows,
-)
-from tests._helpers.rows import (
-    DataModelSeed,
 )
 from tests._helpers.seeds import SUBSYSTEM_ANALYTICS_PACK
 
@@ -252,20 +248,33 @@ def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
         )
     )
 
-    insert_rows(
-        gateway,
+    gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_models (
+            repo, commit, model_id, goid_h128, model_name, module, rel_path,
+            model_kind, base_classes_json, doc_short, doc_long, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         [model_row],
-        table="analytics.data_models",
     )
-    insert_rows(
-        gateway,
+    gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_model_fields (
+            repo, commit, model_id, field_name, field_type, required, has_default,
+            default_expr, constraints_json, source, rel_path, lineno, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         [field_row],
-        table="analytics.data_model_fields",
     )
-    insert_rows(
-        gateway,
+    gateway.con.executemany(
+        """
+        INSERT INTO analytics.data_model_relationships (
+            repo, commit, source_model_id, target_model_id, target_module,
+            target_model_name, field_name, relationship_kind, multiplicity, via,
+            evidence_json, rel_path, lineno, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         [relationship_row],
-        table="analytics.data_model_relationships",
     )
 
     normalized = fetch_models_normalized(gateway, repo, commit)

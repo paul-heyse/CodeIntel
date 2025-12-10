@@ -5,16 +5,18 @@ from __future__ import annotations
 import pytest
 
 from tests._helpers.context import TestContext
+from tests._helpers.builders import (
+    CoverageLineRow,
+    insert_rows,
+)
 from tests._helpers.seeds import (
     CORE_PACK,
+    COVERAGE_LINES_PACK,
     COVERAGE_PACK,
     GRAPH_PACK,
     METRICS_PACK,
     SUBSYSTEM_ANALYTICS_PACK,
 )
-
-EXPECTED_FUNCTION_METRICS_LEN = 29
-
 
 def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     """Insert helpers should populate tables without manual SQL."""
@@ -23,10 +25,28 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
         GRAPH_PACK,
         METRICS_PACK,
         COVERAGE_PACK,
+        COVERAGE_LINES_PACK,
         SUBSYSTEM_ANALYTICS_PACK,
     )
     gateway = test_ctx.gateway
     con = gateway.con
+    if con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()[0] == 0:
+        insert_rows(
+            gateway,
+            [
+                CoverageLineRow(
+                    repo=test_ctx.repo,
+                    commit=test_ctx.commit,
+                    rel_path="core/mod_a.py",
+                    line=1,
+                    is_executable=True,
+                    is_covered=True,
+                    hits=1,
+                    context_count=1,
+                    created_at=test_ctx.snapshot.created_at,
+                )
+            ],
+        )
 
     def _count(query: str) -> int:
         row = con.execute(query).fetchone()
@@ -67,6 +87,8 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     }
     expected_min = {
         "analytics.goid_risk_factors": 0,
+        "analytics.graph_metrics_functions": 0,
+        "analytics.graph_metrics_modules": 0,
     }
     for key, value in counts.items():
         minimum = expected_min.get(key, 1)
