@@ -172,10 +172,6 @@ def _parse_progress(data: dict[str, object]) -> ProgressConfig:
             enabled=_get_bool(progress_data, "enabled", default=True),
             threshold=_get_float(progress_data, "threshold", default=2.0),
         )
-    # Legacy: progress was a boolean
-    if isinstance(progress_data, bool):
-        threshold = _get_float(data, "progress_threshold", default=2.0)
-        return ProgressConfig(enabled=progress_data, threshold=threshold)
     return ProgressConfig()
 
 
@@ -199,9 +195,6 @@ def _parse_telemetry(data: dict[str, object]) -> TelemetryConfig:
             endpoint=_get_optional_string(telemetry_data, "endpoint"),
             service_name=_get_string(telemetry_data, "service_name", "codeintel-cli"),
         )
-    # Legacy: telemetry_enabled was a flat field
-    if "telemetry_enabled" in data:
-        return TelemetryConfig(enabled=_get_bool(data, "telemetry_enabled", default=True))
     return TelemetryConfig()
 
 
@@ -276,10 +269,6 @@ def _parse_project(data: dict[str, object]) -> ProjectConfigSection:
             root=Path(root) if root else None,
             commit=_get_optional_string(project_data, "commit"),
         )
-    # Legacy: project_root was a flat field
-    if "project_root" in data:
-        root_val = _get_optional_string(data, "project_root")
-        return ProjectConfigSection(root=Path(root_val) if root_val else None)
     return ProjectConfigSection()
 
 

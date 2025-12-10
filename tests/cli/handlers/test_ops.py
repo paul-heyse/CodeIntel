@@ -7,16 +7,18 @@ from unittest.mock import MagicMock, patch
 
 from codeintel.cli.config.model import CliConfig
 from codeintel.cli.handlers.ops import (
-    DatasetDescribeResult,
-    DatasetListResult,
-    DatasetVerifyResult,
-    OpCallResult,
-    OpListResult,
     ServeStartResult,
     op_list_handler,
 )
 from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
+from codeintel.cli.result_types import (
+    DatasetDescribeResult,
+    DatasetListResult,
+    DatasetVerifyResult,
+    OperationCallResult,
+    OperationListResult,
+)
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
@@ -46,7 +48,7 @@ def test_op_list_handler_returns_ok() -> None:
 
     expect_true(result.success)
     expect_is_not_none(result.data)
-    expect_is_instance(result.data, OpListResult)
+    expect_is_instance(result.data, OperationListResult)
     if result.data is not None:
         expect_equal(result.data.count, 1)
 
@@ -82,8 +84,8 @@ def test_op_list_handler_filters_by_category() -> None:
 
 
 def test_op_list_result_to_dict() -> None:
-    """OpListResult.to_dict returns expected structure."""
-    result = OpListResult(
+    """OperationListResult.to_dict returns expected structure."""
+    result = OperationListResult(
         operations=[{"id": "test", "category": "test"}],
         count=1,
     )
@@ -140,15 +142,15 @@ def test_dataset_verify_result_to_dict() -> None:
 
 
 def test_op_call_result_to_dict() -> None:
-    """OpCallResult.to_dict returns expected structure."""
-    result = OpCallResult(
-        op_id="test-op",
+    """OperationCallResult.to_dict returns expected structure."""
+    result = OperationCallResult(
+        operation_id="test-op",
         result={"data": "value"},
     )
 
     data = result.to_dict()
 
-    expect_equal(data["op_id"], "test-op")
+    expect_equal(data["operation_id"], "test-op")
     expect_equal(data["result"], {"data": "value"})
 
 

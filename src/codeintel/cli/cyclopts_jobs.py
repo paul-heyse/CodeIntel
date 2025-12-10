@@ -6,16 +6,22 @@ for long-running operations.
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
-from rich.console import Console
-from rich.table import Table
 
-from codeintel.cli.jobs import JobStatus, get_job_manager
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
+from codeintel.cli.handlers.jobs import (
+    jobs_cancel_handler,
+    jobs_cleanup_handler,
+    jobs_list_handler,
+    jobs_output_handler,
+    jobs_status_handler,
+)
 
 jobs_app = App(name="jobs", help="Manage background jobs")
 
@@ -35,50 +41,31 @@ class JobsListCommand:
     ] = None
     limit: Annotated[int, Parameter(help="Maximum jobs to show")] = 20
     output_format: Annotated[
-        Literal["text", "json"],
+        OutputFormat,
         Parameter(name="--format", help="Output format"),
-    ] = "text"
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
         """Execute the jobs list command."""
-        manager = get_job_manager()
-        status_filter = JobStatus(self.status) if self.status else None
-        jobs = manager.list_jobs(status=status_filter, limit=self.limit)
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        if self.output_format == "json":
-            sys.stdout.write(json.dumps([j.to_dict() for j in jobs], indent=2))
-            sys.stdout.write("\n")
-            return
-
-        if not jobs:
-            sys.stdout.write("No jobs found\n")
-            return
-
-        console = Console()
-        table = Table(title="Background Jobs")
-        table.add_column("Job ID", style="cyan")
-        table.add_column("Operation")
-        table.add_column("Status")
-        table.add_column("Created")
-
-        status_styles = {
-            JobStatus.PENDING: "yellow",
-            JobStatus.RUNNING: "blue",
-            JobStatus.COMPLETED: "green",
-            JobStatus.FAILED: "red",
-            JobStatus.CANCELLED: "dim",
+        params: dict[str, object] = {
+            "status": self.status,
+            "limit": self.limit,
         }
 
-        for job in jobs:
-            style = status_styles.get(job.status, "")
-            table.add_row(
-                job.job_id,
-                job.operation_id,
-                f"[{style}]{job.status.value}[/{style}]",
-                job.created_at[:19] if job.created_at else "",
-            )
-
-        console.print(table)
+        with command_context(
+            "jobs.list",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = jobs_list_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @jobs_app.command(name="status")
@@ -92,42 +79,28 @@ class JobsStatusCommand:
 
     job_id: Annotated[str, Parameter(help="Job ID")]
     output_format: Annotated[
-        Literal["text", "json"],
+        OutputFormat,
         Parameter(name="--format", help="Output format"),
-    ] = "text"
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the jobs status command.
+        """Execute the jobs status command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If the job is not found.
-        """
-        manager = get_job_manager()
-        job = manager.get_status(self.job_id)
+        params: dict[str, object] = {"job_id": self.job_id}
 
-        if job is None:
-            sys.stdout.write(f"Job not found: {self.job_id}\n")
-            raise SystemExit(1)
-
-        if self.output_format == "json":
-            sys.stdout.write(json.dumps(job.to_dict(), indent=2))
-            sys.stdout.write("\n")
-            return
-
-        console = Console()
-        console.print(f"[bold]Job ID:[/bold] {job.job_id}")
-        console.print(f"[bold]Operation:[/bold] {job.operation_id}")
-        console.print(f"[bold]Status:[/bold] {job.status.value}")
-        console.print(f"[bold]Created:[/bold] {job.created_at}")
-
-        if job.started_at:
-            console.print(f"[bold]Started:[/bold] {job.started_at}")
-        if job.completed_at:
-            console.print(f"[bold]Completed:[/bold] {job.completed_at}")
-        if job.error:
-            console.print(f"[bold red]Error:[/bold red] {job.error}")
+        with command_context(
+            "jobs.status",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = jobs_status_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @jobs_app.command(name="output")
@@ -140,32 +113,29 @@ class JobsOutputCommand:
     """
 
     job_id: Annotated[str, Parameter(help="Job ID")]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the jobs output command.
+        """Execute the jobs output command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If the job is not found or not completed.
-        """
-        manager = get_job_manager()
-        job = manager.get_status(self.job_id)
+        params: dict[str, object] = {"job_id": self.job_id}
 
-        if job is None:
-            sys.stdout.write(f"Job not found: {self.job_id}\n")
-            raise SystemExit(1)
-
-        if job.status != JobStatus.COMPLETED:
-            sys.stdout.write(f"Job is not completed (status: {job.status.value})\n")
-            raise SystemExit(1)
-
-        result = manager.get_output(self.job_id)
-        if result:
-            sys.stdout.write(json.dumps(result, indent=2))
-            sys.stdout.write("\n")
-        else:
-            sys.stdout.write("No output available\n")
+        with command_context(
+            "jobs.output",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = jobs_output_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @jobs_app.command(name="cancel")
@@ -178,22 +148,29 @@ class JobsCancelCommand:
     """
 
     job_id: Annotated[str, Parameter(help="Job ID")]
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
-        """Execute the jobs cancel command.
+        """Execute the jobs cancel command."""
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
-        Raises
-        ------
-        SystemExit
-            If the job could not be cancelled.
-        """
-        manager = get_job_manager()
+        params: dict[str, object] = {"job_id": self.job_id}
 
-        if manager.cancel(self.job_id):
-            sys.stdout.write(f"Job {self.job_id} cancelled\n")
-        else:
-            sys.stdout.write(f"Could not cancel job {self.job_id}\n")
-            raise SystemExit(1)
+        with command_context(
+            "jobs.cancel",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = jobs_cancel_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @jobs_app.command(name="cleanup")
@@ -206,12 +183,29 @@ class JobsCleanupCommand:
     """
 
     max_age_days: Annotated[int, Parameter(help="Maximum age in days")] = 7
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(name="--format", help="Output format"),
+    ] = OutputFormat.TEXT
 
     def __call__(self) -> None:
         """Execute the jobs cleanup command."""
-        manager = get_job_manager()
-        cleaned = manager.cleanup(max_age_days=self.max_age_days)
-        sys.stdout.write(f"Cleaned up {cleaned} jobs\n")
+        runtime_cli = RuntimeCLI()
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {"max_age_days": self.max_age_days}
+
+        with command_context(
+            "jobs.cleanup",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,
+        ) as (ctx, renderer):
+            result = jobs_cleanup_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = [

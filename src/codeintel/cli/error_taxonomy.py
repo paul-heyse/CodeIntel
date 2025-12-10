@@ -215,7 +215,7 @@ JOB_ALREADY_RUNNING = ErrorCode(ErrorCategory.JOB, "already-running", 409, "Job 
 JOB_FAILED = ErrorCode(ErrorCategory.JOB, "failed", 500, "Job Execution Failed")
 JOB_EXPIRED = ErrorCode(ErrorCategory.JOB, "expired", 410, "Job Results Expired")
 
-# HTTP status code mappings (legacy - kept for backward compatibility)
+# HTTP status code mappings for error code enums
 _STATUS_CODES: dict[str, int] = {
     ValidationErrorCode.MISSING_REQUIRED.value: 400,
     ValidationErrorCode.INVALID_TYPE.value: 400,

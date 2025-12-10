@@ -30,8 +30,6 @@ from codeintel.cli.command_context import command_context
 from codeintel.cli.cyclopts_common import (
     OutputFormatCLI,
     RuntimeCLI,
-    RuntimeCliError,
-    build_runtime_from_cli,
     get_output_format,
     get_verbose,
     runtime_field,
@@ -43,6 +41,7 @@ from codeintel.cli.handlers.ops import (
     dataset_describe_handler,
     dataset_list_handler,
     dataset_verify_handler,
+    invoke_operation,
     op_call_handler,
     op_list_handler,
     serve_http_handler,
@@ -54,11 +53,12 @@ from codeintel.cli.op_params import (
     build_operation_cli_metadata,
     get_operations_with_cli_support,
 )
-
-# Legacy import for invoke_operation used in dynamic operation calls
-from codeintel.cli.ops_handlers import invoke_operation
 from codeintel.cli.output import OutputEnvelope, iter_stdin_records, merge_stdin_with_args
-from codeintel.cli.project import ProjectRuntime
+from codeintel.cli.project import (
+    ProjectNotFoundError,
+    ProjectRuntime,
+    build_project_runtime,
+)
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.operations.catalog import (
@@ -653,6 +653,11 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
 def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
     """Build a runtime from CLI flags with Cyclopts-native error handling.
 
+    Parameters
+    ----------
+    cli
+        RuntimeCLI instance with project parameters.
+
     Returns
     -------
     ProjectRuntime
@@ -664,9 +669,10 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
         If runtime resolution fails.
     """
     try:
-        return build_runtime_from_cli(cli)
-    except RuntimeCliError as exc:
-        raise ValidationError(str(exc)) from exc
+        return build_project_runtime(cli.project_root)
+    except ProjectNotFoundError as exc:
+        msg = str(exc) or "No codeintel.yaml found. Provide --root or create a project file."
+        raise ValidationError(msg) from exc
 
 
 def _invoke_operation_with_prereqs(
@@ -1322,7 +1328,6 @@ register_dynamic_operations()
 
 __all__ = [
     "SimpleNamespace",
-    "app",
     "app_proxy",
     "build_param_field_for_spec",
     "dataset_app",

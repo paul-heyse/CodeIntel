@@ -56,7 +56,7 @@ def test_render_table_text() -> None:
     ctx, out, _err = RenderContext.for_testing()
     renderer = UnifiedRenderer(ctx)
 
-    rows = [
+    rows: list[dict[str, object]] = [
         {"name": "foo", "count": 10},
         {"name": "bar", "count": 20},
     ]
@@ -92,7 +92,7 @@ def test_render_table_json() -> None:
     expected_count = 2
     expected_second_count = 20
 
-    rows = [
+    rows: list[dict[str, object]] = [
         {"name": "foo", "count": 10},
         {"name": "bar", "count": expected_second_count},
     ]

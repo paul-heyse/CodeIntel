@@ -110,7 +110,7 @@ def test_max_value_constraint() -> None:
 
 def test_unknown_keys_handled() -> None:
     """Configuration with unknown keys is handled."""
-    config = {"unknown_key": "value", "another_unknown": 123}
+    config: dict[str, object] = {"unknown_key": "value", "another_unknown": 123}
     errors = validate_with_json_schema(config)
 
     # Should validate without crashing
@@ -120,7 +120,7 @@ def test_unknown_keys_handled() -> None:
 @pytest.mark.parametrize("colors_enabled", [True, False])
 def test_boolean_config_values(*, colors_enabled: bool) -> None:
     """Boolean config values are handled correctly."""
-    config = {"output": {"colors": colors_enabled}}
+    config: dict[str, object] = {"output": {"colors": colors_enabled}}
     errors = validate_with_json_schema(config)
 
     # Should validate without type errors

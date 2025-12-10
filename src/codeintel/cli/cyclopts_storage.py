@@ -13,11 +13,9 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    RuntimeCLI,
-    command_context,
-)
+from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
 from codeintel.cli.handlers.storage import (
     MacroRequirement,
     generate_macros_handler,
@@ -58,6 +56,13 @@ class ValidateMacrosCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -66,17 +71,15 @@ class ValidateMacrosCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage validate-macros command."""
         runtime_cli = RuntimeCLI(
             project_root=self.project_root,
+            db_path=self.db_path,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
         params: dict[str, object] = {
             "db_path": str(self.db_path) if self.db_path else None,
@@ -86,7 +89,7 @@ class ValidateMacrosCommand:
         with command_context(
             "storage.validate_macros",
             runtime_cli,
-            self.output_format,
+            output_cli,
             params=params,
         ) as (ctx, renderer):
             result = validate_macros_handler(ctx)
@@ -114,6 +117,13 @@ class GenerateMacrosCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -122,10 +132,6 @@ class GenerateMacrosCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage generate-macros command."""
@@ -133,6 +139,7 @@ class GenerateMacrosCommand:
             project_root=self.project_root,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
         params: dict[str, object] = {
             "tables": self.tables,
@@ -141,7 +148,7 @@ class GenerateMacrosCommand:
         with command_context(
             "storage.generate_macros",
             runtime_cli,
-            self.output_format,
+            output_cli,
             params=params,
         ) as (ctx, renderer):
             result = generate_macros_handler(ctx)
@@ -184,6 +191,13 @@ class ProfileStorageCommand:
             help="Project root directory.",
         ),
     ] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
     verbose: Annotated[
         int,
         Parameter(
@@ -192,17 +206,15 @@ class ProfileStorageCommand:
             count=True,
         ),
     ] = 0
-    output_format: Annotated[
-        OutputFormatCLI,
-        Parameter(name="*"),
-    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage profile command."""
         runtime_cli = RuntimeCLI(
             project_root=self.project_root,
+            db_path=self.db_path,
             verbose=self.verbose,
         )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
 
         params: dict[str, object] = {
             "db_path": str(self.db_path) if self.db_path else None,
@@ -213,7 +225,7 @@ class ProfileStorageCommand:
         with command_context(
             "storage.profile",
             runtime_cli,
-            self.output_format,
+            output_cli,
             params=params,
         ) as (ctx, renderer):
             result = profile_storage_handler(ctx)

@@ -18,8 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.cli.cli_types import BackendFlags, OutputFormat
-from codeintel.cli.common_handlers import build_config_from_options
-from codeintel.cli.config import load_config
+from codeintel.cli.config import build_config_from_options, load_config
 from codeintel.cli.handlers.base import setup_logging
 from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.project import (
@@ -190,9 +189,8 @@ def command_context(
     render_ctx = RenderContext.auto_detect(format_override=render_format)
     renderer = UnifiedRenderer(render_ctx)
 
-    # Combine params with CLI values
+    # Combine params with CLI values (runtime_params serve as defaults, resolved_params override)
     combined_params: dict[str, object] = {
-        **resolved_params,
         "project_root": runtime_params.project_root,
         "repo": runtime_params.repo,
         "commit": runtime_params.commit,
@@ -200,6 +198,7 @@ def command_context(
         "build_dir": runtime_params.build_dir,
         "repo_root": runtime_params.repo_root,
         "document_output_dir": runtime_params.document_output_dir,
+        **resolved_params,  # Command-specific params override runtime defaults
     }
 
     # Create enhanced context
