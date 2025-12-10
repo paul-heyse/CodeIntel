@@ -37,12 +37,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.build.executor import BuildExecutor
+from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildLayoutOptions, BuildPaths, SnapshotRef
 from codeintel.config.resolver import resolve_tools_config
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
@@ -103,6 +103,15 @@ class StageResult:
     ended_at: str
     outputs: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class E2EPaths:
+    """Derived paths for the E2E test run."""
+
+    build_dir: Path
+    db_path: Path
+    output_dir: Path
 
 
 @dataclass
@@ -171,6 +180,22 @@ class E2EReport:
             ],
             "summary": self.summary,
         }
+
+
+def _derive_paths(repo_root: Path) -> E2EPaths:
+    """Compute all paths used by the E2E test.
+
+    Returns
+    -------
+    E2EPaths
+        Derived build, database, and output directories.
+    """
+    build_dir = repo_root / "build"
+    return E2EPaths(
+        build_dir=build_dir,
+        db_path=build_dir / "db" / "codeintel.duckdb",
+        output_dir=repo_root / "document_output",
+    )
 
 
 def _get_timestamp() -> str:
@@ -319,7 +344,7 @@ def _stage_scip_index(
     }
 
 
-def _stage_build_run(  # noqa: PLR0914 - Build orchestration requires many locals
+def _stage_build_run(
     repo_root: Path,
     repo: str,
     commit: str,
@@ -357,11 +382,9 @@ def _stage_build_run(  # noqa: PLR0914 - Build orchestration requires many local
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     paths = BuildPaths.from_layout(
         repo_root=repo_root,
-        build_dir=build_dir,
-        db_path=db_path,
+        overrides=BuildLayoutOptions(build_dir=build_dir, db_path=db_path),
     )
 
-    # Open gateway
     gateway = open_gateway(
         StorageConfig(
             db_path=db_path,
@@ -370,25 +393,21 @@ def _stage_build_run(  # noqa: PLR0914 - Build orchestration requires many local
         )
     )
 
-    # Get target graph
     graph = get_target_graph()
     all_targets = [t.name for t in graph.all_targets if t.module != "export"]
 
     log.info("Validating state for %d targets...", len(all_targets))
 
-    # State validation
-    validator = StateValidator(graph, gateway, snapshot)
-    db_state = validator.validate()
+    db_state = StateValidator(graph, gateway, snapshot).validate()
 
-    # Resolution
     log.info("Resolving minimal work...")
-    resolver = BuildResolver(graph, db_state)
-    resolution = resolver.resolve(goals=all_targets, force_recompute=None)
+    resolution = BuildResolver(graph, db_state).resolve(
+        goals=all_targets,
+        force_recompute=None,
+    )
 
-    # Plan generation
     log.info("Generating build plan...")
-    generator = PlanGenerator(graph)
-    plan = generator.generate(resolution)
+    plan = PlanGenerator(graph).generate(resolution)
 
     log.info(
         "Plan: %d stages, %d targets to compute, %d skipped",
@@ -399,14 +418,13 @@ def _stage_build_run(  # noqa: PLR0914 - Build orchestration requires many local
 
     # Execute
     log.info("Executing build plan...")
-    tools = resolve_tools_config()
-    executor = BuildExecutor(
-        graph=graph,
+    env = ExecutorEnv(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
-        tools=tools,
+        tools=resolve_tools_config(),
     )
+    executor = BuildExecutor(graph=graph, env=env)
 
     result = executor.execute(plan)
 
@@ -569,7 +587,7 @@ def _get_commit_sha(repo_root: Path) -> str:
         return "unknown"
 
 
-def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
+def run_e2e_test(
     repo_root: Path,
     *,
     skip_scip: bool = False,
@@ -592,10 +610,7 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
     started_at = _get_timestamp()
     start_time = time.perf_counter()
 
-    # Derive paths
-    build_dir = repo_root / "build"
-    db_path = build_dir / "db" / "codeintel.duckdb"
-    output_dir = repo_root / "document_output"
+    paths = _derive_paths(repo_root)
 
     # Get repo info
     repo = os.environ.get("GEN_DOCS_REPO", "local/repo")
@@ -607,9 +622,9 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
     log.info("Repo: %s", repo)
     log.info("Commit: %s", commit)
     log.info("Repo Root: %s", repo_root)
-    log.info("Build Dir: %s", build_dir)
-    log.info("DB Path: %s", db_path)
-    log.info("Output Dir: %s", output_dir)
+    log.info("Build Dir: %s", paths.build_dir)
+    log.info("DB Path: %s", paths.db_path)
+    log.info("Output Dir: %s", paths.output_dir)
     log.info("Skip SCIP: %s", skip_scip)
     log.info("=" * 70)
 
@@ -622,7 +637,7 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
             "SCIP Indexing",
             _stage_scip_index,
             repo_root=repo_root,
-            build_dir=build_dir,
+            build_dir=paths.build_dir,
             skip_scip=skip_scip,
         )
     )
@@ -639,8 +654,8 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
                 repo_root=repo_root,
                 repo=repo,
                 commit=commit,
-                db_path=db_path,
-                build_dir=build_dir,
+                db_path=paths.db_path,
+                build_dir=paths.build_dir,
             )
         )
 
@@ -652,8 +667,8 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
                 _run_stage(
                     "Document Export",
                     _stage_export_docs,
-                    db_path=db_path,
-                    output_dir=output_dir,
+                    db_path=paths.db_path,
+                    output_dir=paths.output_dir,
                 )
             )
 
@@ -662,14 +677,13 @@ def run_e2e_test(  # noqa: PLR0914 - Complex test orchestration
                 _run_stage(
                     "Verify Outputs",
                     _stage_verify_outputs,
-                    output_dir=output_dir,
-                    db_path=db_path,
+                    output_dir=paths.output_dir,
+                    db_path=paths.db_path,
                 )
             )
 
             # Determine overall status
-            failed_stages = [s for s in stages if s.status == "failed"]
-            overall_status = "failed" if failed_stages else "success"
+            overall_status = "failed" if any(s.status == "failed" for s in stages) else "success"
 
     end_time = time.perf_counter()
     total_duration_ms = (end_time - start_time) * 1000

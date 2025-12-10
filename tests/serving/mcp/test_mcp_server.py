@@ -19,8 +19,7 @@ from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import wrap_fastmcp
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # create_mcp_server Tests
@@ -40,7 +39,7 @@ def test_create_mcp_server_local_db_requires_gateway() -> None:
 
 
 def test_create_mcp_server_returns_server_and_close(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_mcp_server returns an MCP server and close callback.
 
@@ -66,7 +65,7 @@ def test_create_mcp_server_returns_server_and_close(
 
 
 def test_create_mcp_server_with_custom_backend_factory(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_mcp_server accepts custom backend factory.
 
@@ -120,7 +119,7 @@ def test_create_mcp_server_with_custom_backend_factory(
 
 
 def test_create_mcp_server_with_custom_tools_registration(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_mcp_server accepts custom tool registration function.
 
@@ -155,7 +154,7 @@ def test_create_mcp_server_with_custom_tools_registration(
 
 
 def test_create_mcp_server_close_callback_callable(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify the close callback can be invoked without error.
 
@@ -213,7 +212,7 @@ def test_create_mcp_server_close_callback_callable(
 
 
 def test_create_mcp_server_default_tools_registered(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_mcp_server registers default tools when no custom fn provided.
 

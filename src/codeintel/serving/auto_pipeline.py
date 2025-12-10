@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.executor import BuildExecutor, BuildResult
+from codeintel.build.executor import BuildExecutor, BuildResult, ExecutorEnv
 from codeintel.build.operations import get_targets_for_operation
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.readiness import DatabaseReadinessView
@@ -753,7 +753,13 @@ def run_operation_prereqs(
     )
 
     # Execute via build system
-    executor = BuildExecutor(graph, gateway, snapshot, paths, tools)
+    env = ExecutorEnv(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        tools=tools,
+    )
+    executor = BuildExecutor(graph=graph, env=env)
     return executor.execute(plan)
 
 

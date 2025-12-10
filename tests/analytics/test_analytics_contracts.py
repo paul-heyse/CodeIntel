@@ -28,6 +28,7 @@ from codeintel.config.datasets import (
 )
 from codeintel.graphs.catalog import FunctionCatalog
 from tests._helpers import CORE_PACK, TestContext, create_test_context
+from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.rows import function_meta
@@ -83,22 +84,22 @@ def _graph_metrics_functions_row(ctx: ContractCtx) -> GraphMetricsFunctionsRow:
         module_by_path={"pkg/mod.py": "pkg.mod"},
     )
     ensure_catalog_with_goids(ctx, catalog)
-    return {
-        "repo": ctx.repo,
-        "commit": ctx.commit,
-        "function_goid_h128": 10,
-        "call_fan_in": 1,
-        "call_fan_out": 1,
-        "call_in_degree": 1,
-        "call_out_degree": 1,
-        "call_pagerank": 0.1,
-        "call_betweenness": 0.2,
-        "call_closeness": 0.3,
-        "call_cycle_member": False,
-        "call_cycle_id": None,
-        "call_layer": None,
-        "created_at": now,
-    }
+    return make_graph_metric_function_row(
+        repo=ctx.repo,
+        commit=ctx.commit,
+        function_goid_h128=10,
+        overrides={
+            "call_fan_in": 1,
+            "call_fan_out": 1,
+            "call_in_degree": 1,
+            "call_out_degree": 1,
+            "call_pagerank": 0.1,
+            "call_betweenness": 0.2,
+            "call_closeness": 0.3,
+            "call_cycle_member": False,
+            "created_at": now,
+        },
+    )
 
 
 def _assert_graph_fk(con: DuckDBPyConnection) -> None:

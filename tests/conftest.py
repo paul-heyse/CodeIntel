@@ -16,11 +16,11 @@ from tests._helpers.configs import (
     CoverageEdgeEnv,
     CoverageSeedConfig,
     GatewayOptions,
-    ProvisionedGateway,
     ProvisioningConfig,
     SpanTestEnv,
 )
 from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.gateway import memory_con_with_macros
 from tests._helpers.orchestration import (
     compute_coverage_edges,
@@ -30,8 +30,6 @@ from tests._helpers.orchestration import (
     generate_span_coverage,
     provision_docs_export_ready,
     provision_graph_ready_repo,
-    provision_ingested_repo,
-    provisioned_gateway,
 )
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds import (
@@ -52,49 +50,26 @@ def fresh_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     StorageGateway
         Gateway configured with schemas/views; caller must not close.
     """
-    with provisioned_gateway(
+    ctx = create_provisioned_test_env(
         tmp_path / "fresh",
-        config=ProvisioningConfig(run_ingestion=False),
-    ) as ctx:
+        ProvisioningConfig(run_ingestion=False),
+    )
+    try:
         yield ctx.gateway
+    finally:
+        ctx.close()
 
 
 @pytest.fixture
-def provisioned_repo(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+def provisioned_repo(tmp_path: Path) -> Iterator[TestContext]:
     """Provision a repo-root and ingest baseline data via production entry points.
 
     Yields
     ------
-    ProvisionedGateway
-        Gateway plus repo root populated with baseline ingestion data.
+    TestContext
+        Context plus repo root populated with baseline ingestion data.
     """
-    with provision_ingested_repo(tmp_path / "repo") as ctx:
-        yield ctx
-
-
-@pytest.fixture
-def graph_ready_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
-    """Provision a repo with graph metrics seeds for graph-centric tests.
-
-    Yields
-    ------
-    ProvisionedGateway
-        Gateway plus repo context seeded with graph metrics data.
-    """
-    with provision_graph_ready_repo(tmp_path / "repo") as ctx:
-        yield ctx
-
-
-@pytest.fixture
-def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
-    """Provision a gateway ready for docs export scenarios.
-
-    Yields
-    ------
-    ProvisionedGateway
-        Gateway populated with docs export seeds.
-    """
-    ctx = provision_docs_export_ready(tmp_path, repo="demo/repo", commit="deadbeef")
+    ctx = create_provisioned_test_env(tmp_path / "repo")
     try:
         yield ctx
     finally:
@@ -102,37 +77,76 @@ def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
 
 
 @pytest.fixture
-def ingestion_only_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+def graph_ready_gateway(tmp_path: Path) -> Iterator[TestContext]:
+    """Provision a repo with graph metrics seeds for graph-centric tests.
+
+    Yields
+    ------
+    TestContext
+        Context plus repo context seeded with graph metrics data.
+    """
+    ctx = TestContext.from_provisioned(provision_graph_ready_repo(tmp_path / "repo"))
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+
+
+@pytest.fixture
+def docs_export_gateway(tmp_path: Path) -> Iterator[TestContext]:
+    """Provision a gateway ready for docs export scenarios.
+
+    Yields
+    ------
+    TestContext
+        Context populated with docs export seeds.
+    """
+    prov = provision_docs_export_ready(tmp_path, repo="demo/repo", commit="deadbeef")
+    ctx = TestContext.from_provisioned(prov)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+
+
+@pytest.fixture
+def ingestion_only_gateway(tmp_path: Path) -> Iterator[TestContext]:
     """Provision a gateway without ingestion for custom seeding.
 
     Yields
     ------
-    ProvisionedGateway
-        Gateway prepared with schemas but without ingestion.
+    TestContext
+        Context prepared with schemas but without ingestion.
     """
-    with provisioned_gateway(
+    ctx = create_provisioned_test_env(
         tmp_path / "repo",
-        config=ProvisioningConfig(run_ingestion=False),
-    ) as ctx:
+        ProvisioningConfig(run_ingestion=False),
+    )
+    try:
         yield ctx
+    finally:
+        ctx.close()
 
 
 @pytest.fixture
-def loose_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+def loose_gateway(tmp_path: Path) -> Iterator[TestContext]:
     """Opt-out gateway for tests that intentionally drift schemas.
 
     Yields
     ------
-    ProvisionedGateway
-        Gateway configured without strict schema enforcement.
+    TestContext
+        Context configured without strict schema enforcement.
     """
-    with provisioned_gateway(
+    ctx = create_provisioned_test_env(
         tmp_path / "repo",
-        config=ProvisioningConfig(
+        ProvisioningConfig(
             run_ingestion=False, gateway_options=GatewayOptions(strict_schema=False)
         ),
-    ) as ctx:
+    )
+    try:
         yield ctx
+    finally:
+        ctx.close()
 
 
 @pytest.fixture

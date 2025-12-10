@@ -67,18 +67,13 @@ def escape_bash(text: str) -> str:
 
     Examples
     --------
-    >>> escape_bash('simple text')
+    >>> escape_bash("simple text")
     'simple text'
-    >>> escape_bash('path with $var')
+    >>> escape_bash("path with $var")
     'path with \\$var'
     """
     # In double-quoted strings, escape: $ ` \ "
-    return (
-        text.replace("\\", "\\\\")
-        .replace("$", "\\$")
-        .replace("`", "\\`")
-        .replace('"', '\\"')
-    )
+    return text.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace('"', '\\"')
 
 
 def escape_zsh(text: str) -> str:
@@ -99,7 +94,7 @@ def escape_zsh(text: str) -> str:
 
     Examples
     --------
-    >>> escape_zsh('simple text')
+    >>> escape_zsh("simple text")
     'simple text'
     >>> escape_zsh("it's a test")
     "it'\\''s a test"
@@ -126,7 +121,7 @@ def escape_fish(text: str) -> str:
 
     Examples
     --------
-    >>> escape_fish('simple text')
+    >>> escape_fish("simple text")
     'simple text'
     >>> escape_fish("it's a test")
     "it\\'s a test"
@@ -153,7 +148,7 @@ def escape_powershell(text: str) -> str:
 
     Examples
     --------
-    >>> escape_powershell('simple text')
+    >>> escape_powershell("simple text")
     'simple text'
     >>> escape_powershell("it's a test")
     "it''s a test"

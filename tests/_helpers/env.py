@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
+from tests._helpers.configs.provisioning_config import ProvisioningConfig
 from tests._helpers.context import (
     TestContext,
     create_test_context,
@@ -18,7 +18,12 @@ from tests._helpers.context import (
 from tests._helpers.context import (
     build_test_gateway as _build_test_gateway,
 )
+from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.env_options import EnvOptions, GatewayOptions
+from tests._helpers.orchestration.provisioning import (
+    provision_gateway_with_repo,
+    provision_ingested_repo,
+)
 
 
 def build_test_gateway(
@@ -47,21 +52,48 @@ def create_test_env(
 ) -> TestContext:
     """Build a TestContext with consistent defaults via GatewayFactory.
 
+    Returns
+    -------
+    TestContext
+        Constructed context with schemas/views/macros ensured.
+    """
+    return create_test_context(tmp_path, options=options, gateway_options=gateway_options)
+
+
+def create_provisioned_test_env(
+    repo_root: Path,
+    config: ProvisioningConfig | None = None,
+) -> TestContext:
+    """Build a TestContext using provisioning flows (ingested or schema-only).
+
     Parameters
     ----------
-    tmp_path
-        Temporary directory for test artifacts.
-    options
-        Environment options bundle overriding repo, commit, and filesystem paths.
-    gateway_options
-        Optional gateway options bundle for schema/view/validation overrides.
+    repo_root
+        Root path where the repo/build artifacts should live.
+    config
+        Provisioning configuration; defaults mirror ProvisioningConfig.
 
     Returns
     -------
     TestContext
-        Configured test context with gateway, snapshot, and build paths.
+        Provisioned context with gateway, snapshot, and build paths.
     """
-    return create_test_context(tmp_path, options=options, gateway_options=gateway_options)
+    cfg = config or ProvisioningConfig()
+    if cfg.run_ingestion:
+        provisioned = provision_ingested_repo(
+            repo_root,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            options=cfg.provision_options,
+        )
+    else:
+        provisioned = provision_gateway_with_repo(
+            repo_root,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            options=cfg.gateway_options,
+        )
+    return TestContext.from_provisioned(provisioned)
 
 
 __all__ = [
@@ -69,5 +101,6 @@ __all__ = [
     "DEFAULT_REPO",
     "DEFAULT_RUN_ID",
     "build_test_gateway",
+    "create_provisioned_test_env",
     "create_test_env",
 ]

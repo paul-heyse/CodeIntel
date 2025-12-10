@@ -166,7 +166,7 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
 
         build_external_dependencies(gateway, cfg)
 
-        deps_by_library = {
+        rows_by_library = {
             row[0]: row
             for row in gateway.con.execute(
                 """
@@ -178,19 +178,16 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
                 [snapshot.repo, snapshot.commit],
             ).fetchall()
         }
-        expect_equal(len(deps_by_library), 2)
-        requests_dep = deps_by_library["requests"]
-        httpx_dep = deps_by_library["httpx"]
+        expect_equal(len(rows_by_library), 2)
+        expect_equal(_as_list(rows_by_library["requests"][1]), ["read"])
+        expect_equal(_as_list(rows_by_library["requests"][2]), ["API_TOKEN"])
+        expect_equal(rows_by_library["requests"][3], "medium")
+        expect_equal(rows_by_library["requests"][4], 1)
+        expect_equal(rows_by_library["requests"][5], 1)
 
-        expect_equal(_as_list(requests_dep[1]), ["read"])
-        expect_equal(_as_list(requests_dep[2]), ["API_TOKEN"])
-        expect_equal(requests_dep[3], "medium")
-        expect_equal(requests_dep[4], 1)
-        expect_equal(requests_dep[5], 1)
-
-        expect_equal(_as_list(httpx_dep[1]), ["write"])
-        expect_equal(_as_list(httpx_dep[2]), ["API_TOKEN"])
-        expect_equal(httpx_dep[3], "high")
+        expect_equal(_as_list(rows_by_library["httpx"][1]), ["write"])
+        expect_equal(_as_list(rows_by_library["httpx"][2]), ["API_TOKEN"])
+        expect_equal(rows_by_library["httpx"][3], "high")
     finally:
         ctx.close()
 

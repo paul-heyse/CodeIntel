@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.analytics.runtime import (
@@ -12,8 +14,10 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
-from tests._helpers import ProvisionedGateway
 from tests._helpers.factories import make_snapshot
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def _expect(*, condition: bool, message: str) -> None:
@@ -23,7 +27,7 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def test_backend_resource_reuses_pooled_runtime(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Serving wiring should reuse the pooled runtime and its engine."""
     gateway = provisioned_repo.gateway
@@ -79,7 +83,7 @@ def test_backend_resource_reuses_pooled_runtime(
         pytest.fail("Query engine should originate from pooled runtime with matching snapshot")
 
 
-def test_backend_resource_reuse_across_builds(provisioned_repo: ProvisionedGateway) -> None:
+def test_backend_resource_reuse_across_builds(provisioned_repo: TestContext) -> None:
     """Repeated backend builds with a shared pool should reuse the same engine."""
     gateway = provisioned_repo.gateway
     cfg = ServingConfig(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Callable
 
 from cyclopts import App
 
@@ -29,10 +30,11 @@ from codeintel.cli.commands.subsystem import subsystem_app
 from codeintel.cli.errors import OutputFormat, handle_cli_error
 
 # Optional imports for initialization - may not be available during packaging
+_init_plugins: Callable[[], None] | None
 try:
     from codeintel.cli.plugins import initialize_plugins as _init_plugins
 except ImportError:
-    _init_plugins = None  # type: ignore[assignment]
+    _init_plugins = None
 
 app: App = build_patched_app(make_root_app)
 set_root_app(app)

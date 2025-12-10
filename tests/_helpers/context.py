@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.macros import ensure_ingest_macros
 from codeintel.storage.schema import apply_all_schemas
@@ -26,7 +26,10 @@ from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.repo import write_canonical_repo
-from tests._helpers.seeds import CORE_PACK, COVERAGE_LINES_PACK, COVERAGE_PACK, GRAPH_PACK
+from tests._helpers.seeds.core import CORE_PACK
+from tests._helpers.seeds.coverage import COVERAGE_PACK
+from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
+from tests._helpers.seeds.graph import GRAPH_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -182,6 +185,8 @@ class TestContext:
     build_paths: BuildPaths
     seeds_applied: set[str] = field(default_factory=set)
     extra: dict[str, object] = field(default_factory=dict)
+    coverage_file: Path | None = None
+    runner: object | None = None
 
     @property
     def repo(self) -> str:
@@ -241,6 +246,26 @@ class TestContext:
         """
         return self.snapshot
 
+    @property
+    def build_dir(self) -> Path:
+        """Expose build_dir for compatibility with ProvisionedGateway."""
+        return self.build_paths.build_dir
+
+    @property
+    def db_path(self) -> Path:
+        """Expose db_path for compatibility with ProvisionedGateway."""
+        return self.build_paths.db_path
+
+    @property
+    def document_output_dir(self) -> Path:
+        """Expose document_output_dir for compatibility with ProvisionedGateway."""
+        return self.build_paths.document_output_dir
+
+    @property
+    def coverage_path(self) -> Path | None:
+        """Return coverage file path if provisioned, else None."""
+        return self.coverage_file
+
     @classmethod
     def from_provisioned(cls, provisioned: ProvisionedGateway) -> TestContext:
         """Create a TestContext from a ProvisionedGateway.
@@ -263,17 +288,23 @@ class TestContext:
             commit=provisioned.commit,
             repo_root=provisioned.repo_root,
         )
-        build_paths = BuildPaths.from_repo_root(
-            provisioned.repo_root,
+        build_paths = BuildPaths.from_explicit(
             build_dir=provisioned.build_dir,
+            overrides=BuildPathOverrides(
+                db_path=provisioned.db_path,
+                document_output_dir=provisioned.document_output_dir,
+                coverage_json=provisioned.coverage_file,
+            ),
         )
         return cls(
             snapshot=snapshot,
             gateway=provisioned.gateway,
             build_paths=build_paths,
+            coverage_file=provisioned.coverage_file,
+            runner=getattr(provisioned, "runner", None),
             extra={
                 "coverage_file": provisioned.coverage_file,
-                "runner": provisioned.runner,
+                "runner": getattr(provisioned, "runner", None),
                 "document_output_dir": provisioned.document_output_dir,
             },
         )

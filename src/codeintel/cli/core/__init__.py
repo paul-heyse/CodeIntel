@@ -3,6 +3,7 @@
 This package provides fundamental abstractions used across the CLI:
 
 - ``CliResult``: Generic result wrapper for CLI operations
+- ``Command``: Base class for type-safe commands (new pattern)
 - ``OutputEnvelope``: I/O utilities for stdin/stdout handling
 - Result type dataclasses for all handlers
 - Value parsing utilities for consistent type coercion
@@ -10,6 +11,7 @@ This package provides fundamental abstractions used across the CLI:
 
 from __future__ import annotations
 
+from codeintel.cli.core.command import Command
 from codeintel.cli.core.output import (
     OutputEnvelope,
     iter_stdin_records,
@@ -22,11 +24,12 @@ from codeintel.cli.core.parsing import (
     parse_bool_or_none,
     parse_cli_value,
 )
-from codeintel.cli.core.results import CliResult, TextRenderer
+from codeintel.cli.core.results import CliResult, TextRenderer, result_type
 from codeintel.cli.core.serialization import serialize_result
 
 __all__ = [
     "CliResult",
+    "Command",
     "OutputEnvelope",
     "TextRenderer",
     "is_truthy_string",
@@ -36,5 +39,6 @@ __all__ = [
     "parse_bool_or_none",
     "parse_cli_value",
     "read_stdin_records",
+    "result_type",
     "serialize_result",
 ]

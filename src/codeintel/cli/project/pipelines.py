@@ -61,7 +61,7 @@ def _get_streaming_renderer(output: TextIO | None = None) -> UnifiedRenderer:
     ctx = RenderContext.auto_detect()
     if output is not None:
         # Create context with custom writer
-        from codeintel.cli.rendering.types import OutputFormat  # noqa: PLC0415
+        from codeintel.cli.rendering.types import OutputFormat
 
         ctx = RenderContext(
             format=OutputFormat.JSONL,

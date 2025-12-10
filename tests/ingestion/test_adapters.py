@@ -41,8 +41,6 @@ from tests._helpers.orchestration.tooling import (
     build_tooling_artifacts,
 )
 
-pytest_plugins = ["tests._helpers.orchestration.tooling"]
-
 # Test constants
 ROWS_WRITTEN_100 = 100
 DURATION_1_5 = 1.5

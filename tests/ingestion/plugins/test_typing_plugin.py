@@ -114,7 +114,7 @@ async def test_typing_plugin_reports_failure(
     failing_result = StepResult.fail("typing blew up")
     caplog.set_level("WARNING")
 
-    ctx, result = await run_ingestion_scenario(
+    _ctx, result = await run_ingestion_scenario(
         lambda: _make_plugin(captured, result=failing_result, type_checker=checker),
         tmp_path,
         config=TargetContextConfig(

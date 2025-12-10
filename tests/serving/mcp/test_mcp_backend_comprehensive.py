@@ -40,7 +40,7 @@ from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
 
 # Test constants
 CUSTOM_DEFAULT_LIMIT = 25
@@ -96,7 +96,7 @@ def test_duckdb_backend_creation(
 
 
 def test_duckdb_backend_with_custom_limits(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify DuckDBBackend respects custom limits."""
@@ -761,7 +761,7 @@ def test_duckdb_backend_dataset_schema_nonexistent(
 
 
 def test_build_backend_resource_local_db_mode(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify build_backend_resource creates DuckDBBackend in local_db mode."""
     cfg = ServingConfig(
@@ -776,7 +776,7 @@ def test_build_backend_resource_local_db_mode(
 
 
 def test_serving_config_remote_api_missing_url_raises(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify ServingConfig raises when api_base_url missing in remote mode."""
     with pytest.raises(ValidationError, match="api_base_url is required"):

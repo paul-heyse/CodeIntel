@@ -28,9 +28,7 @@ from tests._helpers.assertions import (
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
-
+    from tests._helpers.context import TestContext
 # =============================================================================
 # load_api_config Tests (covers _ensure_readable_db via public interface)
 # =============================================================================
@@ -192,7 +190,7 @@ def test_build_backend_resource_raises_error_on_failure(
 
 
 def test_build_backend_resource_with_gateway(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify build_backend_resource returns BackendResource with gateway.
 
@@ -222,7 +220,7 @@ def test_build_backend_resource_with_gateway(
 
 def test_create_app_with_provisioned_gateway(
     provisioned_http_client: TestClient,
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_app creates functional FastAPI app with real gateway.
 
@@ -372,7 +370,7 @@ def test_register_routes_includes_all_routers(
 
 
 def test_create_app_with_auto_pipeline_option(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     make_http_app: Callable[..., FastAPI],
 ) -> None:
     """Verify create_app accepts auto_pipeline option.

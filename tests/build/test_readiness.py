@@ -21,7 +21,7 @@ from codeintel.build.readiness import (
     TargetReadiness,
     TargetReadinessView,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -132,42 +132,41 @@ def create_test_graph() -> TargetGraph:
     graph = TargetGraph()
 
     # Root target (no dependencies)
-    ast = OutputTarget(
+    ast = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
         plugin="AstPlugin",
         tables=("ingestion.ast",),
-        dependencies=(),
     )
     graph.register(ast)
 
     # Second level
-    goids = OutputTarget(
+    goids = OutputTarget.from_tables(
         name="goids",
         module="graphs",
         plugin="GoidsPlugin",
         tables=("graphs.goids",),
-        dependencies=("ast",),
+        options=TargetOptions(dependencies=("ast",)),
     )
     graph.register(goids)
 
     # Third level
-    function_metrics = OutputTarget(
+    function_metrics = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
         plugin="FunctionMetricsPlugin",
         tables=("analytics.function_metrics",),
-        dependencies=("goids",),
+        options=TargetOptions(dependencies=("goids",)),
     )
     graph.register(function_metrics)
 
     # Fourth level
-    function_profile = OutputTarget(
+    function_profile = OutputTarget.from_tables(
         name="function_profile",
         module="analytics",
         plugin="FunctionProfilePlugin",
         tables=("analytics.function_profile",),
-        dependencies=("function_metrics",),
+        options=TargetOptions(dependencies=("function_metrics",)),
     )
     graph.register(function_profile)
 
@@ -678,12 +677,11 @@ def test_single_target_no_deps() -> None:
     """Test graph with single target and no dependencies."""
     graph = TargetGraph()
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="standalone",
             module="ingestion",
             plugin="StandalonePlugin",
             tables=("test.table",),
-            dependencies=(),
         )
     )
 
@@ -700,12 +698,11 @@ def test_target_with_default_duration() -> None:
     """Test time estimation with default computed duration."""
     graph = TargetGraph()
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="default_duration",
             module="ingestion",
             plugin="Plugin",
             tables=("test.table",),
-            dependencies=(),
         )
     )
 

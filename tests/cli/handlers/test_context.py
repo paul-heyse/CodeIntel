@@ -452,8 +452,9 @@ class TestContextManager:
             config=mock_config,
             operation_id="test",
         )
-        with ctx, pytest.raises(ValueError, match="test error"):
-            raise ValueError("test error")
+        error_message = "test error"
+        with ctx, pytest.raises(ValueError, match=error_message):
+            raise ValueError(error_message)
         expect_true(ctx.is_closed)
 
     @staticmethod
@@ -501,10 +502,10 @@ class TestHandlerContextManager:
         ValueError
             Raised intentionally to verify cleanup on error.
         """
-        with handler_context_manager(mock_config, "test.op") as ctx, pytest.raises(
-            ValueError, match="test"
-        ):
-            raise ValueError("test")
+        with handler_context_manager(mock_config, "test.op") as ctx:
+            message = "test"
+            with pytest.raises(ValueError, match=message):
+                raise ValueError(message)
         expect_true(ctx.is_closed)
 
 
@@ -530,7 +531,16 @@ class TestConvenienceProperties:
         )
         expect_true(ctx.color_enabled)
 
-        expect_false(ctx.color_enabled)
+        other_config = MagicMock(spec=CliConfig)
+        other_config.output_format = "text"
+        other_config.log_level = "WARNING"
+        other_config.color = False
+        other_config.progress = False
+        ctx_false = HandlerContext(
+            config=other_config,
+            operation_id="test",
+        )
+        expect_false(ctx_false.color_enabled)
 
     @staticmethod
     def test_db_path_returns_none_without_runtime(mock_config: CliConfig) -> None:

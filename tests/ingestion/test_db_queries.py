@@ -488,9 +488,7 @@ def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) ->
 # =============================================================================
 
 
-def test_safe_count_duplicates_with_dupes(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_duplicates should count duplicate values."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),
@@ -514,9 +512,7 @@ def test_safe_count_duplicates_with_dupes(
     expect_equal(result, EXPECTED_COUNT_2)
 
 
-def test_safe_count_duplicates_no_dupes(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_duplicates should return 0 when all values are unique."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),
@@ -549,9 +545,7 @@ def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> N
 # =============================================================================
 
 
-def test_safe_not_null_fraction_all_not_null(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_not_null_fraction should return 1.0 when all values are non-null."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),
@@ -566,9 +560,7 @@ def test_safe_not_null_fraction_all_not_null(
     expect_equal(result, EXPECTED_FRACTION_1_0)
 
 
-def test_safe_not_null_fraction_half_null(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_not_null_fraction should return correct fraction."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),
@@ -605,9 +597,7 @@ def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway, tmp_path
     expect_equal(result, 0.0)
 
 
-def test_safe_not_null_fraction_empty_table(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_not_null_fraction should return 0.0 for empty table."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),
@@ -663,9 +653,7 @@ def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway, tmp_pa
     expect_equal(result, 0)
 
 
-def test_safe_count_orphan_refs_with_orphans(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_orphan_refs should count orphaned references."""
     seed_ingestion_tables(
         _ctx_for_gateway(fresh_gateway, tmp_path),

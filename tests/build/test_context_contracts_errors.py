@@ -26,7 +26,6 @@ def _context_with_contract(contract: OutputContract, tmp_path: Path) -> TargetEx
         module="analytics",
         plugin="demo_plugin",
         contract=contract,
-        tables=contract.table_keys,
     )
     return TargetExecutionContext(
         target=target,
@@ -66,12 +65,10 @@ def test_write_table_validation_and_recording(tmp_path: Path) -> None:
 
 def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
     """Legacy tables in target.tables bypass schema lookup."""
-    contract = OutputContract()
-    target = OutputTarget(
+    target = OutputTarget.from_tables(
         name="legacy",
         module="analytics",
         plugin="legacy_plugin",
-        contract=contract,
         tables=("core.legacy",),
     )
     ctx = TargetExecutionContext(

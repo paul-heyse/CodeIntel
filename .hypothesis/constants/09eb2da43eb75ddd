@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/tools_base.py
+# hypothesis_version: 6.148.7
+
+['Any', '_ToolMethod', 'as_registrar', 'datasets', 'expose_tools', 'files', 'functions', 'graph', 'list_tools', 'profiles', 'register_all_tools', 'register_tools', 'tool']

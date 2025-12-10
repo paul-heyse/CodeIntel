@@ -12,7 +12,8 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Protocol, TextIO, runtime_checkable
+from enum import Enum
+from typing import TYPE_CHECKING, Protocol, TextIO, TypeGuard, TypeVar, runtime_checkable
 
 from codeintel.cli.core.serialization import serialize_result
 
@@ -23,6 +24,197 @@ if TYPE_CHECKING:
 
 # Text renderer protocol: callable that takes data and writer
 TextRenderer = Callable[[object, TextIO], None]
+
+
+T_co = TypeVar("T_co", covariant=True)
+
+
+class _DataclassInstance(Protocol):
+    __dataclass_fields__: dict[str, object]
+
+
+def result_type[T](cls: type[T]) -> type[T]:
+    """Add auto-generated to_dict() that omits None fields.
+
+    Apply this decorator to frozen dataclasses that serve as result types.
+    The generated `to_dict()` method serializes all fields, recursively
+    handling nested result types and omitting fields with None values.
+
+    Parameters
+    ----------
+    cls
+        The dataclass to enhance with auto-serialization.
+
+    Returns
+    -------
+    type[T]
+        The enhanced dataclass.
+
+    Raises
+    ------
+    TypeError
+        If cls is not a dataclass.
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> from codeintel.cli.core.results import result_type
+    >>> @result_type
+    ... @dataclass(frozen=True)
+    ... class MyResult:
+    ...     name: str
+    ...     count: int
+    ...     details: str | None = None
+    >>> result = MyResult(name="test", count=5)
+    >>> result.to_dict()
+    {'name': 'test', 'count': 5}
+    >>> result2 = MyResult(name="test", count=5, details="info")
+    >>> result2.to_dict()
+    {'name': 'test', 'count': 5, 'details': 'info'}
+    """
+    if not is_dataclass(cls):
+        msg = f"@result_type requires a dataclass, got {cls.__name__}"
+        raise TypeError(msg)
+
+    def to_dict(self: object) -> dict[str, object]:
+        """Auto-generated serialization that omits None fields.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary with non-None field values.
+        """
+        return _serialize_dataclass(self)
+
+    # Avoid overwriting existing to_dict implementations
+    if not hasattr(cls, "to_dict") or getattr(cls, "_result_type_generated", False):
+        setattr(cls, "to_dict", to_dict)  # noqa: B010
+        setattr(cls, "_result_type_generated", True)  # noqa: B010
+
+    return cls
+
+
+def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
+    """Return True when value is a dataclass instance (not a class)."""
+    return is_dataclass(value) and not isinstance(value, type)
+
+
+def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
+    """Serialize a dataclass instance to dictionary.
+
+    Parameters
+    ----------
+    value
+        Dataclass instance to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        Dictionary with non-None, non-private field values.
+    """
+    from dataclasses import fields as get_fields
+
+    result: dict[str, object] = {}
+    for fld in get_fields(value):
+        if fld.name.startswith("_"):
+            continue
+        field_value = getattr(value, fld.name)
+        if field_value is None:
+            continue
+        result[fld.name] = _serialize_value(field_value)
+    return result
+
+
+def _serialize_value(value: object) -> object:
+    """Recursively serialize a value for JSON output.
+
+    Handle nested dataclasses, lists, dicts, and primitives.
+
+    Parameters
+    ----------
+    value
+        Value to serialize.
+
+    Returns
+    -------
+    object
+        Serialized value suitable for JSON.
+    """
+    if value is None:
+        return None
+
+    if _is_dataclass_instance(value):
+        return _serialize_dataclass(value)
+
+    if isinstance(value, (list, tuple)):
+        return [_serialize_value(item) for item in value]
+
+    if isinstance(value, dict):
+        return {k: _serialize_value(v) for k, v in value.items() if v is not None}
+
+    if isinstance(value, SerializableResult):
+        return value.to_dict()
+
+    if isinstance(value, Enum):
+        return value.value
+
+    return _serialize_primitive(value)
+
+
+def _serialize_primitive(value: object) -> object:
+    """Serialize primitive and special types.
+
+    Parameters
+    ----------
+    value
+        Value to serialize.
+
+    Returns
+    -------
+    object
+        Serialized value.
+    """
+    from pathlib import Path
+
+    # Handle Path
+    if isinstance(value, Path):
+        return str(value)
+
+    # Primitives pass through
+    return value
+
+
+def ensure_serializable[T](cls: type[T]) -> type[T]:
+    """Ensure a result type has to_dict() - add if missing.
+
+    For gradual migration: existing types with manual to_dict() pass through,
+    new types get auto-generated to_dict() via @result_type.
+
+    Parameters
+    ----------
+    cls
+        The class to ensure has serialization.
+
+    Returns
+    -------
+    type[T]
+        The class (possibly enhanced).
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> @dataclass(frozen=True)
+    ... class ExistingResult:
+    ...     value: int
+    ...
+    ...     def to_dict(self) -> dict[str, object]:
+    ...         return {"val": self.value}  # Custom serialization
+    >>> ensure_serializable(ExistingResult)(1).to_dict()
+    {'val': 1}
+    """
+    if hasattr(cls, "to_dict"):
+        return cls  # Already has to_dict, keep it
+    return result_type(cls)  # Add auto-generated
 
 
 @runtime_checkable
@@ -39,6 +231,7 @@ class SerializableResult(Protocol):
     >>> @dataclass
     ... class MyResult:
     ...     value: int
+    ...
     ...     def to_dict(self) -> dict[str, object]:
     ...         return {"value": self.value}
     >>> isinstance(MyResult(1), SerializableResult)
@@ -101,7 +294,7 @@ def auto_serialize(data: object) -> object:
 
 
 @dataclass
-class CliResult[T]:
+class CliResult[T_co]:
     """Structured result from a CLI handler.
 
     Encapsulates success/failure status, data payload, and warnings
@@ -122,7 +315,7 @@ class CliResult[T]:
     """
 
     success: bool
-    data: T | None = None
+    data: T_co | None = None
     error: ProblemDetail | None = None
     warnings: list[str] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
@@ -248,7 +441,7 @@ class CliResult[T]:
             writer.write(f"{data}\n")
 
     @classmethod
-    def ok(cls, data: T, *, metadata: dict[str, object] | None = None) -> CliResult[T]:
+    def ok(cls, data: T_co, *, metadata: dict[str, object] | None = None) -> CliResult[T_co]:
         """Create a successful result.
 
         Parameters
@@ -275,7 +468,7 @@ class CliResult[T]:
         error: ProblemDetail,
         *,
         warnings: list[str] | None = None,
-    ) -> CliResult[T]:
+    ) -> CliResult[T_co]:
         """Create a failed result.
 
         Parameters
@@ -302,4 +495,6 @@ __all__ = [
     "SerializableResult",
     "TextRenderer",
     "auto_serialize",
+    "ensure_serializable",
+    "result_type",
 ]

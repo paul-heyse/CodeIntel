@@ -11,13 +11,14 @@ import pytest
 from codeintel.build.executor import (
     BuildExecutor,
     BuildResult,
+    ExecutorEnv,
     StageExecutionResult,
 )
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import ResolutionResult
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule, TargetOptions
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import StorageGateway
@@ -38,40 +39,36 @@ def _create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    modules_target = OutputTarget(
+    modules_target = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
         plugin="repo_scan",
         tables=("core.modules",),
-        dependencies=(),
-        description="Repository module index",
+        options=TargetOptions(description="Repository module index"),
     )
 
-    ast_target = OutputTarget(
+    ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
         plugin="ast_extract",
         tables=("core.ast_nodes",),
-        dependencies=("modules",),
-        description="AST extraction",
+        options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
 
-    goids_target = OutputTarget(
+    goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
         plugin="goid_builder",
         tables=("core.goids",),
-        dependencies=("ast",),
-        description="GOID construction",
+        options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
 
-    metrics_target = OutputTarget(
+    metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
         plugin="function_metrics",
         tables=("analytics.function_metrics",),
-        dependencies=("goids",),
-        description="Function metrics",
+        options=TargetOptions(dependencies=("goids",), description="Function metrics"),
     )
 
     graph.register(modules_target)
@@ -106,6 +103,43 @@ def _make_paths() -> BuildPaths:
         Test paths for testing.
     """
     return BuildPaths.from_repo_root(Path.cwd())
+
+
+def _make_env(
+    gateway: FakeStorageGateway,
+    snapshot: SnapshotRef,
+    paths: BuildPaths,
+    tools: ToolsConfig,
+) -> ExecutorEnv:
+    """Construct executor env from test fixtures.
+
+    Returns
+    -------
+    ExecutorEnv
+        Bundled execution environment for BuildExecutor.
+    """
+    return ExecutorEnv(
+        gateway=cast("StorageGateway", gateway),
+        snapshot=snapshot,
+        paths=paths,
+        tools=tools,
+    )
+
+
+def _make_executor(
+    graph: TargetGraph,
+    env: ExecutorEnv,
+    *,
+    fail_fast: bool = False,
+) -> BuildExecutor:
+    """Build executor with bundled env for tests.
+
+    Returns
+    -------
+    BuildExecutor
+        Executor configured for the provided graph and environment.
+    """
+    return BuildExecutor(graph=graph, env=env, fail_fast=fail_fast)
 
 
 @dataclass
@@ -482,14 +516,8 @@ class TestBuildExecutorInit:
         test_tools: ToolsConfig,
     ) -> None:
         """Create a build executor."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
         # Verify executor was created (access public behavior)
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan, dry_run=True)
@@ -508,14 +536,8 @@ class TestBuildExecutorRunId:
         test_tools: ToolsConfig,
     ) -> None:
         """Run ID has expected format."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan, dry_run=True)
 
@@ -536,14 +558,8 @@ class TestBuildExecutorRunId:
         test_tools: ToolsConfig,
     ) -> None:
         """Run IDs are unique across executions."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
         plan = _make_plan(requested=(), stages=())
 
         run_ids = [executor.execute(plan, dry_run=True).run_id for _ in range(10)]
@@ -562,14 +578,8 @@ class TestBuildExecutorEmptyPlan:
         test_tools: ToolsConfig,
     ) -> None:
         """Empty plan returns immediately with success."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
 
         plan = _make_plan(
             requested=("function_metrics",),
@@ -597,14 +607,8 @@ class TestBuildExecutorDryRun:
         test_tools: ToolsConfig,
     ) -> None:
         """Dry run returns plan info without executing."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
 
         step = _make_step("modules", "ingestion", "repo_scan")
         stage = _make_stage("ingestion", (step,))
@@ -628,14 +632,8 @@ class TestBuildExecutorDryRun:
         test_tools: ToolsConfig,
     ) -> None:
         """Dry run still records run tracking."""
-        gateway = cast("StorageGateway", fake_gateway)
-        executor = BuildExecutor(
-            graph=executor_graph,
-            gateway=gateway,
-            snapshot=test_snapshot,
-            paths=test_paths,
-            tools=test_tools,
-        )
+        env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
+        executor = _make_executor(graph=executor_graph, env=env)
 
         plan = _make_plan(requested=(), stages=())
         executor.execute(plan, dry_run=True)
@@ -657,18 +655,12 @@ class TestBuildExecutorIntegration:
         """BuildExecutor works with real target registry."""
         graph = get_target_graph()
         fake_gw = FakeStorageGateway()
-        gateway = cast("StorageGateway", fake_gw)
         snapshot = _make_snapshot()
         paths = _make_paths()
         tools = ToolsConfig.default()
 
-        executor = BuildExecutor(
-            graph=graph,
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=tools,
-        )
+        env = _make_env(fake_gw, snapshot, paths, tools)
+        executor = _make_executor(graph=graph, env=env)
 
         # Empty plan should work
         plan = _make_plan(requested=(), stages=())
@@ -681,7 +673,6 @@ class TestBuildExecutorIntegration:
         """Plan from PlanGenerator works with executor."""
         graph = _create_test_graph()
         fake_gw = FakeStorageGateway()
-        gateway = cast("StorageGateway", fake_gw)
         snapshot = _make_snapshot()
         paths = _make_paths()
         tools = ToolsConfig.default()
@@ -700,13 +691,8 @@ class TestBuildExecutorIntegration:
         plan = generator.generate(resolution)
 
         # Execute
-        executor = BuildExecutor(
-            graph=graph,
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=tools,
-        )
+        env = _make_env(fake_gw, snapshot, paths, tools)
+        executor = _make_executor(graph=graph, env=env)
         result = executor.execute(plan)
 
         expect_true(result.success is True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -87,7 +87,7 @@ def _backend_resource_from_service_app(service_app: ServiceApp) -> BackendResour
 
 def service_app_factory_with_routes(
     *,
-    route_builders: Iterable[Callable[[RouterOptions | None], APIRouter]],
+    route_builders: Iterable[Callable[..., APIRouter]],
     backend_source: McpBackendComponents | tuple[StorageGateway, tuple[str, str]],
     options: RouteAppOptions | None = None,
 ) -> RouteApp:
@@ -160,7 +160,7 @@ def service_app_factory_with_routes(
         app.include_router(router)
 
     @contextmanager
-    def _client() -> AbstractContextManager[TestClient]:
+    def _client() -> Iterator[TestClient]:
         with TestClient(app) as client:
             yield client
 

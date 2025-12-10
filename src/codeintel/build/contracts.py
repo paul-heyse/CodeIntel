@@ -95,7 +95,8 @@ class OutputContract:
     ----------
     tables
         Tuple of TableSchema definitions for tables this target writes.
-        These schemas are authoritative - TABLE_SCHEMAS is derived from them.
+        These schemas (and the derived ``table_keys``) are authoritative;
+        TABLE_SCHEMAS is derived from contracts, not the other way around.
     artifacts
         Tuple of ArtifactSpec definitions for files this target produces.
         Empty for targets that only write to tables.

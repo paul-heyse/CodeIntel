@@ -1,13 +1,161 @@
 """Result type definitions for CLI handlers.
 
 Each handler that returns structured data should have a corresponding
-result type defined here.
+result type defined here. Generic result types (ListResult, ActionResult, etc.)
+are provided for common patterns.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+from codeintel.cli.core.results import result_type
+
+# =============================================================================
+# Generic Result Types
+# =============================================================================
+
+
+@result_type
+@dataclass(frozen=True)
+class ListResult[T]:
+    """Generic result type for list operations.
+
+    Use this for any command that returns a list of items with a count.
+    The @result_type decorator auto-generates to_dict() that handles
+    nested serialization.
+
+    Parameters
+    ----------
+    items
+        List of result items.
+    count
+        Total number of items.
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> @result_type
+    ... @dataclass(frozen=True)
+    ... class UserInfo:
+    ...     name: str
+    ...     active: bool
+    >>> result = ListResult(items=[UserInfo("alice", True)], count=1)
+    >>> result.to_dict()
+    {'items': [{'name': 'alice', 'active': True}], 'count': 1}
+    """
+
+    items: list[T]
+    count: int
+
+    @classmethod
+    def from_items(cls, items: list[T]) -> ListResult[T]:
+        """Create ListResult from items, auto-computing count.
+
+        Parameters
+        ----------
+        items
+            List of items.
+
+        Returns
+        -------
+        ListResult[T]
+            Result with items and count.
+        """
+        return cls(items=items, count=len(items))
+
+
+@result_type
+@dataclass(frozen=True)
+class ActionResult:
+    """Result type for action commands (create, delete, update).
+
+    Use this for commands that perform an action and report success.
+
+    Parameters
+    ----------
+    action
+        The action performed (e.g., "created", "deleted", "updated").
+    success
+        Whether the action succeeded.
+    affected_count
+        Number of items affected.
+    message
+        Optional success/failure message.
+
+    Examples
+    --------
+    >>> result = ActionResult(action="created", success=True, affected_count=1)
+    >>> result.to_dict()
+    {'action': 'created', 'success': True, 'affected_count': 1}
+    """
+
+    action: str
+    success: bool
+    affected_count: int = 0
+    message: str | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class StatusResult:
+    """Result type for status check commands.
+
+    Use this for commands that report system or component status.
+
+    Parameters
+    ----------
+    status
+        Status value (e.g., "ok", "warning", "error").
+    message
+        Human-readable status message.
+    details
+        Optional additional details.
+
+    Examples
+    --------
+    >>> result = StatusResult(status="ok", message="All systems operational")
+    >>> result.to_dict()
+    {'status': 'ok', 'message': 'All systems operational'}
+    """
+
+    status: str
+    message: str
+    details: dict[str, object] | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class ExportResult:
+    """Result type for export/generate commands.
+
+    Use this for commands that write output to files.
+
+    Parameters
+    ----------
+    output_path
+        Path where output was written.
+    item_count
+        Number of items exported.
+    duration_seconds
+        Optional export duration.
+
+    Examples
+    --------
+    >>> result = ExportResult(output_path="/tmp/export.json", item_count=100)
+    >>> result.to_dict()
+    {'output_path': '/tmp/export.json', 'item_count': 100}
+    """
+
+    output_path: str
+    item_count: int
+    duration_seconds: float | None = None
+
+
+# =============================================================================
+# Domain-Specific Result Types
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -1290,6 +1438,7 @@ class HealthCheckResult:
 
 
 __all__ = [
+    "ActionResult",
     "BuildExecutionResult",
     "BuildHistoryResult",
     "BuildRunResult",
@@ -1306,6 +1455,7 @@ __all__ = [
     "DocsStatusResult",
     "DryRunResult",
     "DryRunStep",
+    "ExportResult",
     "GenerateMacrosResult",
     "GraphPlanResult",
     "GraphPluginInfo",
@@ -1318,10 +1468,12 @@ __all__ = [
     "HistoryTimeseriesResult",
     "IdeConfigResult",
     "IdeStatusResult",
+    "ListResult",
     "OperationCallResult",
     "OperationListResult",
     "ProfileStorageResult",
     "ServeStartResult",
+    "StatusResult",
     "StorageQueryResult",
     "StorageStatusResult",
     "SubsystemDetailResult",

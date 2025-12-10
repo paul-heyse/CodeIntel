@@ -83,7 +83,11 @@ from tests._helpers.context import (
     graph_ready_context,
 )
 from tests._helpers.coverage import build_fake_coverage, seed_coverage_pack
-from tests._helpers.env import build_test_gateway, create_test_env
+from tests._helpers.env import (
+    build_test_gateway,
+    create_provisioned_test_env,
+    create_test_env,
+)
 from tests._helpers.evidence import build_entrypoint_evidence
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
@@ -199,6 +203,7 @@ __all__ = [
     "coverage_and_graph_context",
     "coverage_context",
     "coverage_ready_context",
+    "create_provisioned_test_env",
     "create_test_context",
     "create_test_env",
     "cyclic_graph",

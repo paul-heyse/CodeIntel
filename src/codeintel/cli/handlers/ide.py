@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import fail_ide_hints_not_found
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 
@@ -124,15 +124,7 @@ def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
 
     if not response.found or not response.hints:
         LOG.debug("No IDE hints found for %s", rel_path)
-        return CliResult.fail(
-            ProblemDetail(
-                type="codeintel:ide/hints-not-found",
-                title="No hints found",
-                status=404,
-                detail=f"No IDE hints found for: {rel_path}",
-                instance=f"file://{rel_path}",
-            )
-        )
+        return fail_ide_hints_not_found(rel_path)
 
     ctx.logger.debug("Found %d hints for %s", len(response.hints), rel_path)
 

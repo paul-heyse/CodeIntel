@@ -15,6 +15,7 @@ from tests._helpers.builders import GoidRow, insert_rows
 from tests._helpers.config_factory import function_analytics_cfg
 from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions
+from tests._helpers.sql import run_query
 
 
 def _insert_goid(
@@ -83,15 +84,16 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(ctx.gateway, cfg)
 
-    metrics_rows = ctx.gateway.con.execute("SELECT * FROM analytics.function_metrics").fetchall()
-    validation_rows = ctx.gateway.con.execute(
+    metrics_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_metrics")
+    validation_rows = run_query(
+        ctx.gateway,
         """
         SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,
         [ctx.repo, ctx.commit],
-    ).fetchall()
+    )
 
     if metrics_rows:
         pytest.fail(f"Expected no metrics rows, found {metrics_rows}")
@@ -112,14 +114,15 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(ctx.gateway, cfg)
 
-    validation_rows = ctx.gateway.con.execute(
+    validation_rows = run_query(
+        ctx.gateway,
         """
         SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,
         [ctx.repo, ctx.commit],
-    ).fetchall()
+    )
 
     if validation_rows != [(1, "span_not_found")]:
         pytest.fail(f"Unexpected validation rows: {validation_rows}")

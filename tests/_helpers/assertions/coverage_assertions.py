@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
@@ -9,6 +10,19 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
+
+
+@dataclass(frozen=True)
+class CoverageFunctionExpectation:
+    """Expected values for a coverage_functions row."""
+
+    snapshot: SnapshotRef
+    goid: int
+    executable: int | None = None
+    covered: int | None = None
+    ratio: float | None = None
+    tested: bool | None = None
+    untested_reason: str | None = None
 
 
 def assert_single_edge(con: DuckDBPyConnection) -> None:
@@ -131,14 +145,7 @@ def assert_typedness_bucket(
 
 def assert_coverage_function_row(
     con: DuckDBPyConnection,
-    *,
-    snapshot: SnapshotRef,
-    goid: int,
-    executable: int | None = None,
-    covered: int | None = None,
-    ratio: float | None = None,
-    tested: bool | None = None,
-    untested_reason: str | None = None,
+    expectation: CoverageFunctionExpectation,
 ) -> None:
     """Assert a coverage_functions row matches expected values for a snapshot/GOID."""
     row = con.execute(
@@ -147,22 +154,24 @@ def assert_coverage_function_row(
         FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [snapshot.repo, snapshot.commit, goid],
+        [expectation.snapshot.repo, expectation.snapshot.commit, expectation.goid],
     ).fetchone()
-    row = expect_is_not_none(row, message=f"coverage_functions row missing for GOID {goid}")
+    row = expect_is_not_none(
+        row, message=f"coverage_functions row missing for GOID {expectation.goid}"
+    )
     if row is None:
         return
     executable_lines, covered_lines, coverage_ratio, covered_flag, reason = row
-    if executable is not None:
-        expect_equal(executable_lines, executable)
-    if covered is not None:
-        expect_equal(covered_lines, covered)
-    if ratio is not None:
-        expect_equal(float(coverage_ratio), ratio)
-    if tested is not None:
-        expect_equal(bool(covered_flag), tested)
-    if untested_reason is not None:
-        expect_equal(reason, untested_reason)
+    if expectation.executable is not None:
+        expect_equal(executable_lines, expectation.executable)
+    if expectation.covered is not None:
+        expect_equal(covered_lines, expectation.covered)
+    if expectation.ratio is not None:
+        expect_equal(float(coverage_ratio), expectation.ratio)
+    if expectation.tested is not None:
+        expect_equal(bool(covered_flag), expectation.tested)
+    if expectation.untested_reason is not None:
+        expect_equal(reason, expectation.untested_reason)
 
 
 __all__ = [

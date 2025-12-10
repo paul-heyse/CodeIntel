@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import cast
 
 import pytest
 
@@ -51,8 +52,9 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
 
 
 def _as_mapping(row: tuple[object, ...], table_key: str) -> dict[str, object]:
-    columns = TABLE_REGISTRY[table_key]["columns"]
-    return {column: value for column, value in zip(columns, row, strict=False)}
+    columns_raw = TABLE_REGISTRY[table_key]["columns"]
+    columns = cast("Sequence[str]", columns_raw)
+    return dict(zip(columns, row, strict=True))
 
 
 def _repos_for_gateway(

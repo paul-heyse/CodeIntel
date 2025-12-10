@@ -75,8 +75,6 @@ from tests._helpers.orchestration.tooling import (
     build_tooling_artifacts,
 )
 
-pytest_plugins = ["tests._helpers.orchestration.tooling"]
-
 
 @pytest.fixture
 def tooling_artifacts(tmp_path: Path) -> ToolingArtifacts:

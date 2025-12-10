@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/project/_project.py
+# hypothesis_version: 6.148.7
+
+['#', '.codeintel/duckdb.db', '.git', 'CODEINTEL_COMMIT', 'GraphsProjectConfig', 'HEAD', 'IngestProjectConfig', 'PROJECT_FILE', 'ProjectConfig', 'ProjectConfigError', 'ProjectNotFoundError', 'StorageProjectConfig', 'builtin.default', 'builtin.full', 'codeintel.yaml', 'default', 'detect_commit', 'find_project_root', 'full', 'load_project_config', 'packed-refs', 'ref:', 'utf-8']

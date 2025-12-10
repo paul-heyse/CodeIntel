@@ -744,8 +744,9 @@ class BuildResolver:
         ResolutionResult
             Final structured result.
         """
-        # Order to_compute in topological order
-        ordered_compute = self._graph.topological_order(must_compute) if must_compute else ()
+        # Order to_compute in topological order (excluding non-work deps)
+        topo = self._graph.topological_order(must_compute) if must_compute else ()
+        ordered_compute = tuple(name for name in topo if name in must_compute)
 
         return ResolutionResult(
             requested=goals,

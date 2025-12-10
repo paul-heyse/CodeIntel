@@ -22,6 +22,7 @@ from tests._helpers.assertions.common import (
     format_assertion_message,
 )
 from tests._helpers.assertions.coverage_assertions import (
+    CoverageFunctionExpectation,
     assert_coverage_function_row,
     assert_coverage_lines,
     assert_function_loc,
@@ -63,6 +64,9 @@ from tests._helpers.assertions.expectation_assertions import (
     unwrap_optional,
 )
 from tests._helpers.assertions.graphs import (
+    FunctionMetricsExpectation,
+    GraphMetricsTableExpectations,
+    ModuleMetricsExpectation,
     assert_component_counts,
     assert_coverage_ratio_between,
     assert_cycle_counts,
@@ -96,8 +100,12 @@ from tests._helpers.assertions.table_assertions import (
 
 __all__ = [
     "SUBPROCESS_ALLOWLIST",
+    "CoverageFunctionExpectation",
+    "FunctionMetricsExpectation",
+    "GraphMetricsTableExpectations",
     "HasRowCounts",
     "HasSuccessAndError",
+    "ModuleMetricsExpectation",
     "assert_cannot_setattr",
     "assert_columns_not_null",
     "assert_component_counts",

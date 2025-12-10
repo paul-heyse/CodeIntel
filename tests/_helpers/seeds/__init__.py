@@ -36,10 +36,6 @@ FUNCTION_TYPES_PACK
 
 from __future__ import annotations
 
-from tests._helpers.seeds.architecture import (
-    open_seeded_architecture_gateway,
-    seed_architecture,
-)
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK, AstMetricsPack
 from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
 from tests._helpers.seeds.core import CORE_PACK, CorePack
@@ -101,6 +97,4 @@ __all__ = [
     "SubsystemAnalyticsPack",
     "SubsystemPack",
     "SymbolPack",
-    "open_seeded_architecture_gateway",
-    "seed_architecture",
 ]

@@ -209,7 +209,7 @@ def test_target_table_keys_and_execution_duration() -> None:
         name="legacy",
         module="graphs",
         plugin="p",
-        tables=("core.legacy",),
+        contract=OutputContract.simple(table_keys=("core.legacy",)),
     )
     expect_equal(contract_target.table_keys, ("core.t",))
     expect_equal(legacy_target.table_keys, ("core.legacy",))

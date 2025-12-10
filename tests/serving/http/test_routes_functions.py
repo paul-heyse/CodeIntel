@@ -19,8 +19,7 @@ from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_w
 from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # High Risk Functions Tests
@@ -85,7 +84,7 @@ def test_router_options_with_auto_pipeline() -> None:
 
 
 def test_app_with_auto_pipeline_options(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify create_app works with auto_pipeline option."""
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)

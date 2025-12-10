@@ -161,7 +161,7 @@ class OperationSpec:
         ...     group="test",
         ... )
         >>> d = spec.to_dict()  # doctest: +SKIP
-        >>> 'handler' in d  # doctest: +SKIP
+        >>> "handler" in d  # doctest: +SKIP
         False
         """
         result: dict[str, object] = {
@@ -503,7 +503,7 @@ def create_spec_from_serving_operation(
     'function.summary'
     """
     # Import here to avoid circular imports
-    from codeintel.serving.operations.catalog import get_operation  # noqa: PLC0415
+    from codeintel.serving.operations.catalog import get_operation
 
     serving_op = get_operation(serving_op_id)
     if serving_op is None:
@@ -557,9 +557,9 @@ def execute_operation(
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
     # Import here to avoid circular imports
-    from codeintel.cli.config import load_config  # noqa: PLC0415
-    from codeintel.cli.handlers.context import HandlerContext  # noqa: PLC0415
-    from codeintel.cli.rendering.types import OutputFormat  # noqa: PLC0415
+    from codeintel.cli.config import load_config
+    from codeintel.cli.handlers.context import HandlerContext
+    from codeintel.cli.rendering.types import OutputFormat
 
     # Load config for context creation
     config = load_config(validate=False)

@@ -18,8 +18,7 @@ from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_w
 from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # build_meta_router Tests
@@ -65,7 +64,7 @@ def test_meta_datasets_returns_list(
 
 
 def test_meta_datasets_includes_limit_info(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /meta/datasets includes limit configuration.
 
@@ -158,7 +157,7 @@ def test_meta_dataflow_returns_graph(
 
 
 def test_meta_dataflow_nodes_have_expected_fields(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /meta/dataflow nodes have required fields.
 
@@ -192,7 +191,7 @@ def test_meta_dataflow_nodes_have_expected_fields(
 
 
 def test_meta_debug_prereqs_unknown_operation(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns 404 for unknown operation.
 
@@ -221,7 +220,7 @@ def test_meta_debug_prereqs_unknown_operation(
 
 
 def test_meta_debug_prereqs_valid_operation(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns debug info for valid operation.
 

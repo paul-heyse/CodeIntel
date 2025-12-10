@@ -22,7 +22,7 @@ from codeintel.build.registry import (
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.resources import TargetExecution, TargetResources
 from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
@@ -166,15 +166,17 @@ def _target(name: str, dependencies: tuple[str, ...] = (), duration: int = 1000)
     OutputTarget
         Target configured for tests.
     """
-    return OutputTarget(
+    return OutputTarget.from_tables(
         name=name,
         module="analytics",
         plugin=f"{name}_plugin",
         tables=(f"core.{name}",),
-        dependencies=dependencies,
-        execution=TargetExecution(cpu_intensive=False, max_runtime_ms=duration),
-        resources=TargetResources(),
-        description=name,
+        options=TargetOptions(
+            dependencies=dependencies,
+            execution=TargetExecution(cpu_intensive=False, max_runtime_ms=duration),
+            resources=TargetResources(),
+            description=name,
+        ),
     )
 
 
@@ -290,12 +292,12 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
 
 def test_registry_build_target_graph_validation_error() -> None:
     """build_target_graph raises when targets have missing deps."""
-    bad_target = OutputTarget(
+    bad_target = OutputTarget.from_tables(
         name="bad",
         module="analytics",
         plugin="p",
         tables=("core.bad",),
-        dependencies=("missing_dep",),
+        options=TargetOptions(dependencies=("missing_dep",)),
     )
 
     with pytest.raises(ValueError, match="missing_dep") as excinfo:
@@ -306,7 +308,7 @@ def test_registry_build_target_graph_validation_error() -> None:
 
 def test_registry_get_target_by_table() -> None:
     """get_target_by_table returns producer target for table."""
-    target = OutputTarget(
+    target = OutputTarget.from_tables(
         name="producer",
         module="analytics",
         plugin="p",

@@ -1,7 +1,8 @@
 """Unified execution pipeline for CLI operations.
 
 This package provides a single execution infrastructure that supports
-handler-based operations with consistent progress tracking.
+both legacy handler-based operations and the new Command[T] pattern
+with middleware.
 
 The canonical `OperationSpec` is defined in `execution/registry.py` and
 is used by `@cli_command` decorator and the introspection system.
@@ -9,9 +10,17 @@ is used by `@cli_command` decorator and the introspection system.
 Public surface
 --------------
 Use the registry-based APIs (`OperationSpec`, `register_operation`, `execute_operation`) as
-the supported entry points for defining and running operations. Legacy executor-style types
-such as OperationExecutor/OperationCategory are intentionally not re-exported here; build
-on the handler/registry flow instead.
+the supported entry points for defining and running operations. All operations should:
+
+1. Define handlers that accept `HandlerContext` and return `CliResult`
+2. Register via `OperationSpec` with required fields (operation_id, name, description, handler, group)
+3. Use `@cli_command` decorator for command-line integration
+
+For new code, prefer the Command[T] pattern with middleware:
+
+1. Define command as a frozen dataclass extending `Command[T]`
+2. Implement `execute(self, deps: Deps) -> CliResult[T]`
+3. Use `ExecutionPipeline` for cross-cutting concerns
 
 Examples
 --------
@@ -34,6 +43,11 @@ Register an operation:
 >>> register_operation(spec)  # doctest: +SKIP
 """
 
+from codeintel.cli.execution.middleware import (
+    ExecutionMiddleware,
+    ExecutionPipeline,
+    LoggingMiddleware,
+)
 from codeintel.cli.execution.progress import (
     ProgressRenderer,
     ProgressStreamConfig,
@@ -70,6 +84,9 @@ from codeintel.cli.execution.types import (
 __all__ = [
     "AnyHandler",
     "AsyncHandler",
+    "ExecutionMiddleware",
+    "ExecutionPipeline",
+    "LoggingMiddleware",
     "OperationRegistry",
     "OperationSpec",
     "ProgressConfig",

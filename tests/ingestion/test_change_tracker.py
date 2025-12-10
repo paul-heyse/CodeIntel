@@ -136,6 +136,21 @@ def _compute_changes(gateway: StorageGateway, request: ChangeRequest) -> ChangeS
     return adapter.compute_changes(request, modules)
 
 
+def _src_python_filter(_modules: list[ModuleRecord]) -> ModuleFilter:
+    """Return a predicate that keeps only src/ Python modules.
+
+    Returns
+    -------
+    ModuleFilter
+        Predicate that accepts only Python files under src/.
+    """
+
+    def _predicate(module: ModuleRecord) -> bool:
+        return module.rel_path.endswith(".py") and module.rel_path.startswith("src/")
+
+    return _predicate
+
+
 VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
     {
         "id": "incremental",
@@ -175,9 +190,7 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
             added=[modules[0]], modified=[], deleted=[modules[2]]
         ),
         "policy": lambda: IncrementalIngestPolicy(min_total_modules_for_ratio=10),
-        "module_filter": lambda _modules: (
-            lambda module: module.rel_path.endswith(".py") and module.rel_path.startswith("src/")
-        ),
+        "module_filter": _src_python_filter,
         "expected_use_full": False,
         "expected_reparse": lambda modules: [modules[0]],
         "expected_deleted": lambda _modules: [],
@@ -187,7 +200,7 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
         "structure": {"a.py": "print('ok')\n", "b.py": "print('ok')\n"},
         "full_rebuild": True,
         "change_set": lambda modules: ChangeSet(added=[], modified=[modules[0]], deleted=[]),
-        "policy": lambda: IncrementalIngestPolicy(),
+        "policy": IncrementalIngestPolicy,
         "module_filter": lambda _modules: None,
         "expected_use_full": True,
         "expected_reparse": lambda modules: modules,

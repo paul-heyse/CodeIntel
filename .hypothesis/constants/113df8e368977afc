@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/completions/escaping.py
+# hypothesis_version: 6.148.7
+
+['"', '$', "'", "''", "'\\''", 'IndentManager', 'ShellType', '\\', '\\"', '\\$', "\\'", '\\\\', '\\`', '`', 'bash', 'escape_bash', 'escape_fish', 'escape_for_shell', 'escape_powershell', 'escape_zsh', 'fish', 'powershell', 'zsh']

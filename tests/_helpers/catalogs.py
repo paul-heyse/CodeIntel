@@ -2,29 +2,66 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Protocol
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, FunctionMeta
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.context import TestContext
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
+
+
+class CatalogCtx(Protocol):
+    """Minimal context required to seed GOIDs."""
+
+    gateway: StorageGateway
+    repo: str
+    commit: str
+
+
 CatalogLike = FunctionCatalog | FunctionCatalogService | MockFunctionCatalog
+CatalogInput = CatalogLike | object
+type CatalogCtxLike = CatalogCtx | "TestContext"
 
 
-def _normalize_catalog(catalog: CatalogLike) -> FunctionCatalog | MockFunctionCatalog:
+def _normalize_catalog(catalog: CatalogInput) -> FunctionCatalog | MockFunctionCatalog:
+    """Return a concrete FunctionCatalog from supported providers.
+
+    Parameters
+    ----------
+    catalog
+        Catalog instance or provider wrapper.
+
+    Returns
+    -------
+    FunctionCatalog | MockFunctionCatalog
+        Underlying catalog object for iteration.
+
+    Raises
+    ------
+    TypeError
+        If the catalog type is not supported.
+    """
     if isinstance(catalog, (FunctionCatalog, MockFunctionCatalog)):
         return catalog
-    if hasattr(catalog, "catalog"):
-        maybe = catalog.catalog
-        if callable(maybe):
-            return maybe()  # type: ignore[no-any-return]
-        return maybe  # type: ignore[return-value]
-    if hasattr(catalog, "get"):
-        return catalog.get()  # type: ignore[no-any-return]
-    raise TypeError(f"Unsupported catalog type: {type(catalog)}")
+    if isinstance(catalog, FunctionCatalogService):
+        return catalog.catalog()
+    maybe = getattr(catalog, "catalog", None)
+    if maybe is not None:
+        candidate = maybe() if callable(maybe) else maybe
+        if isinstance(candidate, (FunctionCatalog, MockFunctionCatalog)):
+            return candidate
+    getter: Callable[[], Any] | None = getattr(catalog, "get", None)
+    if getter is not None:
+        candidate = getter()
+        if isinstance(candidate, (FunctionCatalog, MockFunctionCatalog)):
+            return candidate
+    message = f"Unsupported catalog type: {type(catalog)}"
+    raise TypeError(message)
 
 
 def _iter_functions(catalog: FunctionCatalog | MockFunctionCatalog) -> Iterable[FunctionMeta]:
@@ -67,27 +104,25 @@ def _build_goid_rows(
     """
     kind_map = kinds or {}
     now = datetime.now(tz=UTC)
-    rows: list[tuple[object, ...]] = []
-    for func in _iter_functions(catalog):
-        rows.append(
-            (
-                func.urn,
-                repo,
-                commit,
-                func.rel_path or "",
-                "python",
-                kind_map.get(func.goid) or getattr(func, "kind", None) or "function",
-                func.qualname,
-                func.goid,
-                func.start_line or 1,
-                func.end_line or func.start_line or 1,
-                now,
-            )
+    return [
+        (
+            func.urn,
+            repo,
+            commit,
+            func.rel_path or "",
+            "python",
+            kind_map.get(func.goid) or getattr(func, "kind", None) or "function",
+            func.qualname,
+            func.goid,
+            func.start_line or 1,
+            func.end_line or func.start_line or 1,
+            now,
         )
-    return rows
+        for func in _iter_functions(catalog)
+    ]
 
 
-def seed_goids_from_catalog(ctx: TestContext, catalog: CatalogLike) -> None:
+def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogInput) -> None:
     """Insert core.goids rows for every function in a FunctionCatalog."""
     catalog_obj = _normalize_catalog(catalog)
     rows = _build_goid_rows(
@@ -117,7 +152,7 @@ def seed_goids_from_catalog(ctx: TestContext, catalog: CatalogLike) -> None:
     )
 
 
-def ensure_catalog_with_goids(ctx: TestContext, catalog: CatalogLike) -> CatalogLike:
+def ensure_catalog_with_goids(ctx: CatalogCtxLike, catalog: CatalogInput) -> CatalogLike:
     """Normalize a catalog/provider and ensure GOIDs are seeded for its functions.
 
     Returns

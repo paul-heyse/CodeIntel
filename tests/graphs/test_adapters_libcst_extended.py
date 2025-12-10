@@ -52,7 +52,8 @@ def _require_module(result: ParseResult) -> ParsedModule:
     """
     module = result.module
     if module is None:
-        raise AssertionError("Expected parsed module")
+        message = "Expected parsed module"
+        raise AssertionError(message)
     expect_is_not_none(module)
     return module
 
