@@ -11,6 +11,7 @@ from codeintel.ingestion.plugins.tests_plugin import (
     get_module_paths,
     resolve_report_file,
 )
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.factories.row_factories import sample_pytest_summary, sample_pytest_tests
@@ -21,7 +22,7 @@ from tests._helpers.ingestion import (
     make_resource_case_params,
     write_pytest_report,
 )
-from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
+from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
 
 EXPECTED_TEST_ROWS = 4
 TRUNCATED_LONGREPR_LENGTH = 1000
@@ -39,15 +40,20 @@ RESOURCE_CASES = make_resource_case_params()
     ids=[name for name, _ in RESOURCE_CASES],
 )
 def test_module_path_resolution_scenarios(
-    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway: StorageGateway
 ) -> None:
     """Shared module path resolution coverage for TestsIngestPlugin."""
+    case = ModulePathCase(
+        resources_path="pkg/mod.py",
+        simulate_resources=options["simulate_resources"],
+        simulate_db_fallback=options["simulate_db_fallback"],
+        simulate_gateway_failure=options["simulate_gateway_failure"],
+    )
     run_module_path_resolution_scenarios(
         lambda _capture: TestsIngestPlugin(),
         get_module_paths,
         tmp_path,
-        resources_path="pkg/mod.py",
-        options=options,
+        case=case,
         gateway=ingestion_gateway,
     )
 

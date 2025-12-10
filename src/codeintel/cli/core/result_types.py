@@ -970,6 +970,325 @@ class StorageQueryResult:
         }
 
 
+@dataclass(frozen=True)
+class DatasetLintResult:
+    """Result from dataset lint command.
+
+    Parameters
+    ----------
+    passed
+        Whether validation passed.
+    issue_count
+        Number of issues found.
+    issues
+        List of issue descriptions.
+    """
+
+    passed: bool
+    issue_count: int
+    issues: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "passed": self.passed,
+            "issue_count": self.issue_count,
+            "issues": self.issues,
+        }
+
+
+@dataclass(frozen=True)
+class DatasetSnapshotResult:
+    """Result from dataset snapshot command.
+
+    Parameters
+    ----------
+    output_path
+        Path where snapshot was written.
+    datasets_count
+        Number of datasets in snapshot.
+    """
+
+    output_path: str
+    datasets_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "output_path": self.output_path,
+            "datasets_count": self.datasets_count,
+        }
+
+
+@dataclass(frozen=True)
+class DatasetDiffResult:
+    """Result from dataset diff command.
+
+    Parameters
+    ----------
+    added
+        List of added dataset names.
+    removed
+        List of removed dataset names.
+    changed
+        List of changed dataset names.
+    has_differences
+        Whether any differences were found.
+    """
+
+    added: list[str]
+    removed: list[str]
+    changed: list[str]
+    has_differences: bool
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "added": self.added,
+            "removed": self.removed,
+            "changed": self.changed,
+            "has_differences": self.has_differences,
+        }
+
+
+@dataclass(frozen=True)
+class ValidateMacrosResult:
+    """Result from macro validation command.
+
+    Parameters
+    ----------
+    status
+        Validation status (valid, skipped, invalid).
+    missing_ingest
+        List of missing ingest macro names.
+    present_ingest
+        List of present ingest macro names.
+    dataset_rows_only
+        List of datasets with rows only (no normalized macro).
+    reason
+        Optional reason for status (e.g., skip reason).
+    """
+
+    status: str
+    missing_ingest: list[str]
+    present_ingest: list[str]
+    dataset_rows_only: list[str]
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        result: dict[str, object] = {
+            "status": self.status,
+            "missing_ingest": self.missing_ingest,
+            "present_ingest": self.present_ingest,
+            "dataset_rows_only": self.dataset_rows_only,
+        }
+        if self.reason:
+            result["reason"] = self.reason
+        return result
+
+
+@dataclass(frozen=True)
+class GenerateMacrosResult:
+    """Result from macro generation command.
+
+    Parameters
+    ----------
+    macros
+        List of rendered macro definitions with macro_name and ddl.
+    count
+        Number of macros generated.
+    """
+
+    macros: list[dict[str, str]]
+    count: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "macros": self.macros,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True)
+class ProfileStorageResult:
+    """Result from storage profiling command.
+
+    Parameters
+    ----------
+    db_path
+        Path to the profiled database.
+    output_dir
+        Directory where profile output was written.
+    include_views
+        Whether views were included in profiling.
+    """
+
+    db_path: str
+    output_dir: str
+    include_views: bool
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "db_path": self.db_path,
+            "output_dir": self.output_dir,
+            "include_views": self.include_views,
+        }
+
+
+@dataclass(frozen=True)
+class HistoryTimeseriesResult:
+    """Result from history timeseries aggregation command.
+
+    Parameters
+    ----------
+    output_db
+        Path to the output database.
+    commits_processed
+        Number of commits processed.
+    entity_kind
+        Entity kind used for aggregation.
+    """
+
+    output_db: str
+    commits_processed: int
+    entity_kind: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "output_db": self.output_db,
+            "commits_processed": self.commits_processed,
+            "entity_kind": self.entity_kind,
+        }
+
+
+@dataclass(frozen=True)
+class ServeStartResult:
+    """Result from server start command.
+
+    Parameters
+    ----------
+    server_type
+        Type of server (http, mcp).
+    host
+        Server host address.
+    port
+        Server port number.
+    auto_pipeline
+        Whether auto-pipeline is enabled.
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+    db_path
+        Path to database.
+    """
+
+    server_type: str
+    host: str | None
+    port: int | None
+    auto_pipeline: bool
+    repo: str
+    commit: str
+    db_path: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "server_type": self.server_type,
+            "host": self.host,
+            "port": self.port,
+            "auto_pipeline": self.auto_pipeline,
+            "repo": self.repo,
+            "commit": self.commit,
+            "db_path": self.db_path,
+        }
+
+
+@dataclass(frozen=True)
+class HealthCheckResult:
+    """Result from health check command.
+
+    Parameters
+    ----------
+    checks
+        List of individual check results.
+    overall_status
+        Overall status (ok, warn, fail, skip).
+    total_duration_ms
+        Total time for all checks in milliseconds.
+    """
+
+    checks: list[dict[str, object]]
+    overall_status: str
+    total_duration_ms: float
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "checks": self.checks,
+            "overall_status": self.overall_status,
+            "total_duration_ms": self.total_duration_ms,
+        }
+
+
 __all__ = [
     "BuildExecutionResult",
     "BuildHistoryResult",
@@ -978,25 +1297,34 @@ __all__ = [
     "BuildTargetInfo",
     "ConfigShowResult",
     "DatasetDescribeResult",
+    "DatasetDiffResult",
+    "DatasetLintResult",
     "DatasetListResult",
+    "DatasetSnapshotResult",
     "DatasetVerifyResult",
     "DocsGenerateResult",
     "DocsStatusResult",
     "DryRunResult",
     "DryRunStep",
+    "GenerateMacrosResult",
     "GraphPlanResult",
     "GraphPluginInfo",
     "GraphPluginsResult",
     "GraphQueryResult",
     "GraphStatsResult",
+    "HealthCheckResult",
     "HistoryDetailResult",
     "HistoryListResult",
+    "HistoryTimeseriesResult",
     "IdeConfigResult",
     "IdeStatusResult",
     "OperationCallResult",
     "OperationListResult",
+    "ProfileStorageResult",
+    "ServeStartResult",
     "StorageQueryResult",
     "StorageStatusResult",
     "SubsystemDetailResult",
     "SubsystemListResult",
+    "ValidateMacrosResult",
 ]

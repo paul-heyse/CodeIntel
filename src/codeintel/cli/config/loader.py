@@ -27,6 +27,7 @@ from codeintel.cli.config.model import (
     TelemetryConfig,
 )
 from codeintel.cli.config.validation import validate_config
+from codeintel.cli.core.parsing import parse_bool
 
 LOG = logging.getLogger(__name__)
 
@@ -355,6 +356,10 @@ def _get_bool(data: dict[str, object], key: str, *, default: bool) -> bool:
         Boolean value.
     """
     value = data.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return parse_bool(value)
     return bool(value)
 
 

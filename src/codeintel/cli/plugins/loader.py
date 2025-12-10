@@ -1,15 +1,13 @@
 """Unified plugin loading.
 
-Provide a unified interface for loading both manifest-based
-and legacy plugins with optional sandboxing.
+Provide a unified interface for loading manifest-based
+plugins with optional sandboxing.
 """
 
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import logging
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -33,14 +31,11 @@ class LoadedPlugin:
         Loaded Python module.
     path
         Plugin path.
-    is_legacy
-        Whether this is a legacy format plugin.
     """
 
     manifest: PluginManifest
     module: ModuleType
     path: Path
-    is_legacy: bool = False
 
     def has_capability(self, cap: PluginCapability) -> bool:
         """Check if plugin has capability.
@@ -68,13 +63,10 @@ class PluginLoadResult:
         Successfully loaded plugins.
     failed
         Failed plugin paths with error messages.
-    legacy_warnings
-        Warnings about legacy plugins.
     """
 
     loaded: list[LoadedPlugin] = field(default_factory=list)
     failed: list[tuple[Path, str]] = field(default_factory=list)
-    legacy_warnings: list[str] = field(default_factory=list)
 
 
 class PluginLoader:
@@ -119,20 +111,6 @@ class PluginLoader:
         discovered = discover_plugins(search_paths)
 
         for plugin in discovered:
-            if plugin.is_legacy:
-                result.legacy_warnings.append(
-                    f"Legacy plugin at {plugin.path}: {plugin.errors[0]}",
-                )
-                # Try loading legacy plugin
-                try:
-                    loaded = self._load_legacy(plugin)
-                    if loaded:
-                        result.loaded.append(loaded)
-                        continue
-                except (ImportError, OSError, AttributeError, TypeError) as e:
-                    result.failed.append((plugin.path, str(e)))
-                    continue
-
             if not plugin.valid:
                 result.failed.append((plugin.path, "; ".join(plugin.errors)))
                 continue
@@ -155,7 +133,7 @@ class PluginLoader:
         Parameters
         ----------
         path
-            Path to plugin directory or file.
+            Path to plugin directory.
 
         Returns
         -------
@@ -167,32 +145,29 @@ class PluginLoader:
         ValueError
             If plugin is invalid or cannot be loaded.
         """
-        manifest_path = path / "plugin.json" if path.is_dir() else None
+        if not path.is_dir():
+            msg = f"Plugin path must be a directory: {path}"
+            raise ValueError(msg)
 
-        if manifest_path and manifest_path.exists():
-            manifest = PluginManifest.load(manifest_path)
-            errors = manifest.validate()
-            if errors:
-                msg = f"Invalid manifest: {'; '.join(errors)}"
-                raise ValueError(msg)
+        manifest_path = path / "plugin.json"
 
-            discovered = DiscoveredPlugin(
-                path=path,
-                manifest=manifest,
-                valid=True,
-                errors=[],
-            )
-            return self._load_plugin(discovered)
+        if not manifest_path.exists():
+            msg = f"No plugin.json manifest found at {path}"
+            raise ValueError(msg)
 
-        # Check for legacy format
-        discovered = self._check_legacy(path)
-        if discovered:
-            loaded = self._load_legacy(discovered)
-            if loaded:
-                return loaded
+        manifest = PluginManifest.load(manifest_path)
+        errors = manifest.validate()
+        if errors:
+            msg = f"Invalid manifest: {'; '.join(errors)}"
+            raise ValueError(msg)
 
-        msg = f"No valid plugin found at {path}"
-        raise ValueError(msg)
+        discovered = DiscoveredPlugin(
+            path=path,
+            manifest=manifest,
+            valid=True,
+            errors=[],
+        )
+        return self._load_plugin(discovered)
 
     def _load_plugin(self, discovered: DiscoveredPlugin) -> LoadedPlugin:
         """Load a manifest-based plugin.
@@ -223,98 +198,6 @@ class PluginLoader:
             module=module,
             path=discovered.path,
         )
-
-    @staticmethod
-    def _load_legacy(discovered: DiscoveredPlugin) -> LoadedPlugin | None:
-        """Load a legacy plugin (create_plugin API).
-
-        Parameters
-        ----------
-        discovered
-            Discovered plugin info.
-
-        Returns
-        -------
-        LoadedPlugin | None
-            Loaded plugin or None if not valid.
-        """
-        path = discovered.path
-
-        if path.is_file():
-            # Single file plugin
-            spec = importlib.util.spec_from_file_location(path.stem, path)
-            if spec is None or spec.loader is None:
-                return None
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[path.stem] = module
-            spec.loader.exec_module(module)
-        else:
-            # Directory plugin - add to path temporarily
-            sys.path.insert(0, str(path))
-            try:
-                module = importlib.import_module(discovered.manifest.entry_point)
-            finally:
-                sys.path.remove(str(path))
-
-        # Verify it has create_plugin
-        if not hasattr(module, "create_plugin"):
-            return None
-
-        return LoadedPlugin(
-            manifest=discovered.manifest,
-            module=module,
-            path=path,
-            is_legacy=True,
-        )
-
-    @staticmethod
-    def _check_legacy(path: Path) -> DiscoveredPlugin | None:
-        """Check if path contains a legacy plugin.
-
-        Parameters
-        ----------
-        path
-            Path to check.
-
-        Returns
-        -------
-        DiscoveredPlugin | None
-            Discovered plugin info or None.
-        """
-        if path.is_file() and path.suffix == ".py":
-            content = path.read_text(encoding="utf-8")
-            if "def create_plugin" in content:
-                return DiscoveredPlugin(
-                    path=path,
-                    manifest=PluginManifest(
-                        name=path.stem,
-                        version="0.0.0",
-                        api_version="0.0.0",
-                        entry_point=path.stem,
-                    ),
-                    valid=False,
-                    errors=["Legacy plugin format"],
-                    is_legacy=True,
-                )
-        elif path.is_dir():
-            for py_file in path.glob("*.py"):
-                if py_file.name.startswith("_"):
-                    continue
-                content = py_file.read_text(encoding="utf-8")
-                if "def create_plugin" in content:
-                    return DiscoveredPlugin(
-                        path=path,
-                        manifest=PluginManifest(
-                            name=path.name,
-                            version="0.0.0",
-                            api_version="0.0.0",
-                            entry_point=py_file.stem,
-                        ),
-                        valid=False,
-                        errors=["Legacy plugin format"],
-                        is_legacy=True,
-                    )
-        return None
 
 
 def get_plugin_loader(

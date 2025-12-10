@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, TextIO
+
+from codeintel.cli.core.serialization import serialize_result
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail
@@ -83,9 +85,13 @@ class CliResult[T]:
         object
             Serialized representation of the data.
         """
+        # First try to_dict() for backward compatibility with existing result types
         to_dict = getattr(data, "to_dict", None)
         if callable(to_dict):
             return to_dict()
+        # Use generic serializer for dataclasses without to_dict()
+        if is_dataclass(data) and not isinstance(data, type):
+            return serialize_result(data)
         if hasattr(data, "__dict__") and not isinstance(data, type):
             return data.__dict__
         return data

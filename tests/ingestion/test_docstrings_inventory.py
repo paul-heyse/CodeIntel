@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from codeintel.ingestion import DocstringsExtractStep
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     build_repo_with_variants,
@@ -22,7 +23,7 @@ from tests._helpers.ingestion import (
 def _docstrings_setup(
     tmp_path: Path,
     *,
-    gateway,
+    gateway: StorageGateway,
     repo_structure: dict[str, str],
     ignore_dirs: tuple[str, ...] = (),
 ) -> Iterator[SimpleNamespace]:
@@ -41,7 +42,7 @@ def _docstrings_setup(
 
 
 def test_docstrings_respects_scan_profile_and_module_inventory(
-    tmp_path: Path, ingestion_gateway
+    tmp_path: Path, ingestion_gateway: StorageGateway
 ) -> None:
     """Ensure docstrings ingest honors scan profile filters and module inventory."""
     structure = {
@@ -78,7 +79,7 @@ def test_docstrings_respects_scan_profile_and_module_inventory(
 
 
 def test_docstrings_uses_module_inventory_not_filesystem_scan(
-    tmp_path: Path, ingestion_gateway
+    tmp_path: Path, ingestion_gateway: StorageGateway
 ) -> None:
     """Verify docstrings ingest trusts core.modules instead of re-scanning the filesystem."""
     structure = {

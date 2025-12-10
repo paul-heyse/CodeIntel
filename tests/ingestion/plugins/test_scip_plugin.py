@@ -8,8 +8,10 @@ from typing import cast
 import pytest
 
 from codeintel.build.errors import ToolNotAvailableError
+from codeintel.build.context import TargetExecutionContext
 from codeintel.build.protocols import ScipOccurrence, ScipSymbol
 from codeintel.build.providers import Providers
+from codeintel.storage.gateway import StorageGateway
 from codeintel.ingestion.plugins.scip_plugin import (
     ScipIngestPlugin,
     get_module_paths,
@@ -27,7 +29,7 @@ from tests._helpers.ingestion import (
     run_ingestion_scenario,
     write_scip_index,
 )
-from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
+from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
 
 
 def test_paths_to_modules_creates_records(tmp_path: Path) -> None:
@@ -50,15 +52,20 @@ RESOURCE_CASES = make_resource_case_params()
     ids=[name for name, _ in RESOURCE_CASES],
 )
 def test_module_path_resolution_scenarios(
-    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway: StorageGateway
 ) -> None:
     """Shared module path resolution coverage for ScipIngestPlugin."""
+    case = ModulePathCase(
+        resources_path="pkg/a.py",
+        simulate_resources=options["simulate_resources"],
+        simulate_db_fallback=options["simulate_db_fallback"],
+        simulate_gateway_failure=options["simulate_gateway_failure"],
+    )
     run_module_path_resolution_scenarios(
         lambda _capture: ScipIngestPlugin(),
         get_module_paths,
         tmp_path,
-        resources_path="pkg/a.py",
-        options=options,
+        case=case,
         gateway=ingestion_gateway,
     )
 
@@ -101,11 +108,14 @@ async def test_execute_ingests_symbols_and_occurrences(tmp_path: Path) -> None:
             role="definition",
         ),
     )
-    ctx, result = await run_ingestion_scenario(
+    def _seed_index(context: TargetExecutionContext) -> None:
+        _write_scip_json(context.scip_dir)
+
+    _ctx, result = await run_ingestion_scenario(
         ScipIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
-        seed_fn=lambda context: _write_scip_json(context.scip_dir),
+        seed_fn=_seed_index,
     )
 
     expect_true(result.success is True)
@@ -124,11 +134,14 @@ async def test_execute_fails_when_indexer_returns_error(tmp_path: Path) -> None:
         providers=cast("Providers", fake_providers),
         modules=("pkg/a.py",),
     )
-    ctx, result = await run_ingestion_scenario(
+    def _seed_failure(context: TargetExecutionContext) -> None:
+        _write_scip_json(context.scip_dir)
+
+    _ctx, result = await run_ingestion_scenario(
         ScipIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
-        seed_fn=lambda context: _write_scip_json(context.scip_dir),
+        seed_fn=_seed_failure,
     )
 
     expect_true(result.success is False)

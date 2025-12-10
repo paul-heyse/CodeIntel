@@ -6,11 +6,15 @@ Handlers for storage validation, macro generation, and profiling operations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import (
+    GenerateMacrosResult,
+    ProfileStorageResult,
+    ValidateMacrosResult,
+)
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
@@ -33,111 +37,6 @@ class MacroRequirement(Enum):
 
     REQUIRE = "require"
     ALLOW_MISSING = "allow_missing"
-
-
-@dataclass(frozen=True)
-class ValidateMacrosResult:
-    """Result from macro validation.
-
-    Parameters
-    ----------
-    status
-        Validation status (valid, skipped, invalid).
-    missing_ingest
-        List of missing ingest macro names.
-    present_ingest
-        List of present ingest macro names.
-    dataset_rows_only
-        List of datasets with rows only (no normalized macro).
-    reason
-        Optional reason for status (e.g., skip reason).
-    """
-
-    status: str
-    missing_ingest: list[str]
-    present_ingest: list[str]
-    dataset_rows_only: list[str]
-    reason: str | None = None
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {
-            "status": self.status,
-            "missing_ingest": self.missing_ingest,
-            "present_ingest": self.present_ingest,
-            "dataset_rows_only": self.dataset_rows_only,
-        }
-        if self.reason:
-            result["reason"] = self.reason
-        return result
-
-
-@dataclass(frozen=True)
-class GenerateMacrosResult:
-    """Result from macro generation.
-
-    Parameters
-    ----------
-    macros
-        List of rendered macro definitions with macro_name and ddl.
-    count
-        Number of macros generated.
-    """
-
-    macros: list[dict[str, str]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "macros": self.macros,
-            "count": self.count,
-        }
-
-
-@dataclass(frozen=True)
-class ProfileStorageResult:
-    """Result from storage profiling.
-
-    Parameters
-    ----------
-    db_path
-        Path to the profiled database.
-    output_dir
-        Directory where profile output was written.
-    include_views
-        Whether views were included in profiling.
-    """
-
-    db_path: str
-    output_dir: str
-    include_views: bool
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "db_path": self.db_path,
-            "output_dir": self.output_dir,
-            "include_views": self.include_views,
-        }
 
 
 def validate_macros_handler(

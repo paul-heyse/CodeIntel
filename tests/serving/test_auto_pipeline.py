@@ -1083,7 +1083,8 @@ class PrereqCase:
 class EnsureFn(Protocol):
     """Protocol for ensure_prereqs functions using keyword-only params."""
 
-    def __call__(self, *, op_id: str, config: ServingConfig, backend: QueryBackend) -> object: ...
+    def __call__(self, *, op_id: str, config: ServingConfig, backend: QueryBackend) -> object:
+        """Execute an ensure_prereqs function for a given operation."""
 
 
 _PREREQ_CASES: tuple[PrereqCase, ...] = (

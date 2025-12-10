@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -17,9 +18,10 @@ from codeintel.analytics.adapters.profiles import (
     ModuleProfileAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal
 from tests._helpers.contracts import count_rows
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import file_profile_row, function_profile_row, module_profile_row
 
 # =============================================================================
@@ -47,20 +49,20 @@ TEST_FILE_COUNT_5 = 5
 
 
 @pytest.fixture
-def snapshot() -> SnapshotRef:
-    """
-    Create snapshot reference.
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Create a test context aligned with the demo repo/commit."""
+    options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
 
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference for testing.
-    """
-    return SnapshotRef(
-        repo=DEMO_REPO,
-        commit=DEMO_COMMIT,
-        repo_root=Path("/workspace/demo"),
-    )
+
+@pytest.fixture
+def snapshot(ctx: TestContext) -> SnapshotRef:
+    """Expose the snapshot from the shared test context."""
+    return ctx.snapshot
 
 
 # =============================================================================
@@ -69,40 +71,36 @@ def snapshot() -> SnapshotRef:
 
 
 def test_function_profile_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
+    adapter = FunctionProfileAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.function_profile")
 
 
 def test_function_profile_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
+    adapter = FunctionProfileAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_function_profile_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
+    adapter = FunctionProfileAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_function_profile_adapter_persist_single_row(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
+    adapter = FunctionProfileAdapter(ctx.gateway, ctx.snapshot)
     row = function_profile_row(repo=DEMO_REPO, commit=DEMO_COMMIT)
 
     count = adapter.persist([row])
@@ -110,7 +108,7 @@ def test_function_profile_adapter_persist_single_row(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -118,11 +116,10 @@ def test_function_profile_adapter_persist_single_row(
 
 
 def test_function_profile_adapter_persist_multiple_rows(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = FunctionProfileAdapter(fresh_gateway, snapshot)
+    adapter = FunctionProfileAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         function_profile_row(
@@ -138,7 +135,7 @@ def test_function_profile_adapter_persist_multiple_rows(
 
     # Verify rows were inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -151,40 +148,36 @@ def test_function_profile_adapter_persist_multiple_rows(
 
 
 def test_file_profile_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = FileProfileAdapter(fresh_gateway, snapshot)
+    adapter = FileProfileAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.file_profile")
 
 
 def test_file_profile_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = FileProfileAdapter(fresh_gateway, snapshot)
+    adapter = FileProfileAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_file_profile_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = FileProfileAdapter(fresh_gateway, snapshot)
+    adapter = FileProfileAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_file_profile_adapter_persist_single_row(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = FileProfileAdapter(fresh_gateway, snapshot)
+    adapter = FileProfileAdapter(ctx.gateway, ctx.snapshot)
     row = file_profile_row(repo=DEMO_REPO, commit=DEMO_COMMIT)
 
     count = adapter.persist([row])
@@ -192,7 +185,7 @@ def test_file_profile_adapter_persist_single_row(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -200,11 +193,10 @@ def test_file_profile_adapter_persist_single_row(
 
 
 def test_file_profile_adapter_persist_multiple_rows(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = FileProfileAdapter(fresh_gateway, snapshot)
+    adapter = FileProfileAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         file_profile_row(rel_path="src/api.py", repo=DEMO_REPO, commit=DEMO_COMMIT),
@@ -216,7 +208,7 @@ def test_file_profile_adapter_persist_multiple_rows(
 
     # Verify rows were inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -229,40 +221,36 @@ def test_file_profile_adapter_persist_multiple_rows(
 
 
 def test_module_profile_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
+    adapter = ModuleProfileAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.module_profile")
 
 
 def test_module_profile_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
+    adapter = ModuleProfileAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_module_profile_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
+    adapter = ModuleProfileAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_module_profile_adapter_persist_single_row(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
+    adapter = ModuleProfileAdapter(ctx.gateway, ctx.snapshot)
     row = module_profile_row(repo=DEMO_REPO, commit=DEMO_COMMIT)
 
     count = adapter.persist([row])
@@ -270,7 +258,7 @@ def test_module_profile_adapter_persist_single_row(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -278,11 +266,10 @@ def test_module_profile_adapter_persist_single_row(
 
 
 def test_module_profile_adapter_persist_multiple_rows(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = ModuleProfileAdapter(fresh_gateway, snapshot)
+    adapter = ModuleProfileAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         module_profile_row(module="services.api", repo=DEMO_REPO, commit=DEMO_COMMIT),
@@ -294,7 +281,7 @@ def test_module_profile_adapter_persist_multiple_rows(
 
     # Verify rows were inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )

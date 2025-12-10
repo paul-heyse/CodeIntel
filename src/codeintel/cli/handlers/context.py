@@ -23,6 +23,7 @@ from codeintel.analytics.runtime import (
     build_graph_runtime,
 )
 from codeintel.cli.core.parsing import is_truthy_string
+from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
@@ -729,6 +730,32 @@ class HandlerContext:
 
         self._graph_runtime = None
         self._closed = True
+
+    @contextmanager
+    def gateway_scope(self, *, read_only: bool = True) -> Iterator[StorageGateway]:
+        """Context manager for explicit gateway lifecycle control.
+
+        Use this when you need a gateway with a specific lifecycle that
+        differs from the handler's default, such as when building multiple
+        independent databases or when you need write access.
+
+        Parameters
+        ----------
+        read_only
+            Whether to open the gateway in read-only mode.
+
+        Yields
+        ------
+        StorageGateway
+            Open storage gateway that will be closed when the context exits.
+
+        Examples
+        --------
+        >>> with ctx.gateway_scope(read_only=False) as gw:
+        ...     gw.execute("CREATE TABLE test (id INT)")
+        """
+        with runtime_gateway(self.runtime, read_only=read_only) as gw:
+            yield gw
 
     def __enter__(self) -> Self:
         """Enter context manager.

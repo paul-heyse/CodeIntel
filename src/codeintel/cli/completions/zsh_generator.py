@@ -6,84 +6,7 @@ Generate zsh completion scripts with rich descriptions and grouping.
 from __future__ import annotations
 
 from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
-
-
-def generate_zsh_completion(model: CompletionModel) -> str:
-    """Generate zsh completion script.
-
-    Parameters
-    ----------
-    model
-        Completion model.
-
-    Returns
-    -------
-    str
-        Zsh completion script.
-    """
-    lines: list[str] = [
-        f"#compdef {model.program_name}",
-        "# Zsh completion for codeintel",
-        "# Generated automatically - do not edit",
-        "",
-        "_codeintel() {",
-        "    local context state state_descr line",
-        "    typeset -A opt_args",
-        "",
-        "    _arguments -C \\",
-    ]
-
-    # Global flags
-    for flag in model.global_flags:
-        short = f"-{flag.short}" if flag.short else ""
-        desc = _escape_zsh_description(flag.description)
-        if short:
-            lines.append(f"        '{short}[{desc}]' \\")
-        lines.append(f"        '--{flag.name}[{desc}]' \\")
-
-    # Subcommands
-    lines.extend(
-        [
-            "        '1:command:->commands' \\",
-            "        '*::arg:->args'",
-            "",
-            "    case $state in",
-            "        commands)",
-            "            local -a commands",
-            "            commands=(",
-        ],
-    )
-
-    for cmd in model.root_command.subcommands:
-        desc = _escape_zsh_description(cmd.description)
-        lines.append(f"                '{cmd.name}:{desc}'")
-
-    lines.extend(
-        [
-            "            )",
-            "            _describe 'command' commands",
-            "            ;;",
-            "        args)",
-            "            case $words[1] in",
-        ],
-    )
-
-    # Command-specific completions
-    for cmd in model.root_command.subcommands:
-        lines.extend(_generate_zsh_command(cmd))
-
-    lines.extend(
-        [
-            "            esac",
-            "            ;;",
-            "    esac",
-            "}",
-            "",
-            "_codeintel",
-        ],
-    )
-
-    return "\n".join(lines)
+from codeintel.cli.completions.generator import ShellBackend
 
 
 def _escape_zsh_description(desc: str) -> str:
@@ -102,48 +25,209 @@ def _escape_zsh_description(desc: str) -> str:
     return desc.replace("'", "'\\''")
 
 
-def _generate_zsh_command(cmd: CommandSpec) -> list[str]:
+class ZshBackend(ShellBackend):
+    """Zsh-specific completion backend.
+
+    Attributes
+    ----------
+    _program
+        Program name for completion script.
+    _indent
+        Base indentation string.
+    """
+
+    def __init__(self) -> None:
+        """Initialize zsh backend with default configuration."""
+        self._program = "codeintel"
+        self._indent = "    "
+
+    def header(self, model: CompletionModel) -> list[str]:
+        """Generate zsh header.
+
+        Returns
+        -------
+        list[str]
+            Header lines for zsh completion script.
+        """
+        self._program = model.program_name
+        return [
+            f"#compdef {self._program}",
+            "# Zsh completion for codeintel",
+            "# Generated automatically - do not edit",
+            "",
+            "_codeintel() {",
+            f"{self._indent}local context state state_descr line",
+            f"{self._indent}typeset -A opt_args",
+            "",
+            f"{self._indent}_arguments -C \\",
+        ]
+
+    def global_flags(self, model: CompletionModel) -> list[str]:
+        """Generate zsh global flags.
+
+        Returns
+        -------
+        list[str]
+            Global flag definition lines.
+        """
+        lines: list[str] = []
+        double_indent = self._indent * 2
+        for flag in model.global_flags:
+            short = f"-{flag.short}" if flag.short else ""
+            desc = _escape_zsh_description(flag.description)
+            if short:
+                lines.append(f"{double_indent}'{short}[{desc}]' \\")
+            lines.append(f"{double_indent}'--{flag.name}[{desc}]' \\")
+        return lines
+
+    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+        """Generate zsh command completion.
+
+        Returns
+        -------
+        list[str]
+            Command completion lines.
+        """
+        return _generate_zsh_command(cmd, indent=self._indent, depth=depth)
+
+    def footer(self, model: CompletionModel) -> list[str]:
+        """Generate zsh footer.
+
+        Returns
+        -------
+        list[str]
+            Footer lines including function structure and invocation.
+        """
+        double_indent = self._indent * 2
+        triple_indent = self._indent * 3
+        quad_indent = self._indent * 4
+        lines: list[str] = [
+            f"{double_indent}'1:command:->commands' \\",
+            f"{double_indent}'*::arg:->args'",
+            "",
+            f"{self._indent}case $state in",
+            f"{double_indent}commands)",
+            f"{triple_indent}local -a commands",
+            f"{triple_indent}commands=(",
+        ]
+
+        for cmd in model.root_command.subcommands:
+            desc = _escape_zsh_description(cmd.description)
+            lines.append(f"{quad_indent}'{cmd.name}:{desc}'")
+
+        lines.extend(
+            [
+                f"{triple_indent})",
+                f"{triple_indent}_describe 'command' commands",
+                f"{double_indent};;",
+                f"{double_indent}args)",
+                f"{triple_indent}case $words[1] in",
+            ],
+        )
+
+        # Command cases are added via command() method, but we need to close the structure
+        lines.extend(
+            [
+                f"{triple_indent}esac",
+                f"{double_indent};;",
+                f"{self._indent}esac",
+                "}",
+                "",
+                "_codeintel",
+            ],
+        )
+        return lines
+
+
+def _generate_zsh_command(
+    cmd: CommandSpec,
+    *,
+    indent: str = "    ",
+    depth: int = 0,
+) -> list[str]:
     """Generate zsh completion for command.
 
     Parameters
     ----------
     cmd
         Command specification.
+    indent
+        Base indentation string.
+    depth
+        Nesting depth (unused but kept for protocol consistency).
 
     Returns
     -------
     list[str]
         Zsh completion lines.
     """
-    lines: list[str] = [f"                {cmd.name})"]
+    _ = depth  # Protocol consistency
+    quad_indent = indent * 4
+    five_indent = indent * 5
+    six_indent = indent * 6
+    lines: list[str] = [f"{quad_indent}{cmd.name})"]
 
     if cmd.subcommands:
         lines.extend(
             [
-                "                    local -a subcommands",
-                "                    subcommands=(",
+                f"{five_indent}local -a subcommands",
+                f"{five_indent}subcommands=(",
             ],
         )
         for sub in cmd.subcommands:
             desc = _escape_zsh_description(sub.description)
-            lines.append(f"                        '{sub.name}:{desc}'")
+            lines.append(f"{six_indent}'{sub.name}:{desc}'")
         lines.extend(
             [
-                "                    )",
-                "                    _describe 'subcommand' subcommands",
+                f"{five_indent})",
+                f"{five_indent}_describe 'subcommand' subcommands",
             ],
         )
     elif cmd.flags:
-        lines.append("                    _arguments \\")
+        lines.append(f"{five_indent}_arguments \\")
         for flag in cmd.flags:
             desc = _escape_zsh_description(flag.description)
             if flag.takes_value:
-                lines.append(f"                        '--{flag.name}=[{desc}]' \\")
+                lines.append(f"{six_indent}'--{flag.name}=[{desc}]' \\")
             else:
-                lines.append(f"                        '--{flag.name}[{desc}]' \\")
+                lines.append(f"{six_indent}'--{flag.name}[{desc}]' \\")
 
-    lines.append("                    ;;")
+    lines.append(f"{five_indent};;")
     return lines
 
 
-__all__ = ["generate_zsh_completion"]
+def generate_zsh_completion(model: CompletionModel) -> str:
+    """Generate zsh completion script.
+
+    Parameters
+    ----------
+    model
+        Completion model.
+
+    Returns
+    -------
+    str
+        Zsh completion script.
+    """
+    # Note: ZshBackend uses a custom structure that doesn't fit the
+    # simple header/commands/footer pattern well, so we use direct generation
+    backend = ZshBackend()
+    lines: list[str] = []
+    lines.extend(backend.header(model))
+    lines.extend(backend.global_flags(model))
+
+    # Insert command cases between the header/flags and footer
+    footer = backend.footer(model)
+    # Insert commands before the "esac" in args case
+    pre_footer = footer[:12]  # Up to "case $words[1] in"
+    post_footer = footer[12:]  # After the args case starts
+
+    lines.extend(pre_footer)
+    for cmd in model.root_command.subcommands:
+        lines.extend(backend.command(cmd, depth=0))
+    lines.extend(post_footer)
+
+    return "\n".join(lines)
+
+
+__all__ = ["ZshBackend", "generate_zsh_completion"]

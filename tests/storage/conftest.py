@@ -10,6 +10,7 @@ import pytest
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import docs_views_ready_gateway
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.run_tracking import RunTrackingHarness, make_tracking
 
 
 @pytest.fixture
@@ -74,3 +75,23 @@ def docs_views_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
         yield ctx.gateway
     finally:
         ctx.close()
+
+
+@pytest.fixture
+def run_tracking_harness(tmp_path: Path) -> Iterator[RunTrackingHarness]:
+    """
+    Provide a macro-ready gateway and tracking accessor for run tracking tests.
+
+    Yields
+    ------
+    RunTrackingHarness
+        Harness bundling gateway, tracking accessor, and repo root.
+    """
+    repo_root = tmp_path / "run_repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    gateway = GatewayFactory().with_views().open()
+    try:
+        tracking = make_tracking(gateway.con)
+        yield RunTrackingHarness(gateway=gateway, tracking=tracking, repo_root=repo_root)
+    finally:
+        gateway.close()

@@ -16,6 +16,7 @@ from codeintel.serving.http.routes.functions import RouterOptions, build_functio
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
+from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -89,7 +90,7 @@ def test_app_with_auto_pipeline_options(
     """Verify create_app works with auto_pipeline option."""
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_functions_router],
+        route_builders=[adapt_route(build_functions_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(limits=limits, auto_pipeline=True),
     )

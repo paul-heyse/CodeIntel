@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.observability import ServiceObservability
+from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.serving_apps import (
     DEFAULT_LIMIT,
@@ -47,12 +49,12 @@ class ProvisionedServiceContext:
         return self.context.limits
 
     @property
-    def service(self) -> object:
+    def service(self) -> LocalQueryService:
         """Return the underlying LocalQueryService."""
         return self.context.service
 
     @property
-    def backend(self) -> object:
+    def backend(self) -> DuckDBBackend:
         """Return the underlying backend instance."""
         return self.context.backend
 

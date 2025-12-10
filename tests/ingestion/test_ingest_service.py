@@ -10,6 +10,7 @@ import pytest
 
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.infrastructure.macros import INGEST_MACRO_TABLES, macro_exists
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -91,20 +92,22 @@ def test_ingest_macro_table_keys_are_well_formed(table_key: str) -> None:
     expect_true(bool(table), message=f"Table key '{table_key}' has empty table name")
 
 
-def test_ingest_macros_registered_and_listed(fresh_gateway) -> None:
+def test_ingest_macros_registered_and_listed(fresh_gateway: StorageGateway) -> None:
     """Ensure ingest macros are present for all registered tables."""
     assert_all_ingest_macros(fresh_gateway.con)
     assert_ingest_macros_registered(fresh_gateway.con)
 
 
-def test_macro_exists_handles_malformed_table_key(fresh_gateway) -> None:
+def test_macro_exists_handles_malformed_table_key(fresh_gateway: StorageGateway) -> None:
     """macro_exists should raise on table keys without a schema prefix."""
     with pytest.raises(ValueError, match="not enough values to unpack"):
         macro_exists(fresh_gateway.con, "no_dot_in_name")
 
 
 @pytest.mark.parametrize("table_key", PERF_TABLE_KEYS)
-def test_ingest_macro_perf_with_prepared_statements(fresh_gateway, table_key: str) -> None:
+def test_ingest_macro_perf_with_prepared_statements(
+    fresh_gateway: StorageGateway, table_key: str
+) -> None:
     """Macro ingest should remain within acceptable bounds versus prepared statements."""
     if table_key == "analytics.function_metrics":
         row = function_metrics_row(

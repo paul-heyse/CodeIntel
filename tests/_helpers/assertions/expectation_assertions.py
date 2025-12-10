@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, cast
+from typing import cast
+
+import duckdb
 
 
 def _prefix(label: str | None) -> str:
@@ -158,27 +160,27 @@ def expect_row_count(rows: Sequence[object], expected: int, *, label: str | None
 
 
 def expect_table_row_count(
-    con: Any,
+    con: duckdb.DuckDBPyConnection,
     table: str,
     expected_count: int,
     *,
     label: str | None = None,
 ) -> None:
     """Assert that a table has the expected row count."""
-    row = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-    actual = int(row[0]) if row else 0
+    row = con.table(table).aggregate("count(*)").fetchone()
+    actual = int(row[0]) if row is not None else 0
     expect_equal(actual, expected_count, label=label or f"{table}_row_count")
 
 
 def expect_table_schema(
-    con: Any,
+    con: duckdb.DuckDBPyConnection,
     table: str,
     *,
     expected_columns: Mapping[str, str],
     label: str | None = None,
 ) -> None:
     """Assert that a table's schema matches expected column names/types."""
-    rows = con.execute(f"PRAGMA table_info('{table}')").fetchall()
+    rows = con.execute("PRAGMA table_info(?)", [table]).fetchall()
     observed = {cast("str", row[1]): cast("str", row[2]) for row in rows} if rows else {}
     expect_equal(observed, dict(expected_columns), label=label or f"{table}_schema")
 

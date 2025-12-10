@@ -1,7 +1,7 @@
 """Plugin discovery and enumeration.
 
-Provide utilities for discovering plugins in standard locations,
-supporting both manifest-based and legacy plugin formats.
+Provide utilities for discovering plugins in standard locations
+using the manifest-based plugin format.
 """
 
 from __future__ import annotations
@@ -34,15 +34,12 @@ class DiscoveredPlugin:
         Whether plugin passed validation.
     errors
         Validation errors.
-    is_legacy
-        Whether this is a legacy format plugin.
     """
 
     path: Path
     manifest: PluginManifest
     valid: bool
     errors: list[str]
-    is_legacy: bool = False
 
 
 def discover_plugins(
@@ -69,19 +66,11 @@ def discover_plugins(
 
         for item in search_path.iterdir():
             if not item.is_dir():
-                # Check for legacy plugin (bare .py file)
-                if item.suffix == ".py" and not item.name.startswith("_"):
-                    legacy = _check_legacy_plugin_file(item)
-                    if legacy:
-                        discovered.append(legacy)
                 continue
 
             manifest_path = item / "plugin.json"
             if not manifest_path.exists():
-                # Check for legacy plugin (directory without manifest)
-                legacy = _check_legacy_plugin_dir(item)
-                if legacy:
-                    discovered.append(legacy)
+                LOG.debug("Skipping %s: no plugin.json manifest", item)
                 continue
 
             try:
@@ -111,86 +100,6 @@ def discover_plugins(
                 )
 
     return discovered
-
-
-def _check_legacy_plugin_file(path: Path) -> DiscoveredPlugin | None:
-    """Check for legacy plugin format (single .py file with create_plugin).
-
-    Parameters
-    ----------
-    path
-        Path to Python file.
-
-    Returns
-    -------
-    DiscoveredPlugin | None
-        A DiscoveredPlugin with warnings about migration, or None.
-    """
-    try:
-        content = path.read_text(encoding="utf-8")
-        if "def create_plugin" in content:
-            return DiscoveredPlugin(
-                path=path,
-                manifest=PluginManifest(
-                    name=path.stem,
-                    version="0.0.0",
-                    api_version="0.0.0",
-                    description="Legacy plugin (needs migration)",
-                    entry_point=path.stem,
-                ),
-                valid=False,
-                errors=[
-                    "Legacy plugin format detected (single .py file). "
-                    "Please migrate to manifest-based format with plugin.json. "
-                    "See: https://docs.codeintel.dev/plugins/migration",
-                ],
-                is_legacy=True,
-            )
-    except OSError:
-        pass
-    return None
-
-
-def _check_legacy_plugin_dir(path: Path) -> DiscoveredPlugin | None:
-    """Check for legacy plugin format (directory with create_plugin).
-
-    Parameters
-    ----------
-    path
-        Path to plugin directory.
-
-    Returns
-    -------
-    DiscoveredPlugin | None
-        A DiscoveredPlugin with warnings about migration, or None.
-    """
-    # Look for .py files with create_plugin function
-    for py_file in path.glob("*.py"):
-        if py_file.name.startswith("_"):
-            continue
-        try:
-            content = py_file.read_text(encoding="utf-8")
-            if "def create_plugin" in content:
-                return DiscoveredPlugin(
-                    path=path,
-                    manifest=PluginManifest(
-                        name=path.name,
-                        version="0.0.0",
-                        api_version="0.0.0",
-                        description="Legacy plugin (needs migration)",
-                        entry_point=py_file.stem,
-                    ),
-                    valid=False,
-                    errors=[
-                        "Legacy plugin format detected (missing plugin.json). "
-                        "Please add plugin.json manifest and migrate to register() API. "
-                        "See: https://docs.codeintel.dev/plugins/migration",
-                    ],
-                    is_legacy=True,
-                )
-        except OSError:
-            continue
-    return None
 
 
 def get_default_plugin_paths() -> list[Path]:

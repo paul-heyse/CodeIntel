@@ -30,11 +30,6 @@ from codeintel.cli.errors import OutputFormat, handle_cli_error
 
 # Optional imports for initialization - may not be available during packaging
 try:
-    from codeintel.cli import operations as _operations_module
-except ImportError:
-    _operations_module = None  # type: ignore[assignment]
-
-try:
     from codeintel.cli.plugins import initialize_plugins as _init_plugins
 except ImportError:
     _init_plugins = None  # type: ignore[assignment]
@@ -106,10 +101,6 @@ def _initialize_cli() -> None:
 
     Register operations and load plugins before running commands.
     """
-    # Operations module import triggers registration via module-level code
-    # The import at top-level already triggered this if available
-    _ = _operations_module  # Reference to confirm import happened
-
     # Load plugins from plugin directories
     if _init_plugins is not None:
         _init_plugins()

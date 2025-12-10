@@ -8,12 +8,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from codeintel.build.context import TargetExecutionContext
 from codeintel.build.contracts import OutputContract
+from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import TableSchema
+from codeintel.config.primitives import SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion import (
     BuildToolAdapter,
@@ -47,6 +49,15 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
+TResult = TypeVar("TResult", bound=TargetResult, covariant=True)
+
+
+class TargetPluginProtocol(Protocol[TResult]):
+    """Protocol for target plugins with an execute method."""
+
+    async def execute(self, ctx: TargetExecutionContext) -> TResult:  # pragma: no cover - protocol
+        ...
+
 __all__ = [
     "IngestionContextBundle",
     "ModuleInventoryContext",
@@ -54,7 +65,9 @@ __all__ = [
     "ScanSetup",
     "ScanSetupOptions",
     "ScipIngestContext",
+    "SeedIngestionConfig",
     "TargetContextConfig",
+    "TargetPluginProtocol",
     "build_ingestion_adapters",
     "build_ingestion_context_bundle",
     "build_repo_target",
@@ -99,7 +112,7 @@ class TargetContextConfig:
     providers: Providers | None = None
     gateway: StorageGateway | None = None
     gateway_factory: GatewayFactory | None = None
-    snapshot: tuple[str, str] | None = None
+    snapshot: SnapshotRef | tuple[str, str] | None = None
     resources: TargetResourceOverrides | None = None
 
 
@@ -166,7 +179,7 @@ class ScanSetupOptions:
 
 
 def build_target_context_for_plugin(
-    plugin: TargetPlugin,
+    plugin: TargetPluginProtocol[TargetResult],
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
@@ -194,7 +207,7 @@ def build_target_context_for_plugin(
         gateway=gateway,
     )
     builder = ExecutionContextBuilder.create(tmp_path, env_overrides=overrides)
-    effective_target = target or make_test_output_target(plugin)
+    effective_target = target or make_test_output_target(cast("TargetPlugin", plugin))
     resource_overrides = cfg.resources or TargetResourceOverrides(
         providers=cfg.providers,
         modules=cfg.modules or (),
@@ -203,11 +216,11 @@ def build_target_context_for_plugin(
 
 
 async def run_ingestion_plugin(
-    plugin: TargetPlugin,
+    plugin: TargetPluginProtocol[TargetResult],
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
-) -> tuple[TargetExecutionContext, object]:
+) -> tuple[TargetExecutionContext, TargetResult]:
     """Execute a plugin with a built target context and return both.
 
     Returns
@@ -221,12 +234,12 @@ async def run_ingestion_plugin(
 
 
 async def run_ingestion_scenario(
-    plugin_factory: Callable[[], TargetPlugin],
+    plugin_factory: Callable[[], TargetPluginProtocol[TargetResult]],
     tmp_path: Path,
     *,
     seed_fn: Callable[[TargetExecutionContext], None] | None = None,
     config: TargetContextConfig | None = None,
-) -> tuple[TargetExecutionContext, object]:
+) -> tuple[TargetExecutionContext, TargetResult]:
     """Build a plugin from a factory, optionally seed context, and execute.
 
     Returns
@@ -839,36 +852,43 @@ def seed_inventory_from_paths(
     seed_modules_and_repo_map(cast("TargetExecutionContext", dummy_context), paths)
 
 
+@dataclass(frozen=True)
+class SeedIngestionConfig:
+    """Configuration for seeding common ingestion tables."""
+
+    module_paths: Sequence[str] | None = None
+    numeric_tables: Mapping[str, Sequence[float]] | None = None
+    varchar_tables: Mapping[str, Sequence[tuple[int, str | None]]] | None = None
+    foreign_keys: (
+        Sequence[tuple[str, str, Sequence[tuple[int, str]], Sequence[tuple[int, int | None]]]]
+        | None
+    ) = None
+    include_defaults: bool = True
+    include_orphans: bool = False
+    include_duplicates: bool = False
+
+
 def seed_ingestion_tables(
     ctx: TargetExecutionContext,
-    *,
-    module_paths: Sequence[str] | None = None,
-    numeric_tables: Mapping[str, Sequence[float]] | None = None,
-    varchar_tables: Mapping[str, Sequence[tuple[int, str | None]]] | None = None,
-    foreign_keys: Sequence[
-        tuple[str, str, Sequence[tuple[int, str]], Sequence[tuple[int, int | None]]]
-    ]
-    | None = None,
-    include_defaults: bool = True,
-    include_orphans: bool = False,
-    include_duplicates: bool = False,
+    config: SeedIngestionConfig | None = None,
 ) -> None:
     """Seed common ingestion tables in a single call."""
-    if module_paths:
-        seed_modules_and_repo_map(ctx, module_paths)
+    cfg = config or SeedIngestionConfig()
+    if cfg.module_paths:
+        seed_modules_and_repo_map(ctx, cfg.module_paths)
 
     tables_seeded = False
-    if numeric_tables:
+    if cfg.numeric_tables:
         tables_seeded = True
-        for table, values in numeric_tables.items():
+        for table, values in cfg.numeric_tables.items():
             seed_numeric_table(ctx.gateway, table, values)
-    if varchar_tables:
+    if cfg.varchar_tables:
         tables_seeded = True
-        for table, values in varchar_tables.items():
+        for table, values in cfg.varchar_tables.items():
             seed_varchar_table(ctx.gateway, table, values)
-    if foreign_keys:
+    if cfg.foreign_keys:
         tables_seeded = True
-        for parent_table, child_table, parent_rows, child_rows in foreign_keys:
+        for parent_table, child_table, parent_rows, child_rows in cfg.foreign_keys:
             seed_foreign_key_tables(
                 ctx.gateway,
                 parent_table=parent_table,
@@ -877,29 +897,32 @@ def seed_ingestion_tables(
                 child_rows=child_rows,
             )
 
-    if include_defaults and not tables_seeded:
+    if cfg.include_defaults and not tables_seeded:
         seed_numeric_table(
             ctx.gateway,
             "core.test_numeric",
-            [10.5, 5.0, 20.0, 5.0] if include_duplicates else [10.5, 5.0, 20.0],
+            [10.5, 5.0, 20.0, 5.0] if cfg.include_duplicates else [10.5, 5.0, 20.0],
         )
         seed_varchar_table(
             ctx.gateway,
             "core.test_varchar",
-            ["alpha", "beta", "gamma", "beta"]
-            if include_duplicates
-            else ["alpha", "beta", "gamma"],
+            [
+                (1, "alpha"),
+                (2, "beta"),
+                (3, "gamma"),
+                (4, "beta") if cfg.include_duplicates else (4, "delta"),
+            ],
         )
-        parent_rows = [("p1", "Parent 1"), ("p2", "Parent 2")]
-        child_rows: list[tuple[int | str, int | str | None]] = [("c1", "p1"), ("c2", "p1")]
-        if include_orphans:
-            child_rows.append(("c_orphan", "missing"))
+        default_parent_rows: list[tuple[int, str]] = [(1, "Parent 1"), (2, "Parent 2")]
+        default_child_rows: list[tuple[int, int | None]] = [(1, 1), (2, 1)]
+        if cfg.include_orphans:
+            default_child_rows.append((3, None))
         seed_foreign_key_tables(
             ctx.gateway,
             parent_table="core.test_parent",
             child_table="core.test_child",
-            parent_rows=parent_rows,
-            child_rows=cast("Sequence[tuple[int, int | None]]", child_rows),
+            parent_rows=default_parent_rows,
+            child_rows=default_child_rows,
         )
 
 

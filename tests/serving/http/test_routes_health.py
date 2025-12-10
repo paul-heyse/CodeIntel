@@ -18,6 +18,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
+from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -58,7 +59,7 @@ def test_health_endpoint_returns_status_ok(
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_health_router],
+        route_builders=[adapt_route(build_health_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(
             limits=limits,
@@ -91,7 +92,7 @@ def test_health_endpoint_includes_limits(
     max_rows = 250
     limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_health_router],
+        route_builders=[adapt_route(build_health_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(limits=limits),
     )
@@ -118,7 +119,7 @@ def test_health_endpoint_read_only_false(
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_health_router],
+        route_builders=[adapt_route(build_health_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(
             limits=limits,

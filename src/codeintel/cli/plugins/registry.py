@@ -1,7 +1,7 @@
 """Plugin registration with operation registry.
 
-Provide utilities for registering operations from loaded plugins,
-supporting both new register() API and legacy create_plugin() API.
+Provide utilities for registering operations from loaded plugins
+using the register() API.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from codeintel.cli.execution.registry import OperationSpec
 from codeintel.cli.introspection import OperationRegistry, get_registry
@@ -18,45 +18,6 @@ from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadR
 from codeintel.cli.plugins.manifest import PluginCapability
 
 LOG = logging.getLogger(__name__)
-
-
-class PluginProtocol(Protocol):
-    """Protocol for legacy plugins.
-
-    Legacy plugins implement this interface via create_plugin().
-    """
-
-    @property
-    def name(self) -> str:
-        """Plugin name."""
-        ...
-
-    @property
-    def version(self) -> str:
-        """Plugin version."""
-        ...
-
-    @property
-    def description(self) -> str:
-        """Plugin description."""
-        ...
-
-    def get_operations(self) -> list[OperationSpec]:
-        """Get operations provided by this plugin.
-
-        Returns
-        -------
-        list[OperationSpec]
-            Operations to register.
-        """
-        ...
-
-    def initialize(self) -> None:
-        """Initialize the plugin.
-
-        Called after loading but before operations are registered.
-        """
-        ...
 
 
 def register_plugin_operations(
@@ -86,16 +47,12 @@ def register_plugin_operations(
         )
         return 0
 
-    # Check for register() function (new API)
+    # Check for register() function
     if hasattr(plugin.module, "register"):
         return _register_new_api(plugin, reg)
 
-    # Check for create_plugin() function (legacy API)
-    if hasattr(plugin.module, "create_plugin"):
-        return _register_legacy_api(plugin, reg)
-
     LOG.warning(
-        "Plugin %s has no register() or create_plugin() function",
+        "Plugin %s has no register() function",
         plugin.manifest.name,
     )
     return 0
@@ -170,55 +127,6 @@ def _register_new_api(
     return count
 
 
-def _register_legacy_api(
-    plugin: LoadedPlugin,
-    registry: OperationRegistry,
-) -> int:
-    """Register operations using legacy API.
-
-    Parameters
-    ----------
-    plugin
-        Loaded plugin.
-    registry
-        Operation registry.
-
-    Returns
-    -------
-    int
-        Number of operations registered.
-
-    Raises
-    ------
-    RuntimeError
-        If an error occurs during registration.
-    """
-    LOG.warning(
-        "Plugin %s uses deprecated create_plugin() API. Please migrate to register() function.",
-        plugin.manifest.name,
-    )
-
-    try:
-        plugin_instance = plugin.module.create_plugin()
-        plugin_instance.initialize()
-        operations = plugin_instance.get_operations()
-
-        for op_spec in operations:
-            registry.register(op_spec)
-
-        LOG.info(
-            "Registered %d operations from legacy plugin %s",
-            len(operations),
-            plugin.manifest.name,
-        )
-        return len(operations)
-
-    except (AttributeError, TypeError) as e:
-        LOG.exception("Error loading legacy plugin %s", plugin.manifest.name)
-        msg = f"Error in create_plugin(): {e}"
-        raise RuntimeError(msg) from e
-
-
 def register_all_plugins(
     result: PluginLoadResult,
     registry: OperationRegistry | None = None,
@@ -274,10 +182,6 @@ def initialize_plugins(
     """
     loader = PluginLoader(sandbox_enabled=sandbox_enabled)
     result = loader.load_all(search_paths)
-
-    # Log warnings
-    for warning in result.legacy_warnings:
-        LOG.warning(warning)
 
     # Log failures
     for path, error in result.failed:
@@ -464,7 +368,6 @@ def get_plugin_manager() -> PluginManager:
 __all__ = [
     "PluginInfo",
     "PluginManager",
-    "PluginProtocol",
     "get_plugin_manager",
     "initialize_plugins",
     "register_all_plugins",
