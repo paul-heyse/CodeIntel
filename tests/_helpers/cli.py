@@ -15,7 +15,7 @@ from io import StringIO
 from pathlib import Path
 
 from codeintel.cli import app
-from codeintel.cli.cli_errors import handle_cli_error
+from codeintel.cli.errors import handle_cli_error
 
 
 @dataclass(frozen=True)

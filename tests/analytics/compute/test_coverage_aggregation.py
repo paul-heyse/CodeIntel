@@ -1,22 +1,16 @@
-"""Tests for analytics.coverage_analytics module.
-
-Covers the compute_coverage_functions function which aggregates line-level
-coverage data into function-level coverage statistics.
-"""
+"""Combined coverage aggregation tests using shared coverage packs."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import Iterator, cast
 
 import pytest
 
 import codeintel.analytics.testing.coverage.edges as coverage_edges
-from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
+from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_not_none,
@@ -33,16 +27,9 @@ from tests._helpers.coverage import (
     seed_coverage_lines_range,
     seed_goid,
 )
-from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import GatewayFactory
-
-if TYPE_CHECKING:
-    from duckdb import DuckDBPyConnection
-
-
-# ---------------------------------------------------------------------------
-# Test Constants
-# ---------------------------------------------------------------------------
+from tests._helpers.context import TestContext
+from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds import METRICS_PACK
 
 EXPECTED_EXECUTABLE_5 = 5
 EXPECTED_EXECUTABLE_3 = 3
@@ -55,7 +42,6 @@ DIVIDE_COVERAGE_LOW = 0.5
 DIVIDE_COVERAGE_HIGH = 0.6
 DIVIDE_ERROR_LINE_START = 22
 
-# Hash constants for test GOIDs (DECIMAL(38,0) in schema)
 HASH_1 = 1001
 HASH_2 = 1002
 HASH_3 = 1003
@@ -75,96 +61,54 @@ HASH_CALC_DIVIDE = 2004
 HASH_HELPER = 2005
 
 
-# ---------------------------------------------------------------------------
-# Test Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
-def snapshot() -> SnapshotRef:
-    """
-    Create a standard test snapshot reference.
-
-    Returns
-    -------
-    SnapshotRef
-        A snapshot reference for testing.
-    """
-    return make_snapshot()
-
-
-@pytest.fixture
-def analytics_gateway() -> Iterator[StorageGateway]:
-    """
-    Create an in-memory gateway with full schema for coverage analytics tests.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway backed by in-memory DuckDB with full schema.
-    """
-    gw = GatewayFactory().open()
+def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide a coverage-ready TestContext with clean coverage tables."""
+    ctx = TestScenario.with_coverage().with_seeds(METRICS_PACK).build(tmp_path)
+    con = ctx.con
+    for table in (
+        "analytics.coverage_functions",
+        "analytics.coverage_lines",
+        "analytics.test_catalog",
+        "analytics.test_coverage_edges",
+    ):
+        con.execute(f"DELETE FROM {table}")
+    con.execute(
+        "DELETE FROM core.goids WHERE repo = ? AND commit = ?",
+        [ctx.repo, ctx.commit],
+    )
     try:
-        yield gw
+        yield ctx
     finally:
-        gw.close()
-
-
-def _query_coverage_function(
-    con: DuckDBPyConnection,
-    snapshot: SnapshotRef,
-    goid_h128: int,
-) -> tuple[object, ...] | None:
-    """
-    Query a coverage function by hash.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    snapshot
-        Snapshot reference for repo/commit.
-    goid_h128
-        GOID hash to query.
-
-    Returns
-    -------
-    tuple[object, ...] | None
-        Row tuple or None if not found.
-    """
-    return con.execute(
-        """
-        SELECT
-            executable_lines, covered_lines, coverage_ratio, tested, untested_reason
-        FROM analytics.coverage_functions
-        WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
-        """,
-        [snapshot.repo, snapshot.commit, goid_h128],
-    ).fetchone()
+        ctx.close()
 
 
 def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
-    """Build a typed CoverageAnalyticsStepConfig for a snapshot.
-
-    Returns
-    -------
-    CoverageAnalyticsStepConfig
-        Coverage analytics configuration scoped to the snapshot.
-    """
     return coverage_analytics_cfg(snapshot)
 
 
-# ---------------------------------------------------------------------------
-# Test Cases
-# ---------------------------------------------------------------------------
+def _query_coverage_function(
+    ctx: TestContext,
+    goid_h128: int,
+) -> tuple[object, ...] | None:
+    return ctx.con.execute(
+        """
+        SELECT executable_lines, covered_lines, coverage_ratio, tested, untested_reason
+        FROM analytics.coverage_functions
+        WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
+        """,
+        [ctx.repo, ctx.commit, goid_h128],
+    ).fetchone()
 
 
-def test_load_coverage_data_missing_file_logs_warning(
-    tmp_path: Path, snapshot: SnapshotRef, caplog: pytest.LogCaptureFixture
+def test_load_coverage_data_missing_file(
+    tmp_path: Path,
+    coverage_ctx: TestContext,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Missing coverage files should emit a warning and return None."""
     cfg = TestCoverageStepConfig(
-        snapshot=snapshot,
+        snapshot=coverage_ctx.to_snapshot_ref(),
         coverage_file=tmp_path / "nonexistent.coverage",
     )
     caplog.set_level("WARNING")
@@ -179,46 +123,39 @@ def test_load_coverage_data_missing_file_logs_warning(
     )
 
 
-def test_empty_goids_produces_no_rows(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_empty_goids_produces_no_rows(coverage_ctx: TestContext) -> None:
     """Verify that no GOIDs results in no coverage function rows."""
-    con = analytics_gateway.con
+    cfg = _coverage_config(coverage_ctx.to_snapshot_ref())
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
-
-    result = con.execute(
+    count = coverage_ctx.con.execute(
         """
         SELECT COUNT(*) FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ?
         """,
-        [snapshot.repo, snapshot.commit],
+        [coverage_ctx.repo, coverage_ctx.commit],
     ).fetchone()
 
-    result = expect_is_not_none(result)
-    expect_equal(result[0], 0)
+    count = expect_is_not_none(count)
+    expect_equal(count[0], 0)
 
 
-def test_single_function_fully_covered(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_single_function_fully_covered(coverage_ctx: TestContext) -> None:
     """Verify coverage ratio for a fully covered function."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
         snapshot,
         GoidSeedData("urn:test:func1", "module.py", "function", "my_function", HASH_1, 1, 5),
     )
-
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(con, snapshot, HASH_1)
-
+    result = _query_coverage_function(coverage_ctx, HASH_1)
     result = expect_is_not_none(result)
     expect_equal(result[0], EXPECTED_EXECUTABLE_5)
     expect_equal(result[1], EXPECTED_EXECUTABLE_5)
@@ -227,11 +164,10 @@ def test_single_function_fully_covered(
     expect_equal(result[4], "")
 
 
-def test_single_function_partially_covered(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_single_function_partially_covered(coverage_ctx: TestContext) -> None:
     """Verify coverage ratio for a partially covered function."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -239,7 +175,6 @@ def test_single_function_partially_covered(
         GoidSeedData("urn:test:func2", "partial.py", "function", "partial_func", HASH_2, 1, 4),
     )
 
-    # 4 lines: 3 executable, 2 covered
     seed_coverage_line(
         con, snapshot, CoverageLineSeedData("partial.py", 1, is_executable=True, is_covered=True)
     )
@@ -254,10 +189,9 @@ def test_single_function_partially_covered(
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(con, snapshot, HASH_2)
-
+    result = _query_coverage_function(coverage_ctx, HASH_2)
     result = expect_is_not_none(result)
     expect_equal(result[0], EXPECTED_EXECUTABLE_3)
     expect_equal(result[1], EXPECTED_COVERED_2)
@@ -269,11 +203,10 @@ def test_single_function_partially_covered(
     expect_equal(result[4], "")
 
 
-def test_function_no_coverage_data(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_function_no_coverage_data(coverage_ctx: TestContext) -> None:
     """Verify function with no coverage lines is marked untested."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -282,10 +215,9 @@ def test_function_no_coverage_data(
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(con, snapshot, HASH_3)
-
+    result = _query_coverage_function(coverage_ctx, HASH_3)
     result = expect_is_not_none(result)
     expect_equal(result[0], 0)
     expect_equal(result[1], 0)
@@ -294,11 +226,10 @@ def test_function_no_coverage_data(
     expect_equal(result[4], "no_executable_code")
 
 
-def test_function_with_executable_but_no_covered_lines(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_function_with_executable_but_no_covered_lines(coverage_ctx: TestContext) -> None:
     """Verify function with executable but zero covered lines."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -311,10 +242,9 @@ def test_function_with_executable_but_no_covered_lines(
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(con, snapshot, HASH_4)
-
+    result = _query_coverage_function(coverage_ctx, HASH_4)
     result = expect_is_not_none(result)
     expect_equal(result[0], EXPECTED_EXECUTABLE_6)
     expect_equal(result[1], 0)
@@ -323,9 +253,10 @@ def test_function_with_executable_but_no_covered_lines(
     expect_equal(result[4], "no_tests")
 
 
-def test_method_kind_included(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
+def test_method_kind_included(coverage_ctx: TestContext) -> None:
     """Verify that 'method' kind GOIDs are included in aggregation."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -334,13 +265,12 @@ def test_method_kind_included(snapshot: SnapshotRef, analytics_gateway: StorageG
             "urn:test:method1", "class_mod.py", "method", "MyClass.my_method", HASH_METHOD, 10, 15
         ),
     )
-
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_mod.py", 10, 16))
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = con.execute(
+    result = coverage_ctx.con.execute(
         """
         SELECT kind, coverage_ratio, tested
         FROM analytics.coverage_functions
@@ -355,22 +285,22 @@ def test_method_kind_included(snapshot: SnapshotRef, analytics_gateway: StorageG
     expect_true(result[2] is True)
 
 
-def test_class_kind_excluded(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
+def test_class_kind_excluded(coverage_ctx: TestContext) -> None:
     """Verify that 'class' kind GOIDs are NOT included in aggregation."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
         snapshot,
         GoidSeedData("urn:test:class1", "class_def.py", "class", "MyClass", HASH_CLASS, 1, 50),
     )
-
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_def.py", 1, 51))
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = con.execute(
+    result = coverage_ctx.con.execute(
         """
         SELECT COUNT(*)
         FROM analytics.coverage_functions
@@ -383,24 +313,21 @@ def test_class_kind_excluded(snapshot: SnapshotRef, analytics_gateway: StorageGa
     expect_equal(result[0], 0)
 
 
-def test_multiple_functions_same_file(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_multiple_functions_same_file(coverage_ctx: TestContext) -> None:
     """Verify multiple functions in the same file are aggregated separately."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
         snapshot,
         GoidSeedData("urn:test:func_a", "multi.py", "function", "func_a", HASH_A, 1, 5),
     )
-
     seed_goid(
         con,
         snapshot,
         GoidSeedData("urn:test:func_b", "multi.py", "function", "func_b", HASH_B, 10, 15),
     )
-
     seed_coverage_lines_range(
         con, snapshot, CoverageRangeSeedData("multi.py", 1, 6, is_covered=True)
     )
@@ -409,9 +336,9 @@ def test_multiple_functions_same_file(
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result_a = con.execute(
+    result_a = coverage_ctx.con.execute(
         """
         SELECT coverage_ratio, tested
         FROM analytics.coverage_functions
@@ -419,12 +346,11 @@ def test_multiple_functions_same_file(
         """,
         [snapshot.repo, snapshot.commit, HASH_A],
     ).fetchone()
-
     result_a = expect_is_not_none(result_a)
     expect_equal(result_a[0], 1.0)
     expect_true(result_a[1] is True)
 
-    result_b = con.execute(
+    result_b = coverage_ctx.con.execute(
         """
         SELECT coverage_ratio, tested
         FROM analytics.coverage_functions
@@ -432,17 +358,15 @@ def test_multiple_functions_same_file(
         """,
         [snapshot.repo, snapshot.commit, HASH_B],
     ).fetchone()
-
     result_b = expect_is_not_none(result_b)
     expect_equal(result_b[0], 0.0)
     expect_true(result_b[1] is False)
 
 
-def test_idempotent_rerun_deletes_old_rows(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_idempotent_rerun_deletes_old_rows(coverage_ctx: TestContext) -> None:
     """Verify that re-running deletes existing rows for the same repo/commit."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -451,7 +375,6 @@ def test_idempotent_rerun_deletes_old_rows(
             "urn:test:func_idem", "idempotent.py", "function", "idem_func", HASH_IDEM, 1, 3
         ),
     )
-
     seed_coverage_line(
         con, snapshot, CoverageLineSeedData("idempotent.py", 1, is_executable=True, is_covered=True)
     )
@@ -467,9 +390,9 @@ def test_idempotent_rerun_deletes_old_rows(
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result1 = con.execute(
+    result1 = coverage_ctx.con.execute(
         """
         SELECT covered_lines FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
@@ -479,7 +402,7 @@ def test_idempotent_rerun_deletes_old_rows(
     result1 = expect_is_not_none(result1)
     expect_equal(result1[0], 1)
 
-    con.execute(
+    coverage_ctx.con.execute(
         """
         UPDATE analytics.coverage_lines
         SET is_covered = TRUE
@@ -488,9 +411,9 @@ def test_idempotent_rerun_deletes_old_rows(
         [snapshot.repo, snapshot.commit],
     )
 
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result2 = con.execute(
+    result2 = coverage_ctx.con.execute(
         """
         SELECT covered_lines FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
@@ -500,7 +423,7 @@ def test_idempotent_rerun_deletes_old_rows(
     result2 = expect_is_not_none(result2)
     expect_equal(result2[0], EXPECTED_COVERED_3)
 
-    count = con.execute(
+    count = coverage_ctx.con.execute(
         """
         SELECT COUNT(*) FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
@@ -511,27 +434,30 @@ def test_idempotent_rerun_deletes_old_rows(
     expect_equal(count[0], 1)
 
 
-def test_different_repos_isolated(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
+def test_different_repos_isolated(coverage_ctx: TestContext) -> None:
     """Verify that different repos are isolated from each other."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
+    other_snapshot = SnapshotRef(
+        repo="other-repo",
+        commit="other-commit",
+        repo_root=snapshot.repo_root,
+    )
 
     seed_goid(
         con,
         snapshot,
         GoidSeedData("urn:repo1:func", "module.py", "function", "func1", HASH_REPO1, 1, 5),
     )
-
-    other_snapshot = make_snapshot(repo="other-repo", commit="other-commit")
     seed_goid(
         con,
         other_snapshot,
         GoidSeedData("urn:repo2:func", "module.py", "function", "func2", HASH_REPO2, 1, 5),
     )
-
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
     result = con.execute(
         """
@@ -553,11 +479,10 @@ def test_different_repos_isolated(snapshot: SnapshotRef, analytics_gateway: Stor
     expect_equal(result_other[0], 0)
 
 
-def test_function_with_null_end_line(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_function_with_null_end_line(coverage_ctx: TestContext) -> None:
     """Verify handling of GOIDs with NULL end_line (single-line functions)."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
 
     seed_goid(
         con,
@@ -572,15 +497,14 @@ def test_function_with_null_end_line(
             None,
         ),
     )
-
     seed_coverage_line(
         con, snapshot, CoverageLineSeedData("single.py", 5, is_executable=True, is_covered=True)
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = con.execute(
+    result = coverage_ctx.con.execute(
         """
         SELECT executable_lines, covered_lines, coverage_ratio
         FROM analytics.coverage_functions
@@ -595,14 +519,12 @@ def test_function_with_null_end_line(
     expect_equal(result[2], 1.0)
 
 
-def test_realistic_module_with_mixed_coverage(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_realistic_module_with_mixed_coverage(coverage_ctx: TestContext) -> None:
     """Test a realistic module with multiple functions and varied coverage."""
-    con = analytics_gateway.con
+    con = coverage_ctx.con
+    snapshot = coverage_ctx.to_snapshot_ref()
     calc_path = "utils/calculator.py"
 
-    # Class (should not be included)
     seed_goid(
         con,
         snapshot,
@@ -610,8 +532,6 @@ def test_realistic_module_with_mixed_coverage(
             "urn:utils:Calculator", calc_path, "class", "Calculator", HASH_CALC_CLASS, 1, 50
         ),
     )
-
-    # Constructor method
     seed_goid(
         con,
         snapshot,
@@ -625,8 +545,6 @@ def test_realistic_module_with_mixed_coverage(
             10,
         ),
     )
-
-    # Add method (well tested)
     seed_goid(
         con,
         snapshot,
@@ -634,8 +552,6 @@ def test_realistic_module_with_mixed_coverage(
             "urn:utils:Calculator.add", calc_path, "method", "Calculator.add", HASH_CALC_ADD, 12, 15
         ),
     )
-
-    # Divide method (partially tested)
     seed_goid(
         con,
         snapshot,
@@ -649,8 +565,6 @@ def test_realistic_module_with_mixed_coverage(
             25,
         ),
     )
-
-    # Helper function (untested)
     seed_goid(
         con,
         snapshot,
@@ -665,28 +579,25 @@ def test_realistic_module_with_mixed_coverage(
         ),
     )
 
-    # __init__: fully covered
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData(calc_path, 5, 11))
-
-    # add: fully covered
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData(calc_path, 12, 16))
-
-    # divide: partially covered
     for line in range(17, 26):
-        is_covered = line < DIVIDE_ERROR_LINE_START
         seed_coverage_line(
             con,
             snapshot,
-            CoverageLineSeedData(calc_path, line, is_executable=True, is_covered=is_covered),
+            CoverageLineSeedData(
+                calc_path,
+                line,
+                is_executable=True,
+                is_covered=line < DIVIDE_ERROR_LINE_START,
+            ),
         )
-
-    # _internal_helper: not covered at all
     seed_coverage_lines_range(
         con, snapshot, CoverageRangeSeedData(calc_path, 30, 36, is_covered=False)
     )
 
     cfg = _coverage_config(snapshot)
-    compute_coverage_functions(analytics_gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
 
     results = con.execute(
         """
@@ -699,7 +610,6 @@ def test_realistic_module_with_mixed_coverage(
     ).fetchall()
 
     expect_length(results, EXPECTED_FUNCTIONS_COUNT)
-
     results_by_hash = {int(row[0]): row for row in results}
 
     init_row = results_by_hash[HASH_CALC_INIT]
@@ -718,3 +628,76 @@ def test_realistic_module_with_mixed_coverage(
     expect_equal(helper_row[1], 0.0)
     expect_true(helper_row[2] is False)
     expect_equal(helper_row[3], "no_tests")
+
+
+def test_compute_coverage_functions_smoke(coverage_ctx: TestContext) -> None:
+    """Aggregate executable and covered lines into coverage_functions."""
+    snapshot = coverage_ctx.to_snapshot_ref()
+    con = coverage_ctx.con
+    seed_goid(
+        con,
+        snapshot,
+        GoidSeedData(
+            urn="urn:func",
+            rel_path="pkg/mod.py",
+            kind="function",
+            qualname="pkg.mod.fn",
+            goid_h128=1,
+            start_line=1,
+            end_line=3,
+        ),
+    )
+    seed_goid(
+        con,
+        snapshot,
+        GoidSeedData(
+            urn="urn:method",
+            rel_path="pkg/mod.py",
+            kind="method",
+            qualname="pkg.mod.method",
+            goid_h128=2,
+            start_line=10,
+            end_line=12,
+        ),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 1, is_executable=True, is_covered=True),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 2, is_executable=True, is_covered=False),
+    )
+    seed_coverage_line(
+        con,
+        snapshot,
+        CoverageLineSeedData("pkg/mod.py", 3, is_executable=False, is_covered=False),
+    )
+
+    cfg = _coverage_config(snapshot)
+    compute_coverage_functions(coverage_ctx.gateway, cfg)
+
+    rows_raw = con.execute(
+        """
+        SELECT function_goid_h128, executable_lines, covered_lines,
+               coverage_ratio, tested, untested_reason
+        FROM analytics.coverage_functions
+        WHERE repo = ? AND commit = ?
+        ORDER BY function_goid_h128
+        """,
+        [snapshot.repo, snapshot.commit],
+    ).fetchall()
+
+    rows = [
+        (int(goid), exec_lines, covered, ratio, tested, reason)
+        for goid, exec_lines, covered, ratio, tested, reason in rows_raw
+    ]
+    expect_equal(
+        rows,
+        [
+            (1, 2, 1, pytest.approx(0.5), True, ""),
+            (2, 0, 0, None, False, "no_executable_code"),
+        ],
+    )

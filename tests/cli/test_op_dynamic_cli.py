@@ -16,7 +16,7 @@ import pytest
 from cyclopts.exceptions import UnknownCommandError
 
 from codeintel.cli import cyclopts_ops
-from codeintel.cli.op_params import (
+from codeintel.cli.introspection import (
     CliParamSpec,
     OperationCliMetadata,
     ParamRole,

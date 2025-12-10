@@ -1,17 +1,259 @@
-"""Entrypoint detection tests for analytics compute layer."""
+"""Entrypoint detection and evidence tests (combined suite)."""
 
 from __future__ import annotations
 
+import textwrap
+
+import pytest
+
 from codeintel.analytics.compute.entrypoints.detection import (
     DetectorSettings,
+    EntryPointCandidate,
+    ImportContext,
     detect_entrypoints,
 )
+from tests._helpers import assert_frozen
 from tests._helpers.assertions import assert_mapping_list
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.seeds.entrypoints import ENTRYPOINTS_MOD_FQN, ENTRYPOINTS_MOD_PATH
+
+REL_PATH = ENTRYPOINTS_MOD_PATH
+MODULE = ENTRYPOINTS_MOD_FQN
+
+
+def test_detector_settings_defaults_and_disable() -> None:
+    """DetectorSettings toggles default and selective frameworks."""
+    defaults = DetectorSettings()
+    expect_true(defaults.detect_fastapi)
+    expect_true(defaults.detect_flask)
+    expect_true(defaults.detect_click)
+    expect_true(defaults.detect_typer)
+    expect_true(defaults.detect_cron)
+    expect_true(defaults.detect_django)
+    expect_true(defaults.detect_celery)
+    expect_true(defaults.detect_airflow)
+    expect_true(defaults.detect_generic_routes)
+
+    disabled = DetectorSettings(detect_fastapi=False, detect_flask=False)
+    expect_false(disabled.detect_fastapi)
+    expect_false(disabled.detect_flask)
+    assert_frozen(defaults, "detect_fastapi", new_value=False)
+
+
+def test_import_context_immutability() -> None:
+    """ImportContext supports expected fields and is frozen."""
+    ctx = ImportContext(
+        alias_to_lib={"app": "fastapi.FastAPI"},
+        fastapi_targets={"app"},
+        flask_targets=set(),
+        flask_blueprints=set(),
+        typer_targets=set(),
+        click_groups=set(),
+        django_url_helpers=set(),
+        celery_apps=set(),
+    )
+    expect_in("app", ctx.fastapi_targets)
+    expect_equal(ctx.alias_to_lib["app"], "fastapi.FastAPI")
+    assert_frozen(ctx, "alias_to_lib", {"new": "value"})
+
+
+def test_entrypoint_candidate_core_metadata() -> None:
+    """EntryPointCandidate stores required and optional fields."""
+    candidate = EntryPointCandidate(
+        kind="http_handler",
+        framework="fastapi",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="get_users",
+        lineno=10,
+        end_lineno=15,
+    )
+    expect_equal(candidate.kind, "http_handler")
+    expect_equal(candidate.framework, "fastapi")
+    expect_equal(candidate.rel_path, REL_PATH)
+    expect_equal(candidate.module, MODULE)
+    expect_equal(candidate.qualname, "get_users")
+    expect_equal(candidate.lineno, 10)
+    expect_equal(candidate.end_lineno, 15)
+
+    http = EntryPointCandidate(
+        kind="http_handler",
+        framework="fastapi",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="create_user",
+        lineno=20,
+        end_lineno=30,
+        http_method="POST",
+        route_path="/users",
+        status_codes=[201, 400],
+    )
+    expect_equal(http.http_method, "POST")
+    expect_equal(http.route_path, "/users")
+    expect_equal(http.status_codes, [201, 400])
+
+    cli = EntryPointCandidate(
+        kind="cli_command",
+        framework="click",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="cli_main",
+        lineno=1,
+        end_lineno=10,
+        command_name="main",
+    )
+    expect_equal(cli.command_name, "main")
+    expect_equal(cli.kind, "cli_command")
+
+    job = EntryPointCandidate(
+        kind="background_job",
+        framework="celery",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="process_task",
+        lineno=1,
+        end_lineno=10,
+        schedule="0 * * * *",
+        trigger="cron",
+    )
+    expect_equal(job.schedule, "0 * * * *")
+    expect_equal(job.trigger, "cron")
+
+    extra = EntryPointCandidate(
+        kind="http_handler",
+        framework="custom",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="handler",
+        lineno=1,
+        end_lineno=5,
+        extra={"custom_field": "value", "count": 42},
+    )
+    expect_is_not_none(extra.extra)
+    expect_equal(extra.extra["custom_field"], "value")
+    assert_frozen(candidate, "kind", "cli_command")
+
+
+def test_entrypoint_candidate_optionals_and_schema() -> None:
+    """EntryPointCandidate handles optional fields and schemas."""
+    base = EntryPointCandidate(
+        kind="http_handler",
+        framework=None,
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="handler",
+        lineno=1,
+        end_lineno=5,
+    )
+    expect_equal(base.framework, None)
+    expect_equal(base.http_method, None)
+    expect_equal(base.route_path, None)
+    expect_equal(base.status_codes, None)
+    expect_equal(base.auth_required, None)
+    expect_equal(base.command_name, None)
+    expect_equal(base.schedule, None)
+    expect_equal(base.trigger, None)
+    expect_equal(base.extra, None)
+
+    evidence_payload = [{"type": "decorator", "line": 10}]
+    evidence_candidate = EntryPointCandidate(
+        kind="http_handler",
+        framework="fastapi",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="handler",
+        lineno=1,
+        end_lineno=5,
+        evidence=evidence_payload,
+    )
+    expect_equal(evidence_candidate.evidence, evidence_payload)
+
+    schema = {
+        "name": {"type": "str", "required": True},
+        "count": {"type": "int", "default": 1},
+    }
+    with_schema = EntryPointCandidate(
+        kind="cli_command",
+        framework="click",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="cmd",
+        lineno=1,
+        end_lineno=5,
+        arguments_schema=schema,
+    )
+    expect_is_not_none(with_schema.arguments_schema)
+    expect_in("name", with_schema.arguments_schema or {})
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["http_handler", "cli_command", "background_job", "scheduled_job", "websocket"],
+)
+def test_entrypoint_candidate_kinds(kind: str) -> None:
+    """Test various entrypoint kinds."""
+    candidate = EntryPointCandidate(
+        kind=kind,
+        framework="generic",
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="handler",
+        lineno=1,
+        end_lineno=5,
+    )
+    expect_equal(candidate.kind, kind)
+
+
+@pytest.mark.parametrize(
+    "framework",
+    ["fastapi", "flask", "click", "typer", "celery", "django", "airflow", None],
+)
+def test_entrypoint_candidate_frameworks(framework: str | None) -> None:
+    """Test various framework values."""
+    candidate = EntryPointCandidate(
+        kind="http_handler",
+        framework=framework,
+        rel_path=REL_PATH,
+        module=MODULE,
+        qualname="handler",
+        lineno=1,
+        end_lineno=5,
+    )
+    expect_equal(candidate.framework, framework)
+
+
+def test_detect_entrypoints_basic_behaviors() -> None:
+    """Detect entrypoints handles empty, syntax errors, and basic flows."""
+    settings = DetectorSettings()
+    expect_equal(
+        detect_entrypoints("", rel_path=REL_PATH, module=MODULE, settings=settings),
+        [],
+    )
+    expect_equal(
+        detect_entrypoints("def broken(", rel_path=REL_PATH, module=MODULE, settings=settings),
+        [],
+    )
+
+    source = """
+def helper_function(x):
+    return x + 1
+
+class MyClass:
+    def method(self):
+        pass
+"""
+    candidates = detect_entrypoints(source, rel_path=REL_PATH, module=MODULE, settings=settings)
+    expect_equal(candidates, [])
+
+    result = detect_entrypoints("x = 1", rel_path=REL_PATH, module=MODULE, settings=settings)
+    expect_is_instance(result, list)
 
 
 def test_detects_fastapi_and_flask_routes() -> None:
@@ -33,8 +275,8 @@ def say_hello() -> str:
 """
     candidates = detect_entrypoints(
         source,
-        rel_path="api.py",
-        module="api",
+        rel_path=REL_PATH,
+        module=MODULE,
         settings=DetectorSettings(),
     )
     frameworks = {candidate.framework for candidate in candidates}
@@ -161,3 +403,34 @@ urlpatterns = [
     django_entry = next(candidate for candidate in candidates if candidate.framework == "django")
     expect_equal(django_entry.route_path, "home/")
     expect_true(django_entry.qualname.endswith("airflow_task"))
+
+
+def test_detect_entrypoints_emits_snippet_evidence() -> None:
+    """detect_entrypoints should emit decorator evidence with snippets."""
+    source = textwrap.dedent(
+        """\
+        from fastapi import FastAPI
+
+        app = FastAPI()
+
+        @app.get("/ping")
+        def ping() -> str:
+            return "ok"
+        """
+    )
+    candidates = detect_entrypoints(
+        source,
+        rel_path=REL_PATH,
+        module=MODULE,
+        settings=DetectorSettings(),
+    )
+    if not candidates:
+        pytest.fail("Expected a FastAPI entrypoint candidate")
+    evidence = candidates[0].evidence
+    if not evidence:
+        pytest.fail("Entrypoint candidate did not include evidence")
+    sample = evidence[0]
+    expect_equal(sample["path"], REL_PATH)
+    expect_equal(sample["lineno"], 5)
+    expect_equal(sample["snippet"], '@app.get("/ping")')
+    expect_true("app.get" in str(sample["details"]))

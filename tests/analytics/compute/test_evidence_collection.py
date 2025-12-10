@@ -84,6 +84,42 @@ def test_evidence_collector_add_from_ast_and_extend() -> None:
     )
 
 
+def test_evidence_collector_caps_and_retains_details() -> None:
+    """Collector should deduplicate, cap, and preserve details."""
+    collector = EvidenceCollector(max_samples=2)
+    sample = EvidenceSample(
+        path="file.py",
+        lineno=1,
+        end_lineno=1,
+        snippet="line",
+        details={"kind": "example"},
+    )
+    collector.add(sample)
+    collector.add(sample)
+    collector.add(
+        EvidenceSample(
+            path="file.py",
+            lineno=2,
+            end_lineno=2,
+            snippet="other",
+            details={},
+        )
+    )
+    collector.add(
+        EvidenceSample(
+            path="file.py",
+            lineno=3,
+            end_lineno=3,
+            snippet="extra",
+            details={},
+        )
+    )
+
+    evidence = collector.to_dicts()
+    expect_length(evidence, 2)
+    expect_equal(evidence[0]["details"], {"kind": "example"})
+
+
 def test_validate_evidence_samples_errors() -> None:
     """Validate payloads raise on bad inputs."""
     with pytest.raises(TypeError):

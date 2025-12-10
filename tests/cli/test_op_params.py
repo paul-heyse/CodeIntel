@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.cli.op_params import (
+from codeintel.cli.introspection import (
     CliParamSpec,
     coerce_params_from_strings,
     coerce_string_param,

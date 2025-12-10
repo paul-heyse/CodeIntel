@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.cli.execution import OperationCategory, OperationExecutor, OperationSpec
-from codeintel.cli.operation_registry import get_operation_registry
-from codeintel.cli.results import CliResult
+from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.core import CliResult
 from tests._helpers.assertions import expect_true
 
 if TYPE_CHECKING:

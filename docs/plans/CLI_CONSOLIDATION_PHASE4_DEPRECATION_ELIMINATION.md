@@ -203,6 +203,7 @@ src/codeintel/cli/
 │   ├── docs.py          # Documentation handlers
 │   ├── graphs.py        # Graph plugin handlers
 │   ├── health.py        # Health check handlers
+│   ├── history.py       # History timeseries handlers
 │   ├── ide.py           # IDE hint handlers
 │   ├── jobs.py          # Background job handlers
 │   ├── ops.py           # Operation handlers
@@ -286,16 +287,20 @@ Fixed `command_context.py` param merging - command-specific params now correctly
 
 ---
 
-## Summary of Phase 4 Accomplishments
+## Summary of Phase 4 & 5 Accomplishments
 
 ### Code Removed
-- 9 legacy handler files deleted (~7,634 lines, ~200 KB)
-- 2 obsolete test files deleted
-- Deprecation warnings test file converted to placeholder
+- 10 legacy handler files deleted (~8,000+ lines, ~220 KB):
+  - 9 handler files from Phase 4
+  - `history_handlers.py` from Phase 5
+- 3 obsolete test files deleted
+- All deprecated functions removed from `cyclopts_common.py`
+- All backward compatibility code removed from `config/loader.py` and `config/env.py`
 
 ### Code Added
 - `handlers/plugins.py`: 7 handlers, 7 result types (~600 lines)
 - `handlers/jobs.py`: 5 handlers, 5 result types (~350 lines)
+- `handlers/history.py`: 1 handler, 1 result type (~300 lines)
 - Config building functions moved to `config/service.py` (~120 lines)
 
 ### Code Updated
@@ -303,6 +308,7 @@ Fixed `command_context.py` param merging - command-specific params now correctly
 - All handlers use `CliResult` for output
 - Type consolidation on `result_types.py`
 - Test files updated for new architecture
+- `command_context.py` fixed for correct param merging
 
 ### Architectural Achievements
 
@@ -311,6 +317,7 @@ Fixed `command_context.py` param merging - command-specific params now correctly
 3. **Unified context management**: `command_context()` handles all setup/teardown
 4. **Type-safe result types**: Centralized in `result_types.py`
 5. **No more stdout.write in handlers**: All output through renderer
+6. **Zero deprecated code**: No more deprecation warnings, backward compatibility shims, or legacy aliases
 
 ---
 

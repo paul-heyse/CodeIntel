@@ -12,7 +12,7 @@ from codeintel.cli.handlers.ops import (
 )
 from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.cli.result_types import (
+from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
     DatasetVerifyResult,

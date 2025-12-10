@@ -6,7 +6,7 @@ Test individual operations through OperationTestHarness.
 from __future__ import annotations
 
 from codeintel.cli.execution import OperationCategory
-from codeintel.cli.operation_registry import get_operation_registry
+from codeintel.cli.introspection import get_operation_registry
 from tests._helpers.assertions import (
     expect_false,
     expect_in,
