@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.graphs.compute.metrics.paths import (
@@ -24,8 +23,9 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     empty_digraph,
     star_graph,
+    tree_graph,
 )
-from tests.graphs.constants import STAR_SPOKE_SWEEP
+from tests.graphs.constants import STAR_SPOKE_SWEEP, TREE_SHAPES
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -409,6 +409,18 @@ def test_reachable_star_graphs(spoke_count: int, expected_reachable_from_hub: in
     result = compute_reachable_nodes(graph, "hub")
 
     expect_length(result, expected_reachable_from_hub)
+
+
+@pytest.mark.parametrize(
+    ("depth", "branching"),
+    TREE_SHAPES,
+)
+def test_reachable_tree_graphs(depth: int, branching: int) -> None:
+    """Tree graphs reach all nodes from the root."""
+    graph = tree_graph(depth, branching)
+    reachable = compute_reachable_nodes(graph, "N0")
+
+    expect_length(reachable, graph.number_of_nodes())
 
 
 @pytest.mark.parametrize(

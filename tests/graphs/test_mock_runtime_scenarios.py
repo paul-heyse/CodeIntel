@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Final
 
 import networkx as nx
-import pytest
 
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.config.primitives import GraphBackendConfig
@@ -301,8 +300,9 @@ class TestMockRuntimeFactories:
         mock = create_mock_runtime_with_call_graph()
 
         call_graph = mock.call_graph
+        expect_true(call_graph is not None, message="Expected call graph to be set")
         if call_graph is None:
-            pytest.fail("Expected call graph to be set")
+            return
         expect_true(call_graph.number_of_edges() > 0)
         expect_true("func_a" in call_graph.nodes)
         expect_true("func_b" in call_graph.nodes)
@@ -314,8 +314,9 @@ class TestMockRuntimeFactories:
         mock = create_mock_runtime_with_call_graph(custom_edges)
 
         call_graph = mock.call_graph
+        expect_true(call_graph is not None, message="Expected call graph to be set")
         if call_graph is None:
-            pytest.fail("Expected call graph to be set")
+            return
         expect_true("main" in call_graph.nodes)
         expect_true("helper" in call_graph.nodes)
         expect_true("util" in call_graph.nodes)
@@ -326,8 +327,9 @@ class TestMockRuntimeFactories:
         mock = create_mock_runtime_with_import_graph()
 
         import_graph = mock.import_graph
+        expect_true(import_graph is not None, message="Expected import graph to be set")
         if import_graph is None:
-            pytest.fail("Expected import graph to be set")
+            return
         expect_true(import_graph.number_of_edges() > 0)
 
     @staticmethod

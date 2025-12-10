@@ -1,8 +1,9 @@
 # CLI Unified Architecture Specification
 
-> **Status:** Draft  
+> **Status:** Active (Phase 3 Complete)  
 > **Author:** Architecture Team  
 > **Date:** December 2024  
+> **Last Updated:** December 2024 (Post-Phase 3)  
 > **Scope:** `src/codeintel/cli/` consolidation
 
 ## Executive Summary
@@ -158,7 +159,7 @@ Into a **single, canonical context type** that:
 ### 3.2 Context Structure
 
 ```
-HandlerContext
+HandlerContext (implemented in handlers/context.py)
 ├── Immutable Configuration
 │   ├── config: CliConfig
 │   ├── operation_id: str
@@ -176,19 +177,27 @@ HandlerContext
 │   └── graph_runtime: GraphRuntime
 │
 ├── Parameter Access
-│   ├── _params: dict[str, Any]  (internal storage)
-│   ├── param_str(key, default) -> str | None
-│   ├── param_int(key, default) -> int
-│   ├── param_bool(key, default) -> bool
-│   ├── param_path(key, default) -> Path | None
-│   ├── param_enum(key, enum_type, default) -> E | None
-│   ├── require_str(key) -> str  (raises if missing)
-│   ├── require_int(key) -> int
-│   └── require_path(key) -> Path
+│   ├── _params: dict[str, object]  (internal storage)
+│   ├── params: dict[str, object]   (read-only view for backward compat)
+│   │
+│   ├── Optional Accessors (return default/None if missing)
+│   │   ├── param_str(key, default=None) -> str | None
+│   │   ├── param_int(key, default=0) -> int
+│   │   ├── param_bool(key, default=False) -> bool
+│   │   ├── param_path(key, default=None) -> Path | None
+│   │   ├── param_enum(key, enum_type, default=None) -> E | None
+│   │   ├── param_list(key, default=None) -> list[str]
+│   │   └── param_tuple(key, default=None) -> tuple[str, ...]
+│   │
+│   └── Required Accessors (raise ParameterError if missing)
+│       ├── require_str(key) -> str
+│       ├── require_int(key) -> int
+│       └── require_path(key) -> Path
 │
 ├── Utilities
 │   ├── logger: Logger  (named for operation)
-│   └── db_path: Path | None  (shortcut to runtime.db_path)
+│   ├── db_path: Path | None  (shortcut to runtime.db_path)
+│   └── color_enabled: bool  (from config)
 │
 └── Lifecycle
     ├── close() -> None  (cleanup resources)
@@ -196,7 +205,10 @@ HandlerContext
     └── __exit__() -> None
 ```
 
-**Note:** Properties like `elapsed_seconds` and `is_dry_run` can be added if needed but are not part of the core implementation. Handlers can compute elapsed time from `ctx.param_int("start_time")` if tracked, and dry-run is typically a param (`ctx.param_bool("dry_run")`).
+**Key Implementation Notes:**
+- `ParameterError` is the specific exception type for missing/invalid required parameters (subclass of `ValueError`)
+- The `params` property provides read-only access to `_params` for backward compatibility
+- `param_list()` and `param_tuple()` handle conversion from various sequence types
 
 ### 3.3 Lazy Resolution Behavior
 
@@ -214,18 +226,22 @@ Resolution failures propagate as exceptions with appropriate `ProblemDetail` wra
 |--------|-------------|---------------|
 | `param_str(key, default=None)` | Returns `default` | Coerces via `str()` |
 | `param_int(key, default=0)` | Returns `default` | Coerces via `int()`, returns default on error |
-| `param_bool(key, default=False)` | Returns `default` | Truthy check or string parse ("true"/"1"/"yes") |
+| `param_bool(key, default=False)` | Returns `default` | Truthy check or string parse ("true"/"1"/"yes"/"on") |
 | `param_path(key, default=None)` | Returns `default` | Coerces via `Path()` |
 | `param_enum(key, enum_type, default=None)` | Returns `default` | Attempts `enum_type(value)`, returns default on error |
-| `require_str(key)` | Raises `ValueError` | Coerces via `str()` |
-| `require_int(key)` | Raises `ValueError` | Coerces via `int()`, raises on conversion error |
-| `require_path(key)` | Raises `ValueError` | Coerces via `Path()` |
+| `param_list(key, default=None)` | Returns `default` or `[]` | Coerces via `[str(v) for v in value]` |
+| `param_tuple(key, default=None)` | Returns `default` or `()` | Coerces via `tuple(str(v) for v in value)` |
+| `require_str(key)` | Raises `ParameterError` | Coerces via `str()` |
+| `require_int(key)` | Raises `ParameterError` | Coerces via `int()`, raises on conversion error |
+| `require_path(key)` | Raises `ParameterError` | Coerces via `Path()` |
+
+**Note:** `ParameterError` is defined in `handlers/context.py` and is a subclass of `ValueError`. It includes a `key` attribute identifying which parameter caused the error.
 
 ### 3.5 Context Manager Support
 
 ```python
 # HandlerContext implements __enter__/__exit__ directly
-with HandlerContext(config=config, operation_id="my.op", ...) as ctx:
+with HandlerContext(config=config, operation_id="my.op", _params={...}) as ctx:
     result = my_handler(ctx)
 # gateway closed automatically
 
@@ -237,11 +253,19 @@ with handler_context_manager(config, "my.op", params={"key": "value"}) as ctx:
 # cleanup handled
 
 # Or explicit cleanup
-ctx = HandlerContext(config=config, operation_id="my.op", ...)
+ctx = HandlerContext(config=config, operation_id="my.op", _params={...})
 try:
     result = my_handler(ctx)
 finally:
     ctx.close()
+```
+
+**Migration Adapter (Temporary - Phase 6 Removal):**
+```python
+# For gradual migration, convert legacy EnhancedHandlerContext
+from codeintel.cli.handlers.context import handler_context_from_enhanced
+
+new_ctx = handler_context_from_enhanced(legacy_ctx, "my.op", extra_params)
 ```
 
 **Note:** The `@cli_command` decorator handles context creation and cleanup internally, so handler authors don't need to manage the context lifecycle directly.
@@ -806,19 +830,45 @@ OutputFormat: Enum[TEXT, JSON, JSONL]
 `HandlerContext` is a concrete dataclass, not a Protocol. For testing, create instances directly with mock/fake dependencies:
 
 ```python
-# Test fixture pattern
-def create_test_context(
+# Test fixture pattern (actual implementation)
+from unittest.mock import MagicMock
+from codeintel.cli.config.model import CliConfig
+from codeintel.cli.handlers.context import HandlerContext
+
+def _build_test_context(
+    params: dict[str, object],
     operation_id: str = "test.op",
-    params: dict[str, Any] | None = None,
-    config: CliConfig | None = None,
 ) -> HandlerContext:
     """Create HandlerContext for testing."""
+    mock_config = MagicMock(spec=CliConfig)
     return HandlerContext(
-        config=config or create_test_config(),
+        config=mock_config,
         operation_id=operation_id,
-        output_format=OutputFormat.TEXT,
-        verbosity=0,
-        _params=params or {},
+        _params=params,
+    )
+
+# Usage in tests
+def test_my_handler():
+    ctx = _build_test_context({"name": "value", "count": 10})
+    result = my_handler(ctx)
+    assert result.success
+```
+
+**For handlers requiring resources (gateway, runtime):**
+```python
+def _build_test_context_with_resources(params: dict[str, object]) -> HandlerContext:
+    mock_runtime = MagicMock(spec=ResolvedRuntime)
+    mock_runtime.serving = MagicMock(spec=ServingConfig)
+    mock_gateway = MagicMock(spec=StorageGateway)
+    mock_graph_runtime = MagicMock()
+
+    return HandlerContext(
+        config=MagicMock(spec=CliConfig),
+        operation_id="test.op",
+        _params=params,
+        _runtime=mock_runtime,
+        _gateway=mock_gateway,
+        _graph_runtime=mock_graph_runtime,
     )
 ```
 
@@ -946,15 +996,15 @@ After consolidation (Phase 6):
 
 ### 12.1 Phase Overview
 
-| Phase | Name | Focus | Duration |
-|-------|------|-------|----------|
-| Phase 0 | Preparation | Baselines, inventories, scaffolding | 1-2 days |
-| Phase 1 | Foundation Layer | `HandlerContext`, `bootstrap_cli()` | 3-4 days |
-| Phase 2 | Rendering Consolidation | Single `UnifiedRenderer` stack | 2-3 days |
-| Phase 3 | Handler Migration | All handlers use new context | 5-7 days |
-| Phase 4 | Registry Unification | Single `OperationRegistry` | 2-3 days |
-| Phase 5 | Command Decorator | `@cli_command` + migrate commands | 5-7 days |
-| Phase 6 | Legacy Cleanup | Delete all superseded files | 2-3 days |
+| Phase | Name | Focus | Duration | Status |
+|-------|------|-------|----------|--------|
+| Phase 0 | Preparation | Baselines, inventories, scaffolding | 1-2 days | ✅ Complete |
+| Phase 1 | Foundation Layer | `HandlerContext`, `bootstrap_cli()` | 3-4 days | ✅ Complete |
+| Phase 2 | Rendering Consolidation | Single `UnifiedRenderer` stack | 2-3 days | ✅ Complete |
+| Phase 3 | Handler Migration | All handlers use new context | 5-7 days | ✅ Complete |
+| Phase 4 | Registry Unification | Single `OperationRegistry` | 2-3 days | 🔄 Next |
+| Phase 5 | Command Decorator | `@cli_command` + migrate commands | 5-7 days | ⬜ Pending |
+| Phase 6 | Legacy Cleanup | Delete all superseded files | 2-3 days | ⬜ Pending |
 
 **Total:** 4-6 weeks (20-29 working days)
 
@@ -987,14 +1037,14 @@ Each plan includes:
 
 ### 12.4 Key Milestones
 
-| Milestone | Phase | Validation |
-|-----------|-------|------------|
-| New context available | 1 | `HandlerContext` unit tests pass |
-| Rendering unified | 2 | `renderers.py` deleted, all output works |
-| All handlers migrated | 3 | No `_get_*_param` helpers remain |
-| Registry unified | 4 | Operations registered in handlers |
-| All commands migrated | 5 | No manual `__call__` methods remain |
-| Migration complete | 6 | All legacy files deleted, full tests pass |
+| Milestone | Phase | Validation | Status |
+|-----------|-------|------------|--------|
+| New context available | 1 | `HandlerContext` unit tests pass | ✅ |
+| Rendering unified | 2 | `renderers.py` deleted, all output works | ✅ |
+| All handlers migrated | 3 | No `_get_*_param` helpers remain, all use `ctx.param_*()` | ✅ |
+| Registry unified | 4 | Operations registered in handlers | ⬜ |
+| All commands migrated | 5 | No manual `__call__` methods remain | ⬜ |
+| Migration complete | 6 | All legacy files deleted, full tests pass | ⬜ |
 
 ---
 
@@ -1079,7 +1129,7 @@ Each plan includes:
 
 ## Appendix B: Example Migration
 
-### Before (Current State)
+### Before (Pre-Phase 3)
 
 ```python
 # commands/jobs.py
@@ -1117,10 +1167,35 @@ def jobs_list_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsListResult]:
     # ... implementation
 ```
 
-### After (Target State)
+### Current State (Phase 3 Complete)
+
+Handlers now use `HandlerContext` with typed accessors. Local helper functions eliminated:
 
 ```python
-# commands/jobs.py
+# handlers/jobs.py (Current - Phase 3 complete)
+from codeintel.cli.handlers.context import HandlerContext
+
+def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
+    """List background jobs.
+    
+    Parameters
+    ----------
+    ctx
+        Handler context with params:
+        - status: Optional status filter
+        - limit: Maximum jobs to return (default 20)
+    """
+    status_str = ctx.param_str("status")
+    limit = ctx.param_int("limit", 20)
+    # ... implementation (same business logic, cleaner param access)
+```
+
+### After (Target State - Phase 5)
+
+Commands use `@cli_command` decorator, eliminating all boilerplate:
+
+```python
+# commands/jobs.py (Target - Phase 5)
 @cli_command(
     "jobs.list",
     handler=jobs_list_handler,
@@ -1140,20 +1215,12 @@ class JobsListCommand:
     # No __call__ needed - decorator generates it
 
 
-# handlers/jobs.py
+# handlers/jobs.py (same as current)
 def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
-    """List background jobs.
-    
-    Parameters
-    ----------
-    ctx
-        Handler context with params:
-        - status: Optional status filter
-        - limit: Maximum jobs to return (default 20)
-    """
+    """List background jobs."""
     status_str = ctx.param_str("status")
     limit = ctx.param_int("limit", 20)
-    # ... implementation (same business logic)
+    # ... implementation
 ```
 
 **Note:** The decorator's first positional argument is `operation_id`, and `handler` is keyword-only. The decorator automatically:
@@ -1165,27 +1232,56 @@ def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
 
 ## Appendix C: Testing Considerations
 
-### Handler Testing
+### Handler Testing (Recommended Pattern)
 
 ```python
-def test_jobs_list_handler():
-    # Create test context with fake/test implementations
-    ctx = build_test_context(
-        operation_id="jobs.list",
-        params={"status": "running", "limit": 10},
+from unittest.mock import MagicMock
+from codeintel.cli.config.model import CliConfig
+from codeintel.cli.handlers.context import HandlerContext, ParameterError
+from codeintel.cli.resolution.types import ResolvedRuntime
+from codeintel.storage.gateway import StorageGateway
+
+
+def _build_test_context(params: dict[str, object]) -> HandlerContext:
+    """Create HandlerContext for testing with mocked resources."""
+    mock_config = MagicMock(spec=CliConfig)
+    mock_runtime = MagicMock(spec=ResolvedRuntime)
+    mock_gateway = MagicMock(spec=StorageGateway)
+    mock_graph_runtime = MagicMock()
+
+    return HandlerContext(
+        config=mock_config,
+        operation_id="test.op",
+        _params=params,
+        _runtime=mock_runtime,
+        _gateway=mock_gateway,
+        _graph_runtime=mock_graph_runtime,
     )
+
+
+def test_jobs_list_handler():
+    """Test handler with mocked context."""
+    ctx = _build_test_context({"status": "running", "limit": 10})
     
     result = jobs_list_handler(ctx)
     
     assert result.success
-    assert len(result.data.jobs) <= 10
+    if result.data is not None:
+        assert len(result.data.jobs) <= 10
+
+
+def test_handler_raises_on_missing_required_param():
+    """Test ParameterError raised for missing required params."""
+    ctx = _build_test_context({})  # No params
+    
+    with pytest.raises(ParameterError, match="Required parameter 'name'"):
+        my_handler(ctx)
 ```
 
 ### Renderer Testing
 
 ```python
 def test_unified_renderer_json():
-    ctx, stdout, stderr = RenderContext.for_testing()
     ctx = RenderContext(format=OutputFormat.JSON, color=False, writer=stdout, err_writer=stderr)
     renderer = UnifiedRenderer(ctx)
     
@@ -1199,6 +1295,12 @@ def test_unified_renderer_json():
 ### Command Testing
 
 With `@cli_command`, commands can be tested at the handler level (easier) or integration tested via Cyclopts test utilities.
+
+**Key Testing Principles:**
+1. Create `HandlerContext` directly with mock dependencies - no special test factories needed
+2. Use `ParameterError` for expected required parameter failures
+3. Test handlers in isolation from command boilerplate
+4. Prefer assertion helpers from `tests/_helpers/assertions/` for consistent error messages
 
 ---
 

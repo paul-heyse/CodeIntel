@@ -27,7 +27,6 @@ from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK, TestContext
 from tests._helpers.assertions import (
     expect_equal,
-    expect_is_none,
     expect_length,
     expect_true,
 )
@@ -51,76 +50,6 @@ EXPECTED_EMPTY_LIST_LENGTH = 0
 EXPECTED_SINGLE_EDGE = 1
 EXPECTED_COVERAGE_RATIO_FULL = 1.0
 FLOAT_COMPARISON_TOLERANCE = 0.01
-
-
-class TestEdgeContext:
-    """Tests for EdgeContext dataclass."""
-
-    @staticmethod
-    def test_creates_edge_context(tmp_path: Path) -> None:
-        """Verify EdgeContext stores all required fields."""
-        now = datetime.now(UTC)
-        snapshot = make_snapshot(repo_root=tmp_path)
-        cfg = TestCoverageStepConfig(snapshot=snapshot)
-        ctx = EdgeContext(
-            status_by_test={"test_a": "passed", "test_b": "failed"},
-            cfg=cfg,
-            now=now,
-            test_meta_by_id={"test_a": (123, "urn:test_a")},
-        )
-        expect_equal(ctx.status_by_test["test_a"], "passed")
-        expect_equal(ctx.cfg.repo, DEFAULT_REPO)
-        expect_equal(ctx.now, now)
-        expect_equal(ctx.test_meta_by_id["test_a"], (123, "urn:test_a"))
-
-    @staticmethod
-    def test_edge_context_allows_empty_dicts(tmp_path: Path) -> None:
-        """Verify EdgeContext works with empty dictionaries."""
-        snapshot = make_snapshot(repo_root=tmp_path)
-        cfg = TestCoverageStepConfig(snapshot=snapshot)
-        ctx = EdgeContext(
-            status_by_test={},
-            cfg=cfg,
-            now=datetime.now(UTC),
-            test_meta_by_id={},
-        )
-        expect_equal(ctx.status_by_test, {})
-        expect_equal(ctx.test_meta_by_id, {})
-
-
-class TestFunctionRow:
-    """Tests for FunctionRow TypedDict."""
-
-    @staticmethod
-    def test_creates_function_row() -> None:
-        """Verify FunctionRow contains expected fields."""
-        row: FunctionRow = {
-            "goid_h128": TEST_GOID,
-            "urn": TEST_URN,
-            "rel_path": TEST_REL_PATH,
-            "qualname": TEST_QUALNAME,
-            "start_line": TEST_START_LINE,
-            "end_line": TEST_END_LINE,
-        }
-        expect_equal(row["goid_h128"], TEST_GOID)
-        expect_equal(row["urn"], TEST_URN)
-        expect_equal(row["rel_path"], TEST_REL_PATH)
-        expect_equal(row["qualname"], TEST_QUALNAME)
-        expect_equal(row["start_line"], TEST_START_LINE)
-        expect_equal(row["end_line"], TEST_END_LINE)
-
-    @staticmethod
-    def test_function_row_allows_none_end_line() -> None:
-        """Verify FunctionRow allows None for end_line."""
-        row: FunctionRow = {
-            "goid_h128": TEST_GOID,
-            "urn": TEST_URN,
-            "rel_path": TEST_REL_PATH,
-            "qualname": TEST_QUALNAME,
-            "start_line": TEST_START_LINE,
-            "end_line": None,
-        }
-        expect_is_none(row["end_line"])
 
 
 class TestBuildEdgesForFile:

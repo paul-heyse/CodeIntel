@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, cast
+from collections.abc import Iterator
+from typing import cast
 
 import pytest
 
@@ -18,7 +18,6 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
-from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     assert_logged,
@@ -45,52 +44,6 @@ MAX_ROWS = 100
 # =============================================================================
 
 
-def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing."""
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
-def _build_architecture_backend(gateway: StorageGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for architecture testing."""
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
 @pytest.fixture(autouse=True)
 def _register_scip_ingest_plugin() -> Iterator[None]:
     """Ensure the scip_ingest dependency plugin exists for planning tests."""
@@ -109,34 +62,32 @@ def _register_scip_ingest_plugin() -> Iterator[None]:
 
 
 def test_register_architecture_tools_success(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Architecture")
-    backend = _build_backend(provisioned_repo)
 
     # Should not raise
-    register_architecture_tools(mcp, backend)
+    register_architecture_tools(mcp, mcp_backend.backend)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Architecture")
 
 
 def test_register_architecture_tools_with_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools accepts config parameter."""
     mcp = wrap_fastmcp("Test Architecture Config")
-    backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="remote_api",
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
         api_base_url="http://test",
     )
 
     # Should not raise with config
-    register_architecture_tools(mcp, backend, config=config)
+    register_architecture_tools(mcp, mcp_backend.backend, config=config)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Architecture Config")
@@ -144,10 +95,15 @@ def test_register_architecture_tools_with_config(
 
 def test_register_architecture_tools_with_architecture_gateway(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify register_architecture_tools works with architecture data."""
     mcp = wrap_fastmcp("Test Architecture Gateway")
-    backend = _build_architecture_backend(architecture_gateway)
+    backend = mcp_backend_factory(
+        gateway=architecture_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    ).backend
 
     # Should not raise
     register_architecture_tools(mcp, backend)
@@ -156,37 +112,25 @@ def test_register_architecture_tools_with_architecture_gateway(
 
 
 def test_register_architecture_tools_without_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools works without config."""
     mcp = wrap_fastmcp("Test No Config")
-    backend = _build_backend(provisioned_repo)
 
     # Should work with config=None (default)
-    register_architecture_tools(mcp, backend, config=None)
+    register_architecture_tools(mcp, mcp_backend.backend, config=None)
 
     expect_equal(mcp.name, "Test No Config")
 
 
 def test_register_architecture_tools_with_local_query_service(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools works with LocalQueryService directly."""
     mcp = wrap_fastmcp("Test Local Service")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
 
     # Should work with service directly
-    register_architecture_tools(mcp, service)
+    register_architecture_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Local Service")
 
@@ -197,36 +141,37 @@ def test_register_architecture_tools_with_local_query_service(
 
 
 def test_register_architecture_tools_different_servers(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify tools can be registered on different servers."""
-    backend = _build_backend(provisioned_repo)
-
     # Register on first server
     mcp1 = wrap_fastmcp("Server One")
-    register_architecture_tools(mcp1, backend)
+    register_architecture_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server One")
 
     # Register on second server
     mcp2 = wrap_fastmcp("Server Two")
-    register_architecture_tools(mcp2, backend)
+    register_architecture_tools(mcp2, mcp_backend.backend)
     expect_equal(mcp2.name, "Server Two")
 
 
 def test_register_architecture_tools_different_backends(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify tools can be registered with different backends."""
-    # Register with provisioned repo backend
     mcp1 = wrap_fastmcp("Test Backend 1")
-    backend1 = _build_backend(provisioned_repo)
-    register_architecture_tools(mcp1, backend1)
+    register_architecture_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Test Backend 1")
 
     # Register with architecture gateway backend
     mcp2 = wrap_fastmcp("Test Backend 2")
-    backend2 = _build_architecture_backend(architecture_gateway)
+    backend2 = mcp_backend_factory(
+        gateway=architecture_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+    ).backend
     register_architecture_tools(mcp2, backend2)
     expect_equal(mcp2.name, "Test Backend 2")
 
@@ -237,42 +182,27 @@ def test_register_architecture_tools_different_backends(
 
 
 def test_register_architecture_tools_duckdb_backend(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools works with DuckDBBackend."""
     mcp = wrap_fastmcp("Test DuckDB Backend")
-    backend = _build_backend(provisioned_repo)
 
     # Verify backend is DuckDBBackend
-    expect_is_instance(backend, DuckDBBackend)
+    expect_is_instance(mcp_backend.backend, DuckDBBackend)
 
-    register_architecture_tools(mcp, backend)
+    register_architecture_tools(mcp, mcp_backend.backend)
     expect_equal(mcp.name, "Test DuckDB Backend")
 
 
 def test_register_architecture_tools_service_with_repo_info(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify architecture tools work with service having repo/commit info."""
     mcp = wrap_fastmcp("Test Service Repo")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
+    expect_equal(mcp_backend_components.query.context.repo, mcp_backend_components.repo)
+    expect_equal(mcp_backend_components.query.context.commit, mcp_backend_components.commit)
 
-    # Query context should have repo/commit
-    expect_equal(query.context.repo, provisioned_repo.repo)
-    expect_equal(query.context.commit, provisioned_repo.commit)
-
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
-    register_architecture_tools(mcp, service)
+    register_architecture_tools(mcp, mcp_backend_components.service)
     expect_equal(mcp.name, "Test Service Repo")
 
 
@@ -282,37 +212,35 @@ def test_register_architecture_tools_service_with_repo_info(
 
 
 def test_register_architecture_tools_local_db_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify architecture tools work with local_db mode config."""
     mcp = wrap_fastmcp("Test Local DB Config")
-    backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="local_db",
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        db_path=provisioned_repo.db_path,
-        repo_root=provisioned_repo.repo_root,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
+        db_path=mcp_backend.gateway.config.db_path,
+        repo_root=mcp_backend.gateway.config.repo_root,
     )
 
-    register_architecture_tools(mcp, backend, config=config)
+    register_architecture_tools(mcp, mcp_backend.backend, config=config)
     expect_equal(mcp.name, "Test Local DB Config")
 
 
 def test_register_architecture_tools_remote_api_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify architecture tools work with remote_api mode config."""
     mcp = wrap_fastmcp("Test Remote API Config")
-    backend = _build_backend(provisioned_repo)
     config = ServingConfig(
         mode="remote_api",
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
         api_base_url="http://test:8080",
     )
 
-    register_architecture_tools(mcp, backend, config=config)
+    register_architecture_tools(mcp, mcp_backend.backend, config=config)
     expect_equal(mcp.name, "Test Remote API Config")
 
 
@@ -322,30 +250,19 @@ def test_register_architecture_tools_remote_api_config(
 
 
 def test_register_architecture_tools_custom_limits(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify architecture tools work with custom limits."""
     custom_limit = 50
     custom_max = 500
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+    backend = mcp_backend_factory(
+        gateway=mcp_backend.gateway,
+        repo=mcp_backend.repo,
+        commit=mcp_backend.commit,
         limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
+    ).backend
 
     mcp = wrap_fastmcp("Test Custom Limits")
     register_architecture_tools(mcp, backend)
@@ -361,88 +278,72 @@ def test_register_architecture_tools_custom_limits(
 
 
 def test_backend_list_subsystems_via_tools(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify list_subsystems works through backend."""
-    backend = _build_backend(provisioned_repo)
-
-    # Direct backend call should work
-    result = backend.list_subsystems()
+    result = mcp_backend.backend.list_subsystems()
     expect_is_not_none(result)
 
 
 def test_backend_list_subsystems_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify list_subsystems with limit parameter."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.list_subsystems(limit=5)
+    result = mcp_backend.backend.list_subsystems(limit=5)
     expect_is_not_none(result)
 
 
 def test_backend_list_subsystems_with_role(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify list_subsystems with role filter."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.list_subsystems(role="api")
+    result = mcp_backend.backend.list_subsystems(role="api")
     expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_via_tools(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify search_subsystems works through backend."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.search_subsystems(q="test")
+    result = mcp_backend.backend.search_subsystems(q="test")
     expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_with_limit(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify search_subsystems with limit."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.search_subsystems(limit=5)
+    result = mcp_backend.backend.search_subsystems(limit=5)
     expect_is_not_none(result)
 
 
 def test_backend_search_subsystems_with_role(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify search_subsystems with role filter."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.search_subsystems(role="api")
+    result = mcp_backend.backend.search_subsystems(role="api")
     expect_is_not_none(result)
 
 
 def test_backend_get_file_hints_via_tools(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify get_file_hints works through backend."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.get_file_hints(rel_path="test/file.py")
+    result = mcp_backend.backend.get_file_hints(rel_path="test/file.py")
     expect_is_not_none(result)
 
 
 def test_backend_get_module_subsystems_via_tools(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify get_module_subsystems works through backend."""
-    backend = _build_backend(provisioned_repo)
-
-    result = backend.get_module_subsystems(module="test.module")
+    result = mcp_backend.backend.get_module_subsystems(module="test.module")
     expect_is_not_none(result)
 
 
 def test_backend_get_function_architecture_via_tools(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_function_architecture works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
@@ -461,6 +362,7 @@ def test_backend_get_function_architecture_via_tools(
 
 def test_backend_get_function_architecture_not_found(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_function_architecture handles not found."""
     backend = _build_architecture_backend(architecture_gateway)
@@ -472,6 +374,7 @@ def test_backend_get_function_architecture_not_found(
 
 def test_backend_get_module_architecture_via_tools(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_module_architecture works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
@@ -490,6 +393,7 @@ def test_backend_get_module_architecture_via_tools(
 
 def test_backend_get_module_architecture_not_found(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_module_architecture handles not found."""
     backend = _build_architecture_backend(architecture_gateway)
@@ -500,6 +404,7 @@ def test_backend_get_module_architecture_not_found(
 
 def test_backend_get_subsystem_modules_via_tools(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify get_subsystem_modules works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
@@ -519,6 +424,7 @@ def test_backend_get_subsystem_modules_via_tools(
 
 def test_backend_summarize_subsystem_via_tools(
     architecture_gateway: StorageGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify summarize_subsystem works through backend."""
     backend = _build_architecture_backend(architecture_gateway)

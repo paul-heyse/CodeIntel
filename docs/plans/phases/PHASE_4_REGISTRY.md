@@ -3,8 +3,9 @@
 > **Phase:** 4 of 6  
 > **Duration:** 2-3 days  
 > **Risk Level:** Low  
-> **Dependencies:** Phase 3 complete  
+> **Dependencies:** Phase 3 complete ✅  
 > **Parallelizable:** No  
+> **Last Updated:** December 2024 (Post-Phase 3)  
 
 ---
 
@@ -38,14 +39,50 @@ Phase 4 unifies the operation registry:
 
 ### 2.1 Phase Dependencies
 
-- [ ] Phase 3 complete (all handlers migrated)
-- [ ] Handler signatures finalized
-- [ ] All existing tests passing
+- [x] Phase 3 complete (all handlers migrated to `HandlerContext`)
+- [x] Handler signatures finalized (all use `ctx: HandlerContext -> CliResult[T]`)
+- [x] All existing tests passing (145 handler tests)
 
 ### 2.2 Environment
 
 - [ ] Clean git working tree
-- [ ] Quality checks passing
+- [ ] Quality checks passing (ruff, pyright, pyrefly)
+
+### 2.3 Phase 3 Outcomes (Context for Phase 4)
+
+Phase 3 migrated all handlers to use the unified `HandlerContext`:
+
+| Handler Module | Handlers Migrated | Notes |
+|---------------|-------------------|-------|
+| `jobs.py` | 5 | `param_str`, `param_int` |
+| `health.py` | 2 | Minimal params |
+| `ops.py` | 7 | `require_str`, `param_list` |
+| `storage.py` | 3 | `param_enum` for `MacroRequirement` |
+| `history.py` | 1 | `param_path`, `param_list` |
+| `build.py` | 3 | `param_path`, `param_bool` |
+| `docs.py` | 2 | `param_str`, `param_bool`, `param_list` |
+| `graphs.py` | 2 | `param_tuple`, `param_bool` |
+| `ide.py` | 1 | `require_str` with validation |
+| `datasets.py` | 4 | `param_str`, `param_bool` |
+| `plugins.py` | 7 | `require_str`, `param_path` |
+| `subsystem.py` | 5 | `param_int`, `param_str`, `require_str` |
+
+All handlers now use typed parameter accessors instead of local `_get_*_param` helper functions.
+
+---
+
+## 2.4 Lessons from Phase 3 (Informing Phase 4)
+
+1. **Handler Context Access:** All handlers now use `HandlerContext` with typed accessors. This means `OperationSpec.handler` can be strongly typed as `Callable[[HandlerContext], CliResult[Any]]`.
+
+2. **Resource Requirements:** During Phase 3, we identified which handlers need runtime/gateway/graph_runtime:
+   - Handlers using `ctx.gateway` need `require_gateway=True`
+   - Handlers using `ctx.runtime` need `require_runtime=True`
+   - Handlers using `ctx.graph_runtime` need `require_graph_runtime=True`
+
+3. **Test Patterns:** Handler tests create `HandlerContext` directly with mock dependencies. Registry tests should follow the same pattern.
+
+4. **No Local Helpers:** All `_get_*_param` functions have been removed. Registrations can reference handlers directly without worrying about helper function dependencies.
 
 ---
 
@@ -101,6 +138,14 @@ Operations registered directly in handler modules:
 # handlers/jobs.py
 
 from codeintel.cli.execution.registry import register_operation, OperationSpec
+from codeintel.cli.handlers.context import HandlerContext
+
+def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
+    """List background jobs."""
+    status_str = ctx.param_str("status")
+    limit = ctx.param_int("limit", 20)
+    # ... implementation
+
 
 # At module level (after handler definition)
 register_operation(OperationSpec(
@@ -114,18 +159,23 @@ register_operation(OperationSpec(
 ))
 ```
 
+**Note:** The handler signature `(ctx: HandlerContext) -> CliResult[T]` is now standardized across all handlers (Phase 3 complete).
+
 ### 4.3 OperationSpec Structure
 
 ```python
+from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.core import CliResult
+
 @dataclass(frozen=True)
 class OperationSpec:
     """Specification for a CLI operation."""
     
-    operation_id: str          # Unique ID (e.g., "jobs.list")
-    name: str                  # Display name
-    description: str           # Help text
-    handler: Callable          # Handler function
-    group: str                 # Command group
+    operation_id: str                                      # Unique ID (e.g., "jobs.list")
+    name: str                                              # Display name
+    description: str                                       # Help text
+    handler: Callable[[HandlerContext], CliResult[Any]]   # Handler function
+    group: str                                             # Command group
     
     # Resource requirements
     require_runtime: bool = True
@@ -136,6 +186,8 @@ class OperationSpec:
     tags: tuple[str, ...] = ()
     hidden: bool = False
 ```
+
+**Handler Type:** All handlers now follow the standardized signature `(ctx: HandlerContext) -> CliResult[T]` per Phase 3.
 
 ---
 
@@ -578,18 +630,24 @@ register_operation(OperationSpec(
 ))
 ```
 
-**Repeat for all handler modules:**
-- `handlers/health.py`
-- `handlers/ops.py`
-- `handlers/storage.py`
-- `handlers/history.py`
-- `handlers/build.py`
-- `handlers/docs.py`
-- `handlers/graphs.py`
-- `handlers/ide.py`
-- `handlers/datasets.py`
-- `handlers/plugins.py`
-- `handlers/subsystem.py`
+**Repeat for all handler modules (42 total handlers across 12 files):**
+
+| Module | Handlers | Resource Requirements |
+|--------|----------|----------------------|
+| `handlers/jobs.py` | 5 | No runtime, no gateway |
+| `handlers/health.py` | 2 | No runtime, no gateway |
+| `handlers/ops.py` | 7 | Mixed (list: no runtime; serve: yes) |
+| `handlers/storage.py` | 3 | Runtime for db_path |
+| `handlers/history.py` | 1 | Runtime + gateway |
+| `handlers/build.py` | 3 | Runtime + gateway |
+| `handlers/docs.py` | 2 | Runtime |
+| `handlers/graphs.py` | 2 | No runtime, no gateway |
+| `handlers/ide.py` | 1 | Runtime + gateway + graph_runtime |
+| `handlers/datasets.py` | 4 | Mixed |
+| `handlers/plugins.py` | 7 | No runtime, no gateway |
+| `handlers/subsystem.py` | 5 | Runtime + gateway + graph_runtime |
+
+**Note:** Resource requirements determine what the `@cli_command` decorator (Phase 5) will configure for lazy loading.
 
 ---
 
@@ -936,8 +994,30 @@ assert 'jobs.status' in registry
 # Verify handler is correct
 spec = registry.get('jobs.list')
 assert spec.handler.__name__ == 'jobs_list_handler'
+
+# Verify handler signature (Phase 3 guarantee)
+from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.core import CliResult
+import inspect
+sig = inspect.signature(spec.handler)
+params = list(sig.parameters.values())
+assert len(params) == 1
+assert params[0].annotation == HandlerContext
+
 print('✓ Integration test passed')
 "
+```
+
+**Verify handler tests still pass:**
+```bash
+uv run pytest tests/cli/handlers/ -v --tb=short
+```
+
+**Verify no regressions in CLI commands:**
+```bash
+codeintel --help
+codeintel jobs --help
+codeintel ops list
 ```
 
 ---

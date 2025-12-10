@@ -41,8 +41,13 @@ def _build_components(
     commit: str,
     limits: BackendLimits | None = None,
 ) -> McpBackendComponents:
-    """Construct query/service/backend trio for a gateway snapshot."""
+    """Construct query/service/backend trio for a gateway snapshot.
 
+    Returns
+    -------
+    McpBackendComponents
+        Aggregated gateway, query, service, and backend.
+    """
     effective_limits = limits or BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         gateway,
@@ -74,8 +79,13 @@ def _build_components(
 
 @pytest.fixture
 def mcp_backend_factory() -> Callable[..., McpBackendComponents]:
-    """Factory fixture to build MCP backend components for any gateway snapshot."""
+    """Build MCP backend components for any gateway snapshot.
 
+    Returns
+    -------
+    Callable[..., McpBackendComponents]
+        Factory that produces backend components given gateway, repo, and commit.
+    """
     def _build(
         *,
         gateway: StorageGateway,
@@ -89,7 +99,6 @@ def mcp_backend_factory() -> Callable[..., McpBackendComponents]:
             commit=commit,
             limits=limits,
         )
-
     return _build
 
 
@@ -98,8 +107,13 @@ def mcp_backend_components(
     provisioned_repo: ProvisionedGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> McpBackendComponents:
-    """Provisioned gateway components reused across MCP tool tests."""
+    """Provide provisioned gateway components reused across MCP tool tests.
 
+    Returns
+    -------
+    McpBackendComponents
+        Aggregated components built from the provisioned gateway snapshot.
+    """
     return mcp_backend_factory(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -109,22 +123,37 @@ def mcp_backend_components(
 
 @pytest.fixture
 def mcp_backend(mcp_backend_components: McpBackendComponents) -> DuckDBBackend:
-    """DuckDBBackend bound to the provisioned gateway snapshot."""
+    """Return DuckDBBackend bound to the provisioned gateway snapshot.
 
+    Returns
+    -------
+    DuckDBBackend
+        Backend constructed from the provisioned gateway snapshot.
+    """
     return mcp_backend_components.backend
 
 
 @pytest.fixture
 def mcp_service(mcp_backend_components: McpBackendComponents) -> LocalQueryService:
-    """LocalQueryService bound to the provisioned gateway snapshot."""
+    """Return LocalQueryService bound to the provisioned gateway snapshot.
 
+    Returns
+    -------
+    LocalQueryService
+        Service constructed from the provisioned gateway snapshot.
+    """
     return mcp_backend_components.service
 
 
 @pytest.fixture
 def mcp_query_service(mcp_backend_components: McpBackendComponents) -> DuckDBQueryService:
-    """DuckDBQueryService bound to the provisioned gateway snapshot."""
+    """Return DuckDBQueryService bound to the provisioned gateway snapshot.
 
+    Returns
+    -------
+    DuckDBQueryService
+        Query service constructed from the provisioned gateway snapshot.
+    """
     return mcp_backend_components.query
 
 

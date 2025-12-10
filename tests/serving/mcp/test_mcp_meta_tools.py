@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
@@ -21,10 +21,6 @@ from tests._helpers.assertions import (
     expect_length,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar
-from tests.serving.mcp.conftest import McpBackendComponents
-
-if TYPE_CHECKING:
-    from tests.serving.mcp.conftest import McpBackendComponents
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100

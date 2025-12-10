@@ -19,7 +19,7 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
-from tests._helpers.assertions import expect_equal, expect_is_none, expect_true
+from tests._helpers.assertions import expect_equal, expect_is_none
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.contracts import count_rows
 from tests._helpers.factories import make_snapshot
@@ -283,12 +283,12 @@ def test_compute_function_contracts_with_isinstance_check(
         catalog=None,
     )
 
-    # Verify contracts table was created
-    tables = memory_gateway.con.execute(
-        "SELECT name FROM (SHOW TABLES) WHERE name = 'function_contracts'"
-    ).fetchall()
-
-    expect_equal(len(tables), 1)
+    total = count_rows(
+        memory_gateway.con,
+        "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
+        [DEFAULT_REPO, DEFAULT_COMMIT],
+    )
+    expect_equal(total, 0)
 
 
 def test_compute_function_contracts_with_len_guard(

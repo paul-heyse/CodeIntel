@@ -93,6 +93,11 @@ def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
     CliResult[IdeHintsResult]
         Result with hints for the file.
 
+    Raises
+    ------
+    ValueError
+        If rel_path is empty after stripping whitespace.
+
     Examples
     --------
     >>> with handler_context(config, runtime, {"rel_path": "pkg/mod.py"}) as ctx:
@@ -100,7 +105,10 @@ def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
     ...     result.success  # doctest: +SKIP
     True
     """
-    rel_path = ctx.require_str("rel_path")
+    rel_path = ctx.require_str("rel_path").strip()
+    if not rel_path:
+        msg = "rel_path cannot be empty"
+        raise ValueError(msg)
 
     ctx.logger.debug("Resolving IDE hints for: %s", rel_path)
 

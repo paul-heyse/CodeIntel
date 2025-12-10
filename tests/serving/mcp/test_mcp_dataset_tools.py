@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, cast
+from collections.abc import Callable
+from typing import cast
 
 import pytest
 
@@ -22,7 +22,6 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.dataset_factories import make_descriptor
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 from tests.serving.mcp.conftest import McpBackendComponents
@@ -94,7 +93,9 @@ def test_register_dataset_tools_on_multiple_servers(
     expect_equal(mcp2.name, "Server 2")
 
 
-def test_dataset_tools_serialize_unicode_payloads() -> None:
+def test_dataset_tools_serialize_unicode_payloads(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Dataset tools serialize multi-row unicode/nullable payloads."""
 
     class _FailingService(LocalQueryService):

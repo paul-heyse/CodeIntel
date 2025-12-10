@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/context.py
+# hypothesis_version: 6.148.7
+
+['0000000', 'CommandContextError', 'build', 'build_dir', 'command_context', 'commit', 'db', 'db_path', 'document_output_dir', 'local_db', 'project_root', 'repo', 'repo_root', 'stub.duckdb', 'stub/repo']

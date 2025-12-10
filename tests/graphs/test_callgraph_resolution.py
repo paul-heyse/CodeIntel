@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
-import pytest
-
 from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs.adapters import callgraph_persistence as call_persist
 from codeintel.graphs.compute import callgraph as call_resolution
+from tests._helpers.assertions import expect_equal, expect_true
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234
@@ -29,12 +28,9 @@ def test_resolve_callee_precedence_local_then_alias() -> None:
         import_aliases=aliases,
     )
 
-    if result.callee_goid != 1:
-        pytest.fail(f"Expected local GOID 1, got {result.callee_goid}")
-    if result.resolved_via != "local_name":
-        pytest.fail(f"Expected local_name, got {result.resolved_via}")
-    if result.confidence <= 0.0:
-        pytest.fail("Confidence should be positive for local resolution")
+    expect_equal(result.callee_goid, 1)
+    expect_equal(result.resolved_via, "local_name")
+    expect_true(result.confidence > 0.0, message="Confidence should be positive for local resolution")
 
 
 def test_resolve_callee_import_alias_global_attr_chain() -> None:
@@ -51,12 +47,9 @@ def test_resolve_callee_import_alias_global_attr_chain() -> None:
         import_aliases=aliases,
     )
 
-    if result.callee_goid != ALIAS_GOID:
-        pytest.fail(f"Expected alias GOID {ALIAS_GOID}, got {result.callee_goid}")
-    if result.resolved_via != "import_alias":
-        pytest.fail(f"Expected import_alias, got {result.resolved_via}")
-    if result.confidence <= 0.0:
-        pytest.fail("Confidence should be positive for alias resolution")
+    expect_equal(result.callee_goid, ALIAS_GOID)
+    expect_equal(result.resolved_via, "import_alias")
+    expect_true(result.confidence > 0.0, message="Confidence should be positive for alias resolution")
 
 
 def test_resolve_callee_unresolved_returns_none() -> None:
@@ -69,12 +62,9 @@ def test_resolve_callee_unresolved_returns_none() -> None:
         import_aliases={},
     )
 
-    if result.callee_goid is not None:
-        pytest.fail(f"Expected unresolved GOID, got {result.callee_goid}")
-    if result.resolved_via != "unresolved":
-        pytest.fail(f"Expected unresolved, got {result.resolved_via}")
-    if result.confidence != 0.0:
-        pytest.fail(f"Expected zero confidence, got {result.confidence}")
+    expect_true(result.callee_goid is None, message="Expected unresolved GOID")
+    expect_equal(result.resolved_via, "unresolved")
+    expect_equal(result.confidence, 0.0)
 
 
 def test_resolve_via_scip_uses_crosswalk_mapping() -> None:
@@ -84,12 +74,9 @@ def test_resolve_via_scip_uses_crosswalk_mapping() -> None:
 
     result = call_resolution.resolve_via_scip(candidates, crosswalk)
 
-    if result.callee_goid != SCIP_GOID:
-        pytest.fail(f"Expected SCIP GOID {SCIP_GOID}, got {result.callee_goid}")
-    if result.resolved_via != "scip_def_path":
-        pytest.fail(f"Expected scip_def_path, got {result.resolved_via}")
-    if result.confidence <= 0.0:
-        pytest.fail("SCIP resolution should set positive confidence")
+    expect_equal(result.callee_goid, SCIP_GOID)
+    expect_equal(result.resolved_via, "scip_def_path")
+    expect_true(result.confidence > 0.0, message="SCIP resolution should set positive confidence")
 
 
 def test_dedupe_includes_repo_commit_scope() -> None:
@@ -117,5 +104,4 @@ def test_dedupe_includes_repo_commit_scope() -> None:
 
     unique = call_persist.dedupe_edge_rows(edges)
 
-    if len(unique) != UNIQUE_EDGE_COUNT:
-        pytest.fail(f"Expected {UNIQUE_EDGE_COUNT} unique edges, got {len(unique)}")
+    expect_equal(len(unique), UNIQUE_EDGE_COUNT)

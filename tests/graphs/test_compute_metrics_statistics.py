@@ -42,8 +42,14 @@ from tests._helpers.fakes.networkx_graphs import (
     scc_with_tail_graph,
     single_node_digraph,
     star_graph,
+    tree_graph,
 )
-from tests.graphs.constants import CYCLE_SCC_SIZES, CYCLE_SIZE_SWEEP, SMALL_COMPLETE_GRAPH_SIZES
+from tests.graphs.constants import (
+    CYCLE_SCC_SIZES,
+    CYCLE_SIZE_SWEEP,
+    SMALL_COMPLETE_GRAPH_SIZES,
+    TREE_SHAPES,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -398,6 +404,19 @@ def test_condensation_layers_mixed_graph() -> None:
 
     # SCC {A,B,C} -> D -> E = 3 layers
     expect_equal(result, EXPECTED_LAYER_COUNT_THREE)
+
+
+@pytest.mark.parametrize(
+    ("depth", "branching"),
+    TREE_SHAPES,
+)
+def test_condensation_layers_tree_graphs(depth: int, branching: int) -> None:
+    """Tree graphs have one layer per depth level."""
+    graph = tree_graph(depth, branching)
+
+    result = compute_condensation_layer_count(graph)
+
+    expect_equal(result, depth + 1)
 
 
 # ===========================================================================

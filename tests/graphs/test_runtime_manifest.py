@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import pytest
-
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.runtime.manifest import (
     GraphPluginManifest,
@@ -31,6 +29,7 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_none,
+    expect_is_not_none,
     expect_length,
     expect_not_equal,
     expect_true,
@@ -142,8 +141,9 @@ def test_compute_options_hash_with_dict_options() -> None:
 
     hash_val = compute_options_hash(plugin, options)
 
+    expect_is_not_none(hash_val, message="Expected hash value for serializable options")
     if hash_val is None:
-        pytest.fail("Expected hash value for serializable options")
+        return
 
     expect_length(hash_val, EXPECTED_HASH_LENGTH)
 

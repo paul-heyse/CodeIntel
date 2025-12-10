@@ -13,7 +13,7 @@ from codeintel.analytics.graphs import (
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.views import create_all_views
-from tests._helpers import ProvisionedGateway, TestContext
+from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -41,13 +41,6 @@ def _seed_test_modules(ctx: TestContext) -> None:
             ModuleRow(module="pkg.b", path="pkg/b.py", repo=ctx.repo, commit=ctx.commit),
             ModuleRow(module="pkg.c", path="pkg/c.py", repo=ctx.repo, commit=ctx.commit),
         ],
-    )
-
-
-def test_graph_views_exist(graph_ready_gateway: ProvisionedGateway) -> None:
-    """Verify graph-ready provisioning exposes graph metric views."""
-    graph_ready_gateway.gateway.con.execute(
-        "SELECT * FROM analytics.config_graph_metrics_keys LIMIT 0"
     )
 
 

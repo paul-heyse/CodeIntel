@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
@@ -12,14 +12,12 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests.serving.mcp.conftest import McpBackendComponents
 
@@ -277,23 +275,11 @@ def test_register_profile_tools_preserves_backend_state(
 
 
 def test_local_query_service_as_backend(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify LocalQueryService can be used as backend."""
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
     mcp = wrap_fastmcp("Test Local Service")
-    register_profile_tools(mcp, service)
+    register_profile_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Local Service")
 
@@ -304,10 +290,10 @@ def test_local_query_service_as_backend(
 
 
 def test_function_profile_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify function profile response contains expected fields."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
@@ -328,10 +314,10 @@ def test_function_profile_response_structure(
 
 
 def test_file_profile_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify file profile response contains expected fields."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid path from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
@@ -352,10 +338,10 @@ def test_file_profile_response_structure(
 
 
 def test_module_profile_response_structure(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify module profile response contains expected fields."""
-    backend = _build_backend(provisioned_repo)
+    backend = mcp_backend.backend
 
     # Get a valid module from the backend
     result_obj = backend.list_high_risk_functions(limit=1)

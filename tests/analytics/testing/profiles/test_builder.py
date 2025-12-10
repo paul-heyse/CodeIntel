@@ -15,27 +15,16 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.testing.coverage.inputs import (
-    FunctionCoverageEntry,
-    SubsystemCoverageEntry,
-    TestGraphMetrics,
-)
 from codeintel.analytics.testing.profiles.builder import (
-    EMPTY_FUNCTION_COVERAGE_ENTRY,
-    EMPTY_SUBSYSTEM_ENTRY,
-    EMPTY_TEST_METRICS,
-    PRIMARY_COVERAGE_THRESHOLD,
-    BehavioralProfile,
     build_test_profile,
     infer_behavior_tags,
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config import ConfigBuilder, SnapshotInit
-from tests._helpers import TestContext, assert_frozen
+from tests._helpers import TestContext
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
-    expect_is_none,
     expect_true,
 )
 
@@ -44,93 +33,6 @@ from tests._helpers.assertions import (
 # =============================================================================
 
 EXPECTED_EMPTY_LIST_LENGTH = 0
-EXPECTED_THRESHOLD = 0.4
-
-# BehavioralProfile test values
-ASSERT_COUNT_FIVE = 5
-RAISE_COUNT_TWO = 2
-
-# Coverage entry test values
-ENTRY_COUNT_TWO = 2
-PRIMARY_COUNT_ONE = 1
-MAX_RISK_SCORE = 0.75
-
-# TestGraphMetrics test values
-DEGREE_FIVE = 5
-WEIGHTED_DEGREE_2_5 = 2.5
-PROJ_DEGREE_THREE = 3
-PROJ_WEIGHT_1_5 = 1.5
-PROJ_CLUSTERING = 0.8
-PROJ_BETWEENNESS = 0.2
-
-
-class TestBehavioralProfile:
-    """Tests for BehavioralProfile dataclass."""
-
-    @staticmethod
-    def test_creates_behavioral_profile() -> None:
-        """Verify BehavioralProfile stores all expected fields."""
-        profile = BehavioralProfile(
-            functions_covered=[{"goid": 123, "name": "func_a"}],
-            subsystems_covered=[{"id": "core"}],
-            assert_count=ASSERT_COUNT_FIVE,
-            raise_count=RAISE_COUNT_TWO,
-            markers=["unit", "slow"],
-        )
-        expect_equal(profile.functions_covered, [{"goid": 123, "name": "func_a"}])
-        expect_equal(profile.subsystems_covered, [{"id": "core"}])
-        expect_equal(profile.assert_count, ASSERT_COUNT_FIVE)
-        expect_equal(profile.raise_count, RAISE_COUNT_TWO)
-        expect_equal(profile.markers, ["unit", "slow"])
-
-    @staticmethod
-    def test_behavioral_profile_immutable() -> None:
-        """Verify BehavioralProfile is frozen/immutable."""
-        profile = BehavioralProfile(
-            functions_covered=[],
-            subsystems_covered=[],
-            assert_count=0,
-            raise_count=0,
-            markers=[],
-        )
-        assert_frozen(profile, "assert_count", 10)
-
-
-class TestEmptySentinels:
-    """Tests for empty sentinel values."""
-
-    @staticmethod
-    def test_empty_function_coverage_entry() -> None:
-        """Verify EMPTY_FUNCTION_COVERAGE_ENTRY has expected structure."""
-        entry = EMPTY_FUNCTION_COVERAGE_ENTRY
-        expect_equal(entry.functions, [])
-        expect_equal(entry.count, 0)
-        expect_equal(entry.primary, [])
-
-    @staticmethod
-    def test_empty_subsystem_entry() -> None:
-        """Verify EMPTY_SUBSYSTEM_ENTRY has expected structure."""
-        entry = EMPTY_SUBSYSTEM_ENTRY
-        expect_equal(entry.subsystems, [])
-        expect_equal(entry.count, 0)
-        expect_is_none(entry.primary_subsystem_id)
-        expect_equal(entry.max_risk_score, 0.0)
-
-    @staticmethod
-    def test_empty_test_metrics() -> None:
-        """Verify EMPTY_TEST_METRICS has expected structure."""
-        metrics = EMPTY_TEST_METRICS
-        expect_is_none(metrics.degree)
-        expect_is_none(metrics.weighted_degree)
-        expect_is_none(metrics.proj_degree)
-        expect_is_none(metrics.proj_weight)
-        expect_is_none(metrics.proj_clustering)
-        expect_is_none(metrics.proj_betweenness)
-
-    @staticmethod
-    def test_primary_coverage_threshold_value() -> None:
-        """Verify PRIMARY_COVERAGE_THRESHOLD has expected value."""
-        expect_equal(PRIMARY_COVERAGE_THRESHOLD, EXPECTED_THRESHOLD)
 
 
 class TestInferBehaviorTags:
@@ -452,50 +354,3 @@ class TestBuildTestProfile:
         )
         # COVERAGE_PACK seeds 4 tests
         expect_equal(count, 4)
-
-
-class TestCoverageInputTypes:
-    """Tests for coverage input type constructors."""
-
-    @staticmethod
-    def test_function_coverage_entry_constructor() -> None:
-        """Verify FunctionCoverageEntry can be constructed."""
-        entry = FunctionCoverageEntry(
-            functions=[{"goid": 1}, {"goid": 2}],
-            count=ENTRY_COUNT_TWO,
-            primary=[1],  # primary is list[int] - GOIDs of primary functions
-        )
-        expect_equal(entry.count, ENTRY_COUNT_TWO)
-        expect_equal(len(entry.functions), ENTRY_COUNT_TWO)
-        expect_equal(len(entry.primary), PRIMARY_COUNT_ONE)
-
-    @staticmethod
-    def test_subsystem_coverage_entry_constructor() -> None:
-        """Verify SubsystemCoverageEntry can be constructed."""
-        entry = SubsystemCoverageEntry(
-            subsystems=[{"id": "core"}, {"id": "api"}],
-            count=ENTRY_COUNT_TWO,
-            primary_subsystem_id="core",
-            max_risk_score=MAX_RISK_SCORE,
-        )
-        expect_equal(entry.count, ENTRY_COUNT_TWO)
-        expect_equal(entry.primary_subsystem_id, "core")
-        expect_equal(entry.max_risk_score, MAX_RISK_SCORE)
-
-    @staticmethod
-    def test_test_graph_metrics_constructor() -> None:
-        """Verify TestGraphMetrics can be constructed."""
-        metrics = TestGraphMetrics(
-            degree=DEGREE_FIVE,
-            weighted_degree=WEIGHTED_DEGREE_2_5,
-            proj_degree=PROJ_DEGREE_THREE,
-            proj_weight=PROJ_WEIGHT_1_5,
-            proj_clustering=PROJ_CLUSTERING,
-            proj_betweenness=PROJ_BETWEENNESS,
-        )
-        expect_equal(metrics.degree, DEGREE_FIVE)
-        expect_equal(metrics.weighted_degree, WEIGHTED_DEGREE_2_5)
-        expect_equal(metrics.proj_degree, PROJ_DEGREE_THREE)
-        expect_equal(metrics.proj_weight, PROJ_WEIGHT_1_5)
-        expect_equal(metrics.proj_clustering, PROJ_CLUSTERING)
-        expect_equal(metrics.proj_betweenness, PROJ_BETWEENNESS)

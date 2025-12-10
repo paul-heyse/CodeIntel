@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import pytest
-
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.ports.parsing import ParsedModule
 from tests._helpers.assertions import (
@@ -32,14 +30,16 @@ def test_parse_module_simple_function() -> None:
 def hello():
     """Say hello."""
     print("Hello")
-'''
+    '''
     result = LibCSTParsingAdapter.parse_module(source)
 
     expect_true(result.success, message=f"Expected parsing to succeed, got error: {result.error}")
-    if result.module is None:
-        pytest.fail("Expected module to be set")
-    expect_equal(len(result.module.functions), 1)
-    func = result.module.functions[0]
+    expect_is_not_none(result.module, message="Expected module to be set")
+    module = result.module
+    if module is None:
+        return
+    expect_equal(len(module.functions), 1)
+    func = module.functions[0]
     expect_equal(func.name, "hello")
 
 
@@ -49,14 +49,16 @@ def test_parse_module_async_function() -> None:
 async def fetch_data():
     """Fetch data asynchronously."""
     pass
-'''
+    '''
     result = LibCSTParsingAdapter.parse_module(source)
 
     expect_true(result.success, message="Expected parsing to succeed")
-    if result.module is None:
-        pytest.fail("Expected module to be set")
-    expect_equal(len(result.module.functions), 1)
-    func = result.module.functions[0]
+    expect_is_not_none(result.module, message="Expected module to be set")
+    module = result.module
+    if module is None:
+        return
+    expect_equal(len(module.functions), 1)
+    func = module.functions[0]
     expect_true(func.is_async, message="Expected function to be async")
 
 
@@ -75,14 +77,16 @@ def value(self):
     result = LibCSTParsingAdapter.parse_module(source)
 
     expect_true(result.success, message="Expected parsing to succeed")
-    if result.module is None:
-        pytest.fail("Expected module to be set")
-    expect_equal(len(result.module.functions), EXPECTED_FUNCTION_COUNT)
+    expect_is_not_none(result.module, message="Expected module to be set")
+    module = result.module
+    if module is None:
+        return
+    expect_equal(len(module.functions), EXPECTED_FUNCTION_COUNT)
 
-    helper = result.module.functions[0]
+    helper = module.functions[0]
     expect_in("staticmethod", helper.decorator_names)
 
-    value_func = result.module.functions[1]
+    value_func = module.functions[1]
     expect_in("property", value_func.decorator_names)
 
 
@@ -99,14 +103,16 @@ class MyClass:
     result = LibCSTParsingAdapter.parse_module(source)
 
     expect_true(result.success, message="Expected parsing to succeed")
-    if result.module is None:
-        pytest.fail("Expected module to be set")
-    expect_equal(len(result.module.functions), EXPECTED_FUNCTION_COUNT)
+    expect_is_not_none(result.module, message="Expected module to be set")
+    module = result.module
+    if module is None:
+        return
+    expect_equal(len(module.functions), EXPECTED_FUNCTION_COUNT)
 
-    init_method = result.module.functions[0]
+    init_method = module.functions[0]
     expect_equal(init_method.qualname, "MyClass.__init__")
 
-    method = result.module.functions[1]
+    method = module.functions[1]
     expect_equal(method.qualname, "MyClass.method")
 
 
@@ -121,11 +127,13 @@ from typing import List, Optional
     result = LibCSTParsingAdapter.parse_module(source)
 
     expect_true(result.success, message="Expected parsing to succeed")
-    if result.module is None:
-        pytest.fail("Expected module to be set")
+    expect_is_not_none(result.module, message="Expected module to be set")
+    module = result.module
+    if module is None:
+        return
     expect_true(
-        len(result.module.imports) >= EXPECTED_MIN_IMPORTS,
-        message=f"Expected at least {EXPECTED_MIN_IMPORTS} imports, got {len(result.module.imports)}",
+        len(module.imports) >= EXPECTED_MIN_IMPORTS,
+        message=f"Expected at least {EXPECTED_MIN_IMPORTS} imports, got {len(module.imports)}",
     )
 
 

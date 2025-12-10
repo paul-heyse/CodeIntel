@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/introspection/help.py
+# hypothesis_version: 6.148.7
+
+['\nExamples:\n', '\nParameters:\n', 'Available Operations', 'Category', 'Description', 'HelpRenderer', 'Key', 'Name', 'No', 'Operation', 'Operation ID', 'Progress', 'Required', 'Retryable', 'Type', 'Value', 'Yes', 'bold', 'cyan', 'get_help_renderer', 'name', 'optional', 'render_help_text', 'required', 'type']

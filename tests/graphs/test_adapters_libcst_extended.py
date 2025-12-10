@@ -15,8 +15,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import pytest
-
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.ports.parsing import (
     ParsedFunction,
@@ -47,9 +45,9 @@ def _require_module(result: ParseResult) -> ParsedModule:
     ParsedModule
         Parsed module extracted from the result.
     """
-    if result.module is None:
-        pytest.fail("Expected parsed module")
     module = result.module
+    if module is None:
+        raise AssertionError("Expected parsed module")
     expect_is_not_none(module)
     return module
 
@@ -587,8 +585,9 @@ def test_parse_result_fail_creates_failure() -> None:
 
     expect_true(not result.success)
     expect_true(result.module is None)
+    expect_is_not_none(result.error, message="Expected parse error")
     if result.error is None:
-        pytest.fail("Expected parse error")
+        return
     expect_true(result.error is error)
     expect_equal(result.error.line, PARSE_ERROR_LINE)
 

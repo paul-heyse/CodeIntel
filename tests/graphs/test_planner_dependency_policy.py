@@ -10,6 +10,7 @@ from codeintel.graphs.core.registry import (
     plan_graph_plugins,
     reset_graph_registry,
 )
+from tests._helpers.assertions import expect_in, expect_true
 
 
 @pytest.fixture(autouse=True)
@@ -43,16 +44,15 @@ def test_skip_policy_records_skipped_dependencies() -> None:
         ),
     )
     skipped_names = {skip.name for skip in plan.skipped_plugins}
-    if "goid_builder" not in skipped_names:
-        pytest.fail("Expected missing builder to be recorded as skipped")
-    if "goid_builder" not in plan.dep_graph:
-        pytest.fail("Expected goid_builder to appear in dep graph")
+    expect_in("goid_builder", skipped_names, label="skipped_plugin")
+    expect_in("goid_builder", set(plan.dep_graph), label="dep_graph")
 
 
 def test_default_plan_includes_ingest_stubs() -> None:
     """Default planning should register ingest stubs to satisfy deps."""
     plan = plan_graph_plugins(plugin_names=("goid_builder",))
-    if not ({"scip_ingest", "ast_extract", "repo_scan"} & set(plan.dep_graph)):
-        pytest.fail("Expected ingest stubs to be present in dependency graph")
-    if plan.skipped_plugins:
-        pytest.fail("Did not expect skipped plugins when stubs are available")
+    expect_true(
+        bool({"scip_ingest", "ast_extract", "repo_scan"} & set(plan.dep_graph)),
+        message="Expected ingest stubs to be present in dependency graph",
+    )
+    expect_true(not plan.skipped_plugins, message="Did not expect skipped plugins when stubs exist")

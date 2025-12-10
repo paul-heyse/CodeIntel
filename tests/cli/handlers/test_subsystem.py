@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.handlers.context import HandlerContext, ParameterError
 from codeintel.cli.handlers.subsystem import (
     SubsystemCoverageResult,
     SubsystemListResult,
@@ -261,8 +261,6 @@ def test_subsystem_memberships_handler_returns_ok() -> None:
 
 def test_subsystem_memberships_handler_raises_when_module_missing() -> None:
     """Handler raises ParameterError when module is missing."""
-    from codeintel.cli.handlers.context import ParameterError
-
     with _mock_duckdb_backend():
         ctx = _build_test_context(params={})
 

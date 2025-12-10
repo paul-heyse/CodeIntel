@@ -20,6 +20,7 @@ from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
     expect_is_instance,
+    expect_is_not_none,
     expect_true,
 )
 from tests._helpers.fakes.networkx_graphs import (
@@ -53,8 +54,9 @@ def _require_projection(graph: nx.Graph | None) -> nx.Graph:
     nx.Graph
         The provided projection graph when it is present.
     """
+    expect_is_not_none(graph, message="Expected projection graph")
     if graph is None:
-        pytest.fail("Expected projection graph")
+        raise AssertionError("Expected projection graph")
     return graph
 
 

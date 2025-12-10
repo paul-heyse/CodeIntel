@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/_lazy_resources.py
+# hypothesis_version: 6.148.7
+
+['db_path', 'lazy_resolve_runtime', 'project_root']
