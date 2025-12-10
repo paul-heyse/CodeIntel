@@ -14,6 +14,7 @@ from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
@@ -28,7 +29,13 @@ def _expect(*, condition: bool, message: str) -> None:
 def _build_local_service(
     provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Return the shared LocalQueryService from the provisioned service app."""
+    """Return the shared LocalQueryService from the provisioned service app.
+
+    Returns
+    -------
+    LocalQueryService
+        Service instance wired to the provisioned gateway snapshot.
+    """
     return provisioned_service_app.service
 
 
@@ -39,19 +46,12 @@ def _build_local_service(
 
 def test_get_function_profile_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_profile returns domain FunctionProfileResult."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT function_goid_h128 FROM analytics.function_profile LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No function profiles available in test data")
-
-    goid_h128 = result[0]
-    profile = service.get_function_profile(goid_h128=goid_h128)
+    profile = service.get_function_profile(goid_h128=analytics_samples.goid_h128)
 
     _expect(
         condition=isinstance(profile, dm.FunctionProfileResult),
@@ -83,19 +83,12 @@ def test_get_function_profile_not_found(
 
 def test_get_file_profile_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_profile returns domain FileProfileResult."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available in test data")
-
-    rel_path = result[0]
-    profile = service.get_file_profile(rel_path=rel_path)
+    profile = service.get_file_profile(rel_path=analytics_samples.rel_path)
 
     _expect(
         condition=isinstance(profile, dm.FileProfileResult),
@@ -123,19 +116,12 @@ def test_get_file_profile_not_found(
 
 def test_get_module_profile_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_profile returns domain ModuleProfileResult."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM analytics.module_profile LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No module profiles available in test data")
-
-    module = result[0]
-    profile = service.get_module_profile(module=module)
+    profile = service.get_module_profile(module=analytics_samples.module)
 
     _expect(
         condition=isinstance(profile, dm.ModuleProfileResult),
@@ -165,19 +151,12 @@ def test_get_module_profile_not_found(
 
 def test_get_function_architecture_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_architecture returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT function_goid_h128 FROM analytics.graph_metrics_functions LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No function architecture data available")
-
-    goid_h128 = result[0]
-    architecture = service.get_function_architecture(goid_h128=goid_h128)
+    architecture = service.get_function_architecture(goid_h128=analytics_samples.goid_h128)
 
     _expect(
         condition=isinstance(architecture, dm.FunctionArchitectureResult),
@@ -208,19 +187,12 @@ def test_get_function_architecture_not_found(
 
 def test_get_module_architecture_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_architecture returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM analytics.graph_metrics_modules LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No module architecture data available")
-
-    module = result[0]
-    architecture = service.get_module_architecture(module=module)
+    architecture = service.get_module_architecture(module=analytics_samples.module)
 
     _expect(
         condition=isinstance(architecture, dm.ModuleArchitectureResult),

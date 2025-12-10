@@ -39,7 +39,13 @@ class ServiceApp:
 
     @contextmanager
     def client(self) -> Iterator[TestClient]:
-        """Provide a TestClient bound to the configured app."""
+        """Provide a TestClient bound to the configured app.
+
+        Yields
+        ------
+        TestClient
+            Configured client bound to the service app.
+        """
         with TestClient(self.app) as test_client:
             yield test_client
 
@@ -47,13 +53,19 @@ class ServiceApp:
 def build_service_app(
     gateway: StorageGateway,
     *,
-    repo: str,
-    commit: str,
+    snapshot: tuple[str, str],
     limits: BackendLimits | None = None,
     config_overrides: dict[str, Any] | None = None,
     observability: ServiceObservability | None = None,
 ) -> ServiceApp:
-    """Construct a LocalQueryService, DuckDB backend, and FastAPI app for tests."""
+    """Construct a LocalQueryService, DuckDB backend, and FastAPI app for tests.
+
+    Returns
+    -------
+    ServiceApp
+        Aggregated service, backend, app, and observability harness.
+    """
+    repo, commit = snapshot
     effective_limits = limits or BackendLimits(
         default_limit=DEFAULT_LIMIT,
         max_rows_per_call=MAX_ROWS,

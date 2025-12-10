@@ -28,13 +28,16 @@ from codeintel.cli.commands._common import (
     runtime_field,
 )
 
-# Context manager
-from codeintel.cli.commands.context import command_context
+# Main app and entry point (must be last to avoid circular imports)
+from codeintel.cli.commands.app import app, main
 
 # Command apps - Domain
 from codeintel.cli.commands.build import build_app
 from codeintel.cli.commands.completions import completions_app
 from codeintel.cli.commands.config import config_app
+
+# Context manager
+from codeintel.cli.commands.context import command_context
 from codeintel.cli.commands.dataset_ops import dataset_app
 from codeintel.cli.commands.datasets import datasets_ext_app
 from codeintel.cli.commands.docs import docs_app
@@ -49,9 +52,6 @@ from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
-
-# Main app and entry point (must be last to avoid circular imports)
-from codeintel.cli.commands.app import app, main
 
 __all__ = [
     "OutputFormatCLI",

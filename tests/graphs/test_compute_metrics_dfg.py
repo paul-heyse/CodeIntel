@@ -75,8 +75,7 @@ def test_path_lengths_empty_graph_returns_empty() -> None:
 
 def test_path_lengths_single_node() -> None:
     """Single node has zero distances."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = chain_graph(1)
     result = compute_dfg_path_lengths(graph)
 
     expect_length(result, 1)
@@ -147,9 +146,7 @@ def test_path_lengths_max_depth_limiting() -> None:
 
 def test_path_lengths_avg_calculation() -> None:
     """Average distance is correctly calculated."""
-    graph = nx.DiGraph()
-    # A reaches B (dist 1), C (dist 2), D (dist 3)
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "D")])
+    graph = chain_graph(4)
     result = compute_dfg_path_lengths(graph)
 
     # Avg for A: (1 + 2 + 3) / 3 = 2.0
@@ -184,8 +181,7 @@ def test_dfg_components_empty_graph_returns_empty() -> None:
 
 def test_dfg_components_single_node() -> None:
     """Single node is one SCC and one WCC."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = chain_graph(1)
     scc, wcc = compute_dfg_components(graph)
 
     expect_length(scc, EXPECTED_SINGLE_COMPONENT)
@@ -412,7 +408,7 @@ def test_dfg_density_star_graph() -> None:
 
 def test_dfg_density_two_node_graph() -> None:
     """Two node graph density calculation."""
-    graph = nx.DiGraph([("A", "B")])
+    graph = chain_graph(2)
     result = compute_dfg_density(graph)
 
     # 1 edge, max 2 edges -> density 0.5

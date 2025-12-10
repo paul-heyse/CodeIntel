@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
-from typing import cast
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,19 +29,48 @@ from codeintel.analytics.compute.functions.typedness import (
     compute_param_stats,
     compute_typedness_flags,
 )
+from codeintel.analytics.compute.profiles.aggregation import (
+    FunctionMetricInput,
+    ProfileAggregates,
+    aggregate_function_metrics,
+    compute_profile_stats,
+)
+from codeintel.analytics.compute.profiles.features import (
+    COMPLEXITY_NORMALIZATION,
+    COMPLEXITY_WEIGHT,
+    HIGH_COMPLEXITY_THRESHOLD,
+    HIGH_TYPED_RATIO,
+    LARGE_MODULE_THRESHOLD,
+    LOW_COMPLEXITY_THRESHOLD,
+    LOW_TYPED_RATIO,
+    SIZE_WEIGHT,
+    SMALL_MODULE_THRESHOLD,
+    TYPEDNESS_WEIGHT,
+    ProfileFeatures,
+    extract_profile_features,
+)
 from codeintel.analytics.profiles import (
     SLOW_TEST_THRESHOLD_MS,
     build_file_profile,
     build_function_profile,
     build_module_profile,
 )
-from codeintel.config import SnapshotInit
+from codeintel.analytics.profiles import files as profile_files
+from codeintel.analytics.profiles import functions as profile_functions
+from codeintel.analytics.profiles import modules as profile_modules
+from codeintel.analytics.testing.profiles import rows as profile_rows
+from codeintel.config import BehavioralCoverageStepConfig, SnapshotInit, TestProfileStepConfig
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
     TEST_PROFILE_COLUMNS,
+    BehavioralCoverageRowModel,
+    FileProfileRowModel,
+    FunctionProfileRowModel,
+    ModuleProfileRowModel,
+    ProfileRowModel,
     behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     function_profile_row_to_tuple,
@@ -51,14 +82,14 @@ from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
+    expect_false,
     expect_in,
     expect_is_instance,
-    expect_is_not_none,
     expect_length,
     expect_true,
 )
 from tests._helpers.config_factory import profiles_analytics_cfg
-from tests._helpers.factory_profiles import seed_profile_data
+from tests._helpers.context import TestContext
 from tests._helpers.factories.row_factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
@@ -73,11 +104,12 @@ from tests._helpers.factories.row_factories import (
 )
 from tests._helpers.rows import list_public_exports
 from tests._helpers.scenarios import TestScenario
-from tests._helpers.seeds.function_types import FunctionTypesPack
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"
 MODULE = "pkg.mod"
+RowBuilder = Callable[[str, str], list[dict[str, object]]]
+WriterFn = Callable[[Any, list[dict[str, object]]], int]
 
 
 # =============================================================================
@@ -86,8 +118,14 @@ MODULE = "pkg.mod"
 
 
 @pytest.fixture
-def profiles_ctx(tmp_path) -> Iterator[object]:
-    """Provide seeded profile context using ProfilePack."""
+def profiles_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide seeded profile context using ProfilePack.
+
+    Yields
+    ------
+    Iterator[TestContext]
+        Seeded context configured with profile seeds.
+    """
     ctx = TestScenario.with_profiles().build(tmp_path)
     try:
         yield ctx
@@ -96,8 +134,14 @@ def profiles_ctx(tmp_path) -> Iterator[object]:
 
 
 @pytest.fixture
-def function_types_ctx(tmp_path):
-    """Context seeded with function types for typedness-related checks."""
+def function_types_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Context seeded with function types for typedness-related checks.
+
+    Yields
+    ------
+    Iterator[TestContext]
+        Context prepared with function types seeds.
+    """
     ctx = TestScenario.with_function_types().build(tmp_path)
     try:
         yield ctx
@@ -164,24 +208,17 @@ def _assert_module_profile(con: DuckDBConnection) -> None:
     expect_true(row[3] is True)
 
 
-def test_profile_builders_aggregate_expected_fields(profiles_ctx) -> None:
+def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -> None:
     """Ensure profile builders compose metrics, tests, coverage, and graph data."""
     gateway = profiles_ctx.gateway
     con = gateway.con
-    seed_profile_data(
-        gateway,
-        repo=profiles_ctx.repo,
-        commit=profiles_ctx.commit,
-        rel_path=REL_PATH,
-        module=MODULE,
-    )
     cfg = profiles_analytics_cfg(
         SnapshotInit(
             repo=profiles_ctx.repo,
             commit=profiles_ctx.commit,
             repo_root=profiles_ctx.repo_root,
         ),
-        layout=BuildLayoutOptions(build_dir=profiles_ctx.build_dir),
+        layout=BuildLayoutOptions(build_dir=profiles_ctx.build_paths.build_dir),
     )
     build_function_profile(gateway, cfg)
     build_file_profile(gateway, cfg)
@@ -196,8 +233,8 @@ def test_profile_builders_aggregate_expected_fields(profiles_ctx) -> None:
 # =============================================================================
 
 
-def _function_rows(repo: str, commit: str):
-    rows = []
+def _function_rows(repo: str, commit: str) -> list[FunctionProfileRowModel]:
+    rows: list[FunctionProfileRowModel] = []
     for base in sample_function_profile_rows(repo, commit):
         module_name = base.get("module") or base.get("rel_path", "").replace("/", ".").removesuffix(
             ".py"
@@ -211,8 +248,8 @@ def _function_rows(repo: str, commit: str):
     return rows
 
 
-def _file_rows(repo: str, commit: str):
-    rows = []
+def _file_rows(repo: str, commit: str) -> list[FileProfileRowModel]:
+    rows: list[FileProfileRowModel] = []
     for base in sample_file_profile_rows(repo, commit):
         row = blank_file_profile_row()
         row.update(base)
@@ -223,8 +260,8 @@ def _file_rows(repo: str, commit: str):
     return rows
 
 
-def _module_rows(repo: str, commit: str):
-    rows = []
+def _module_rows(repo: str, commit: str) -> list[ModuleProfileRowModel]:
+    rows: list[ModuleProfileRowModel] = []
     for base in sample_module_profile_rows(repo, commit):
         row = blank_module_profile_row()
         row.update(base)
@@ -235,8 +272,8 @@ def _module_rows(repo: str, commit: str):
     return rows
 
 
-def _test_rows(repo: str, commit: str):
-    rows = []
+def _test_rows(repo: str, commit: str) -> list[ProfileRowModel]:
+    rows: list[ProfileRowModel] = []
     for base in sample_test_profile_rows(repo, commit):
         module_name = base.get("module") or base.get("rel_path", "").replace("/", ".").removesuffix(
             ".py"
@@ -251,8 +288,8 @@ def _test_rows(repo: str, commit: str):
     return rows
 
 
-def _behavior_rows(repo: str, commit: str):
-    rows = []
+def _behavior_rows(repo: str, commit: str) -> list[BehavioralCoverageRowModel]:
+    rows: list[BehavioralCoverageRowModel] = []
     for base in sample_behavioral_coverage_rows(repo, commit):
         row = blank_behavioral_coverage_row()
         row.update(base)
@@ -282,25 +319,98 @@ def test_profile_tuple_alignment() -> None:
         pytest.fail("Behavioral coverage tuple length mismatch with column constants.")
 
 
-def test_function_profile_writer_registry_and_prepared_statements() -> None:
-    """Writer should delete then insert with registry alignment."""
-    ctx = TestScenario.with_profiles().build(tmp_path=None)
+@pytest.mark.parametrize(
+    ("rows_builder", "writer", "select_sql", "delete_sql"),
+    [
+        (
+            _function_rows,
+            profile_functions.write_function_profile_rows,
+            "SELECT function_goid_h128, tags, owners "
+            "FROM analytics.function_profile ORDER BY function_goid_h128",
+            "DELETE FROM analytics.function_profile",
+        ),
+        (
+            _file_rows,
+            profile_files.write_file_profile_rows,
+            "SELECT rel_path, module, tags FROM analytics.file_profile ORDER BY rel_path",
+            "DELETE FROM analytics.file_profile",
+        ),
+        (
+            _module_rows,
+            profile_modules.write_module_profile_rows,
+            "SELECT module, path, tags FROM analytics.module_profile ORDER BY module",
+            "DELETE FROM analytics.module_profile",
+        ),
+    ],
+)
+def test_profile_writers_replace_existing_rows(
+    tmp_path: Path,
+    rows_builder: RowBuilder,
+    writer: WriterFn,
+    select_sql: str,
+    delete_sql: str,
+) -> None:
+    """Profile writers should overwrite existing rows for the same snapshot."""
+    ctx = TestScenario.minimal().build(tmp_path)
     try:
-        rows = _function_rows(ctx.repo, ctx.commit)
-        inserted_first = ctx.gateway.analytics.insert_function_profile(rows)
-        stored_first = ctx.gateway.con.execute(
-            """
-            SELECT function_goid_h128, tags, owners
-            FROM analytics.function_profile
-            ORDER BY function_goid_h128
-            """
-        ).fetchall()
-        expect_equal(len(rows), inserted_first)
-        expect_equal(len(rows), len(stored_first))
+        ctx.gateway.con.execute(delete_sql)
+        rows = rows_builder(ctx.repo, ctx.commit)
+        inserted_first = writer(ctx.gateway, rows)
+        expect_equal(inserted_first, len(rows))
+        stored_first = ctx.gateway.con.execute(select_sql).fetchall()
+        expect_equal(len(stored_first), len(rows))
 
-        # Verify deletion and idempotent insert
-        inserted_second = ctx.gateway.analytics.insert_function_profile(rows)
-        expect_equal(inserted_second, len(rows))
+        inserted_second = writer(ctx.gateway, rows[:1])
+        expect_equal(inserted_second, 1)
+        stored_second = ctx.gateway.con.execute(select_sql).fetchall()
+        expect_equal(len(stored_second), 1)
+        expect_equal(stored_second[0][0], stored_first[0][0])
+    finally:
+        ctx.close()
+
+
+def test_test_and_behavioral_profile_writers(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test profile and behavioral coverage writers respect snapshot alignment."""
+    ctx = TestScenario.minimal().build(tmp_path)
+    try:
+        test_cfg = TestProfileStepConfig(snapshot=ctx.snapshot)
+        behavior_cfg = BehavioralCoverageStepConfig(snapshot=ctx.snapshot)
+        caplog.set_level(logging.WARNING)
+
+        test_rows = _test_rows(ctx.repo, ctx.commit)
+        ctx.gateway.con.execute("DELETE FROM analytics.test_profile")
+        inserted = profile_rows.write_test_profile_rows(ctx.gateway, test_cfg, test_rows)
+        expect_equal(inserted, len(test_rows))
+        stored = ctx.gateway.con.execute(
+            "SELECT test_id, rel_path FROM analytics.test_profile ORDER BY test_id"
+        ).fetchall()
+        expect_equal(len(stored), len(test_rows))
+
+        replaced = profile_rows.write_test_profile_rows(ctx.gateway, test_cfg, test_rows[:1])
+        expect_equal(replaced, 1)
+        remaining = ctx.gateway.con.execute(
+            "SELECT COUNT(*) FROM analytics.test_profile"
+        ).fetchone()
+        if remaining is None:
+            pytest.fail("test_profile rows missing after rewrite")
+        expect_equal(int(remaining[0]), 1)
+
+        ctx.gateway.con.execute("DELETE FROM analytics.behavioral_coverage")
+        behavior_rows = _behavior_rows(ctx.repo, ctx.commit)
+        inserted_behavior = profile_rows.write_behavioral_coverage_rows(
+            ctx.gateway, behavior_cfg, behavior_rows
+        )
+        expect_equal(inserted_behavior, len(behavior_rows))
+        behavior_count = ctx.gateway.con.execute(
+            "SELECT COUNT(*) FROM analytics.behavioral_coverage"
+        ).fetchone()
+        if behavior_count is None:
+            pytest.fail("behavioral_coverage rows missing after insert")
+        expect_equal(int(behavior_count[0]), len(behavior_rows))
+        warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
+        expect_equal(warnings, [])
     finally:
         ctx.close()
 
@@ -311,7 +421,18 @@ def test_function_profile_writer_registry_and_prepared_statements() -> None:
 
 
 def _parse_function(source: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    """Parse source and return the function node."""
+    """Parse source and return the function node.
+
+    Returns
+    -------
+    ast.FunctionDef | ast.AsyncFunctionDef
+        Parsed function node from the provided source.
+
+    Raises
+    ------
+    TypeError
+        If the parsed body does not start with a function definition.
+    """
     tree = ast.parse(source.strip())
     node = tree.body[0]
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -346,6 +467,7 @@ def medium(a, b, c, d, e, f):
     )
     simple_metrics = compute_complexity(simple)
     medium_metrics = compute_complexity(medium)
+    expect_is_instance(simple_metrics, ComplexityMetrics)
     expect_equal(simple_metrics.cyclomatic, 1)
     expect_equal(simple_metrics.complexity_bucket, "low")
     expect_true(medium_metrics.cyclomatic > COMPLEXITY_LOW)
@@ -369,7 +491,6 @@ def generator(items):
     expect_equal(metrics.yield_count, 2)
     expect_true(metrics.is_generator)
     expect_equal(metrics.decorator_count, 0)
-    expect_false = lambda value: expect_true(not value)  # Local helper to stay within lint rules
     expect_false(metrics.has_docstring)
 
 
@@ -398,6 +519,7 @@ def demo(self, a: int, b, *, flag: bool = False, **kwargs) -> str:
     )
     stats = compute_param_stats(node)
     expected_types = {"a": "int", "b": None, "flag": "bool", "kwargs": None}
+    expect_is_instance(stats, ParamStats)
     expect_equal(stats.param_count, 5, label="param_count")
     expect_equal(stats.positional_params, 3, label="positional_params")
     expect_equal(stats.keyword_only_params, 1, label="keyword_only_params")
@@ -448,7 +570,7 @@ def from_dict(cls, data: dict) -> "MyClass":
 """
     )
     deco_sig = extract_signature(decorated)
-    expect_true(any(dec.name == "classmethod" for dec in deco_sig.decorators))
+    expect_true(any(str(dec) == "classmethod" for dec in deco_sig.decorators))
     expect_equal(deco_sig.parameters[0].kind, "positional_or_keyword")
 
     property_func = _parse_function(
@@ -459,13 +581,13 @@ def count(self) -> int:
 """
     )
     prop_sig = extract_signature(property_func)
-    expect_true(any(dec.name == "property" for dec in prop_sig.decorators))
+    expect_true(any(str(dec) == "property" for dec in prop_sig.decorators))
     expect_true(prop_sig.is_property)
     expect_true(isinstance(prop_sig.parameters[0], ParameterInfo))
     assert_frozen(prop_sig, "name", "other")
 
 
-def test_function_types_seed_alignment(function_types_ctx) -> None:
+def test_function_types_seed_alignment(function_types_ctx: TestContext) -> None:
     """Function types seed should populate typedness buckets consistently."""
     rows = function_types_ctx.gateway.con.execute(
         """
@@ -479,6 +601,90 @@ def test_function_types_seed_alignment(function_types_ctx) -> None:
     expect_in("fully_typed", buckets)
     expect_in("partial_typed", buckets)
     expect_in("untyped", buckets)
+
+
+def test_function_metric_inputs_and_aggregates_defaults() -> None:
+    """Validate defaults and simple construction for profile aggregation inputs."""
+    aggregates = ProfileAggregates()
+    expect_equal(aggregates.total_functions, 0)
+    expect_equal(aggregates.total_loc, 0)
+    metric = FunctionMetricInput(
+        loc=25,
+        complexity=3,
+        typedness_ratio=0.75,
+        typedness_bucket="partial",
+        complexity_bucket="low",
+    )
+    expect_equal(metric.loc, 25)
+    expect_equal(metric.typedness_ratio, 0.75)
+
+
+def test_aggregate_function_metrics_and_stats() -> None:
+    """Aggregate typed, partial, and untyped functions then compute ratios."""
+    metrics = [
+        FunctionMetricInput(10, 2, 1.0, "typed", "low"),
+        FunctionMetricInput(20, 5, 0.5, "partial", "medium"),
+        FunctionMetricInput(30, 8, 0.0, "untyped", "high"),
+    ]
+    aggregates = aggregate_function_metrics(metrics)
+    expect_equal(aggregates.total_functions, 3)
+    expect_equal(aggregates.total_loc, 60)
+    expect_equal(aggregates.typed_count, 1)
+    expect_equal(aggregates.partial_typed_count, 1)
+    expect_equal(aggregates.untyped_count, 1)
+    expect_equal(aggregates.complexity_buckets.get("high"), 1)
+
+    stats = compute_profile_stats(aggregates)
+    expect_equal(stats["typed_ratio"], pytest.approx(1 / 3))
+    expect_equal(stats["avg_loc"], pytest.approx(20.0))
+
+
+def test_extract_profile_features_classifies_boundaries() -> None:
+    """Classify size, complexity, and typedness at threshold boundaries."""
+    small = ProfileAggregates(
+        total_functions=5,
+        total_loc=SMALL_MODULE_THRESHOLD - 1,
+        avg_complexity=LOW_COMPLEXITY_THRESHOLD - 0.1,
+        avg_typedness=HIGH_TYPED_RATIO,
+        typed_count=5,
+    )
+    small_features = extract_profile_features(small)
+    expect_equal(small_features.size_category, "small")
+    expect_equal(small_features.complexity_category, "simple")
+    expect_equal(small_features.typedness_category, "typed")
+
+    large = ProfileAggregates(
+        total_functions=20,
+        total_loc=LARGE_MODULE_THRESHOLD,
+        avg_complexity=HIGH_COMPLEXITY_THRESHOLD,
+        avg_typedness=LOW_TYPED_RATIO - 0.01,
+        untyped_count=15,
+    )
+    large_features = extract_profile_features(large)
+    expect_equal(large_features.size_category, "large")
+    expect_equal(large_features.complexity_category, "complex")
+    expect_equal(large_features.typedness_category, "untyped")
+
+
+def test_profile_quality_score_bounds_and_weights() -> None:
+    """Quality score stays bounded and weights sum to expected total."""
+    total_weight = TYPEDNESS_WEIGHT + COMPLEXITY_WEIGHT + SIZE_WEIGHT
+    expect_true(abs(total_weight - 1.0) < EPSILON)
+
+    high_complexity = ProfileAggregates(
+        total_functions=5,
+        avg_complexity=COMPLEXITY_NORMALIZATION * 2,
+        avg_typedness=1.0,
+    )
+    features = extract_profile_features(high_complexity)
+    expect_true(0.0 <= features.quality_score <= 1.0)
+    frozen_features = ProfileFeatures(
+        size_category="medium",
+        complexity_category="moderate",
+        typedness_category="partial",
+        quality_score=0.5,
+    )
+    assert_frozen(frozen_features, "quality_score", 0.6)
 
 
 def test_exports_helper_lists_public_names() -> None:

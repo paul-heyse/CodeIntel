@@ -9,7 +9,6 @@ import networkx as nx
 import pytest
 from _pytest.logging import LogCaptureFixture
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations
 from codeintel.graphs.validation.checks import (
     call_graph_findings,
@@ -21,10 +20,10 @@ from codeintel.graphs.validation.checks import (
     import_upward_findings,
     symbol_graph_findings,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
-from tests._helpers.factories import make_snapshot
+from tests._helpers.factories import make_graph_runtime_options, make_snapshot
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -36,20 +35,20 @@ EXPECTED_TWO: Final = 2
 
 
 def test_run_graph_validations_emits_warnings(
-    caplog: LogCaptureFixture, graph_gateway: StorageGateway
+    caplog: LogCaptureFixture, graph_executor_env: GraphTestEnv
 ) -> None:
     """Graph validations should warn for common integrity gaps."""
-    gateway = graph_gateway
+    gateway = graph_executor_env.gateway
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    snapshot = make_snapshot(repo=repo, commit=commit)
+    snapshot = graph_executor_env.snapshot
 
     with caplog.at_level("WARNING"):
         run_graph_validations(
             gateway,
             snapshot=snapshot,
-            runtime=GraphRuntimeOptions(snapshot=snapshot),
+            runtime=make_graph_runtime_options(snapshot=snapshot),
         )
 
     messages = " ".join(record.message for record in caplog.records)
@@ -59,12 +58,12 @@ def test_run_graph_validations_emits_warnings(
 
 
 def test_run_graph_validations_snapshot_mismatch_raises(
-    graph_gateway: StorageGateway,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Graph runtime snapshot must align with validation snapshot."""
-    gateway = graph_gateway
-    snapshot = make_snapshot()
-    mismatched_runtime = GraphRuntimeOptions(
+    gateway = graph_executor_env.gateway
+    snapshot = graph_executor_env.snapshot
+    mismatched_runtime = make_graph_runtime_options(
         snapshot=make_snapshot(repo="other/repo", commit="cafebabe")
     )
 
@@ -77,15 +76,15 @@ def test_run_graph_validations_snapshot_mismatch_raises(
 
 
 def test_run_graph_validations_hard_fail_on_error(
-    graph_gateway: StorageGateway,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Hard-fail mode should raise when error-level findings exist."""
-    gateway = graph_gateway
-    repo = "demo/repo"
-    commit = "deadbeef"
-    snapshot = make_snapshot(repo=repo, commit=commit)
+    gateway = graph_executor_env.gateway
+    snapshot = graph_executor_env.snapshot
+    repo = snapshot.repo
+    commit = snapshot.commit
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    runtime = GraphRuntimeOptions(snapshot=snapshot)
+    runtime = make_graph_runtime_options(snapshot=snapshot)
 
     with pytest.raises(RuntimeError, match="error-level findings"):
         run_graph_validations(
@@ -103,15 +102,15 @@ def test_run_graph_validations_hard_fail_on_error(
 
 
 def test_run_graph_validations_caps_findings(
-    graph_gateway: StorageGateway,
+    graph_executor_env: GraphTestEnv,
 ) -> None:
     """Per-rule caps should limit persisted validation rows."""
-    gateway = graph_gateway
-    repo = "demo/repo"
-    commit = "deadbeef"
-    snapshot = make_snapshot(repo=repo, commit=commit)
+    gateway = graph_executor_env.gateway
+    snapshot = graph_executor_env.snapshot
+    repo = snapshot.repo
+    commit = snapshot.commit
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    runtime = GraphRuntimeOptions(snapshot=snapshot)
+    runtime = make_graph_runtime_options(snapshot=snapshot)
 
     run_graph_validations(
         gateway,

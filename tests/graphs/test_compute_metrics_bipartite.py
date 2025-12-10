@@ -155,31 +155,21 @@ def test_bipartite_degrees_weighted() -> None:
 
 def test_bipartite_degrees_degree_centrality() -> None:
     """Degree centrality for bipartite graph."""
-    graph = nx.Graph()
-    # Complete bipartite K_{2,3}
-    graph.add_edges_from(
-        [
-            (1, "a"),
-            (1, "b"),
-            (1, "c"),
-            (2, "a"),
-            (2, "b"),
-            (2, "c"),
-        ]
-    )
-    primary = {1, 2}
-    secondary = {"a", "b", "c"}
+    graph = bipartite_graph(2, 3).to_undirected(as_view=False)
+    primary = {"L0", "L1"}
+    secondary = {"R0", "R1", "R2"}
 
     result = compute_bipartite_degrees(graph, primary, secondary)
 
     # In complete bipartite, all primary nodes have same centrality
     expect_true(
-        abs(result.primary_degree_centrality[1] - result.primary_degree_centrality[2]) < TOLERANCE
+        abs(result.primary_degree_centrality["L0"] - result.primary_degree_centrality["L1"])
+        < TOLERANCE
     )
 
     # All secondary nodes have same centrality
     expect_true(
-        abs(result.secondary_degree_centrality["a"] - result.secondary_degree_centrality["b"])
+        abs(result.secondary_degree_centrality["R0"] - result.secondary_degree_centrality["R1"])
         < TOLERANCE
     )
 
@@ -270,19 +260,8 @@ def test_weighted_projection_no_shared_neighbors() -> None:
 
 def test_weighted_projection_complete_bipartite() -> None:
     """Complete bipartite projects to complete graph."""
-    graph = nx.Graph()
-    # K_{3,2}: 3 primary nodes, 2 secondary nodes, all connected
-    graph.add_edges_from(
-        [
-            (1, "a"),
-            (1, "b"),
-            (2, "a"),
-            (2, "b"),
-            (3, "a"),
-            (3, "b"),
-        ]
-    )
-    primary = {1, 2, 3}
+    graph = bipartite_graph(3, 2).to_undirected(as_view=False)
+    primary = {"L0", "L1", "L2"}
 
     result = compute_weighted_projection(graph, primary)
 
@@ -464,9 +443,9 @@ def test_degree_centrality_sums_correctly() -> None:
 )
 def test_complete_bipartite_degrees(primary_size: int, secondary_size: int) -> None:
     """Complete bipartite graphs have predictable degrees."""
-    graph = nx.complete_bipartite_graph(primary_size, secondary_size)
-    primary = set(range(primary_size))
-    secondary = set(range(primary_size, primary_size + secondary_size))
+    graph = bipartite_graph(primary_size, secondary_size).to_undirected(as_view=False)
+    primary = {f"L{i}" for i in range(primary_size)}
+    secondary = {f"R{i}" for i in range(secondary_size)}
 
     result = compute_bipartite_degrees(graph, primary, secondary)
 
@@ -491,8 +470,8 @@ def test_complete_bipartite_projection_edges(
     primary_size: int, secondary_size: int, expected_projection_edges: int
 ) -> None:
     """Complete bipartite projects to complete graph on primary."""
-    graph = nx.complete_bipartite_graph(primary_size, secondary_size)
-    primary = set(range(primary_size))
+    graph = bipartite_graph(primary_size, secondary_size).to_undirected(as_view=False)
+    primary = {f"L{i}" for i in range(primary_size)}
 
     result = compute_weighted_projection(graph, primary)
 

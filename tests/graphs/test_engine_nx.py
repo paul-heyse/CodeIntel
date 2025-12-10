@@ -23,6 +23,7 @@ from tests._helpers.builders import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes.networkx_graphs import chain_graph
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 ISOLATED_NODE: Final[int] = 3
@@ -115,7 +116,7 @@ def test_cache_seed_with_none_is_noop() -> None:
 def test_cache_seed_stores_graph() -> None:
     """GraphCache.seed stores the graph for retrieval."""
     cache = GraphCache()
-    graph = nx.DiGraph()
+    graph = chain_graph(2)
 
     cache.seed(GraphKind.CALL_GRAPH, graph)
 
@@ -125,7 +126,7 @@ def test_cache_seed_stores_graph() -> None:
 def test_cache_get_returns_cached_graph() -> None:
     """GraphCache.get returns cached graph without calling loader."""
     cache = GraphCache()
-    original_graph = nx.DiGraph()
+    original_graph = chain_graph(2)
     cache.seed(GraphKind.CALL_GRAPH, original_graph)
     call_count = 0
 
@@ -143,7 +144,7 @@ def test_cache_get_returns_cached_graph() -> None:
 def test_cache_get_calls_loader_when_not_cached() -> None:
     """GraphCache.get calls loader and caches result when not present."""
     cache = GraphCache()
-    expected_graph = nx.DiGraph()
+    expected_graph = chain_graph(2)
     call_count = 0
 
     def loader() -> nx.DiGraph:
@@ -162,8 +163,8 @@ def test_cache_get_calls_loader_when_not_cached() -> None:
 def test_cache_clear_removes_all_entries() -> None:
     """GraphCache.clear removes all cached graphs."""
     cache = GraphCache()
-    cache.seed(GraphKind.CALL_GRAPH, nx.DiGraph())
-    cache.seed(GraphKind.IMPORT_GRAPH, nx.DiGraph())
+    cache.seed(GraphKind.CALL_GRAPH, chain_graph(2))
+    cache.seed(GraphKind.IMPORT_GRAPH, chain_graph(3))
 
     cache.clear()
 
@@ -174,8 +175,8 @@ def test_cache_clear_removes_all_entries() -> None:
 def test_cache_invalidate_removes_specific_entry() -> None:
     """GraphCache.invalidate removes only the specified graph kind."""
     cache = GraphCache()
-    cache.seed(GraphKind.CALL_GRAPH, nx.DiGraph())
-    cache.seed(GraphKind.IMPORT_GRAPH, nx.DiGraph())
+    cache.seed(GraphKind.CALL_GRAPH, chain_graph(2))
+    cache.seed(GraphKind.IMPORT_GRAPH, chain_graph(3))
 
     cache.invalidate(GraphKind.CALL_GRAPH)
 

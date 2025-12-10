@@ -13,7 +13,6 @@ from codeintel.ingestion import (
     RepoScanStep,
 )
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
-from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import (
@@ -24,9 +23,8 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
-    TargetContextConfig,
-    build_ingestion_adapters,
-    build_target_context_for_plugin,
+    build_scan_profile,
+    create_scan_and_docstring_steps,
 )
 
 
@@ -220,24 +218,8 @@ def _create_scan_infrastructure(
     tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]
         Scan step, docstrings step, and scan profile.
     """
-    ctx = build_target_context_for_plugin(
-        RepoScanPlugin(),
-        tmp_path,
-        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
-    )
-    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
-    scan_profile = ScanProfile(
-        repo_root=repo_root,
-        source_roots=(repo_root,),
-        include_globs=("*.py",),
-        ignore_dirs=(),
-    )
-    scan_step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
-    )
-    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    scan_step, doc_step = create_scan_and_docstring_steps(gateway, repo_root, tmp_path)
+    scan_profile = build_scan_profile(repo_root)
     return scan_step, doc_step, scan_profile
 
 
@@ -253,9 +235,11 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     _, file_b = _setup_test_files(repo_root)
     snapshot = make_snapshot(repo_root=repo_root)
 
-    gateway = GatewayFactory().open()
+    gateway = GatewayFactory().with_macros().open()
     try:
-        scan_step, doc_step, scan_profile = _create_scan_infrastructure(gateway, repo_root, tmp_path)
+        scan_step, doc_step, scan_profile = _create_scan_infrastructure(
+            gateway, repo_root, tmp_path
+        )
 
         # Step 1: Populate core.modules via repo scan
         _, modules, _ = scan_step.execute(
@@ -307,7 +291,7 @@ def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:
     file_path = repo_root / "a.py"
     file_path.write_text("x = 1\n", encoding="utf8")
 
-    gateway = GatewayFactory().open()
+    gateway = GatewayFactory().with_macros().open()
 
     def make_record() -> ModuleRecord:
         return ModuleRecord(

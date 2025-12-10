@@ -15,13 +15,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
+from codeintel.cli.core.results import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.rendering.renderers import (
-    OutputRenderer,
-    get_renderer,
-    render_cli_result,
-)
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.execution.context import ExecutionContext, ExecutionResult
 from codeintel.cli.execution.middleware import (
     MiddlewareStack,
@@ -39,7 +34,12 @@ from codeintel.cli.execution.types import (
     SyncHandler,
     get_handler_type,
 )
-from codeintel.cli.core.results import CliResult
+from codeintel.cli.rendering.renderers import (
+    OutputRenderer,
+    get_renderer,
+    render_cli_result,
+)
+from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator

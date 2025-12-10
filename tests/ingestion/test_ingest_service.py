@@ -6,19 +6,25 @@ function and INGEST_MACRO_TABLES constant.
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+
 import pytest
 
+from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.infrastructure.macros import (
     INGEST_MACRO_TABLES,
     macro_exists,
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
+    expect_equal,
     expect_false,
     expect_in,
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.fakes.tools import FakeToolRunner, FakeToolService, FakeToolServiceConfig
 
 # =============================================================================
 # INGEST_MACRO_TABLES Tests
@@ -179,3 +185,15 @@ def test_ingest_macro_tables_members_can_be_checked(
         # Should not raise an exception
         result = macro_exists(fresh_gateway.con, table_key)
         expect_is_instance(result, bool)
+
+
+def test_fake_tool_service_uses_shared_runner(tmp_path: Path) -> None:
+    """FakeToolService should wire the shared FakeToolRunner without subprocesses."""
+    config = FakeToolServiceConfig(pyright_errors={"main.py": 2})
+    service = FakeToolService(config=config, cache_dir=tmp_path / "cache")
+
+    result = asyncio.run(service.run_pyright(tmp_path))
+
+    expect_equal(result, {"main.py": 2})
+    expect_is_instance(service.runner, FakeToolRunner)
+    expect_is_instance(service.runner, ToolRunner)

@@ -101,10 +101,9 @@ def test_simple_paths_diamond_graph() -> None:
 
 def test_simple_paths_multiple_sources() -> None:
     """Multiple sources counts paths from all sources."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "C"), ("B", "C")])
+    graph = star_graph(2, inward=True)
     result = count_simple_paths(
-        graph, ["A", "B"], ["C"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
+        graph, ["spoke1", "spoke2"], ["hub"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
     # One path from A to C, one path from B to C
     expect_equal(result, EXPECTED_PATH_COUNT_TWO)
@@ -112,10 +111,9 @@ def test_simple_paths_multiple_sources() -> None:
 
 def test_simple_paths_multiple_targets() -> None:
     """Multiple targets counts paths to all targets."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "B"), ("A", "C")])
+    graph = star_graph(2)
     result = count_simple_paths(
-        graph, ["A"], ["B", "C"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
+        graph, ["hub"], ["spoke1", "spoke2"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
     )
     expect_equal(result, EXPECTED_PATH_COUNT_TWO)
 
@@ -189,8 +187,7 @@ def test_avg_shortest_path_empty_graph() -> None:
 
 def test_avg_shortest_path_single_node() -> None:
     """Single node source has zero average path length."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = chain_graph(1)
     result = compute_avg_shortest_path_from_source(graph, "A")
     # Only path is to itself (length 0)
     expect_equal(result, AVG_PATH_ZERO)
@@ -267,8 +264,7 @@ def test_reachable_nodes_empty_graph() -> None:
 
 def test_reachable_nodes_single_node() -> None:
     """Single node reaches only itself."""
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = chain_graph(1)
     result = compute_reachable_nodes(graph, "A")
 
     expect_equal(result, {"A"})

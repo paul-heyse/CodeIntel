@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.base import setup_logging
-from codeintel.cli.core import CliResult
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
@@ -278,9 +278,7 @@ def history_timeseries_handler(ctx: EnhancedHandlerContext) -> CliResult[History
 
     runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
     builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(
-            repo=repo, commit=commits[0], repo_root=repo_root
-        ),
+        snapshot=SnapshotInit(repo=repo, commit=commits[0], repo_root=repo_root),
     )
     cfg = builder.history_timeseries(
         commits=tuple(commits),
@@ -303,12 +301,16 @@ def history_timeseries_handler(ctx: EnhancedHandlerContext) -> CliResult[History
         LOG.exception("Missing snapshot database for history_timeseries")
         gateway.close()
         return CliResult.fail(
-            _make_error("Storage Error", f"Missing snapshot database for one or more commits: {exc}")
+            _make_error(
+                "Storage Error", f"Missing snapshot database for one or more commits: {exc}"
+            )
         )
     except DuckDBError as exc:
         LOG.exception("Failed to compute history_timeseries")
         gateway.close()
-        return CliResult.fail(_make_error("Query Error", f"Failed to compute history_timeseries: {exc}"))
+        return CliResult.fail(
+            _make_error("Query Error", f"Failed to compute history_timeseries: {exc}")
+        )
 
     gateway.close()
 

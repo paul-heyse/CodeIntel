@@ -12,8 +12,8 @@ import sys
 from datetime import UTC, datetime
 
 from codeintel.cli.execution import get_executor
-from codeintel.cli.jobs import JobStatus, JobStore
 from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.jobs import JobStatus, JobStore
 
 
 def main() -> None:

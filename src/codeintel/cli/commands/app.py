@@ -7,7 +7,6 @@ import sys
 
 from cyclopts import App
 
-from codeintel.cli.errors import OutputFormat, handle_cli_error
 from codeintel.cli.commands._common import make_root_app
 from codeintel.cli.commands._help import build_patched_app
 from codeintel.cli.commands.build import build_app
@@ -27,6 +26,7 @@ from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
+from codeintel.cli.errors import OutputFormat, handle_cli_error
 
 # Optional imports for initialization - may not be available during packaging
 try:

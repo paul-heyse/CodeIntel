@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any, TextIO
 
 import yaml
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.execution import get_executor
 from codeintel.cli.introspection import get_operation_registry
-from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.execution import ExecutionResult

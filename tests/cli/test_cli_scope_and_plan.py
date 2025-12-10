@@ -20,7 +20,9 @@ def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
     payload = envelope.get("data", envelope)
     # New handler outputs stages with plugins
     if "stages" not in payload and "plugins" not in payload and "plan_id" not in payload:
-        message = f"Plan JSON should include stages, plugins, or plan_id. Got: {list(payload.keys())}"
+        message = (
+            f"Plan JSON should include stages, plugins, or plan_id. Got: {list(payload.keys())}"
+        )
         pytest.fail(message)
 
 

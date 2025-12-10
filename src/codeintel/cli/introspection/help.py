@@ -15,7 +15,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from codeintel.cli.rendering import CODEINTEL_THEME
 from codeintel.cli.introspection.discovery import (
     get_operation_info,
     get_operation_schema,
@@ -23,6 +22,7 @@ from codeintel.cli.introspection.discovery import (
     list_operations_by_category,
     search_operations,
 )
+from codeintel.cli.rendering import CODEINTEL_THEME
 
 
 @dataclass

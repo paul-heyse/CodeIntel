@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.runtime import build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schema import apply_all_schemas
+from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
 from tests._helpers.assertions import expect_true
-from tests._helpers.factories import make_snapshot
+from tests._helpers.factories import make_graph_runtime_options
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.graphs import build_graph_engine_double
 
 
 def test_maybe_enable_nx_gpu_success() -> None:
@@ -18,7 +20,9 @@ def test_maybe_enable_nx_gpu_success() -> None:
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
     status = maybe_enable_nx_gpu(cfg, enabler=lambda: None)
     expect_true(status.gpu_enabled, message="GPU backend should be enabled")
-    expect_true(status.effective_backend == "nx-cugraph", message="Unexpected backend effective value")
+    expect_true(
+        status.effective_backend == "nx-cugraph", message="Unexpected backend effective value"
+    )
     expect_true(status.fallback_reason is None, message="Fallback reason should be None on success")
 
 
@@ -48,20 +52,36 @@ def test_maybe_enable_nx_gpu_strict_raises() -> None:
         maybe_enable_nx_gpu(cfg, enabler=_fail)
 
 
-def test_build_graph_runtime_captures_backend_info(graph_gateway: StorageGateway) -> None:
+def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTestEnv) -> None:
     """Runtime should expose backend metadata recorded during engine construction."""
-    apply_all_schemas(graph_gateway.con)
-    snapshot = make_snapshot(repo="r", commit="c")
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
+    engine_with_metadata: Any = build_graph_engine_double(
+        graph_executor_env.gateway,
+        graph_executor_env.snapshot,
+    )
+    engine_with_metadata.backend_info = BackendEnablement(
+        requested_backend=cfg.backend,
+        requested_gpu=True,
+        effective_backend="nx-cugraph",
+        gpu_enabled=True,
+        fallback_reason=None,
+    )
 
     runtime = build_graph_runtime(
-        graph_gateway,
-        GraphRuntimeOptions(snapshot=snapshot, backend=cfg),
+        graph_executor_env.gateway,
+        make_graph_runtime_options(
+            snapshot=graph_executor_env.snapshot,
+            backend=cfg,
+            engine=engine_with_metadata,
+        ),
         enabler=lambda: None,
     )
     info = runtime.backend_info
     expect_true(info is not None, message="backend_info should be set on runtime")
-    expect_true(info is not None and info.gpu_enabled, message="GPU should be marked enabled in backend_info")
+    expect_true(
+        info is not None and info.gpu_enabled,
+        message="GPU should be marked enabled in backend_info",
+    )
     expect_true(
         info is not None and info.effective_backend == "nx-cugraph",
         message="Unexpected backend recorded on runtime",

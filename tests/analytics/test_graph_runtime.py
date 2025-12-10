@@ -104,7 +104,9 @@ class GraphRuntimeHarness:
         GraphRuntime
             Runtime configured with the provided engine and cache directory.
         """
-        options = GraphRuntimeOptions(snapshot=self.snapshot, graph_cache_dir=cache_dir or self.cache_dir)
+        options = GraphRuntimeOptions(
+            snapshot=self.snapshot, graph_cache_dir=cache_dir or self.cache_dir
+        )
         return GraphRuntime(options=options, engine=engine or self.build_engine())
 
 
@@ -170,13 +172,17 @@ def test_disk_cache_mismatch_falls_back_to_loader(graph_runtime_ctx: GraphRuntim
     graph_path.parent.mkdir(parents=True, exist_ok=True)
     graph_payload = json_graph.node_link_data(nx.DiGraph())
     graph_path.write_text(json.dumps(graph_payload), encoding="utf-8")
-    meta_path.write_text("\n".join(["other", "c", runtime.backend.backend, "false"]), encoding="utf-8")
+    meta_path.write_text(
+        "\n".join(["other", "c", runtime.backend.backend, "false"]), encoding="utf-8"
+    )
 
     runtime.ensure_call_graph()
     expect_equal(engine.method_counts.get("load_call_graph", 0), 1)
 
 
-def test_compute_graph_metrics_reuses_runtime_engine(graph_runtime_ctx: GraphRuntimeHarness) -> None:
+def test_compute_graph_metrics_reuses_runtime_engine(
+    graph_runtime_ctx: GraphRuntimeHarness,
+) -> None:
     """Provided GraphRuntime should be reused without rebuilding the engine."""
     runtime = build_graph_runtime(
         graph_runtime_ctx.gateway,

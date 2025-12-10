@@ -12,7 +12,7 @@ from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 from uuid import uuid4
 
 import pytest
@@ -1066,202 +1066,107 @@ def test_wrap_tool_logs_debug_message(
 
 
 # -----------------------------------------------------------------------------
-# ensure_prereqs_for_mcp Integration Tests
+# ensure_prereqs Integration Tests
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.integration
-def test_ensure_prereqs_for_mcp_skips_when_prior_run_exists(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_mcp skips when prior successful run exists."""
-    env = auto_pipeline_test_env
+@dataclass(frozen=True)
+class PrereqCase:
+    """Parameterized prerequisites scenario for HTTP and MCP paths."""
 
-    # Seed a successful run in the gateway
-    params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
-    _seed_run(env.gateway.runs, params)
-
-    # Create config matching the gateway
-    config = ServingConfig(
-        mode="local_db",
-        repo_root=env.tmp_path,
-        repo="test/repo",
-        commit="abc123",
-        db_path=env.tmp_path / "db.duckdb",
-    )
-
-    result = ensure_prereqs_for_mcp(
-        op_id="function.summary",
-        config=config,
-        backend=env.backend,
-    )
-
-    # Should skip because a successful run exists
-    expect_is_none(result)
+    name: str
+    ensure: EnsureFn
+    seed: RunParams | None
+    expect_skip: bool
 
 
-@pytest.mark.integration
-def test_ensure_prereqs_for_mcp_skips_with_op_prereqs_run(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_mcp skips when op_prereqs run exists."""
-    env = auto_pipeline_test_env
+class EnsureFn(Protocol):
+    """Protocol for ensure_prereqs functions using keyword-only params."""
 
-    # Seed a successful op_prereqs run
-    params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="op_prereqs")
-    _seed_run(env.gateway.runs, params)
-
-    config = ServingConfig(
-        mode="local_db",
-        repo_root=env.tmp_path,
-        repo="test/repo",
-        commit="abc123",
-        db_path=env.tmp_path / "db.duckdb",
-    )
-
-    result = ensure_prereqs_for_mcp(
-        op_id="function.summary",
-        config=config,
-        backend=env.backend,
-    )
-
-    # Should skip because an op_prereqs run exists
-    expect_is_none(result)
+    def __call__(self, *, op_id: str, config: ServingConfig, backend: QueryBackend) -> object: ...
 
 
-@pytest.mark.integration
-def test_ensure_prereqs_for_mcp_does_not_skip_for_failed_run(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_mcp does not skip when prior run failed."""
-    env = auto_pipeline_test_env
-
-    # Seed a failed run - should not satisfy prereqs
-    params = RunParams(repo="test/repo", commit="abc123", status="failed", kind="full")
-    _seed_run(env.gateway.runs, params)
-
-    # This will attempt to run the pipeline, which may fail or succeed
-    # depending on infrastructure. The key assertion is that it doesn't skip.
-    # We check has_successful_prereq_run returns False to verify skip logic.
-    has_prereq = has_successful_prereq_run(
-        env.gateway.runs,
-        repo="test/repo",
-        commit="abc123",
-        op_id="function.summary",
-    )
-
-    # The failed run should not satisfy prereqs
-    expect_false(has_prereq)
+_PREREQ_CASES: tuple[PrereqCase, ...] = (
+    PrereqCase(
+        name="mcp_skip_full_success",
+        ensure=ensure_prereqs_for_mcp,
+        seed=RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full"),
+        expect_skip=True,
+    ),
+    PrereqCase(
+        name="mcp_skip_op_prereqs",
+        ensure=ensure_prereqs_for_mcp,
+        seed=RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="op_prereqs"),
+        expect_skip=True,
+    ),
+    PrereqCase(
+        name="mcp_do_not_skip_failed",
+        ensure=ensure_prereqs_for_mcp,
+        seed=RunParams(repo="test/repo", commit="abc123", status="failed", kind="full"),
+        expect_skip=False,
+    ),
+    PrereqCase(
+        name="mcp_do_not_skip_other_commit",
+        ensure=ensure_prereqs_for_mcp,
+        seed=RunParams(repo="test/repo", commit="different123", status="succeeded", kind="full"),
+        expect_skip=False,
+    ),
+    PrereqCase(
+        name="http_skip_full_success",
+        ensure=ensure_prereqs_for_http,
+        seed=RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full"),
+        expect_skip=True,
+    ),
+    PrereqCase(
+        name="http_skip_op_prereqs",
+        ensure=ensure_prereqs_for_http,
+        seed=RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="op_prereqs"),
+        expect_skip=True,
+    ),
+    PrereqCase(
+        name="http_do_not_skip_failed",
+        ensure=ensure_prereqs_for_http,
+        seed=RunParams(repo="test/repo", commit="abc123", status="failed", kind="full"),
+        expect_skip=False,
+    ),
+)
 
 
 @pytest.mark.integration
-def test_ensure_prereqs_for_mcp_does_not_skip_for_different_commit(
+@pytest.mark.parametrize("case", _PREREQ_CASES, ids=lambda case: case.name)
+def test_ensure_prereqs_skip_matrix(
     auto_pipeline_test_env: AutoPipelineTestEnv,
+    case: PrereqCase,
 ) -> None:
-    """Verify ensure_prereqs_for_mcp does not skip for different commit."""
+    """Validate ensure_prereqs skip behavior across HTTP and MCP backends."""
     env = auto_pipeline_test_env
 
-    # Seed a successful run for a different commit
-    params = RunParams(repo="test/repo", commit="different123", status="succeeded", kind="full")
-    _seed_run(env.gateway.runs, params)
-
-    # Check prereq logic returns False for our commit (abc123)
-    # The run we seeded was for "different123" so it shouldn't match
-    has_prereq = has_successful_prereq_run(
-        env.gateway.runs,
-        repo="test/repo",
-        commit="abc123",
-        op_id="function.summary",
-    )
-
-    # The run for different commit should not satisfy prereqs
-    expect_false(has_prereq)
-
-
-# -----------------------------------------------------------------------------
-# ensure_prereqs_for_http Integration Tests
-# -----------------------------------------------------------------------------
-
-
-@pytest.mark.integration
-def test_ensure_prereqs_for_http_skips_when_prior_run_exists(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_http skips when prior successful run exists."""
-    env = auto_pipeline_test_env
-
-    # Seed a successful run
-    params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
-    _seed_run(env.gateway.runs, params)
+    if case.seed:
+        _seed_run(env.gateway.runs, case.seed)
 
     config = ServingConfig(
         mode="local_db",
         repo_root=env.tmp_path,
-        repo="test/repo",
-        commit="abc123",
-        db_path=env.tmp_path / "db.duckdb",
+        repo=env.config.repo,
+        commit=env.config.commit,
+        db_path=env.config.db_path,
     )
 
-    result = ensure_prereqs_for_http(
-        op_id="function.summary",
-        config=config,
-        backend=env.backend,
-    )
-
-    # Should skip because a successful run exists
-    expect_is_none(result)
-
-
-@pytest.mark.integration
-def test_ensure_prereqs_for_http_skips_with_op_prereqs_run(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_http skips when op_prereqs run exists."""
-    env = auto_pipeline_test_env
-
-    # Seed a successful op_prereqs run
-    params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="op_prereqs")
-    _seed_run(env.gateway.runs, params)
-
-    config = ServingConfig(
-        mode="local_db",
-        repo_root=env.tmp_path,
-        repo="test/repo",
-        commit="abc123",
-        db_path=env.tmp_path / "db.duckdb",
-    )
-
-    result = ensure_prereqs_for_http(
-        op_id="function.summary",
-        config=config,
-        backend=env.backend,
-    )
-
-    # Should skip because an op_prereqs run exists
-    expect_is_none(result)
-
-
-@pytest.mark.integration
-def test_ensure_prereqs_for_http_does_not_skip_for_failed_run(
-    auto_pipeline_test_env: AutoPipelineTestEnv,
-) -> None:
-    """Verify ensure_prereqs_for_http does not skip when prior run failed."""
-    env = auto_pipeline_test_env
-
-    # Seed a failed run
-    params = RunParams(repo="test/repo", commit="abc123", status="failed", kind="full")
-    _seed_run(env.gateway.runs, params)
-
-    # Check prereq logic returns False
-    has_prereq = has_successful_prereq_run(
-        env.gateway.runs,
-        repo="test/repo",
-        commit="abc123",
-        op_id="function.summary",
-    )
-
-    # The failed run should not satisfy prereqs
-    expect_false(has_prereq)
+    if case.expect_skip:
+        result = case.ensure(
+            op_id="function.summary",
+            config=config,
+            backend=env.backend,
+        )
+        expect_is_none(result)
+    else:
+        has_prereq = has_successful_prereq_run(
+            env.gateway.runs,
+            repo=env.config.repo,
+            commit=env.config.commit,
+            op_id="function.summary",
+        )
+        expect_false(has_prereq)
 
 
 # -----------------------------------------------------------------------------

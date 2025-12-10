@@ -11,22 +11,23 @@ import pytest
 from codeintel.config import BuildLayoutOptions, BuildPaths
 from codeintel.ingestion import ScipIngestStep
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestResult
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.ingestion import (
     ScipIngestContext,
     build_scip_ingest_context,
-    write_dummy_scip_files,
 )
 from tests._helpers.sql import count_table_rows
 
 
 @pytest.fixture
 def scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
-    """Provision repo, gateway, and adapters for SCIP ingest tests."""
-    context = build_scip_ingest_context(tmp_path)
-    db_path = context.build_dir / "db" / "codeintel.duckdb"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    return context
+    """Provision repo, gateway, and adapters for SCIP ingest tests.
+
+    Returns
+    -------
+    ScipIngestContext
+        Context bundle with repo_root, gateway, adapters, and build_dir.
+    """
+    return build_scip_ingest_context(tmp_path)
 
 
 def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) -> None:
@@ -53,12 +54,8 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
         ),
     )
 
-    gateway = open_gateway(
-        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
-    )
     try:
         scip_dir = build_dir / "scip"
-        write_dummy_scip_files(build_dir)  # ensure artifact paths exist
 
         config = ScipIngestConfig(
             repo="demo/repo",
@@ -80,9 +77,9 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
         if not (scip_dir / "index.scip.json").is_file():
             pytest.fail("index.scip.json was not created under build/scip")
 
-        count = count_table_rows(gateway.con, "scip_index_view")
+        count = count_table_rows(gateway.con, "core.scip_symbols")
         if count == 0:
-            pytest.fail("scip_index_view is empty; expected rows after ingest")
+            pytest.fail("core.scip_symbols is empty; expected rows after ingest")
 
     finally:
         gateway.close()

@@ -13,6 +13,7 @@ from codeintel.serving import domain_models as dm
 from codeintel.serving.services.query_service import LocalQueryService
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
@@ -28,7 +29,13 @@ def _expect(*, condition: bool, message: str) -> None:
 def _build_local_service(
     provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Return the shared LocalQueryService from the provisioned service app."""
+    """Return the shared LocalQueryService from the provisioned service app.
+
+    Returns
+    -------
+    LocalQueryService
+        Service instance wired to the provisioned gateway snapshot.
+    """
     return provisioned_service_app.service
 
 
@@ -95,19 +102,12 @@ def test_list_subsystems_with_query(
 
 def test_get_module_subsystems_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_subsystems returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM analytics.subsystem_modules LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystem modules available in test data")
-
-    module = result[0]
-    subsystems = service.get_module_subsystems(module=module)
+    subsystems = service.get_module_subsystems(module=analytics_samples.module)
 
     _expect(
         condition=isinstance(subsystems, dm.ModuleSubsystemResult),
@@ -131,19 +131,12 @@ def test_get_module_subsystems_not_found(
 
 def test_get_file_hints_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_hints returns domain FileHintsResult."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available in test data")
-
-    rel_path = result[0]
-    hints = service.get_file_hints(rel_path=rel_path)
+    hints = service.get_file_hints(rel_path=analytics_samples.rel_path)
 
     _expect(
         condition=isinstance(hints, dm.FileHintsResult),
@@ -167,19 +160,12 @@ def test_get_file_hints_not_found(
 
 def test_get_subsystem_modules_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_subsystem_modules returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
-    modules = service.get_subsystem_modules(subsystem_id=subsystem_id)
+    modules = service.get_subsystem_modules(subsystem_id=analytics_samples.subsystem_id)
 
     _expect(
         condition=isinstance(modules, dm.SubsystemModulesResult),
@@ -189,19 +175,15 @@ def test_get_subsystem_modules_returns_domain_result(
 
 def test_get_subsystem_modules_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_subsystem_modules with module_limit."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
-    modules = service.get_subsystem_modules(subsystem_id=subsystem_id, module_limit=LIMIT_FIVE)
+    modules = service.get_subsystem_modules(
+        subsystem_id=analytics_samples.subsystem_id,
+        module_limit=LIMIT_FIVE,
+    )
 
     _expect(
         condition=isinstance(modules, dm.SubsystemModulesResult),
@@ -267,19 +249,12 @@ def test_search_subsystems_with_role(
 
 def test_summarize_subsystem_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify summarize_subsystem returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
-    summary = service.summarize_subsystem(subsystem_id=subsystem_id)
+    summary = service.summarize_subsystem(subsystem_id=analytics_samples.subsystem_id)
 
     _expect(
         condition=isinstance(summary, dm.SubsystemModulesResult),
@@ -289,19 +264,15 @@ def test_summarize_subsystem_returns_domain_result(
 
 def test_summarize_subsystem_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify summarize_subsystem with module_limit."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
-    summary = service.summarize_subsystem(subsystem_id=subsystem_id, module_limit=LIMIT_FIVE)
+    summary = service.summarize_subsystem(
+        subsystem_id=analytics_samples.subsystem_id,
+        module_limit=LIMIT_FIVE,
+    )
 
     _expect(
         condition=isinstance(summary, dm.SubsystemModulesResult),

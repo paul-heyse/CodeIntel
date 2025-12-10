@@ -28,7 +28,9 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginScratch
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
+from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
@@ -198,6 +200,37 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
         Snapshot reference for the golden repo and commit.
     """
     return make_snapshot(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Resource Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def storage_resource(graph_gateway: StorageGateway, tmp_path: Path) -> StorageResource:
+    """Provide a reusable StorageResource instance for graph tests.
+
+    Returns
+    -------
+    StorageResource
+        Storage resource bound to the graph gateway and repo root.
+    """
+    return StorageResource(gateway=graph_gateway, _repo_root=tmp_path)
+
+
+@pytest.fixture
+def storage_registry(storage_resource: StorageResource) -> ResourceRegistry:
+    """Provide a registry pre-loaded with StorageResource.
+
+    Returns
+    -------
+    ResourceRegistry
+        Registry containing the storage resource provider.
+    """
+    registry = ResourceRegistry()
+    registry.register_provider(storage_resource)
+    return registry
 
 
 # ---------------------------------------------------------------------------

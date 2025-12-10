@@ -90,52 +90,36 @@ STATUS_COUNTS = _EXECUTOR_PRIVATES["_status_counts"]
 # Test Helpers
 
 
-def _make_test_plugin(
-    name: str,
-    *,
-    succeed: bool = True,
-    row_counts: Mapping[str, int] | None = None,
-    raise_exception: type[Exception] | None = None,
-    delay_ms: int = 0,
-    input_hash: str | None = None,
-    options_hash: str | None = None,
-) -> GraphPluginProtocol:
+def _make_test_plugin(name: str, config: Mapping[str, object] | None = None) -> GraphPluginProtocol:
     """Create a configurable test plugin.
 
     Parameters
     ----------
     name
         Plugin name.
-    succeed
-        Whether the plugin should return success.
-    row_counts
-        Row counts to return on success.
-    raise_exception
-        Optional exception type to raise during execution.
-    delay_ms
-        Delay before executing in milliseconds.
-    input_hash
-        Input hash to include in the result.
-    options_hash
-        Options hash to include in the result.
+    config
+        Optional configuration mapping:
+        - succeed: bool (default True)
+        - row_counts: Mapping[str, int]
+        - raise_exception: type[Exception]
+        - delay_ms: int
+        - input_hash: str
+        - options_hash: str
 
     Returns
     -------
     GraphPluginProtocol
         Configured test plugin instance.
     """
-    runtime: dict[str, object] = {
-        "delay_ms": delay_ms,
-        "input_hash": input_hash,
-        "options_hash": options_hash,
-        "row_counts": dict(row_counts) if row_counts is not None else None,
-        "exception_type": raise_exception,
-        "exception_message": f"{name} exception",
-        "succeed": succeed,
-        "error_message": f"Plugin {name} failed",
-    }
-    # Strip None values to avoid runtime type noise
-    runtime = {k: v for k, v in runtime.items() if v is not None}
+    runtime: dict[str, object] = {}
+    runtime.update(config or {})
+    runtime.setdefault("succeed", True)
+    runtime.setdefault("exception_message", f"{name} exception")
+    runtime.setdefault("error_message", f"Plugin {name} failed")
+    if "raise_exception" in runtime:
+        runtime["exception_type"] = runtime.pop("raise_exception")
+    if "row_counts" in runtime and isinstance(runtime["row_counts"], Mapping):
+        runtime["row_counts"] = dict(runtime["row_counts"])
     return make_graph_plugin(name, runtime=runtime)
 
 
@@ -177,7 +161,7 @@ def test_graph_plugin_executor_dry_run_skips_execution(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """Dry run mode skips actual plugin execution."""
-    plugin = _make_test_plugin("dry_run_plugin", succeed=True)
+    plugin = _make_test_plugin("dry_run_plugin", {"succeed": True})
 
     with plugin_registrar([plugin]):
         context = GraphPlanContext(
@@ -289,7 +273,7 @@ def test_graph_plugin_executor_skip_on_unchanged(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """Plugin skipped when manifest shows inputs unchanged."""
-    plugin = _make_test_plugin("unchanged_plugin", succeed=True)
+    plugin = _make_test_plugin("unchanged_plugin", {"succeed": True})
 
     with plugin_registrar([plugin]):
         context = GraphPlanContext(
@@ -359,7 +343,7 @@ def test_graph_plugin_executor_builds_manifest(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """Successful plugin execution populates manifest in report."""
-    plugin = _make_test_plugin("manifest_build_plugin", succeed=True)
+    plugin = _make_test_plugin("manifest_build_plugin", {"succeed": True})
 
     with plugin_registrar([plugin]):
         context = GraphPlanContext(
@@ -398,8 +382,8 @@ def test_graph_plugin_executor_fatal_stops_remaining(
     graph_executor_env: GraphTestEnv,
 ) -> None:
     """Fatal plugin error stops execution of remaining plugins."""
-    fatal_plugin = _make_test_plugin("fatal_first", raise_exception=RuntimeError)
-    second_plugin = _make_test_plugin("second_should_not_run", succeed=True)
+    fatal_plugin = _make_test_plugin("fatal_first", {"raise_exception": RuntimeError})
+    second_plugin = _make_test_plugin("second_should_not_run", {"succeed": True})
 
     with plugin_registrar([fatal_plugin, second_plugin]):
         context = GraphPlanContext(
@@ -497,8 +481,8 @@ def test_graph_plugin_executor_batch_executes_multiple(
 ) -> None:
     """Batch execution runs multiple plugins and reports results."""
     plugins = [
-        _make_test_plugin("batch_p1", succeed=True),
-        _make_test_plugin("batch_p2", succeed=True),
+        _make_test_plugin("batch_p1", {"succeed": True}),
+        _make_test_plugin("batch_p2", {"succeed": True}),
     ]
 
     with plugin_registrar(plugins):
@@ -524,8 +508,8 @@ def test_graph_plugin_executor_batch_with_mixed_results(
 ) -> None:
     """Batch execution handles mixed success and failure results."""
     plugins = [
-        _make_test_plugin("batch_success", succeed=True),
-        _make_test_plugin("batch_fail", succeed=False),
+        _make_test_plugin("batch_success", {"succeed": True}),
+        _make_test_plugin("batch_fail", {"succeed": False}),
     ]
 
     with plugin_registrar(plugins):

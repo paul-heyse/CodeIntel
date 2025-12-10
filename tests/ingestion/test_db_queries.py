@@ -37,6 +37,7 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_not_null_fraction,
     safe_table_exists,
 )
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
@@ -47,6 +48,12 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.factories import make_snapshot
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_target_context_for_plugin,
+    seed_modules_and_repo_map,
+    seed_numeric_table,
+)
 
 # Test constants (non-repo/commit)
 EXPECTED_COUNT_2 = 2
@@ -56,107 +63,6 @@ EXPECTED_FRACTION_0_5 = 0.5
 EXPECTED_FRACTION_1_0 = 1.0
 EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
-MODULE_INSERT_SQL = """
-    INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-    VALUES (?, ?, ?, ?, ?, '[]', '[]')
-"""
-
-
-def _insert_modules(
-    gateway: StorageGateway, rows: list[tuple[str, str, str, str, str | None]]
-) -> None:
-    """Insert rows into core.modules for tests."""
-    params = [
-        (module, path, repo, commit, language or "python")
-        for module, path, repo, commit, language in rows
-    ]
-    gateway.con.executemany(MODULE_INSERT_SQL, params)
-
-
-def _create_numeric_table(gateway: StorageGateway, table: str, values: list[float]) -> None:
-    """Create a numeric table with id/value rows.
-
-    Raises
-    ------
-    ValueError
-        If an unsupported table is requested.
-    """
-    params = [(idx, value) for idx, value in enumerate(values, start=1)]
-
-    def _insert(query: str) -> None:
-        if not params:
-            return
-        gateway.con.executemany(query, params)
-
-    if table == "core.test_numeric":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_numeric (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        _insert("INSERT INTO core.test_numeric (id, value) VALUES (?, ?)")
-    elif table == "core.test_numeric2":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_numeric2 (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        _insert("INSERT INTO core.test_numeric2 (id, value) VALUES (?, ?)")
-    elif table == "core.test_empty_num":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_empty_num (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        _insert("INSERT INTO core.test_empty_num (id, value) VALUES (?, ?)")
-    elif table == "core.test_empty_num2":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_empty_num2 (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        _insert("INSERT INTO core.test_empty_num2 (id, value) VALUES (?, ?)")
-    elif table == "core.test_pos":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_pos (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_pos (id, value) VALUES (?, ?)",
-            params,
-        )
-    elif table == "core.test_all_pos":
-        gateway.con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS core.test_all_pos (
-                id INTEGER,
-                value DOUBLE
-            )
-            """
-        )
-        gateway.con.executemany(
-            "INSERT INTO core.test_all_pos (id, value) VALUES (?, ?)",
-            params,
-        )
-    else:
-        message = f"Unsupported numeric table for tests: {table}"
-        raise ValueError(message)
 
 
 def _create_varchar_table(
@@ -335,14 +241,14 @@ def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, tabl
     expect_is_none(result)
 
 
-def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count should return accurate row counts."""
-    _insert_modules(
+    _seed_modules(
         fresh_gateway,
-        [
-            ("a", "a.py", "test", "abc", "python"),
-            ("b", "b.py", "test", "abc", "python"),
-        ],
+        tmp_path,
+        repo="test",
+        commit="abc",
+        paths=["a.py", "b.py"],
     )
 
     result = safe_count(fresh_gateway, "core.modules")
@@ -357,16 +263,22 @@ def test_safe_count_returns_correct_count(fresh_gateway: StorageGateway) -> None
 
 def test_safe_count_with_scope_filters_by_snapshot(
     fresh_gateway: StorageGateway,
+    tmp_path: Path,
 ) -> None:
     """safe_count_with_scope should count only matching repo/commit."""
-    # Insert data for different repos/commits
-    _insert_modules(
+    _seed_modules(
         fresh_gateway,
-        [
-            ("a", "a.py", "repo1", "commit1", "python"),
-            ("b", "b.py", "repo1", "commit1", "python"),
-            ("c", "c.py", "repo2", "commit2", "python"),
-        ],
+        tmp_path,
+        repo="repo1",
+        commit="commit1",
+        paths=["a.py", "b.py"],
+    )
+    _seed_modules(
+        fresh_gateway,
+        tmp_path,
+        repo="repo2",
+        commit="commit2",
+        paths=["c.py"],
     )
 
     snapshot = make_snapshot(repo="repo1", commit="commit1", repo_root=TEST_REPO_ROOT)
@@ -511,15 +423,14 @@ def test_safe_get_columns_nonexistent_or_invalid(
 # =============================================================================
 
 
-def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_nulls_no_nulls(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_nulls should return 0 when no NULL values exist."""
-    # Insert data with no nulls
-    _insert_modules(
+    _seed_modules(
         fresh_gateway,
-        [
-            ("a", "a.py", "test", "abc", "python"),
-            ("b", "b.py", "test", "abc", "python"),
-        ],
+        tmp_path,
+        repo="test",
+        commit="abc",
+        paths=["a.py", "b.py"],
     )
 
     result = safe_count_nulls(fresh_gateway, "core.modules", "module")
@@ -568,7 +479,7 @@ def test_safe_count_nulls_invalid_inputs(
 
 def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
     """safe_min_value should return minimum value."""
-    _create_numeric_table(fresh_gateway, "core.test_numeric", [10.5, 5.0, 20.0])
+    seed_numeric_table(fresh_gateway, "core.test_numeric", [10.5, 5.0, 20.0])
 
     result = safe_min_value(fresh_gateway, "core.test_numeric", "value")
 
@@ -577,7 +488,7 @@ def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
     """safe_max_value should return maximum value."""
-    _create_numeric_table(fresh_gateway, "core.test_numeric2", [10.5, 5.0, 20.0])
+    seed_numeric_table(fresh_gateway, "core.test_numeric2", [10.5, 5.0, 20.0])
 
     result = safe_max_value(fresh_gateway, "core.test_numeric2", "value")
 
@@ -586,7 +497,7 @@ def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_min_value should return None for empty table."""
-    _create_numeric_table(fresh_gateway, "core.test_empty_num", [])
+    seed_numeric_table(fresh_gateway, "core.test_empty_num", [])
 
     result = safe_min_value(fresh_gateway, "core.test_empty_num", "value")
 
@@ -595,7 +506,7 @@ def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_max_value_empty_table(fresh_gateway: StorageGateway) -> None:
     """safe_max_value should return None for empty table."""
-    _create_numeric_table(fresh_gateway, "core.test_empty_num2", [])
+    seed_numeric_table(fresh_gateway, "core.test_empty_num2", [])
 
     result = safe_max_value(fresh_gateway, "core.test_empty_num2", "value")
 
@@ -623,7 +534,7 @@ def test_safe_max_value_invalid_column(fresh_gateway: StorageGateway) -> None:
 
 def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -> None:
     """safe_count_non_positive should count values <= 0."""
-    _create_numeric_table(fresh_gateway, "core.test_pos", [-5.0, 0.0, 10.0, -2.0])
+    seed_numeric_table(fresh_gateway, "core.test_pos", [-5.0, 0.0, 10.0, -2.0])
 
     result = safe_count_non_positive(fresh_gateway, "core.test_pos", "value")
 
@@ -632,7 +543,7 @@ def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -
 
 def test_safe_count_non_positive_all_positive(fresh_gateway: StorageGateway) -> None:
     """safe_count_non_positive should return 0 when all values are positive."""
-    _create_numeric_table(fresh_gateway, "core.test_all_pos", [5.0, 10.0])
+    seed_numeric_table(fresh_gateway, "core.test_all_pos", [5.0, 10.0])
 
     result = safe_count_non_positive(fresh_gateway, "core.test_all_pos", "value")
 
@@ -954,3 +865,24 @@ def test_safe_macro_exists_builtin_function(fresh_gateway: StorageGateway) -> No
     result = safe_macro_exists(fresh_gateway, "count")
 
     expect_true(result)
+
+
+def _seed_modules(
+    gateway: StorageGateway,
+    tmp_path: Path,
+    *,
+    repo: str,
+    commit: str,
+    paths: list[str],
+) -> None:
+    """Seed core.modules and repo_map via shared helpers."""
+    ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
+        tmp_path,
+        config=TargetContextConfig(
+            repo_root=tmp_path / f"{repo}-{commit}",
+            gateway=gateway,
+            snapshot=(repo, commit),
+        ),
+    )
+    seed_modules_and_repo_map(ctx, paths)

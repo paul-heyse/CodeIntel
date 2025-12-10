@@ -17,6 +17,7 @@ from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
 from codeintel.cli.project import (
     ProjectNotFoundError,
@@ -24,7 +25,6 @@ from codeintel.cli.project import (
     build_project_runtime,
     find_project_root,
 )
-from codeintel.cli.core import CliResult
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:

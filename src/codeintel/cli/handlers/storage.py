@@ -11,8 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.core import CliResult
+from codeintel.cli.errors import ProblemDetail
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
 from codeintel.storage.macros.generation import render_macro

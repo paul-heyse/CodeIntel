@@ -6,6 +6,11 @@ import pytest
 
 from codeintel.config.datasets import DEFAULT_JSONL_FILENAMES
 from codeintel.serving.backend import BackendLimits
+from tests._helpers.datasets_assertions import (
+    expect_spec_filename,
+    expect_spec_has_capabilities,
+    expect_spec_has_columns,
+)
 from tests._helpers.gateway import GatewayFactory, build_duckdb_query_service
 
 
@@ -34,13 +39,8 @@ def test_dataset_specs_include_contract_fields() -> None:
             message="Row binding flag missing for function_profile",
         )
         expected_filename = DEFAULT_JSONL_FILENAMES.get("analytics.function_profile")
-        _require(
-            condition=profile.jsonl_filename == expected_filename,
-            message="jsonl_filename mismatch for function_profile",
-        )
-        _require(
-            condition=bool(profile.schema_columns) is True,
-            message="Schema columns missing for function_profile",
-        )
+        expect_spec_filename(profile, expected_filename)
+        expect_spec_has_columns(profile)
+        expect_spec_has_capabilities(profile)
     finally:
         gateway.close()

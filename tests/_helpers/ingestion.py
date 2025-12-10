@@ -10,27 +10,31 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget
-from codeintel.config.models import ToolsConfig
 from codeintel.config.datasets.primitives import TableSchema
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
 )
+from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.compute import DocstringsExtractStep, RepoScanStep
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
+from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
+from tests._helpers import build_repo_tree
 from tests._helpers.fakes.contexts import (
     EnvOverrides,
     ExecutionContextBuilder,
     TargetResourceOverrides,
     make_test_output_target,
 )
+from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.fakes.tools import write_dummy_scip_files as write_dummy_scip_files
-from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.ingestion.engine.service import ToolService
-from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -42,19 +46,24 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
+    "ScipIngestContext",
     "TargetContextConfig",
     "build_ingestion_adapters",
     "build_repo_target",
-    "build_target_context_for_plugin",
+    "build_repo_with_configs",
+    "build_scan_profile",
     "build_scip_ingest_context",
-    "ScipIngestContext",
+    "build_target_context_for_plugin",
+    "create_scan_and_docstring_steps",
+    "create_scan_step",
     "module_paths_from_context",
     "module_records_for_paths",
     "seed_modules_and_repo_map",
+    "seed_numeric_table",
     "write_coverage_file",
+    "write_dummy_scip_files",
     "write_pytest_report",
     "write_scip_index",
-    "write_dummy_scip_files",
 ]
 
 
@@ -67,6 +76,7 @@ class TargetContextConfig:
     providers: Providers | None = None
     gateway: StorageGateway | None = None
     gateway_factory: GatewayFactory | None = None
+    snapshot: tuple[str, str] | None = None
     resources: TargetResourceOverrides | None = None
 
 
@@ -93,7 +103,11 @@ def build_target_context_for_plugin(
         factory = cfg.gateway_factory or GatewayFactory().with_macros()
         gateway = factory.open()
 
-    overrides = EnvOverrides(tmp_path=effective_repo_root, gateway=gateway)
+    overrides = EnvOverrides(
+        snapshot=cfg.snapshot,
+        tmp_path=effective_repo_root,
+        gateway=gateway,
+    )
     builder = ExecutionContextBuilder.create(tmp_path, env_overrides=overrides)
     effective_target = target or make_test_output_target(plugin)
     resource_overrides = cfg.resources or TargetResourceOverrides(
@@ -203,6 +217,95 @@ def write_scip_index(
     return index_path
 
 
+def build_repo_with_configs(
+    tmp_path: Path,
+    *,
+    include_invalid: bool = False,
+) -> tuple[Path, tuple[str, ...]]:
+    """Create a realistic repo layout with optional invalid config.
+
+    Returns
+    -------
+    tuple[Path, tuple[str, ...]]
+        Repo root and the Python module paths created.
+    """
+    structure: dict[str, str] = {
+        "pkg/__init__.py": "",
+        "pkg/service.py": "def add(x: int, y: int) -> int:\n    return x + y\n",
+        "config/app.yaml": "service:\n  retries: 3\n  hosts:\n    - api.local\n",
+        "config/settings.toml": 'feature = true\n[db]\nurl = "duckdb:///tmp.db"\n',
+        "config/app.ini": "[service]\ntimeout=30\n",
+    }
+    if include_invalid:
+        structure["config/broken.yml"] = ":\n  - invalid\n"
+
+    repo_root = build_repo_tree(tmp_path / "repo", structure)
+    modules = tuple(path for path in structure if path.endswith(".py"))
+    return repo_root, modules
+
+
+def build_scan_profile(
+    repo_root: Path,
+    *,
+    include_globs: Sequence[str] = ("*.py",),
+    ignore_dirs: Sequence[str] = (),
+) -> ScanProfile:
+    """Create a ScanProfile with shared defaults.
+
+    Returns
+    -------
+    ScanProfile
+        Profile covering the repo root with optional ignore patterns.
+    """
+    return ScanProfile(
+        repo_root=repo_root,
+        source_roots=(repo_root,),
+        include_globs=tuple(include_globs),
+        ignore_dirs=tuple(ignore_dirs),
+    )
+
+
+def create_scan_step(
+    gateway: StorageGateway,
+    repo_root: Path,
+    tmp_path: Path,
+) -> tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]:
+    """Create scan step and adapters for a repository.
+
+    Returns
+    -------
+    tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
+        Repo scan step plus the storage and discovery adapters backing it.
+    """
+    ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
+    )
+    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    scan_step = RepoScanStep(
+        storage=storage, discovery=discovery, change_detection=change_detection
+    )
+    return scan_step, storage, discovery
+
+
+def create_scan_and_docstring_steps(
+    gateway: StorageGateway,
+    repo_root: Path,
+    tmp_path: Path,
+) -> tuple[RepoScanStep, DocstringsExtractStep]:
+    """Create scan and docstring steps from gateway and repo root.
+
+    Returns
+    -------
+    tuple[RepoScanStep, DocstringsExtractStep]
+        Configured repo scan and docstring extraction steps.
+    """
+    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    return scan_step, doc_step
+
+
 @dataclass(frozen=True)
 class ScipIngestContext:
     """Bundle of SCIP ingest fixtures reused across tests."""
@@ -210,7 +313,7 @@ class ScipIngestContext:
     repo_root: Path
     gateway: StorageGateway
     storage: DuckDBStorageAdapter
-    tools: BuildToolAdapter
+    tools: ToolRunnerAdapter
     build_dir: Path
 
 
@@ -227,7 +330,9 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
         {"pkg/__init__.py": "", "pkg/mod.py": "def foo(x: int) -> int:\n    return x + 1\n"},
     )
     build_dir = repo_root / "build"
-    gateway = GatewayFactory().with_macros().open()
+    db_path = build_dir / "db" / "codeintel.duckdb"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    gateway = GatewayFactory().file_backed(db_path).with_macros().open()
     plugin = TestsIngestPlugin()
     ctx = build_target_context_for_plugin(
         plugin,
@@ -349,3 +454,57 @@ def build_repo_target(plugin: TargetPlugin, tables: tuple[TableSchema, ...]) -> 
         contract=OutputContract(tables=tables),
         description=plugin.plugin_description,
     )
+
+
+def seed_numeric_table(gateway: StorageGateway, table: str, values: Sequence[float]) -> None:
+    """
+    Create or truncate a numeric table and insert provided values.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported table name is provided.
+    """
+    sql_lookup: dict[str, tuple[str, str, str]] = {
+        "core.test_numeric": (
+            "CREATE TABLE IF NOT EXISTS core.test_numeric (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_numeric",
+            "INSERT INTO core.test_numeric (id, value) VALUES (?, ?)",
+        ),
+        "core.test_numeric2": (
+            "CREATE TABLE IF NOT EXISTS core.test_numeric2 (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_numeric2",
+            "INSERT INTO core.test_numeric2 (id, value) VALUES (?, ?)",
+        ),
+        "core.test_empty_num": (
+            "CREATE TABLE IF NOT EXISTS core.test_empty_num (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_empty_num",
+            "INSERT INTO core.test_empty_num (id, value) VALUES (?, ?)",
+        ),
+        "core.test_empty_num2": (
+            "CREATE TABLE IF NOT EXISTS core.test_empty_num2 (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_empty_num2",
+            "INSERT INTO core.test_empty_num2 (id, value) VALUES (?, ?)",
+        ),
+        "core.test_pos": (
+            "CREATE TABLE IF NOT EXISTS core.test_pos (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_pos",
+            "INSERT INTO core.test_pos (id, value) VALUES (?, ?)",
+        ),
+        "core.test_all_pos": (
+            "CREATE TABLE IF NOT EXISTS core.test_all_pos (id INTEGER, value DOUBLE)",
+            "DELETE FROM core.test_all_pos",
+            "INSERT INTO core.test_all_pos (id, value) VALUES (?, ?)",
+        ),
+    }
+    queries = sql_lookup.get(table)
+    if queries is None:
+        message = f"Unsupported numeric table for tests: {table}"
+        raise ValueError(message)
+
+    create_sql, delete_sql, insert_sql = queries
+    gateway.con.execute(create_sql)
+    gateway.con.execute(delete_sql)
+    params = [(idx, value) for idx, value in enumerate(values, start=1)]
+    if params:
+        gateway.con.executemany(insert_sql, params)

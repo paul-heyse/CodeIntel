@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import uvicorn
 
-from codeintel.cli.errors import ProblemDetail, ValidationError
-from codeintel.cli.project import ProjectRuntime
+from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
@@ -22,7 +21,8 @@ from codeintel.cli.core.result_types import (
     OperationCallResult,
     OperationListResult,
 )
-from codeintel.cli.core import CliResult
+from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.project import ProjectRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack

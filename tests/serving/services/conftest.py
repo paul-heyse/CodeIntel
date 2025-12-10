@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
 from tests._helpers.serving_apps import ServiceApp, build_service_app
 
 if TYPE_CHECKING:
@@ -17,7 +18,13 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def service_app_factory() -> Callable[..., ServiceApp]:
-    """Factory for building service apps bound to a gateway snapshot."""
+    """Build service apps bound to a gateway snapshot.
+
+    Returns
+    -------
+    Callable[..., ServiceApp]
+        Factory that produces configured ServiceApp instances.
+    """
 
     def _build(
         *,
@@ -28,8 +35,7 @@ def service_app_factory() -> Callable[..., ServiceApp]:
     ) -> ServiceApp:
         return build_service_app(
             gateway,
-            repo=repo,
-            commit=commit,
+            snapshot=(repo, commit),
             limits=limits,
         )
 
@@ -41,7 +47,13 @@ def provisioned_service_app(
     provisioned_repo: ProvisionedGateway,
     service_app_factory: Callable[..., ServiceApp],
 ) -> ServiceApp:
-    """Service app constructed from the provisioned_repo fixture."""
+    """Service app constructed from the provisioned_repo fixture.
+
+    Returns
+    -------
+    ServiceApp
+        Configured service app for provisioned repo snapshots.
+    """
     return service_app_factory(
         gateway=provisioned_repo.gateway,
         repo=provisioned_repo.repo,
@@ -54,12 +66,34 @@ def architecture_service_app(
     architecture_gateway: StorageGateway,
     service_app_factory: Callable[..., ServiceApp],
 ) -> ServiceApp:
-    """Service app constructed from the architecture_gateway fixture."""
+    """Service app constructed from the architecture_gateway fixture.
+
+    Returns
+    -------
+    ServiceApp
+        Configured service app for architecture-focused tests.
+    """
     return service_app_factory(
         gateway=architecture_gateway,
         repo="demo/repo",
         commit="deadbeef",
     )
+
+
+@pytest.fixture
+def analytics_samples(
+    provisioned_service_app: ServiceApp,
+) -> AnalyticsSamples:
+    """Analytics identifiers extracted once per session."""
+    return load_analytics_samples(provisioned_service_app.gateway)
+
+
+@pytest.fixture
+def architecture_samples(
+    architecture_service_app: ServiceApp,
+) -> AnalyticsSamples:
+    """Analytics identifiers for architecture-focused service app."""
+    return load_analytics_samples(architecture_service_app.gateway)
 
 
 __all__ = [

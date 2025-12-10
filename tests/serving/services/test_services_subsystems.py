@@ -21,6 +21,7 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
+from tests._helpers.analytics_samples import AnalyticsSamples
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.http_payloads import (
     RequestRecorder,
@@ -72,6 +73,7 @@ def test_list_subsystems_with_limit(
 
 def test_get_subsystem_modules(
     architecture_service_app: ServiceApp,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify subsystem modules endpoint functions.
 
@@ -79,10 +81,14 @@ def test_get_subsystem_modules(
     ----------
     architecture_service_app
         Service app wired to architecture data.
+    architecture_samples
+        Sample analytics identifiers for architecture subsystem.
     """
     # Try to get modules for a subsystem
     with architecture_service_app.client() as client:
-        response = client.get("/architecture/subsystem?subsystem_id=test_subsystem")
+        response = client.get(
+            f"/architecture/subsystem?subsystem_id={architecture_samples.subsystem_id}"
+        )
 
     # May be 200 with empty data or 400/404 if no such subsystem - both are valid
     expect_true(
@@ -97,6 +103,7 @@ def test_get_subsystem_modules(
 
 def test_get_module_subsystems(
     architecture_service_app: ServiceApp,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify module subsystems endpoint functions.
 
@@ -104,9 +111,13 @@ def test_get_module_subsystems(
     ----------
     architecture_service_app
         Service app wired to architecture data.
+    architecture_samples
+        Sample analytics identifiers for architecture module.
     """
     with architecture_service_app.client() as client:
-        response = client.get("/architecture/module-subsystems?module=test.module")
+        response = client.get(
+            f"/architecture/module-subsystems?module={architecture_samples.module}"
+        )
 
     # May be 200 with data or 400/404 if not found
     expect_true(

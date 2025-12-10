@@ -29,13 +29,12 @@ from tests._helpers.serving_harnesses import RecordingObservability
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
 # =============================================================================
 # Constants
 # =============================================================================
-
-DEFAULT_LIMIT = 10
 
 T = TypeVar("T")
 MIN_RISK_THRESHOLD = 0.7
@@ -54,6 +53,7 @@ MAX_NODES_LARGE = 50
 
 def test_get_function_summary_with_goid_h128(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary works with goid_h128 parameter.
 
@@ -62,18 +62,8 @@ def test_get_function_summary_with_goid_h128(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    # First get a valid goid_h128 from the database
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/summary?goid_h128={goid_h128}")
+        response = client.get(f"/function/summary?goid_h128={analytics_samples.goid_h128}")
 
     # May return 404 if function doesn't exist, or 200 if found
     expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -81,6 +71,7 @@ def test_get_function_summary_with_goid_h128(
 
 def test_get_function_summary_with_rel_path_and_qualname(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary works with rel_path and qualname.
 
@@ -89,18 +80,11 @@ def test_get_function_summary_with_rel_path_and_qualname(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    # Get a rel_path from repo_map
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available in test data")
-
-    rel_path = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/summary?rel_path={rel_path}&qualname=test_function")
+        response = client.get(
+            f"/function/summary?rel_path={analytics_samples.rel_path}"
+            f"&qualname={analytics_samples.qualname}"
+        )
 
     # May return 404 if function doesn't exist, or 200 if found
     expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -225,6 +209,7 @@ def test_list_high_risk_functions_with_limit(
 
 def test_get_callgraph_neighbors_direction_both(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=both.
 
@@ -233,18 +218,10 @@ def test_get_callgraph_neighbors_direction_both(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    # Get a valid goid_h128
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=both")
+        response = client.get(
+            f"/function/callgraph?goid_h128={analytics_samples.goid_h128}&direction=both"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -253,6 +230,7 @@ def test_get_callgraph_neighbors_direction_both(
 
 def test_get_callgraph_neighbors_direction_in(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=in.
 
@@ -261,23 +239,17 @@ def test_get_callgraph_neighbors_direction_in(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=in")
+        response = client.get(
+            f"/function/callgraph?goid_h128={analytics_samples.goid_h128}&direction=in"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_direction_out(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with direction=out.
 
@@ -286,23 +258,17 @@ def test_get_callgraph_neighbors_direction_out(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/callgraph?goid_h128={goid_h128}&direction=out")
+        response = client.get(
+            f"/function/callgraph?goid_h128={analytics_samples.goid_h128}&direction=out"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighbors_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors respects limit parameter.
 
@@ -311,17 +277,10 @@ def test_get_callgraph_neighbors_with_limit(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/callgraph?goid_h128={goid_h128}&limit=3")
+        response = client.get(
+            f"/function/callgraph?goid_h128={analytics_samples.goid_h128}&limit=3"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
@@ -333,6 +292,7 @@ def test_get_callgraph_neighbors_with_limit(
 
 def test_get_callgraph_neighborhood_radius_one(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood with radius=1.
 
@@ -341,17 +301,10 @@ def test_get_callgraph_neighborhood_radius_one(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_ONE}")
+        response = client.get(
+            f"/graph/call/neighborhood?goid_h128={analytics_samples.goid_h128}&radius={RADIUS_ONE}"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -361,6 +314,7 @@ def test_get_callgraph_neighborhood_radius_one(
 
 def test_get_callgraph_neighborhood_radius_two(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood with radius=2.
 
@@ -369,23 +323,17 @@ def test_get_callgraph_neighborhood_radius_two(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/graph/call/neighborhood?goid_h128={goid_h128}&radius={RADIUS_TWO}")
+        response = client.get(
+            f"/graph/call/neighborhood?goid_h128={analytics_samples.goid_h128}&radius={RADIUS_TWO}"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
 def test_get_callgraph_neighborhood_with_max_nodes(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood respects max_nodes parameter.
 
@@ -394,18 +342,10 @@ def test_get_callgraph_neighborhood_with_max_nodes(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
         response = client.get(
-            f"/graph/call/neighborhood?goid_h128={goid_h128}&max_nodes={MAX_NODES_SMALL}"
+            f"/graph/call/neighborhood?goid_h128={analytics_samples.goid_h128}"
+            f"&max_nodes={MAX_NODES_SMALL}"
         )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -420,6 +360,7 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
 def test_get_import_boundary_with_subsystem_id(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary with a subsystem_id.
 
@@ -428,18 +369,10 @@ def test_get_import_boundary_with_subsystem_id(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    # Try to find a subsystem ID
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystem assignments available in test data")
-
-    subsystem_id = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}")
+        response = client.get(
+            f"/graph/import/boundary?subsystem_id={analytics_samples.subsystem_id}"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -449,6 +382,7 @@ def test_get_import_boundary_with_subsystem_id(
 
 def test_get_import_boundary_with_max_edges(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary respects max_edges parameter.
 
@@ -457,17 +391,10 @@ def test_get_import_boundary_with_max_edges(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystem assignments available in test data")
-
-    subsystem_id = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/graph/import/boundary?subsystem_id={subsystem_id}&max_edges=10")
+        response = client.get(
+            f"/graph/import/boundary?subsystem_id={analytics_samples.subsystem_id}&max_edges=10"
+        )
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
@@ -496,6 +423,7 @@ def test_get_import_boundary_nonexistent_subsystem(
 
 def test_get_tests_for_function_with_goid_h128(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function with goid_h128.
 
@@ -504,17 +432,8 @@ def test_get_tests_for_function_with_goid_h128(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/tests?goid_h128={goid_h128}")
+        response = client.get(f"/function/tests?goid_h128={analytics_samples.goid_h128}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -523,6 +442,7 @@ def test_get_tests_for_function_with_goid_h128(
 
 def test_get_tests_for_function_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function respects limit parameter.
 
@@ -531,17 +451,8 @@ def test_get_tests_for_function_with_limit(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/function/tests?goid_h128={goid_h128}&limit=5")
+        response = client.get(f"/function/tests?goid_h128={analytics_samples.goid_h128}&limit=5")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 
@@ -570,6 +481,7 @@ def test_get_tests_for_function_no_params_returns_error(
 
 def test_get_file_summary_with_rel_path(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_summary with rel_path parameter.
 
@@ -578,17 +490,8 @@ def test_get_file_summary_with_rel_path(
     provisioned_service_app
         Provisioned service app fixture.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available in test data")
-
-    rel_path = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/file/summary?rel_path={rel_path}")
+        response = client.get(f"/file/summary?rel_path={analytics_samples.rel_path}")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
@@ -636,6 +539,7 @@ def test_get_file_summary_missing_param(
 
 def test_local_query_service_get_function_summary(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_function_summary works directly.
 
@@ -646,17 +550,7 @@ def test_local_query_service_get_function_summary(
     """
     service = provisioned_service_app.service
 
-    # Get a valid goid_h128
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
-    summary = service.get_function_summary(goid_h128=goid_h128)
+    summary = service.get_function_summary(goid_h128=analytics_samples.goid_h128)
     expect_is_not_none(summary)
 
 
@@ -679,6 +573,7 @@ def test_local_query_service_list_high_risk_functions(
 
 def test_local_query_service_get_callgraph_neighbors(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_callgraph_neighbors works directly.
 
@@ -689,21 +584,16 @@ def test_local_query_service_get_callgraph_neighbors(
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
-    neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128, direction="both")
+    neighbors = service.get_callgraph_neighbors(
+        goid_h128=analytics_samples.goid_h128,
+        direction="both",
+    )
     expect_is_not_none(neighbors)
 
 
 def test_local_query_service_get_callgraph_neighborhood(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_callgraph_neighborhood works directly.
 
@@ -714,17 +604,10 @@ def test_local_query_service_get_callgraph_neighborhood(
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     neighborhood = service.get_callgraph_neighborhood(
-        goid_h128=goid_h128, radius=RADIUS_ONE, max_nodes=MAX_NODES_LARGE
+        goid_h128=analytics_samples.goid_h128,
+        radius=RADIUS_ONE,
+        max_nodes=MAX_NODES_LARGE,
     )
     expect_is_not_none(neighborhood)
     expect_true(hasattr(neighborhood, "nodes"))
@@ -733,6 +616,7 @@ def test_local_query_service_get_callgraph_neighborhood(
 
 def test_local_query_service_get_file_summary(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_file_summary works directly.
 
@@ -743,21 +627,13 @@ def test_local_query_service_get_file_summary(
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available in test data")
-
-    rel_path = result[0]
-
-    summary = service.get_file_summary(rel_path=rel_path)
+    summary = service.get_file_summary(rel_path=analytics_samples.rel_path)
     expect_is_not_none(summary)
 
 
 def test_local_query_service_get_tests_for_function(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_tests_for_function works directly.
 
@@ -768,16 +644,10 @@ def test_local_query_service_get_tests_for_function(
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
-    tests = service.get_tests_for_function(goid_h128=goid_h128, limit=DEFAULT_LIMIT)
+    tests = service.get_tests_for_function(
+        goid_h128=analytics_samples.goid_h128,
+        limit=provisioned_service_app.limits.default_limit,
+    )
     expect_is_not_none(tests)
     expect_true(hasattr(tests, "tests"))
 

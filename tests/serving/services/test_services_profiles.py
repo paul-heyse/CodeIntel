@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 from fastapi import status
 
 from codeintel.serving.mcp.errors import McpError
@@ -20,6 +19,7 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
 # =============================================================================
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 def test_get_function_profile_with_goid_h128(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_profile works with goid_h128 parameter.
 
@@ -41,19 +42,11 @@ def test_get_function_profile_with_goid_h128(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    # Get a valid goid_h128 from the database
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/function?goid_h128={goid_h128}")
+        response = client.get(f"/profiles/function?goid_h128={analytics_samples.goid_h128}")
 
     # May return 404 if profile doesn't exist, or 200 if found
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -101,6 +94,7 @@ def test_get_function_profile_invalid_goid_h128(
 
 def test_get_file_profile_with_rel_path(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_profile works with rel_path parameter.
 
@@ -108,18 +102,11 @@ def test_get_file_profile_with_rel_path(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    rel_path = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/file?rel_path={rel_path}")
+        response = client.get(f"/profiles/file?rel_path={analytics_samples.rel_path}")
 
     # May return 404 if profile doesn't exist, or 200 if found
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -166,6 +153,7 @@ def test_get_file_profile_nonexistent_file(
 
 def test_get_module_profile_with_module(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_profile works with module parameter.
 
@@ -173,18 +161,11 @@ def test_get_module_profile_with_module(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/module?module={module}")
+        response = client.get(f"/profiles/module?module={analytics_samples.module}")
 
     # May return 404 if profile doesn't exist, or 200 if found
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -231,6 +212,7 @@ def test_get_module_profile_nonexistent_module(
 
 def test_get_function_architecture_with_goid_h128(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_architecture works with goid_h128 parameter.
 
@@ -238,18 +220,11 @@ def test_get_function_architecture_with_goid_h128(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/architecture/function?goid_h128={goid_h128}")
+        response = client.get(f"/architecture/function?goid_h128={analytics_samples.goid_h128}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -296,6 +271,7 @@ def test_get_function_architecture_invalid_goid_h128(
 
 def test_get_module_architecture_with_module(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_architecture works with module parameter.
 
@@ -303,18 +279,11 @@ def test_get_module_architecture_with_module(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/architecture/module?module={module}")
+        response = client.get(f"/architecture/module?module={analytics_samples.module}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
@@ -361,6 +330,7 @@ def test_get_module_architecture_nonexistent_module(
 
 def test_local_query_service_get_function_profile(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_function_profile works directly.
 
@@ -368,24 +338,18 @@ def test_local_query_service_get_function_profile(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
-    profile = service.get_function_profile(goid_h128=goid_h128)
+    profile = service.get_function_profile(goid_h128=analytics_samples.goid_h128)
     expect_is_not_none(profile)
 
 
 def test_local_query_service_get_file_profile(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_file_profile works directly.
 
@@ -393,24 +357,18 @@ def test_local_query_service_get_file_profile(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    rel_path = result[0]
-
-    profile = service.get_file_profile(rel_path=rel_path)
+    profile = service.get_file_profile(rel_path=analytics_samples.rel_path)
     expect_is_not_none(profile)
 
 
 def test_local_query_service_get_module_profile(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_module_profile works directly.
 
@@ -418,21 +376,14 @@ def test_local_query_service_get_module_profile(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     # Module profile may not exist for all modules - handle gracefully
     try:
-        profile = service.get_module_profile(module=module)
+        profile = service.get_module_profile(module=analytics_samples.module)
         expect_is_not_none(profile)
     except McpError:
         # Expected when module profile doesn't exist in test data
@@ -441,6 +392,7 @@ def test_local_query_service_get_module_profile(
 
 def test_local_query_service_get_function_architecture(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_function_architecture works directly.
 
@@ -448,24 +400,18 @@ def test_local_query_service_get_function_architecture(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
-    architecture = service.get_function_architecture(goid_h128=goid_h128)
+    architecture = service.get_function_architecture(goid_h128=analytics_samples.goid_h128)
     expect_is_not_none(architecture)
 
 
 def test_local_query_service_get_module_architecture(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify LocalQueryService.get_module_architecture works directly.
 
@@ -473,21 +419,14 @@ def test_local_query_service_get_module_architecture(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
     service = provisioned_service_app.service
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     # Module architecture may not exist for all modules - handle gracefully
     try:
-        architecture = service.get_module_architecture(module=module)
+        architecture = service.get_module_architecture(module=analytics_samples.module)
         expect_is_not_none(architecture)
     except McpError:
         # Expected when module architecture doesn't exist in test data
@@ -501,6 +440,7 @@ def test_local_query_service_get_module_architecture(
 
 def test_function_profile_response_structure(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify function profile response contains expected fields.
 
@@ -508,18 +448,11 @@ def test_function_profile_response_structure(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/function?goid_h128={goid_h128}")
+        response = client.get(f"/profiles/function?goid_h128={analytics_samples.goid_h128}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
@@ -529,6 +462,7 @@ def test_function_profile_response_structure(
 
 def test_file_profile_response_structure(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify file profile response contains expected fields.
 
@@ -536,18 +470,11 @@ def test_file_profile_response_structure(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    rel_path = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/file?rel_path={rel_path}")
+        response = client.get(f"/profiles/file?rel_path={analytics_samples.rel_path}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
@@ -557,6 +484,7 @@ def test_file_profile_response_structure(
 
 def test_module_profile_response_structure(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify module profile response contains expected fields.
 
@@ -564,18 +492,11 @@ def test_module_profile_response_structure(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/profiles/module?module={module}")
+        response = client.get(f"/profiles/module?module={analytics_samples.module}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
@@ -585,6 +506,7 @@ def test_module_profile_response_structure(
 
 def test_function_architecture_response_structure(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify function architecture response contains expected fields.
 
@@ -592,18 +514,11 @@ def test_function_architecture_response_structure(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/architecture/function?goid_h128={goid_h128}")
+        response = client.get(f"/architecture/function?goid_h128={analytics_samples.goid_h128}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
@@ -613,6 +528,7 @@ def test_function_architecture_response_structure(
 
 def test_module_architecture_response_structure(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify module architecture response contains expected fields.
 
@@ -620,18 +536,11 @@ def test_module_architecture_response_structure(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Shared analytics identifiers for seeded data.
     """
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT module FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python modules available in test data")
-
-    module = result[0]
-
     with provisioned_service_app.client() as client:
-        response = client.get(f"/architecture/module?module={module}")
+        response = client.get(f"/architecture/module?module={analytics_samples.module}")
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()

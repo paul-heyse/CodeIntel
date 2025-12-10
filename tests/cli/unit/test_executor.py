@@ -6,8 +6,8 @@ import time
 
 import pytest
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.introspection import StringValidator, ValidationSchema
 from codeintel.cli.execution import (
     ExecutionContext,
     ExecutionResult,
@@ -15,8 +15,8 @@ from codeintel.cli.execution import (
     OperationExecutor,
     OperationSpec,
 )
+from codeintel.cli.introspection import StringValidator, ValidationSchema
 from codeintel.cli.rendering.types import OutputFormat
-from codeintel.cli.core import CliResult
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

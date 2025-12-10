@@ -9,11 +9,11 @@ from datetime import UTC, datetime
 import pytest
 
 from codeintel.analytics.compute.semantic_roles.classification import (
-    FunctionContext,
     HELPER_LOC_THRESHOLD,
     ROLE_THRESHOLD,
     SERVICE_FAN_IN_THRESHOLD,
     SERVICE_FAN_OUT_THRESHOLD,
+    FunctionContext,
     ModuleRecord,
     RoleAccumulator,
     classify_function_role,

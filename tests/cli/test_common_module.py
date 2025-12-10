@@ -7,12 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.errors import ValidationError, runtime_required
-from codeintel.cli.config import (
-    build_config_from_options,
-    build_graph_backend_config,
-    build_graph_feature_flags_from_env,
-)
 from codeintel.cli.commands import (
     OutputFormatCLI,
     RuntimeCLI,
@@ -20,6 +14,12 @@ from codeintel.cli.commands import (
     get_verbose,
     resolve_output_format,
 )
+from codeintel.cli.config import (
+    build_config_from_options,
+    build_graph_backend_config,
+    build_graph_feature_flags_from_env,
+)
+from codeintel.cli.errors import ValidationError, runtime_required
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.params import BackendFlags
 from codeintel.config.models import CliPathsInput
@@ -148,13 +148,17 @@ def test_resolve_output_format_precedence() -> None:
     """Verify resolve_output_format handles precedence correctly."""
     # JSON flag takes highest precedence
     expect_equal(
-        resolve_output_format(json_flag=True, explicit=OutputFormat.TEXT, default=OutputFormat.TEXT),
+        resolve_output_format(
+            json_flag=True, explicit=OutputFormat.TEXT, default=OutputFormat.TEXT
+        ),
         OutputFormat.JSON,
     )
 
     # Explicit format takes precedence over default
     expect_equal(
-        resolve_output_format(json_flag=False, explicit=OutputFormat.JSON, default=OutputFormat.TEXT),
+        resolve_output_format(
+            json_flag=False, explicit=OutputFormat.JSON, default=OutputFormat.TEXT
+        ),
         OutputFormat.JSON,
     )
 

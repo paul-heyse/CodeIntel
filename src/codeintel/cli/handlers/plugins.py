@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.plugins import (
     PluginManifest,
@@ -17,7 +18,6 @@ from codeintel.cli.plugins import (
     create_plugin_scaffold,
     get_plugin_manager,
 )
-from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.handlers.protocol import EnhancedHandlerContext
@@ -332,11 +332,13 @@ def plugins_discover_handler(
     discovered: list[dict[str, str]] = []
     for path in paths:
         is_loaded = any(path.stem in name or name in path.stem for name in loaded_names)
-        discovered.append({
-            "path": str(path),
-            "name": path.name,
-            "status": "loaded" if is_loaded else "available",
-        })
+        discovered.append(
+            {
+                "path": str(path),
+                "name": path.name,
+                "status": "loaded" if is_loaded else "available",
+            }
+        )
 
     plugin_dirs = [str(d) for d in manager.plugin_dirs]
 
@@ -497,12 +499,14 @@ def plugins_test_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginTestRes
     for result in results:
         if not result.success:
             all_passed = False
-        result_dicts.append({
-            "success": result.success,
-            "message": result.message,
-            "errors": result.errors,
-            "warnings": result.warnings,
-        })
+        result_dicts.append(
+            {
+                "success": result.success,
+                "message": result.message,
+                "errors": result.errors,
+                "warnings": result.warnings,
+            }
+        )
 
     summary = harness.get_summary()
 
