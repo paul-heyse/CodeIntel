@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
     MacroRequirement,
@@ -181,7 +181,7 @@ def _mock_storage_gateway() -> Iterator[MagicMock]:
 
 def _build_test_context(
     params: dict[str, object],
-) -> EnhancedHandlerContext:
+) -> HandlerContext:
     """Build a test context with mocked dependencies.
 
     Parameters
@@ -191,7 +191,7 @@ def _build_test_context(
 
     Returns
     -------
-    EnhancedHandlerContext
+    HandlerContext
         Test context.
     """
     mock_serving = MagicMock(spec=ServingConfig)
@@ -203,12 +203,11 @@ def _build_test_context(
     mock_gateway = MagicMock(spec=StorageGateway)
     mock_graph_runtime = MagicMock()
 
-    return EnhancedHandlerContext(
+    return HandlerContext(
         config=mock_config,
-        runtime=mock_runtime,
-        params=params,
-        verbosity=0,
+        operation_id="storage.test",
+        _params=params,
+        _runtime=mock_runtime,
         _gateway=mock_gateway,
         _graph_runtime=mock_graph_runtime,
-        _operation_name="storage.test",
     )

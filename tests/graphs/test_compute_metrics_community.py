@@ -30,6 +30,7 @@ from tests._helpers.fakes.networkx_graphs import (
     complete_digraph,
     complete_graph,
     disconnected_graph,
+    empty_graph,
     single_node_graph,
 )
 from tests.graphs.constants import COMPLETE_GRAPH_SIZES
@@ -56,7 +57,7 @@ RANDOM_SEED: Final[int] = 42
 
 def test_greedy_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = detect_communities_greedy(graph)
     expect_equal(result, {})
 
@@ -107,7 +108,7 @@ def test_greedy_directed_graph_converted() -> None:
 
 def test_greedy_weighted_edges() -> None:
     """Weighted edges are respected when weight parameter provided."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # Strong connection between 1-2, weak to 3
     graph.add_edge(1, 2, weight=10.0)
     graph.add_edge(2, 3, weight=0.1)
@@ -138,7 +139,7 @@ def test_greedy_resolution_parameter() -> None:
 
 def test_louvain_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = detect_communities_louvain(graph)
     expect_equal(result, {})
 
@@ -212,7 +213,7 @@ def test_louvain_resolution_parameter() -> None:
 
 def test_louvain_weighted_edges() -> None:
     """Weighted edges are respected."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edge(1, 2, weight=100.0)
     graph.add_edge(2, 3, weight=0.001)
     graph.add_edge(3, 4, weight=100.0)
@@ -229,7 +230,7 @@ def test_louvain_weighted_edges() -> None:
 
 def test_label_propagation_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = detect_communities_label_propagation(graph)
     expect_equal(result, {})
 
@@ -289,7 +290,7 @@ def test_label_propagation_chain_graph() -> None:
 
 def test_modularity_empty_graph_returns_zero() -> None:
     """Empty graph returns zero modularity."""
-    graph = nx.Graph()
+    graph = empty_graph()
     result = compute_modularity(graph, {})
     expect_equal(result, 0.0)
 
@@ -356,7 +357,7 @@ def test_modularity_resolution_parameter() -> None:
 
 def test_modularity_weighted_graph() -> None:
     """Weighted edges are considered in modularity."""
-    graph = nx.Graph()
+    graph = empty_graph()
     graph.add_edge(1, 2, weight=10.0)
     graph.add_edge(2, 3, weight=0.1)
     communities = {1: 0, 2: 0, 3: 1}

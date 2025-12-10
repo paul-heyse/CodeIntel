@@ -479,7 +479,7 @@ def health_check_handler(
         Health check results.
     """
     # Use ctx for logging context
-    _ = ctx._params  # Acknowledge params even if empty
+    _ = ctx.params  # Acknowledge params even if empty
     LOG.info("Running health checks")
 
     checker = get_health_checker()

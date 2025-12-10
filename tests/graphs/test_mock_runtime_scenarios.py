@@ -35,6 +35,7 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_import_graph,
     create_mock_runtime_with_standard_graphs,
 )
+from tests._helpers.fakes.networkx_graphs import empty_digraph
 from tests._helpers.graphs import (
     call_chain_graph,
     call_star_graph,
@@ -231,7 +232,7 @@ class TestMixedGraphTypes:
     def test_cfg_graph_structure() -> None:
         """MockGraphRuntime preserves CFG graph structure."""
         # Create a simple CFG with entry/exit blocks
-        cfg = nx.DiGraph()
+        cfg = empty_digraph()
         cfg.add_edges_from(
             [
                 ("entry", "block1"),

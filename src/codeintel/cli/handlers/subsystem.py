@@ -196,13 +196,13 @@ class SubsystemMembershipResult:
 # =============================================================================
 
 
-def _build_backend(ctx: EnhancedHandlerContext) -> DuckDBBackend:
+def _build_backend(ctx: HandlerContext) -> DuckDBBackend:
     """Build a DuckDBBackend from context.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context.
+        Handler context.
 
     Returns
     -------
@@ -227,90 +227,18 @@ def _build_backend(ctx: EnhancedHandlerContext) -> DuckDBBackend:
     return backend
 
 
-def _get_int_param(ctx: EnhancedHandlerContext, name: str) -> int | None:
-    """Extract optional integer parameter.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    int | None
-        Integer value or None.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    # Convert string or other types to int
-    return int(str(value))
-
-
-def _get_str_param(ctx: EnhancedHandlerContext, name: str) -> str | None:
-    """Extract optional string parameter.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str | None
-        String value or None.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return None
-    return str(value)
-
-
-def _require_str_param(ctx: EnhancedHandlerContext, name: str) -> str:
-    """Extract required string parameter.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str
-        String value.
-
-    Raises
-    ------
-    ValueError
-        If parameter is missing.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        msg = f"{name} parameter is required"
-        raise ValueError(msg)
-    return str(value)
-
-
 # =============================================================================
 # Handlers
 # =============================================================================
 
 
-def subsystem_list_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemListResult]:
+def subsystem_list_handler(ctx: HandlerContext) -> CliResult[SubsystemListResult]:
     """List inferred subsystems with role/risk metadata.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context with optional params:
+        Handler context with optional params:
 
         - role: Optional role filter
         - query: Optional search query
@@ -325,9 +253,9 @@ def subsystem_list_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemLi
     backend = _build_backend(ctx)
 
     response = backend.list_subsystems(
-        limit=_get_int_param(ctx, "limit"),
-        role=_get_str_param(ctx, "role"),
-        q=_get_str_param(ctx, "query"),
+        limit=ctx.param_int("limit"),
+        role=ctx.param_str("role"),
+        q=ctx.param_str("query"),
     )
 
     return CliResult.ok(
@@ -338,13 +266,13 @@ def subsystem_list_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemLi
     )
 
 
-def subsystem_show_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemShowResult]:
+def subsystem_show_handler(ctx: HandlerContext) -> CliResult[SubsystemShowResult]:
     """Show subsystem detail and modules.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context with params:
+        Handler context with params:
 
         - subsystem_id: Subsystem ID to show (required)
 
@@ -353,7 +281,7 @@ def subsystem_show_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemSh
     CliResult[SubsystemShowResult]
         Result with subsystem details.
     """
-    subsystem_id = _require_str_param(ctx, "subsystem_id")
+    subsystem_id = ctx.require_str("subsystem_id")
     ctx.logger.debug("Showing subsystem: %s", subsystem_id)
 
     backend = _build_backend(ctx)
@@ -380,13 +308,13 @@ def subsystem_show_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemSh
     )
 
 
-def subsystem_profiles_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemProfilesResult]:
+def subsystem_profiles_handler(ctx: HandlerContext) -> CliResult[SubsystemProfilesResult]:
     """List subsystem profiles from docs.v_subsystem_profile.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context with optional params:
+        Handler context with optional params:
 
         - limit: Optional result limit
 
@@ -398,7 +326,7 @@ def subsystem_profiles_handler(ctx: EnhancedHandlerContext) -> CliResult[Subsyst
     ctx.logger.debug("Listing subsystem profiles")
     backend = _build_backend(ctx)
 
-    response = backend.service.list_subsystem_profiles(limit=_get_int_param(ctx, "limit"))
+    response = backend.service.list_subsystem_profiles(limit=ctx.param_int("limit"))
     profile_response = (
         response
         if isinstance(response, SubsystemProfileResponse)
@@ -417,13 +345,13 @@ def subsystem_profiles_handler(ctx: EnhancedHandlerContext) -> CliResult[Subsyst
     )
 
 
-def subsystem_coverage_handler(ctx: EnhancedHandlerContext) -> CliResult[SubsystemCoverageResult]:
+def subsystem_coverage_handler(ctx: HandlerContext) -> CliResult[SubsystemCoverageResult]:
     """List subsystem coverage rollups from docs.v_subsystem_coverage.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context with optional params:
+        Handler context with optional params:
 
         - limit: Optional result limit
 
@@ -435,7 +363,7 @@ def subsystem_coverage_handler(ctx: EnhancedHandlerContext) -> CliResult[Subsyst
     ctx.logger.debug("Listing subsystem coverage")
     backend = _build_backend(ctx)
 
-    response = backend.service.list_subsystem_coverage(limit=_get_int_param(ctx, "limit"))
+    response = backend.service.list_subsystem_coverage(limit=ctx.param_int("limit"))
     coverage_response = (
         response
         if isinstance(response, SubsystemCoverageResponse)
@@ -455,14 +383,14 @@ def subsystem_coverage_handler(ctx: EnhancedHandlerContext) -> CliResult[Subsyst
 
 
 def subsystem_module_memberships_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[SubsystemMembershipResult]:
     """List subsystem memberships for a module.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context with params:
+        Handler context with params:
 
         - module: Module path to query (required)
 
@@ -471,7 +399,7 @@ def subsystem_module_memberships_handler(
     CliResult[SubsystemMembershipResult]
         Result with membership list.
     """
-    module = _require_str_param(ctx, "module")
+    module = ctx.require_str("module")
     ctx.logger.debug("Getting subsystem memberships for module: %s", module)
 
     backend = _build_backend(ctx)

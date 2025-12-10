@@ -13,11 +13,11 @@ from codeintel.cli.core.result_types import (
     OperationCallResult,
     OperationListResult,
 )
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.ops import (
     ServeStartResult,
     op_list_handler,
 )
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
@@ -176,7 +176,7 @@ def test_serve_start_result_to_dict() -> None:
 
 def _build_test_context(
     params: dict[str, object],
-) -> EnhancedHandlerContext:
+) -> HandlerContext:
     """Build a test context with mocked dependencies.
 
     Parameters
@@ -186,7 +186,7 @@ def _build_test_context(
 
     Returns
     -------
-    EnhancedHandlerContext
+    HandlerContext
         Test context.
     """
     mock_serving = MagicMock(spec=ServingConfig)
@@ -200,12 +200,11 @@ def _build_test_context(
     mock_gateway = MagicMock(spec=StorageGateway)
     mock_graph_runtime = MagicMock()
 
-    return EnhancedHandlerContext(
+    return HandlerContext(
         config=mock_config,
-        runtime=mock_runtime,
-        params=params,
-        verbosity=0,
+        operation_id="ops.test",
+        _params=params,
+        _runtime=mock_runtime,
         _gateway=mock_gateway,
         _graph_runtime=mock_graph_runtime,
-        _operation_name="ops.test",
     )

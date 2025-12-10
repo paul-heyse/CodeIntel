@@ -395,6 +395,7 @@ SUBPROCESS_ALLOWLIST: tuple[Path, ...] = (
     Path("src/codeintel/ingestion/engine/service.py"),
     Path("src/codeintel/build/providers.py"),
     Path("src/codeintel/cli/jobs/_jobs.py"),
+    Path("src/codeintel/cli/jobs/runner.py"),
 )
 
 

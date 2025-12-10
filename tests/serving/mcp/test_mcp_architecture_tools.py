@@ -1,7 +1,4 @@
-"""Tests for MCP architecture tools.
-
-This module tests the architecture and subsystem MCP tools using real gateways.
-"""
+"""Tests for MCP architecture tools."""
 
 from __future__ import annotations
 
@@ -35,10 +32,6 @@ from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_regist
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests.serving.mcp.conftest import McpBackendComponents
 
-if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-    from tests.serving.mcp.conftest import McpBackendComponents
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -53,18 +46,7 @@ MAX_ROWS = 100
 
 
 def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
+    """Build a DuckDBBackend for testing."""
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         provisioned_repo.gateway,
@@ -87,18 +69,7 @@ def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
 
 
 def _build_architecture_backend(gateway: StorageGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for architecture testing.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway with architecture data.
-
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
+    """Build a DuckDBBackend for architecture testing."""
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
         gateway,
@@ -122,13 +93,7 @@ def _build_architecture_backend(gateway: StorageGateway) -> DuckDBBackend:
 
 @pytest.fixture(autouse=True)
 def _register_scip_ingest_plugin() -> Iterator[None]:
-    """Ensure the scip_ingest dependency plugin exists for planning tests.
-
-    Yields
-    ------
-    Iterator[None]
-        Context where the plugin is registered.
-    """
+    """Ensure the scip_ingest dependency plugin exists for planning tests."""
     plugins = [
         GraphPluginBuilder(name="scip_ingest").build(),
         GraphPluginBuilder(name="ast_extract").build(),
@@ -146,13 +111,7 @@ def _register_scip_ingest_plugin() -> Iterator[None]:
 def test_register_architecture_tools_success(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_architecture_tools registers tools successfully.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_architecture_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Architecture")
     backend = _build_backend(provisioned_repo)
 
@@ -166,13 +125,7 @@ def test_register_architecture_tools_success(
 def test_register_architecture_tools_with_config(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_architecture_tools accepts config parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_architecture_tools accepts config parameter."""
     mcp = wrap_fastmcp("Test Architecture Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
@@ -192,13 +145,7 @@ def test_register_architecture_tools_with_config(
 def test_register_architecture_tools_with_architecture_gateway(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify register_architecture_tools works with architecture data.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify register_architecture_tools works with architecture data."""
     mcp = wrap_fastmcp("Test Architecture Gateway")
     backend = _build_architecture_backend(architecture_gateway)
 
@@ -211,13 +158,7 @@ def test_register_architecture_tools_with_architecture_gateway(
 def test_register_architecture_tools_without_config(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_architecture_tools works without config.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_architecture_tools works without config."""
     mcp = wrap_fastmcp("Test No Config")
     backend = _build_backend(provisioned_repo)
 
@@ -230,13 +171,7 @@ def test_register_architecture_tools_without_config(
 def test_register_architecture_tools_with_local_query_service(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_architecture_tools works with LocalQueryService directly.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_architecture_tools works with LocalQueryService directly."""
     mcp = wrap_fastmcp("Test Local Service")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
@@ -264,13 +199,7 @@ def test_register_architecture_tools_with_local_query_service(
 def test_register_architecture_tools_different_servers(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify tools can be registered on different servers.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify tools can be registered on different servers."""
     backend = _build_backend(provisioned_repo)
 
     # Register on first server
@@ -288,15 +217,7 @@ def test_register_architecture_tools_different_backends(
     provisioned_repo: ProvisionedGateway,
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify tools can be registered with different backends.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify tools can be registered with different backends."""
     # Register with provisioned repo backend
     mcp1 = wrap_fastmcp("Test Backend 1")
     backend1 = _build_backend(provisioned_repo)
@@ -318,13 +239,7 @@ def test_register_architecture_tools_different_backends(
 def test_register_architecture_tools_duckdb_backend(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify register_architecture_tools works with DuckDBBackend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify register_architecture_tools works with DuckDBBackend."""
     mcp = wrap_fastmcp("Test DuckDB Backend")
     backend = _build_backend(provisioned_repo)
 
@@ -338,13 +253,7 @@ def test_register_architecture_tools_duckdb_backend(
 def test_register_architecture_tools_service_with_repo_info(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify architecture tools work with service having repo/commit info.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify architecture tools work with service having repo/commit info."""
     mcp = wrap_fastmcp("Test Service Repo")
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
     query = build_duckdb_query_service(
@@ -375,13 +284,7 @@ def test_register_architecture_tools_service_with_repo_info(
 def test_register_architecture_tools_local_db_config(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify architecture tools work with local_db mode config.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify architecture tools work with local_db mode config."""
     mcp = wrap_fastmcp("Test Local DB Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
@@ -399,13 +302,7 @@ def test_register_architecture_tools_local_db_config(
 def test_register_architecture_tools_remote_api_config(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify architecture tools work with remote_api mode config.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify architecture tools work with remote_api mode config."""
     mcp = wrap_fastmcp("Test Remote API Config")
     backend = _build_backend(provisioned_repo)
     config = ServingConfig(
@@ -427,13 +324,7 @@ def test_register_architecture_tools_remote_api_config(
 def test_register_architecture_tools_custom_limits(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify architecture tools work with custom limits.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify architecture tools work with custom limits."""
     custom_limit = 50
     custom_max = 500
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
@@ -472,13 +363,7 @@ def test_register_architecture_tools_custom_limits(
 def test_backend_list_subsystems_via_tools(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_subsystems works through backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_subsystems works through backend."""
     backend = _build_backend(provisioned_repo)
 
     # Direct backend call should work
@@ -489,13 +374,7 @@ def test_backend_list_subsystems_via_tools(
 def test_backend_list_subsystems_with_limit(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_subsystems with limit parameter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_subsystems with limit parameter."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.list_subsystems(limit=5)
@@ -505,13 +384,7 @@ def test_backend_list_subsystems_with_limit(
 def test_backend_list_subsystems_with_role(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify list_subsystems with role filter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify list_subsystems with role filter."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.list_subsystems(role="api")
@@ -521,13 +394,7 @@ def test_backend_list_subsystems_with_role(
 def test_backend_search_subsystems_via_tools(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify search_subsystems works through backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify search_subsystems works through backend."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(q="test")
@@ -537,13 +404,7 @@ def test_backend_search_subsystems_via_tools(
 def test_backend_search_subsystems_with_limit(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify search_subsystems with limit.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify search_subsystems with limit."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(limit=5)
@@ -553,13 +414,7 @@ def test_backend_search_subsystems_with_limit(
 def test_backend_search_subsystems_with_role(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify search_subsystems with role filter.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify search_subsystems with role filter."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.search_subsystems(role="api")
@@ -569,13 +424,7 @@ def test_backend_search_subsystems_with_role(
 def test_backend_get_file_hints_via_tools(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_file_hints works through backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_file_hints works through backend."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.get_file_hints(rel_path="test/file.py")
@@ -585,13 +434,7 @@ def test_backend_get_file_hints_via_tools(
 def test_backend_get_module_subsystems_via_tools(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify get_module_subsystems works through backend.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-    """
+    """Verify get_module_subsystems works through backend."""
     backend = _build_backend(provisioned_repo)
 
     result = backend.get_module_subsystems(module="test.module")
@@ -601,13 +444,7 @@ def test_backend_get_module_subsystems_via_tools(
 def test_backend_get_function_architecture_via_tools(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_function_architecture works through backend.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_function_architecture works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
 
     result = architecture_gateway.con.execute(
@@ -625,13 +462,7 @@ def test_backend_get_function_architecture_via_tools(
 def test_backend_get_function_architecture_not_found(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_function_architecture handles not found.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_function_architecture handles not found."""
     backend = _build_architecture_backend(architecture_gateway)
 
     nonexistent_goid = 99999999
@@ -642,13 +473,7 @@ def test_backend_get_function_architecture_not_found(
 def test_backend_get_module_architecture_via_tools(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_module_architecture works through backend.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_module_architecture works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
 
     result = architecture_gateway.con.execute(
@@ -666,13 +491,7 @@ def test_backend_get_module_architecture_via_tools(
 def test_backend_get_module_architecture_not_found(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_module_architecture handles not found.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_module_architecture handles not found."""
     backend = _build_architecture_backend(architecture_gateway)
 
     with contextlib.suppress(McpError):
@@ -682,13 +501,7 @@ def test_backend_get_module_architecture_not_found(
 def test_backend_get_subsystem_modules_via_tools(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify get_subsystem_modules works through backend.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify get_subsystem_modules works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
 
     result = architecture_gateway.con.execute(
@@ -707,13 +520,7 @@ def test_backend_get_subsystem_modules_via_tools(
 def test_backend_summarize_subsystem_via_tools(
     architecture_gateway: StorageGateway,
 ) -> None:
-    """Verify summarize_subsystem works through backend.
-
-    Parameters
-    ----------
-    architecture_gateway
-        Gateway with architecture data seeded.
-    """
+    """Verify summarize_subsystem works through backend."""
     backend = _build_architecture_backend(architecture_gateway)
 
     result = architecture_gateway.con.execute(

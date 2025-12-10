@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Final
 
-import networkx as nx
 import pytest
 from _pytest.logging import LogCaptureFixture
 
@@ -24,6 +23,7 @@ from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.factories import make_graph_runtime_options, make_snapshot
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -132,7 +132,7 @@ def test_run_graph_validations_caps_findings(
 
 def test_call_graph_findings_with_isolated_nodes() -> None:
     """call_graph_findings detects isolated function nodes."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Add isolated function nodes
     graph.add_node(1, kind="function")
     graph.add_node(2, kind="function")
@@ -154,7 +154,7 @@ def test_call_graph_findings_with_isolated_nodes() -> None:
 
 def test_call_graph_findings_with_scc() -> None:
     """call_graph_findings detects recursive call clusters."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Create a strongly connected component (cycle) with 3+ nodes
     for i in range(5):
         graph.add_node(i, kind="function")
@@ -173,7 +173,7 @@ def test_call_graph_findings_with_scc() -> None:
 
 def test_call_graph_findings_with_hub_nodes() -> None:
     """call_graph_findings detects high-degree hubs."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Create a hub with many connections (degree > threshold)
     hub_node = 0
     graph.add_node(hub_node, kind="function")
@@ -190,7 +190,7 @@ def test_call_graph_findings_with_hub_nodes() -> None:
 
 def test_call_graph_findings_empty_graph() -> None:
     """call_graph_findings returns empty list for empty graph."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     log = logging.getLogger("test")
 
     findings = call_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
@@ -234,7 +234,7 @@ def test_import_cycle_findings_detects_cross_package_cycles() -> None:
 
 def test_import_hub_findings_detects_hubs() -> None:
     """import_hub_findings detects high-degree import hubs."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Create a hub module with many imports
     hub = "core.utils"
     graph.add_node(hub)
@@ -251,7 +251,7 @@ def test_import_hub_findings_detects_hubs() -> None:
 
 def test_import_upward_findings_detects_layer_violations() -> None:
     """import_upward_findings detects imports against layering."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Module at layer 3 imports from layer 1 (upward)
     graph.add_node("deep.module", layer=3)
     graph.add_node("shallow.module", layer=1)
@@ -265,7 +265,7 @@ def test_import_upward_findings_detects_layer_violations() -> None:
 
 def test_import_upward_findings_ignores_downward() -> None:
     """import_upward_findings ignores proper layered imports."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Proper layering: lower layer imports from higher
     graph.add_node("shallow.module", layer=1)
     graph.add_node("deep.module", layer=3)
@@ -279,7 +279,7 @@ def test_import_upward_findings_ignores_downward() -> None:
 
 def test_import_bridge_findings_detects_bridges() -> None:
     """import_bridge_findings detects high-betweenness modules."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Create a bridge topology: A -> B -> C (B is a bridge)
     modules = ["a.mod", "b.bridge", "c.mod", "d.mod", "e.mod"]
     for mod in modules:
@@ -300,7 +300,7 @@ def test_import_bridge_findings_detects_bridges() -> None:
 
 def test_import_graph_findings_combines_checks() -> None:
     """import_graph_findings runs all import checks."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Add some nodes and edges
     graph.add_edge("pkg.a", "pkg.b")
     graph.add_edge("pkg.b", "pkg.c")
@@ -318,7 +318,7 @@ def test_import_graph_findings_combines_checks() -> None:
 
 def test_symbol_graph_findings_detects_hubs() -> None:
     """symbol_graph_findings detects high-degree symbol hubs."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # Create a symbol hub with many connections
     hub = "common_symbol"
     graph.add_node(hub)
@@ -335,7 +335,7 @@ def test_symbol_graph_findings_detects_hubs() -> None:
 
 def test_symbol_graph_findings_empty_graph() -> None:
     """symbol_graph_findings returns empty for empty graph."""
-    graph = nx.Graph()
+    graph = empty_graph()
 
     log = logging.getLogger("test")
     findings = symbol_graph_findings(graph, TEST_REPO, TEST_COMMIT, log)
@@ -350,7 +350,7 @@ def test_symbol_graph_findings_empty_graph() -> None:
 
 def test_config_key_findings_detects_broad_usage() -> None:
     """config_key_findings detects config keys used broadly."""
-    graph = nx.Graph()
+    graph = empty_graph()
     # Create a bipartite graph with config keys (bipartite=0) and modules (bipartite=1)
     config_key = ("config_path", "common.key")
     graph.add_node(config_key, bipartite=0)
@@ -369,7 +369,7 @@ def test_config_key_findings_detects_broad_usage() -> None:
 
 def test_config_key_findings_empty_graph() -> None:
     """config_key_findings returns empty for empty graph."""
-    graph = nx.Graph()
+    graph = empty_graph()
 
     log = logging.getLogger("test")
     findings = config_key_findings(graph, TEST_REPO, TEST_COMMIT, log)

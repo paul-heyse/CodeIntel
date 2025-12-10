@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.subsystem import (
     SubsystemCoverageResult,
     SubsystemListResult,
@@ -165,11 +165,13 @@ def test_subsystem_show_handler_returns_fail_when_not_found() -> None:
 
 
 def test_subsystem_show_handler_raises_when_id_missing() -> None:
-    """Handler raises ValueError when subsystem_id is missing."""
+    """Handler raises ParameterError when subsystem_id is missing."""
+    from codeintel.cli.handlers.context import ParameterError
+
     with _mock_duckdb_backend():
         ctx = _build_test_context(params={})
 
-        with pytest.raises(ValueError, match="subsystem_id parameter is required"):
+        with pytest.raises(ParameterError, match="Required parameter 'subsystem_id' not provided"):
             subsystem_show_handler(ctx)
 
 
@@ -258,11 +260,13 @@ def test_subsystem_memberships_handler_returns_ok() -> None:
 
 
 def test_subsystem_memberships_handler_raises_when_module_missing() -> None:
-    """Handler raises ValueError when module is missing."""
+    """Handler raises ParameterError when module is missing."""
+    from codeintel.cli.handlers.context import ParameterError
+
     with _mock_duckdb_backend():
         ctx = _build_test_context(params={})
 
-        with pytest.raises(ValueError, match="module parameter is required"):
+        with pytest.raises(ParameterError, match="Required parameter 'module' not provided"):
             subsystem_module_memberships_handler(ctx)
 
 
@@ -354,7 +358,7 @@ def _mock_duckdb_backend() -> Iterator[MagicMock]:
 
 def _build_test_context(
     params: dict[str, object],
-) -> EnhancedHandlerContext:
+) -> HandlerContext:
     """Build a test context with mocked dependencies.
 
     Parameters
@@ -364,7 +368,7 @@ def _build_test_context(
 
     Returns
     -------
-    EnhancedHandlerContext
+    HandlerContext
         Test context.
     """
     mock_serving = MagicMock(spec=ServingConfig)
@@ -374,12 +378,11 @@ def _build_test_context(
     mock_gateway = MagicMock(spec=StorageGateway)
     mock_graph_runtime = MagicMock()
 
-    return EnhancedHandlerContext(
+    return HandlerContext(
         config=mock_config,
-        runtime=mock_runtime,
-        params=params,
-        verbosity=0,
+        operation_id="subsystem.test",
+        _params=params,
+        _runtime=mock_runtime,
         _gateway=mock_gateway,
         _graph_runtime=mock_graph_runtime,
-        _operation_name="subsystem.test",
     )

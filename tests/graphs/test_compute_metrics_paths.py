@@ -22,6 +22,7 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
+    empty_digraph,
     star_graph,
 )
 from tests.graphs.constants import STAR_SPOKE_SWEEP
@@ -50,7 +51,7 @@ AVG_PATH_ZERO: Final[float] = 0.0
 
 def test_simple_paths_empty_graph() -> None:
     """Empty graph returns zero paths."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = count_simple_paths(graph, [1], [2], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT)
     expect_equal(result, EXPECTED_PATH_COUNT_ZERO)
 
@@ -121,7 +122,7 @@ def test_simple_paths_multiple_targets() -> None:
 
 def test_simple_paths_max_paths_limit() -> None:
     """Max paths parameter limits count."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     # Multiple paths: A -> B -> D, A -> C -> D, A -> E -> D
     graph.add_edges_from(
         [
@@ -155,7 +156,7 @@ def test_simple_paths_cutoff_limit() -> None:
 
 def test_simple_paths_self_loop_handled() -> None:
     """Source equals target handled (simple paths exclude loops)."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     graph.add_edge("A", "A")
     # NetworkX all_simple_paths excludes self-loops for same source/target
     result = count_simple_paths(
@@ -181,7 +182,7 @@ def test_simple_paths_node_not_in_graph() -> None:
 
 def test_avg_shortest_path_empty_graph() -> None:
     """Empty graph returns zero."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_avg_shortest_path_from_source(graph, "A")
     expect_equal(result, AVG_PATH_ZERO)
 
@@ -257,7 +258,7 @@ def test_avg_shortest_path_diamond_graph() -> None:
 
 def test_reachable_nodes_empty_graph() -> None:
     """Empty graph returns just the source (if in graph) or source alone."""
-    graph = nx.DiGraph()
+    graph = empty_digraph()
     result = compute_reachable_nodes(graph, "A")
     # Source is always included even if not in graph
     expect_true("A" in result)

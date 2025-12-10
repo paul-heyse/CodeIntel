@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from codeintel.cli.config.model import CliConfig
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.ide import IdeHintsResult, ide_hints_handler
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.models import FileHintsResponse, ResponseMeta, ViewRow
@@ -76,23 +76,27 @@ def test_ide_hints_handler_returns_fail_when_no_hints() -> None:
 
 
 def test_ide_hints_handler_raises_when_rel_path_missing() -> None:
-    """Handler raises ValueError when rel_path is missing."""
+    """Handler raises ParameterError when rel_path is missing."""
+    from codeintel.cli.handlers.context import ParameterError
+
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
     with _mock_backend_returning(mock_response):
         ctx = _build_test_context(params={})
 
-        with pytest.raises(ValueError, match="rel_path parameter is required"):
+        with pytest.raises(ParameterError, match="Required parameter 'rel_path' not provided"):
             ide_hints_handler(ctx)
 
 
 def test_ide_hints_handler_raises_when_rel_path_empty() -> None:
-    """Handler raises ValueError when rel_path is empty."""
+    """Handler raises ValueError when rel_path is empty after strip."""
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
     with _mock_backend_returning(mock_response):
         ctx = _build_test_context(params={"rel_path": "  "})
 
+        # The handler gets "  " as a string, which is non-empty but whitespace.
+        # After stripping, it becomes empty and should raise ValueError.
         with pytest.raises(ValueError, match="rel_path cannot be empty"):
             ide_hints_handler(ctx)
 
@@ -140,7 +144,7 @@ def _mock_backend_returning(response: FileHintsResponse) -> Iterator[None]:
 
 def _build_test_context(
     params: dict[str, object],
-) -> EnhancedHandlerContext:
+) -> HandlerContext:
     """Build a test context with mocked dependencies.
 
     Parameters
@@ -150,7 +154,7 @@ def _build_test_context(
 
     Returns
     -------
-    EnhancedHandlerContext
+    HandlerContext
         Test context.
     """
     mock_serving = MagicMock(spec=ServingConfig)
@@ -160,12 +164,11 @@ def _build_test_context(
     mock_gateway = MagicMock(spec=StorageGateway)
     mock_graph_runtime = MagicMock()
 
-    return EnhancedHandlerContext(
+    return HandlerContext(
         config=mock_config,
-        runtime=mock_runtime,
-        params=params,
-        verbosity=0,
+        operation_id="ide.hints",
+        _params=params,
+        _runtime=mock_runtime,
         _gateway=mock_gateway,
         _graph_runtime=mock_graph_runtime,
-        _operation_name="ide.hints",
     )

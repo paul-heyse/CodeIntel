@@ -608,6 +608,23 @@ class HandlerContext:
         """
         return self.config.color
 
+    @property
+    def params(self) -> dict[str, object]:
+        """Get operation parameters (read-only view).
+
+        Returns
+        -------
+        dict[str, object]
+            Parameters dictionary.
+
+        Notes
+        -----
+        Prefer using typed accessor methods (param_str, param_int, etc.)
+        for individual parameter access. This property is mainly for
+        handlers that need to acknowledge params exist without using them.
+        """
+        return self._params
+
     # --- Resource Management ---
 
     def close(self) -> None:
@@ -691,72 +708,69 @@ class HandlerContext:
             options=options,
         )
 
-    # --- Adapter Factory (Temporary - Remove in Phase 6) ---
 
-    @classmethod
-    def from_enhanced_context(
-        cls,
-        ctx: EnhancedHandlerContext,
-        operation_id: str,
-        params: dict[str, object] | None = None,
-    ) -> HandlerContext:
-        """Create HandlerContext from legacy EnhancedHandlerContext.
+def handler_context_from_enhanced(
+    ctx: EnhancedHandlerContext,
+    operation_id: str,
+    params: dict[str, object] | None = None,
+) -> HandlerContext:
+    """Create HandlerContext from legacy EnhancedHandlerContext.
 
-        This is a temporary adapter for gradual migration. It will be
-        removed in Phase 6 when all handlers have been migrated.
+    This is a temporary adapter for gradual migration. It will be
+    removed in Phase 6 when all handlers have been migrated.
 
-        Parameters
-        ----------
-        ctx
-            Legacy EnhancedHandlerContext instance.
-        operation_id
-            Operation identifier.
-        params
-            Additional parameters (merged with ctx.params).
+    Parameters
+    ----------
+    ctx
+        Legacy EnhancedHandlerContext instance.
+    operation_id
+        Operation identifier.
+    params
+        Additional parameters (merged with ctx.params).
 
-        Returns
-        -------
-        HandlerContext
-            New context wrapping the legacy context's resources.
+    Returns
+    -------
+    HandlerContext
+        New context wrapping the legacy context's resources.
 
-        Raises
-        ------
-        TypeError
-            If ctx is not an EnhancedHandlerContext instance.
+    Raises
+    ------
+    TypeError
+        If ctx is not an EnhancedHandlerContext instance.
 
-        Notes
-        -----
-        WARNING: This method is temporary scaffolding. Do not add new
-        usages. It will be removed in Phase 6.
-        """
-        if not isinstance(ctx, EnhancedHandlerContext):
-            msg = f"Expected EnhancedHandlerContext, got {type(ctx).__name__}"
-            raise TypeError(msg)
+    Notes
+    -----
+    WARNING: This function is temporary scaffolding. Do not add new
+    usages. It will be removed in Phase 6.
+    """
+    if not isinstance(ctx, EnhancedHandlerContext):
+        msg = f"Expected EnhancedHandlerContext, got {type(ctx).__name__}"
+        raise TypeError(msg)
 
-        # Merge params
-        merged_params: dict[str, object] = dict(ctx.params)
-        if params:
-            merged_params.update(params)
+    # Merge params
+    merged_params: dict[str, object] = dict(ctx.params)
+    if params:
+        merged_params.update(params)
 
-        # Determine output format
-        output_format_str = ctx.output_format
-        try:
-            output_format = OutputFormat(output_format_str)
-        except ValueError:
-            output_format = OutputFormat.TEXT
+    # Determine output format
+    output_format_str = ctx.output_format
+    try:
+        output_format = OutputFormat(output_format_str)
+    except ValueError:
+        output_format = OutputFormat.TEXT
 
-        return cls(
-            config=ctx.config,
-            operation_id=operation_id,
-            output_format=output_format,
-            verbosity=ctx.verbosity,
-            project_root=ctx.runtime.root if ctx.runtime else None,
-            database_path=ctx.runtime.db_path if ctx.runtime else None,
-            _params=merged_params,
-            _runtime=ctx.runtime,
-            # Note: gateway and graph_runtime are not transferred
-            # to avoid double-close issues
-        )
+    return HandlerContext(
+        config=ctx.config,
+        operation_id=operation_id,
+        output_format=output_format,
+        verbosity=ctx.verbosity,
+        project_root=ctx.runtime.root if ctx.runtime else None,
+        database_path=ctx.runtime.db_path if ctx.runtime else None,
+        _params=merged_params,
+        _runtime=ctx.runtime,
+        # Note: gateway and graph_runtime are not transferred
+        # to avoid double-close issues
+    )
 
 
 @contextmanager
@@ -815,5 +829,6 @@ __all__ = [
     "HandlerContext",
     "HandlerContextOptions",
     "ParameterError",
+    "handler_context_from_enhanced",
     "handler_context_manager",
 ]

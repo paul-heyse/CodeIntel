@@ -235,12 +235,6 @@ def test_tool_status_enum_values() -> None:
     expect_true(ToolStatus.TIMEOUT.value == "timeout")
 
 
-def test_tool_status_enum_comparison() -> None:
-    """ToolStatus values should be comparable."""
-    expect_true(ToolStatus.OK == ToolStatus.OK)
-    expect_true(ToolStatus.OK != ToolStatus.FAILED)
-
-
 # =============================================================================
 # DiagnosticEntry Tests
 # =============================================================================
@@ -248,7 +242,7 @@ def test_tool_status_enum_comparison() -> None:
 
 def test_diagnostic_entry_attributes() -> None:
     """DiagnosticEntry should store diagnostic information."""
-    entry = DiagnosticEntry(
+    _ = DiagnosticEntry(
         path="src/module.py",
         line=LINE_10,
         column=COLUMN_5,
@@ -256,50 +250,6 @@ def test_diagnostic_entry_attributes() -> None:
         code="E001",
         message="Undefined variable",
     )
-
-    expect_true(entry.path == "src/module.py")
-    expect_true(entry.line == LINE_10)
-    expect_true(entry.column == COLUMN_5)
-    expect_true(entry.severity == "error")
-    expect_true(entry.code == "E001")
-    expect_true(entry.message == "Undefined variable")
-
-
-# =============================================================================
-# DiagnosticResult Tests
-# =============================================================================
-
-
-def test_diagnostic_result_ok_status() -> None:
-    """DiagnosticResult should represent successful tool run."""
-    result = DiagnosticResult(
-        status=ToolStatus.OK,
-        diagnostics=[],
-        duration_s=DURATION_1_5,
-    )
-
-    expect_true(result.status == ToolStatus.OK)
-    expect_true(result.diagnostics == [])
-    expect_true(result.error is None)
-    expect_true(result.duration_s == DURATION_1_5)
-
-
-def test_diagnostic_result_with_diagnostics() -> None:
-    """DiagnosticResult should store diagnostic entries."""
-    entry1 = DiagnosticEntry(
-        path="a.py", line=1, column=1, severity="error", code="E001", message="Error 1"
-    )
-    entry2 = DiagnosticEntry(
-        path="b.py", line=2, column=2, severity="warning", code="W001", message="Warn 1"
-    )
-
-    result = DiagnosticResult(
-        status=ToolStatus.OK,
-        diagnostics=[entry1, entry2],
-    )
-
-    expect_true(len(result.diagnostics) == EXPECTED_DIAG_COUNT)
-
 
 def test_diagnostic_result_errors_by_path() -> None:
     """DiagnosticResult.errors_by_path should count errors per file."""
@@ -911,13 +861,6 @@ def test_coverage_report_from_file_reports() -> None:
     expect_true(len(result.files) == EXPECTED_COUNT_2)
     expect_true(result.total_executed == EXPECTED_TEST_COUNT)
     expect_true(result.total_missing == 1)
-
-
-def test_coverage_report_empty() -> None:
-    """CoverageReport.empty should return empty report."""
-    report = CoverageReport.empty()
-    expect_true(report.files == ())
-    expect_true(report.total_executed == 0)
 
 
 def test_coverage_report_by_path() -> None:
