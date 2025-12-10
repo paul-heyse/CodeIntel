@@ -8,19 +8,19 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion import (
-    DocstringsExtractStep,
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-    RepoScanStep,
-)
+from codeintel.ingestion import DocstringsExtractStep, RepoScanStep
 from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
 )
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_ingestion_adapters,
+    build_target_context_for_plugin,
+)
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -51,20 +51,16 @@ def _code_profile_ignoring_dir(snapshot_repo_root: Path, ignored_dir_name: str) 
 def _create_scan_steps(
     gateway: StorageGateway,
     repo_root: Path,
+    tmp_path: Path,
 ) -> tuple[RepoScanStep, DocstringsExtractStep]:
-    """Create scan and docstring steps from gateway and repo root.
-
-    Returns
-    -------
-    tuple[RepoScanStep, DocstringsExtractStep]
-        Scan step and docstrings extraction step.
-    """
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    scan_step = RepoScanStep(
-        storage=storage, discovery=discovery, change_detection=change_detection
+    """Create scan and docstring steps from gateway and repo root."""
+    ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
+    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
     doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
     return scan_step, doc_step
 
@@ -73,6 +69,8 @@ def _scan_and_extract_docstrings(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     profile: ScanProfile,
+    *,
+    tmp_path: Path,
     module_filter: Iterable[ModuleRecord] | None = None,
 ) -> list[str]:
     """Scan modules and extract docstrings, returning list of rel_paths.
@@ -82,7 +80,7 @@ def _scan_and_extract_docstrings(
     list[str]
         List of relative paths where docstrings were extracted.
     """
-    scan_step, doc_step = _create_scan_steps(gateway, snapshot.repo_root)
+    scan_step, doc_step = _create_scan_steps(gateway, snapshot.repo_root, tmp_path)
 
     _, modules, _ = scan_step.execute(
         repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root, profile=profile
@@ -111,7 +109,7 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
     code_profile = _code_profile_ignoring_dir(snapshot.repo_root, "ignored")
     gateway = GatewayFactory().open()
 
-    rel_paths = _scan_and_extract_docstrings(gateway, snapshot, code_profile)
+    rel_paths = _scan_and_extract_docstrings(gateway, snapshot, code_profile, tmp_path=tmp_path)
     expected_paths = ["src/pkg/a.py", "src/pkg/b.py"]
 
     if rel_paths != expected_paths:
@@ -133,7 +131,7 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
     code_profile = default_code_profile(snapshot.repo_root)
     gateway = GatewayFactory().open()
 
-    scan_step, doc_step = _create_scan_steps(gateway, repo_root)
+    scan_step, doc_step = _create_scan_steps(gateway, repo_root, tmp_path)
     _, modules, _ = scan_step.execute(
         repo=snapshot.repo, commit=snapshot.commit, repo_root=repo_root, profile=code_profile
     )

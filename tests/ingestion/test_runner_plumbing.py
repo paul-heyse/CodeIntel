@@ -12,15 +12,20 @@ from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
     RepoScanStep,
     ToolRunnerAdapter,
     TypingIngestStep,
 )
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from tests._helpers import build_repo_tree
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_ingestion_adapters,
+    build_target_context_for_plugin,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -147,12 +152,13 @@ def _create_scan_step(
     tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
         Scan step and the adapters used to create it.
     """
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    scan_step = RepoScanStep(
-        storage=storage, discovery=discovery, change_detection=change_detection
+    ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
+        repo_root,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
+    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
     return scan_step, storage, discovery
 
 

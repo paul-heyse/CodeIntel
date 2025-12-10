@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, cast
+from typing import cast
 
 import pytest
 
-import codeintel.analytics.testing.coverage.edges as coverage_edges
 from codeintel.analytics.compute.coverage import compute_coverage_functions
+from codeintel.analytics.testing.coverage import edges as coverage_edges
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
 from tests._helpers.assertions import (
@@ -19,6 +20,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.config_factory import coverage_analytics_cfg
+from tests._helpers.context import TestContext
 from tests._helpers.coverage import (
     CoverageLineSeedData,
     CoverageRangeSeedData,
@@ -27,7 +29,6 @@ from tests._helpers.coverage import (
     seed_coverage_lines_range,
     seed_goid,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds import METRICS_PACK
 
@@ -63,16 +64,19 @@ HASH_HELPER = 2005
 
 @pytest.fixture
 def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Provide a coverage-ready TestContext with clean coverage tables."""
+    """Provide a coverage-ready TestContext with clean coverage tables.
+
+    Yields
+    ------
+    TestContext
+        Context with coverage and metrics seeds applied.
+    """
     ctx = TestScenario.with_coverage().with_seeds(METRICS_PACK).build(tmp_path)
     con = ctx.con
-    for table in (
-        "analytics.coverage_functions",
-        "analytics.coverage_lines",
-        "analytics.test_catalog",
-        "analytics.test_coverage_edges",
-    ):
-        con.execute(f"DELETE FROM {table}")
+    con.execute("DELETE FROM analytics.coverage_functions")
+    con.execute("DELETE FROM analytics.coverage_lines")
+    con.execute("DELETE FROM analytics.test_catalog")
+    con.execute("DELETE FROM analytics.test_coverage_edges")
     con.execute(
         "DELETE FROM core.goids WHERE repo = ? AND commit = ?",
         [ctx.repo, ctx.commit],

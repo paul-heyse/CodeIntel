@@ -33,7 +33,7 @@ from codeintel.cli.execution.types import (
     ProgressState,
     StreamingResult,
 )
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable

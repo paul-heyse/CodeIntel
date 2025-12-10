@@ -22,6 +22,13 @@ from codeintel.graphs.compute.metrics.coupling import (
     compute_distance_from_main_sequence,
 )
 from tests._helpers.assertions import assert_cannot_setattr, expect_equal, expect_true
+from tests._helpers.fakes.networkx_graphs import (
+    bidirectional_deps_graph,
+    god_module_graph,
+    hub_dependencies_graph,
+    independent_modules_graph,
+    linear_dependency_graph,
+)
 
 INSTABILITY_TOLERANCE: Final = 0.01
 HUB_DEPENDENT_COUNT: Final = 4
@@ -34,108 +41,9 @@ MODERATE_INSTABILITY: Final = 0.375
 HALF_RATIO: Final = 0.5
 
 
-def _make_independent_modules() -> nx.DiGraph:
-    """Create a graph with independent modules (no coupling).
-
-    Returns
-    -------
-    nx.DiGraph
-        A graph with disconnected nodes.
-    """
-    g = nx.DiGraph()
-    g.add_nodes_from(["module_a", "module_b", "module_c"])
-    return g
-
-
-def _make_linear_dependency() -> nx.DiGraph:
-    """Create a linear dependency chain.
-
-    Structure: A -> B -> C
-
-    Returns
-    -------
-    nx.DiGraph
-        A linear dependency graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from(
-        [
-            ("module_a", "module_b"),
-            ("module_b", "module_c"),
-        ]
-    )
-    return g
-
-
-def _make_hub_dependencies() -> nx.DiGraph:
-    """Create a hub module with many dependents.
-
-    Structure: Many modules depend on 'core'
-
-    Returns
-    -------
-    nx.DiGraph
-        A hub dependency graph.
-    """
-    g = nx.DiGraph()
-    # Many modules depend on core (high afferent)
-    g.add_edges_from(
-        [
-            ("module_a", "core"),
-            ("module_b", "core"),
-            ("module_c", "core"),
-            ("module_d", "core"),
-        ]
-    )
-    return g
-
-
-def _make_god_module() -> nx.DiGraph:
-    """Create a god module that depends on everything.
-
-    Structure: 'god' depends on many modules
-
-    Returns
-    -------
-    nx.DiGraph
-        A god module dependency graph.
-    """
-    g = nx.DiGraph()
-    # God module depends on everything (high efferent)
-    g.add_edges_from(
-        [
-            ("god", "module_a"),
-            ("god", "module_b"),
-            ("god", "module_c"),
-            ("god", "module_d"),
-        ]
-    )
-    return g
-
-
-def _make_bidirectional_deps() -> nx.DiGraph:
-    """Create bidirectional dependencies.
-
-    Structure: A <-> B (circular dependency)
-
-    Returns
-    -------
-    nx.DiGraph
-        A bidirectional dependency graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from(
-        [
-            ("module_a", "module_b"),
-            ("module_b", "module_a"),
-        ]
-    )
-    return g
-
-
 def test_compute_coupling_independent() -> None:
     """Compute coupling for independent modules."""
-    g = _make_independent_modules()
+    g = independent_modules_graph()
 
     coupling = compute_coupling(g)
 
@@ -147,7 +55,7 @@ def test_compute_coupling_independent() -> None:
 
 def test_compute_coupling_linear() -> None:
     """Compute coupling for linear dependencies."""
-    g = _make_linear_dependency()
+    g = linear_dependency_graph()
 
     coupling = compute_coupling(g)
 
@@ -169,7 +77,7 @@ def test_compute_coupling_linear() -> None:
 
 def test_compute_coupling_hub() -> None:
     """Compute coupling for hub module."""
-    g = _make_hub_dependencies()
+    g = hub_dependencies_graph()
 
     coupling = compute_coupling(g)
 
@@ -186,7 +94,7 @@ def test_compute_coupling_hub() -> None:
 
 def test_compute_coupling_god() -> None:
     """Compute coupling for god module."""
-    g = _make_god_module()
+    g = god_module_graph()
 
     coupling = compute_coupling(g)
 
@@ -203,7 +111,7 @@ def test_compute_coupling_god() -> None:
 
 def test_compute_coupling_bidirectional() -> None:
     """Compute coupling for bidirectional dependencies."""
-    g = _make_bidirectional_deps()
+    g = bidirectional_deps_graph()
 
     coupling = compute_coupling(g)
 

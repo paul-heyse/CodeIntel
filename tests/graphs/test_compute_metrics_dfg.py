@@ -30,6 +30,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
+    complete_digraph,
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
@@ -382,7 +383,7 @@ def test_dfg_density_single_node_returns_zero() -> None:
 
 def test_dfg_density_complete_graph() -> None:
     """Complete directed graph has density 1.0."""
-    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    graph = complete_digraph(4)
     result = compute_dfg_density(graph)
 
     # Complete digraph: n*(n-1) edges / n*(n-1) max = 1.0

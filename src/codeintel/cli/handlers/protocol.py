@@ -24,8 +24,8 @@ from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gatewa
 
 if TYPE_CHECKING:
     from codeintel.cli.config.model import CliConfig
+    from codeintel.cli.core import CliResult
     from codeintel.cli.resolution.types import ResolvedRuntime
-    from codeintel.cli.results import CliResult
 
 T = TypeVar("T")
 

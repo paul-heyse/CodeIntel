@@ -33,7 +33,7 @@ CLI_EXIT_VALIDATION = 1
 CLI_EXIT_USAGE = 2
 
 if TYPE_CHECKING:
-    from codeintel.cli.cyclopts_common import RuntimeCLI
+    from codeintel.cli.commands import RuntimeCLI
     from codeintel.cli.core.results import CliResult
 
 _HandlerP = ParamSpec("_HandlerP")

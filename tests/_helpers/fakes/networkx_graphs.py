@@ -235,6 +235,22 @@ def complete_digraph(n: int = DEFAULT_COMPLETE_SIZE) -> nx.DiGraph:
     return nx.complete_graph(n, create_using=nx.DiGraph())
 
 
+def complete_graph(n: int = DEFAULT_COMPLETE_SIZE) -> nx.Graph:
+    """Create a complete undirected graph.
+
+    Parameters
+    ----------
+    n
+        Number of nodes.
+
+    Returns
+    -------
+    nx.Graph
+        Complete undirected graph.
+    """
+    return nx.complete_graph(n)
+
+
 def bipartite_graph(left: int = 3, right: int = 3) -> nx.DiGraph:
     """Create a complete bipartite directed graph.
 
@@ -269,6 +285,123 @@ def bipartite_graph(left: int = 3, right: int = 3) -> nx.DiGraph:
         for rnode in right_nodes:
             g.add_edge(lnode, rnode)
 
+    return g
+
+
+def hub_dependencies_graph() -> nx.DiGraph:
+    """Create a hub dependency graph with many modules depending on core.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph where several modules depend on a single core node.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            ("module_a", "core"),
+            ("module_b", "core"),
+            ("module_c", "core"),
+            ("module_d", "core"),
+        ]
+    )
+    return g
+
+
+def god_module_graph() -> nx.DiGraph:
+    """Create a graph where a single module depends on many others.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph with a single highly dependent module.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            ("god", "module_a"),
+            ("god", "module_b"),
+            ("god", "module_c"),
+            ("god", "module_d"),
+        ]
+    )
+    return g
+
+
+def bidirectional_deps_graph() -> nx.DiGraph:
+    """Create a bidirectional dependency graph with a simple cycle.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph containing a two-node cycle.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from([("module_a", "module_b"), ("module_b", "module_a")])
+    return g
+
+
+def linear_dependency_graph() -> nx.DiGraph:
+    """Create a simple linear dependency chain A -> B -> C.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph representing a simple chain.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from([("module_a", "module_b"), ("module_b", "module_c")])
+    return g
+
+
+def independent_modules_graph() -> nx.DiGraph:
+    """Create a graph with independent modules and no edges.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph containing unconnected module nodes.
+    """
+    g = nx.DiGraph()
+    g.add_nodes_from(["module_a", "module_b", "module_c"])
+    return g
+
+
+def two_sccs_graph() -> nx.DiGraph:
+    """Create a graph with two strongly connected components connected by an edge.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph composed of two SCCs linked in sequence.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            ("A", "B"),
+            ("B", "A"),
+            ("C", "D"),
+            ("D", "C"),
+            ("B", "C"),
+        ]
+    )
+    return g
+
+
+def complex_sccs_graph() -> nx.DiGraph:
+    """Create a graph with SCCs of sizes 1, 2, and 3 connected linearly.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph combining singleton, pair, and triple SCCs.
+    """
+    g = nx.DiGraph()
+    g.add_node("A")
+    g.add_edges_from([("B", "C"), ("C", "D"), ("D", "B")])
+    g.add_edges_from([("E", "F"), ("F", "E")])
+    g.add_edge("A", "B")
+    g.add_edge("D", "E")
     return g
 
 
@@ -394,14 +527,22 @@ __all__ = [
     "DEFAULT_COMPLETE_SIZE",
     "DEFAULT_CYCLE_SIZE",
     "DEFAULT_SPOKES",
+    "bidirectional_deps_graph",
     "bipartite_graph",
     "chain_graph",
     "complete_digraph",
+    "complete_graph",
+    "complex_sccs_graph",
     "cyclic_graph",
     "diamond_graph",
     "disconnected_graph",
+    "god_module_graph",
     "hub_and_spoke_graph",
+    "hub_dependencies_graph",
+    "independent_modules_graph",
     "layered_graph",
+    "linear_dependency_graph",
     "star_graph",
     "tree_graph",
+    "two_sccs_graph",
 ]

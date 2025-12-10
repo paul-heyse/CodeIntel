@@ -24,8 +24,8 @@ from codeintel.cli.rendering.types import OutputFormat, RenderContext
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.cli.cli_errors import ProblemDetail
-    from codeintel.cli.results import CliResult
+    from codeintel.cli.core import CliResult
+    from codeintel.cli.errors import ProblemDetail
 
 T = TypeVar("T")
 

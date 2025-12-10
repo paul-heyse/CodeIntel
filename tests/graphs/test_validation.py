@@ -22,7 +22,6 @@ from codeintel.graphs.validation.checks import (
     symbol_graph_findings,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schema import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.factories import make_snapshot
@@ -37,13 +36,12 @@ EXPECTED_TWO: Final = 2
 
 
 def test_run_graph_validations_emits_warnings(
-    caplog: LogCaptureFixture, fresh_gateway: StorageGateway
+    caplog: LogCaptureFixture, graph_gateway: StorageGateway
 ) -> None:
     """Graph validations should warn for common integrity gaps."""
-    gateway = fresh_gateway
+    gateway = graph_gateway
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
-    apply_all_schemas(gateway.con)
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
     snapshot = make_snapshot(repo=repo, commit=commit)
 
@@ -61,11 +59,10 @@ def test_run_graph_validations_emits_warnings(
 
 
 def test_run_graph_validations_snapshot_mismatch_raises(
-    fresh_gateway: StorageGateway,
+    graph_gateway: StorageGateway,
 ) -> None:
     """Graph runtime snapshot must align with validation snapshot."""
-    gateway = fresh_gateway
-    apply_all_schemas(gateway.con)
+    gateway = graph_gateway
     snapshot = make_snapshot()
     mismatched_runtime = GraphRuntimeOptions(
         snapshot=make_snapshot(repo="other/repo", commit="cafebabe")
@@ -80,11 +77,10 @@ def test_run_graph_validations_snapshot_mismatch_raises(
 
 
 def test_run_graph_validations_hard_fail_on_error(
-    fresh_gateway: StorageGateway,
+    graph_gateway: StorageGateway,
 ) -> None:
     """Hard-fail mode should raise when error-level findings exist."""
-    gateway = fresh_gateway
-    apply_all_schemas(gateway.con)
+    gateway = graph_gateway
     repo = "demo/repo"
     commit = "deadbeef"
     snapshot = make_snapshot(repo=repo, commit=commit)
@@ -107,11 +103,10 @@ def test_run_graph_validations_hard_fail_on_error(
 
 
 def test_run_graph_validations_caps_findings(
-    fresh_gateway: StorageGateway,
+    graph_gateway: StorageGateway,
 ) -> None:
     """Per-rule caps should limit persisted validation rows."""
-    gateway = fresh_gateway
-    apply_all_schemas(gateway.con)
+    gateway = graph_gateway
     repo = "demo/repo"
     commit = "deadbeef"
     snapshot = make_snapshot(repo=repo, commit=commit)

@@ -13,7 +13,6 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Final
 
@@ -26,17 +25,10 @@ from codeintel.config.steps_graphs import (
 )
 from codeintel.core.execution.retry import RetryPolicy
 from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
-from codeintel.core.plugins.types.result import PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.core.protocol import (
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-)
+from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.core.registry import (
     PlanningOptions,
     SelectionPolicy,
-    get_graph_registry,
-    register_graph_plugin,
 )
 from codeintel.graphs.runtime import planning
 from codeintel.graphs.runtime.planning import (
@@ -55,7 +47,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -73,79 +65,14 @@ BUILD_PLUGIN_SETTINGS = _PLANNING_PRIVATES["_build_plugin_settings"]
 # Test Helpers
 
 
-@dataclass
-class PluginConfig:
-    """Configuration for constructing test planning plugins."""
-
-    depends_on: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-    severity: PluginSeverity = "fatal"
-    resource_hints: PluginResourceHints | None = None
-    options_default: object | None = None
-
-
-PLUGIN_CONFIG_FIELDS: Final = {field.name for field in fields(PluginConfig)}
-
-
-def _resolve_plugin_config(
-    config: PluginConfig | None, overrides: dict[str, object]
-) -> PluginConfig:
-    """Merge a base plugin config with validated overrides.
-
-    Parameters
-    ----------
-    config
-        Base plugin configuration or None for defaults.
-    overrides
-        Override values keyed by PluginConfig field names.
-
-    Returns
-    -------
-    PluginConfig
-        Combined plugin configuration.
-
-    Raises
-    ------
-    ValueError
-        If overrides contain unsupported keys.
-    """
-    unknown_keys = set(overrides) - PLUGIN_CONFIG_FIELDS
-    if unknown_keys:
-        message = f"Unsupported plugin config overrides: {sorted(unknown_keys)}"
-        raise ValueError(message)
-    base_config = config or PluginConfig()
-    if not overrides:
-        return base_config
-    return replace(base_config, **overrides)
-
-
-class _PluginRegistrar:
-    """Context manager for registering and cleaning up test plugins."""
-
-    def __init__(self, plugins: list[GraphPluginProtocol]) -> None:
-        """Initialize with plugins to register.
-
-        Parameters
-        ----------
-        plugins
-            Plugins to register.
-        """
-        self._plugins = plugins
-        self._registry = get_graph_registry()
-
-    def __enter__(self) -> None:
-        """Register plugins on entry."""
-        for plugin in self._plugins:
-            register_graph_plugin(plugin)
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        """Unregister plugins on exit."""
-        for plugin in self._plugins:
-            self._registry.unregister(plugin.metadata.name)
-
-
 def _make_test_plugin(
-    name: str, *, config: PluginConfig | None = None, **overrides: object
+    name: str,
+    *,
+    depends_on: tuple[str, ...] = (),
+    provides: tuple[str, ...] = (),
+    severity: PluginSeverity = "fatal",
+    resource_hints: PluginResourceHints | None = None,
+    options_default: object | None = None,
 ) -> GraphPluginProtocol:
     """Create a configurable test plugin for planning tests.
 
@@ -153,34 +80,31 @@ def _make_test_plugin(
     ----------
     name
         Plugin name.
-    config
-        Base configuration for plugin metadata and defaults.
-    **overrides
-        Overrides for plugin configuration fields.
+    depends_on
+        Plugin dependencies.
+    provides
+        Capabilities provided by the plugin.
+    severity
+        Failure severity for the plugin.
+    resource_hints
+        Resource hints attached to metadata.
+    options_default
+        Default options for the plugin.
 
     Returns
     -------
     GraphPluginProtocol
         Configured test plugin.
     """
-    plugin_config = _resolve_plugin_config(config, overrides)
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-        depends_on=plugin_config.depends_on,
-        provides=plugin_config.provides,
-        severity=plugin_config.severity,
-        resource_hints=plugin_config.resource_hints,
-        options_default=plugin_config.options_default,
+    builder = GraphPluginBuilder(name=name).with_dependencies(*depends_on).with_provides(
+        *provides
     )
-
-    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    builder = (
+        builder.with_severity(severity)
+        .with_resource_hints(resource_hints)
+        .with_options_default(options_default)
+    )
+    return builder.build()
 
 
 def test_resolve_plugin_options_map_uses_default() -> None:
@@ -432,7 +356,7 @@ def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
     plugin = _make_test_plugin("basic_plan")
     snapshot = make_snapshot(repo="plan/repo", commit="plan_commit", repo_root=tmp_path)
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -456,7 +380,7 @@ def test_plan_graph_plugin_run_with_scope_override() -> None:
     plugin = _make_test_plugin("scope_plan")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         run_options = GraphPluginRunOptions(
             scope=GraphRunScope(paths=("custom/path/",), modules=("custom.module",)),
         )
@@ -480,7 +404,7 @@ def test_plan_graph_plugin_run_with_plugin_options() -> None:
     plugin = _make_test_plugin("options_plan", options_default={"default": True})
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         run_options = GraphPluginRunOptions(
             plugin_options={"options_plan": {"override": True}},
         )
@@ -503,7 +427,7 @@ def test_plan_graph_plugin_run_with_prior_manifest() -> None:
     plugin = _make_test_plugin("manifest_plan")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         prior = {"manifest_plan": {"input_hash": "prior_hash"}}
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
@@ -526,7 +450,7 @@ def test_plan_graph_plugin_run_includes_settings() -> None:
     plugin = _make_test_plugin("settings_plan")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(default_severity="soft_fail"),
@@ -548,7 +472,7 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
     plugin_b = _make_test_plugin("dep_b", depends_on=("dep_a",))
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin_a, plugin_b]):
+    with plugin_registrar([plugin_a, plugin_b]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -570,7 +494,7 @@ def test_graph_plugin_execution_plan_dep_graph() -> None:
     plugin_b = _make_test_plugin("graph_b", depends_on=("graph_a",))
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin_a, plugin_b]):
+    with plugin_registrar([plugin_a, plugin_b]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -590,7 +514,7 @@ def test_graph_plugin_execution_plan_skipped_plugins() -> None:
     plugin = _make_test_plugin("skip_test")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -614,7 +538,7 @@ def test_graph_plugin_execution_plan_requested_required_raises() -> None:
     plugin = _make_test_plugin("skip_test")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -634,7 +558,7 @@ def test_graph_plugin_execution_plan_unknown_strict_raises() -> None:
     plugin = _make_test_plugin("skip_test")
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),

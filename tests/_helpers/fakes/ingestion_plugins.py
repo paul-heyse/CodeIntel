@@ -220,6 +220,80 @@ class RecordingTypeChecker:
         )
 
 
+def make_recording_adapter_factories(
+    capture: StepCallCapture,
+    module_sources: dict[str, str] | None = None,
+) -> tuple[
+    Callable[[object], RecordingStorageAdapter],
+    Callable[[Path], RecordingDiscoveryAdapter],
+]:
+    """Create storage and discovery adapter factories sharing a capture."""
+
+    def storage_factory(gateway: object) -> RecordingStorageAdapter:
+        return RecordingStorageAdapter(gateway, capture=capture)
+
+    def discovery_factory(repo_root: Path) -> RecordingDiscoveryAdapter:
+        return RecordingDiscoveryAdapter(
+            repo_root,
+            module_sources=module_sources,
+            capture=capture,
+        )
+
+    return storage_factory, discovery_factory
+
+
+def make_recording_step_factory(
+    capture: StepCallCapture,
+    *,
+    table_key: str,
+    result: StepResult | None = None,
+) -> Callable[[IngestStoragePort, ModuleDiscoveryPort], RecordingStep]:
+    """Build a factory for synchronous RecordingStep instances."""
+
+    def factory(storage: IngestStoragePort, discovery: ModuleDiscoveryPort) -> RecordingStep:
+        return RecordingStep(
+            storage,
+            discovery,
+            capture=capture,
+            table_key=table_key,
+            result=result,
+        )
+
+    return factory
+
+
+def make_recording_async_step_factory(
+    capture: StepCallCapture,
+    *,
+    result: StepResult | None = None,
+) -> Callable[[IngestStoragePort, ModuleDiscoveryPort, IngestToolPort | None], RecordingAsyncStep]:
+    """Build a factory for async RecordingAsyncStep instances."""
+
+    def factory(
+        storage: IngestStoragePort, discovery: ModuleDiscoveryPort, tools: IngestToolPort | None
+    ) -> RecordingAsyncStep:
+        return RecordingAsyncStep(
+            storage,
+            discovery,
+            tools,
+            capture=capture,
+            result=result,
+        )
+
+    return factory
+
+
+def make_recording_type_checker_factory(
+    checker: TypeChecker,
+) -> Callable[[TypeChecker | None], TypeChecker]:
+    """Return a factory that always yields the provided checker."""
+
+    def factory(_: TypeChecker | None) -> TypeChecker:
+        return checker
+
+    return factory
+
+
 class RecordingToolPort(IngestToolPort):
     """Tool port double that can return deterministic results."""
 
@@ -304,6 +378,10 @@ def make_type_checker_factory(
 
 
 __all__ = [
+    "make_recording_adapter_factories",
+    "make_recording_async_step_factory",
+    "make_recording_step_factory",
+    "make_recording_type_checker_factory",
     "RecordingAsyncStep",
     "RecordingDiscoveryAdapter",
     "RecordingStep",

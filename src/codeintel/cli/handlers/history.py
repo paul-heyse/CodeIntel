@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.cli.cli_errors import ProblemDetail
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.base import setup_logging
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (

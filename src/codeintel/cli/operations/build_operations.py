@@ -7,9 +7,9 @@ status, run, and history commands.
 from __future__ import annotations
 
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.operation_registry import register_operation
-from codeintel.cli.result_types import BuildHistoryResult, BuildStatusResult
-from codeintel.cli.results import CliResult
+from codeintel.cli.introspection import register_operation
+from codeintel.cli.core.result_types import BuildHistoryResult, BuildStatusResult
+from codeintel.cli.core import CliResult
 
 
 def _build_status_handler() -> CliResult[BuildStatusResult]:

@@ -21,7 +21,7 @@ from typing import Annotated, Any
 
 from cyclopts import Parameter
 
-from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.rendering.types import OutputFormat
 
 
 @dataclass

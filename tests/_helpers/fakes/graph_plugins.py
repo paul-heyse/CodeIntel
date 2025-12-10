@@ -26,7 +26,7 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 
-from codeintel.core.plugins.types.protocol import PluginSeverity
+from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
@@ -103,6 +103,10 @@ class GraphPluginBuilder:
         Plugin kind (builder, metric, validation).
     stage : GraphPluginStage
         Plugin stage in the pipeline.
+    resource_hints : PluginResourceHints | None
+        Optional resource hints attached to metadata.
+    options_default : object | None
+        Default options included in metadata.
     succeed : bool
         Whether execution should succeed.
     row_counts : dict[str, int] | None
@@ -113,6 +117,10 @@ class GraphPluginBuilder:
         Message for raised exception.
     delay_ms : int
         Delay in milliseconds before returning.
+    input_hash : str | None
+        Input hash to return on success.
+    options_hash : str | None
+        Options hash to return on success.
     depends_on : tuple[str, ...]
         Plugin dependencies.
     provides : tuple[str, ...]
@@ -131,11 +139,15 @@ class GraphPluginBuilder:
     description: str = ""
     kind: GraphPluginKind = "builder"
     stage: GraphPluginStage = "goid"
+    resource_hints: PluginResourceHints | None = None
+    options_default: object | None = None
     succeed: bool = True
     row_counts: dict[str, int] | None = None
     exception_type: type[Exception] | None = None
     exception_message: str = "Test exception"
     delay_ms: int = 0
+    input_hash: str | None = None
+    options_hash: str | None = None
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
@@ -354,6 +366,26 @@ class GraphPluginBuilder:
         self.severity = severity
         return self
 
+    def with_resource_hints(self, hints: PluginResourceHints | None) -> GraphPluginBuilder:
+        """Set resource hints for metadata."""
+        self.resource_hints = hints
+        return self
+
+    def with_options_default(self, options: object | None) -> GraphPluginBuilder:
+        """Set default options for metadata."""
+        self.options_default = options
+        return self
+
+    def with_input_hash(self, input_hash: str | None) -> GraphPluginBuilder:
+        """Set input hash returned on success."""
+        self.input_hash = input_hash
+        return self
+
+    def with_options_hash(self, options_hash: str | None) -> GraphPluginBuilder:
+        """Set options hash returned on success."""
+        self.options_hash = options_hash
+        return self
+
     def build(self) -> GraphPluginProtocol:
         """Build the configured plugin.
 
@@ -370,6 +402,8 @@ class GraphPluginBuilder:
         delay_ms = self.delay_ms
         error_message = self.error_message
         plugin_name = self.name
+        result_input_hash = self.input_hash
+        result_options_hash = self.options_hash
 
         def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
             if delay_ms > 0:
@@ -378,7 +412,11 @@ class GraphPluginBuilder:
                 msg = f"{exception_message} from {plugin_name}"
                 raise exception_type(msg)
             if succeed:
-                return PluginResult.ok(row_counts=row_counts)
+                return PluginResult.ok(
+                    row_counts=row_counts,
+                    input_hash=result_input_hash,
+                    options_hash=result_options_hash,
+                )
             return PluginResult.fail(error_message)
 
         description = self.description or f"Test plugin {self.name}"
@@ -392,6 +430,8 @@ class GraphPluginBuilder:
             provides=self.provides,
             requires=self.requires,
             produces_tables=self.produces_tables,
+            resource_hints=self.resource_hints,
+            options_default=self.options_default,
         )
 
         return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)

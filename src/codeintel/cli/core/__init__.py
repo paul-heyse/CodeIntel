@@ -14,6 +14,7 @@ from codeintel.cli.core.options import CommonOptions
 from codeintel.cli.core.output import (
     OutputEnvelope,
     iter_stdin_records,
+    merge_stdin_with_args,
     read_stdin_records,
 )
 from codeintel.cli.core.results import CliResult, TextRenderer
@@ -24,5 +25,6 @@ __all__ = [
     "OutputEnvelope",
     "TextRenderer",
     "iter_stdin_records",
+    "merge_stdin_with_args",
     "read_stdin_records",
 ]

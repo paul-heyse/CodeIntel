@@ -8,23 +8,16 @@ from __future__ import annotations
 from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schema import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
+from tests._helpers.assertions import expect_equal
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 
-def _expect(*, condition: bool, detail: str) -> None:
-    if condition:
-        return
-    raise AssertionError(detail)
-
-
-def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway) -> None:
+def test_graph_validation_orphan_uses_catalog_map(graph_gateway: StorageGateway) -> None:
     """Graph validation should fall back to catalog module map when modules are absent."""
-    gateway = fresh_gateway
+    gateway = graph_gateway
     con = gateway.con
-    apply_all_schemas(con)
     provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.a"})
     repo = "r"
     commit = "c"
@@ -37,4 +30,4 @@ def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway)
         runtime=GraphRuntimeOptions(snapshot=snapshot),
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
-    _expect(condition=rows == [("pkg/a.py",)], detail=f"unexpected paths {rows}")
+    expect_equal(rows, [("pkg/a.py",)], label="graph_validation_paths")

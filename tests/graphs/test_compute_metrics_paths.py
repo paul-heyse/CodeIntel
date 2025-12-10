@@ -19,6 +19,7 @@ from codeintel.graphs.compute.metrics.paths import (
 from tests._helpers.assertions import expect_equal, expect_length, expect_true
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
+    cyclic_graph,
     diamond_graph,
     disconnected_graph,
     star_graph,
@@ -341,7 +342,7 @@ def test_reachable_nodes_source_not_in_graph() -> None:
 
 def test_reachable_nodes_cyclic_graph() -> None:
     """Cyclic graph reaches all nodes in cycle."""
-    graph = nx.DiGraph([("A", "B"), ("B", "C"), ("C", "A")])
+    graph = cyclic_graph(3)
     result = compute_reachable_nodes(graph, "A")
 
     expect_equal(result, {"A", "B", "C"})

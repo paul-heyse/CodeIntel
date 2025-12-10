@@ -11,7 +11,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.cli.cli_validation import ValidationSchema
+    from codeintel.cli.introspection import ValidationSchema
 
 # Minimum number of parts for a valid operation ID (group.subcommand)
 _MIN_OPERATION_ID_PARTS = 2
@@ -186,7 +186,7 @@ def build_completion_model() -> CompletionModel:
         Complete completion model.
     """
     # Import here to avoid circular import
-    from codeintel.cli.operation_registry import (  # noqa: PLC0415
+    from codeintel.cli.introspection import (  # noqa: PLC0415
         get_operation_registry,
     )
 

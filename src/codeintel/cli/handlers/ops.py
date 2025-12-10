@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING, Any
 
 import uvicorn
 
-from codeintel.cli.cli_errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ProblemDetail, ValidationError
 from codeintel.cli.project import ProjectRuntime
-from codeintel.cli.result_types import (
+from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
     DatasetVerifyResult,
     OperationCallResult,
     OperationListResult,
 )
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack

@@ -5,22 +5,15 @@ This module tests the function-related HTTP endpoints using real gateways.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
 from codeintel.serving.http.routes.functions import RouterOptions
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
-from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -33,6 +26,7 @@ if TYPE_CHECKING:
 
 def test_high_risk_functions_endpoint(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /functions/high-risk endpoint returns results.
 
@@ -40,39 +34,15 @@ def test_high_risk_functions_endpoint(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")
@@ -84,6 +54,7 @@ def test_high_risk_functions_endpoint(
 
 def test_high_risk_functions_with_min_risk(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /functions/high-risk accepts min_risk parameter.
 
@@ -91,39 +62,15 @@ def test_high_risk_functions_with_min_risk(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?min_risk=0.5")
@@ -133,6 +80,7 @@ def test_high_risk_functions_with_min_risk(
 
 def test_high_risk_functions_with_limit(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /functions/high-risk accepts limit parameter.
 
@@ -140,39 +88,15 @@ def test_high_risk_functions_with_limit(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?limit=5")
@@ -182,6 +106,7 @@ def test_high_risk_functions_with_limit(
 
 def test_high_risk_functions_with_tested_only(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /functions/high-risk accepts tested_only parameter.
 
@@ -189,39 +114,15 @@ def test_high_risk_functions_with_tested_only(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk?tested_only=true")
@@ -236,6 +137,7 @@ def test_high_risk_functions_with_tested_only(
 
 def test_function_summary_missing_params(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /function/summary returns error when no identifier provided.
 
@@ -243,39 +145,15 @@ def test_function_summary_missing_params(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/function/summary")
@@ -303,6 +181,7 @@ def test_router_options_with_auto_pipeline() -> None:
 
 def test_app_with_auto_pipeline_options(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify create_app works with auto_pipeline option.
 
@@ -310,40 +189,16 @@ def test_app_with_auto_pipeline_options(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
+        auto_pipeline=True,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    # Should not raise with auto_pipeline enabled
-    app = create_app(config_loader=load_config, backend_factory=backend_factory, auto_pipeline=True)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")

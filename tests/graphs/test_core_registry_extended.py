@@ -15,16 +15,12 @@ from `codeintel.graphs.core.registry`, including:
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, fields, replace
 from typing import Final
 
 import pytest
 
-from codeintel.core.plugins.types.result import PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     GraphPluginKind,
-    GraphPluginMetadata,
     GraphPluginProtocol,
     GraphPluginSkip,
     GraphPluginStage,
@@ -46,64 +42,24 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder
 
 # Constants
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"
-
-
-@dataclass
-class PluginConfig:
-    """Configuration for constructing registry test plugins."""
-
-    kind: GraphPluginKind = "builder"
-    stage: GraphPluginStage = "goid"
-    depends_on: tuple[str, ...] = ()
-    requires: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-    produces_tables: tuple[str, ...] = ()
-
-
-PLUGIN_CONFIG_FIELDS: Final = {field.name for field in fields(PluginConfig)}
-
-
-def _resolve_plugin_config(
-    config: PluginConfig | None, overrides: dict[str, object]
-) -> PluginConfig:
-    """Merge a base plugin config with validated overrides.
-
-    Parameters
-    ----------
-    config
-        Base plugin configuration or None for defaults.
-    overrides
-        Override values keyed by PluginConfig field names.
-
-    Returns
-    -------
-    PluginConfig
-        Combined plugin configuration.
-
-    Raises
-    ------
-    ValueError
-        If overrides contain unsupported keys.
-    """
-    unknown_keys = set(overrides) - PLUGIN_CONFIG_FIELDS
-    if unknown_keys:
-        message = f"Unsupported plugin config overrides: {sorted(unknown_keys)}"
-        raise ValueError(message)
-    base_config = config or PluginConfig()
-    if not overrides:
-        return base_config
-    return replace(base_config, **overrides)
 
 
 # Test Helpers
 
 
 def _make_test_plugin(
-    name: str, *, config: PluginConfig | None = None, **overrides: object
+    name: str,
+    *,
+    kind: GraphPluginKind = "builder",
+    stage: GraphPluginStage = "goid",
+    depends_on: tuple[str, ...] = (),
+    requires: tuple[str, ...] = (),
+    provides: tuple[str, ...] = (),
+    produces_tables: tuple[str, ...] = (),
 ) -> GraphPluginProtocol:
     """Create a configurable test plugin.
 
@@ -111,33 +67,34 @@ def _make_test_plugin(
     ----------
     name
         Plugin name.
-    config
-        Base configuration for the plugin.
-    **overrides
-        Overrides for plugin configuration fields.
+    kind
+        Plugin kind to set on metadata.
+    stage
+        Pipeline stage for metadata.
+    depends_on
+        Plugin dependencies.
+    requires
+        Required capabilities.
+    provides
+        Provided capabilities.
+    produces_tables
+        Tables produced by the plugin.
 
     Returns
     -------
     GraphPluginProtocol
         Test plugin instance.
     """
-    plugin_config = _resolve_plugin_config(config, overrides)
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=f"{TEST_PLUGIN_PREFIX}{name}",
-        description=f"Test plugin {name}",
-        kind=plugin_config.kind,
-        stage=plugin_config.stage,
-        depends_on=plugin_config.depends_on,
-        requires=plugin_config.requires,
-        provides=plugin_config.provides,
-        produces_tables=plugin_config.produces_tables,
+    builder = (
+        GraphPluginBuilder(name=f"{TEST_PLUGIN_PREFIX}{name}")
+        .with_kind(kind)
+        .with_stage(stage)
+        .with_dependencies(*depends_on)
+        .with_requires(*requires)
+        .with_provides(*provides)
+        .with_produces_tables(*produces_tables)
     )
-
-    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    return builder.build()
 
 
 @pytest.fixture

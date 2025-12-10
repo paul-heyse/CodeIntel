@@ -1,24 +1,19 @@
-"""Test semantic role classification computation.
-
-Test the pure computation functions for classifying functions and
-modules into semantic roles based on heuristic signals.
-"""
+"""Semantic role classification tests."""
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 
 from codeintel.analytics.compute.semantic_roles.classification import (
+    FunctionContext,
     HELPER_LOC_THRESHOLD,
     ROLE_THRESHOLD,
     SERVICE_FAN_IN_THRESHOLD,
     SERVICE_FAN_OUT_THRESHOLD,
-    FunctionContext,
     ModuleRecord,
     RoleAccumulator,
     classify_function_role,
@@ -31,192 +26,43 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-
-# =============================================================================
-# Constants
-# =============================================================================
+from tests._helpers.builders import FunctionContextBuilder
 
 DEFAULT_LOC = 50
-BUMP_VALUE_0_5 = 0.5
-BUMP_VALUE_0_3 = 0.3
 BUMP_VALUE_0_2 = 0.2
-BUMP_VALUE_0_7 = 0.7
+BUMP_VALUE_0_3 = 0.3
+BUMP_VALUE_0_5 = 0.5
 BUMP_VALUE_0_4 = 0.4
 BUMP_VALUE_0_6 = 0.6
 BUMP_VALUE_0_8 = 0.8
+BUMP_VALUE_0_7 = 0.7
 BUMP_VALUE_1_5 = 1.5
 EXPECTED_SOURCES_2 = 2
 EXPECTED_ROWS_1 = 1
 EXPECTED_ROWS_3 = 3
 EXPECTED_DECORATORS_2 = 2
-LARGE_LOC = 200
 CONFIDENCE_CAP = 1.0
 CONFIDENCE_ZERO = 0.0
-PAIR_LENGTH = 2
+LARGE_LOC = 200
 
 
-# =============================================================================
-# Test Data Factories
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ContextBuilder:
-    """Build FunctionContext instances with default values."""
-
-    goid: int = 1
-    rel_path: str = "src/module.py"
-    qualname: str = "module.function"
-    decorators: tuple[str, ...] = ()
-    effects: tuple[tuple[str, object], ...] = ()
-    contracts: tuple[tuple[str, object], ...] = ()
-    module_tags: tuple[str, ...] = ()
-    module_name: str | None = None
-    graph: tuple[tuple[str, int], ...] = ()
-    loc: int | None = DEFAULT_LOC
-
-    def build(self) -> FunctionContext:
-        """
-        Build a FunctionContext from this builder.
-
-        Returns
-        -------
-        FunctionContext
-            The constructed function context.
-        """
-        return FunctionContext(
-            goid=self.goid,
-            rel_path=self.rel_path,
-            qualname=self.qualname,
-            decorators=list(self.decorators),
-            effects=dict(self.effects),
-            contracts=dict(self.contracts),
-            module_tags=list(self.module_tags),
-            module_name=self.module_name,
-            graph=dict(self.graph),
-            loc=self.loc,
-        )
-
-
-Coercer = Callable[[object], object]
-
-
-def _coerce_str(value: object) -> str:
-    return str(value)
-
-
-def _coerce_optional_str(value: object) -> str | None:
-    return None if value is None else str(value)
-
-
-def _coerce_optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float, str)):
-        return int(value)
-    msg = f"Expected int-convertible value, got {type(value)}"
-    raise TypeError(msg)
-
-
-def _coerce_tuple_str(value: object) -> tuple[str, ...]:
-    if isinstance(value, (tuple, list)):
-        return tuple(str(v) for v in value if v is not None)
-    msg = f"Expected sequence of strings, got {type(value)}"
-    raise TypeError(msg)
-
-
-def _coerce_pairs(value: object) -> tuple[tuple[str, object], ...]:
-    if isinstance(value, Mapping):
-        return tuple((str(k), v) for k, v in value.items())
-    if isinstance(value, Iterable):
-        pairs: list[tuple[str, object]] = []
-        for item in value:
-            if not isinstance(item, Sequence) or len(item) != PAIR_LENGTH:
-                msg = f"Expected pair sequence, got {type(item)}"
-                raise TypeError(msg)
-            key, pair_value = item
-            pairs.append((str(key), pair_value))
-        return tuple(pairs)
-    msg = f"Expected mapping or pair sequence, got {type(value)}"
-    raise TypeError(msg)
-
-
-def _coerce_graph(value: object) -> tuple[tuple[str, int], ...]:
-    if isinstance(value, Mapping):
-        return tuple((str(k), int(v)) for k, v in value.items())
-    if isinstance(value, Iterable):
-        edges: list[tuple[str, int]] = []
-        for item in value:
-            if not isinstance(item, Sequence) or len(item) != PAIR_LENGTH:
-                msg = f"Expected pair sequence, got {type(item)}"
-                raise TypeError(msg)
-            key, edge_value = item
-            edges.append((str(key), int(edge_value)))
-        return tuple(edges)
-    msg = f"Expected mapping or pair sequence, got {type(value)}"
-    raise TypeError(msg)
-
-
-# Mapping of override keys to their coercion functions
-_OVERRIDE_COERCERS: dict[str, Coercer] = {
-    "goid": _coerce_optional_int,
-    "loc": _coerce_optional_int,
-    "rel_path": _coerce_str,
-    "qualname": _coerce_str,
-    "decorators": _coerce_tuple_str,
-    "module_tags": _coerce_tuple_str,
-    "effects": _coerce_pairs,
-    "contracts": _coerce_pairs,
-    "module_name": _coerce_optional_str,
-    "graph": _coerce_graph,
-}
-
-
-def _make_context(builder: ContextBuilder | None = None, **overrides: object) -> FunctionContext:
-    """Create a FunctionContext with default values.
-
-    Parameters
-    ----------
-    builder
-        Optional base builder to use.
-    **overrides
-        Field overrides passed to ContextBuilder.
-
-    Returns
-    -------
-    FunctionContext
-        The constructed function context.
-
-    Raises
-    ------
-    KeyError
-        If an unsupported override key is provided.
-    """
-    base = builder or ContextBuilder()
-    typed_overrides: dict[str, object] = {}
-
+def _make_context(
+    builder: FunctionContextBuilder | None = None, **overrides: object
+) -> FunctionContext:
+    base = builder or FunctionContextBuilder()
+    kwargs: dict[str, object] = {}
     for key, value in overrides.items():
-        coercer = _OVERRIDE_COERCERS.get(key)
-        if coercer is None:
-            msg = f"Unsupported override key: {key}"
-            raise KeyError(msg)
-        typed_overrides[key] = coercer(value)
-
-    updated = replace(base, **typed_overrides)
+        if key in {"decorators", "module_tags"} and isinstance(value, tuple):
+            kwargs[key] = list(value)
+        elif key == "graph" and isinstance(value, dict):
+            kwargs[key] = {str(k): int(v) for k, v in value.items()}
+        else:
+            kwargs[key] = value
+    updated = replace(base, **kwargs)
     return updated.build()
 
 
 def _get_now() -> datetime:
-    """
-    Get current UTC timestamp.
-
-    Returns
-    -------
-    datetime
-        Current time in UTC.
-    """
     return datetime.now(tz=UTC)
 
 

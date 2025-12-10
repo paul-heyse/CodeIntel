@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cyclopts import config as cyclopts_config
 
-from codeintel.cli.cli_types import BackendFlags
+from codeintel.cli.resolution.params import BackendFlags
 from codeintel.cli.config.loader import apply_overrides, load_config
 from codeintel.cli.config.model import CliConfig
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig

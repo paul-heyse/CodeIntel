@@ -5,25 +5,14 @@ This module tests the dataset-related HTTP endpoints using real gateways.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.query_service import LocalQueryService
-from tests._helpers.assertions import (
-    expect_equal,
-    expect_is_instance,
-    expect_true,
-)
-from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -36,6 +25,7 @@ if TYPE_CHECKING:
 
 def test_datasets_list_endpoint(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets endpoint returns list of datasets.
 
@@ -43,39 +33,15 @@ def test_datasets_list_endpoint(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/datasets")
@@ -87,6 +53,7 @@ def test_datasets_list_endpoint(
 
 def test_datasets_specs_endpoint(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets/specs endpoint returns dataset specs.
 
@@ -94,39 +61,15 @@ def test_datasets_specs_endpoint(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/datasets/specs")
@@ -143,6 +86,7 @@ def test_datasets_specs_endpoint(
 
 def test_dataset_rows_not_found(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets/{name} returns 400 for unknown dataset.
 
@@ -150,39 +94,15 @@ def test_dataset_rows_not_found(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/datasets/nonexistent_dataset")
@@ -194,6 +114,7 @@ def test_dataset_rows_not_found(
 
 def test_dataset_schema_not_found(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets/{name}/schema returns 400 for unknown dataset.
 
@@ -201,39 +122,15 @@ def test_dataset_schema_not_found(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/datasets/nonexistent_dataset/schema")
@@ -248,6 +145,7 @@ def test_dataset_schema_not_found(
 
 def test_dataset_rows_with_limit(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets/{name} accepts limit parameter.
 
@@ -255,39 +153,15 @@ def test_dataset_rows_with_limit(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     # Get list of datasets first to find a valid one
     with TestClient(app) as client:
@@ -312,6 +186,7 @@ def test_dataset_rows_with_limit(
 
 def test_dataset_rows_with_offset(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /datasets/{name} accepts offset parameter.
 
@@ -319,39 +194,15 @@ def test_dataset_rows_with_offset(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     # Get list of datasets first to find a valid one
     with TestClient(app) as client:

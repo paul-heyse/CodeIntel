@@ -11,9 +11,7 @@ focusing on specific execution paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-import time
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Final
 
@@ -22,18 +20,13 @@ import pytest
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.core.execution.errors import PluginFatalError
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
-from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
 from codeintel.graphs.core.context import (
-    GraphPluginExecutionContext,
     GraphPluginExecutionContextBuilder,
 )
-from codeintel.graphs.core.protocol import (
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-)
-from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
+from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.runtime import graph_executor
@@ -53,7 +46,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 
 class _MockFunctionCatalogProvider(FunctionCatalogProvider):
@@ -94,83 +87,18 @@ _EXECUTOR_PRIVATES: Final = graph_executor.__dict__
 STATUS_COUNTS = _EXECUTOR_PRIVATES["_status_counts"]
 
 
-@dataclass
-class PluginConfig:
-    """Configuration for constructing test plugins with varied behaviors."""
-
-    succeed: bool = True
-    row_counts: dict[str, int] | None = None
-    raise_exception: type[Exception] | None = None
-    delay_ms: int = 0
-    input_hash: str | None = None
-    options_hash: str | None = None
-
-
-PLUGIN_CONFIG_FIELDS: Final = {field.name for field in fields(PluginConfig)}
-
-
-def _resolve_plugin_config(
-    config: PluginConfig | None, overrides: Mapping[str, object]
-) -> PluginConfig:
-    """Merge a base config with validated overrides.
-
-    Parameters
-    ----------
-    config
-        Optional base configuration.
-    overrides
-        Override values keyed by PluginConfig field names.
-
-    Returns
-    -------
-    PluginConfig
-        Combined plugin configuration.
-
-    Raises
-    ------
-    ValueError
-        If overrides include unsupported keys.
-    """
-    unknown_keys = set(overrides) - PLUGIN_CONFIG_FIELDS
-    if unknown_keys:
-        message = f"Unsupported plugin config overrides: {sorted(unknown_keys)}"
-        raise ValueError(message)
-    base_config = config or PluginConfig()
-    if not overrides:
-        return base_config
-    return replace(base_config, **{key: overrides[key] for key in overrides})
-
-
 # Test Helpers
 
 
-class _PluginRegistrar:
-    """Context manager for registering and cleaning up test plugins."""
-
-    def __init__(self, plugins: list[GraphPluginProtocol]) -> None:
-        """Initialize with plugins to register.
-
-        Parameters
-        ----------
-        plugins
-            Plugins to register.
-        """
-        self._plugins = plugins
-        self._registry = get_graph_registry()
-
-    def __enter__(self) -> None:
-        """Register plugins on entry."""
-        for plugin in self._plugins:
-            register_graph_plugin(plugin)
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        """Unregister plugins on exit."""
-        for plugin in self._plugins:
-            self._registry.unregister(plugin.metadata.name)
-
-
 def _make_test_plugin(
-    name: str, *, config: PluginConfig | None = None, **overrides: object
+    name: str,
+    *,
+    succeed: bool = True,
+    row_counts: Mapping[str, int] | None = None,
+    raise_exception: type[Exception] | None = None,
+    delay_ms: int = 0,
+    input_hash: str | None = None,
+    options_hash: str | None = None,
 ) -> GraphPluginProtocol:
     """Create a configurable test plugin.
 
@@ -178,40 +106,33 @@ def _make_test_plugin(
     ----------
     name
         Plugin name.
-    config
-        Optional base configuration for the plugin.
-    **overrides
-        Overrides for individual fields on the base configuration.
+    succeed
+        Whether the plugin should return success.
+    row_counts
+        Row counts to return on success.
+    raise_exception
+        Optional exception type to raise during execution.
+    delay_ms
+        Delay before executing in milliseconds.
+    input_hash
+        Input hash to include in the result.
+    options_hash
+        Options hash to include in the result.
 
     Returns
     -------
     GraphPluginProtocol
         Configured test plugin instance.
     """
-    plugin_config = _resolve_plugin_config(config, overrides)
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        if plugin_config.delay_ms > 0:
-            time.sleep(plugin_config.delay_ms / 1000)
-        if plugin_config.raise_exception is not None:
-            error_msg = f"Test exception from {name}"
-            raise plugin_config.raise_exception(error_msg)
-        if plugin_config.succeed:
-            return PluginResult.ok(
-                row_counts=plugin_config.row_counts,
-                input_hash=plugin_config.input_hash,
-                options_hash=plugin_config.options_hash,
-            )
-        return PluginResult.fail(f"Plugin {name} failed")
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-    )
-
-    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    builder = GraphPluginBuilder(name=name).with_delay(delay_ms).with_input_hash(input_hash)
+    builder = builder.with_options_hash(options_hash)
+    if row_counts is not None:
+        builder = builder.with_row_counts(dict(row_counts))
+    if raise_exception is not None:
+        builder = builder.raising(raise_exception)
+    if not succeed:
+        builder = builder.failing(f"Plugin {name} failed")
+    return builder.build()
 
 
 def test_status_counts_aggregates_correctly() -> None:
@@ -254,7 +175,7 @@ def test_graph_plugin_executor_dry_run_skips_execution(
     """Dry run mode skips actual plugin execution."""
     plugin = _make_test_plugin("dry_run_plugin", succeed=True)
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=graph_executor_env.snapshot,
             policy=GraphPluginPolicy(dry_run=True),
@@ -366,7 +287,7 @@ def test_graph_plugin_executor_skip_on_unchanged(
     """Plugin skipped when manifest shows inputs unchanged."""
     plugin = _make_test_plugin("unchanged_plugin", succeed=True)
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=graph_executor_env.snapshot,
             policy=GraphPluginPolicy(skip_on_unchanged=True),
@@ -436,7 +357,7 @@ def test_graph_plugin_executor_builds_manifest(
     """Successful plugin execution populates manifest in report."""
     plugin = _make_test_plugin("manifest_build_plugin", succeed=True)
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=graph_executor_env.snapshot,
             policy=GraphPluginPolicy(),
@@ -476,7 +397,7 @@ def test_graph_plugin_executor_fatal_stops_remaining(
     fatal_plugin = _make_test_plugin("fatal_first", raise_exception=RuntimeError)
     second_plugin = _make_test_plugin("second_should_not_run", succeed=True)
 
-    with _PluginRegistrar([fatal_plugin, second_plugin]):
+    with plugin_registrar([fatal_plugin, second_plugin]):
         context = GraphPlanContext(
             runtime_snapshot=graph_executor_env.snapshot,
             policy=GraphPluginPolicy(default_severity="fatal", fail_fast=True),
@@ -576,7 +497,7 @@ def test_graph_plugin_executor_batch_executes_multiple(
         _make_test_plugin("batch_p2", succeed=True),
     ]
 
-    with _PluginRegistrar(plugins):
+    with plugin_registrar(plugins):
         executor_context = GraphExecutorContext(
             gateway=graph_executor_env.gateway,
             snapshot=graph_executor_env.snapshot,
@@ -603,7 +524,7 @@ def test_graph_plugin_executor_batch_with_mixed_results(
         _make_test_plugin("batch_fail", succeed=False),
     ]
 
-    with _PluginRegistrar(plugins):
+    with plugin_registrar(plugins):
         executor_context = GraphExecutorContext(
             gateway=graph_executor_env.gateway,
             snapshot=graph_executor_env.snapshot,

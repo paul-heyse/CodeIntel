@@ -17,8 +17,8 @@ from dataclasses import fields, is_dataclass
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
 
-from codeintel.cli.cli_render import get_renderer, render_cli_result
-from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.rendering import get_renderer, render_cli_result
+from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.config import load_config
 from codeintel.cli.execution.context import ExecutionContext
 from codeintel.cli.execution.executor import (
@@ -27,8 +27,8 @@ from codeintel.cli.execution.executor import (
     get_executor,
 )
 from codeintel.cli.handlers.base import setup_logging
-from codeintel.cli.operation_registry import get_operation_registry
-from codeintel.cli.results import CliResult
+from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.core import CliResult
 
 LOG = logging.getLogger(__name__)
 

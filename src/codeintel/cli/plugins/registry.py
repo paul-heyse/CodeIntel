@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codeintel.cli.execution import OperationSpec
-from codeintel.cli.operation_registry import OperationRegistry, get_operation_registry
+from codeintel.cli.introspection import OperationRegistry, get_operation_registry
 from codeintel.cli.plugins.discovery import DEFAULT_PLUGIN_PATHS
 from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadResult
 from codeintel.cli.plugins.manifest import PluginCapability

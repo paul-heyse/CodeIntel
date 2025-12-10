@@ -29,8 +29,10 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
+    complex_sccs_graph,
     cyclic_graph,
     diamond_graph,
+    two_sccs_graph,
 )
 
 SIMPLE_DAG_NODE_COUNT: Final = 4
@@ -47,47 +49,6 @@ TRIPLE_NODE_SIZE: Final = 3
 DOUBLE_NODE_SIZE: Final = 2
 SINGLE_NODE_SIZE: Final = 1
 SINGLE_COMPONENT_COUNT: Final = 1
-
-
-def _make_two_sccs() -> nx.DiGraph:
-    """Create a graph with two SCCs connected.
-
-    Structure: A <-> B, C <-> D, B -> C
-
-    Returns
-    -------
-    nx.DiGraph
-        A graph with two SCCs.
-    """
-    g = nx.DiGraph()
-    # SCC 1: A <-> B
-    g.add_edges_from([("A", "B"), ("B", "A")])
-    # SCC 2: C <-> D
-    g.add_edges_from([("C", "D"), ("D", "C")])
-    # Connection between SCCs
-    g.add_edge("B", "C")
-    return g
-
-
-def _make_complex_sccs() -> nx.DiGraph:
-    """Create a complex graph with multiple SCCs of varying sizes.
-
-    Returns
-    -------
-    nx.DiGraph
-        A graph with multiple SCCs.
-    """
-    g = nx.DiGraph()
-    # SCC 1: Singleton A
-    g.add_node("A")
-    # SCC 2: B <-> C <-> D (cycle of 3)
-    g.add_edges_from([("B", "C"), ("C", "D"), ("D", "B")])
-    # SCC 3: E <-> F (cycle of 2)
-    g.add_edges_from([("E", "F"), ("F", "E")])
-    # Connections between SCCs
-    g.add_edge("A", "B")
-    g.add_edge("D", "E")
-    return g
 
 
 def test_find_strongly_connected_dag() -> None:
@@ -116,7 +77,7 @@ def test_find_strongly_connected_single_cycle() -> None:
 
 def test_find_strongly_connected_two_sccs() -> None:
     """Find SCCs in a graph with two SCCs."""
-    g = _make_two_sccs()
+    g = two_sccs_graph()
 
     result = find_strongly_connected(g)
 
@@ -129,7 +90,7 @@ def test_find_strongly_connected_two_sccs() -> None:
 
 def test_find_strongly_connected_complex() -> None:
     """Find SCCs in a complex graph."""
-    g = _make_complex_sccs()
+    g = complex_sccs_graph()
 
     result = find_strongly_connected(g)
 
@@ -179,7 +140,7 @@ def test_find_strongly_connected_node_to_component_mapping() -> None:
 
 def test_find_strongly_connected_with_condensation() -> None:
     """Find SCCs with condensation graph computation."""
-    g = _make_two_sccs()
+    g = two_sccs_graph()
 
     result = find_strongly_connected(g, compute_condensation=True)
 
@@ -192,7 +153,7 @@ def test_find_strongly_connected_with_condensation() -> None:
 
 def test_find_strongly_connected_condensation_is_dag() -> None:
     """Condensation graph is always a DAG."""
-    g = _make_complex_sccs()
+    g = complex_sccs_graph()
 
     result = find_strongly_connected(g, compute_condensation=True)
 
@@ -235,7 +196,7 @@ def test_condensation_layers_diamond_dag() -> None:
 
 def test_condensation_layers_two_sccs() -> None:
     """Compute layers with multiple SCCs."""
-    g = _make_two_sccs()
+    g = two_sccs_graph()
     scc_result = find_strongly_connected(g, compute_condensation=True)
 
     layers = condensation_layers(g, scc_result)
@@ -314,7 +275,7 @@ def test_scc_result_attributes() -> None:
 
 def test_scc_result_with_condensation() -> None:
     """SCCResult can include condensation graph."""
-    g = _make_two_sccs()
+    g = two_sccs_graph()
     result = find_strongly_connected(g, compute_condensation=True)
 
     expect_true(result.condensation is not None)

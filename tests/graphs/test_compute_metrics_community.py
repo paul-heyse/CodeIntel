@@ -26,6 +26,7 @@ from tests._helpers.assertions import (
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     complete_digraph,
+    complete_graph,
     disconnected_graph,
 )
 
@@ -68,7 +69,7 @@ def test_greedy_single_node_single_community() -> None:
 
 def test_greedy_complete_graph() -> None:
     """Complete graph typically has one or few communities."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = detect_communities_greedy(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
@@ -154,7 +155,7 @@ def test_louvain_single_node() -> None:
 
 def test_louvain_complete_graph() -> None:
     """Complete graph assigns all nodes to communities."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = detect_communities_louvain(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
@@ -246,7 +247,7 @@ def test_label_propagation_single_node() -> None:
 
 def test_label_propagation_complete_graph() -> None:
     """Complete graph assigns all nodes."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
@@ -299,14 +300,14 @@ def test_modularity_empty_graph_returns_zero() -> None:
 
 def test_modularity_empty_communities_returns_zero() -> None:
     """Empty communities dict returns zero modularity."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_modularity(graph, {})
     expect_equal(result, 0.0)
 
 
 def test_modularity_single_community() -> None:
     """Single community has defined modularity."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     communities = dict.fromkeys(graph.nodes(), 0)
     result = compute_modularity(graph, communities)
 
@@ -331,7 +332,7 @@ def test_modularity_optimal_partition() -> None:
 
 def test_modularity_poor_partition() -> None:
     """Poorly separated partition has lower modularity."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     # Split complete graph - not a natural partition
     communities = {0: 0, 1: 0, 2: 1, 3: 1}
     result = compute_modularity(graph, communities)
@@ -432,7 +433,7 @@ def test_modularity_comparison_across_algorithms() -> None:
 )
 def test_greedy_various_sizes(graph_size: int) -> None:
     """Greedy algorithm works on various graph sizes."""
-    graph = nx.complete_graph(graph_size)
+    graph = complete_graph(graph_size)
     result = detect_communities_greedy(graph)
 
     expect_equal(len(result), graph_size)
@@ -444,7 +445,7 @@ def test_greedy_various_sizes(graph_size: int) -> None:
 )
 def test_louvain_various_sizes(graph_size: int) -> None:
     """Louvain algorithm works on various graph sizes."""
-    graph = nx.complete_graph(graph_size)
+    graph = complete_graph(graph_size)
     result = detect_communities_louvain(graph, seed=RANDOM_SEED)
 
     expect_equal(len(result), graph_size)

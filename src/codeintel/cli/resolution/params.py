@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from codeintel.cli.cyclopts_common import RuntimeCLI
+    from codeintel.cli.commands import RuntimeCLI
     from codeintel.cli.execution.context import ExecutionContext
 
 
@@ -158,7 +158,7 @@ class RuntimeParams:
 
         Examples
         --------
-        >>> from codeintel.cli.cyclopts_common import RuntimeCLI
+        >>> from codeintel.cli.commands import RuntimeCLI
         >>> cli = RuntimeCLI(repo="org/repo", commit="abc123")
         >>> params = RuntimeParams.from_cyclopts(cli)
         >>> params.repo
