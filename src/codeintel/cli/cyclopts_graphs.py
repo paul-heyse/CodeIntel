@@ -1,4 +1,7 @@
-"""Cyclopts wiring for graph commands."""
+"""Cyclopts wiring for graph commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
@@ -8,16 +11,11 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_types import OutputFormat
-from codeintel.cli.cyclopts_common import (
-    OutputFormatCLI,
-    get_output_format,
-)
+from codeintel.cli.execution.adapter import CycloptsAdapter
 from codeintel.cli.graphs_handlers import (
     DependencyPolicy,
-    GraphPluginsOptions,
-    PlanMode,
     SelectionPolicy,
-    graph_plugins_handler,
+    graph_plugins_ctx,
 )
 
 graphs_app = App(
@@ -26,9 +24,10 @@ graphs_app = App(
 )
 
 
+@graphs_app.command(name="plugins")
 @dataclass
-class GraphPluginsCli:
-    """CLI surface for graph plugin listing/planning."""
+class GraphPluginsCommand:
+    """List registered graph plugins or display an execution plan."""
 
     plan: Annotated[
         bool,
@@ -83,28 +82,25 @@ class GraphPluginsCli:
             negative=(),
         ),
     ] = False
-    output: Annotated[OutputFormatCLI | None, Parameter(name="*")] = None
+    output_format: Annotated[
+        OutputFormat,
+        Parameter(
+            name="--output-format",
+            help="Output format (text or json).",
+        ),
+    ] = OutputFormat.TEXT
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
-
-@graphs_app.command(name="plugins")
-def plugins(
-    cfg: Annotated[GraphPluginsCli, Parameter(name="*")] | None = None,
-) -> None:
-    """List registered graph plugins or display an execution plan."""
-    cfg = cfg or GraphPluginsCli()
-    output_format = get_output_format(cfg.output or OutputFormatCLI(), default=OutputFormat.TEXT)
-
-    options = GraphPluginsOptions(
-        mode=PlanMode.PLAN if cfg.plan else PlanMode.LIST,
-        names=tuple(cfg.names) if cfg.names else None,
-        enable=tuple(cfg.enable) if cfg.enable else None,
-        disable=tuple(cfg.disable) if cfg.disable else (),
-        selection_policy=cfg.selection_policy,
-        dependency_policy=cfg.dependency_policy,
-        validation_mode=cfg.validate_plan,
-        output_format=output_format,
-    )
-    graph_plugins_handler(options)
+    def __call__(self) -> None:
+        """Execute the graph plugins command."""
+        CycloptsAdapter("graph.plugins", graph_plugins_ctx)(self)
 
 
 __all__ = ["graphs_app"]

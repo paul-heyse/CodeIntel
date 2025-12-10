@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.executor import BuildExecutor, BuildResult
 from codeintel.build.manifest import BuildRunRecord
@@ -35,8 +35,11 @@ from codeintel.cli.project import (
     build_project_runtime,
     find_project_root,
 )
-from codeintel.cli.result_types import BuildHistoryResult, BuildStatusResult
+from codeintel.cli.result_types import BuildHistoryResult, BuildRunResult, BuildStatusResult
 from codeintel.cli.results import CliResult
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
 
 LOG = logging.getLogger(__name__)
 
@@ -1006,6 +1009,272 @@ def build_history_handler_structured(
     )
 
 
+# =============================================================================
+# ExecutionContext-based Handlers
+# =============================================================================
+
+
+def _build_runtime_from_ctx(ctx: ExecutionContext) -> ProjectRuntime:
+    """Build ProjectRuntime from execution context.
+
+    Parameters
+    ----------
+    ctx
+        Execution context.
+
+    Returns
+    -------
+    ProjectRuntime
+        Resolved project runtime.
+
+    Raises
+    ------
+    RuntimeError
+        If project cannot be resolved.
+    """
+    project_root_raw = ctx.params.get("project_root")
+    project_root = Path(project_root_raw) if project_root_raw else None
+
+    try:
+        project_root_resolved = find_project_root(project_root)
+        return build_project_runtime(project_root_resolved)
+    except ProjectNotFoundError as exc:
+        msg = f"Project not found: {exc}"
+        raise RuntimeError(msg) from exc
+    except Exception as exc:
+        msg = f"Failed to load project: {exc}"
+        raise RuntimeError(msg) from exc
+
+
+def _build_status_result(state: DatabaseState) -> BuildStatusResult:
+    """Build status result from database state.
+
+    Parameters
+    ----------
+    state
+        Database state from validator.
+
+    Returns
+    -------
+    BuildStatusResult
+        Status result with counts.
+    """
+    targets: list[dict[str, object]] = []
+    stale_count = 0
+
+    computed, stale_list, missing_list, blocked_list = _group_targets_by_status(state)
+
+    targets.extend({"name": name, "status": "fresh"} for name in computed)
+    targets.extend({"name": name, "status": "stale"} for name in stale_list)
+    targets.extend({"name": name, "status": "missing"} for name in missing_list)
+    targets.extend({"name": name, "status": "blocked"} for name in blocked_list)
+
+    stale_count = len(stale_list) + len(missing_list)
+
+    return BuildStatusResult(
+        targets=targets,
+        stale_count=stale_count,
+        fresh_count=len(computed),
+    )
+
+
+def build_status_ctx(ctx: ExecutionContext) -> CliResult[BuildStatusResult]:
+    """Show current state of all build targets.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - module: Optional module filter (ingestion, graphs, analytics).
+
+    Returns
+    -------
+    CliResult[BuildStatusResult]
+        Structured result with target status information.
+
+    Raises
+    ------
+    RuntimeError
+        If project resolution fails or module is invalid.
+    """
+    setup_logging(ctx.verbosity)
+    runtime = _build_runtime_from_ctx(ctx)
+    graph = get_target_graph()
+    module = ctx.get_str_param("module")
+
+    LOG.info(
+        "build.status repo=%s commit=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+    )
+
+    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
+    state = validator.validate()
+
+    if module:
+        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
+        if module not in valid_modules:
+            msg = f"Unknown module: {module}. Valid: {', '.join(valid_modules)}"
+            raise RuntimeError(msg)
+
+        module_targets = graph.targets_for_module(cast("TargetModule", module))
+        module_names = {t.name for t in module_targets}
+        state = DatabaseState(
+            repo=state.repo,
+            commit=state.commit,
+            targets={
+                name: target_state
+                for name, target_state in state.targets.items()
+                if name in module_names
+            },
+        )
+
+    return CliResult.ok(_build_status_result(state))
+
+
+def build_run_ctx(ctx: ExecutionContext) -> CliResult[BuildRunResult]:
+    """Build targets with automatic dependency resolution.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - targets: Target names to build.
+        - module: Module name (ingestion, graphs, analytics).
+        - all_targets: Build all targets.
+        - dry_run: Show plan without executing.
+        - force: Force recompute of specific targets.
+
+    Returns
+    -------
+    CliResult[BuildRunResult]
+        Structured result with build execution information.
+
+    Raises
+    ------
+    RuntimeError
+        If build execution fails.
+    """
+    setup_logging(ctx.verbosity)
+
+    # Extract params BEFORE runtime resolution for validation
+    targets = ctx.params.get("targets")
+    module = ctx.get_str_param("module")
+    all_targets = ctx.get_bool_param("all_targets")
+    force_raw = ctx.params.get("force")
+    force = list(force_raw) if force_raw else None
+
+    # Validate module if specified
+    if module:
+        valid_modules = ("ingestion", "graphs", "analytics")
+        if module not in valid_modules:
+            msg = f"Unknown module: {module}. Valid: {', '.join(valid_modules)}"
+            raise RuntimeError(msg)
+
+    # Validate selection (exactly one of targets/module/all_targets)
+    provided = [bool(targets), module is not None, all_targets]
+    if sum(provided) != 1:
+        msg = "Provide exactly one of targets, --module, or --all."
+        raise RuntimeError(msg)
+
+    # Now resolve runtime after validation
+    runtime = _build_runtime_from_ctx(ctx)
+    graph = get_target_graph()
+
+    # Determine target scope
+    scope = TargetScope.ALL if all_targets else TargetScope.REQUESTED
+
+    # Resolve goals
+    goals = _resolve_goals(targets, module, scope, graph)
+
+    LOG.info(
+        "build.run repo=%s commit=%s targets=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+        goals,
+    )
+
+    run_mode = RunMode.DRY_RUN if ctx.dry_run else RunMode.EXECUTE
+
+    # Execute build
+    try:
+        result, _plan = _execute_build(runtime, goals, force, run_mode)
+    except Exception as exc:
+        LOG.exception("build.run.error")
+        msg = f"Build execution failed: {exc}"
+        raise RuntimeError(msg) from exc
+
+    if run_mode is RunMode.DRY_RUN or result is None:
+        return CliResult.ok(
+            BuildRunResult(
+                executed=[],
+                skipped=[],
+                failed=[],
+                duration_seconds=0.0,
+            )
+        )
+
+    return CliResult.ok(
+        BuildRunResult(
+            executed=list(result.completed_targets),
+            skipped=list(result.skipped_targets),
+            failed=list(result.failed_targets),
+            duration_seconds=result.duration_ms / 1000.0,
+        )
+    )
+
+
+def build_history_ctx(ctx: ExecutionContext) -> CliResult[BuildHistoryResult]:
+    """Show build run history and details.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - project_root: Optional project root override.
+        - run_id: Optional specific run ID to show.
+        - limit: Maximum number of runs to show (default 10).
+
+    Returns
+    -------
+    CliResult[BuildHistoryResult]
+        Structured result with build history.
+
+    Raises
+    ------
+    RuntimeError
+        If run lookup fails.
+    """
+    setup_logging(ctx.verbosity)
+    runtime = _build_runtime_from_ctx(ctx)
+    run_id = ctx.get_str_param("run_id")
+    limit = ctx.get_int_param("limit", 10)
+
+    if run_id:
+        try:
+            record = _lookup_run_by_id(runtime, run_id)
+        except ValidationError as exc:
+            msg = f"Run lookup failed: {exc}"
+            raise RuntimeError(msg) from exc
+        return CliResult.ok(
+            BuildHistoryResult(
+                runs=[record.to_dict()],
+                count=1,
+            )
+        )
+
+    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=limit)
+
+    return CliResult.ok(
+        BuildHistoryResult(
+            runs=[r.to_dict() for r in runs],
+            count=len(runs),
+        )
+    )
+
+
 __all__ = [
     "BuildHistoryOptions",
     "BuildRunContext",
@@ -1015,10 +1284,13 @@ __all__ = [
     "RunMode",
     "RuntimeCliOptions",
     "TargetScope",
+    "build_history_ctx",
     "build_history_handler",
     "build_history_handler_structured",
+    "build_run_ctx",
     "build_run_handler",
     "build_runtime_from_cli",
+    "build_status_ctx",
     "build_status_handler",
     "build_status_handler_structured",
     "bundle_build_run",

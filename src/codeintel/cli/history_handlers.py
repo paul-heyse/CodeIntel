@@ -332,15 +332,29 @@ def _parse_history_params(ctx: ExecutionContext) -> _HistoryParams:
     db_dir_raw = ctx.params.get("db_dir")
     output_db_raw = ctx.params.get("output_db")
 
+    # Handle entity_kind - may be enum or string
+    entity_kind_raw = ctx.params.get("entity_kind", "function")
+    if hasattr(entity_kind_raw, "value"):
+        entity_kind = str(entity_kind_raw.value)
+    else:
+        entity_kind = str(entity_kind_raw) if entity_kind_raw else "function"
+
+    # Handle selection_strategy - may be enum or string
+    selection_strategy_raw = ctx.params.get("selection_strategy", "risk_score")
+    if hasattr(selection_strategy_raw, "value"):
+        selection_strategy = str(selection_strategy_raw.value)
+    else:
+        selection_strategy = str(selection_strategy_raw) if selection_strategy_raw else "risk_score"
+
     return _HistoryParams(
         repo=repo,
         commits=commits,
         repo_root=Path(repo_root_raw) if repo_root_raw else Path(),
         db_dir=Path(db_dir_raw) if db_dir_raw else Path("build/db"),
         output_db=Path(output_db_raw) if output_db_raw else Path("build/db/history.duckdb"),
-        entity_kind=ctx.get_str_param("entity_kind", "function") or "function",
+        entity_kind=entity_kind,
         max_entities=ctx.get_int_param("max_entities", 500),
-        selection_strategy=ctx.get_str_param("selection_strategy", "risk_score") or "risk_score",
+        selection_strategy=selection_strategy,
     )
 
 

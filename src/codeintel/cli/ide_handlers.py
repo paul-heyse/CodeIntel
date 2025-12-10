@@ -12,26 +12,28 @@ import logging
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.runtime import build_graph_runtime as build_graph_runtime_internal
 from codeintel.cli.cli_errors import ValidationError
+
+# Import consolidated setup_logging from handlers.base
+from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
     build_project_runtime,
     find_project_root,
 )
+from codeintel.cli.results import CliResult
 from codeintel.config.primitives import SnapshotRef
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 if TYPE_CHECKING:
+    from codeintel.cli.execution.context import ExecutionContext
     from codeintel.config.models import CodeIntelConfig
-
-# Import consolidated setup_logging from handlers.base
-from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
 
 LOG = logging.getLogger(__name__)
 
@@ -207,11 +209,116 @@ def ide_hints_handler(options: IdeHintsOptions) -> None:
     sys.stdout.write("\n")
 
 
+# -----------------------------------------------------------------------------
+# Result Types
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class IdeHintsResult:
+    """Result from IDE hints lookup.
+
+    Parameters
+    ----------
+    rel_path
+        Relative path that was queried.
+    hints
+        List of hints for the file.
+    meta
+        Response metadata.
+    """
+
+    rel_path: str
+    hints: list[dict[str, Any]]
+    meta: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation.
+        """
+        return {
+            "rel_path": self.rel_path,
+            "hints": self.hints,
+            "meta": self.meta,
+        }
+
+
+# -----------------------------------------------------------------------------
+# Structured Handler (accepts ExecutionContext)
+# -----------------------------------------------------------------------------
+
+
+def ide_hints_ctx(ctx: ExecutionContext) -> CliResult[IdeHintsResult]:
+    """Emit IDE hints (module + subsystem context) for a relative file path.
+
+    Parameters
+    ----------
+    ctx
+        Execution context with params:
+        - rel_path: Relative path to query hints for.
+        - project_root: Optional project root override.
+
+    Returns
+    -------
+    CliResult[IdeHintsResult]
+        Result with hints for the file.
+
+    Raises
+    ------
+    RuntimeError
+        If hints cannot be resolved.
+    """
+    setup_logging(ctx.verbosity)
+
+    rel_path = ctx.require_str_param("rel_path")
+    project_root_raw = ctx.params.get("project_root")
+    project_root = Path(project_root_raw) if project_root_raw else None
+
+    try:
+        project_root_resolved = find_project_root(project_root)
+        runtime = build_project_runtime(project_root_resolved)
+    except ProjectNotFoundError as exc:
+        msg = f"Project not found: {exc}"
+        raise RuntimeError(msg) from exc
+    except Exception as exc:
+        msg = f"Failed to load project: {exc}"
+        raise RuntimeError(msg) from exc
+
+    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
+    graph_runtime = build_graph_runtime(runtime.cfg, gateway)
+
+    resource = build_backend_resource(
+        runtime.serving,
+        gateway=gateway,
+        options=BackendResourceOptions(graph_runtime=graph_runtime),
+    )
+
+    response = resource.backend.get_file_hints(rel_path=rel_path)
+    if not response.found or not response.hints:
+        LOG.error("No IDE hints found for %s", rel_path)
+        msg = f"No hints found for: {rel_path}"
+        raise RuntimeError(msg)
+
+    return CliResult.ok(
+        IdeHintsResult(
+            rel_path=rel_path,
+            hints=[hint.model_dump() for hint in response.hints],
+            meta=response.meta.model_dump(),
+        )
+    )
+
+
 __all__ = [
     "IdeHintsOptions",
+    "IdeHintsResult",
     "RuntimeCliOptions",
     "build_graph_runtime",
     "build_runtime_from_cli",
+    "ide_hints_ctx",
     "ide_hints_handler",
     "open_gateway_from_config",
     "setup_logging",

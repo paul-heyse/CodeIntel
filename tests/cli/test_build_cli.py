@@ -34,7 +34,7 @@ class TestBuildStatusHelp:
 
         expect_equal(result.exit_code, 0, label="exit_code")
         expect_in("--module", result.stdout, label="module option")
-        expect_in("--json", result.stdout, label="json option")
+        expect_in("--output-format", result.stdout, label="output format option")
 
 
 class TestBuildStatusCommand:
@@ -43,7 +43,7 @@ class TestBuildStatusCommand:
     @staticmethod
     def test_status_json_output_structure() -> None:
         """JSON output has expected structure."""
-        result = run_cli(["build", "status", "--json"])
+        result = run_cli(["build", "status", "--output-format", "json"])
 
         if result.exit_code == 0:
             data = json.loads(result.stdout)
@@ -88,7 +88,7 @@ class TestBuildRunHelp:
         expect_in("--module", result.stdout, label="module option")
         expect_in("--dry-run", result.stdout, label="dry-run option")
         expect_in("--force", result.stdout, label="force option")
-        expect_in("--json", result.stdout, label="json option")
+        expect_in("--output-format", result.stdout, label="output format option")
 
 
 class TestBuildRunValidation:
@@ -209,20 +209,20 @@ class TestForceOption:
 
 
 class TestJsonOutput:
-    """Tests for --json output option."""
+    """Tests for --output-format output option."""
 
     @staticmethod
     def test_json_flag_recognized_on_status() -> None:
-        """JSON flag is recognized on status command."""
+        """Output format option is recognized on status command."""
         result = run_cli(["build", "status", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
-        expect_in("--json", result.stdout, label="json option recognized")
+        expect_in("--output-format", result.stdout, label="output-format option recognized")
 
     @staticmethod
     def test_json_flag_recognized_on_run() -> None:
-        """JSON flag is recognized on run command."""
+        """Output format option is recognized on run command."""
         result = run_cli(["build", "run", "--help"])
 
         expect_equal(result.exit_code, 0, label="exit_code")
-        expect_in("--json", result.stdout, label="json option recognized")
+        expect_in("--output-format", result.stdout, label="output-format option recognized")

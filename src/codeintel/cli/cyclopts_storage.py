@@ -1,4 +1,7 @@
-"""Cyclopts wiring for storage commands."""
+"""Cyclopts wiring for storage commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +11,13 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import run_handler
-from codeintel.cli.cyclopts_common import (
-    ExistingPath,
-    RuntimeCLI,
-    get_verbose,
-    runtime_cli_to_options,
+from codeintel.cli.execution.adapter import CycloptsAdapter
+from codeintel.cli.storage_handlers import (
+    MacroRequirement,
+    generate_macros_structured,
+    profile_storage_structured,
+    storage_validate_macros_structured,
 )
-from codeintel.cli.storage_handlers import MacroRequirement, storage_validate_macros
 
 storage_app = App(
     name="storage",
@@ -23,12 +25,19 @@ storage_app = App(
 )
 
 
+@storage_app.command(name="validate-macros")
 @dataclass
-class ValidateMacrosCli:
-    """CLI surface for `codeintel storage validate-macros`."""
+class ValidateMacrosCommand:
+    """Validate macro registry hashes and normalized macro schemas."""
 
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
-    macros: Annotated[
+    db_path: Annotated[
+        Path | None,
+        Parameter(
+            name="--db-path",
+            help="Path to DuckDB database.",
+        ),
+    ] = None
+    macro_requirement: Annotated[
         MacroRequirement,
         Parameter(
             name="--macros",
@@ -36,31 +45,106 @@ class ValidateMacrosCli:
             show_choices=True,
         ),
     ] = MacroRequirement.REQUIRE
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the storage validate-macros command."""
+        CycloptsAdapter("storage.validate_macros", storage_validate_macros_structured)(self)
+
+
+@storage_app.command(name="generate-macros")
+@dataclass
+class GenerateMacrosCommand:
+    """Generate macros for tables."""
+
+    tables: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--table",
+            help="Tables to generate macros for (repeatable).",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
+
+    def __call__(self) -> None:
+        """Execute the storage generate-macros command."""
+        CycloptsAdapter("storage.generate_macros", generate_macros_structured)(self)
+
+
+@storage_app.command(name="profile")
+@dataclass
+class ProfileStorageCommand:
+    """Profile storage paths and sizes."""
+
     db_path: Annotated[
-        ExistingPath,
+        Path | None,
         Parameter(
             name="--db-path",
             help="Path to DuckDB database.",
         ),
-    ] = Path("build/db/codeintel.duckdb")
+    ] = None
+    output_dir: Annotated[
+        Path,
+        Parameter(
+            name="--output-dir",
+            help="Output directory for profile report.",
+        ),
+    ] = Path("build/storage_profile")
+    format: Annotated[
+        str,
+        Parameter(
+            name="--format",
+            help="Output format (text, json, csv).",
+        ),
+    ] = "text"
+    include_samples: Annotated[
+        bool,
+        Parameter(
+            name="--include-samples",
+            help="Include sample data in profile.",
+            negative=(),
+        ),
+    ] = False
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
-
-@storage_app.command(name="validate-macros")
-def validate_macros(
-    cfg: Annotated[ValidateMacrosCli, Parameter(name="*")] | None = None,
-) -> None:
-    """Validate macro registry hashes and normalized macro schemas."""
-    cfg = cfg or ValidateMacrosCli()
-    runtime = cfg.runtime or RuntimeCLI()
-    runtime_options = runtime_cli_to_options(runtime)
-    db_path = cfg.db_path or runtime_options.db_path or Path("build/db/codeintel.duckdb")
-    verbose = get_verbose(runtime)
-    run_handler(
-        storage_validate_macros,
-        db_path,
-        cfg.macros,
-        verbose,
-    )
+    def __call__(self) -> None:
+        """Execute the storage profile command."""
+        CycloptsAdapter("storage.profile", profile_storage_structured)(self)
 
 
 __all__ = ["storage_app"]

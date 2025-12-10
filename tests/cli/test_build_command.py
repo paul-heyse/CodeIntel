@@ -37,7 +37,9 @@ def test_build_run_success(
 
     result = cli_project_runner(["build", "run", "ast"])
     assert_success(result)
-    expect_in("Build completed successfully", result.stdout)
+    # New handler returns structured result, check for executed targets in output
+    expect_in("executed:", result.stdout)
+    expect_in("ast", result.stdout)
     expect_true(bool(captured_plan))
     expect_equal(captured_plan[0].requested_targets, ("ast",))
 
@@ -49,7 +51,9 @@ def test_build_run_dry_run(
     """Dry-run should output plan summary without executing targets."""
     result = cli_project_runner(["build", "run", "ast", "--dry-run"])
     assert_success(result)
-    expect_in("Build Plan for: ast", result.stdout)
+    # New handler returns structured result for dry-run
+    expect_in("executed:", result.stdout)
+    expect_in("duration_seconds:", result.stdout)
 
 
 @pytest.mark.usefixtures("cli_project_ctx")

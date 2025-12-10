@@ -74,8 +74,7 @@ def operation(
     Examples
     --------
     >>> @operation("build.run", category=OperationCategory.BUILD)
-    ... def build_run_handler(ctx: HandlerContext) -> CliResult[BuildResult]:
-    ...     ...
+    ... def build_run_handler(ctx: HandlerContext) -> CliResult[BuildResult]: ...
     """
 
     def decorator(handler: Callable[P, CliResult[T]]) -> Callable[P, CliResult[T]]:
@@ -210,8 +209,13 @@ class CycloptsAdapter:
         # Extract parameters from command dataclass
         params = self._extract_params(command)
         verbosity = int(params.pop("verbose", params.pop("verbosity", 0)))
-        output_format_str = str(params.get("output_format", "text"))
-        output_format = OutputFormat.JSON if output_format_str == "json" else OutputFormat.TEXT
+        output_format_raw = params.get("output_format", OutputFormat.TEXT)
+        if isinstance(output_format_raw, OutputFormat):
+            output_format = output_format_raw
+        elif str(output_format_raw).lower() == "json":
+            output_format = OutputFormat.JSON
+        else:
+            output_format = OutputFormat.TEXT
 
         # Load config and setup logging
         config = load_config(validate=False)
@@ -232,8 +236,9 @@ class CycloptsAdapter:
             result = exec_result.result
         else:
             # Build context and call handler directly
+            # Params are stored in ctx.params; handler accesses them via ctx.get_*_param()
             ctx = ExecutionContext.for_sync(self._operation_id, params)
-            result = self._handler(ctx, **params)
+            result = self._handler(ctx)
 
         # Render the result
         renderer = get_renderer(output_format)

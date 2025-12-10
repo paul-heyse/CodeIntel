@@ -90,7 +90,7 @@ def test_history_help_renders_positional(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("path", output)  # positional argument
+    expect_in("repo", output)  # Updated: key flag in the new command
     expect_not_in("simplenamespace", output)
 
 
@@ -138,7 +138,7 @@ def test_build_status_help_renders_core_flags(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("commit", output)
+    expect_in("module", output)  # Updated: new simplified command uses --module
     expect_not_in("simplenamespace", output)
 
 
@@ -153,7 +153,7 @@ def test_build_history_help_renders_core_flags(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("commit", output)
+    expect_in("limit", output)  # Updated: new simplified command uses --limit
     expect_not_in("simplenamespace", output)
 
 

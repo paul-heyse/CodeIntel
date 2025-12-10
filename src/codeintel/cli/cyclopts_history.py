@@ -1,23 +1,19 @@
-"""Cyclopts wiring for history commands."""
+"""Cyclopts wiring for history commands.
+
+This module wires Cyclopts command classes to unified ExecutionContext handlers.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.cli_errors import ValidationError, run_handler
-from codeintel.cli.cyclopts_common import (
-    ExistingDir,
-    OutputPath,
-    RuntimeCLI,
-    get_verbose,
-    runtime_cli_to_options,
-)
-from codeintel.cli.history_handlers import HistoryOptions, history_timeseries_handler
+from codeintel.cli.execution.adapter import CycloptsAdapter
+from codeintel.cli.history_handlers import history_timeseries_ctx
 
 history_app = App(
     name="history",
@@ -41,9 +37,10 @@ class SelectionStrategy(Enum):
     HOTSPOT_SCORE = "hotspot_score"
 
 
+@history_app.command(name="timeseries")
 @dataclass
-class HistoryTimeseriesCli:
-    """CLI surface for `codeintel history timeseries`."""
+class HistoryTimeseriesCommand:
+    """Aggregate analytics.history_timeseries across commits."""
 
     repo: Annotated[
         str,
@@ -59,16 +56,15 @@ class HistoryTimeseriesCli:
             help="Commits to include in the timeseries (latest first).",
         ),
     ] = None
-    runtime: Annotated[RuntimeCLI | None, Parameter(name="*")] = None
     db_dir: Annotated[
-        ExistingDir,
+        Path,
         Parameter(
             name="--db-dir",
             help="Directory with per-commit DuckDB snapshots.",
         ),
     ] = Path("build/db")
     output_db: Annotated[
-        OutputPath,
+        Path,
         Parameter(
             name="--output-db",
             help="Destination DuckDB for history_timeseries.",
@@ -95,43 +91,25 @@ class HistoryTimeseriesCli:
             help="Selection strategy for picking entities (default: risk_score).",
         ),
     ] = SelectionStrategy.RISK_SCORE
-
-
-@history_app.command(name="timeseries")
-@dataclass
-class HistoryTimeseriesCommand:
-    """Aggregate analytics.history_timeseries across commits."""
-
-    cfg: Annotated[HistoryTimeseriesCli, Parameter(name="*")] = field(
-        default_factory=HistoryTimeseriesCli
-    )
+    repo_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--repo-root",
+            help="Repository root directory.",
+        ),
+    ] = None
+    verbose: Annotated[
+        int,
+        Parameter(
+            name=["-v", "--verbose"],
+            help="Increase verbosity level.",
+            count=True,
+        ),
+    ] = 0
 
     def __call__(self) -> None:
-        if not self.cfg.repo:
-            message = "Repository slug is required."
-            raise ValidationError(message)
-        if self.cfg.commits is None or not list(self.cfg.commits):
-            message = "At least one commit is required."
-            raise ValidationError(message)
-        runtime = self.cfg.runtime or RuntimeCLI()
-        runtime_options = runtime_cli_to_options(runtime)
-        options = HistoryOptions(
-            repo_root=runtime_options.repo_root or Path(),
-            db_dir=self.cfg.db_dir,
-            output_db=self.cfg.output_db,
-            entity_kind=self.cfg.entity_kind.value,
-            max_entities=self.cfg.max_entities,
-            selection_strategy=self.cfg.selection_strategy.value,
-        )
-        commits = list(self.cfg.commits)
-        verbose = get_verbose(runtime)
-        run_handler(
-            history_timeseries_handler,
-            repo=self.cfg.repo,
-            commits=commits,
-            options=options,
-            verbose=verbose,
-        )
+        """Execute the history timeseries command."""
+        CycloptsAdapter("history.timeseries", history_timeseries_ctx)(self)
 
 
 __all__ = ["history_app"]

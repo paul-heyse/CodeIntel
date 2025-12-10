@@ -183,15 +183,17 @@ def _resolve_from_params(ctx: ExecutionContext) -> ResolvedRuntime:
     document_output_dir = Path(doc_output_raw) if doc_output_raw else None
 
     # Build configuration from context params
-    config = _build_config(_ConfigParams(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        db_path=db_path,
-        build_dir=build_dir,
-        document_output_dir=document_output_dir,
-        use_gpu=ctx.params.get("use_gpu", False),
-    ))
+    config = _build_config(
+        _ConfigParams(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            db_path=db_path,
+            build_dir=build_dir,
+            document_output_dir=document_output_dir,
+            use_gpu=ctx.params.get("use_gpu", False),
+        )
+    )
 
     # Ensure database directory exists
     config.build_paths.db_path.parent.mkdir(parents=True, exist_ok=True)
