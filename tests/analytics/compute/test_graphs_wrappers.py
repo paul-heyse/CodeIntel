@@ -62,7 +62,13 @@ class CfgBlock:
     successors: int
 
     def to_tuple(self) -> tuple[int, str, int, int]:
-        """Return values in tuple order matching CFG block schema."""
+        """Return values in tuple order matching CFG block schema.
+
+        Returns
+        -------
+        tuple[int, str, int, int]
+            Block index, label, predecessors, successors.
+        """
         return (self.idx, self.label, self.predecessors, self.successors)
 
 
@@ -75,7 +81,13 @@ class CfgEdge:
     kind: str
 
     def to_tuple(self) -> tuple[int, int, str]:
-        """Return values in tuple order matching CFG edge schema."""
+        """Return values in tuple order matching CFG edge schema.
+
+        Returns
+        -------
+        tuple[int, int, str]
+            Edge source, target, and kind.
+        """
         return (self.source, self.target, self.kind)
 
 
@@ -91,7 +103,13 @@ class DataFlowEdge:
     edge_kind: str
 
     def to_tuple(self) -> tuple[int, int, str, str, bool, str]:
-        """Return values in tuple order matching DFG edge schema."""
+        """Return values in tuple order matching DFG edge schema.
+
+        Returns
+        -------
+        tuple[int, int, str, str, bool, str]
+            Data flow edge fields in schema order.
+        """
         return (
             self.source_block,
             self.target_block,

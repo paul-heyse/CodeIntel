@@ -86,8 +86,268 @@ class HandlerContextOptions:
     database_path: Path | None = None
 
 
-@dataclass  # noqa: PLR0904
-class HandlerContext:
+class ParameterAccessors:
+    """Parameter access helpers shared by handler contexts."""
+
+    _params: dict[str, object]
+
+    def param_str(self, key: str, default: str | None = None) -> str | None:
+        """Get string parameter with optional default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        str | None
+            Parameter value as string, or default when missing.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default
+        return str(value)
+
+    def param_int(self, key: str, default: int = 0) -> int:
+        """Get integer parameter with default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        int
+            Parsed integer value or provided default.
+
+        Raises
+        ------
+        ParameterError
+            If the parameter cannot be coerced to an integer.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if isinstance(value, (str, float)):
+            try:
+                return int(value)
+            except ValueError as exc:
+                raise ParameterError(key, f"Parameter '{key}' must be an integer.") from exc
+        message = f"Parameter '{key}' must be an integer."
+        raise ParameterError(key, message)
+
+    def param_bool(self, key: str, *, default: bool = False) -> bool:
+        """Get boolean parameter with default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        bool
+            Parsed boolean value or provided default.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return is_truthy_string(value)
+        return bool(value)
+
+    def param_path(self, key: str, default: Path | None = None) -> Path | None:
+        """Get parameter as Path with optional default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        Path | None
+            Path value or provided default.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default
+        return Path(str(value))
+
+    def param_enum(self, key: str, enum_type: type[E], default: E | None = None) -> E | None:
+        """Get enum parameter with optional default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        enum_type
+            Enum class used for coercion.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        E | None
+            Enum value or provided default.
+
+        Raises
+        ------
+        ParameterError
+            If the parameter cannot be coerced to the enum type.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default
+        if isinstance(value, enum_type):
+            return value
+        if isinstance(value, str):
+            normalized = enum_type.__members__.get(value.upper())
+            if normalized is not None:
+                return normalized
+            msg = f"Invalid value '{value}' for parameter '{key}'."
+            raise ParameterError(key, msg)
+        msg = f"Parameter '{key}' must be a string or {enum_type.__name__}."
+        raise ParameterError(key, msg)
+
+    def param_list(self, key: str, default: list[str] | None = None) -> list[str]:
+        """Get list parameter with optional default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        list[str]
+            List of stringified values or provided default.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default or []
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, tuple):
+            return [str(item) for item in value]
+        if isinstance(value, str):
+            return [value]
+        return [str(value)]
+
+    def param_tuple(
+        self,
+        key: str,
+        default: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...]:
+        """Get tuple parameter with optional default.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+        default
+            Optional fallback when parameter is missing.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Tuple of stringified values or provided default.
+        """
+        value = self._params.get(key)
+        if value is None:
+            return default or ()
+        if isinstance(value, tuple):
+            return tuple(str(item) for item in value)
+        if isinstance(value, list):
+            return tuple(str(item) for item in value)
+        if isinstance(value, str):
+            return (value,)
+        return (str(value),)
+
+    def require_str(self, key: str) -> str:
+        """Get required string parameter.
+
+        Returns
+        -------
+        str
+            Parameter value as string.
+
+        Raises
+        ------
+        ParameterError
+            If the parameter is missing or empty.
+        """
+        value = self.param_str(key)
+        if not value:
+            raise ParameterError(key, f"Required parameter '{key}' not provided.")
+        return value
+
+    def require_int(self, key: str) -> int:
+        """Get required integer parameter.
+
+        Returns
+        -------
+        int
+            Parsed integer value.
+
+        Raises
+        ------
+        ParameterError
+            If the parameter is missing or not an integer.
+        """
+        value = self._params.get(key)
+        if value is None:
+            raise ParameterError(key, f"Required parameter '{key}' not provided.")
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if isinstance(value, (str, float)):
+            try:
+                return int(value)
+            except ValueError as exc:
+                raise ParameterError(key, f"Parameter '{key}' must be an integer.") from exc
+        raise ParameterError(key, f"Parameter '{key}' must be an integer.")
+
+    def require_path(self, key: str) -> Path:
+        """Get required path parameter.
+
+        Returns
+        -------
+        Path
+            Parsed path value.
+
+        Raises
+        ------
+        ParameterError
+            If the parameter is missing.
+        """
+        value = self.param_path(key)
+        if value is None:
+            raise ParameterError(key, f"Required parameter '{key}' not provided.")
+        return value
+
+
+@dataclass
+class HandlerContext(ParameterAccessors):
     """Unified context for all CLI handler operations.
 
     This is the single context type that all handlers receive. It provides:
@@ -151,367 +411,7 @@ class HandlerContext:
     _graph_runtime: GraphRuntime | None = field(default=None, repr=False)
     _closed: bool = field(default=False, repr=False)
 
-    # --- Parameter Accessors ---
-
-    def param_str(self, key: str, default: str | None = None) -> str | None:
-        """Get string parameter with optional default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present.
-
-        Returns
-        -------
-        str | None
-            Parameter value or default.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(config=MagicMock(), operation_id="test", _params={"name": "value"})
-        >>> ctx.param_str("name")
-        'value'
-        >>> ctx.param_str("missing", "default")
-        'default'
-        >>> ctx.param_str("missing") is None
-        True
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default
-        return str(value)
-
-    def param_int(self, key: str, default: int = 0) -> int:
-        """Get integer parameter with default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present or invalid.
-
-        Returns
-        -------
-        int
-            Parameter value or default.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"count": 42, "text": "5"}
-        ... )
-        >>> ctx.param_int("count")
-        42
-        >>> ctx.param_int("text")
-        5
-        >>> ctx.param_int("missing", 10)
-        10
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        try:
-            return int(str(value))
-        except ValueError:
-            LOG.warning("Invalid int value for %s: %r, using default %d", key, value, default)
-            return default
-
-    def param_bool(self, key: str, *, default: bool = False) -> bool:
-        """Get boolean parameter with default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present.
-
-        Returns
-        -------
-        bool
-            Parameter value or default.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"flag": True, "text": "yes"}
-        ... )
-        >>> ctx.param_bool("flag")
-        True
-        >>> ctx.param_bool("text")
-        True
-        >>> ctx.param_bool("missing", default=True)
-        True
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        # Handle string representations using canonical parsing
-        if isinstance(value, str):
-            return is_truthy_string(value)
-        return bool(value)
-
-    def param_path(self, key: str, default: Path | None = None) -> Path | None:
-        """Get Path parameter with optional default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present.
-
-        Returns
-        -------
-        Path | None
-            Parameter value or default.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> from pathlib import Path
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"path": "/some/path"}
-        ... )
-        >>> ctx.param_path("path")
-        PosixPath('/some/path')
-        >>> ctx.param_path("missing", Path("/default"))
-        PosixPath('/default')
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default
-        if isinstance(value, Path):
-            return value
-        return Path(str(value))
-
-    def param_enum(self, key: str, enum_type: type[E], default: E | None = None) -> E | None:
-        """Get enum parameter with optional default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        enum_type
-            Enum class to convert to.
-        default
-            Default value if parameter not present or invalid.
-
-        Returns
-        -------
-        E | None
-            Parameter value or default.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> from enum import Enum
-        >>> class Color(Enum):
-        ...     RED = "red"
-        ...     BLUE = "blue"
-        >>> ctx = HandlerContext(config=MagicMock(), operation_id="test", _params={"color": "red"})
-        >>> ctx.param_enum("color", Color)
-        <Color.RED: 'red'>
-        >>> ctx.param_enum("missing", Color, Color.BLUE)
-        <Color.BLUE: 'blue'>
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default
-        if isinstance(value, enum_type):
-            return value
-        try:
-            return enum_type(str(value))
-        except ValueError:
-            LOG.warning("Invalid enum value for %s: %r, using default", key, value)
-            return default
-
-    def param_list(self, key: str, default: list[str] | None = None) -> list[str]:
-        """Get list parameter with optional default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present.
-
-        Returns
-        -------
-        list[str]
-            Parameter value or default (empty list if None).
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"items": ["a", "b"]}
-        ... )
-        >>> ctx.param_list("items")
-        ['a', 'b']
-        >>> ctx.param_list("missing")
-        []
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default if default is not None else []
-        if isinstance(value, list):
-            return [str(v) for v in value]
-        if isinstance(value, tuple):
-            return [str(v) for v in value]
-        # Single value becomes single-item list
-        return [str(value)]
-
-    def param_tuple(self, key: str, default: tuple[str, ...] | None = None) -> tuple[str, ...]:
-        """Get tuple parameter with optional default.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-        default
-            Default value if parameter not present.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Parameter value or default (empty tuple if None).
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"items": ("a", "b")}
-        ... )
-        >>> ctx.param_tuple("items")
-        ('a', 'b')
-        >>> ctx.param_tuple("missing")
-        ()
-        """
-        value = self._params.get(key)
-        if value is None:
-            return default if default is not None else ()
-        if isinstance(value, tuple):
-            return tuple(str(v) for v in value)
-        if isinstance(value, list):
-            return tuple(str(v) for v in value)
-        # Single value becomes single-item tuple
-        return (str(value),)
-
-    def require_str(self, key: str) -> str:
-        """Get required string parameter.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-
-        Returns
-        -------
-        str
-            Parameter value.
-
-        Raises
-        ------
-        ParameterError
-            If parameter is missing.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(config=MagicMock(), operation_id="test", _params={"name": "value"})
-        >>> ctx.require_str("name")
-        'value'
-        """
-        value = self._params.get(key)
-        if value is None:
-            msg = f"Required parameter '{key}' not provided"
-            raise ParameterError(key, msg)
-        return str(value)
-
-    def require_int(self, key: str) -> int:
-        """Get required integer parameter.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-
-        Returns
-        -------
-        int
-            Parameter value.
-
-        Raises
-        ------
-        ParameterError
-            If parameter is missing or not a valid integer.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(config=MagicMock(), operation_id="test", _params={"count": 42})
-        >>> ctx.require_int("count")
-        42
-        """
-        value = self._params.get(key)
-        if value is None:
-            msg = f"Required parameter '{key}' not provided"
-            raise ParameterError(key, msg)
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        try:
-            return int(str(value))
-        except ValueError as e:
-            msg = f"Parameter '{key}' must be an integer, got: {value!r}"
-            raise ParameterError(key, msg) from e
-
-    def require_path(self, key: str) -> Path:
-        """Get required Path parameter.
-
-        Parameters
-        ----------
-        key
-            Parameter name.
-
-        Returns
-        -------
-        Path
-            Parameter value.
-
-        Raises
-        ------
-        ParameterError
-            If parameter is missing.
-
-        Examples
-        --------
-        >>> from unittest.mock import MagicMock
-        >>> ctx = HandlerContext(
-        ...     config=MagicMock(), operation_id="test", _params={"path": "/some/path"}
-        ... )
-        >>> ctx.require_path("path")
-        PosixPath('/some/path')
-        """
-        value = self._params.get(key)
-        if value is None:
-            msg = f"Required parameter '{key}' not provided"
-            raise ParameterError(key, msg)
-        if isinstance(value, Path):
-            return value
-        return Path(str(value))
-
-    # --- Lazy Resource Properties ---
+    # Parameter accessors are inherited from ParameterAccessors.
 
     @property
     def runtime(self) -> ResolvedRuntime:
@@ -665,9 +565,9 @@ class HandlerContext:
         {'function_goid_h128': 'abc123', 'name': 'foo', ...}
         """
         # Import here to avoid circular imports
-        from codeintel.serving.auto_pipeline import run_operation_prereqs  # noqa: PLC0415
-        from codeintel.serving.bootstrap import build_service_stack  # noqa: PLC0415
-        from codeintel.serving.operations.catalog import get_operation  # noqa: PLC0415
+        from codeintel.serving.auto_pipeline import run_operation_prereqs
+        from codeintel.serving.bootstrap import build_service_stack
+        from codeintel.serving.operations.catalog import get_operation
 
         op = get_operation(op_id)
         if op is None:
@@ -815,7 +715,7 @@ class HandlerContext:
         -----
         Uses resolve_from_params directly with no intermediate context objects.
         """
-        from codeintel.cli.resolution.runtime import resolve_from_params  # noqa: PLC0415
+        from codeintel.cli.resolution.runtime import resolve_from_params
 
         # Build params dict with project_root and db_path
         params: dict[str, object] = dict(self._params)

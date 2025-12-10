@@ -23,7 +23,7 @@ EXPECTED_VERBOSITY = 2
 
 def test_resolution_from_explicit_params() -> None:
     """Test runtime resolution from explicit params."""
-    params: dict[str, object] = {
+    params: dict[str, object | str] = {
         "repo": "test/repo",
         "commit": "abc123def456789",
         "db_path": str(Path.cwd() / "build" / "test.duckdb"),

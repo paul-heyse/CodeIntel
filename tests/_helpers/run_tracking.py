@@ -169,7 +169,9 @@ class RunTrackingHarness:
         RunContext
             Context configured for the given run id and options.
         """
-        return make_run_context(run_id=run_id, repo_root=self.repo_root, options=options or self.options)
+        return make_run_context(
+            run_id=run_id, repo_root=self.repo_root, options=options or self.options
+        )
 
     def assert_run(
         self,

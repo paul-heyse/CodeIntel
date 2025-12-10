@@ -16,7 +16,7 @@ from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
 
 MIN_TOOL_COUNT = 6
 
@@ -27,7 +27,7 @@ MIN_TOOL_COUNT = 6
 
 
 def test_register_tools_with_backend(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify register_tools registers tools on registrar with backend.
 
@@ -65,7 +65,7 @@ def test_register_tools_with_backend(
 
 
 def test_register_tools_with_service(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify register_tools registers tools on registrar with service.
 
@@ -94,7 +94,7 @@ def test_register_tools_with_service(
 
 
 def test_register_tools_with_config(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify register_tools accepts optional config for auto-pipeline.
 

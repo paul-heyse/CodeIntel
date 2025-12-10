@@ -186,7 +186,7 @@ def build_completion_model() -> CompletionModel:
         Complete completion model.
     """
     # Import here to avoid circular import
-    from codeintel.cli.introspection import (  # noqa: PLC0415
+    from codeintel.cli.introspection import (
         get_registry,
     )
 

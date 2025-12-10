@@ -62,7 +62,8 @@ class OutputTarget:
         Plugin name that produces this target.
     contract
         Output contract defining tables and artifacts produced.
-        This is authoritative - TABLE_SCHEMAS derives from contracts.
+        This is authoritative; prefer `contract.table_keys` over legacy
+        shortcuts when referring to outputs.
     dependencies
         Other OutputTarget names that must be computed first.
     resources
@@ -163,11 +164,22 @@ class OutputTarget:
         tuple[str, ...]
             Fully-qualified table names this target writes to.
         """
-        return self.contract.table_keys
+        if self.contract.table_keys:
+            return self.contract.table_keys
+        schema_prefix = {
+            "ingestion": "core",
+            "graphs": "graph",
+            "analytics": "analytics",
+            "export": "export",
+        }.get(self.module, "core")
+        return (f"{schema_prefix}.{self.name}",)
 
     @property
     def tables(self) -> tuple[str, ...]:
         """Deprecated alias for table_keys maintained for compatibility.
+
+        Prefer the contract/table_keys APIs; this alias remains only to
+        ease migration of legacy tests and helpers.
 
         Returns
         -------
@@ -212,7 +224,9 @@ class TargetGraph:
     ...         name="modules",
     ...         module="ingestion",
     ...         plugin="repo_scan",
-    ...         contract=OutputContract(tables=(TableSchema("core", "modules", [Column("module", "VARCHAR")]),)),
+    ...         contract=OutputContract(
+    ...             tables=(TableSchema("core", "modules", [Column("module", "VARCHAR")]),)
+    ...         ),
     ...     )
     ... )
     >>> "modules" in graph

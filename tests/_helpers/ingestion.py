@@ -55,8 +55,11 @@ TResult_co = TypeVar("TResult_co", bound=TargetResult, covariant=True)
 class TargetPluginProtocol(Protocol[TResult_co]):
     """Protocol for target plugins with an execute method."""
 
-    async def execute(self, ctx: TargetExecutionContext) -> TResult_co:  # pragma: no cover - protocol
+    async def execute(
+        self, ctx: TargetExecutionContext
+    ) -> TResult_co:  # pragma: no cover - protocol
         ...
+
 
 __all__ = [
     "IngestionContextBundle",

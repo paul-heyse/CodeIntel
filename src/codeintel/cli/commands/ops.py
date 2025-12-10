@@ -618,8 +618,8 @@ def _invoke_operation_with_prereqs(
     verbose
         Whether to emit verbose output.
     """
-    import json  # noqa: PLC0415
-    import sys  # noqa: PLC0415
+    import json
+    import sys
 
     sys.stdout.write(f"Invoking operation '{op_id}'...\n")
 

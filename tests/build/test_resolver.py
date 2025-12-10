@@ -15,7 +15,7 @@ from codeintel.build.state import (
     StalenessReason,
     TargetState,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -53,53 +53,48 @@ def _create_test_graph() -> TargetGraph:
     graph = TargetGraph()
 
     # Root target with no dependencies
-    modules_target = OutputTarget(
+    modules_target = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
         plugin="repo_scan",
         tables=("core.modules",),
-        dependencies=(),
-        description="Repository module index",
+        options=TargetOptions(description="Repository module index"),
     )
 
     # Target depending on modules
-    ast_target = OutputTarget(
+    ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
         plugin="ast_extract",
         tables=("core.ast_nodes",),
-        dependencies=("modules",),
-        description="AST extraction",
+        options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
 
     # Target depending on ast
-    goids_target = OutputTarget(
+    goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
         plugin="goid_builder",
         tables=("core.goids",),
-        dependencies=("ast",),
-        description="GOID construction",
+        options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
 
     # Independent target depending on ast
-    typing_target = OutputTarget(
+    typing_target = OutputTarget.from_tables(
         name="typing",
         module="ingestion",
         plugin="typing_ingest",
         tables=("analytics.typedness",),
-        dependencies=("ast",),
-        description="Type analysis",
+        options=TargetOptions(dependencies=("ast",), description="Type analysis"),
     )
 
     # Target depending on goids
-    metrics_target = OutputTarget(
+    metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
         plugin="function_metrics",
         tables=("analytics.function_metrics",),
-        dependencies=("goids",),
-        description="Function metrics",
+        options=TargetOptions(dependencies=("goids",), description="Function metrics"),
     )
 
     graph.register(modules_target)
@@ -743,13 +738,12 @@ class TestBlockedTargets:
         # Let's create a more realistic scenario:
         # Add an external_data target that's blocked by something not in our goals
         graph = _create_test_graph()
-        external_target = OutputTarget(
+        external_target = OutputTarget.from_tables(
             name="external_data",
             module="ingestion",
             plugin="external_ingest",
             tables=("core.external",),
-            dependencies=(),  # No deps in graph
-            description="External data",
+            options=TargetOptions(description="External data"),
         )
         graph.register(external_target)
 

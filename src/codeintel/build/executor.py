@@ -49,6 +49,7 @@ from codeintel.graphs.runtime.graph_executor import GraphExecutorContext, GraphP
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
 
 if TYPE_CHECKING:
+    from codeintel.build.targets import TargetGraph
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -59,6 +60,16 @@ log = logging.getLogger(__name__)
 # =============================================================================
 # Type Definitions
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class ExecutorEnv:
+    """Bundled execution dependencies for the build executor."""
+
+    gateway: StorageGateway
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    tools: ToolsConfig
 
 
 @dataclass(frozen=True)
@@ -228,35 +239,29 @@ class BuildExecutor:
     ----------
     graph
         Target graph for looking up target metadata.
-    gateway
-        Storage gateway for database access and manifest tracking.
-    snapshot
-        Repository snapshot reference (repo, commit, repo_root).
-    paths
-        Build paths configuration.
-    tools
-        Tools configuration for build execution.
+    env
+        Execution environment bundle containing gateway, snapshot,
+        build paths, and tools configuration.
 
     Examples
     --------
     >>> executor = BuildExecutor(
     ...     graph=get_target_graph(),
-    ...     gateway=gateway,
-    ...     snapshot=snapshot,
-    ...     paths=paths,
-    ...     tools=tools,
+    ...     env=ExecutorEnv(
+    ...         gateway=gateway,
+    ...         snapshot=snapshot,
+    ...         paths=paths,
+    ...         tools=tools,
+    ...     ),
     ... )
     >>> result = executor.execute(plan)
     >>> print(f"Completed: {result.completed_targets}")
     """
 
-    def __init__(  # noqa: PLR0913 - Core dependencies for build execution
+    def __init__(
         self,
         graph: TargetGraph,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
-        paths: BuildPaths,
-        tools: ToolsConfig,
+        env: ExecutorEnv,
         *,
         fail_fast: bool = False,
     ) -> None:
@@ -266,29 +271,23 @@ class BuildExecutor:
         ----------
         graph
             Target graph containing all registered targets.
-        gateway
-            Storage gateway for database access.
-        snapshot
-            Repository snapshot reference.
-        paths
-            Build paths configuration.
-        tools
-            Tools configuration for build execution.
+        env
+            Execution environment (gateway, snapshot, build paths, tools).
         fail_fast
             If True, stop on first error. If False (default), continue
             executing independent targets and collect all errors.
         """
         self._graph = graph
-        self._gateway = gateway
-        self._snapshot = snapshot
-        self._paths = paths
-        self._tools = tools
+        self._gateway = env.gateway
+        self._snapshot = env.snapshot
+        self._paths = env.paths
+        self._tools = env.tools
         self._fail_fast = fail_fast
         self._export_options: ExportCallOptions | None = None
         # Initialize providers for protocol-based DI
-        self._providers: Providers = create_default_providers(tools)
+        self._providers: Providers = create_default_providers(env.tools)
         # Load build config for target parameters
-        self._config: BuildConfig = load_build_config(snapshot.repo_root)
+        self._config: BuildConfig = load_build_config(env.snapshot.repo_root)
 
     @property
     def export_options(self) -> ExportCallOptions | None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import cast
 
 import yaml
 
@@ -19,6 +20,8 @@ from codeintel.cli.config.env import load_env_config
 from codeintel.cli.config.model import (
     CliConfig,
     ConfigLoadError,
+    LogLevel,
+    OutputFormat,
     PluginsConfigSection,
     ProgressConfig,
     ProjectConfigSection,
@@ -132,18 +135,20 @@ def dict_to_config(
     project = _parse_project(data)
     plugins = _parse_plugins(data)
 
-    output_format = _get_string(data, "output_format", "text")
-    if output_format not in VALID_OUTPUT_FORMATS:
-        output_format = "text"
-
-    log_level = _get_string(data, "log_level", "WARNING")
-    if log_level not in VALID_LOG_LEVELS:
-        log_level = "WARNING"
+    output_format_raw = _get_string(data, "output_format", "text")
+    output_format_value: OutputFormat = cast(
+        OutputFormat,
+        output_format_raw if output_format_raw in VALID_OUTPUT_FORMATS else "text",
+    )
+    log_level_raw = _get_string(data, "log_level", "WARNING")
+    log_level_value: LogLevel = cast(
+        LogLevel, log_level_raw if log_level_raw in VALID_LOG_LEVELS else "WARNING"
+    )
 
     return CliConfig(
-        output_format=output_format,  # type: ignore[arg-type]
+        output_format=output_format_value,
         color=_get_bool(data, "color", default=True),
-        log_level=log_level,  # type: ignore[arg-type]
+        log_level=log_level_value,
         progress=progress,
         telemetry=telemetry,
         retry=retry,
@@ -632,11 +637,11 @@ def _parse_config_file(path: Path) -> dict[str, object]:
     """
     content = path.read_text(encoding="utf-8")
     is_yaml = path.suffix in {".yaml", ".yml"}
-    data = yaml.safe_load(content) if is_yaml else json.loads(content)
+    parsed = yaml.safe_load(content) if is_yaml else json.loads(content)
 
-    if not isinstance(data, dict):
+    if not isinstance(parsed, dict):
         return {}
-    return data  # type: ignore[return-value]
+    return cast(dict[str, object], parsed)
 
 
 def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
@@ -654,10 +659,11 @@ def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[st
     dict[str, object]
         Merged dictionary.
     """
-    result = dict(base)
+    result: dict[str, object] = dict(base)
     for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)  # type: ignore[arg-type]
+        existing = result.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            result[key] = _deep_merge(existing, value)
         else:
             result[key] = value
     return result

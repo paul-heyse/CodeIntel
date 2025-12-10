@@ -23,6 +23,19 @@ from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
 
+
+# Simple alias to align with serializer naming used in tests and contracts.
+def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
+    """Serialize a SymbolUseRow into the INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with symbol_use INSERT order.
+    """
+    return SymbolUseRow.to_tuple(row)
+
+
 # Call graph types remain TypedDicts as they are not duplicated in compute modules
 
 

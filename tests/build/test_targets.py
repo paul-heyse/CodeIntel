@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -16,19 +16,24 @@ from tests._helpers.assertions import (
 
 def _make_target(
     name: str,
-    module: str,
+    module: TargetModule,
     plugin: str,
     tables: tuple[str, ...],
-    dependencies: tuple[str, ...] = (),
-    description: str = "",
+    options: TargetOptions | None = None,
 ) -> OutputTarget:
-    """Create targets using the contract-based factory for legacy tests."""
+    """Create targets using the contract-based factory for legacy tests.
+
+    Returns
+    -------
+    OutputTarget
+        Constructed target with supplied attributes.
+    """
     return OutputTarget.from_tables(
         name=name,
         module=module,
         plugin=plugin,
         tables=tables,
-        options=TargetOptions(dependencies=dependencies, description=description),
+        options=options or TargetOptions(),
     )
 
 
@@ -61,8 +66,10 @@ class TestOutputTarget:
             module="analytics",
             plugin="test_plugin",
             tables=("analytics.test_table",),
-            dependencies=("dep1", "dep2"),
-            description="Test target description",
+            options=TargetOptions(
+                dependencies=("dep1", "dep2"),
+                description="Test target description",
+            ),
         )
         expect_equal(target.name, "test_target")
         expect_equal(target.dependencies, ("dep1", "dep2"))
@@ -177,7 +184,7 @@ class TestTargetGraph:
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -200,14 +207,14 @@ class TestTargetGraph:
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
             tables=("analytics.t3",),
-            dependencies=("target2",),
+            options=TargetOptions(dependencies=("target2",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -231,14 +238,14 @@ class TestTargetGraph:
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
             tables=("analytics.t3",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -262,14 +269,14 @@ class TestTargetGraph:
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
             tables=("analytics.t3",),
-            dependencies=("target2",),
+            options=TargetOptions(dependencies=("target2",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -301,7 +308,7 @@ class TestTargetGraph:
             module="analytics",
             plugin="plugin3",
             tables=("analytics.t3",),
-            dependencies=("target1", "target2"),
+            options=TargetOptions(dependencies=("target1", "target2")),
         )
         graph.register(t1)
         graph.register(t2)
@@ -322,21 +329,21 @@ class TestTargetGraph:
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
-            dependencies=("target3",),
+            options=TargetOptions(dependencies=("target3",)),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
             plugin="plugin3",
             tables=("analytics.t3",),
-            dependencies=("target2",),
+            options=TargetOptions(dependencies=("target2",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -349,19 +356,19 @@ class TestTargetGraph:
     def test_targets_for_module() -> None:
         """Filter targets by module."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
         )
-        t3 = OutputTarget(
+        t3 = _make_target(
             name="target3",
             module="ingestion",
             plugin="plugin3",
@@ -380,18 +387,18 @@ class TestTargetGraph:
     def test_validate_valid_graph() -> None:
         """Validate a valid graph returns no errors."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",
             tables=("graph.t2",),
-            dependencies=("target1",),
+            options=TargetOptions(dependencies=("target1",)),
         )
         graph.register(t1)
         graph.register(t2)
@@ -403,12 +410,12 @@ class TestTargetGraph:
     def test_validate_missing_dependency() -> None:
         """Validate graph with missing dependency returns error."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="graphs",
             plugin="plugin1",
             tables=("graph.t1",),
-            dependencies=("nonexistent",),
+            options=TargetOptions(dependencies=("nonexistent",)),
         )
         graph.register(t1)
 
@@ -420,13 +427,13 @@ class TestTargetGraph:
     def test_iterate_over_graph() -> None:
         """Iterate over target names in graph."""
         graph = TargetGraph()
-        t1 = OutputTarget(
+        t1 = _make_target(
             name="target1",
             module="ingestion",
             plugin="plugin1",
             tables=("core.t1",),
         )
-        t2 = OutputTarget(
+        t2 = _make_target(
             name="target2",
             module="graphs",
             plugin="plugin2",

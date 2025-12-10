@@ -341,15 +341,16 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
         )
         snapshot = make_snapshot(repo_root=repo_root, repo=ctx.repo, commit=ctx.commit)
 
-        module_map_provider = ModuleMapProvider(gateway, snapshot)
-        module_map = module_map_provider.get()
+        module_map = ModuleMapProvider(gateway, snapshot).get()
 
-        ast_request = FunctionAstLoadRequest(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=repo_root,
+        ast_by_goid, missing_goids = load_function_asts(
+            gateway,
+            FunctionAstLoadRequest(
+                repo=ctx.repo,
+                commit=ctx.commit,
+                repo_root=repo_root,
+            ),
         )
-        ast_by_goid, missing_goids = load_function_asts(gateway, ast_request)
         call_graph = load_call_graph(gateway, repo=ctx.repo, commit=ctx.commit)
 
         compute_data_models(gateway, builder.analytics.data_models())

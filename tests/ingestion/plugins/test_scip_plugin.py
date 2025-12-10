@@ -108,6 +108,7 @@ async def test_execute_ingests_symbols_and_occurrences(tmp_path: Path) -> None:
             role="definition",
         ),
     )
+
     def _seed_index(context: TargetExecutionContext) -> None:
         _write_scip_json(context.scip_dir)
 
@@ -134,6 +135,7 @@ async def test_execute_fails_when_indexer_returns_error(tmp_path: Path) -> None:
         providers=cast("Providers", fake_providers),
         modules=("pkg/a.py",),
     )
+
     def _seed_failure(context: TargetExecutionContext) -> None:
         _write_scip_json(context.scip_dir)
 

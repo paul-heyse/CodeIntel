@@ -86,7 +86,7 @@ def test_dataset_list_returns_datasets(
 
     expect_is_not_none(result)
     # Result is valid (either success or expected resolution error)
-    expect_true(result.exit_code in (0, 1))
+    expect_true(result.exit_code in {0, 1})
 
 
 def test_storage_status_returns_info(

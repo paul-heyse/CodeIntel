@@ -1,4 +1,12 @@
-"""Helpers for build-system unit tests."""
+"""Helpers for build-system unit tests.
+
+Migration note
+--------------
+Targets should be defined via contracts (``OutputContract`` / ``OutputTarget``
+factories like ``from_tables``) and referenced by ``table_keys``. Avoid adding
+new call sites that pass ``tables=`` directly; the contract is the source of
+truth for outputs.
+"""
 
 from __future__ import annotations
 

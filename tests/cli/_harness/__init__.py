@@ -514,15 +514,7 @@ class OperationTestHarness:
             )
 
         # Execute operation through the standard registry path
-        try:
-            result = execute_operation(spec, params)
-        except Exception as exc:
-            # Catch any exception from the handler and convert to error result
-            return CliInvocationResult(
-                exit_code=1,
-                stdout="",
-                stderr=str(exc),
-            )
+        result = execute_operation(spec, params)
 
         if result.success:
             data = result.data

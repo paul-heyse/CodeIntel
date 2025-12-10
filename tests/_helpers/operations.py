@@ -22,7 +22,13 @@ def make_operation_spec(
     description: str | None = None,
     group: str = "test",
 ) -> OperationSpec:
-    """Build an OperationSpec with sane defaults for tests."""
+    """Build an OperationSpec with sane defaults for tests.
+
+    Returns
+    -------
+    OperationSpec
+        Spec constructed from the provided handler and metadata.
+    """
     sig = inspect.signature(handler)
     expects_ctx = len(sig.parameters) > 0
 

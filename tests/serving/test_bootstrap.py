@@ -47,7 +47,7 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
 
 # Constants for test values
 DEFAULT_LIMIT = 100
@@ -326,7 +326,7 @@ def test_build_service_from_config_remote_api_missing_request(tmp_path: Path) ->
 
 
 def test_build_service_from_config_local_db_with_observability(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify local_db mode works with observability option."""
     cfg = ServingConfig(
@@ -364,7 +364,7 @@ def test_build_service_from_config_remote_api_returns_http_service(tmp_path: Pat
 
 
 def test_build_service_from_config_local_db_returns_local_service(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify local_db mode returns LocalQueryService with real gateway."""
     cfg = ServingConfig(
@@ -385,7 +385,7 @@ def test_build_service_from_config_local_db_returns_local_service(
 # =============================================================================
 
 
-def test_build_service_stack_returns_stack(provisioned_repo: ProvisionedGateway) -> None:
+def test_build_service_stack_returns_stack(provisioned_repo: TestContext) -> None:
     """Verify build_service_stack returns complete ServiceStack."""
     cfg = ServingConfig(
         repo=provisioned_repo.repo,
@@ -404,7 +404,7 @@ def test_build_service_stack_returns_stack(provisioned_repo: ProvisionedGateway)
     expect_is_not_none(stack.repositories)
 
 
-def test_build_service_stack_with_options(provisioned_repo: ProvisionedGateway) -> None:
+def test_build_service_stack_with_options(provisioned_repo: TestContext) -> None:
     """Verify build_service_stack accepts BootstrapOptions."""
     cfg = ServingConfig(
         repo=provisioned_repo.repo,
@@ -423,7 +423,7 @@ def test_build_service_stack_with_options(provisioned_repo: ProvisionedGateway) 
     expect_is_instance(stack, ServiceStack)
 
 
-def test_build_service_stack_close_calls_cleanup(provisioned_repo: ProvisionedGateway) -> None:
+def test_build_service_stack_close_calls_cleanup(provisioned_repo: TestContext) -> None:
     """Verify ServiceStack.close() invokes cleanup function."""
     cfg = ServingConfig(
         repo=provisioned_repo.repo,
@@ -446,7 +446,7 @@ def test_build_service_stack_close_calls_cleanup(provisioned_repo: ProvisionedGa
 # =============================================================================
 
 
-def test_service_stack_close_method(provisioned_repo: ProvisionedGateway) -> None:
+def test_service_stack_close_method(provisioned_repo: TestContext) -> None:
     """Verify ServiceStack.close() method exists and is callable."""
     cfg = ServingConfig(
         repo=provisioned_repo.repo,
@@ -469,7 +469,7 @@ def test_service_stack_close_method(provisioned_repo: ProvisionedGateway) -> Non
 
 
 def test_build_local_query_service_with_validation(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify build_local_query_service constructs service with validation."""
     cfg = ServingConfig(
@@ -510,7 +510,7 @@ def test_build_local_query_service_with_validation(
 # =============================================================================
 
 
-def test_build_query_service_basic(provisioned_repo: ProvisionedGateway) -> None:
+def test_build_query_service_basic(provisioned_repo: TestContext) -> None:
     """Verify build_query_service constructs DuckDBQueryService."""
     gateway = provisioned_repo.gateway
     limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_LIMIT)

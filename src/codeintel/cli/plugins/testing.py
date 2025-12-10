@@ -331,36 +331,66 @@ __all__ = ["register"]
 '''
     (pkg_dir / "__init__.py").write_text(init_content, encoding="utf-8")
 
-    # Create main.py
+    # Create main.py - uses current CLI architecture patterns
     main_content = f'''"""
 Main module for {name} plugin.
+
+This module follows the CLI's HandlerContext + OperationSpec pattern.
 """
 
 from __future__ import annotations
 
-from codeintel.cli.execution import OperationCategory, OperationSpec
+from typing import TYPE_CHECKING
+
 from codeintel.cli.core import CliResult
+from codeintel.cli.execution import OperationSpec
+
+if TYPE_CHECKING:
+    from codeintel.cli.handlers.context import HandlerContext
 
 
-def _example_handler() -> CliResult[dict[str, str]]:
-    """Example operation handler."""
+def _example_handler(ctx: HandlerContext) -> CliResult[dict[str, str]]:
+    """Example operation handler.
+
+    Parameters
+    ----------
+    ctx
+        Handler context with params and resources.
+
+    Returns
+    -------
+    CliResult[dict[str, str]]
+        Result with greeting message.
+    """
+    # Access params via ctx.param_str(), ctx.param_int(), etc.
+    _ = ctx  # Acknowledge context (remove when adding real logic)
     return CliResult.ok({{"message": "Hello from {name}!"}})
 
 
 def register(registry: object) -> None:
-    """Register plugin operations.
+    """Register plugin operations with the CLI.
 
     Parameters
     ----------
     registry
-        Operation registry.
+        Operation registry (provides register method).
+
+    Notes
+    -----
+    Operations must follow the OperationSpec pattern with:
+    - operation_id: Unique ID prefixed with plugin name
+    - name: Human-readable display name
+    - description: Help text
+    - handler: Function accepting HandlerContext
+    - group: Command group for organization
     """
     registry.register(
         OperationSpec(
             operation_id="{name}.hello",
-            handler=_example_handler,
-            category=OperationCategory.READ,
+            name="Hello",
             description="Example operation from {name} plugin",
+            handler=_example_handler,
+            group="{name}",
         )
     )
 '''

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
@@ -198,7 +199,7 @@ def test_get_function_profile_returns_row(metrics_ctx: TestContext) -> None:
         "analytics.function_profile",
         [
             function_profile_row(
-                goid=1,
+                goid=Decimal(1),
                 qualname="test_fn",
                 rel_path="test.py",
                 repo=metrics_ctx.repo,

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import fail_invalid_policy
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.graphs.core.registry import (
@@ -252,26 +252,12 @@ def graph_plugins_plan_handler(
     try:
         selection_policy = SelectionPolicy(selection_policy_str)
     except ValueError:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:graphs:invalid-policy",
-                title="Invalid Selection Policy",
-                detail=f"Unknown selection policy: {selection_policy_str}",
-                status=400,
-            )
-        )
+        return fail_invalid_policy("selection", selection_policy_str or "")
 
     try:
         dependency_policy = DependencyPolicy(dependency_policy_str)
     except ValueError:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:graphs:invalid-policy",
-                title="Invalid Dependency Policy",
-                detail=f"Unknown dependency policy: {dependency_policy_str}",
-                status=400,
-            )
-        )
+        return fail_invalid_policy("dependency", dependency_policy_str or "")
 
     LOG.info(
         "Planning graph plugins (names=%s, enable=%s, disable=%s)",

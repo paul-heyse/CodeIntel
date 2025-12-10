@@ -11,6 +11,7 @@ from typing import cast
 import pytest
 
 from codeintel.build.contracts import ArtifactSpec, OutputContract, TableSchema
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.parameters import ParameterError, TargetParameters
 from codeintel.build.state import (
     DatabaseState,
@@ -18,7 +19,7 @@ from codeintel.build.state import (
     StateValidator,
     TargetState,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
@@ -29,7 +30,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.build import sample_manifest
+from tests._helpers.build import ManifestParams, sample_manifest
 
 
 class FakeBuildStore:
@@ -81,13 +82,12 @@ def _make_target(name: str, dependencies: tuple[str, ...] = ()) -> OutputTarget:
     OutputTarget
         Target with provided dependencies.
     """
-    return OutputTarget(
+    return OutputTarget.from_tables(
         name=name,
         module="analytics",
         plugin=f"{name}_plugin",
         tables=(f"core.{name}",),
-        dependencies=dependencies,
-        description=f"{name} target",
+        options=TargetOptions(dependencies=dependencies, description=f"{name} target"),
     )
 
 
@@ -166,7 +166,11 @@ def test_state_validator_missing_and_computed() -> None:
     snapshot = _snapshot()
 
     # Compute manifest with matching input hash
-    manifest = sample_manifest(target="single")
+    current_hash = compute_input_hash(target, snapshot, _make_gateway({}))
+    manifest = sample_manifest(
+        target="single",
+        params=ManifestParams(input_hash=current_hash),
+    )
     gateway = _make_gateway({"single": manifest})
     graph = TargetGraph()
     graph.register(target)

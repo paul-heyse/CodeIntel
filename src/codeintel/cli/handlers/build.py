@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.executor import BuildExecutor, BuildResult
+from codeintel.build.executor import BuildExecutor, BuildResult, ExecutorEnv
 from codeintel.build.plan import BuildPlan, PlanGenerator
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
@@ -18,7 +18,15 @@ from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import BuildHistoryResult, BuildRunResult, BuildStatusResult
-from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ValidationError
+from codeintel.cli.errors.factory import (
+    fail_build_run_not_found,
+    fail_execution_failed,
+    fail_invalid_module,
+    fail_invalid_target_selection,
+    fail_invalid_targets,
+    fail_project_error,
+)
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
@@ -219,13 +227,13 @@ def _execute_build(
         return None, plan
 
     LOG.info("build.cli.execute stages=%d", len(plan.stages))
-    executor = BuildExecutor(
-        graph=graph,
+    env = ExecutorEnv(
         gateway=gateway,
         snapshot=runtime.snapshot,
         paths=runtime.paths,
         tools=runtime.tools,
     )
+    executor = BuildExecutor(graph=graph, env=env)
     result = executor.execute(plan)
     return result, plan
 
@@ -296,14 +304,7 @@ def build_status_handler(
     try:
         runtime = ctx.runtime
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("build", str(e))
 
     graph = get_target_graph()
 
@@ -320,14 +321,7 @@ def build_status_handler(
     if module:
         valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
         if module not in valid_modules:
-            return CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:build:invalid-module",
-                    title="Invalid Module",
-                    detail=f"Unknown module: {module}. Valid: {', '.join(valid_modules)}",
-                    status=400,
-                )
-            )
+            return fail_invalid_module(module, valid_modules)
 
         module_targets = graph.targets_for_module(cast("TargetModule", module))
         module_names = {t.name for t in module_targets}
@@ -401,25 +395,11 @@ def _validate_build_run_params(
     if params.module:
         valid_modules = ("ingestion", "graphs", "analytics")
         if params.module not in valid_modules:
-            return CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:build:invalid-module",
-                    title="Invalid Module",
-                    detail=f"Unknown module: {params.module}. Valid: {', '.join(valid_modules)}",
-                    status=400,
-                )
-            )
+            return fail_invalid_module(params.module, valid_modules)
 
     provided = [bool(params.targets), params.module is not None, params.all_targets]
     if sum(provided) != 1:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:invalid-selection",
-                title="Invalid Target Selection",
-                detail="Provide exactly one of targets, --module, or --all.",
-                status=400,
-            )
-        )
+        return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
 
     return None
 
@@ -453,14 +433,7 @@ def build_run_handler(
     try:
         runtime = ctx.runtime
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("build", str(e))
 
     graph = get_target_graph()
     scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
@@ -468,14 +441,7 @@ def build_run_handler(
     try:
         goals = _resolve_goals(params.targets, params.module, scope, graph)
     except ValidationError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:invalid-targets",
-                title="Invalid Targets",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_invalid_targets(str(e))
 
     LOG.info(
         "build.run repo=%s commit=%s targets=%s",
@@ -517,14 +483,7 @@ def _execute_and_format_result(
             result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
     except Exception as exc:
         LOG.exception("build.run.error")
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:execution-failed",
-                title="Build Execution Failed",
-                detail=str(exc),
-                status=500,
-            )
-        )
+        return fail_execution_failed("build", str(exc))
 
     if run_mode is RunMode.DRY_RUN or result is None:
         return CliResult.ok(
@@ -570,28 +529,14 @@ def build_history_handler(
     try:
         runtime = ctx.runtime
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:build:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("build", str(e))
 
     gateway = ctx.gateway
     if run_id:
         try:
             record = _lookup_run_by_id(gateway, runtime.snapshot.repo, run_id)
         except ValidationError as e:
-            return CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:build:run-not-found",
-                    title="Run Not Found",
-                    detail=str(e),
-                    status=404,
-                )
-            )
+            return fail_build_run_not_found(str(e))
         return CliResult.ok(
             BuildHistoryResult(
                 runs=[record.to_dict()],

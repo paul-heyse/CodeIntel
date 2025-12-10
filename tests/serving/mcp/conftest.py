@@ -16,7 +16,7 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
@@ -115,7 +115,7 @@ def mcp_backend_factory() -> Callable[..., McpBackendComponents]:
 
 @pytest.fixture
 def mcp_backend_components(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> McpBackendComponents:
     """Provide provisioned gateway components reused across MCP tool tests.

@@ -12,6 +12,7 @@ The primary API is `resolve_from_params()` which takes a params dict directly.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,7 +98,7 @@ class _ConfigParams:
 
 
 def resolve_from_params(
-    params: dict[str, object],
+    params: Mapping[str, object] | Mapping[str, str],
     *,
     allow_fallback: bool = True,
 ) -> ResolvedRuntime:
@@ -221,7 +222,7 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     )
 
 
-def _resolve_from_params_dict(params: dict[str, object]) -> ResolvedRuntime:
+def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) -> ResolvedRuntime:
     """Resolve from explicit CLI parameters.
 
     Parameters
@@ -285,7 +286,9 @@ def _resolve_from_params_dict(params: dict[str, object]) -> ResolvedRuntime:
     )
 
 
-def _extract_required_params_dict(params: dict[str, object]) -> tuple[str, str]:
+def _extract_required_params_dict(
+    params: Mapping[str, object] | Mapping[str, str],
+) -> tuple[str, str]:
     """Extract and validate required repo and commit params.
 
     Parameters

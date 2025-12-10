@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import (
+    fail_invalid_plugin_manifest,
+    fail_invalid_plugin_name,
+    fail_plugin_no_manifest,
+    fail_plugin_not_found,
+)
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.plugins import (
     PluginManifest,
@@ -315,14 +320,7 @@ def plugins_info_handler(ctx: HandlerContext) -> CliResult[PluginInfoResult]:
     plugin = manager.get_plugin(name)
 
     if plugin is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:plugins:not-found",
-                title="Plugin Not Found",
-                detail=f"Plugin not found: {name}",
-                status=404,
-            )
-        )
+        return fail_plugin_not_found(name)
 
     return CliResult.ok(
         PluginInfoResult(
@@ -377,7 +375,7 @@ def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
     CliResult[PluginNewResult]
         Created plugin info.
     """
-    import re  # noqa: PLC0415
+    import re
 
     name = ctx.require_str("name")
     output_dir = ctx.param_path("output") or Path.cwd()
@@ -387,13 +385,8 @@ def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
     # Validate name
     pattern = re.compile(r"^[a-z][a-z0-9_-]*$")
     if not pattern.match(name):
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:plugins:invalid-name",
-                title="Invalid Plugin Name",
-                detail="Plugin name must be lowercase alphanumeric with hyphens/underscores",
-                status=400,
-            )
+        return fail_invalid_plugin_name(
+            "Plugin name must be lowercase alphanumeric with hyphens/underscores"
         )
 
     plugin_dir = create_plugin_scaffold(name, output_dir)
@@ -421,14 +414,7 @@ def plugins_test_handler(ctx: HandlerContext) -> CliResult[PluginTestResult]:
 
     manifest_path = path / "plugin.json"
     if not manifest_path.exists():
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:plugins:no-manifest",
-                title="No Plugin Manifest",
-                detail=f"No plugin.json found in {path}",
-                status=404,
-            )
-        )
+        return fail_plugin_no_manifest(str(path))
 
     manifest = PluginManifest.load(manifest_path)
     harness = PluginTestHarness(manifest)
@@ -486,26 +472,12 @@ def plugins_validate_handler(
 
     manifest_path = path / "plugin.json"
     if not manifest_path.exists():
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:plugins:no-manifest",
-                title="No Plugin Manifest",
-                detail=f"No plugin.json found in {path}",
-                status=404,
-            )
-        )
+        return fail_plugin_no_manifest(str(path))
 
     try:
         manifest = PluginManifest.load(manifest_path)
     except (KeyError, ValueError) as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:plugins:invalid-manifest",
-                title="Invalid Plugin Manifest",
-                detail=f"Error loading manifest: {e}",
-                status=400,
-            )
-        )
+        return fail_invalid_plugin_manifest(str(e))
 
     errors = manifest.validate()
 

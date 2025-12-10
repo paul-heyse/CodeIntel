@@ -10,7 +10,10 @@ import contextlib
 import importlib
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from importlib.abc import Loader, MetaPathFinder
+from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Self
 
@@ -67,16 +70,8 @@ class SandboxConfig:
     memory_limit: int | None = None
 
 
-class SandboxedImporter:
-    """Custom importer that restricts module access.
-
-    Parameters
-    ----------
-    manifest
-        Plugin manifest.
-    config
-        Sandbox configuration.
-    """
+class SandboxedImporter(MetaPathFinder, Loader):
+    """Custom importer that restricts module access."""
 
     def __init__(
         self,
@@ -89,13 +84,7 @@ class SandboxedImporter:
         self._allowed = self._compute_allowed_modules()
 
     def _compute_allowed_modules(self) -> frozenset[str]:
-        """Compute set of allowed modules.
-
-        Returns
-        -------
-        frozenset[str]
-            Allowed module names.
-        """
+        """Compute set of allowed modules."""
         allowed = set(ALLOWED_MODULES)
 
         for capability in self._config.allowed_capabilities:
@@ -104,52 +93,38 @@ class SandboxedImporter:
 
         return frozenset(allowed)
 
-    def find_module(
-        self,
-        name: str,
-        path: object = None,  # noqa: ARG002
-    ) -> SandboxedImporter | None:
-        """Check if module import is allowed.
-
-        Parameters
-        ----------
-        name
-            Module name.
-        path
-            Import path (unused).
-
-        Returns
-        -------
-        SandboxedImporter | None
-            Self if blocking import, None to allow.
-        """
-        # Allow importing the plugin itself
+    def _is_allowed(self, name: str) -> bool:
+        """Return True when module import is permitted."""
         entry_parts = self._manifest.entry_point.split(".", maxsplit=1)
         if entry_parts and name.startswith(entry_parts[0]):
-            return None
+            return True
 
-        # Check if module is allowed
         root_module = name.split(".", maxsplit=1)[0]
-        if root_module in self._allowed or name in self._allowed:
+        return root_module in self._allowed or name in self._allowed
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: Sequence[str] | None,
+        target: ModuleType | None = None,
+    ) -> ModuleSpec | None:
+        """Return spec when blocking an import."""
+        _ = (path, target)
+        if self._is_allowed(fullname):
             return None
+        return ModuleSpec(fullname, self)
 
-        # Block import
-        return self
+    def create_module(self, spec: ModuleSpec) -> ModuleType | None:
+        """Use default module creation semantics."""
+        _ = spec
+        return None
 
-    def load_module(self, name: str) -> None:
-        """Block module load.
-
-        Parameters
-        ----------
-        name
-            Module name.
-
-        Raises
-        ------
-        ImportError
-            Always raised to block import.
-        """
-        msg = f"Plugin '{self._manifest.name}' cannot import '{name}': missing required capability"
+    def exec_module(self, module: ModuleType) -> None:
+        """Block module load with an ImportError."""
+        msg = (
+            f"Plugin '{self._manifest.name}' cannot import '{module.__name__}': "
+            "missing required capability"
+        )
         raise ImportError(msg)
 
 
@@ -195,7 +170,7 @@ class PluginSandbox:
             raise RuntimeError(msg)
 
         # Install custom importer
-        sys.meta_path.insert(0, self._importer)  # type: ignore[arg-type]
+        sys.meta_path.insert(0, self._importer)
         self._active = True
         LOG.debug("Entered sandbox for plugin: %s", self._manifest.name)
         return self
@@ -210,7 +185,7 @@ class PluginSandbox:
         """
         # Remove custom importer
         with contextlib.suppress(ValueError):
-            sys.meta_path.remove(self._importer)  # type: ignore[arg-type]
+            sys.meta_path.remove(self._importer)
         self._active = False
         LOG.debug("Exited sandbox for plugin: %s", self._manifest.name)
 

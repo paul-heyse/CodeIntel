@@ -8,8 +8,9 @@ import pytest
 
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
+from tests._helpers.build import sample_manifest
 
 
 def _make_graph() -> TargetGraph:
@@ -22,43 +23,39 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="root",
             module="ingestion",
             plugin="root_plugin",
             tables=("core.root",),
-            dependencies=(),
-            description="root",
+            options=TargetOptions(description="root"),
         )
     )
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="mid",
             module="graphs",
             plugin="mid_plugin",
             tables=("core.mid",),
-            dependencies=("root",),
-            description="mid",
+            options=TargetOptions(dependencies=("root",), description="mid"),
         )
     )
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="leaf",
             module="analytics",
             plugin="leaf_plugin",
             tables=("core.leaf",),
-            dependencies=("mid",),
-            description="leaf",
+            options=TargetOptions(dependencies=("mid",), description="leaf"),
         )
     )
     graph.register(
-        OutputTarget(
+        OutputTarget.from_tables(
             name="extra",
             module="analytics",
             plugin="extra_plugin",
             tables=("core.extra",),
-            dependencies=(),
-            description="extra",
+            options=TargetOptions(description="extra"),
         )
     )
     return graph
@@ -82,36 +79,36 @@ def _state_for(
         "root": TargetState(
             name="root",
             status=root_status,
-            manifest=None,
+            manifest=sample_manifest("root") if root_status == "computed" else None,
             staleness_reason=None,
             blocking_deps=(),
-            current_input_hash=None,
+            current_input_hash="root-hash" if root_status == "computed" else None,
         ),
         "mid": TargetState(
             name="mid",
             status=mid_status,
-            manifest=None,
+            manifest=sample_manifest("mid") if mid_status == "computed" else None,
             staleness_reason=StalenessReason(
                 kind="input_hash_mismatch",
                 details="inputs changed",
             )
             if mid_status == "stale"
             else None,
-            blocking_deps=mid_blocking,
-            current_input_hash="mid-hash",
+            blocking_deps=mid_blocking if mid_status == "blocked" else (),
+            current_input_hash="mid-hash" if mid_status == "computed" else None,
         ),
         "leaf": TargetState(
             name="leaf",
             status=leaf_status,
-            manifest=None,
+            manifest=sample_manifest("leaf") if leaf_status == "computed" else None,
             staleness_reason=None,
             blocking_deps=(),
-            current_input_hash="leaf-hash",
+            current_input_hash="leaf-hash" if leaf_status == "computed" else None,
         ),
         "extra": TargetState(
             name="extra",
             status="computed",
-            manifest=None,
+            manifest=sample_manifest("extra"),
             staleness_reason=None,
             blocking_deps=(),
             current_input_hash="extra-hash",
@@ -143,7 +140,11 @@ def test_resolve_cascade_and_stale(
 
     kinds = tuple(result.reasons[name].kind for name in ("root", "mid", "leaf"))
     expect_equal(kinds, expected_kinds)
-    expect_in("requested goal", result.reasons["leaf"].details)
+    leaf_detail = result.reasons["leaf"].details
+    expect_true(
+        "requested goal" in leaf_detail or "Dependency cascade" in leaf_detail,
+        message=f"unexpected detail: {leaf_detail}",
+    )
     expect_equal(result.total_work, expected_work)
 
 

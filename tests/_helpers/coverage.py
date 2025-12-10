@@ -26,6 +26,46 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
 
+def _coerce_int(value: object, *, default: int) -> int:
+    """Safely coerce arbitrary values to int with fallback.
+
+    Returns
+    -------
+    int
+        Coerced integer or provided default.
+    """
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _coerce_float(value: object, *, default: float | None) -> float | None:
+    """Safely coerce arbitrary values to float with fallback.
+
+    Returns
+    -------
+    float | None
+        Coerced float or provided default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
 @dataclass(frozen=True)
 class GoidSeedData:
     """Data for inserting a GOID row."""
@@ -59,6 +99,85 @@ class CoverageRangeSeedData:
     end: int
     is_executable: bool = True
     is_covered: bool = True
+
+
+@dataclass(frozen=True)
+class CoverageEdgeMeta:
+    """Typed coverage edge metadata with defaults."""
+
+    covered_lines: int = 1
+    executable_lines: int = 1
+    coverage_ratio: float | None = None
+    last_status: str | None = None
+
+    @classmethod
+    def from_mapping(cls, meta: Mapping[str, object] | None) -> CoverageEdgeMeta:
+        """Coerce loose mapping to typed coverage edge metadata.
+
+        Returns
+        -------
+        CoverageEdgeMeta
+            Parsed metadata with defaults applied.
+        """
+        if meta is None:
+            return cls()
+        covered_lines = _coerce_int(meta.get("covered_lines"), default=1)
+        executable_lines = _coerce_int(meta.get("executable_lines"), default=1)
+        ratio = _coerce_float(meta.get("coverage_ratio"), default=None)
+        last_status = meta.get("last_status")
+        return cls(
+            covered_lines=covered_lines,
+            executable_lines=executable_lines,
+            coverage_ratio=ratio,
+            last_status=str(last_status) if last_status is not None else None,
+        )
+
+    def resolved_ratio(self) -> float:
+        """Return a safe coverage ratio, computing from lines when absent.
+
+        Returns
+        -------
+        float
+            Coverage ratio computed from available fields.
+        """
+        if self.coverage_ratio is not None:
+            return self.coverage_ratio
+        if self.executable_lines <= 0:
+            return 0.0
+        return self.covered_lines / self.executable_lines
+
+
+@dataclass(frozen=True)
+class TestMeta:
+    """Typed test catalog metadata with defaults."""
+
+    status: str = "passed"
+    kind: str = "unit"
+    duration_ms: int = 0
+    markers: str = "[]"
+    parametrized: bool = False
+    flaky: bool = False
+
+    @classmethod
+    def from_mapping(cls, meta: Mapping[str, object] | None, *, status: str) -> TestMeta:
+        """Coerce loose mapping to typed test metadata.
+
+        Returns
+        -------
+        TestMeta
+            Parsed test metadata with defaults applied.
+        """
+        if meta is None:
+            return cls(status=status)
+        markers_raw = meta.get("markers", "[]")
+        return cls(
+            status=str(meta.get("status", status)),
+            kind=str(meta.get("kind", "unit")),
+            duration_ms=_coerce_int(meta.get("duration_ms"), default=0),
+            markers=str(markers_raw),
+            parametrized=bool(meta.get("parametrized", False)),
+            flaky=bool(meta.get("flaky", False)),
+        )
 
 
 def seed_goid(
@@ -186,13 +305,9 @@ def synthesize_coverage_edges(
         rel_path = test_id.split("::")[0]
         qualname = test_id.split("::")[-1]
         urn = f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}"
-        meta = (edge_meta or {}).get(test_id, {})
+        meta = CoverageEdgeMeta.from_mapping((edge_meta or {}).get(test_id))
         coverage_counts[goid] = coverage_counts.get(goid, 0) + 1
         first_span.setdefault(goid, (rel_path, qualname))
-        covered_lines = int(meta.get("covered_lines", 1))
-        executable_lines = int(meta.get("executable_lines", 1))
-        ratio = float(meta.get("coverage_ratio", covered_lines / executable_lines))
-        last_status = str(meta.get("last_status", status))
         edge_rows.append(
             TestCoverageEdgeRow(
                 test_id=test_id,
@@ -203,14 +318,14 @@ def synthesize_coverage_edges(
                 commit=ctx.commit,
                 rel_path=rel_path,
                 qualname=qualname,
-                covered_lines=covered_lines,
-                executable_lines=executable_lines,
-                coverage_ratio=ratio,
-                last_status=last_status,
+                covered_lines=meta.covered_lines,
+                executable_lines=meta.executable_lines,
+                coverage_ratio=meta.resolved_ratio(),
+                last_status=meta.last_status or status,
                 created_at=now,
             )
         )
-        test_meta_payload = (test_meta or {}).get(test_id, {})
+        test_meta_payload = TestMeta.from_mapping((test_meta or {}).get(test_id), status=status)
         tests.setdefault(
             test_id,
             TestCatalogRow(
@@ -219,12 +334,12 @@ def synthesize_coverage_edges(
                 commit=ctx.commit,
                 rel_path=rel_path,
                 qualname=qualname,
-                status=str(test_meta_payload.get("status", status)),
-                kind=str(test_meta_payload.get("kind", "unit")),
-                duration_ms=int(test_meta_payload.get("duration_ms", 0)),
-                markers=test_meta_payload.get("markers", "[]"),
-                parametrized=bool(test_meta_payload.get("parametrized", False)),
-                flaky=bool(test_meta_payload.get("flaky", False)),
+                status=test_meta_payload.status,
+                kind=test_meta_payload.kind,
+                duration_ms=test_meta_payload.duration_ms,
+                markers=test_meta_payload.markers,
+                parametrized=test_meta_payload.parametrized,
+                flaky=test_meta_payload.flaky,
                 created_at=now,
             ),
         )

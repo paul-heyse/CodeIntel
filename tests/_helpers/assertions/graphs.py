@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
@@ -18,6 +19,49 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
+
+
+@dataclass(frozen=True)
+class GraphMetricsTableExpectations:
+    """Expected row counts for graph metrics tables."""
+
+    functions: int | None = None
+    modules: int | None = None
+    modules_min: int | None = None
+    functions_ext: int | None = None
+    modules_ext_min: int | None = None
+    modules_ext: int | None = None
+    config_keys: int | None = None
+    config_projection_min: int | None = None
+    graph_stats_min: int | None = None
+    subsystem_metrics_min: int | None = None
+    subsystem_agreement_min: int | None = None
+    symbol_functions_min: int | None = None
+    symbol_modules_min: int | None = None
+
+
+@dataclass(frozen=True)
+class FunctionMetricsExpectation:
+    """Expected values for a graph_metrics_functions row."""
+
+    goid: int
+    fan_in: int
+    fan_out: int
+    in_degree: int
+    out_degree: int
+    cycle_member: bool
+
+
+@dataclass(frozen=True)
+class ModuleMetricsExpectation:
+    """Expected values for a graph_metrics_modules row."""
+
+    module: str
+    import_fan_in: int
+    import_fan_out: int
+    symbol_fan_in: int
+    symbol_fan_out: int
+    import_cycle_member: bool
 
 
 def assert_graph_counts(
@@ -98,139 +142,134 @@ def assert_coverage_ratio_between(ctx: TestContext, goid: int, *, low: float, hi
     expect_true(low <= ratio <= high, message=f"coverage_ratio {ratio} outside [{low}, {high}]")
 
 
+def _count_for_snapshot(con: DuckDBPyConnection, snapshot: SnapshotRef, query: str) -> int:
+    result = con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
+    return int(result[0])  # type: ignore[index]
+
+
+def _expect_count_equal_if_present(
+    con: DuckDBPyConnection, snapshot: SnapshotRef, *, query: str, expected: int | None
+) -> None:
+    if expected is None:
+        return
+    expect_equal(_count_for_snapshot(con, snapshot, query), expected)
+
+
+def _expect_count_at_least_if_present(
+    con: DuckDBPyConnection, snapshot: SnapshotRef, *, query: str, minimum: int | None
+) -> None:
+    if minimum is None:
+        return
+    expect_true(_count_for_snapshot(con, snapshot, query) >= minimum)
+
+
 def assert_graph_metrics_table_counts(
     con: DuckDBPyConnection,
     snapshot: SnapshotRef,
-    *,
-    functions: int | None = None,
-    modules: int | None = None,
-    modules_min: int | None = None,
-    functions_ext: int | None = None,
-    modules_ext_min: int | None = None,
-    modules_ext: int | None = None,
-    config_keys: int | None = None,
-    config_projection_min: int | None = None,
-    graph_stats_min: int | None = None,
-    subsystem_metrics_min: int | None = None,
-    subsystem_agreement_min: int | None = None,
-    symbol_functions_min: int | None = None,
-    symbol_modules_min: int | None = None,
+    expectations: GraphMetricsTableExpectations,
 ) -> None:
     """Assert core graph metrics table counts for a snapshot."""
-
-    def _count(query: str) -> int:
-        result = con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
-        return int(result[0])  # type: ignore[index]
-
-    if config_keys is not None:
-        expect_equal(
-            _count(
-                "SELECT COUNT(*) FROM analytics.config_graph_metrics_keys "
-                "WHERE repo = ? AND commit = ?"
-            ),
-            config_keys,
-        )
-    if config_projection_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.config_projection_module_edges "
-                "WHERE repo = ? AND commit = ?"
-            )
-            >= config_projection_min
-        )
-    if functions is not None:
-        expect_equal(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_functions "
-                "WHERE repo = ? AND commit = ?"
-            ),
-            functions,
-        )
-    if modules is not None:
-        expect_equal(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?"
-            ),
-            modules,
-        )
-    if modules_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?"
-            )
-            >= modules_min
-        )
-    if functions_ext is not None:
-        expect_equal(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext "
-                "WHERE repo = ? AND commit = ?"
-            ),
-            functions_ext,
-        )
-    if modules_ext is not None:
-        expect_equal(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext "
-                "WHERE repo = ? AND commit = ?"
-            ),
-            modules_ext,
-        )
-    if modules_ext_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext "
-                "WHERE repo = ? AND commit = ?"
-            )
-            >= modules_ext_min
-        )
-    if graph_stats_min is not None:
-        expect_true(
-            _count("SELECT COUNT(*) FROM analytics.graph_stats WHERE repo = ? AND commit = ?")
-            >= graph_stats_min
-        )
-    if subsystem_metrics_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.subsystem_graph_metrics "
-                "WHERE repo = ? AND commit = ?"
-            )
-            >= subsystem_metrics_min
-        )
-    if subsystem_agreement_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?"
-            )
-            >= subsystem_agreement_min
-        )
-    if symbol_modules_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules "
-                "WHERE repo = ? AND commit = ?"
-            )
-            >= symbol_modules_min
-        )
-    if symbol_functions_min is not None:
-        expect_true(
-            _count(
-                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions "
-                "WHERE repo = ? AND commit = ?"
-            )
-            >= symbol_functions_min
-        )
+    _expect_count_equal_if_present(
+        con,
+        snapshot,
+        query="SELECT COUNT(*) FROM analytics.config_graph_metrics_keys WHERE repo = ? AND commit = ?",
+        expected=expectations.config_keys,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.config_projection_module_edges "
+            "WHERE repo = ? AND commit = ?"
+        ),
+        minimum=expectations.config_projection_min,
+    )
+    _expect_count_equal_if_present(
+        con,
+        snapshot,
+        query="SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
+        expected=expectations.functions,
+    )
+    _expect_count_equal_if_present(
+        con,
+        snapshot,
+        query="SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
+        expected=expectations.modules,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query="SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
+        minimum=expectations.modules_min,
+    )
+    _expect_count_equal_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext "
+            "WHERE repo = ? AND commit = ?"
+        ),
+        expected=expectations.functions_ext,
+    )
+    _expect_count_equal_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?"
+        ),
+        expected=expectations.modules_ext,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?"
+        ),
+        minimum=expectations.modules_ext_min,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query="SELECT COUNT(*) FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
+        minimum=expectations.graph_stats_min,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?"
+        ),
+        minimum=expectations.subsystem_metrics_min,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=("SELECT COUNT(*) FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?"),
+        minimum=expectations.subsystem_agreement_min,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules "
+            "WHERE repo = ? AND commit = ?"
+        ),
+        minimum=expectations.symbol_modules_min,
+    )
+    _expect_count_at_least_if_present(
+        con,
+        snapshot,
+        query=(
+            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions "
+            "WHERE repo = ? AND commit = ?"
+        ),
+        minimum=expectations.symbol_functions_min,
+    )
 
 
 def assert_graph_metrics_function_row(
     con: DuckDBPyConnection,
-    *,
-    goid: int,
-    fan_in: int,
-    fan_out: int,
-    in_degree: int,
-    out_degree: int,
-    cycle_member: bool,
+    expectation: FunctionMetricsExpectation,
 ) -> None:
     """Assert a graph_metrics_functions row matches expected values."""
     row = con.execute(
@@ -239,23 +278,28 @@ def assert_graph_metrics_function_row(
         FROM analytics.graph_metrics_functions
         WHERE function_goid_h128 = ?
         """,
-        [goid],
+        [expectation.goid],
     ).fetchone()
-    expect_is_not_none(row, message=f"Missing graph_metrics_functions row for GOID {goid}")
+    expect_is_not_none(
+        row, message=f"Missing graph_metrics_functions row for GOID {expectation.goid}"
+    )
     if row is None:
         return
-    expect_equal(tuple(row), (fan_in, fan_out, in_degree, out_degree, cycle_member))
+    expect_equal(
+        tuple(row),
+        (
+            expectation.fan_in,
+            expectation.fan_out,
+            expectation.in_degree,
+            expectation.out_degree,
+            expectation.cycle_member,
+        ),
+    )
 
 
 def assert_graph_metrics_module_row(
     con: DuckDBPyConnection,
-    *,
-    module: str,
-    import_fan_in: int,
-    import_fan_out: int,
-    symbol_fan_in: int,
-    symbol_fan_out: int,
-    import_cycle_member: bool,
+    expectation: ModuleMetricsExpectation,
 ) -> None:
     """Assert a graph_metrics_modules row matches expected values."""
     row = con.execute(
@@ -264,14 +308,20 @@ def assert_graph_metrics_module_row(
         FROM analytics.graph_metrics_modules
         WHERE module = ?
         """,
-        [module],
+        [expectation.module],
     ).fetchone()
-    expect_is_not_none(row, message=f"Missing graph_metrics_modules row for {module}")
+    expect_is_not_none(row, message=f"Missing graph_metrics_modules row for {expectation.module}")
     if row is None:
         return
     expect_equal(
         tuple(row),
-        (import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member),
+        (
+            expectation.import_fan_in,
+            expectation.import_fan_out,
+            expectation.symbol_fan_in,
+            expectation.symbol_fan_out,
+            expectation.import_cycle_member,
+        ),
     )
 
 
@@ -365,6 +415,9 @@ def require_projection_graph(graph: nx.Graph | None, *, message: str | None = No
 
 
 __all__ = [
+    "FunctionMetricsExpectation",
+    "GraphMetricsTableExpectations",
+    "ModuleMetricsExpectation",
     "assert_component_counts",
     "assert_coverage_ratio_between",
     "assert_cycle_counts",

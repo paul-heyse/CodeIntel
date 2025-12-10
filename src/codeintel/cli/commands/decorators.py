@@ -1,12 +1,23 @@
 """Declarative command binding via @cli_command decorator.
 
 This module provides the @cli_command decorator that eliminates boilerplate
-from CLI command classes. Instead of manually implementing __call__, the
-decorator generates it based on:
+from CLI command classes. It supports two patterns:
 
-- Handler function to invoke
-- Resource requirements
-- Command dataclass fields
+**Legacy Pattern (handler-based)**:
+
+- Handler function receives HandlerContext
+- Use `config=CommandConfig(...)` for resource requirements
+- Command class is a regular dataclass
+
+**New Pattern (Command[T]-based)**:
+
+- Command extends `Command[T]` from `cli.core.command`
+- Implements `execute(self, deps: Deps) -> CliResult[T]`
+- Uses `require_storage` and `require_serving` parameters
+- Full end-to-end type safety
+
+Both patterns are supported during migration. Prefer the new pattern for
+new commands.
 """
 
 from __future__ import annotations
@@ -27,6 +38,8 @@ from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from codeintel.cli.core.command import Command
 
 LOG = logging.getLogger(__name__)
 
@@ -85,31 +98,34 @@ _INFRASTRUCTURE_FIELDS = frozenset(
 def cli_command[T, R](
     operation_id: str,
     *,
-    handler: Callable[[HandlerContext], CliResult[R]],
+    handler: Callable[[HandlerContext], CliResult[R]] | None = None,
     config: CommandConfig | None = None,
+    require_storage: bool = False,
+    require_serving: bool = False,
 ) -> Callable[[type[T]], type[T]]:
     """Decorate CLI command dataclasses with automatic execution.
 
-    Generate a __call__ method that handles all CLI infrastructure:
+    Support two patterns:
 
-    1. Bootstrap CLI (logging, config)
-    2. Extract parameters from dataclass fields
-    3. Create HandlerContext
-    4. Invoke handler
-    5. Render result
-    6. Handle exit code
+    **Legacy Pattern** (handler= provided):
+    Uses HandlerContext-based handlers with CommandConfig.
 
-    Also registers the operation with the global OperationRegistry (NEW registry).
+    **New Pattern** (Command[T] subclass, no handler):
+    Command implements execute(deps) directly.
 
     Parameters
     ----------
     operation_id
         Unique operation identifier (e.g., "jobs.list").
     handler
-        Handler function to invoke.
+        Legacy handler function to invoke. If None, command must extend Command[T].
     config
-        Optional command configuration (resource requirements, description).
-        Defaults to requiring runtime and gateway.
+        Legacy command configuration (resource requirements, description).
+        Defaults to requiring runtime and gateway. Ignored for new pattern.
+    require_storage
+        For new pattern: whether command needs storage access via deps.storage.
+    require_serving
+        For new pattern: whether command needs serving access via deps.serving.
 
     Returns
     -------
@@ -118,7 +134,7 @@ def cli_command[T, R](
 
     Examples
     --------
-    Basic usage with default config (requires runtime and gateway):
+    Legacy pattern with handler:
 
     >>> from codeintel.cli.handlers.context import HandlerContext
     >>> from codeintel.cli.core import CliResult
@@ -129,53 +145,286 @@ def cli_command[T, R](
     >>> # class MyCommand:
     >>> #     name: str = "default"
 
-    With custom config (no runtime required):
+    New pattern with Command[T]:
 
-    >>> cfg = CommandConfig(require_runtime=False, require_gateway=False)
-    >>> # @cli_command("jobs.list", handler=list_handler, config=cfg)
-    >>> # @dataclass
-    >>> # class ListCommand:
+    >>> # @cli_command("jobs.list", require_storage=False)
+    >>> # @dataclass(frozen=True)
+    >>> # class ListJobs(Command[ListResult[JobInfo]]):
     >>> #     limit: int = 20
+    >>> #
+    >>> #     def execute(self, deps: Deps) -> CliResult[ListResult[JobInfo]]:
+    >>> #         ...
+    """
+
+    def decorator(cls: type[T]) -> type[T]:
+        # Detect pattern based on whether class is Command subclass
+        is_new_pattern = _is_command_subclass(cls)
+
+        if is_new_pattern and handler is None:
+            return _decorate_new_style(
+                cls, operation_id, require_storage=require_storage, require_serving=require_serving
+            )
+
+        if handler is not None:
+            return _decorate_legacy(cls, operation_id, handler, config)
+
+        msg = (
+            f"@cli_command on {cls.__name__}: must provide handler= for legacy "
+            "pattern or extend Command[T] for new pattern"
+        )
+        raise TypeError(msg)
+
+    return decorator
+
+
+def _is_command_subclass(cls: type[object]) -> bool:
+    """Check if class is a Command[T] subclass.
+
+    Parameters
+    ----------
+    cls
+        Class to check.
+
+    Returns
+    -------
+    bool
+        True if cls extends Command[T].
+    """
+    try:
+        # Check if it's a subclass of Command
+        # Use __mro__ to avoid issues with generics
+        return any(
+            getattr(base, "__name__", "") == "Command"
+            and getattr(base, "__module__", "").startswith("codeintel.cli")
+            for base in cls.__mro__
+            if base is not object
+        )
+    except TypeError:
+        return False
+
+
+def _decorate_legacy[T, R](
+    cls: type[T],
+    operation_id: str,
+    handler: Callable[[HandlerContext], CliResult[R]],
+    config: CommandConfig | None,
+) -> type[T]:
+    """Decorate with legacy handler pattern.
+
+    Parameters
+    ----------
+    cls
+        Command class.
+    operation_id
+        Operation identifier.
+    handler
+        Handler function.
+    config
+        Optional command config.
+
+    Returns
+    -------
+    type[T]
+        Decorated class.
     """
     effective_config = config or DEFAULT_CONFIG
 
-    def decorator(cls: type[T]) -> type[T]:
-        # Extract description from docstring if not provided
-        op_description = effective_config.description or cls.__doc__ or f"Execute {operation_id}"
-        # Clean up multi-line docstrings - get first line only
-        op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
+    # Extract description from docstring if not provided
+    op_description = effective_config.description or cls.__doc__ or f"Execute {operation_id}"
+    op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
 
-        # Extract group from operation_id (e.g., "jobs.list" -> "jobs")
-        group = operation_id.split(".", maxsplit=1)[0]
+    # Extract group from operation_id (e.g., "jobs.list" -> "jobs")
+    group = operation_id.split(".", maxsplit=1)[0]
 
-        # Register operation with NEW registry
-        register_operation(
-            OperationSpec(
-                operation_id=operation_id,
-                name=cls.__name__,
-                description=op_description,
-                handler=handler,
-                group=group,
-                require_runtime=effective_config.require_runtime,
-                require_gateway=effective_config.require_gateway,
-                require_graph_runtime=effective_config.require_graph_runtime,
-            )
+    # Register operation
+    register_operation(
+        OperationSpec(
+            operation_id=operation_id,
+            name=cls.__name__,
+            description=op_description,
+            handler=handler,
+            group=group,
+            require_runtime=effective_config.require_runtime,
+            require_gateway=effective_config.require_gateway,
+            require_graph_runtime=effective_config.require_graph_runtime,
+        )
+    )
+
+    # Generate __call__ method
+    def generated_call(command_self: CommandInstance) -> None:
+        _execute_command(
+            command=command_self,
+            operation_id=operation_id,
+            handler=handler,
         )
 
-        # Generate __call__ method
-        def generated_call(command_self: CommandInstance) -> None:
-            _execute_command(
-                command=command_self,
-                operation_id=operation_id,
-                handler=handler,
+    cls.__call__ = generated_call  # type: ignore[attr-defined]
+    return cls
+
+
+def _decorate_new_style[T](
+    cls: type[T],
+    operation_id: str,
+    *,
+    require_storage: bool,
+    require_serving: bool,
+) -> type[T]:
+    """Decorate with new Command[T] pattern.
+
+    Parameters
+    ----------
+    cls
+        Command class extending Command[T].
+    operation_id
+        Operation identifier.
+    require_storage
+        Whether storage access is required.
+    require_serving
+        Whether serving access is required.
+
+    Returns
+    -------
+    type[T]
+        Decorated class.
+    """
+    # Set class attributes if not already defined
+    if not hasattr(cls, "__operation_id__"):
+        cls.__operation_id__ = operation_id  # type: ignore[attr-defined]
+    if not hasattr(cls, "__require_storage__"):
+        cls.__require_storage__ = require_storage  # type: ignore[attr-defined]
+    if not hasattr(cls, "__require_serving__"):
+        cls.__require_serving__ = require_serving  # type: ignore[attr-defined]
+
+    # Extract description
+    op_description = cls.__doc__ or f"Execute {operation_id}"
+    op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
+
+    group = operation_id.split(".", maxsplit=1)[0]
+
+    # Create a wrapper handler for registry compatibility
+    def command_handler(ctx: HandlerContext) -> CliResult[object]:
+        # This is called if someone uses execute_operation() from registry
+        # We need to convert HandlerContext to Deps and call execute()
+        from codeintel.cli.deps.compat import deps_from_handler_context
+
+        deps = deps_from_handler_context(ctx)
+        # Reconstruct command from context params
+        cmd = _reconstruct_command(cls, ctx)
+        return cmd.execute(deps)  # type: ignore[union-attr]
+
+    # Register operation
+    register_operation(
+        OperationSpec(
+            operation_id=operation_id,
+            name=cls.__name__,
+            description=op_description,
+            handler=command_handler,
+            group=group,
+            require_runtime=require_storage,
+            require_gateway=require_storage,
+            require_graph_runtime=False,
+        )
+    )
+
+    # Generate __call__ method for CLI invocation
+    def generated_call(command_self: CommandInstance) -> None:
+        _execute_new_command(
+            command_self,  # type: ignore[arg-type]
+            require_storage=require_storage,
+            require_serving=require_serving,
+        )
+
+    cls.__call__ = generated_call  # type: ignore[attr-defined]
+    return cls
+
+
+def _reconstruct_command[T](cls: type[T], ctx: HandlerContext) -> T:
+    """Reconstruct command instance from HandlerContext params.
+
+    Parameters
+    ----------
+    cls
+        Command class.
+    ctx
+        Handler context with params.
+
+    Returns
+    -------
+    T
+        Reconstructed command instance.
+    """
+    # Get dataclass fields
+    if not dataclasses.is_dataclass(cls):
+        return cls()  # type: ignore[return-value]
+
+    kwargs: dict[str, object] = {}
+    for fld in dataclasses.fields(cls):  # type: ignore[arg-type]
+        if fld.name == "flags":
+            # Create SharedFlags from context
+            from codeintel.cli.commands._common import SharedFlags
+
+            kwargs["flags"] = SharedFlags(
+                output_format=ctx.output_format,
+                verbose=ctx.verbosity,
+                project_root=ctx.project_root,
             )
+        elif fld.name in ctx._params:  # noqa: SLF001
+            kwargs[fld.name] = ctx._params[fld.name]  # noqa: SLF001
+        elif fld.default is not dataclasses.MISSING:
+            kwargs[fld.name] = fld.default
+        elif fld.default_factory is not dataclasses.MISSING:
+            kwargs[fld.name] = fld.default_factory()
 
-        # Attach to class
-        cls.__call__ = generated_call  # type: ignore[attr-defined]
+    return cls(**kwargs)  # type: ignore[return-value]
 
-        return cls
 
-    return decorator
+def _execute_new_command[T](
+    command: Command[T],
+    *,
+    require_storage: bool,
+    require_serving: bool,
+) -> None:
+    """Execute a new-style Command[T].
+
+    Parameters
+    ----------
+    command
+        Command instance.
+    require_storage
+        Whether storage is required.
+    require_serving
+        Whether serving is required.
+    """
+    from codeintel.cli.deps import DepsBuilder
+
+    # Extract infrastructure from command
+    infra = _extract_infrastructure(command)
+
+    # Bootstrap CLI
+    bootstrap_cli(verbosity=infra.verbosity)
+
+    # Build deps
+    builder = DepsBuilder().with_verbosity(infra.verbosity)
+
+    if infra.project_root is not None:
+        builder = builder.with_project(infra.project_root)
+
+    if require_storage:
+        builder = builder.with_storage(db_path=infra.database_path)
+
+    if require_serving:
+        builder = builder.with_serving()
+
+    # Execute with deps
+    with builder.build() as deps:
+        result = command.execute(deps)
+
+    # Render result
+    renderer = get_renderer(infra.output_format)
+    exit_code = renderer.render_result(result)
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 def _execute_command[R](

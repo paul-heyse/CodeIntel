@@ -20,7 +20,11 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
     ServeStartResult,
 )
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import (
+    fail_dataset_not_found,
+    fail_invalid_param,
+    fail_unknown_operation,
+)
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
@@ -126,27 +130,13 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
     # Validate operation exists first
     op = get_operation(op_id)
     if op is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:ops:unknown-operation",
-                title="Unknown Operation",
-                detail=f"Unknown operation: {op_id}",
-                status=404,
-            )
-        )
+        return fail_unknown_operation(op_id)
 
     # Parse params list into kwargs
     kwargs: dict[str, object] = {}
     for param_str in params_list:
         if "=" not in param_str:
-            return CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:ops:invalid-param",
-                    title="Invalid Parameter Format",
-                    detail=f"Invalid parameter format: {param_str} (expected key=value)",
-                    status=400,
-                )
-            )
+            return fail_invalid_param(param_str)
         key, value = param_str.split("=", 1)
         kwargs[key] = parse_cli_value(value)
 
@@ -171,14 +161,7 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     contracts = get_dataset_contracts_by_table_key()
     contract = contracts.get(table_key)
     if contract is None:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:ops:dataset-not-found",
-                title="Dataset Not Found",
-                detail=f"Dataset not found: {table_key}",
-                status=404,
-            )
-        )
+        return fail_dataset_not_found(table_key)
 
     columns = contract.schema.columns if contract.schema else []
 

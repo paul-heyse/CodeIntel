@@ -12,7 +12,7 @@ import cyclopts.help as help_pkg
 import cyclopts.help.help as help_mod
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands import _help as help_utils  # noqa: PLC2701
+from codeintel.cli.commands import _help as help_utils
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -22,7 +22,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
-_DisplayDefault = getattr(help_utils, "_DisplayDefault")
+_DISPLAY_DEFAULT_ATTR = "_DisplayDefault"
+DISPLAY_DEFAULT_CLS = getattr(help_utils, _DISPLAY_DEFAULT_ATTR)
 apply_help_patch = help_utils.apply_help_patch
 build_patched_app = help_utils.build_patched_app
 create_parameter_help_panel = help_utils.create_parameter_help_panel
@@ -210,7 +211,7 @@ def test_display_default_repr_is_clean() -> None:
     defaults in help output. It must produce clean repr/str output without
     wrapper text like ``namespace(name='...')``.
     """
-    none_default = _DisplayDefault("(none)")
+    none_default = DISPLAY_DEFAULT_CLS("(none)")
 
     # Clean repr for help output
     expect_equal(repr(none_default), "(none)")
@@ -230,9 +231,9 @@ def test_display_default_repr_is_clean() -> None:
 
 def test_display_default_equality() -> None:
     """Verify _DisplayDefault equality semantics."""
-    dd1 = _DisplayDefault("(none)")
-    dd2 = _DisplayDefault("(none)")
-    dd3 = _DisplayDefault("other")
+    dd1 = DISPLAY_DEFAULT_CLS("(none)")
+    dd2 = DISPLAY_DEFAULT_CLS("(none)")
+    dd3 = DISPLAY_DEFAULT_CLS("other")
 
     # Same name means equal
     expect_equal(dd1, dd2)

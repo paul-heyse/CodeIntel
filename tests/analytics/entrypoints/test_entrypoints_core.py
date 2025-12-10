@@ -20,13 +20,14 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.builders import CoverageFunctionRow, insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
+from tests._helpers.context import TestContext
 from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
 from tests._helpers.graphs import build_ast_map, build_module_map, insert_modules
 
 
 def _seed_entrypoint_ctx(
-    ctx,
+    ctx: TestContext,
 ) -> tuple[
     MockFunctionCatalog,
     dict[str, str],
@@ -113,7 +114,6 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
     """Entry points and entrypoint_tests rows capture coverage and test meta."""
     ctx = coverage_and_graph_context(tmp_path)
     catalog, module_map, features, module_path, func_ast = _seed_entrypoint_ctx(ctx)
-    con = ctx.gateway.con
 
     now = datetime.now(tz=UTC)
     insert_rows(

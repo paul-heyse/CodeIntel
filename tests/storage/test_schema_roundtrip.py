@@ -20,8 +20,8 @@ from codeintel.config.datasets import (
     call_graph_edge_to_tuple,
     get_dataset_contracts_by_table_key,
     serialize_test_coverage_edge,
-    symbol_use_to_tuple,
 )
+from codeintel.config.datasets.rows.graph import symbol_use_to_tuple
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets

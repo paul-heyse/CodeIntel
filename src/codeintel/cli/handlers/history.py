@@ -1,17 +1,22 @@
 """Handlers for history timeseries commands.
 
 Provide analytics aggregation across multiple commit snapshots.
+
+This handler writes to a dedicated output database (not the runtime's database),
+so it uses explicit gateway management rather than HandlerContext.gateway.
 """
 
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config import ConfigBuilder, SnapshotInit
@@ -23,32 +28,33 @@ from codeintel.storage.gateway import (
     open_gateway,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from codeintel.storage.gateway import StorageGateway
+
 LOG = logging.getLogger(__name__)
 
 
-def _make_error(title: str, detail: str, status: int = 1) -> ProblemDetail:
-    """Create a ProblemDetail for an error.
+@contextmanager
+def _output_gateway(output_db: Path) -> Iterator[StorageGateway]:
+    """Open a write-enabled gateway for output database with automatic cleanup.
 
     Parameters
     ----------
-    title
-        Short, human-readable summary of the problem.
-    detail
-        Human-readable explanation specific to this occurrence.
-    status
-        Exit code for this error.
+    output_db
+        Path to the output database.
 
-    Returns
-    -------
-    ProblemDetail
-        Structured error.
+    Yields
+    ------
+    StorageGateway
+        Open gateway that closes on context exit.
     """
-    return ProblemDetail(
-        type=f"urn:codeintel:cli:history:{title.lower().replace(' ', '-')}",
-        title=title,
-        status=status,
-        detail=detail,
-    )
+    gw = open_gateway(StorageConfig.for_ingest(output_db))
+    try:
+        yield gw
+    finally:
+        gw.close()
 
 
 # -----------------------------------------------------------------------------
@@ -86,7 +92,7 @@ def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseri
     commits = ctx.param_list("commits")
 
     if not commits:
-        return CliResult.fail(_make_error("Validation Error", "At least one commit is required"))
+        return fail_history_error("Validation Error", "At least one commit is required")
 
     repo = ctx.require_str("repo")
 
@@ -110,32 +116,24 @@ def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseri
         selection_strategy=selection_strategy,
     )
 
-    storage_cfg = StorageConfig.for_ingest(output_db)
-    gateway = open_gateway(storage_cfg)
-    snapshot_resolver = build_snapshot_gateway_resolver(
-        db_dir=db_dir,
-        repo=repo,
-        primary_gateway=gateway,
-    )
+    # Use dedicated output gateway (separate from runtime's database)
+    with _output_gateway(output_db) as gateway:
+        snapshot_resolver = build_snapshot_gateway_resolver(
+            db_dir=db_dir,
+            repo=repo,
+            primary_gateway=gateway,
+        )
 
-    try:
-        compute_history_timeseries_gateways(gateway, cfg, snapshot_resolver, runner=runner)
-    except FileNotFoundError as exc:
-        LOG.exception("Missing snapshot database for history_timeseries")
-        gateway.close()
-        return CliResult.fail(
-            _make_error(
+        try:
+            compute_history_timeseries_gateways(gateway, cfg, snapshot_resolver, runner=runner)
+        except FileNotFoundError as exc:
+            LOG.exception("Missing snapshot database for history_timeseries")
+            return fail_history_error(
                 "Storage Error", f"Missing snapshot database for one or more commits: {exc}"
             )
-        )
-    except DuckDBError as exc:
-        LOG.exception("Failed to compute history_timeseries")
-        gateway.close()
-        return CliResult.fail(
-            _make_error("Query Error", f"Failed to compute history_timeseries: {exc}")
-        )
-
-    gateway.close()
+        except DuckDBError as exc:
+            LOG.exception("Failed to compute history_timeseries")
+            return fail_history_error("Query Error", f"Failed to compute history_timeseries: {exc}")
 
     LOG.info(
         "history_timeseries written to %s for %d commits",

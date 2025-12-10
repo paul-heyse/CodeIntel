@@ -22,17 +22,13 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
 from tests._helpers.serving_routes import RouteApp, service_app_factory_with_routes
 from tests.serving.http.client_harness import adapt_route
-from tests.serving.mcp.conftest import (
-    McpBackendComponents,
-)
-from tests.serving.mcp.conftest import (
-    mcp_backend_factory as _mcp_backend_factory,
-)
-
-mcp_backend_factory = _mcp_backend_factory
+from tests.serving.mcp.conftest import McpBackendComponents
+from tests.serving.mcp.conftest import mcp_backend_factory as _mcp_backend_factory
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
+
+mcp_backend_factory = _mcp_backend_factory
 
 
 @pytest.fixture
@@ -140,7 +136,7 @@ def architecture_http_client(architecture_http_app: FastAPI) -> Iterator[TestCli
 
 @pytest.fixture
 def provisioned_http_app(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     make_http_app: Callable[..., FastAPI],
 ) -> FastAPI:
     """FastAPI app bound to the provisioned gateway snapshot.
@@ -179,13 +175,13 @@ __all__ += [
 
 
 def _provisioned_backend_source(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> tuple[StorageGateway, tuple[str, str]]:
     return provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)
 
 
 @pytest.fixture
-def datasets_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
+def datasets_route_app(provisioned_repo: TestContext) -> RouteApp:
     """Route-scoped app for dataset endpoints.
 
     Returns
@@ -213,7 +209,7 @@ def datasets_http_client(datasets_route_app: RouteApp) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def functions_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
+def functions_route_app(provisioned_repo: TestContext) -> RouteApp:
     """Route-scoped app for function endpoints.
 
     Returns
@@ -241,7 +237,7 @@ def functions_http_client(functions_route_app: RouteApp) -> Iterator[TestClient]
 
 
 @pytest.fixture
-def meta_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
+def meta_route_app(provisioned_repo: TestContext) -> RouteApp:
     """Route-scoped app for meta endpoints.
 
     Returns
@@ -269,7 +265,7 @@ def meta_http_client(meta_route_app: RouteApp) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def health_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
+def health_route_app(provisioned_repo: TestContext) -> RouteApp:
     """Route-scoped app for health endpoints.
 
     Returns

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 
+from types import ModuleType
+
 from codeintel.cli.config.model import CliConfig, ConfigValidationError
 from codeintel.cli.config.schema import generate_schema
 
@@ -21,12 +23,13 @@ REPO_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\./]+$")
 COMMIT_PATTERN = re.compile(r"^[a-fA-F0-9]{7,40}$")
 
 # Try to import jsonschema for JSON Schema validation
+_jsonschema: ModuleType | None
 try:
     import jsonschema as _jsonschema
 
     _HAS_JSONSCHEMA = True
 except ImportError:
-    _jsonschema = None  # type: ignore[assignment]
+    _jsonschema = None
     _HAS_JSONSCHEMA = False
 
 

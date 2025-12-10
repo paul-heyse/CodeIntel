@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import cast
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -16,7 +17,11 @@ from codeintel.cli.core.result_types import (
     DatasetListResult,
     DatasetSnapshotResult,
 )
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import (
+    fail_file_not_found,
+    fail_missing_required,
+    fail_project_error,
+)
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
@@ -27,7 +32,7 @@ LOG = logging.getLogger(__name__)
 
 def datasets_list_handler(
     ctx: HandlerContext,
-) -> CliResult[DatasetListResult]:
+) -> CliResult[DatasetListResult | None]:
     """List datasets with capabilities and optional filters.
 
     Parameters
@@ -48,16 +53,9 @@ def datasets_list_handler(
 
     # Trigger runtime resolution to validate project exists
     try:
-        _ = ctx.runtime
+        _ = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:datasets:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("datasets", str(e))
 
     LOG.info("Listing datasets (category=%s, include_internal=%s)", category, include_internal)
 
@@ -86,7 +84,7 @@ def datasets_list_handler(
 
 def datasets_lint_handler(
     ctx: HandlerContext,
-) -> CliResult[DatasetLintResult]:
+) -> CliResult[DatasetLintResult | None]:
     """Validate dataset contract health.
 
     Parameters
@@ -102,20 +100,16 @@ def datasets_lint_handler(
     """
     try:
         # Trigger runtime resolution for early error detection
-        _ = ctx.runtime
+        runtime = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:datasets:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("datasets", str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail_project_error("datasets", str(e))
 
     LOG.info("Linting datasets")
 
-    gateway = ctx.gateway
+    runtime_gateway = getattr(runtime, "gateway", None)
+    gateway = runtime_gateway or ctx.gateway
     issues = collect_contract_issues(gateway.con)
 
     passed = len(issues) == 0
@@ -148,14 +142,7 @@ def datasets_snapshot_handler(
     """
     output_path_str = ctx.param_str("output")
     if not output_path_str:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:datasets:missing-param",
-                title="Missing Parameter",
-                detail="output parameter is required",
-                status=400,
-            )
-        )
+        return cast("CliResult[DatasetSnapshotResult]", fail_missing_required("output"))
 
     output_path = Path(output_path_str)
 
@@ -201,24 +188,13 @@ def datasets_diff_handler(
     """
     baseline_path_str = ctx.param_str("baseline_path")
     if not baseline_path_str:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:datasets:missing-param",
-                title="Missing Parameter",
-                detail="baseline_path parameter is required",
-                status=400,
-            )
-        )
+        return cast("CliResult[DatasetDiffResult]", fail_missing_required("baseline_path"))
 
     baseline_path = Path(baseline_path_str)
     if not baseline_path.exists():
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:datasets:file-not-found",
-                title="File Not Found",
-                detail=f"Baseline file not found: {baseline_path}",
-                status=404,
-            )
+        return cast(
+            "CliResult[DatasetDiffResult]",
+            fail_file_not_found(str(baseline_path), domain="datasets"),
         )
 
     LOG.info("Diffing datasets against %s", baseline_path)
@@ -249,6 +225,17 @@ def datasets_diff_handler(
             has_differences=has_differences,
         )
     )
+
+
+def _build_runtime_from_ctx(ctx: HandlerContext) -> object:
+    """Build runtime from handler context for tests.
+
+    Returns
+    -------
+    object
+        Runtime resolved from the handler context.
+    """
+    return ctx.runtime
 
 
 __all__ = [

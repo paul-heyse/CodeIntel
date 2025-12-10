@@ -22,8 +22,6 @@ from tests._helpers.serving_contexts import (
 )
 from tests.serving.mcp.conftest import McpBackendComponents
 
-pytest_plugins = ["tests.serving.mcp.conftest"]
-
 type HandlerContextBuilder = Callable[
     [ProvisionedServiceContext, str, dict[str, object]],
     HandlerContext,
@@ -260,7 +258,9 @@ def handler_context_builder() -> HandlerContextBuilder:
         runtime.repo = service_ctx.repo
         runtime.commit = service_ctx.commit
 
-        snapshot = SnapshotRef(repo=service_ctx.repo, commit=service_ctx.commit, repo_root=repo_root)
+        snapshot = SnapshotRef(
+            repo=service_ctx.repo, commit=service_ctx.commit, repo_root=repo_root
+        )
         graph_runtime = FakeGraphRuntime(
             snapshot=snapshot,
             gateway=service_ctx.gateway,

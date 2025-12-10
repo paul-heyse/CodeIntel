@@ -12,6 +12,7 @@ from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphKind
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
 from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions
@@ -19,7 +20,7 @@ from tests._helpers.graphs import CountingGraphEngineAdapter, GraphStubEngine
 
 
 def _make_counting_engine(
-    gateway, snapshot: SnapshotRef
+    gateway: StorageGateway, snapshot: SnapshotRef
 ) -> CountingGraphEngineAdapter:
     runtime = GraphStubEngine(
         gateway=gateway,

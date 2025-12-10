@@ -31,6 +31,9 @@ from tests._helpers import (
     seed_module_graph_inputs,
 )
 from tests._helpers.assertions import (
+    FunctionMetricsExpectation,
+    GraphMetricsTableExpectations,
+    ModuleMetricsExpectation,
     assert_graph_metrics_function_row,
     assert_graph_metrics_module_row,
     assert_graph_metrics_table_counts,
@@ -87,17 +90,19 @@ def test_graph_metrics_end_to_end(graph_runtime_ctx: GraphRuntimeHarness) -> Non
     assert_graph_metrics_table_counts(
         con,
         graph_runtime_ctx.snapshot,
-        config_keys=CONFIG_GRAPH_METRICS_KEY_COUNT,
-        config_projection_min=1,
-        functions=len(fixtures.call_graph.nodes),
-        modules_min=len(fixtures.import_graph.nodes),
-        functions_ext=len(fixtures.call_graph.nodes),
-        modules_ext_min=len(fixtures.import_graph.nodes),
-        graph_stats_min=MIN_GRAPH_STATS_ROWS,
-        subsystem_metrics_min=1,
-        subsystem_agreement_min=1,
-        symbol_modules_min=len(fixtures.symbol_module_graph.nodes),
-        symbol_functions_min=len(fixtures.symbol_function_graph.nodes),
+        GraphMetricsTableExpectations(
+            config_keys=CONFIG_GRAPH_METRICS_KEY_COUNT,
+            config_projection_min=1,
+            functions=len(fixtures.call_graph.nodes),
+            modules_min=len(fixtures.import_graph.nodes),
+            functions_ext=len(fixtures.call_graph.nodes),
+            modules_ext_min=len(fixtures.import_graph.nodes),
+            graph_stats_min=MIN_GRAPH_STATS_ROWS,
+            subsystem_metrics_min=1,
+            subsystem_agreement_min=1,
+            symbol_modules_min=len(fixtures.symbol_module_graph.nodes),
+            symbol_functions_min=len(fixtures.symbol_function_graph.nodes),
+        ),
     )
 
 
@@ -187,12 +192,14 @@ def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> Non
 
     assert_graph_metrics_function_row(
         ctx.gateway.con,
-        goid=2,
-        fan_in=1,
-        fan_out=1,
-        in_degree=2,
-        out_degree=1,
-        cycle_member=True,
+        FunctionMetricsExpectation(
+            goid=2,
+            fan_in=1,
+            fan_out=1,
+            in_degree=2,
+            out_degree=1,
+            cycle_member=True,
+        ),
     )
     ctx.close()
 
@@ -227,11 +234,13 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
 
     assert_graph_metrics_module_row(
         ctx.gateway.con,
-        module=MODULE_A,
-        import_fan_in=0,
-        import_fan_out=1,
-        symbol_fan_in=0,
-        symbol_fan_out=1,
-        import_cycle_member=False,
+        ModuleMetricsExpectation(
+            module=MODULE_A,
+            import_fan_in=0,
+            import_fan_out=1,
+            symbol_fan_in=0,
+            symbol_fan_out=1,
+            import_cycle_member=False,
+        ),
     )
     ctx.close()

@@ -23,17 +23,13 @@ from tests._helpers.serving_contexts import (
     build_provisioned_service_context,
 )
 from tests._helpers.serving_harnesses import RecordingObservability
-from tests.serving.mcp.conftest import (
-    McpBackendComponents,
-)
-from tests.serving.mcp.conftest import (
-    mcp_backend_factory as _mcp_backend_factory,
-)
-
-mcp_backend_factory = _mcp_backend_factory
+from tests.serving.mcp.conftest import McpBackendComponents
+from tests.serving.mcp.conftest import mcp_backend_factory as _mcp_backend_factory
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests._helpers.context import TestContext
+
+mcp_backend_factory = _mcp_backend_factory
 
 
 @pytest.fixture
@@ -77,7 +73,7 @@ def service_app_factory(
 
 @pytest.fixture
 def provisioned_service_app(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     service_app_factory: Callable[..., ServiceApp],
 ) -> ServiceApp:
     """Service app constructed from the provisioned_repo fixture.
@@ -96,7 +92,7 @@ def provisioned_service_app(
 
 @pytest.fixture
 def provisioned_service_ctx(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> ProvisionedServiceContext:
     """Provisioned service context with rebuild helpers.

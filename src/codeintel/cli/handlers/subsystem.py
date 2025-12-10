@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import fail_subsystem_not_found
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
@@ -289,15 +289,7 @@ def subsystem_show_handler(ctx: HandlerContext) -> CliResult[SubsystemShowResult
 
     if not response.found or response.subsystem is None:
         LOG.debug("Subsystem not found: %s", subsystem_id)
-        return CliResult.fail(
-            ProblemDetail(
-                type="codeintel:subsystem/not-found",
-                title="Subsystem not found",
-                status=404,
-                detail=f"Subsystem not found: {subsystem_id}",
-                instance=f"subsystem://{subsystem_id}",
-            )
-        )
+        return fail_subsystem_not_found(subsystem_id)
 
     return CliResult.ok(
         SubsystemShowResult(

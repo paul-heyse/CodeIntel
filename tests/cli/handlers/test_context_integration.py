@@ -22,8 +22,6 @@ from tests._helpers.configs import ProvisionedGateway
 from tests._helpers.serving_contexts import build_provisioned_service_context
 from tests.serving.mcp.conftest import McpBackendComponents
 
-pytest_plugins = ["tests.serving.mcp.conftest"]
-
 
 def test_full_param_workflow() -> None:
     """Test complete parameter workflow."""

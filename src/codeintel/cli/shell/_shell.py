@@ -11,6 +11,7 @@ import json
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.execution.registry import execute_operation
@@ -24,12 +25,13 @@ if TYPE_CHECKING:
     from typing import TextIO
 
 # Optional readline import for tab completion
+_readline: ModuleType | None
 try:
     import readline as _readline
 
     _READLINE_AVAILABLE = True
 except ImportError:
-    _readline = None  # type: ignore[assignment]
+    _readline = None
     _READLINE_AVAILABLE = False
 
 

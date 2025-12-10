@@ -7,10 +7,12 @@ for DuckDB-based tests. Prefer using relation methods over raw SQL strings.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
-from codeintel.storage.gateway.protocol import DuckDBConnection
+from codeintel.storage.gateway.protocol import DuckDBConnection, StorageGateway
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+GatewayLike = StorageGateway | DuckDBConnection
 
 
 def validate_identifier(name: str, *, kind: str = "identifier") -> str:
@@ -84,8 +86,62 @@ def count_nulls(con: DuckDBConnection, table: str, column: str) -> int:
     return int(result[0]) if result else 0
 
 
+def run_query(
+    gateway: GatewayLike,
+    sql: str,
+    params: Sequence[object] | None = None,
+) -> list[tuple[object, ...]]:
+    """Execute SQL and return all rows as tuples.
+
+    Parameters
+    ----------
+    gateway
+        StorageGateway or DuckDB connection.
+    sql
+        SQL statement to execute.
+    params
+        Optional parameter bindings.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Query results as tuples.
+    """
+    con = gateway if isinstance(gateway, DuckDBConnection) else gateway.con
+    return [tuple(row) for row in con.execute(sql, params).fetchall()]
+
+
+def expect_single_value(row: Sequence[object] | None, *, message: str | None = None) -> object:
+    """Extract a single value from a one-column row.
+
+    Parameters
+    ----------
+    row
+        Row returned from ``fetchone()`` (tuple or list).
+    message
+        Optional override for the assertion message.
+
+    Returns
+    -------
+    object
+        The single value contained in the row.
+
+    Raises
+    ------
+    AssertionError
+        If the row is missing or does not contain exactly one value.
+    """
+    if row is None:
+        raise AssertionError(message or "Expected one row but query returned none")
+    if len(row) != 1:
+        raise AssertionError(message or f"Expected one column, found {len(row)}")
+    return row[0]
+
+
 __all__ = [
     "count_nulls",
     "count_table_rows",
+    "expect_single_value",
+    "run_query",
     "validate_identifier",
 ]

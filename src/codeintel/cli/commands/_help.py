@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
-from typing import TYPE_CHECKING, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
 import attrs
 import cyclopts.help.help as help_mod
@@ -48,7 +48,7 @@ class _DisplayDefault:
     """
 
     __slots__ = ("name",)
-    __hash__ = None  # type: ignore[assignment]  # Unhashable due to mutable-like equality
+    __hash__: ClassVar[None] = None  # Unhashable due to mutable-like equality
 
     def __init__(self, name: str) -> None:
         """Initialize with the display name.

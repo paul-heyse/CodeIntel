@@ -8,17 +8,35 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 LOG = logging.getLogger(__name__)
 
+# Minimal protocols to describe OpenTelemetry trace module and span context.
+@runtime_checkable
+class _TraceContext(Protocol):
+    trace_id: int
+    span_id: int
+
+
+@runtime_checkable
+class _Span(Protocol):
+    def get_span_context(self) -> _TraceContext: ...
+
+
+@runtime_checkable
+class _TraceModule(Protocol):
+    def get_current_span(self) -> _Span: ...
+
+
 # Try to import OpenTelemetry trace module (optional dependency)
+_otel_trace: _TraceModule | None
 try:
     from opentelemetry import trace as _otel_trace
 
     _OTEL_TRACE_AVAILABLE = True
 except ImportError:
-    _otel_trace = None  # type: ignore[assignment]
+    _otel_trace = None
     _OTEL_TRACE_AVAILABLE = False
 
 

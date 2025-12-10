@@ -21,8 +21,7 @@ from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_w
 from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
-
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # build_health_router Tests
@@ -48,7 +47,7 @@ def test_build_health_router_returns_router() -> None:
 
 
 def test_health_endpoint_returns_status_ok(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /health returns status: ok with repo and commit info.
 
@@ -79,7 +78,7 @@ def test_health_endpoint_returns_status_ok(
 
 
 def test_health_endpoint_includes_limits(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /health includes limits when service has them.
 
@@ -108,7 +107,7 @@ def test_health_endpoint_includes_limits(
 
 
 def test_health_endpoint_read_only_false(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
 ) -> None:
     """Verify /health reflects read_only=False when configured.
 

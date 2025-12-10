@@ -263,7 +263,7 @@ def test_datasets_snapshot_handler_missing_output() -> None:
     expect_true(not result.success)
     error = result.error
     if error is not None:
-        expect_equal(error.type, "urn:codeintel:datasets:missing-param")
+        expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
 
 
 @patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
@@ -304,7 +304,7 @@ def test_datasets_diff_handler_missing_baseline() -> None:
     expect_true(not result.success)
     error = result.error
     if error is not None:
-        expect_equal(error.type, "urn:codeintel:datasets:missing-param")
+        expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
 
 
 def test_datasets_diff_handler_baseline_not_found(tmp_path: Path) -> None:

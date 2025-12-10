@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.errors.factory import fail_project_error
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
 
@@ -146,16 +146,11 @@ def docs_export_handler(
 
     try:
         # Access runtime to trigger resolution and validate project
-        _ = ctx.runtime
+        _ = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:docs:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("docs", str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail_project_error("docs", str(e))
 
     # Determine mode
     if dry_run:
@@ -208,16 +203,11 @@ def docs_validate_handler(
     """
     try:
         # Access runtime to trigger resolution and validate project
-        _ = ctx.runtime
+        _ = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
-        return CliResult.fail(
-            ProblemDetail(
-                type="urn:codeintel:docs:project-error",
-                title="Project Error",
-                detail=str(e),
-                status=400,
-            )
-        )
+        return fail_project_error("docs", str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail_project_error("docs", str(e))
 
     LOG.info("Validating docs exports")
 
@@ -230,6 +220,17 @@ def docs_validate_handler(
             issues=[],
         )
     )
+
+
+def _build_runtime_from_ctx(ctx: HandlerContext) -> object:
+    """Build runtime from handler context for tests.
+
+    Returns
+    -------
+    object
+        Runtime resolved from the handler context.
+    """
+    return ctx.runtime
 
 
 __all__ = [
