@@ -69,6 +69,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.networkx_graphs import (
     bidirectional_deps_graph,
+    bridge_chain_graph,
     chain_graph,
     complete_digraph,
     complete_graph,
@@ -78,6 +79,7 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     empty_digraph,
     empty_graph,
+    fan_in_fan_out_graph,
     god_module_graph,
     hub_dependencies_graph,
     independent_modules_graph,
@@ -283,11 +285,11 @@ def test_degree_centrality_empty_graph_returns_empty() -> None:
 
 def test_in_degree_centrality() -> None:
     """In-degree centrality computation."""
-    graph = nx.DiGraph([(1, 0), (2, 0), (3, 0)])
+    graph = fan_in_fan_out_graph(sources=("s1", "s2", "s3"), sinks=("t1",))
     result = compute_in_degree_centrality(graph)
 
     # Node 0 has highest in-degree
-    expect_true(result[0] > result[1])
+    expect_true(result["core"] > result["s1"])
 
 
 def test_in_degree_centrality_empty_graph() -> None:
@@ -300,11 +302,11 @@ def test_in_degree_centrality_empty_graph() -> None:
 
 def test_out_degree_centrality() -> None:
     """Out-degree centrality computation."""
-    graph = nx.DiGraph([(0, 1), (0, 2), (0, 3)])
+    graph = fan_in_fan_out_graph(sinks=("out1", "out2", "out3"))
     result = compute_out_degree_centrality(graph)
 
     # Node 0 has highest out-degree
-    expect_true(result[0] > result[1])
+    expect_true(result["core"] > result["out1"])
 
 
 def test_out_degree_centrality_empty_graph() -> None:
@@ -531,7 +533,7 @@ def test_bridges_empty_graph_returns_empty() -> None:
 
 def test_bridges_path_graph_all_edges_are_bridges() -> None:
     """Path graph - all edges are bridges."""
-    graph = nx.path_graph(4)
+    graph = bridge_chain_graph(segments=4, segment_size=1)
     result = find_bridges(graph)
 
     # All edges in a path are bridges

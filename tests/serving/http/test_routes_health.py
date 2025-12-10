@@ -5,10 +5,9 @@ This module tests the health endpoint using real gateways and TestClient.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, status
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
@@ -18,11 +17,10 @@ from tests._helpers.assertions import (
     expect_in,
     expect_true,
 )
+from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
-
-HttpAppFactory = Callable[..., FastAPI]
 
 
 # =============================================================================
@@ -50,7 +48,6 @@ def test_build_health_router_returns_router() -> None:
 
 def test_health_endpoint_returns_status_ok(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health returns status: ok with repo and commit info.
 
@@ -58,18 +55,18 @@ def test_health_endpoint_returns_status_ok(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-        config_overrides={"read_only": True},
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_health_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(
+            limits=limits,
+            config_overrides={"read_only": True},
+        ),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -82,7 +79,6 @@ def test_health_endpoint_returns_status_ok(
 
 def test_health_endpoint_includes_limits(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health includes limits when service has them.
 
@@ -90,19 +86,17 @@ def test_health_endpoint_includes_limits(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     default_limit = 25
     max_rows = 250
     limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_health_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(limits=limits),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -114,7 +108,6 @@ def test_health_endpoint_includes_limits(
 
 def test_health_endpoint_read_only_false(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /health reflects read_only=False when configured.
 
@@ -122,18 +115,18 @@ def test_health_endpoint_read_only_false(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-        config_overrides={"read_only": False},
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_health_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(
+            limits=limits,
+            config_overrides={"read_only": False},
+        ),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)

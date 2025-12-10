@@ -5,15 +5,15 @@ This module tests the function-related HTTP endpoints using real gateways.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, status
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.routes.functions import RouterOptions
+from codeintel.serving.http.routes.functions import RouterOptions, build_functions_router
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
+from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -96,18 +96,16 @@ def test_router_options_with_auto_pipeline() -> None:
 
 def test_app_with_auto_pipeline_options(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: Callable[..., FastAPI],
 ) -> None:
     """Verify create_app works with auto_pipeline option."""
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-        auto_pipeline=True,
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_functions_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(limits=limits, auto_pipeline=True),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/functions/high-risk")
 
     expect_equal(response.status_code, status.HTTP_200_OK)

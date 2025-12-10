@@ -9,7 +9,8 @@ This module provides:
 Examples
 --------
 >>> from codeintel.cli import app, main
->>> from codeintel.cli.handlers import ide_hints_handler, EnhancedHandlerContext
+>>> from codeintel.cli.handlers import ide_hints_handler
+>>> from codeintel.cli.handlers.context import HandlerContext
 """
 
 from __future__ import annotations

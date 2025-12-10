@@ -92,7 +92,9 @@ def measure_ingest_perf(
     )
 
 
-def assert_macro_perf(result: MacroPerfResult, *, slowdown_factor: float = 10.0, slack: float = 0.05) -> None:
+def assert_macro_perf(
+    result: MacroPerfResult, *, slowdown_factor: float = 10.0, slack: float = 0.05
+) -> None:
     """Assert macro ingest is within acceptable bound of prepared inserts."""
     expect_true(
         result.rows_written > 0,

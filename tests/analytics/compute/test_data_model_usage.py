@@ -12,10 +12,9 @@ import pytest
 from codeintel.analytics.compute.data_models import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import SnapshotInit
-from codeintel.storage.gateway import StorageGateway
+from tests._helpers import TestContext, create_test_context
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.config_factory import data_model_usage_cfg
-from tests._helpers.gateway import GatewayFactory
 
 
 def _function_ast(code: str, *, goid: int, rel_path: str, qualname: str) -> FunctionAst:
@@ -35,29 +34,27 @@ def _function_ast(code: str, *, goid: int, rel_path: str, qualname: str) -> Func
 
 
 @pytest.fixture
-def gateway() -> Iterator[StorageGateway]:
-    """Provide a gateway with schema applied but validation disabled.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway configured for analytics classification tests.
-    """
-    gw = GatewayFactory().without_validation().without_views().open()
+def data_model_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide a test context with schema ready for data model usage."""
+    ctx = create_test_context(tmp_path)
     try:
-        yield gw
+        yield ctx
     finally:
-        gw.close()
+        ctx.close()
 
 
-def test_compute_data_model_usage_records_multiple_kinds(gateway: StorageGateway) -> None:
+def test_compute_data_model_usage_records_multiple_kinds(data_model_ctx: TestContext) -> None:
     """Classify model interactions across create/update/serialize/delete operations."""
     cfg = data_model_usage_cfg(
-        SnapshotInit(repo="demo/repo", commit="abc123", repo_root=Path.cwd()),
+        SnapshotInit(
+            repo=data_model_ctx.repo,
+            commit=data_model_ctx.commit,
+            repo_root=data_model_ctx.repo_root,
+        ),
         max_examples_per_usage=2,
     )
 
-    con = gateway.con
+    con = data_model_ctx.gateway.con
     con.execute(
         """
         INSERT INTO analytics.data_models (
@@ -86,7 +83,7 @@ def test_compute_data_model_usage_records_multiple_kinds(gateway: StorageGateway
             TRUE, FALSE, FALSE, 'typed', 'annotations', NOW()
         )
         """,
-        [cfg.repo, cfg.commit],
+        [data_model_ctx.repo, data_model_ctx.commit],
     )
 
     function_ast = _function_ast(
@@ -106,7 +103,7 @@ def process_user(user: User) -> dict[str, str]:
     ast_by_goid = {10: function_ast}
 
     compute_data_model_usage(
-        gateway,
+        data_model_ctx.gateway,
         cfg,
         module_map=module_map,
         ast_by_goid=ast_by_goid,

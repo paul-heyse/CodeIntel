@@ -8,9 +8,9 @@ from __future__ import annotations
 from codeintel.graphs.validation import run_graph_validations
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_rows_equal
-from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 
 
 def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestEnv) -> None:
@@ -24,7 +24,7 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
         gateway,
         snapshot=snapshot,
         catalog_provider=provider,
-        runtime=make_graph_runtime_options(snapshot=snapshot),
+        runtime=runtime_with_graphs(gateway, snapshot)[0],
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
     expect_rows_equal(rows, [("pkg/a.py",)], message="graph_validation_paths")

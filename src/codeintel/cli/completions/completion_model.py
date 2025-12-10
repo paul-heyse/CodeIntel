@@ -204,8 +204,9 @@ def build_completion_model() -> CompletionModel:
             if group not in command_groups:
                 command_groups[group] = []
 
-            # Build flags from param_schema
-            flags = _extract_flags_from_schema(spec.param_schema)
+            # Note: New OperationSpec doesn't have param_schema, so flags are empty
+            # Command-line flags come from Cyclopts dataclass definitions instead
+            flags: list[FlagSpec] = []
 
             command_groups[group].append(
                 CommandSpec(

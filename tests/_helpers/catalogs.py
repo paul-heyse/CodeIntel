@@ -43,9 +43,7 @@ def _iter_functions(catalog: FunctionCatalog | MockFunctionCatalog) -> Iterable[
         yield from funcs_attr
 
 
-def seed_goids_from_catalog(
-    ctx: TestContext, catalog: CatalogLike
-) -> None:
+def seed_goids_from_catalog(ctx: TestContext, catalog: CatalogLike) -> None:
     """Insert core.goids rows for every function in a FunctionCatalog."""
     catalog_obj = _normalize_catalog(catalog)
     now = datetime.now(tz=UTC)

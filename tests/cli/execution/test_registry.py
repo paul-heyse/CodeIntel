@@ -317,7 +317,9 @@ def test_spec_creation_with_defaults() -> None:
     spec = _create_test_spec()
     _verify_true(condition=spec.require_runtime, message="require_runtime should default True")
     _verify_true(condition=spec.require_gateway, message="require_gateway should default True")
-    _verify_false(condition=spec.require_graph_runtime, message="require_graph_runtime should default False")
+    _verify_false(
+        condition=spec.require_graph_runtime, message="require_graph_runtime should default False"
+    )
     _verify_equal(spec.tags, ())
     _verify_false(condition=spec.hidden, message="hidden should default False")
 
@@ -337,7 +339,9 @@ def test_spec_creation_with_all_fields() -> None:
     )
     _verify_false(condition=spec.require_runtime, message="require_runtime should be False")
     _verify_false(condition=spec.require_gateway, message="require_gateway should be False")
-    _verify_true(condition=spec.require_graph_runtime, message="require_graph_runtime should be True")
+    _verify_true(
+        condition=spec.require_graph_runtime, message="require_graph_runtime should be True"
+    )
     _verify_equal(spec.tags, ("tag1", "tag2"))
     _verify_true(condition=spec.hidden, message="hidden should be True")
 

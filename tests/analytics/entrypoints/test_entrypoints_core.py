@@ -24,7 +24,6 @@ from tests._helpers.builders import (
     TestCoverageEdgeRow,
     insert_rows,
 )
-from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
 from tests._helpers.graphs import build_ast_map, build_module_map, insert_goids, insert_modules
 

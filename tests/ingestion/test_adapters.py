@@ -33,12 +33,12 @@ from tests._helpers.assertions import (
 from tests._helpers.fakes.tools import (
     make_failing_tool_service,
     make_success_tool_service,
-    write_dummy_scip_files,
 )
 from tests._helpers.ingestion import write_pytest_report
 from tests._helpers.orchestration.tooling import (
     ToolingArtifacts,
     ToolingOutputs,
+    build_tooling_artifacts,
 )
 
 pytest_plugins = ["tests._helpers.orchestration.tooling"]
@@ -93,16 +93,7 @@ def coverage_tooling(tmp_path: Path, tooling_outputs: ToolingOutputs) -> Tooling
     ToolingArtifacts
         Bundle containing adapter and coverage/test artifacts.
     """
-    scip_index, scip_index_json = write_dummy_scip_files(tmp_path)
-    return ToolingArtifacts(
-        coverage_file=tooling_outputs.context.coverage_file,
-        pytest_report=write_pytest_report(tmp_path),
-        scip_index=scip_index,
-        scip_index_json=scip_index_json,
-        service=tooling_outputs.context.service,
-        adapter=ToolRunnerAdapter(tooling_outputs.context.service),
-        context=tooling_outputs.context,
-    )
+    return build_tooling_artifacts(tmp_path, tooling_outputs=tooling_outputs)
 
 
 # =============================================================================
@@ -453,7 +444,8 @@ def test_tool_runner_adapter_run_coverage_success(
     result = asyncio.run(
         coverage_tooling.adapter.run_coverage(
             tooling_outputs.context.repo_root,
-            coverage_file=coverage_tooling.coverage_file,
+            coverage_file=tooling_outputs.context.coverage_file,
+            output_path=coverage_tooling.coverage_file,
         )
     )
 

@@ -1,12 +1,14 @@
 """Enhanced help system with rich contextual output.
 
 Provide detailed help for operations using introspection APIs,
-including parameter documentation, examples, and JSON schemas.
+including operation metadata and resource requirements.
+
+Note: Phase 6 Migration - Updated to work with the new OperationInfo
+structure from the unified handler-based registry.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from typing import TextIO
@@ -16,13 +18,16 @@ from rich.panel import Panel
 from rich.table import Table
 
 from codeintel.cli.introspection.discovery import (
+    OperationInfo,
     get_operation_info,
-    get_operation_schema,
     list_all_operations,
-    list_operations_by_category,
+    list_operations_by_group,
     search_operations,
 )
 from codeintel.cli.rendering import CODEINTEL_THEME
+
+# Minimum number of parts in operation_id for group/action split (e.g., "jobs.list")
+_MIN_OPERATION_ID_PARTS = 2
 
 
 @dataclass
@@ -69,79 +74,55 @@ class HelpRenderer:
         table = Table(show_header=False, box=None)
         table.add_column("Key", style="bold")
         table.add_column("Value")
-        table.add_row("Category", info.category)
-        table.add_row("Progress", "Yes" if info.requires_progress else "No")
-        table.add_row("Retryable", "Yes" if info.retryable else "No")
+        table.add_row("Name", info.name)
+        table.add_row("Group", info.group)
+        table.add_row("Requires Runtime", "Yes" if info.require_runtime else "No")
+        table.add_row("Requires Gateway", "Yes" if info.require_gateway else "No")
+        table.add_row("Requires Graph Runtime", "Yes" if info.require_graph_runtime else "No")
+        if info.tags:
+            table.add_row("Tags", ", ".join(info.tags))
         self.console.print(table)
         self.console.print()
 
-        # Parameters
-        if info.parameters:
-            self.console.print("[heading]Parameters[/heading]")
-            param_table = Table()
-            param_table.add_column("Name", style="cyan")
-            param_table.add_column("Type")
-            param_table.add_column("Required")
-            for param in info.parameters:
-                param_table.add_row(
-                    str(param.get("name", "")),
-                    str(param.get("type", "")),
-                    "Yes" if param.get("required") else "No",
-                )
-            self.console.print(param_table)
-            self.console.print()
-
-        # Examples
-        if info.examples:
-            self.console.print("[heading]Examples[/heading]")
-            for example in info.examples:
-                self.console.print(f"  [dim]$[/dim] {example}")
-            self.console.print()
+        # Usage example
+        self._render_usage_example(info)
 
         return True
 
-    def render_operation_schema(self, operation_id: str) -> bool:
-        """Render JSON Schema for operation parameters.
+    def _render_usage_example(self, info: OperationInfo) -> None:
+        """Render usage example for an operation.
 
         Parameters
         ----------
-        operation_id
-            Operation to describe.
-
-        Returns
-        -------
-        bool
-            True if schema found or operation has no parameters.
+        info
+            Operation information.
         """
-        info = get_operation_info(operation_id)
-        if info is None:
-            self.console.print(f"[error]Operation not found: {operation_id}[/error]")
-            return False
+        self.console.print("[heading]Usage[/heading]")
+        # Generate basic CLI example from operation_id
+        parts = info.operation_id.split(".")
+        if len(parts) >= _MIN_OPERATION_ID_PARTS:
+            group, action = parts[0], parts[1]
+            self.console.print(f"  [dim]$[/dim] codeintel {group} {action}")
+        else:
+            self.console.print(f"  [dim]$[/dim] codeintel op call {info.operation_id}")
+        self.console.print()
 
-        schema = get_operation_schema(operation_id)
-        if schema is None:
-            self.console.print("[dim]No parameters for this operation[/dim]")
-            return True
-
-        self.console.print(json.dumps(schema, indent=2))
-        return True
-
-    def render_operation_list(self, *, by_category: bool = False) -> None:
+    def render_operation_list(self, *, by_group: bool = False) -> None:
         """Render list of all operations.
 
         Parameters
         ----------
-        by_category
-            Group by category.
+        by_group
+            Group by operation group.
         """
-        if by_category:
-            categories = list_operations_by_category()
-            if not categories:
+        if by_group:
+            groups = list_operations_by_group()
+            if not groups:
                 self.console.print("[dim]No operations registered[/dim]")
                 return
 
-            for category, op_ids in sorted(categories.items()):
-                self.console.print(f"\n[heading]{category.upper()}[/heading]")
+            for group, op_ids in sorted(groups.items()):
+                self.console.print(f"\n[heading]{group.upper()}[/heading]")
                 for op_id in sorted(op_ids):
                     info = get_operation_info(op_id)
                     desc = info.description if info else ""
@@ -154,10 +135,10 @@ class HelpRenderer:
 
             table = Table(title="Available Operations")
             table.add_column("Operation ID", style="cyan")
-            table.add_column("Category")
+            table.add_column("Group")
             table.add_column("Description")
             for info in sorted(operations, key=lambda x: x.operation_id):
-                table.add_row(info.operation_id, info.category, info.description)
+                table.add_row(info.operation_id, info.group, info.description)
             self.console.print(table)
 
     def render_search_results(self, query: str) -> None:
@@ -217,23 +198,23 @@ def render_help_text(
         return False
 
     writer.write(f"Operation: {info.operation_id}\n")
-    writer.write(f"Category: {info.category}\n")
+    writer.write(f"Name: {info.name}\n")
+    writer.write(f"Group: {info.group}\n")
     writer.write(f"Description: {info.description}\n")
-    writer.write(f"Progress: {'Yes' if info.requires_progress else 'No'}\n")
-    writer.write(f"Retryable: {'Yes' if info.retryable else 'No'}\n")
+    writer.write(f"Requires Runtime: {'Yes' if info.require_runtime else 'No'}\n")
+    writer.write(f"Requires Gateway: {'Yes' if info.require_gateway else 'No'}\n")
+    writer.write(f"Requires Graph Runtime: {'Yes' if info.require_graph_runtime else 'No'}\n")
+    if info.tags:
+        writer.write(f"Tags: {', '.join(info.tags)}\n")
 
-    if info.parameters:
-        writer.write("\nParameters:\n")
-        for param in info.parameters:
-            name = param.get("name", "")
-            ptype = param.get("type", "")
-            required = "required" if param.get("required") else "optional"
-            writer.write(f"  {name}: {ptype} ({required})\n")
-
-    if info.examples:
-        writer.write("\nExamples:\n")
-        for example in info.examples:
-            writer.write(f"  $ {example}\n")
+    # Generate basic usage example
+    writer.write("\nUsage:\n")
+    parts = info.operation_id.split(".")
+    if len(parts) >= _MIN_OPERATION_ID_PARTS:
+        group, action = parts[0], parts[1]
+        writer.write(f"  $ codeintel {group} {action}\n")
+    else:
+        writer.write(f"  $ codeintel op call {info.operation_id}\n")
 
     return True
 

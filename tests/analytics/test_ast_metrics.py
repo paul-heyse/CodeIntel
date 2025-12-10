@@ -32,9 +32,10 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
-from tests._helpers.graphs import build_canonical_ast_lookup
+from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.repo import (
     GOID_FUNC_A,
     GOID_FUNC_B,
@@ -111,14 +112,16 @@ def ast_metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 @pytest.fixture
 def ast_lookup(ast_metrics_ctx: TestContext) -> dict[int, FunctionAst]:
-    """Build an AST lookup for canonical functions.
-
-    Returns
-    -------
-    dict[int, FunctionAst]
-        Mapping of GOID to parsed function metadata.
-    """
-    return build_canonical_ast_lookup(ast_metrics_ctx.repo_root)
+    """Apply canonical AST artifacts and ensure GOIDs are registered."""
+    artifacts = canonical_ast_artifacts(ast_metrics_ctx)
+    if (
+        ast_metrics_ctx.query_count(
+            "core.goids", f"repo = '{ast_metrics_ctx.repo}' AND commit = '{ast_metrics_ctx.commit}'"
+        )
+        == 0
+    ):
+        ensure_catalog_with_goids(ast_metrics_ctx, artifacts.catalog)
+    return artifacts.ast_map
 
 
 def _call_fan_counts(ast_lookup: dict[int, FunctionAst]) -> tuple[dict[int, int], dict[int, int]]:

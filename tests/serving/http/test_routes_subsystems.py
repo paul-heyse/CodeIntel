@@ -121,7 +121,9 @@ def test_subsystem_detail_nonexistent(
     architecture_route_client: TestClient,
 ) -> None:
     """/architecture/subsystem handles nonexistent subsystem."""
-    response = architecture_route_client.get("/architecture/subsystem?subsystem_id=nonexistent_subsystem_xyz")
+    response = architecture_route_client.get(
+        "/architecture/subsystem?subsystem_id=nonexistent_subsystem_xyz"
+    )
 
     expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 

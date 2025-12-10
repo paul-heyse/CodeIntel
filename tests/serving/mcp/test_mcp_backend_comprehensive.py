@@ -24,6 +24,7 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail, ProblemError
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.analytics_samples import AnalyticsSamples, architecture_seed_selector
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -62,6 +63,20 @@ def _build_arch_backend(
         repo="demo/repo",
         commit="deadbeef",
     ).backend
+
+
+@pytest.fixture
+def architecture_samples(
+    architecture_gateway: StorageGateway,
+) -> AnalyticsSamples:
+    """Analytics identifiers for the seeded architecture gateway.
+
+    Returns
+    -------
+    AnalyticsSamples
+        Sample identifiers loaded from the architecture gateway.
+    """
+    return architecture_seed_selector(architecture_gateway)
 
 
 # =============================================================================
@@ -174,9 +189,13 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
 def test_duckdb_backend_list_subsystems(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify list_subsystems works with architecture gateway."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
+
+    if architecture_samples.subsystem_id is None:
+        pytest.skip("No subsystem data available")
 
     response = backend.list_subsystems(limit=10)
 
@@ -186,9 +205,13 @@ def test_duckdb_backend_list_subsystems(
 def test_duckdb_backend_list_subsystems_with_role_filter(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify list_subsystems accepts role filter."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
+
+    if architecture_samples.subsystem_id is None:
+        pytest.skip("No subsystem data available")
 
     response = backend.list_subsystems(limit=10, role="test_role")
 
@@ -198,9 +221,13 @@ def test_duckdb_backend_list_subsystems_with_role_filter(
 def test_duckdb_backend_list_subsystems_with_query_filter(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify list_subsystems accepts query filter."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
+
+    if architecture_samples.subsystem_id is None:
+        pytest.skip("No subsystem data available")
 
     response = backend.list_subsystems(limit=10, q="test")
 

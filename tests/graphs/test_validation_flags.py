@@ -8,8 +8,8 @@ from codeintel.graphs.validation import apply_severity_overrides, resolve_valida
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
-from tests._helpers.graphs import build_graph_engine_double
 
 
 def _runtime_options(
@@ -17,19 +17,20 @@ def _runtime_options(
     *,
     strict: bool,
 ) -> GraphRuntimeOptions:
+    options, _ = runtime_with_graphs(
+        env.gateway,
+        env.snapshot,
+        call_graph=empty_digraph(),
+        import_graph=empty_digraph(),
+        symbol_module_graph=empty_graph(),
+        symbol_function_graph=empty_graph(),
+        config_graph=empty_graph(),
+        test_function_graph=empty_graph(),
+    )
     return make_graph_runtime_options(
         snapshot=env.snapshot,
         features=GraphFeatureFlags(validation_strict=strict),
-        engine=build_graph_engine_double(
-            env.gateway,
-            env.snapshot,
-            call_graph=empty_digraph(),
-            import_graph=empty_digraph(),
-            symbol_module_graph=empty_graph(),
-            symbol_function_graph=empty_graph(),
-            config_graph=empty_graph(),
-            test_function_graph=empty_graph(),
-        ),
+        engine=options.engine,
     )
 
 

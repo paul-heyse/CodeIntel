@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
@@ -42,13 +42,39 @@ class RouteApp:
             yield client
 
 
+@dataclass(frozen=True)
+class RouteAppOptions:
+    """Configuration for building route-scoped apps."""
+
+    limits: BackendLimits | None = None
+    observability: ServiceObservability | None = None
+    auto_pipeline: bool = False
+    config_overrides: dict[str, Any] | None = None
+    router_options: RouterOptions | None = None
+
+
 def _config_loader(repo: str, commit: str) -> Callable[[], ServingConfig]:
-    return lambda: ServingConfig(
-        mode="remote_api",
-        repo=repo,
-        commit=commit,
-        api_base_url="http://test",
-    )
+    return _config_loader_with_overrides(repo=repo, commit=commit, config_overrides=None)
+
+
+def _config_loader_with_overrides(
+    *,
+    repo: str,
+    commit: str,
+    config_overrides: dict[str, Any] | None,
+) -> Callable[[], ServingConfig]:
+    def _loader() -> ServingConfig:
+        cfg_kwargs: dict[str, Any] = {
+            "mode": "remote_api",
+            "repo": repo,
+            "commit": commit,
+            "api_base_url": "http://test",
+        }
+        if config_overrides:
+            cfg_kwargs.update(config_overrides)
+        return ServingConfig(**cfg_kwargs)
+
+    return _loader
 
 
 def _backend_resource_from_service_app(service_app: ServiceApp) -> BackendResource:
@@ -63,9 +89,7 @@ def service_app_factory_with_routes(
     *,
     route_builders: Iterable[Callable[[RouterOptions | None], APIRouter]],
     backend_source: McpBackendComponents | tuple[StorageGateway, tuple[str, str]],
-    limits: BackendLimits | None = None,
-    observability: ServiceObservability | None = None,
-    auto_pipeline: bool = False,
+    options: RouteAppOptions | None = None,
 ) -> RouteApp:
     """Build a FastAPI app registering only the provided route builders.
 
@@ -75,18 +99,16 @@ def service_app_factory_with_routes(
         Iterable of router factory callables (e.g., build_functions_router).
     backend_source
         Either prebuilt MCP components or a ``(gateway, snapshot)`` tuple.
-    limits
-        Optional limits for backend construction.
-    observability
-        Optional observability harness for the service.
-    auto_pipeline
-        When True, attach auto-pipeline dependencies to the routers.
+    options
+        Optional configuration for limits, observability, auto-pipeline, router options,
+        and ServingConfig overrides.
 
     Returns
     -------
     RouteApp
         Configured app with a client context manager.
     """
+    opts = options or RouteAppOptions()
     repo: str
     commit: str
     backend_resource: BackendResource
@@ -96,16 +118,16 @@ def service_app_factory_with_routes(
         service_app = build_service_app(
             gateway,
             snapshot=snapshot,  # type: ignore[arg-type]
-            limits=limits,
-            observability=observability,
+            limits=opts.limits,
+            observability=opts.observability,
         )
         backend_resource = _backend_resource_from_service_app(service_app)
         repo, commit = service_app.repo, service_app.commit
     except (TypeError, ValueError):
         components = backend_source  # type: ignore[assignment]
         service = components.service
-        if observability is not None:
-            service.observability = observability
+        if opts.observability is not None:
+            service.observability = opts.observability
         backend_resource = BackendResource(
             backend=components.backend,
             service=service,
@@ -113,20 +135,26 @@ def service_app_factory_with_routes(
         )
         repo, commit = components.repo, components.commit
 
-    options = RouterOptions(auto_pipeline=auto_pipeline) if auto_pipeline else None
+    router_options = opts.router_options or (
+        RouterOptions(auto_pipeline=opts.auto_pipeline) if opts.auto_pipeline else None
+    )
 
     def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
         return backend_resource
 
     app = create_app(
-        config_loader=_config_loader(repo, commit),
+        config_loader=_config_loader_with_overrides(
+            repo=repo,
+            commit=commit,
+            config_overrides=opts.config_overrides,
+        ),
         backend_factory=backend_factory,
-        auto_pipeline=auto_pipeline,
+        auto_pipeline=opts.auto_pipeline,
     )
 
     for builder in route_builders:
         try:
-            router = builder(options)
+            router = builder(router_options)
         except TypeError:
             router = builder()
         app.include_router(router)
@@ -139,4 +167,4 @@ def service_app_factory_with_routes(
     return RouteApp(app=app, client_factory=_client)
 
 
-__all__ = ["RouteApp", "service_app_factory_with_routes"]
+__all__ = ["RouteApp", "RouteAppOptions", "service_app_factory_with_routes"]

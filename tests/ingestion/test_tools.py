@@ -68,7 +68,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
-from tests._helpers.ingestion import write_coverage_file, write_pytest_report
+from tests._helpers.ingestion import write_pytest_report
 from tests._helpers.orchestration.tooling import (
     ToolingArtifacts,
     ToolingOutputs,
@@ -76,6 +76,8 @@ from tests._helpers.orchestration.tooling import (
 )
 
 pytest_plugins = ["tests._helpers.orchestration.tooling"]
+
+
 @pytest.fixture
 def tooling_artifacts(tmp_path: Path) -> ToolingArtifacts:
     """Run real tooling to produce coverage/pytest artifacts for integration checks.
@@ -86,6 +88,7 @@ def tooling_artifacts(tmp_path: Path) -> ToolingArtifacts:
         Bundle containing adapter, service, and artifact paths.
     """
     return build_tooling_artifacts(tmp_path)
+
 
 # =============================================================================
 # Test Constants
@@ -1214,13 +1217,11 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
     expect_true(errors == {})
 
 
-def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
+def test_tool_service_run_coverage_report_with_data(
+    tooling_artifacts: ToolingArtifacts,
+) -> None:
     """ToolService.run_coverage_report should return report from parsed data."""
-    artifacts = build_tooling_artifacts(tmp_path)
-    coverage_path = write_coverage_file(
-        tmp_path,
-        content={"files": {"mod.py": {"executed_lines": [1, 2], "missing_lines": [3]}}},
-    )
+    coverage_path = tooling_artifacts.coverage_file
     run = make_tool_run_result(
         ToolName.COVERAGE,
         options=ToolRunOptions(
@@ -1233,7 +1234,13 @@ def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
     )
     service = ToolService(PresetRunner(run))
 
-    report = asyncio.run(service.run_coverage_report(artifacts.context.repo_root))
+    report = asyncio.run(
+        service.run_coverage_report(
+            tooling_artifacts.context.repo_root,
+            coverage_file=tooling_artifacts.context.coverage_file,
+            output_path=coverage_path,
+        )
+    )
 
     # Should return a CoverageReport
     expect_true(isinstance(report, CoverageReport))

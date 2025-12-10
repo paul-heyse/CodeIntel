@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.modules import ModuleRepository
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
 )
+from tests._helpers.builders import ModuleRow, insert_rows
+from tests._helpers.context import TestContext
 
 
-def test_list_modules_returns_sorted_list(fresh_gateway: StorageGateway) -> None:
+def _repo(ctx: TestContext) -> ModuleRepository:
+    """Build a ModuleRepository for the provided context."""
+    return ModuleRepository(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+
+
+def test_list_modules_returns_sorted_list(test_ctx: TestContext) -> None:
     """Verify list_modules returns sorted list of module names."""
-    con = fresh_gateway.con
-
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit) VALUES
-            ('zmod', 'zmod.py', 'test/repo', 'abc123'),
-            ('amod', 'amod.py', 'test/repo', 'abc123'),
-            ('mmod', 'mmod.py', 'test/repo', 'abc123')
-        """
+    insert_rows(
+        test_ctx.gateway,
+        [
+            ModuleRow(module="zmod", path="zmod.py", repo=test_ctx.repo, commit=test_ctx.commit),
+            ModuleRow(module="amod", path="amod.py", repo=test_ctx.repo, commit=test_ctx.commit),
+            ModuleRow(module="mmod", path="mmod.py", repo=test_ctx.repo, commit=test_ctx.commit),
+        ],
     )
 
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     modules = repo.list_modules()
 
@@ -36,14 +36,10 @@ def test_list_modules_returns_sorted_list(fresh_gateway: StorageGateway) -> None
 
 
 def test_list_modules_returns_empty_for_no_data(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify list_modules returns empty list when no modules exist."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     modules = repo.list_modules()
 
@@ -51,14 +47,10 @@ def test_list_modules_returns_empty_for_no_data(
 
 
 def test_get_file_summary_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify get_file_summary returns None when file not found."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     result = repo.get_file_summary("nonexistent.py")
 
@@ -66,14 +58,10 @@ def test_get_file_summary_returns_none_when_not_found(
 
 
 def test_get_module_architecture_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify get_module_architecture returns None when module not found."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     result = repo.get_module_architecture("nonexistent_module")
 
@@ -81,14 +69,10 @@ def test_get_module_architecture_returns_none_when_not_found(
 
 
 def test_get_module_profile_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify get_module_profile returns None when module not found."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     result = repo.get_module_profile("nonexistent_module")
 
@@ -96,14 +80,10 @@ def test_get_module_profile_returns_none_when_not_found(
 
 
 def test_get_file_profile_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify get_file_profile returns None when file not found."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     result = repo.get_file_profile("nonexistent.py")
 
@@ -111,14 +91,10 @@ def test_get_file_profile_returns_none_when_not_found(
 
 
 def test_get_file_hints_returns_empty_when_not_found(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Verify get_file_hints returns empty list when no hints found."""
-    repo = ModuleRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _repo(test_ctx)
 
     result = repo.get_file_hints("nonexistent.py")
 

@@ -128,9 +128,7 @@ def _jsonify_nested_columns(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         contains_nested = bool(df[col].apply(lambda x: isinstance(x, (dict, list))).any())
         if contains_nested:
-            df[col] = df[col].apply(
-                lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
-            )
+            df[col] = df[col].apply(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
     return df
 
 

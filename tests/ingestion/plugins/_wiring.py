@@ -164,9 +164,7 @@ def _run_module_path_case(
         if simulate_db_fallback:
             records = module_records_for_paths([resources_path], ctx.repo_root)
             seed_modules_and_repo_map(ctx, [record.rel_path for record in records])
-        expected_modules = (
-            [resources_path] if (simulate_resources or simulate_db_fallback) else []
-        )
+        expected_modules = [resources_path] if (simulate_resources or simulate_db_fallback) else []
         expect_equal(get_module_paths(ctx), expected_modules)
     finally:
         gateway.close()

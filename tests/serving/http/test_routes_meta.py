@@ -5,20 +5,19 @@ This module tests the meta introspection endpoints using real gateways.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, status
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.meta import build_meta_router
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
+from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
-
-HttpAppFactory = Callable[..., FastAPI]
 
 
 # =============================================================================
@@ -66,7 +65,6 @@ def test_meta_datasets_returns_list(
 
 def test_meta_datasets_includes_limit_info(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/datasets includes limit configuration.
 
@@ -74,23 +72,23 @@ def test_meta_datasets_includes_limit_info(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     default_limit = 25
     max_rows = 250
     limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
-        config_overrides={
-            "default_limit": default_limit,
-            "max_rows_per_call": max_rows,
-        },
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_meta_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(
+            limits=limits,
+            config_overrides={
+                "default_limit": default_limit,
+                "max_rows_per_call": max_rows,
+            },
+        ),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/meta/datasets")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -160,7 +158,6 @@ def test_meta_dataflow_returns_graph(
 
 def test_meta_dataflow_nodes_have_expected_fields(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/dataflow nodes have required fields.
 
@@ -168,17 +165,15 @@ def test_meta_dataflow_nodes_have_expected_fields(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_meta_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(limits=limits),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/meta/dataflow")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
@@ -197,7 +192,6 @@ def test_meta_dataflow_nodes_have_expected_fields(
 
 def test_meta_debug_prereqs_unknown_operation(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns 404 for unknown operation.
 
@@ -205,25 +199,36 @@ def test_meta_debug_prereqs_unknown_operation(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_meta_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(limits=limits),
     )
 
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/meta/debug/pipeline/prereqs?op_id=nonexistent.op")
 
     expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
+    payload = response.json()
+    if "code" in payload:
+        class _ResponseWrapper:
+            def __init__(self, json_payload: dict[str, object]) -> None:
+                self.status_code = status.HTTP_404_NOT_FOUND
+                self._payload = json_payload
+
+            def json(self) -> dict[str, object]:
+                return self._payload
+
+        assert_problem_detail_response(_ResponseWrapper(payload), status_code=status.HTTP_404_NOT_FOUND)
+    else:
+        expect_in("detail", payload)
+        expect_in("nonexistent.op", payload["detail"])
 
 
 def test_meta_debug_prereqs_valid_operation(
     provisioned_repo: ProvisionedGateway,
-    make_http_app: HttpAppFactory,
 ) -> None:
     """Verify /meta/debug/pipeline/prereqs returns debug info for valid operation.
 
@@ -231,18 +236,15 @@ def test_meta_debug_prereqs_valid_operation(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
-    make_http_app
-        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    app = make_http_app(
-        gateway=provisioned_repo.gateway,
-        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
-        limits=limits,
+    route_app = service_app_factory_with_routes(
+        route_builders=[build_meta_router],
+        backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
+        options=RouteAppOptions(limits=limits),
     )
 
-    # Use health.status as it's a known operation
-    with TestClient(app) as client:
+    with route_app.client() as client:
         response = client.get("/meta/debug/pipeline/prereqs?op_id=health.status")
 
     expect_equal(response.status_code, status.HTTP_200_OK)

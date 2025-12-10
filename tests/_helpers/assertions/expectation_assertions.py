@@ -345,7 +345,9 @@ def expect_row_value(
     """
     seq = require_row(row, message=message)
     if index >= len(seq):
-        raise AssertionError(message or f"Row length {len(seq)} shorter than expected index {index}")
+        raise AssertionError(
+            message or f"Row length {len(seq)} shorter than expected index {index}"
+        )
     expect_equal(seq[index], expected, label=message or f"row[{index}]")
     return seq
 

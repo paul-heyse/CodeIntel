@@ -51,6 +51,7 @@ from tests._helpers.builders.graph import (
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
 )
+from tests._helpers.builders.metadata import DatasetDataflowEdgeRow, DatasetDataflowNodeRow
 from tests._helpers.builders.row_protocol import InsertableRow, insert_rows
 
 __all__ = [
@@ -63,6 +64,8 @@ __all__ = [
     "CoverageFunctionRow",
     "CoverageLineRow",
     "DFGEdgeRow",
+    "DatasetDataflowEdgeRow",
+    "DatasetDataflowNodeRow",
     "DocstringRow",
     "FunctionContextBuilder",
     "FunctionMetricsRow",

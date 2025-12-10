@@ -1,17 +1,20 @@
 """Introspection utilities for CLI operations.
 
-Provide runtime discovery of operations, their schemas, and examples.
+Provide runtime discovery of operations, their metadata, and examples.
+
+Note: Phase 6 Migration Complete - This module now uses the unified
+handler-based registry from ``codeintel.cli.execution.registry``.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from codeintel.cli.introspection.registry import get_operation_registry
+from codeintel.cli.execution.registry import get_registry
 
 if TYPE_CHECKING:
-    from codeintel.cli.execution import OperationSpec
+    from codeintel.cli.execution.registry import OperationSpec
 
 
 @dataclass(frozen=True)
@@ -22,27 +25,33 @@ class OperationInfo:
     ----------
     operation_id
         Unique identifier.
-    category
-        Operation category.
+    name
+        Display name.
+    group
+        Operation group (e.g., "jobs", "build").
     description
         Human-readable description.
-    parameters
-        Parameter specifications.
-    examples
-        Usage examples.
-    requires_progress
-        Whether progress is shown.
-    retryable
-        Whether operation is retryable.
+    require_runtime
+        Whether operation needs ResolvedRuntime.
+    require_gateway
+        Whether operation needs StorageGateway.
+    require_graph_runtime
+        Whether operation needs GraphRuntime.
+    tags
+        Optional tags for categorization.
+    hidden
+        Whether operation is hidden from help.
     """
 
     operation_id: str
-    category: str
+    name: str
+    group: str
     description: str
-    parameters: list[dict[str, object]]
-    examples: list[str]
-    requires_progress: bool
-    retryable: bool
+    require_runtime: bool
+    require_gateway: bool
+    require_graph_runtime: bool
+    tags: tuple[str, ...]
+    hidden: bool
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary.
@@ -68,117 +77,88 @@ def get_operation_info(operation_id: str) -> OperationInfo | None:
     OperationInfo | None
         Operation information or None if not found.
     """
-    registry = get_operation_registry()
+    registry = get_registry()
     spec = registry.get(operation_id)
 
     if spec is None:
         return None
 
-    parameters = _extract_parameters(spec)
-    examples = _generate_examples(spec)
-
-    return OperationInfo(
-        operation_id=spec.operation_id,
-        category=spec.category.value,
-        description=spec.description,
-        parameters=parameters,
-        examples=examples,
-        requires_progress=spec.requires_progress,
-        retryable=spec.retryable,
-    )
+    return _spec_to_info(spec)
 
 
-def get_operation_schema(operation_id: str) -> dict[str, object] | None:
-    """Get JSON Schema for an operation's parameters.
+def list_operations_by_group(*, include_hidden: bool = False) -> dict[str, list[str]]:
+    """List operations grouped by their group.
 
     Parameters
     ----------
-    operation_id
-        Operation identifier.
-
-    Returns
-    -------
-    dict[str, object] | None
-        JSON Schema or None if not found.
-    """
-    registry = get_operation_registry()
-    spec = registry.get(operation_id)
-
-    if spec is None or spec.param_schema is None:
-        return None
-
-    return _schema_to_json_schema(spec.param_schema)
-
-
-def list_operations_by_category() -> dict[str, list[str]]:
-    """List operations grouped by category.
+    include_hidden
+        Whether to include hidden operations.
 
     Returns
     -------
     dict[str, list[str]]
-        Operations grouped by category name.
+        Operations grouped by group name.
     """
-    registry = get_operation_registry()
+    registry = get_registry()
     result: dict[str, list[str]] = {}
 
-    for spec in registry.list_operations():
-        category = spec.category.value
-        if category not in result:
-            result[category] = []
-        result[category].append(spec.operation_id)
+    for spec in registry.list_operations(include_hidden=include_hidden):
+        group = spec.group
+        if group not in result:
+            result[group] = []
+        result[group].append(spec.operation_id)
 
     return result
 
 
-def search_operations(query: str) -> list[OperationInfo]:
-    """Search operations by ID or description.
+def search_operations(query: str, *, include_hidden: bool = False) -> list[OperationInfo]:
+    """Search operations by ID, name, or description.
 
     Parameters
     ----------
     query
         Search query.
+    include_hidden
+        Whether to include hidden operations.
 
     Returns
     -------
     list[OperationInfo]
         Matching operations.
     """
-    registry = get_operation_registry()
+    registry = get_registry()
     query_lower = query.lower()
     results = []
 
-    for spec in registry.list_operations():
+    for spec in registry.list_operations(include_hidden=include_hidden):
         match_id = query_lower in spec.operation_id.lower()
+        match_name = query_lower in spec.name.lower()
         match_desc = query_lower in spec.description.lower()
-        if match_id or match_desc:
-            info = get_operation_info(spec.operation_id)
-            if info:
-                results.append(info)
+        if match_id or match_name or match_desc:
+            results.append(_spec_to_info(spec))
 
     return results
 
 
-def list_all_operations() -> list[OperationInfo]:
+def list_all_operations(*, include_hidden: bool = False) -> list[OperationInfo]:
     """List all registered operations.
+
+    Parameters
+    ----------
+    include_hidden
+        Whether to include hidden operations.
 
     Returns
     -------
     list[OperationInfo]
         All operation info.
     """
-    registry = get_operation_registry()
-    results = []
-
-    for spec in registry.list_operations():
-        info = get_operation_info(spec.operation_id)
-        if info:
-            results.append(info)
-
-    return results
+    registry = get_registry()
+    return [_spec_to_info(spec) for spec in registry.list_operations(include_hidden=include_hidden)]
 
 
-def _extract_parameters(spec: OperationSpec[Any]) -> list[dict[str, object]]:
-    """Extract parameter information from spec.
+def _spec_to_info(spec: OperationSpec) -> OperationInfo:
+    """Convert OperationSpec to OperationInfo.
 
     Parameters
     ----------
@@ -187,95 +167,26 @@ def _extract_parameters(spec: OperationSpec[Any]) -> list[dict[str, object]]:
 
     Returns
     -------
-    list[dict[str, object]]
-        Parameter information.
+    OperationInfo
+        Operation information.
     """
-    if spec.param_schema is None:
-        return []
-
-    params: list[dict[str, object]] = []
-    for name, validator in spec.param_schema.validators.items():
-        validator_name = type(validator).__name__
-        param_info: dict[str, object] = {
-            "name": name,
-            "type": validator_name.replace("Validator", "").lower(),
-            "required": True,  # Default to required
-        }
-        params.append(param_info)
-
-    return params
-
-
-def _generate_examples(spec: OperationSpec[Any]) -> list[str]:
-    """Generate usage examples for an operation.
-
-    Parameters
-    ----------
-    spec
-        Operation specification.
-
-    Returns
-    -------
-    list[str]
-        Example command lines.
-    """
-    base = f"codeintel op call {spec.operation_id}"
-    examples = [base]
-
-    if spec.param_schema:
-        param_parts = [f"--{name}=VALUE" for name in spec.param_schema.validators]
-        if param_parts:
-            param_str = " ".join(param_parts)
-            examples.append(f"{base} {param_str}")
-
-    return examples
-
-
-def _schema_to_json_schema(schema: object) -> dict[str, object]:
-    """Convert validation schema to JSON Schema.
-
-    Parameters
-    ----------
-    schema
-        Validation schema.
-
-    Returns
-    -------
-    dict[str, object]
-        JSON Schema.
-    """
-    # Basic conversion - can be extended for full schema support
-    properties: dict[str, dict[str, object]] = {}
-    required: list[str] = []
-
-    validators = getattr(schema, "validators", None)
-    if validators is not None and isinstance(validators, dict):
-        for name, validator in validators.items():
-            prop: dict[str, object] = {"type": "string"}
-
-            validator_name = type(validator).__name__
-            if "Int" in validator_name:
-                prop["type"] = "integer"
-            elif "Path" in validator_name:
-                prop["type"] = "string"
-                prop["format"] = "path"
-
-            properties[name] = prop
-            required.append(name)
-
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": properties,
-        "required": required,
-    }
+    return OperationInfo(
+        operation_id=spec.operation_id,
+        name=spec.name,
+        group=spec.group,
+        description=spec.description,
+        require_runtime=spec.require_runtime,
+        require_gateway=spec.require_gateway,
+        require_graph_runtime=spec.require_graph_runtime,
+        tags=spec.tags,
+        hidden=spec.hidden,
+    )
 
 
 __all__ = [
     "OperationInfo",
     "get_operation_info",
-    "get_operation_schema",
     "list_all_operations",
-    "list_operations_by_category",
+    "list_operations_by_group",
     "search_operations",
 ]

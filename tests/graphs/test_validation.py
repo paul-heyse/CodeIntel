@@ -21,8 +21,9 @@ from codeintel.graphs.validation.checks import (
 )
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
-from tests._helpers.factories import make_graph_runtime_options, make_snapshot
+from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
+from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
 
 # ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ def test_run_graph_validations_emits_warnings(
         run_graph_validations(
             gateway,
             snapshot=snapshot,
-            runtime=make_graph_runtime_options(snapshot=snapshot),
+            runtime=runtime_with_graphs(gateway, snapshot)[0],
         )
 
     messages = " ".join(record.message for record in caplog.records)
@@ -63,9 +64,8 @@ def test_run_graph_validations_snapshot_mismatch_raises(
     """Graph runtime snapshot must align with validation snapshot."""
     gateway = graph_executor_env.gateway
     snapshot = graph_executor_env.snapshot
-    mismatched_runtime = make_graph_runtime_options(
-        snapshot=make_snapshot(repo="other/repo", commit="cafebabe")
-    )
+    other_snapshot = make_snapshot(repo="other/repo", commit="cafebabe")
+    mismatched_runtime = runtime_with_graphs(gateway, other_snapshot)[0]
 
     with pytest.raises(ValueError, match="GraphRuntime snapshot mismatch"):
         run_graph_validations(
@@ -84,7 +84,7 @@ def test_run_graph_validations_hard_fail_on_error(
     repo = snapshot.repo
     commit = snapshot.commit
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    runtime = make_graph_runtime_options(snapshot=snapshot)
+    runtime = runtime_with_graphs(gateway, snapshot)[0]
 
     with pytest.raises(RuntimeError, match="error-level findings"):
         run_graph_validations(
@@ -110,7 +110,7 @@ def test_run_graph_validations_caps_findings(
     repo = snapshot.repo
     commit = snapshot.commit
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    runtime = make_graph_runtime_options(snapshot=snapshot)
+    runtime = runtime_with_graphs(gateway, snapshot)[0]
 
     run_graph_validations(
         gateway,
