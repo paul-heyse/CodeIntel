@@ -1,39 +1,36 @@
 """Unified execution pipeline for CLI operations.
 
 This package provides a single execution infrastructure that supports
-sync, async, and streaming handlers with consistent middleware,
-resilience, and progress tracking.
+handler-based operations with consistent middleware, resilience, and
+progress tracking.
+
+The canonical `OperationSpec` is defined in `execution/registry.py` and
+is used by `@cli_command` decorator and the introspection system.
 
 Examples
 --------
-Execute a sync operation:
+Register an operation:
 
->>> from codeintel.cli.execution import OperationSpec, get_executor
->>> spec = OperationSpec(
+>>> from codeintel.cli.execution import OperationSpec, register_operation
+>>> from codeintel.cli.handlers.context import HandlerContext
+>>> from codeintel.cli.core import CliResult
+>>>
+>>> def my_handler(ctx: HandlerContext) -> CliResult:  # doctest: +SKIP
+...     return CliResult.ok({"status": "done"})
+>>>
+>>> spec = OperationSpec(  # doctest: +SKIP
 ...     operation_id="my.operation",
+...     name="My Operation",
+...     description="Does something",
 ...     handler=my_handler,
+...     group="my",
 ... )
->>> result = get_executor().execute(spec, {"arg": "value"})
-
-Execute an async operation:
-
->>> import asyncio
->>> from codeintel.cli.execution import run_async_operation
->>> result = asyncio.run(run_async_operation(spec, {"arg": "value"}))
+>>> register_operation(spec)  # doctest: +SKIP
 """
 
 from codeintel.cli.execution.context import (
     ExecutionContext,
     ExecutionResult,
-)
-from codeintel.cli.execution.executor import (
-    OperationCategory,
-    OperationExecutor,
-    OperationSpec,
-    configure_executor,
-    get_executor,
-    run_async_operation,
-    run_sync,
 )
 from codeintel.cli.execution.middleware import (
     LoggingMiddleware,
@@ -59,12 +56,11 @@ from codeintel.cli.execution.progress import (
 )
 from codeintel.cli.execution.registry import (
     OperationRegistry,
+    OperationSpec,
+    execute_operation,
     get_registry,
     register_operation,
     reset_registry,
-)
-from codeintel.cli.execution.registry import (
-    OperationSpec as HandlerOperationSpec,
 )
 from codeintel.cli.execution.types import (
     AnyHandler,
@@ -85,13 +81,10 @@ __all__ = [
     "AsyncHandler",
     "ExecutionContext",
     "ExecutionResult",
-    "HandlerOperationSpec",
     "LoggingMiddleware",
     "MetricsMiddleware",
     "Middleware",
     "MiddlewareStack",
-    "OperationCategory",
-    "OperationExecutor",
     "OperationRegistry",
     "OperationSpec",
     "ProgressConfig",
@@ -107,9 +100,8 @@ __all__ = [
     "TimingMiddleware",
     "TracingMiddleware",
     "configure_default_middleware",
-    "configure_executor",
     "configure_progress",
-    "get_executor",
+    "execute_operation",
     "get_handler_type",
     "get_middleware_stack",
     "get_progress_tracker",
@@ -121,7 +113,5 @@ __all__ = [
     "progress_generator",
     "register_operation",
     "reset_registry",
-    "run_async_operation",
-    "run_sync",
     "stream_progress",
 ]

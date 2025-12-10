@@ -468,11 +468,9 @@ def _lazy_resolve_runtime(ctx: ExecutionContext) -> ResolvedRuntime:
     ResolvedRuntime
         Resolved runtime.
     """
-    from codeintel.cli.execution._lazy_deps import (  # noqa: PLC0415
-        lazy_resolve_runtime,
-    )
+    from codeintel.cli.resolution import resolve_runtime  # noqa: PLC0415
 
-    return lazy_resolve_runtime(ctx)
+    return resolve_runtime(ctx)
 
 
 def _lazy_open_gateway(
@@ -494,11 +492,9 @@ def _lazy_open_gateway(
     StorageGateway
         Open gateway.
     """
-    from codeintel.cli.execution._lazy_deps import (  # noqa: PLC0415
-        lazy_open_gateway,
-    )
+    from codeintel.cli.resolution import open_gateway_for_context  # noqa: PLC0415
 
-    return lazy_open_gateway(ctx, read_only=read_only)
+    return open_gateway_for_context(ctx, read_only=read_only)
 
 
 __all__ = [

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from codeintel.cli.execution import get_executor
+from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import (
     get_operation_registry,
     list_all_operations,
@@ -273,15 +273,14 @@ class InteractiveShell:
             self._print(f"Unknown operation: {operation_id}", output)
             return False
 
-        executor = get_executor()
-        result = executor.execute(spec, params, render=False)
+        result = execute_operation(spec, params)
 
-        if result.result.success and result.result.data is not None:
-            data = result.result.data
+        if result.success and result.data is not None:
+            data = result.data
             self.session.last_result = data if isinstance(data, dict) else None
             self._print(json.dumps(data, indent=2, default=str), output)
-        elif result.result.error:
-            error_msg = result.result.error.detail if result.result.error else "Unknown error"
+        elif result.error:
+            error_msg = result.error.detail if result.error else "Unknown error"
             self._print(f"Error: {error_msg}", output)
         return False
 

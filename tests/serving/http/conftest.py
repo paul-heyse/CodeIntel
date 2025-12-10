@@ -21,7 +21,12 @@ from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
 from tests._helpers.serving_routes import RouteApp, service_app_factory_with_routes
-from tests.serving.mcp.conftest import McpBackendComponents
+from tests.serving.mcp.conftest import (
+    McpBackendComponents,
+    mcp_backend_factory as _mcp_backend_factory,
+)
+
+mcp_backend_factory = _mcp_backend_factory
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway

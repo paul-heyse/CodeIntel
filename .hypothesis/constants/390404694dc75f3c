@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/execution/registry.py
+# hypothesis_version: 6.148.7
+
+['OperationRegistry', 'OperationSpec', 'execute_operation', 'get_registry', 'register_operation', 'reset_registry']

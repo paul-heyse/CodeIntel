@@ -68,7 +68,7 @@ def test_op_call_with_unknown_operation(
     op_harness: OperationTestHarness,
 ) -> None:
     """Op call with unknown operation returns error."""
-    result = op_harness.execute("op.call", params={"operation_id": "unknown.op"})
+    result = op_harness.execute("op.call", params={"op_id": "unknown.op"})
 
     expect_false(result.success)
     expect_is_not_none(result.error)

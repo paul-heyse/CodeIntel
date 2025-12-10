@@ -12,7 +12,6 @@ This module follows the Testing Charter from AGENTS.md, which requires:
 
 from __future__ import annotations
 
-import inspect
 import io
 import json
 import os
@@ -25,9 +24,7 @@ from pathlib import Path
 from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.execution import ExecutionResult, get_executor
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_operation_registry
 
 
@@ -516,22 +513,11 @@ class OperationTestHarness:
                 stderr=f"Unknown operation: {operation_id}",
             )
 
-        # Check if this is a handler-based operation (takes ctx as first arg)
-        # vs legacy executor-style (takes **kwargs)
-        handler_sig = inspect.signature(spec.handler)
-        handler_params = list(handler_sig.parameters.keys())
-        is_handler_based = handler_params and handler_params[0] == "ctx"
+        # Execute operation through the standard registry path
+        result = execute_operation(spec, params)
 
-        if is_handler_based:
-            # Handler-based operations need HandlerContext, not executor
-            result = self._execute_handler_based(spec, params)
-        else:
-            # Legacy executor-style operations
-            executor = get_executor()
-            result = executor.execute(spec, params, render=self.render)
-
-        if result.result.success:
-            data = result.result.data
+        if result.success:
+            data = result.data
             if data is not None and hasattr(data, "to_dict"):
                 stdout = json.dumps(data.to_dict(), indent=2)
             else:
@@ -542,83 +528,18 @@ class OperationTestHarness:
                 stderr="",
             )
 
-        error_msg = result.result.error.detail if result.result.error else "Unknown error"
+        error_msg = result.error.detail if result.error else "Unknown error"
         return CliInvocationResult(
             exit_code=1,
             stdout="",
             stderr=str(error_msg),
         )
 
-    @staticmethod
-    def _execute_handler_based(
-        spec: object,
-        params: dict[str, object],
-    ) -> ExecutionResult[object]:
-        """Execute a handler-based operation with HandlerContext.
-
-        Parameters
-        ----------
-        spec
-            Operation specification with handler function.
-        params
-            Operation parameters.
-
-        Returns
-        -------
-        ExecutionResult[object]
-            ExecutionResult with result attribute.
-        """
-        # Create a minimal HandlerContext for testing
-        config = load_config(validate=False)
-        operation_id = spec.operation_id if hasattr(spec, "operation_id") else "test.op"
-        ctx = HandlerContext(
-            config=config,
-            operation_id=operation_id,
-            _params=params,
-        )
-
-        try:
-            # Call the handler with the context
-            handler = spec.handler if hasattr(spec, "handler") else None
-            if handler is None:
-                error_result: CliResult[object] = CliResult.fail(
-                    ProblemDetail(
-                        type="urn:codeintel:cli:test-error",
-                        title="Test Execution Error",
-                        detail="No handler found on spec",
-                        status=500,
-                    )
-                )
-                return ExecutionResult(
-                    result=error_result,
-                    duration_seconds=0.0,
-                )
-            cli_result = handler(ctx)
-            return ExecutionResult(
-                result=cli_result,
-                duration_seconds=0.0,
-            )
-        except (ValueError, TypeError, AttributeError, KeyError) as e:
-            # Return an error result for common exceptions
-            error_result = CliResult.fail(
-                ProblemDetail(
-                    type="urn:codeintel:cli:test-error",
-                    title="Test Execution Error",
-                    detail=str(e),
-                    status=500,
-                )
-            )
-            return ExecutionResult(
-                result=error_result,
-                duration_seconds=0.0,
-            )
-        finally:
-            ctx.close()
-
-
 __all__ = [
     "CliInvocationResult",
+    "CliResult",
     "CliTestHarness",
     "GoldenFileAssertion",
     "OperationTestHarness",
+    "load_config",
 ]
