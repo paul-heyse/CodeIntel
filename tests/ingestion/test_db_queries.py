@@ -15,9 +15,11 @@ Covers all safe_* functions for 80%+ coverage:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from codeintel.build.context import TargetExecutionContext
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -49,12 +51,10 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
+    SeedIngestionConfig,
     TargetContextConfig,
     build_target_context_for_plugin,
-    seed_foreign_key_tables,
     seed_ingestion_tables,
-    seed_numeric_table,
-    seed_varchar_table,
 )
 
 # Test constants (non-repo/commit)
@@ -65,6 +65,16 @@ EXPECTED_FRACTION_0_5 = 0.5
 EXPECTED_FRACTION_1_0 = 1.0
 EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
+
+
+def _ctx_for_gateway(gateway: StorageGateway, tmp_path: Path) -> TargetExecutionContext:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    return build_target_context_for_plugin(
+        RepoScanPlugin(),
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
+    )
 
 
 # =============================================================================
@@ -131,11 +141,11 @@ def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, tabl
     expect_is_none(result)
 
 
-def test_safe_count_returns_correct_count(ingestion_ctx_bundle) -> None:
+def test_safe_count_returns_correct_count(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count should return accurate row counts."""
     seed_ingestion_tables(
         ingestion_ctx_bundle.ctx,
-        module_paths=["a.py", "b.py"],
+        SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
 
     result = safe_count(ingestion_ctx_bundle.gateway, "core.modules")
@@ -149,7 +159,7 @@ def test_safe_count_returns_correct_count(ingestion_ctx_bundle) -> None:
 
 
 def test_safe_count_with_scope_filters_by_snapshot(
-    ingestion_ctx_bundle,
+    ingestion_ctx_bundle: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
     """safe_count_with_scope should count only matching repo/commit."""
@@ -158,7 +168,7 @@ def test_safe_count_with_scope_filters_by_snapshot(
     target_commit = bundle.ctx.snapshot.commit
     seed_ingestion_tables(
         bundle.ctx,
-        module_paths=["a.py", "b.py"],
+        SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
     other_ctx = build_target_context_for_plugin(
         RepoScanPlugin(),
@@ -169,7 +179,9 @@ def test_safe_count_with_scope_filters_by_snapshot(
             snapshot=("other/repo", "other-commit"),
         ),
     )
-    seed_ingestion_tables(other_ctx, module_paths=["c.py"])
+    seed_ingestion_tables(
+        other_ctx, SeedIngestionConfig(module_paths=["c.py"], include_defaults=False)
+    )
 
     snapshot = make_snapshot(repo=target_repo, commit=target_commit, repo_root=bundle.repo_root)
     result = safe_count_with_scope(bundle.gateway, "core.modules", snapshot)
@@ -296,11 +308,11 @@ def test_safe_get_columns_nonexistent_or_invalid(
 # =============================================================================
 
 
-def test_safe_count_nulls_no_nulls(ingestion_ctx_bundle) -> None:
+def test_safe_count_nulls_no_nulls(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_nulls should return 0 when no NULL values exist."""
     seed_ingestion_tables(
         ingestion_ctx_bundle.ctx,
-        module_paths=["a.py", "b.py"],
+        SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
 
     result = safe_count_nulls(ingestion_ctx_bundle.gateway, "core.modules", "module")
@@ -308,17 +320,21 @@ def test_safe_count_nulls_no_nulls(ingestion_ctx_bundle) -> None:
     expect_equal(result, 0)
 
 
-def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_nulls should count NULL values correctly."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_nulls",
-        [
-            (1, "a"),
-            (2, None),
-            (3, None),
-            (4, "b"),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={
+                "core.test_nulls": [
+                    (1, "a"),
+                    (2, None),
+                    (3, None),
+                    (4, "b"),
+                ]
+            },
+            include_defaults=False,
+        ),
     )
 
     result = safe_count_nulls(fresh_gateway, "core.test_nulls", "value")
@@ -347,36 +363,60 @@ def test_safe_count_nulls_invalid_inputs(
 # =============================================================================
 
 
-def test_safe_min_value_with_data(fresh_gateway: StorageGateway) -> None:
+def test_safe_min_value_with_data(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_min_value should return minimum value."""
-    seed_numeric_table(fresh_gateway, "core.test_numeric", [10.5, 5.0, 20.0])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_numeric": [10.5, 5.0, 20.0]},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_min_value(fresh_gateway, "core.test_numeric", "value")
 
     expect_equal(result, EXPECTED_MIN_VALUE)
 
 
-def test_safe_max_value_with_data(fresh_gateway: StorageGateway) -> None:
+def test_safe_max_value_with_data(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_max_value should return maximum value."""
-    seed_numeric_table(fresh_gateway, "core.test_numeric2", [10.5, 5.0, 20.0])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_numeric2": [10.5, 5.0, 20.0]},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_max_value(fresh_gateway, "core.test_numeric2", "value")
 
     expect_equal(result, EXPECTED_MAX_VALUE)
 
 
-def test_safe_min_value_empty_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_min_value_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_min_value should return None for empty table."""
-    seed_numeric_table(fresh_gateway, "core.test_empty_num", [])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_empty_num": []},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_min_value(fresh_gateway, "core.test_empty_num", "value")
 
     expect_is_none(result)
 
 
-def test_safe_max_value_empty_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_max_value_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_max_value should return None for empty table."""
-    seed_numeric_table(fresh_gateway, "core.test_empty_num2", [])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_empty_num2": []},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_max_value(fresh_gateway, "core.test_empty_num2", "value")
 
@@ -402,18 +442,34 @@ def test_safe_max_value_invalid_column(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_safe_count_non_positive_with_negatives(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_non_positive_with_negatives(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_non_positive should count values <= 0."""
-    seed_numeric_table(fresh_gateway, "core.test_pos", [-5.0, 0.0, 10.0, -2.0])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_pos": [-5.0, 0.0, 10.0, -2.0]},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_count_non_positive(fresh_gateway, "core.test_pos", "value")
 
     expect_equal(result, EXPECTED_COUNT_3)  # -5.0, 0.0, -2.0
 
 
-def test_safe_count_non_positive_all_positive(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_non_positive_all_positive(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_non_positive should return 0 when all values are positive."""
-    seed_numeric_table(fresh_gateway, "core.test_all_pos", [5.0, 10.0])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            numeric_tables={"core.test_all_pos": [5.0, 10.0]},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_count_non_positive(fresh_gateway, "core.test_all_pos", "value")
 
@@ -432,18 +488,24 @@ def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) ->
 # =============================================================================
 
 
-def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_duplicates_with_dupes(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_duplicates should count duplicate values."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_dupes",
-        [
-            (1, "alice"),
-            (2, "bob"),
-            (3, "alice"),
-            (4, "alice"),
-            (5, "charlie"),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={
+                "core.test_dupes": [
+                    (1, "alice"),
+                    (2, "bob"),
+                    (3, "alice"),
+                    (4, "alice"),
+                    (5, "charlie"),
+                ]
+            },
+            include_defaults=False,
+        ),
     )
 
     result = safe_count_duplicates(fresh_gateway, "core.test_dupes", "name")
@@ -452,16 +514,22 @@ def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway) -> None
     expect_equal(result, EXPECTED_COUNT_2)
 
 
-def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_duplicates_no_dupes(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_duplicates should return 0 when all values are unique."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_unique",
-        [
-            (1, "a"),
-            (2, "b"),
-            (3, "c"),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={
+                "core.test_unique": [
+                    (1, "a"),
+                    (2, "b"),
+                    (3, "c"),
+                ]
+            },
+            include_defaults=False,
+        ),
     )
 
     result = safe_count_duplicates(fresh_gateway, "core.test_unique", "name")
@@ -481,15 +549,16 @@ def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> N
 # =============================================================================
 
 
-def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> None:
+def test_safe_not_null_fraction_all_not_null(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_not_null_fraction should return 1.0 when all values are non-null."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_frac1",
-        [
-            (1, "a"),
-            (2, "b"),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={"core.test_frac1": [(1, "a"), (2, "b")]},
+            include_defaults=False,
+        ),
     )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac1", "value")
@@ -497,17 +566,23 @@ def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway) -> N
     expect_equal(result, EXPECTED_FRACTION_1_0)
 
 
-def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None:
+def test_safe_not_null_fraction_half_null(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_not_null_fraction should return correct fraction."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_frac2",
-        [
-            (1, "a"),
-            (2, None),
-            (3, "b"),
-            (4, None),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={
+                "core.test_frac2": [
+                    (1, "a"),
+                    (2, None),
+                    (3, "b"),
+                    (4, None),
+                ]
+            },
+            include_defaults=False,
+        ),
     )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac2", "value")
@@ -515,15 +590,14 @@ def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway) -> None
     expect_equal(result, EXPECTED_FRACTION_0_5)
 
 
-def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
+def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_not_null_fraction should return 0.0 when all values are null."""
-    seed_varchar_table(
-        fresh_gateway,
-        "core.test_frac3",
-        [
-            (1, None),
-            (2, None),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={"core.test_frac3": [(1, None), (2, None)]},
+            include_defaults=False,
+        ),
     )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac3", "value")
@@ -531,9 +605,17 @@ def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway) -> None:
     expect_equal(result, 0.0)
 
 
-def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_not_null_fraction_empty_table(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_not_null_fraction should return 0.0 for empty table."""
-    seed_varchar_table(fresh_gateway, "core.test_frac_empty", [])
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            varchar_tables={"core.test_frac_empty": []},
+            include_defaults=False,
+        ),
+    )
 
     result = safe_not_null_fraction(fresh_gateway, "core.test_frac_empty", "value")
 
@@ -552,14 +634,21 @@ def test_safe_not_null_fraction_invalid_table(fresh_gateway: StorageGateway) -> 
 # =============================================================================
 
 
-def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """safe_count_orphan_refs should return 0 when all refs are valid."""
-    seed_foreign_key_tables(
-        fresh_gateway,
-        parent_table="core.test_parent",
-        child_table="core.test_child",
-        parent_rows=[(1, "a"), (2, "b")],
-        child_rows=[(1, 1), (2, 2)],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            foreign_keys=[
+                (
+                    "core.test_parent",
+                    "core.test_child",
+                    [(1, "a"), (2, "b")],
+                    [(1, 1), (2, 2)],
+                )
+            ],
+            include_defaults=False,
+        ),
     )
 
     fk = ForeignKeyRef(
@@ -574,18 +663,27 @@ def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway) -> Non
     expect_equal(result, 0)
 
 
-def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_orphan_refs_with_orphans(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_orphan_refs should count orphaned references."""
-    seed_foreign_key_tables(
-        fresh_gateway,
-        parent_table="core.test_parent2",
-        child_table="core.test_child2",
-        parent_rows=[(1, "a")],
-        child_rows=[
-            (1, 1),
-            (2, 99),
-            (3, 100),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            foreign_keys=[
+                (
+                    "core.test_parent2",
+                    "core.test_child2",
+                    [(1, "a")],
+                    [
+                        (1, 1),
+                        (2, 99),
+                        (3, 100),
+                    ],
+                )
+            ],
+            include_defaults=False,
+        ),
     )
 
     fk = ForeignKeyRef(
@@ -600,18 +698,27 @@ def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway) -> N
     expect_equal(result, EXPECTED_COUNT_2)
 
 
-def test_safe_count_orphan_refs_with_nulls_allowed(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_orphan_refs_with_nulls_allowed(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """safe_count_orphan_refs should handle NULL values when allow_null=True."""
-    seed_foreign_key_tables(
-        fresh_gateway,
-        parent_table="core.test_parent3",
-        child_table="core.test_child3",
-        parent_rows=[(1, "a")],
-        child_rows=[
-            (1, 1),
-            (2, None),
-            (3, 99),
-        ],
+    seed_ingestion_tables(
+        _ctx_for_gateway(fresh_gateway, tmp_path),
+        config=SeedIngestionConfig(
+            foreign_keys=[
+                (
+                    "core.test_parent3",
+                    "core.test_child3",
+                    [(1, "a")],
+                    [
+                        (1, 1),
+                        (2, None),
+                        (3, 99),
+                    ],
+                )
+            ],
+            include_defaults=False,
+        ),
     )
 
     fk = ForeignKeyRef(

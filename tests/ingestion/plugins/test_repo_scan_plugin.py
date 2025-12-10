@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
@@ -23,7 +24,9 @@ MODULE_COUNT_WITH_INIT = 3
 
 
 @pytest.mark.anyio
-async def test_execute_populates_modules_and_repo_map(tmp_path: Path, ingestion_gateway) -> None:
+async def test_execute_populates_modules_and_repo_map(
+    tmp_path: Path, ingestion_gateway: StorageGateway
+) -> None:
     """Repo scan should write modules, create change tracker, and populate repo_map."""
     repo_root = build_repo_tree(
         tmp_path / "repo",
@@ -81,7 +84,7 @@ async def test_execute_populates_modules_and_repo_map(tmp_path: Path, ingestion_
 
 @pytest.mark.anyio
 async def test_compute_row_counts_handles_missing_table(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway: StorageGateway
 ) -> None:
     """Row count computation should return 0 for tables that are absent."""
     repo_root = build_repo_tree(
@@ -118,7 +121,7 @@ async def test_compute_row_counts_handles_missing_table(
 
 @pytest.mark.anyio
 async def test_row_counts_ignore_absent_tables_without_errors(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway: StorageGateway
 ) -> None:
     """Missing tables should not raise and should return zero counts."""
     repo_root = build_repo_tree(

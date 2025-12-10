@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
+from dataclasses import dataclass
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -27,20 +28,38 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 
+@dataclass(frozen=True)
+class ResourceCase:
+    """Scenario controlling resource/gateway behaviors for plugin wiring."""
+
+    table_key: str
+    simulate_resources: bool
+    simulate_db_fallback: bool
+    simulate_gateway_failure: bool
+
+
+@dataclass(frozen=True)
+class ModulePathCase:
+    """Scenario for module path resolution coverage."""
+
+    resources_path: str
+    simulate_resources: bool
+    simulate_db_fallback: bool
+    simulate_gateway_failure: bool
+
+
 async def run_sync_plugin_wiring_scenario(
     plugin_factory: Callable[[StepCallCapture], TargetPlugin],
     tmp_path: Path,
     *,
-    table_key: str,
-    options: Mapping[str, bool],
+    case: ResourceCase,
     gateway: StorageGateway | None = None,
 ) -> None:
     """Execute a standard wiring scenario for a synchronous ingest plugin."""
     await _run_resource_case(
         plugin_factory,
         tmp_path,
-        table_key=table_key,
-        options=options,
+        case=case,
         gateway=gateway,
     )
 
@@ -50,8 +69,7 @@ def run_module_path_resolution_scenarios(
     get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
     *,
-    resources_path: str,
-    options: Mapping[str, bool],
+    case: ModulePathCase,
     gateway: StorageGateway | None = None,
 ) -> None:
     """Exercise module path resolution across resources, DB, and gateway failure."""
@@ -59,8 +77,7 @@ def run_module_path_resolution_scenarios(
         plugin_factory,
         get_module_paths,
         tmp_path,
-        resources_path=resources_path,
-        options=options,
+        case=case,
         gateway=gateway,
     )
 
@@ -69,13 +86,12 @@ async def _run_resource_case(
     plugin_factory: Callable[[StepCallCapture], TargetPlugin],
     tmp_path: Path,
     *,
-    table_key: str,
-    options: Mapping[str, bool],
+    case: ResourceCase,
     gateway: StorageGateway | None,
 ) -> None:
-    simulate_resources = options["simulate_resources"]
-    simulate_db_fallback = options["simulate_db_fallback"]
-    simulate_gateway_failure = options["simulate_gateway_failure"]
+    simulate_resources = case.simulate_resources
+    simulate_db_fallback = case.simulate_db_fallback
+    simulate_gateway_failure = case.simulate_gateway_failure
     repo_root = build_repo_tree(
         tmp_path / "repo",
         {"pkg/mod.py": "x = 1\n"},
@@ -123,7 +139,7 @@ async def _run_resource_case(
         expected_modules = []
 
     expect_true(result.success)
-    expect_equal(result.row_counts.get(table_key, 0), len(expected_modules))
+    expect_equal(result.row_counts.get(case.table_key, 0), len(expected_modules))
     if simulate_db_fallback and recording_gateway is not None:
         expect_true(recording_gateway.executions)
     _assert_module_paths(
@@ -141,13 +157,12 @@ def _run_module_path_case(
     get_module_paths: Callable[[TargetExecutionContext], list[str]],
     tmp_path: Path,
     *,
-    resources_path: str,
-    options: Mapping[str, bool],
+    case: ModulePathCase,
     gateway: StorageGateway | None,
 ) -> None:
-    simulate_resources = options["simulate_resources"]
-    simulate_db_fallback = options["simulate_db_fallback"]
-    simulate_gateway_failure = options["simulate_gateway_failure"]
+    simulate_resources = case.simulate_resources
+    simulate_db_fallback = case.simulate_db_fallback
+    simulate_gateway_failure = case.simulate_gateway_failure
     capture = StepCallCapture()
     plugin = plugin_factory(capture)
     repo_root = tmp_path / "repo"
@@ -161,7 +176,7 @@ def _run_module_path_case(
         gateway = base_gateway
 
     resources = TargetResourceOverrides(
-        modules=(resources_path,) if simulate_resources else (),
+        modules=(case.resources_path,) if simulate_resources else (),
     )
     with closing_gateway(gateway) if owns_gateway else nullcontext(gateway):
         ctx = build_target_context_for_plugin(
@@ -174,9 +189,11 @@ def _run_module_path_case(
             ),
         )
         if simulate_db_fallback:
-            records = module_records_for_paths([resources_path], ctx.repo_root)
+            records = module_records_for_paths([case.resources_path], ctx.repo_root)
             seed_modules_and_repo_map(ctx, [record.rel_path for record in records])
-        expected_modules = [resources_path] if (simulate_resources or simulate_db_fallback) else []
+        expected_modules = (
+            [case.resources_path] if (simulate_resources or simulate_db_fallback) else []
+        )
         _assert_module_paths(get_module_paths, ctx, expected_modules)
 
 

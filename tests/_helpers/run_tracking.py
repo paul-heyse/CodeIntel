@@ -16,6 +16,7 @@ from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_I
 from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
@@ -151,9 +152,66 @@ def expect_step(
     expect_true(step.started_at is not None, message="Step must include started_at")
 
 
+@dataclass(frozen=True)
+class RunTrackingHarness:
+    """Bundle gateway, tracking accessor, and helpers for run-tracking tests."""
+
+    gateway: StorageGateway
+    tracking: PipelineRunTracking
+    repo_root: Path
+    options: RunContextOptions = RunContextOptions()
+
+    def make_context(self, run_id: str, options: RunContextOptions | None = None) -> RunContext:
+        """Create a RunContext bound to the harness repo root.
+
+        Returns
+        -------
+        RunContext
+            Context configured for the given run id and options.
+        """
+        return make_run_context(run_id=run_id, repo_root=self.repo_root, options=options or self.options)
+
+    def assert_run(
+        self,
+        run_id: str,
+        expected: ExpectedRun,
+    ) -> PipelineRunRecord:
+        """Fetch and validate a run record.
+
+        Returns
+        -------
+        PipelineRunRecord
+            The validated run record.
+        """
+        return expect_run(self.tracking.fetch_run(run_id), expected)
+
+    def assert_steps(
+        self,
+        run_id: str,
+        *,
+        expected_count: int | None = None,
+        expected_row_counts: dict[str, int] | None = None,
+    ) -> list[PipelineStepRecord]:
+        """Fetch steps and validate shape/row counts.
+
+        Returns
+        -------
+        list[PipelineStepRecord]
+            Retrieved step records after validation.
+        """
+        steps = expect_steps(
+            self.tracking.fetch_steps(run_id),
+            expected_count=expected_count,
+        )
+        if expected_row_counts is not None and steps:
+            expect_step(steps[-1], row_counts=expected_row_counts)
+        return steps
+
+
 __all__ = [
     "ExpectedRun",
     "RunContextOptions",
+    "RunTrackingHarness",
     "expect_run",
     "expect_step",
     "expect_steps",

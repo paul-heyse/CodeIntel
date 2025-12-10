@@ -10,6 +10,8 @@ import pytest
 
 from codeintel.build.protocols import CoverageData
 from codeintel.build.providers import Providers
+from codeintel.build.context import TargetExecutionContext
+from codeintel.storage.gateway import StorageGateway
 from codeintel.ingestion.plugins.coverage_plugin import (
     CoverageIngestPlugin,
     get_module_paths,
@@ -28,7 +30,7 @@ from tests._helpers.ingestion import (
     run_ingestion_scenario,
     write_coverage_file,
 )
-from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
+from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
 
 
 def test_paths_to_modules_builds_metadata(tmp_path: Path) -> None:
@@ -53,15 +55,20 @@ RESOURCE_CASES = make_resource_case_params()
     ids=[name for name, _ in RESOURCE_CASES],
 )
 def test_module_path_resolution_scenarios(
-    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway: StorageGateway
 ) -> None:
     """Shared coverage of module path resolution for CoverageIngestPlugin."""
+    case = ModulePathCase(
+        resources_path="pkg/mod.py",
+        simulate_resources=options["simulate_resources"],
+        simulate_db_fallback=options["simulate_db_fallback"],
+        simulate_gateway_failure=options["simulate_gateway_failure"],
+    )
     run_module_path_resolution_scenarios(
         lambda _capture: CoverageIngestPlugin(),
         get_module_paths,
         tmp_path,
-        resources_path="pkg/mod.py",
-        options=options,
+        case=case,
         gateway=ingestion_gateway,
     )
 
@@ -74,7 +81,7 @@ async def test_execute_skips_when_no_coverage_file(
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
     caplog.set_level(logging.INFO)
 
-    ctx, result = await run_ingestion_scenario(
+    _ctx, result = await run_ingestion_scenario(
         CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
@@ -131,15 +138,18 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
         modules=("pkg/mod.py", "pkg/naïve.py"),
     )
 
+    def _seed_coverage(context: TargetExecutionContext) -> None:
+        write_coverage_file(
+            coverage_file.parent,
+            filename=coverage_file.name,
+            content=coverage_payload,
+        )
+
     ctx, result = await run_ingestion_scenario(
         CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
-        seed_fn=lambda _ctx: write_coverage_file(
-            coverage_file.parent,
-            filename=coverage_file.name,
-            content=coverage_payload,
-        ),
+        seed_fn=_seed_coverage,
     )
 
     expect_true(result.success is True)
@@ -184,17 +194,19 @@ async def test_execute_fails_when_collector_missing(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Missing or failing collector should produce a failed result."""
-    plugin = CoverageIngestPlugin()
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/mod.py": "x = 1\n"})
     write_coverage_file(repo_root, filename=".coverage", content="{}")
     overrides = TargetResourceOverrides(providers=None, modules=("pkg/mod.py",))
     caplog.set_level(logging.WARNING)
 
-    ctx, result = await run_ingestion_scenario(
+    def _seed_missing(_context: TargetExecutionContext) -> None:
+        write_coverage_file(repo_root, filename=".coverage", content="{}")
+
+    _ctx, result = await run_ingestion_scenario(
         CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
-        seed_fn=lambda _ctx: write_coverage_file(repo_root, filename=".coverage", content="{}"),
+        seed_fn=_seed_missing,
     )
 
     expect_true(result.success is False)
@@ -215,11 +227,14 @@ async def test_execute_fails_when_collector_raises(tmp_path: Path) -> None:
         modules=("pkg/mod.py",),
     )
 
-    ctx, result = await run_ingestion_scenario(
+    def _seed_raise(_context: TargetExecutionContext) -> None:
+        write_coverage_file(repo_root, filename=".coverage", content="{}")
+
+    _ctx, result = await run_ingestion_scenario(
         CoverageIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
-        seed_fn=lambda _ctx: write_coverage_file(repo_root, filename=".coverage", content="{}"),
+        seed_fn=_seed_raise,
     )
 
     expect_true(result.success is False)

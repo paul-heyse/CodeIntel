@@ -7,7 +7,7 @@ classification data using real DuckDB instances.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Iterator, cast
 
 import pytest
 
@@ -16,13 +16,14 @@ from codeintel.analytics.adapters.semantic_roles import (
     SemanticRolesModulesAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_true,
     require_row,
 )
 from tests._helpers.contracts import count_rows
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
     SemanticRoleFunctionSeed,
     SemanticRoleModuleSeed,
@@ -54,20 +55,32 @@ CONFIDENCE_0_75 = 0.75
 
 
 @pytest.fixture
-def snapshot() -> SnapshotRef:
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
     """
-    Create snapshot reference.
+    Create a test context aligned with the demo repo/commit.
 
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference for testing.
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test artifacts.
+
+    Yields
+    ------
+    TestContext
+        Configured context with schemas applied.
     """
-    return SnapshotRef(
-        repo=DEMO_REPO,
-        commit=DEMO_COMMIT,
-        repo_root=Path("/workspace/demo"),
-    )
+    options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
+@pytest.fixture
+def snapshot(ctx: TestContext) -> SnapshotRef:
+    """Expose the snapshot from the shared test context."""
+    return ctx.snapshot
 
 
 # =============================================================================
@@ -76,40 +89,36 @@ def snapshot() -> SnapshotRef:
 
 
 def test_functions_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.semantic_roles_functions")
 
 
 def test_functions_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_functions_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_functions_adapter_persist_single(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single function role."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     row = semantic_role_function_row(
         SemanticRoleFunctionSeed(
             goid=int(TEST_GOID_12345),
@@ -125,7 +134,7 @@ def test_functions_adapter_persist_single(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.semantic_roles_functions WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -133,11 +142,10 @@ def test_functions_adapter_persist_single(
 
 
 def test_functions_adapter_persist_multiple(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple function roles."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         semantic_role_function_row(
@@ -174,11 +182,10 @@ def test_functions_adapter_persist_multiple(
 
 
 def test_functions_adapter_persist_verifies_data(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     row = semantic_role_function_row(
         SemanticRoleFunctionSeed(
             goid=int(TEST_GOID_12345),
@@ -191,7 +198,7 @@ def test_functions_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT role, role_confidence
         FROM analytics.semantic_roles_functions
@@ -207,16 +214,15 @@ def test_functions_adapter_persist_verifies_data(
 
 
 def test_functions_adapter_applies_defaults(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist fills optional fields and created_at."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     row = (DEMO_REPO, DEMO_COMMIT, TEST_GOID_12345, "api_handler", CONFIDENCE_0_85)
 
     adapter.persist([row])
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT framework, role_sources_json, created_at
         FROM analytics.semantic_roles_functions
@@ -231,11 +237,10 @@ def test_functions_adapter_applies_defaults(
 
 
 def test_functions_adapter_rejects_bad_length(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist raises when tuple length is invalid."""
-    adapter = SemanticRolesFunctionsAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesFunctionsAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(ValueError, match="legacy 5-tuple"):
         adapter.persist([(DEMO_REPO, DEMO_COMMIT, TEST_GOID_12345, "api_handler")])
 
@@ -246,40 +251,36 @@ def test_functions_adapter_rejects_bad_length(
 
 
 def test_modules_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.semantic_roles_modules")
 
 
 def test_modules_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_modules_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_modules_adapter_persist_single(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single module role."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     row = semantic_role_module_row(
         SemanticRoleModuleSeed(
             module="api.users",
@@ -295,7 +296,7 @@ def test_modules_adapter_persist_single(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.semantic_roles_modules WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -303,11 +304,10 @@ def test_modules_adapter_persist_single(
 
 
 def test_modules_adapter_persist_multiple(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple module roles."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         semantic_role_module_row(
@@ -344,11 +344,10 @@ def test_modules_adapter_persist_multiple(
 
 
 def test_modules_adapter_persist_verifies_data(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     row = semantic_role_module_row(
         SemanticRoleModuleSeed(
             module="utils.helpers",
@@ -361,7 +360,7 @@ def test_modules_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT module, role, role_confidence
         FROM analytics.semantic_roles_modules
@@ -378,16 +377,15 @@ def test_modules_adapter_persist_verifies_data(
 
 
 def test_modules_adapter_applies_defaults(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist fills optional fields and created_at for module rows."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     row = (DEMO_REPO, DEMO_COMMIT, "api.users", "service", CONFIDENCE_0_90)
 
     adapter.persist([row])
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT role_sources_json, created_at
         FROM analytics.semantic_roles_modules
@@ -401,10 +399,9 @@ def test_modules_adapter_applies_defaults(
 
 
 def test_modules_adapter_rejects_bad_length(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist raises when module tuple length is invalid."""
-    adapter = SemanticRolesModulesAdapter(fresh_gateway, snapshot)
+    adapter = SemanticRolesModulesAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(ValueError, match="legacy 5-tuple"):
         adapter.persist([(DEMO_REPO, DEMO_COMMIT, "api.users", "service")])

@@ -46,7 +46,7 @@ from codeintel.cli.handlers.context import (
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
-    DatasetsListResult,
+    DatasetListResult,
     DatasetSnapshotResult,
     datasets_diff_handler,
     datasets_lint_handler,
@@ -92,7 +92,6 @@ from codeintel.cli.handlers.jobs import (
 )
 from codeintel.cli.handlers.ops import (
     DatasetDescribeResult,
-    DatasetListResult,
     DatasetVerifyResult,
     OperationCallResult,
     OperationListResult,
@@ -154,7 +153,6 @@ __all__ = [
     "DatasetListResult",
     "DatasetSnapshotResult",
     "DatasetVerifyResult",
-    "DatasetsListResult",
     "DocsExportResult",
     "DocsValidateResult",
     "GenerateMacrosResult",

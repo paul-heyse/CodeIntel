@@ -33,6 +33,17 @@ from codeintel.cli.errors._cli_errors import (
     runtime_required,
 )
 
+# Error factory exports (CliResult-returning convenience functions)
+from codeintel.cli.errors.factory import (
+    fail_internal,
+    fail_invalid_value,
+    fail_missing_required,
+    fail_not_found,
+    fail_storage_connection,
+    fail_storage_query,
+    fail_with_problem,
+)
+
 # Error taxonomy exports
 from codeintel.cli.errors.taxonomy import (
     ALREADY_EXISTS,
@@ -90,11 +101,9 @@ from codeintel.cli.errors.taxonomy import (
 )
 
 __all__ = [
-    # Error taxonomy
     "ALREADY_EXISTS",
     "AUTH_FAILED",
     "CANCELLED",
-    # CLI error handling
     "CLI_EXIT_SUCCESS",
     "CLI_EXIT_USAGE",
     "CLI_EXIT_VALIDATION",
@@ -149,6 +158,13 @@ __all__ = [
     "config_error",
     "config_not_found_error",
     "config_validation_error",
+    "fail_internal",
+    "fail_invalid_value",
+    "fail_missing_required",
+    "fail_not_found",
+    "fail_storage_connection",
+    "fail_storage_query",
+    "fail_with_problem",
     "handle_cli_error",
     "internal_error",
     "job_not_found_error",

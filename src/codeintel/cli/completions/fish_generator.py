@@ -6,57 +6,7 @@ Generate fish shell completion scripts.
 from __future__ import annotations
 
 from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
-
-
-def generate_fish_completion(model: CompletionModel) -> str:
-    """Generate fish completion script.
-
-    Parameters
-    ----------
-    model
-        Completion model.
-
-    Returns
-    -------
-    str
-        Fish completion script.
-    """
-    lines: list[str] = [
-        "# Fish completion for codeintel",
-        "# Generated automatically - do not edit",
-        "",
-        "# Disable file completion by default",
-        f"complete -c {model.program_name} -f",
-        "",
-        "# Global flags",
-    ]
-
-    # Global flags
-    for flag in model.global_flags:
-        parts = [f"complete -c {model.program_name}"]
-        if flag.short:
-            parts.append(f"-s {flag.short}")
-        parts.append(f"-l {flag.name}")
-        parts.append(f"-d '{_escape_fish_description(flag.description)}'")
-        lines.append(" ".join(parts))
-
-    lines.append("")
-    lines.append("# Subcommands")
-
-    # Top-level commands
-    lines.extend(
-        f"complete -c {model.program_name} -n '__fish_use_subcommand' "
-        f"-a {cmd.name} -d '{_escape_fish_description(cmd.description)}'"
-        for cmd in model.root_command.subcommands
-    )
-
-    lines.append("")
-
-    # Subcommand completions
-    for cmd in model.root_command.subcommands:
-        lines.extend(_generate_fish_command(model.program_name, cmd))
-
-    return "\n".join(lines)
+from codeintel.cli.completions.generator import ShellBackend, generate_with_backend
 
 
 def _escape_fish_description(desc: str) -> str:
@@ -75,7 +25,99 @@ def _escape_fish_description(desc: str) -> str:
     return desc.replace("'", "\\'")
 
 
-def _generate_fish_command(program: str, cmd: CommandSpec) -> list[str]:
+class FishBackend(ShellBackend):
+    """Fish-specific completion backend.
+
+    Attributes
+    ----------
+    _program
+        Program name for completion script.
+    _complete_prefix
+        Prefix for complete commands.
+    """
+
+    def __init__(self, program_name: str = "codeintel") -> None:
+        """Initialize with program name."""
+        self._program = program_name
+        self._complete_prefix = f"complete -c {program_name}"
+
+    def header(self, model: CompletionModel) -> list[str]:
+        """Generate fish header.
+
+        Returns
+        -------
+        list[str]
+            Header lines for fish completion script.
+        """
+        self._program = model.program_name
+        self._complete_prefix = f"complete -c {self._program}"
+        return [
+            "# Fish completion for codeintel",
+            "# Generated automatically - do not edit",
+            "",
+            "# Disable file completion by default",
+            f"{self._complete_prefix} -f",
+            "",
+            "# Global flags",
+        ]
+
+    def global_flags(self, model: CompletionModel) -> list[str]:
+        """Generate fish global flags.
+
+        Returns
+        -------
+        list[str]
+            Global flag definition lines.
+        """
+        lines: list[str] = []
+        for flag in model.global_flags:
+            parts = [self._complete_prefix]
+            if flag.short:
+                parts.append(f"-s {flag.short}")
+            parts.append(f"-l {flag.name}")
+            parts.append(f"-d '{_escape_fish_description(flag.description)}'")
+            lines.append(" ".join(parts))
+        lines.extend(["", "# Subcommands"])
+
+        # Top-level commands
+        lines.extend(
+            f"{self._complete_prefix} -n '__fish_use_subcommand' "
+            f"-a {cmd.name} -d '{_escape_fish_description(cmd.description)}'"
+            for cmd in model.root_command.subcommands
+        )
+        lines.append("")
+        return lines
+
+    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+        """Generate fish command completion.
+
+        Returns
+        -------
+        list[str]
+            Command completion lines.
+        """
+        return _generate_fish_command(self._program, cmd, depth=depth)
+
+    def footer(self, model: CompletionModel) -> list[str]:
+        """Generate fish footer (empty for fish).
+
+        Returns
+        -------
+        list[str]
+            Empty list (fish doesn't need a footer).
+        """
+        # Use model to validate program consistency
+        if model.program_name != self._program:
+            self._program = model.program_name
+        return []
+
+
+def _generate_fish_command(
+    program: str,
+    cmd: CommandSpec,
+    *,
+    depth: int = 0,
+) -> list[str]:
     """Generate fish completion for command.
 
     Parameters
@@ -84,12 +126,15 @@ def _generate_fish_command(program: str, cmd: CommandSpec) -> list[str]:
         Program name.
     cmd
         Command specification.
+    depth
+        Nesting depth (unused but kept for protocol consistency).
 
     Returns
     -------
     list[str]
         Fish completion lines.
     """
+    _ = depth  # Protocol consistency
     lines: list[str] = [f"# {cmd.name} subcommands"]
 
     condition = f"__fish_seen_subcommand_from {cmd.name}"
@@ -120,4 +165,20 @@ def _generate_fish_command(program: str, cmd: CommandSpec) -> list[str]:
     return lines
 
 
-__all__ = ["generate_fish_completion"]
+def generate_fish_completion(model: CompletionModel) -> str:
+    """Generate fish completion script.
+
+    Parameters
+    ----------
+    model
+        Completion model.
+
+    Returns
+    -------
+    str
+        Fish completion script.
+    """
+    return generate_with_backend(model, FishBackend(model.program_name))
+
+
+__all__ = ["FishBackend", "generate_fish_completion"]

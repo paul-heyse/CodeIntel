@@ -6,12 +6,11 @@ Migrate to use HandlerContext and return CliResult.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.handlers.context import HandlerContext
@@ -25,44 +24,6 @@ from codeintel.storage.gateway import (
 )
 
 LOG = logging.getLogger(__name__)
-
-
-# -----------------------------------------------------------------------------
-# Result Types
-# -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class HistoryTimeseriesResult:
-    """Result from history timeseries aggregation.
-
-    Parameters
-    ----------
-    output_db
-        Path to the output database.
-    commits_processed
-        Number of commits processed.
-    entity_kind
-        Entity kind used for aggregation.
-    """
-
-    output_db: str
-    commits_processed: int
-    entity_kind: str
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, Any]
-            Dictionary representation.
-        """
-        return {
-            "output_db": self.output_db,
-            "commits_processed": self.commits_processed,
-            "entity_kind": self.entity_kind,
-        }
 
 
 def _make_error(title: str, detail: str, status: int = 1) -> ProblemDetail:

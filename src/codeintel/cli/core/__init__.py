@@ -23,6 +23,7 @@ from codeintel.cli.core.parsing import (
     parse_cli_value,
 )
 from codeintel.cli.core.results import CliResult, TextRenderer
+from codeintel.cli.core.serialization import serialize_result
 
 __all__ = [
     "CliResult",
@@ -35,4 +36,5 @@ __all__ = [
     "parse_bool_or_none",
     "parse_cli_value",
     "read_stdin_records",
+    "serialize_result",
 ]

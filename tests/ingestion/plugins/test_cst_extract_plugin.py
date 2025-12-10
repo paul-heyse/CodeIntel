@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin, StepFactory
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_plugins import (
     StepCallCapture,
@@ -20,7 +21,7 @@ from tests._helpers.ingestion import (
     build_target_context_for_plugin,
     make_resource_case_params,
 )
-from tests.ingestion.plugins._wiring import run_sync_plugin_wiring_scenario
+from tests.ingestion.plugins._wiring import ResourceCase, run_sync_plugin_wiring_scenario
 
 
 def _make_plugin(
@@ -51,14 +52,19 @@ RESOURCE_CASES = make_resource_case_params()
     ids=[name for name, _ in RESOURCE_CASES],
 )
 async def test_cst_extract_wiring_scenarios(
-    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway: StorageGateway
 ) -> None:
     """Shared wiring coverage for CstExtractPlugin."""
+    case = ResourceCase(
+        table_key="core.cst_nodes",
+        simulate_resources=options["simulate_resources"],
+        simulate_db_fallback=options["simulate_db_fallback"],
+        simulate_gateway_failure=options["simulate_gateway_failure"],
+    )
     await run_sync_plugin_wiring_scenario(
         _make_plugin,
         tmp_path,
-        table_key="core.cst_nodes",
-        options=options,
+        case=case,
         gateway=ingestion_gateway,
     )
 

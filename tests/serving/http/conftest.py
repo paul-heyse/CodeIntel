@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -21,6 +21,7 @@ from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
 from tests._helpers.serving_routes import RouteApp, service_app_factory_with_routes
+from tests.serving.http.client_harness import adapt_route
 from tests.serving.mcp.conftest import (
     McpBackendComponents,
 )
@@ -125,7 +126,7 @@ def architecture_http_app(
 
 
 @pytest.fixture
-def architecture_http_client(architecture_http_app: FastAPI) -> TestClient:
+def architecture_http_client(architecture_http_app: FastAPI) -> Iterator[TestClient]:
     """Test client bound to the architecture FastAPI app.
 
     Yields
@@ -157,7 +158,7 @@ def provisioned_http_app(
 
 
 @pytest.fixture
-def provisioned_http_client(provisioned_http_app: FastAPI) -> TestClient:
+def provisioned_http_client(provisioned_http_app: FastAPI) -> Iterator[TestClient]:
     """Test client bound to the provisioned FastAPI app.
 
     Yields
@@ -193,13 +194,13 @@ def datasets_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
         Application wrapper exposing dataset routes and client factory.
     """
     return service_app_factory_with_routes(
-        route_builders=[build_datasets_router],
+        route_builders=[adapt_route(build_datasets_router)],
         backend_source=_provisioned_backend_source(provisioned_repo),
     )
 
 
 @pytest.fixture
-def datasets_http_client(datasets_route_app: RouteApp) -> TestClient:
+def datasets_http_client(datasets_route_app: RouteApp) -> Iterator[TestClient]:
     """Client bound to dataset routes.
 
     Yields
@@ -221,13 +222,13 @@ def functions_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
         Application wrapper exposing function routes and client factory.
     """
     return service_app_factory_with_routes(
-        route_builders=[build_functions_router],
+        route_builders=[adapt_route(build_functions_router)],
         backend_source=_provisioned_backend_source(provisioned_repo),
     )
 
 
 @pytest.fixture
-def functions_http_client(functions_route_app: RouteApp) -> TestClient:
+def functions_http_client(functions_route_app: RouteApp) -> Iterator[TestClient]:
     """Client bound to function routes.
 
     Yields
@@ -249,13 +250,13 @@ def meta_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
         Application wrapper exposing meta routes and client factory.
     """
     return service_app_factory_with_routes(
-        route_builders=[build_meta_router],
+        route_builders=[adapt_route(build_meta_router)],
         backend_source=_provisioned_backend_source(provisioned_repo),
     )
 
 
 @pytest.fixture
-def meta_http_client(meta_route_app: RouteApp) -> TestClient:
+def meta_http_client(meta_route_app: RouteApp) -> Iterator[TestClient]:
     """Client bound to meta routes.
 
     Yields
@@ -277,13 +278,13 @@ def health_route_app(provisioned_repo: ProvisionedGateway) -> RouteApp:
         Application wrapper exposing health routes and client factory.
     """
     return service_app_factory_with_routes(
-        route_builders=[build_health_router],
+        route_builders=[adapt_route(build_health_router)],
         backend_source=_provisioned_backend_source(provisioned_repo),
     )
 
 
 @pytest.fixture
-def health_http_client(health_route_app: RouteApp) -> TestClient:
+def health_http_client(health_route_app: RouteApp) -> Iterator[TestClient]:
     """Client bound to health routes.
 
     Yields
@@ -306,13 +307,16 @@ def architecture_route_app(architecture_gateway: StorageGateway) -> RouteApp:
     """
     backend_source = (architecture_gateway, ("demo/repo", "deadbeef"))
     return service_app_factory_with_routes(
-        route_builders=[build_architecture_router, build_subsystem_router],
+        route_builders=[
+            adapt_route(build_architecture_router),
+            adapt_route(build_subsystem_router),
+        ],
         backend_source=backend_source,
     )
 
 
 @pytest.fixture
-def architecture_route_client(architecture_route_app: RouteApp) -> TestClient:
+def architecture_route_client(architecture_route_app: RouteApp) -> Iterator[TestClient]:
     """Client bound to architecture and subsystem routes.
 
     Yields

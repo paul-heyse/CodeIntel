@@ -2,10 +2,9 @@
 
 This package provides a consolidated plugin infrastructure supporting:
 - Manifest-based plugins with plugin.json
-- Legacy plugins with create_plugin() hook
 - Sandboxed execution with capability control
 - Plugin discovery and loading
-- Operation registration
+- Operation registration via register() API
 
 Example
 -------
@@ -58,7 +57,6 @@ from codeintel.cli.plugins.manifest import (
 from codeintel.cli.plugins.registry import (
     PluginInfo,
     PluginManager,
-    PluginProtocol,
     get_plugin_manager,
     initialize_plugins,
     register_all_plugins,
@@ -97,7 +95,6 @@ __all__ = [
     "PluginLoader",
     "PluginManager",
     "PluginManifest",
-    "PluginProtocol",
     "PluginSandbox",
     "PluginTestHarness",
     "PluginTestResult",

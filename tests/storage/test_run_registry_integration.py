@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,27 +10,32 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.execution import RunContext, new_run_context
 from codeintel.storage.tracking import PipelineStepRecord
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.run_tracking import ExpectedRun, expect_run, expect_step, expect_steps
+from tests._helpers.run_tracking import (
+    ExpectedRun,
+    RunTrackingHarness,
+    expect_run,
+    expect_step,
+    expect_steps,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture
-def gateway() -> StorageGateway:
-    """Create an in-memory gateway with full schema for integration tests.
+def gateway(run_tracking_harness: RunTrackingHarness) -> StorageGateway:
+    """Reuse the shared run-tracking gateway fixture for integration tests.
 
     Returns
     -------
     StorageGateway
-        In-memory gateway configured for integration tests.
+        Gateway bound to the shared run-tracking harness.
     """
-    return GatewayFactory().with_views().without_validation().relaxed().open()
+    return run_tracking_harness.gateway
 
 
 @pytest.fixture
-def sample_snapshot(tmp_path: Path) -> SnapshotRef:
+def sample_snapshot(run_tracking_harness: RunTrackingHarness) -> SnapshotRef:
     """Create a sample snapshot for testing.
 
     Returns
@@ -39,8 +43,7 @@ def sample_snapshot(tmp_path: Path) -> SnapshotRef:
     SnapshotRef
         Sample snapshot reference for integration tests.
     """
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
+    repo_root = run_tracking_harness.repo_root
     return SnapshotRef(
         repo="github.com/demo/repo",
         commit="deadbeef" * 5,

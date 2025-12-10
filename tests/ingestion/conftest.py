@@ -20,7 +20,13 @@ from tests._helpers.orchestration.tooling import tooling_outputs_session
 
 @pytest.fixture
 def ingestion_gateway_factory() -> GatewayFactory:
-    """Provide a gateway factory with macros applied."""
+    """Provide a gateway factory with macros applied.
+
+    Returns
+    -------
+    GatewayFactory
+        Factory preconfigured with macros for ingestion tests.
+    """
     return GatewayFactory().with_macros()
 
 

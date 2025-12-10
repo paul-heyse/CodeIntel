@@ -7,11 +7,15 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import (
+    DatasetDiffResult,
+    DatasetLintResult,
+    DatasetListResult,
+    DatasetSnapshotResult,
+)
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
@@ -21,137 +25,9 @@ from codeintel.storage.validation import collect_contract_issues
 LOG = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class DatasetsListResult:
-    """Result from datasets list operation.
-
-    Parameters
-    ----------
-    datasets
-        List of dataset information.
-    count
-        Total count of datasets.
-    """
-
-    datasets: list[dict[str, Any]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "datasets": self.datasets,
-            "count": self.count,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetLintResult:
-    """Result from datasets lint operation.
-
-    Parameters
-    ----------
-    passed
-        Whether validation passed.
-    issue_count
-        Number of issues found.
-    issues
-        List of issue descriptions.
-    """
-
-    passed: bool
-    issue_count: int
-    issues: list[str]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "passed": self.passed,
-            "issue_count": self.issue_count,
-            "issues": self.issues,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetSnapshotResult:
-    """Result from datasets snapshot operation.
-
-    Parameters
-    ----------
-    output_path
-        Path where snapshot was written.
-    datasets_count
-        Number of datasets in snapshot.
-    """
-
-    output_path: str
-    datasets_count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "output_path": self.output_path,
-            "datasets_count": self.datasets_count,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetDiffResult:
-    """Result from datasets diff operation.
-
-    Parameters
-    ----------
-    added
-        List of added dataset names.
-    removed
-        List of removed dataset names.
-    changed
-        List of changed dataset names.
-    has_differences
-        Whether any differences were found.
-    """
-
-    added: list[str]
-    removed: list[str]
-    changed: list[str]
-    has_differences: bool
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "added": self.added,
-            "removed": self.removed,
-            "changed": self.changed,
-            "has_differences": self.has_differences,
-        }
-
-
 def datasets_list_handler(
     ctx: HandlerContext,
-) -> CliResult[DatasetsListResult]:
+) -> CliResult[DatasetListResult]:
     """List datasets with capabilities and optional filters.
 
     Parameters
@@ -164,7 +40,7 @@ def datasets_list_handler(
 
     Returns
     -------
-    CliResult[DatasetsListResult]
+    CliResult[DatasetListResult]
         List of datasets.
     """
     category = ctx.param_str("category")
@@ -187,21 +63,21 @@ def datasets_list_handler(
 
     contracts = get_dataset_contracts_by_table_key()
 
-    dataset_dicts: list[dict[str, Any]] = [
+    dataset_dicts: list[dict[str, str | None]] = [
         {
             "name": contract.name,
             "table_key": contract.table_key,
-            "category": "",  # Category not directly available in contracts
-            "description": contract.description or "",
+            "category": None,  # Category not directly available in contracts
+            "description": contract.description,
         }
         for contract in contracts.values()
     ]
 
     # Sort by name for consistent ordering
-    dataset_dicts.sort(key=lambda d: d["name"])
+    dataset_dicts.sort(key=lambda d: d["name"] or "")
 
     return CliResult.ok(
-        DatasetsListResult(
+        DatasetListResult(
             datasets=dataset_dicts,
             count=len(dataset_dicts),
         )
@@ -376,10 +252,6 @@ def datasets_diff_handler(
 
 
 __all__ = [
-    "DatasetDiffResult",
-    "DatasetLintResult",
-    "DatasetSnapshotResult",
-    "DatasetsListResult",
     "datasets_diff_handler",
     "datasets_lint_handler",
     "datasets_list_handler",

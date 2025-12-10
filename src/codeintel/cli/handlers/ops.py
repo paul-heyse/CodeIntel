@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from dataclasses import dataclass
 
 import uvicorn
 
@@ -19,6 +18,7 @@ from codeintel.cli.core.result_types import (
     DatasetVerifyResult,
     OperationCallResult,
     OperationListResult,
+    ServeStartResult,
 )
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers._utilities import runtime_gateway
@@ -33,37 +33,6 @@ from codeintel.storage.validation import collect_contract_issues
 LOG = logging.getLogger(__name__)
 
 AUTO_PIPELINE_ENV = "CODEINTEL_AUTO_PIPELINE"
-
-
-@dataclass(frozen=True)
-class ServeStartResult:
-    """Result of starting a server."""
-
-    server_type: str
-    host: str | None
-    port: int | None
-    auto_pipeline: bool
-    repo: str
-    commit: str
-    db_path: str
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "server_type": self.server_type,
-            "host": self.host,
-            "port": self.port,
-            "auto_pipeline": self.auto_pipeline,
-            "repo": self.repo,
-            "commit": self.commit,
-            "db_path": self.db_path,
-        }
 
 
 def _setup_serving_env(runtime: ResolvedRuntime, *, auto_pipeline: bool) -> None:

@@ -9,17 +9,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
 from codeintel.analytics.adapters.data_models import DataModelUsageAdapter
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_not_none,
 )
 from tests._helpers.contracts import count_rows
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
     DataModelUsagePayloadSeed,
     data_model_usage_payload,
@@ -46,20 +48,32 @@ TEST_GOID_11111 = Decimal(11111)
 
 
 @pytest.fixture
-def snapshot() -> SnapshotRef:
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
     """
-    Create snapshot reference.
+    Create a test context aligned with the demo repo/commit identifiers.
 
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference for testing.
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for the test artifacts.
+
+    Yields
+    ------
+    TestContext
+        Configured context with schemas applied.
     """
-    return SnapshotRef(
-        repo=DEMO_REPO,
-        commit=DEMO_COMMIT,
-        repo_root=Path("/workspace/demo"),
-    )
+    options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
+@pytest.fixture
+def snapshot(ctx: TestContext) -> SnapshotRef:
+    """Expose the snapshot from the shared test context."""
+    return ctx.snapshot
 
 
 # =============================================================================
@@ -68,40 +82,36 @@ def snapshot() -> SnapshotRef:
 
 
 def test_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.data_model_usage")
 
 
 def test_adapter_load_raises(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load raises NotImplementedError (write-only adapter)."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
     with pytest.raises(NotImplementedError, match="does not support loading"):
         list(adapter.load())
 
 
 def test_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_adapter_persist_single(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single data model usage row."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
     row = data_model_usage_payload(
         DataModelUsagePayloadSeed(
             model_id="model_user",
@@ -126,7 +136,7 @@ def test_adapter_persist_single(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.data_model_usage WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -134,11 +144,10 @@ def test_adapter_persist_single(
 
 
 def test_adapter_persist_multiple(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple data model usage rows."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         data_model_usage_payload(
@@ -175,11 +184,10 @@ def test_adapter_persist_multiple(
 
 
 def test_adapter_persist_same_model_multiple_functions(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist same model used by multiple functions."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         data_model_usage_payload(
@@ -207,11 +215,10 @@ def test_adapter_persist_same_model_multiple_functions(
 
 
 def test_adapter_persist_verifies_data(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = DataModelUsageAdapter(fresh_gateway, snapshot)
+    adapter = DataModelUsageAdapter(ctx.gateway, ctx.snapshot)
     row = data_model_usage_payload(
         DataModelUsagePayloadSeed(
             model_id="model_account",
@@ -224,7 +231,7 @@ def test_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT model_id
         FROM analytics.data_model_usage

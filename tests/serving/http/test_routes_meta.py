@@ -15,6 +15,7 @@ from codeintel.serving.http.routes.meta import build_meta_router
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_with_routes
+from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -77,7 +78,7 @@ def test_meta_datasets_includes_limit_info(
     max_rows = 250
     limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_meta_router],
+        route_builders=[adapt_route(build_meta_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(
             limits=limits,
@@ -168,7 +169,7 @@ def test_meta_dataflow_nodes_have_expected_fields(
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_meta_router],
+        route_builders=[adapt_route(build_meta_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(limits=limits),
     )
@@ -202,7 +203,7 @@ def test_meta_debug_prereqs_unknown_operation(
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_meta_router],
+        route_builders=[adapt_route(build_meta_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(limits=limits),
     )
@@ -210,22 +211,11 @@ def test_meta_debug_prereqs_unknown_operation(
     with route_app.client() as client:
         response = client.get("/meta/debug/pipeline/prereqs?op_id=nonexistent.op")
 
-    expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
     payload = response.json()
     if "code" in payload:
-
-        class _ResponseWrapper:
-            def __init__(self, json_payload: dict[str, object]) -> None:
-                self.status_code = status.HTTP_404_NOT_FOUND
-                self._payload = json_payload
-
-            def json(self) -> dict[str, object]:
-                return self._payload
-
-        assert_problem_detail_response(
-            _ResponseWrapper(payload), status_code=status.HTTP_404_NOT_FOUND
-        )
+        assert_problem_detail_response(response, status_code=status.HTTP_404_NOT_FOUND)
     else:
+        expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
         expect_in("detail", payload)
         expect_in("nonexistent.op", payload["detail"])
 
@@ -242,7 +232,7 @@ def test_meta_debug_prereqs_valid_operation(
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
     route_app = service_app_factory_with_routes(
-        route_builders=[build_meta_router],
+        route_builders=[adapt_route(build_meta_router)],
         backend_source=(provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)),
         options=RouteAppOptions(limits=limits),
     )

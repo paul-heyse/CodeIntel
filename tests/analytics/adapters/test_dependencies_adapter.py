@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
-from typing import TypedDict, Unpack
+from typing import Iterator, TypedDict, Unpack
 
 import pytest
 
@@ -20,7 +20,6 @@ from codeintel.analytics.adapters.dependencies import (
     to_decimal,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -33,6 +32,8 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.contracts import count_rows
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
     DependencyAggregatePayloadSeed,
     DependencyCallPayloadSeed,
@@ -152,20 +153,32 @@ def _aggregate_seed(
 
 
 @pytest.fixture
-def snapshot() -> SnapshotRef:
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
     """
-    Create snapshot reference.
+    Create a test context with the demo repo/commit identifiers.
 
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference for testing.
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test artifacts.
+
+    Yields
+    ------
+    TestContext
+        Configured context with schemas applied.
     """
-    return SnapshotRef(
-        repo=DEMO_REPO,
-        commit=DEMO_COMMIT,
-        repo_root=Path("/workspace/demo"),
-    )
+    options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
+@pytest.fixture
+def snapshot(ctx: TestContext) -> SnapshotRef:
+    """Expose the snapshot from the shared test context."""
+    return ctx.snapshot
 
 
 # =============================================================================
@@ -381,40 +394,36 @@ def test_dependency_aggregate_row_from_payload_is_frozen() -> None:
 
 
 def test_call_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.external_dependency_calls")
 
 
 def test_call_adapter_load_returns_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load returns empty iterator (write-only adapter)."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
     rows = list(adapter.load())
     expect_true(not rows)
 
 
 def test_call_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_call_adapter_persist_single_row(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
     seed = _call_seed(
         library="requests",
         service_name="HTTP Client",
@@ -428,7 +437,7 @@ def test_call_adapter_persist_single_row(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -436,11 +445,10 @@ def test_call_adapter_persist_single_row(
 
 
 def test_call_adapter_persist_multiple_rows(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         dependency_call_row_from_payload(
@@ -474,7 +482,7 @@ def test_call_adapter_persist_multiple_rows(
 
     # Verify rows were inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -482,11 +490,10 @@ def test_call_adapter_persist_multiple_rows(
 
 
 def test_call_adapter_persist_verifies_data(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = DependencyCallAdapter(fresh_gateway, snapshot)
+    adapter = DependencyCallAdapter(ctx.gateway, ctx.snapshot)
     seed = _call_seed(
         library="redis",
         service_name="Redis Cache",
@@ -498,7 +505,7 @@ def test_call_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT library, service_name, qualname, callsite_count
         FROM analytics.external_dependency_calls
@@ -520,40 +527,36 @@ def test_call_adapter_persist_verifies_data(
 
 
 def test_aggregate_adapter_table_name(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Adapter exposes correct table name."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     expect_equal(adapter.table_name, "analytics.external_dependencies")
 
 
 def test_aggregate_adapter_load_returns_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Load returns empty iterator (write-only adapter)."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     rows = list(adapter.load())
     expect_true(not rows)
 
 
 def test_aggregate_adapter_persist_empty(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist empty list returns 0."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     count = adapter.persist([])
     expect_equal(count, EXPECTED_COUNT_0)
 
 
 def test_aggregate_adapter_persist_single_row(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist single row inserts to database."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     seed = _aggregate_seed(
         library="requests",
         service_name="HTTP Client",
@@ -567,7 +570,7 @@ def test_aggregate_adapter_persist_single_row(
 
     # Verify row was inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -575,11 +578,10 @@ def test_aggregate_adapter_persist_single_row(
 
 
 def test_aggregate_adapter_persist_multiple_rows(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist multiple rows inserts all to database."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
 
     rows = [
         dependency_aggregate_row_from_payload(
@@ -603,7 +605,7 @@ def test_aggregate_adapter_persist_multiple_rows(
 
     # Verify rows were inserted
     total = count_rows(
-        fresh_gateway.con,
+        ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
@@ -611,11 +613,10 @@ def test_aggregate_adapter_persist_multiple_rows(
 
 
 def test_aggregate_adapter_persist_verifies_data(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persisted data can be retrieved and verified."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     seed = _aggregate_seed(
         library="sqlalchemy",
         service_name="SQL Database",
@@ -629,7 +630,7 @@ def test_aggregate_adapter_persist_verifies_data(
     adapter.persist([row])
 
     # Query and verify
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT library, category, severity, risk_level, function_count, callsite_count
         FROM analytics.external_dependencies
@@ -648,11 +649,10 @@ def test_aggregate_adapter_persist_verifies_data(
 
 
 def test_aggregate_adapter_persist_with_null_fields(
-    fresh_gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    ctx: TestContext,
 ) -> None:
     """Persist row with null optional fields."""
-    adapter = DependencyAggregateAdapter(fresh_gateway, snapshot)
+    adapter = DependencyAggregateAdapter(ctx.gateway, ctx.snapshot)
     seed = _aggregate_seed(
         library="custom_lib",
         service_name="Custom Service",
@@ -667,7 +667,7 @@ def test_aggregate_adapter_persist_with_null_fields(
     expect_equal(count, EXPECTED_COUNT_1)
 
     # Verify null fields
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT category, severity, criticality, risk_score
         FROM analytics.external_dependencies

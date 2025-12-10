@@ -17,6 +17,7 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import BuildHistoryResult, BuildRunResult, BuildStatusResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
@@ -42,75 +43,6 @@ class TargetScope(Enum):
 
     REQUESTED = "requested"
     ALL = "all"
-
-
-@dataclass(frozen=True)
-class BuildRunResult:
-    """Result from a build run."""
-
-    executed: list[str]
-    skipped: list[str]
-    failed: list[str]
-    duration_seconds: float
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "executed": self.executed,
-            "skipped": self.skipped,
-            "failed": self.failed,
-            "duration_seconds": self.duration_seconds,
-        }
-
-
-@dataclass(frozen=True)
-class BuildStatusResult:
-    """Result from build status check."""
-
-    targets: list[dict[str, object]]
-    stale_count: int
-    fresh_count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "targets": self.targets,
-            "stale_count": self.stale_count,
-            "fresh_count": self.fresh_count,
-        }
-
-
-@dataclass(frozen=True)
-class BuildHistoryResult:
-    """Result from build history query."""
-
-    runs: list[dict[str, object]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "runs": self.runs,
-            "count": self.count,
-        }
 
 
 def _resolve_goals(

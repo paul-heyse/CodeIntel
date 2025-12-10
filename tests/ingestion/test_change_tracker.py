@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TypedDict
@@ -19,6 +19,7 @@ from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     ScanSetupOptions,
     build_repo_tree,
@@ -46,7 +47,9 @@ class ViewScenario(TypedDict):
 
 
 @pytest.fixture
-def scan_setup(tmp_path: Path, ingestion_gateway_factory) -> SimpleNamespace:
+def scan_setup(
+    tmp_path: Path, ingestion_gateway_factory: GatewayFactory
+) -> Generator[SimpleNamespace, None, None]:
     """Provision a reusable scan setup with gateway and snapshot."""
     setup = make_scan_setup(
         tmp_path,
@@ -231,7 +234,9 @@ def _docstrings_by_path(gateway: StorageGateway) -> dict[str, set[str]]:
     return grouped
 
 
-def test_incremental_ingest_ops_reparse_changed_modules(ingestion_ctx_bundle) -> None:
+def test_incremental_ingest_ops_reparse_changed_modules(
+    ingestion_ctx_bundle: SimpleNamespace,
+) -> None:
     """Ensure incremental typing ingest only processes modules flagged as changed.
 
     This test verifies that:
@@ -284,7 +289,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(ingestion_ctx_bundle) ->
         pytest.fail("Updated docstring content was not ingested")
 
 
-def test_compute_changes_tracks_add_modify_delete(ingestion_ctx_bundle) -> None:
+def test_compute_changes_tracks_add_modify_delete(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """Change detection should surface added, modified, and deleted modules.
 
     This test verifies realistic change detection behavior:

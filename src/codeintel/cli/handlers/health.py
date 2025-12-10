@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
@@ -428,39 +429,6 @@ def get_health_checker() -> HealthChecker:
 # -----------------------------------------------------------------------------
 # Handler Result and Functions
 # -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class HealthCheckResult:
-    """Result from health check handler.
-
-    Parameters
-    ----------
-    checks
-        List of individual check results.
-    overall_status
-        Overall status (ok, warn, fail, skip).
-    total_duration_ms
-        Total time for all checks in milliseconds.
-    """
-
-    checks: list[dict[str, object]]
-    overall_status: str
-    total_duration_ms: float
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "checks": self.checks,
-            "overall_status": self.overall_status,
-            "total_duration_ms": self.total_duration_ms,
-        }
 
 
 def health_check_handler(
