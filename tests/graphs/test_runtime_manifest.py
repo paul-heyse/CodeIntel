@@ -17,12 +17,7 @@ from typing import Final
 import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.core.plugins.types.result import PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.core.protocol import (
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-)
+from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.runtime.manifest import (
     GraphPluginManifest,
     InputHashPayload,
@@ -41,7 +36,7 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
-from tests._helpers.fakes.graph_plugins import FakeGraphPlugin
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -63,18 +58,7 @@ def _make_test_plugin(name: str) -> GraphPluginProtocol:
     GraphPluginProtocol
         Test plugin instance.
     """
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-    )
-
-    return FakeGraphPlugin(_metadata=metadata, _execute_fn=execute)
+    return GraphPluginBuilder(name=name).build()
 
 
 def test_compute_input_hash_scope_paths_included() -> None:

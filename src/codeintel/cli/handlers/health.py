@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.cli.health import CheckStatus, get_health_checker
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.handlers.protocol import EnhancedHandlerContext

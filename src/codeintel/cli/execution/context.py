@@ -14,14 +14,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.cli_types import OutputFormat
+from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.execution.types import ProgressEvent, ProgressState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.cli.core import CliResult
     from codeintel.cli.resolution.types import ResolvedRuntime
-    from codeintel.cli.results import CliResult
     from codeintel.storage.gateway import StorageGateway
 
 

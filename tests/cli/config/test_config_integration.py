@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from codeintel.cli.config import ConfigService
-from codeintel.cli.cyclopts_common import make_root_app
+from codeintel.cli.commands import make_root_app
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,

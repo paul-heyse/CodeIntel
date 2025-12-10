@@ -10,14 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.cli_errors import ProblemDetail
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.plugins import (
     PluginManifest,
     PluginTestHarness,
     create_plugin_scaffold,
     get_plugin_manager,
 )
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.handlers.protocol import EnhancedHandlerContext

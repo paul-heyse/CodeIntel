@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.command_context import CommandContextError, command_context
-from codeintel.cli.cyclopts_common import RuntimeCLI
+from codeintel.cli.commands import RuntimeCLI, command_context
+from codeintel.cli.commands.context import CommandContextError
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 

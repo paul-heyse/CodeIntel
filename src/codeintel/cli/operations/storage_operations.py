@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.operation_registry import register_operation
-from codeintel.cli.results import CliResult
+from codeintel.cli.introspection import register_operation
+from codeintel.cli.core import CliResult
 
 
 @dataclass

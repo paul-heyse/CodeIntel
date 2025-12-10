@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from codeintel.cli.cli_errors import ProblemDetail
+from codeintel.cli.errors import ProblemDetail
 
 
 class ErrorCategory(Enum):

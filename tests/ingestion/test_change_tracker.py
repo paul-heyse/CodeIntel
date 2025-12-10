@@ -6,13 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion import (
-    DocstringsExtractStep,
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-    RepoScanStep,
-)
+from codeintel.ingestion import DocstringsExtractStep, RepoScanStep
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -23,6 +17,12 @@ from codeintel.ingestion.tracker import (
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_ingestion_adapters,
+    build_target_context_for_plugin,
+)
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 
 
 def _module(rel_path: str) -> ModuleRecord:
@@ -206,6 +206,7 @@ def _setup_test_files(repo_root: Path) -> tuple[Path, Path]:
 def _create_scan_infrastructure(
     gateway: StorageGateway,
     repo_root: Path,
+    tmp_path: Path,
 ) -> tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]:
     """Create steps and profile for repo scanning.
 
@@ -214,9 +215,12 @@ def _create_scan_infrastructure(
     tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]
         Scan step, docstrings step, and scan profile.
     """
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
+    ctx = build_target_context_for_plugin(
+        RepoScanPlugin(),
+        tmp_path,
+        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
+    )
+    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
     scan_profile = ScanProfile(
         repo_root=repo_root,
         source_roots=(repo_root,),
@@ -246,7 +250,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
 
     gateway = GatewayFactory().open()
     try:
-        scan_step, doc_step, scan_profile = _create_scan_infrastructure(gateway, repo_root)
+        scan_step, doc_step, scan_profile = _create_scan_infrastructure(gateway, repo_root, tmp_path)
 
         # Step 1: Populate core.modules via repo scan
         _, modules, _ = scan_step.execute(

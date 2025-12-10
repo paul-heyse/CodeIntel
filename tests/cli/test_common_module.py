@@ -13,7 +13,7 @@ from codeintel.cli.config import (
     build_graph_backend_config,
     build_graph_feature_flags_from_env,
 )
-from codeintel.cli.cyclopts_common import (
+from codeintel.cli.commands import (
     OutputFormatCLI,
     RuntimeCLI,
     get_output_format,

@@ -15,6 +15,7 @@ from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
+from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack
@@ -104,6 +105,19 @@ class TestScenario:
         """
         scenario = cls()
         scenario.config.seed_packs.extend([CORE_PACK, METRICS_PACK])
+        return scenario
+
+    @classmethod
+    def with_ast_metrics(cls) -> TestScenario:
+        """Create scenario with core data and AST metrics seeds.
+
+        Returns
+        -------
+        TestScenario
+            Scenario configured with CORE_PACK and AST metrics pack.
+        """
+        scenario = cls()
+        scenario.config.seed_packs.extend([CORE_PACK, AST_METRICS_PACK])
         return scenario
 
     @classmethod

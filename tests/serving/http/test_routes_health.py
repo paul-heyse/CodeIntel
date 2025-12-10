@@ -5,26 +5,19 @@ This module tests the health endpoint using real gateways and TestClient.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import (
-    BackendResource,
-    create_app,
-)
 from codeintel.serving.http.routes.health import build_health_router
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -55,6 +48,7 @@ def test_build_health_router_returns_router() -> None:
 
 def test_health_endpoint_returns_status_ok(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /health returns status: ok with repo and commit info.
 
@@ -62,40 +56,16 @@ def test_health_endpoint_returns_status_ok(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
+        config_overrides={"read_only": True},
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-            read_only=True,
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -110,6 +80,7 @@ def test_health_endpoint_returns_status_ok(
 
 def test_health_endpoint_includes_limits(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /health includes limits when service has them.
 
@@ -117,41 +88,17 @@ def test_health_endpoint_includes_limits(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     default_limit = 25
     max_rows = 250
     limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -165,6 +112,7 @@ def test_health_endpoint_includes_limits(
 
 def test_health_endpoint_read_only_false(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /health reflects read_only=False when configured.
 
@@ -172,40 +120,16 @@ def test_health_endpoint_read_only_false(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
+        config_overrides={"read_only": False},
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-            read_only=False,
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -217,6 +141,7 @@ def test_health_endpoint_read_only_false(
 
 def test_health_endpoint_database_connectivity_verified(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., object],
 ) -> None:
     """Verify /health actually probes DuckDB connectivity.
 
@@ -224,39 +149,15 @@ def test_health_endpoint_database_connectivity_verified(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Fixture that builds a FastAPI app bound to the gateway.
     """
     limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         limits=limits,
-        observability=None,
-        service=service,
     )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     # Health should pass when DB is accessible
     with TestClient(app) as client:

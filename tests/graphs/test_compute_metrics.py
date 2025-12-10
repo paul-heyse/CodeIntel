@@ -55,6 +55,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.fakes.networkx_graphs import complete_graph
 
 # ---------------------------------------------------------------------------
 # Constants for magic value compliance
@@ -166,7 +167,7 @@ def test_closeness_empty_graph_returns_empty() -> None:
 
 def test_closeness_complete_graph_uniform() -> None:
     """Complete graph has uniform closeness."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_closeness(graph)
 
     values = list(result.values())
@@ -405,7 +406,7 @@ def test_articulation_path_graph_middle_nodes() -> None:
 
 def test_articulation_complete_graph_no_articulation() -> None:
     """Complete graph has no articulation points."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = find_articulation_points(graph)
 
     expect_true(len(result) == 0)
@@ -634,7 +635,7 @@ def test_louvain_disconnected_separate_communities() -> None:
 
 def test_louvain_returns_community_dataclass() -> None:
     """Returns Community dataclass."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = detect_communities_louvain(graph)
 
     expect_true(len(result) >= 1)
@@ -654,7 +655,7 @@ def test_label_propagation_empty_graph_returns_empty() -> None:
 
 def test_label_propagation_returns_communities() -> None:
     """Returns communities for connected graph."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = detect_communities_label_propagation(graph)
 
     expect_true(len(result) >= 1)
@@ -671,7 +672,7 @@ def test_modularity_empty_graph_returns_zero() -> None:
 
 def test_modularity_empty_communities_returns_zero() -> None:
     """Empty communities returns zero modularity."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_modularity(graph, [])
     expect_true(result == 0.0)
 
@@ -698,7 +699,7 @@ def test_clustering_empty_graph_returns_empty() -> None:
 
 def test_clustering_complete_graph_full() -> None:
     """Complete graph has full clustering."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_clustering_coefficient(graph)
 
     for coeff in result.values():
@@ -707,7 +708,7 @@ def test_clustering_complete_graph_full() -> None:
 
 def test_average_clustering() -> None:
     """Average clustering coefficient computation."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_average_clustering(graph)
 
     expect_true(abs(result - 1.0) < PAGERANK_TOLERANCE)

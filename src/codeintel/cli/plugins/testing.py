@@ -339,7 +339,7 @@ Main module for {name} plugin.
 from __future__ import annotations
 
 from codeintel.cli.execution import OperationCategory, OperationSpec
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 
 
 def _example_handler() -> CliResult[dict[str, str]]:

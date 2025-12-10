@@ -12,7 +12,7 @@ import cyclopts.help as help_pkg
 import cyclopts.help.help as help_mod
 from cyclopts import App, Parameter
 
-from codeintel.cli.cyclopts_help import (
+from codeintel.cli.commands._help import (
     _DisplayDefault,  # noqa: PLC2701 - testing internal implementation
     apply_help_patch,
     build_patched_app,

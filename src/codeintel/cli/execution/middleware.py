@@ -22,7 +22,7 @@ from codeintel.cli.execution.types import ProgressEvent, ProgressState
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
 
-    from codeintel.cli.results import CliResult
+    from codeintel.cli.core import CliResult
 
 # Optional opentelemetry import
 try:

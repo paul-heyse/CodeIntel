@@ -11,14 +11,14 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.cli_errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ProblemDetail, ValidationError
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
     build_project_runtime,
     find_project_root,
 )
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:

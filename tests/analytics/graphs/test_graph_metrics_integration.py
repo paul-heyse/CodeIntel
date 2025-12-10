@@ -38,15 +38,18 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.config.primitives import SnapshotRef
+from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import BuildLayoutOptions, SnapshotRef
 from codeintel.config.steps_graphs import ConfigDataFlowStepConfig, GraphMetricsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
-from tests._helpers.assertions import (
-    expect_equal,
-    expect_in,
-    expect_true,
+from tests._helpers import (
+    GraphMetricsGatewayOptions,
+    graph_metrics_ready_gateway,
+    seed_function_graph_cycle,
+    seed_module_graph_inputs,
 )
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
@@ -75,6 +78,11 @@ from tests._helpers.repo import (
 MIN_CONFIG_DATA_FLOW_ROWS = 0
 CONFIG_GRAPH_METRICS_KEY_COUNT = 2
 MIN_GRAPH_STATS_ROWS = 4
+REPO = "demo/repo"
+COMMIT = "abc123"
+REL_PATH = "pkg/mod.py"
+MODULE_A = "pkg.mod_a"
+MODULE_B = "pkg.mod_b"
 
 
 @dataclass
@@ -422,3 +430,79 @@ def test_contracts_and_catalog(tmp_path: Path) -> None:
         )
     finally:
         sample.close()
+
+
+def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> None:
+    """Compute function graph metrics with cycles and aggregated edge counts."""
+    ctx = graph_metrics_ready_gateway(
+        tmp_path / "graph_metrics",
+        GraphMetricsGatewayOptions(
+            repo=REPO,
+            commit=COMMIT,
+            include_symbol_edges=False,
+            run_metrics=False,
+            build_callgraph_enabled=False,
+            file_backed=False,
+        ),
+    )
+    seed_function_graph_cycle(ctx.gateway, repo=REPO, commit=COMMIT, rel_path=REL_PATH)
+
+    builder = ConfigBuilder.from_snapshot(
+        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
+        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
+    )
+    cfg = builder.graph_metrics()
+    compute_graph_metrics(ctx.gateway, cfg)
+
+    row = ctx.gateway.con.execute(
+        """
+        SELECT call_fan_in, call_fan_out, call_in_degree, call_out_degree,
+               call_cycle_member
+        FROM analytics.graph_metrics_functions
+        WHERE function_goid_h128 = 2
+        """
+    ).fetchone()
+    if row != (1, 1, 2, 1, True):
+        pytest.fail(f"Unexpected function metrics row: {row}")
+    ctx.close()
+
+
+def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> None:
+    """Compute module graph metrics including symbol coupling fan counts."""
+    ctx = graph_metrics_ready_gateway(
+        tmp_path / "graph_metrics_mod",
+        GraphMetricsGatewayOptions(
+            repo=REPO,
+            commit=COMMIT,
+            include_symbol_edges=False,
+            run_metrics=False,
+            build_callgraph_enabled=False,
+            file_backed=False,
+        ),
+    )
+    seed_module_graph_inputs(
+        ctx.gateway,
+        repo=REPO,
+        commit=COMMIT,
+        module_a=MODULE_A,
+        module_b=MODULE_B,
+    )
+
+    builder = ConfigBuilder.from_snapshot(
+        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
+        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
+    )
+    cfg = builder.graph_metrics()
+    compute_graph_metrics(ctx.gateway, cfg)
+
+    row = ctx.gateway.con.execute(
+        """
+        SELECT import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member
+        FROM analytics.graph_metrics_modules
+        WHERE module = ?
+        """,
+        [MODULE_A],
+    ).fetchone()
+    if row != (0, 1, 0, 1, False):
+        pytest.fail(f"Unexpected module metrics row: {row}")
+    ctx.close()

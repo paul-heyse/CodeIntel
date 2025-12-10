@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
-from codeintel.cli.operation_registry import get_operation_registry
-from codeintel.cli.telemetry import TelemetryConfig
+from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.observability import TelemetryConfig
 
 if TYPE_CHECKING:
     from types import ModuleType

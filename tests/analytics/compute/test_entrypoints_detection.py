@@ -136,8 +136,8 @@ def test_entrypoint_candidate_core_metadata() -> None:
         end_lineno=5,
         extra={"custom_field": "value", "count": 42},
     )
-    expect_is_not_none(extra.extra)
-    expect_equal(extra.extra["custom_field"], "value")
+    extra_data = expect_is_not_none(extra.extra)
+    expect_equal(extra_data["custom_field"], "value")
     assert_frozen(candidate, "kind", "cli_command")
 
 
@@ -152,17 +152,17 @@ def test_entrypoint_candidate_optionals_and_schema() -> None:
         lineno=1,
         end_lineno=5,
     )
-    expect_equal(base.framework, None)
-    expect_equal(base.http_method, None)
-    expect_equal(base.route_path, None)
-    expect_equal(base.status_codes, None)
-    expect_equal(base.auth_required, None)
-    expect_equal(base.command_name, None)
-    expect_equal(base.schedule, None)
-    expect_equal(base.trigger, None)
-    expect_equal(base.extra, None)
+    expect_true(base.framework is None)
+    expect_true(base.http_method is None)
+    expect_true(base.route_path is None)
+    expect_true(base.status_codes is None)
+    expect_true(base.auth_required is None)
+    expect_true(base.command_name is None)
+    expect_true(base.schedule is None)
+    expect_true(base.trigger is None)
+    expect_true(base.extra is None)
 
-    evidence_payload = [{"type": "decorator", "line": 10}]
+    evidence_payload: list[dict[str, object]] = [{"type": "decorator", "line": 10}]
     evidence_candidate = EntryPointCandidate(
         kind="http_handler",
         framework="fastapi",

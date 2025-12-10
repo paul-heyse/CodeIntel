@@ -12,23 +12,45 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
+from codeintel.analytics.compute.hotspots.metrics import (
+    FileChurn,
+    build_hotspots,
+    parse_git_log_lines,
+)
+from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import HotspotsStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
+    expect_false,
     expect_in,
     expect_is_not_none,
+    expect_length,
+    expect_not_in,
     expect_true,
 )
 from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
-from tests._helpers.scenarios import TestScenario
-from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK, MEDIUM_COMPLEXITY
-from tests._helpers.seeds.core import MOD_A_PATH
+from tests._helpers.graphs import build_ast_map
+from tests._helpers.repo import (
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    GOID_HELPER,
+    MOD_A_FQN,
+    MOD_A_PATH,
+    MOD_B_FQN,
+    MOD_B_PATH,
+    MOD_C_FQN,
+    MOD_C_PATH,
+    MOD_UTIL_FQN,
+    MOD_UTIL_PATH,
+)
 from tests._helpers.rows import AstMetricSeed, ast_metric_row
+from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
 
 # Test constants (non-repo/commit)
 EXPECTED_COMMIT_COUNT = 2
@@ -36,10 +58,24 @@ EXPECTED_AUTHOR_COUNT = 2
 EXPECTED_AUTHOR_COUNT_MULTI = 3
 EXPECTED_LINES_ADDED = 30
 EXPECTED_LINES_DELETED = 10
+PARSE_COMMITS_1 = 1
+PARSE_COMMITS_2 = 2
+PARSE_AUTHORS_1 = 1
+PARSE_AUTHORS_2 = 2
+PARSE_LINES_ADDED_10 = 10
+PARSE_LINES_ADDED_15 = 15
+PARSE_LINES_DELETED_0 = 0
+PARSE_LINES_DELETED_3 = 3
+PARSE_LINES_DELETED_5 = 5
+PARSE_FILES_2 = 2
 HOTSPOT_SCORE_THRESHOLD = 0.0
 EXPECTED_FILE_COUNT_MULTI = 3
 EXPECTED_COMPLEXITY = 10.0
 EXPECTED_SUMMARY_KEYS = 4
+FUNC_A_LINES = (1, 3)
+FUNC_B_LINES = (1, 6)
+FUNC_C_LINES = (1, 2)
+HELPER_LINES = (1, 2)
 
 
 @pytest.fixture
@@ -62,12 +98,49 @@ def hotspots_config(tmp_path: Path) -> HotspotsStepConfig:
 
 @pytest.fixture
 def ast_metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Provide a seeded TestContext with AST metrics data."""
-    ctx = TestScenario.minimal().with_seeds(AST_METRICS_PACK).build(tmp_path)
+    """Provide a seeded TestContext with AST metrics data.
+
+    Yields
+    ------
+    Iterator[TestContext]
+        Context seeded with core and AST metrics packs.
+    """
+    ctx = TestScenario.with_ast_metrics().build(tmp_path)
     try:
         yield ctx
     finally:
         ctx.close()
+
+
+@pytest.fixture
+def ast_lookup(ast_metrics_ctx: TestContext) -> dict[int, FunctionAst]:
+    """Build an AST lookup for canonical functions.
+
+    Returns
+    -------
+    dict[int, FunctionAst]
+        Mapping of GOID to parsed function metadata.
+    """
+    repo_root = ast_metrics_ctx.repo_root
+    paths = {
+        MOD_A_FQN: repo_root / MOD_A_PATH,
+        MOD_B_FQN: repo_root / MOD_B_PATH,
+        MOD_C_FQN: repo_root / MOD_C_PATH,
+        MOD_UTIL_FQN: repo_root / MOD_UTIL_PATH,
+    }
+    goids = {
+        "func_a": GOID_FUNC_A,
+        "func_b": GOID_FUNC_B,
+        "func_c": GOID_FUNC_C,
+        "helper": GOID_HELPER,
+    }
+    target_names = {
+        MOD_A_FQN: "func_a",
+        MOD_B_FQN: "func_b",
+        MOD_C_FQN: "func_c",
+        MOD_UTIL_FQN: "helper",
+    }
+    return build_ast_map(paths, goids, repo_root, target_names=target_names)
 
 
 def _insert_ast_metrics(gateway: StorageGateway, seeds: list[AstMetricSeed]) -> None:
@@ -513,3 +586,154 @@ def test_build_hotspots_logs_git_failure(
         level="WARNING",
         containing="git log exited with code 2",
     )
+
+
+@pytest.mark.parametrize(
+    ("goid", "rel_path", "expected_start", "expected_end"),
+    [
+        (GOID_FUNC_A, MOD_A_PATH, FUNC_A_LINES[0], FUNC_A_LINES[1]),
+        (GOID_FUNC_B, MOD_B_PATH, FUNC_B_LINES[0], FUNC_B_LINES[1]),
+        (GOID_FUNC_C, MOD_C_PATH, FUNC_C_LINES[0], FUNC_C_LINES[1]),
+        (GOID_HELPER, MOD_UTIL_PATH, HELPER_LINES[0], HELPER_LINES[1]),
+    ],
+)
+def test_ast_lookup_matches_canonical_functions(
+    ast_lookup: dict[int, FunctionAst],
+    goid: int,
+    rel_path: str,
+    expected_start: int,
+    expected_end: int,
+) -> None:
+    """AST lookup should map GOIDs to canonical function spans."""
+    expect_in(goid, ast_lookup)
+    node = ast_lookup[goid]
+    expect_equal(node.rel_path, rel_path)
+    expect_equal(node.start_line, expected_start)
+    expect_equal(node.end_line, expected_end)
+
+
+# =============================================================================
+# parse_git_log_lines Tests
+# =============================================================================
+
+
+def test_parse_git_log_empty_lines() -> None:
+    """Empty input returns empty dict."""
+    result = parse_git_log_lines([])
+    expect_false(result)
+
+
+def test_parse_git_log_simple_commit() -> None:
+    """Parse a single commit with one file."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "10\t5\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_in("src/module.py", result)
+    stats = result["src/module.py"]
+    expect_equal(stats["commit_count"], PARSE_COMMITS_1)
+    expect_equal(stats["author_count"], PARSE_AUTHORS_1)
+    expect_equal(stats["lines_added"], PARSE_LINES_ADDED_10)
+    expect_equal(stats["lines_deleted"], PARSE_LINES_DELETED_5)
+
+
+def test_parse_git_log_multiple_commits_same_file() -> None:
+    """Aggregate stats across multiple commits."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "10\t0\tsrc/module.py",
+        "COMMIT\tdef456\tBob",
+        "5\t3\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    stats = result["src/module.py"]
+    expect_equal(stats["commit_count"], PARSE_COMMITS_2)
+    expect_equal(stats["author_count"], PARSE_AUTHORS_2)
+    expect_equal(stats["lines_added"], PARSE_LINES_ADDED_15)
+    expect_equal(stats["lines_deleted"], PARSE_LINES_DELETED_3)
+
+
+def test_parse_git_log_multiple_files() -> None:
+    """Parse commits touching multiple files."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "10\t0\tsrc/a.py",
+        "20\t5\tsrc/b.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_length(result, PARSE_FILES_2)
+    expect_in("src/a.py", result)
+    expect_in("src/b.py", result)
+
+
+def test_parse_git_log_empty_line_handling() -> None:
+    """Skip empty lines in input."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "",
+        "10\t0\tsrc/module.py",
+        "",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_in("src/module.py", result)
+
+
+def test_parse_git_log_binary_file_numstat() -> None:
+    """Handle binary files (- in numstat)."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "-\t-\timage.png",
+        "10\t0\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_in("image.png", result)
+    stats = result["image.png"]
+    expect_equal(stats["lines_added"], PARSE_LINES_DELETED_0)
+
+
+def test_parse_git_log_normalize_path_separators() -> None:
+    """Backslashes are normalized to forward slashes."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "10\t0\tsrc\\windows\\module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_in("src/windows/module.py", result)
+
+
+def test_parse_git_log_skip_lines_before_commit() -> None:
+    """Skip numstat lines before any COMMIT header."""
+    lines = [
+        "10\t0\torphan.py",
+        "COMMIT\tabc123\tAlice",
+        "5\t0\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_not_in("orphan.py", result)
+    expect_in("src/module.py", result)
+
+
+def test_parse_git_log_malformed_numstat_line() -> None:
+    """Skip malformed numstat lines."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "not\ta\tvalid\tnumstat",
+        "10\t0\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    expect_length(result, PARSE_COMMITS_1)
+
+
+def test_parse_git_log_same_author_multiple_commits() -> None:
+    """Same author counted once even with multiple commits."""
+    lines = [
+        "COMMIT\tabc123\tAlice",
+        "10\t0\tsrc/module.py",
+        "COMMIT\tdef456\tAlice",
+        "5\t0\tsrc/module.py",
+    ]
+    result = parse_git_log_lines(lines)
+    stats = result["src/module.py"]
+    expect_equal(stats["commit_count"], PARSE_COMMITS_2)
+    expect_equal(stats["author_count"], PARSE_AUTHORS_1)

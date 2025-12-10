@@ -9,9 +9,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.cli_errors import ProblemDetail
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.jobs import JobStatus, get_job_manager
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.handlers.protocol import EnhancedHandlerContext

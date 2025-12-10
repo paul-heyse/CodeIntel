@@ -33,6 +33,8 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
+    complete_digraph,
+    complete_graph,
     cyclic_graph,
     diamond_graph,
     disconnected_graph,
@@ -199,7 +201,7 @@ def test_degrees_chain_undirected() -> None:
 
 def test_degrees_complete_graph() -> None:
     """Complete graph has uniform degrees."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = get_degrees(graph)
 
     for _, degree in result:
@@ -271,7 +273,7 @@ def test_diameter_chain_graph() -> None:
 
 def test_diameter_complete_graph() -> None:
     """Complete graph has diameter 1."""
-    graph = nx.complete_graph(5, create_using=nx.DiGraph())
+    graph = complete_digraph(5)
     result = compute_diameter_estimate(graph)
 
     expect_equal(result, DIAMETER_COMPLETE)
@@ -328,7 +330,7 @@ def test_avg_path_length_chain_graph() -> None:
 
 def test_avg_path_length_complete_graph() -> None:
     """Complete graph has avg path length 1."""
-    graph = nx.complete_graph(5, create_using=nx.DiGraph())
+    graph = complete_digraph(5)
     result = compute_avg_shortest_path_length(graph)
 
     expect_true(result is not None)
@@ -462,7 +464,7 @@ def test_statistics_cyclic_graph() -> None:
 
 def test_statistics_complete_graph() -> None:
     """Complete directed graph statistics."""
-    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    graph = complete_digraph(4)
     result = compute_graph_statistics(graph)
 
     expect_equal(result.node_count, EXPECTED_NODE_COUNT_FOUR)
@@ -601,7 +603,7 @@ def test_chain_is_dag(node_count: int) -> None:
 )
 def test_complete_edge_counts(n: int, expected_edge_count: int) -> None:
     """Complete directed graphs have n*(n-1) edges."""
-    graph = nx.complete_graph(n, create_using=nx.DiGraph())
+    graph = complete_digraph(n)
     result = compute_graph_statistics(graph)
 
     expect_equal(result.edge_count, expected_edge_count)

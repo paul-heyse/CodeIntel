@@ -6,12 +6,12 @@ listing and calling serving operations.
 
 from __future__ import annotations
 
-from codeintel.cli.cli_validation import StringValidator, ValidationSchema
+from codeintel.cli.introspection import StringValidator, ValidationSchema
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.handlers.ops import op_list_structured
-from codeintel.cli.operation_registry import register_operation
-from codeintel.cli.result_types import OperationListResult
-from codeintel.cli.results import CliResult
+from codeintel.cli.introspection import register_operation
+from codeintel.cli.core.result_types import OperationListResult
+from codeintel.cli.core import CliResult
 
 
 def _op_list_handler(*, category: str | None = None) -> CliResult[OperationListResult]:

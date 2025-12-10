@@ -17,47 +17,55 @@ Example
 
 from __future__ import annotations
 
-# Main app and entry point
-from codeintel.cli.cyclopts_app import app, main
-
-# Command apps - Core
-from codeintel.cli.cyclopts_build import build_app
-
 # Common utilities for command definitions
-from codeintel.cli.cyclopts_common import (
+from codeintel.cli.commands._common import (
     OutputFormatCLI,
     RuntimeCLI,
+    get_output_format,
+    get_verbose,
     make_root_app,
+    resolve_output_format,
+    runtime_field,
 )
 
-# Command apps - Utilities
-from codeintel.cli.cyclopts_completions import completions_app
-from codeintel.cli.cyclopts_config import config_app
+# Context manager
+from codeintel.cli.commands.context import command_context
 
 # Command apps - Domain
-from codeintel.cli.cyclopts_datasets import datasets_ext_app
-from codeintel.cli.cyclopts_docs import docs_app
-from codeintel.cli.cyclopts_graphs import graphs_app
-from codeintel.cli.cyclopts_health import health_app
-from codeintel.cli.cyclopts_help_commands import help_commands_app
-from codeintel.cli.cyclopts_history import history_app
-from codeintel.cli.cyclopts_ide import ide_app
-from codeintel.cli.cyclopts_jobs import jobs_app
-from codeintel.cli.cyclopts_ops import dataset_app, op_app, serve_app
-from codeintel.cli.cyclopts_plugins import plugins_app
-from codeintel.cli.cyclopts_storage import storage_app
-from codeintel.cli.cyclopts_subsystem import subsystem_app
+from codeintel.cli.commands.build import build_app
+from codeintel.cli.commands.completions import completions_app
+from codeintel.cli.commands.config import config_app
+from codeintel.cli.commands.dataset_ops import dataset_app
+from codeintel.cli.commands.datasets import datasets_ext_app
+from codeintel.cli.commands.docs import docs_app
+from codeintel.cli.commands.graphs import graphs_app
+from codeintel.cli.commands.health import health_app
+from codeintel.cli.commands.help_commands import help_commands_app
+from codeintel.cli.commands.history import history_app
+from codeintel.cli.commands.ide import ide_app
+from codeintel.cli.commands.jobs import jobs_app
+from codeintel.cli.commands.ops import op_app
+from codeintel.cli.commands.plugins import plugins_app
+from codeintel.cli.commands.serve import serve_app
+from codeintel.cli.commands.storage import storage_app
+from codeintel.cli.commands.subsystem import subsystem_app
+
+# Main app and entry point (must be last to avoid circular imports)
+from codeintel.cli.commands.app import app, main
 
 __all__ = [
     "OutputFormatCLI",
     "RuntimeCLI",
     "app",
     "build_app",
+    "command_context",
     "completions_app",
     "config_app",
     "dataset_app",
     "datasets_ext_app",
     "docs_app",
+    "get_output_format",
+    "get_verbose",
     "graphs_app",
     "health_app",
     "help_commands_app",
@@ -68,6 +76,8 @@ __all__ = [
     "make_root_app",
     "op_app",
     "plugins_app",
+    "resolve_output_format",
+    "runtime_field",
     "serve_app",
     "storage_app",
     "subsystem_app",

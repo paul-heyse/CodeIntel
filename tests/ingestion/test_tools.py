@@ -1370,6 +1370,34 @@ def test_tool_service_run_pyright_returns_errors_from_parsed_report(tmp_path: Pa
     expect_true(isinstance(errors, dict))
 
 
+def test_tool_service_run_pyright_execution_error(tmp_path: Path) -> None:
+    """ToolService.run_pyright should raise ToolExecutionError on execution failure."""
+    runner = PresetRunner(RuntimeError("pyright failed"))
+    service = ToolService(runner)
+
+    with pytest.raises(ToolExecutionError):
+        asyncio.run(service.run_pyright(tmp_path))
+
+
+def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
+    """ToolService.run_pyrefly should degrade to empty mapping on failure."""
+    run = make_tool_run_result(
+        ToolName.PYREFLY,
+        options=ToolRunOptions(
+            returncode=1,
+            stdout="",
+            stderr="pyrefly failed",
+            duration_s=0.1,
+        ),
+    )
+    runner = PresetRunner(run)
+    service = ToolService(runner)
+
+    errors = asyncio.run(service.run_pyrefly(tmp_path))
+
+    expect_true(errors == {})
+
+
 def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
     """ToolService.run_coverage_report should return report from parsed data."""
     # Coverage plugin requires coverage JSON data
@@ -1389,6 +1417,27 @@ def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
 
     # Should return a CoverageReport
     expect_true(isinstance(report, CoverageReport))
+
+
+def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) -> None:
+    """ToolService.run_coverage_report should return empty report on failure."""
+    run = make_tool_run_result(
+        ToolName.COVERAGE,
+        options=ToolRunOptions(
+            returncode=1,
+            stdout="",
+            stderr="coverage failed",
+            duration_s=0.1,
+        ),
+    )
+    runner = PresetRunner(run)
+    service = ToolService(runner)
+
+    report = asyncio.run(
+        service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json")
+    )
+
+    expect_true(report == CoverageReport.empty())
 
 
 def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
@@ -1415,6 +1464,16 @@ def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     expect_true(executed is False)
 
 
+def test_tool_service_run_pytest_report_execution_error(tmp_path: Path) -> None:
+    """ToolService.run_pytest_report should raise ToolExecutionError on failure."""
+    runner = PresetRunner(RuntimeError("pytest failed"))
+    service = ToolService(runner)
+    json_path = tmp_path / "report.json"
+
+    with pytest.raises(ToolExecutionError):
+        asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+
+
 def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
     """ToolService.run_scip_full should raise ToolNotFoundError when missing."""
     tools_cfg = ToolsConfig.default()
@@ -1423,6 +1482,21 @@ def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
     service = ToolService(runner, tools_cfg)
 
     with pytest.raises(ToolNotFoundError):
+        asyncio.run(
+            service.run_scip_full(
+                tmp_path,
+                output_scip=tmp_path / "index.scip",
+                output_json=tmp_path / "index.json",
+            )
+        )
+
+
+def test_tool_service_run_scip_full_execution_error(tmp_path: Path) -> None:
+    """ToolService.run_scip_full should raise ToolExecutionError on failure."""
+    runner = PresetRunner(RuntimeError("scip failed"))
+    service = ToolService(runner)
+
+    with pytest.raises(ToolExecutionError):
         asyncio.run(
             service.run_scip_full(
                 tmp_path,
@@ -1444,6 +1518,22 @@ def test_tool_service_run_scip_shard_not_found_raises(tmp_path: Path) -> None:
             service.run_scip_shard(
                 tmp_path,
                 rel_paths=["src/mod.py"],
+                output_scip=tmp_path / "index.scip",
+                output_json=tmp_path / "index.json",
+            )
+        )
+
+
+def test_tool_service_run_scip_shard_execution_error(tmp_path: Path) -> None:
+    """ToolService.run_scip_shard should raise ToolExecutionError on failure."""
+    runner = PresetRunner(RuntimeError("scip shard failed"))
+    service = ToolService(runner)
+
+    with pytest.raises(ToolExecutionError):
+        asyncio.run(
+            service.run_scip_shard(
+                tmp_path,
+                rel_paths=["module.py"],
                 output_scip=tmp_path / "index.scip",
                 output_json=tmp_path / "index.json",
             )

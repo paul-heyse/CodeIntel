@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from codeintel.cli.cyclopts_app import app as cli_app
+from codeintel.cli.commands import app as cli_app
 from codeintel.cli.execution import get_executor
 from codeintel.cli.introspection import get_operation_registry
 

@@ -29,6 +29,8 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
+    complete_digraph,
+    complete_graph,
     diamond_graph,
     star_graph,
 )
@@ -85,7 +87,7 @@ def test_clustering_chain_graph() -> None:
 
 def test_clustering_complete_graph() -> None:
     """Complete graph has clustering coefficient 1.0."""
-    graph = nx.complete_graph(5)
+    graph = complete_graph(5)
     result = compute_clustering_coefficient(graph)
 
     for clustering in result.values():
@@ -115,7 +117,7 @@ def test_clustering_star_graph() -> None:
 
 def test_clustering_directed_graph_converted() -> None:
     """Directed graph is converted to undirected."""
-    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    graph = complete_digraph(4)
     result = compute_clustering_coefficient(graph)
 
     # Should return results (converted to undirected)
@@ -171,7 +173,7 @@ def test_triangles_single_triangle() -> None:
 
 def test_triangles_complete_graph() -> None:
     """Complete graph K4 has multiple triangles per node."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_triangles(graph)
 
     # In K4, each node participates in C(3,2) = 3 triangles
@@ -229,7 +231,7 @@ def test_core_number_chain_graph() -> None:
 
 def test_core_number_complete_graph() -> None:
     """Complete graph K4: all nodes have core number n-1."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_core_number(graph)
 
     # K4 is a 3-core (each node has 3 neighbors)
@@ -258,7 +260,7 @@ def test_core_number_triangle() -> None:
 
 def test_core_number_directed_converted() -> None:
     """Directed graph is converted to undirected."""
-    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    graph = complete_digraph(4)
     result = compute_core_number(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FOUR)
@@ -306,7 +308,7 @@ def test_constraint_star_graph() -> None:
 
 def test_constraint_complete_graph() -> None:
     """Complete graph: all have same constraint (no structural holes)."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_constraint(graph)
 
     # All nodes have same constraint in complete graph
@@ -360,7 +362,7 @@ def test_effective_size_star_graph() -> None:
 
 def test_effective_size_complete_graph() -> None:
     """Complete graph: low effective size (redundant connections)."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_effective_size(graph)
 
     # All neighbors are connected, so redundancy is high
@@ -397,7 +399,7 @@ def test_all_structural_empty_graph() -> None:
 
 def test_all_structural_returns_dataclass() -> None:
     """Returns StructuralMetrics dataclass for each node."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_all_structural(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FOUR)
@@ -423,7 +425,7 @@ def test_all_structural_chain_graph() -> None:
 
 def test_all_structural_complete_graph() -> None:
     """Complete graph structural metrics."""
-    graph = nx.complete_graph(4)
+    graph = complete_graph(4)
     result = compute_all_structural(graph)
 
     for metrics in result.values():
@@ -461,7 +463,7 @@ def test_all_structural_triangle() -> None:
 
 def test_all_structural_directed_converted() -> None:
     """Directed graph is converted to undirected."""
-    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    graph = complete_digraph(4)
     result = compute_all_structural(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FOUR)
@@ -499,7 +501,7 @@ def test_structural_metrics_frozen() -> None:
 )
 def test_complete_graph_core_numbers(n: int, expected_core: int) -> None:
     """Complete graphs Kn have core number n-1."""
-    graph = nx.complete_graph(n)
+    graph = complete_graph(n)
     result = compute_core_number(graph)
 
     for core in result.values():
@@ -516,7 +518,7 @@ def test_complete_graph_core_numbers(n: int, expected_core: int) -> None:
 )
 def test_complete_graph_triangles(n: int, expected_triangles_per_node: int) -> None:
     """Complete graphs have predictable triangle counts."""
-    graph = nx.complete_graph(n)
+    graph = complete_graph(n)
     result = compute_triangles(graph)
 
     for count in result.values():
