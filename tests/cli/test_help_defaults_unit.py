@@ -12,12 +12,7 @@ import cyclopts.help as help_pkg
 import cyclopts.help.help as help_mod
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._help import (
-    _DisplayDefault,  # noqa: PLC2701 - testing internal implementation
-    apply_help_patch,
-    build_patched_app,
-    create_parameter_help_panel,
-)
+from codeintel.cli.commands import _help as help_utils  # noqa: PLC2701
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -26,6 +21,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_in,
     expect_true,
 )
+
+_DisplayDefault = getattr(help_utils, "_DisplayDefault")
+apply_help_patch = help_utils.apply_help_patch
+build_patched_app = help_utils.build_patched_app
+create_parameter_help_panel = help_utils.create_parameter_help_panel
 
 
 @dataclass

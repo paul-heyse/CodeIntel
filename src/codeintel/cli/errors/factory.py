@@ -18,7 +18,7 @@ Example
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Never
+from typing import TYPE_CHECKING
 
 from codeintel.cli.core.results import CliResult
 from codeintel.cli.errors._cli_errors import ProblemDetail
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def fail_missing_required(param: str, *, detail: str | None = None) -> CliResult[Never]:
+def fail_missing_required[T](param: str, *, detail: str | None = None) -> CliResult[T]:
     """Create failed result for missing required parameter.
 
     Parameters
@@ -47,7 +47,7 @@ def fail_missing_required(param: str, *, detail: str | None = None) -> CliResult
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with validation error.
     """
     return CliResult.fail(
@@ -59,13 +59,13 @@ def fail_missing_required(param: str, *, detail: str | None = None) -> CliResult
     )
 
 
-def fail_invalid_value(
+def fail_invalid_value[T](
     param: str,
     value: object,
     reason: str,
     *,
     suggestion: str | None = None,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result for invalid parameter value.
 
     Parameters
@@ -81,7 +81,7 @@ def fail_invalid_value(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with validation error.
     """
     return CliResult.fail(
@@ -95,12 +95,12 @@ def fail_invalid_value(
     )
 
 
-def fail_not_found(
+def fail_not_found[T](
     resource_type: str,
     identifier: str,
     *,
     detail: str | None = None,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result for resource not found.
 
     Parameters
@@ -114,7 +114,7 @@ def fail_not_found(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with not found error.
     """
     return CliResult.fail(
@@ -126,10 +126,10 @@ def fail_not_found(
     )
 
 
-def fail_storage_connection(
+def fail_storage_connection[T](
     db_path: str | Path,
     cause: str,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result for storage connection failure.
 
     Parameters
@@ -141,7 +141,7 @@ def fail_storage_connection(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with storage error.
     """
     return CliResult.fail(
@@ -152,12 +152,12 @@ def fail_storage_connection(
     )
 
 
-def fail_storage_query(
+def fail_storage_query[T](
     message: str,
     *,
     query: str | None = None,
     table: str | None = None,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result for storage query failure.
 
     Parameters
@@ -171,7 +171,7 @@ def fail_storage_query(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with storage error.
     """
     return CliResult.fail(
@@ -184,12 +184,12 @@ def fail_storage_query(
     )
 
 
-def fail_internal(
+def fail_internal[T](
     message: str,
     *,
     operation_id: str = "unknown",
     cause: Exception | None = None,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result for internal/unexpected failures.
 
     Parameters
@@ -203,7 +203,7 @@ def fail_internal(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with internal error.
     """
     return CliResult.fail(
@@ -216,13 +216,13 @@ def fail_internal(
     )
 
 
-def fail_with_problem(
+def fail_with_problem[T](
     error_type: str,
     title: str,
     detail: str,
     *,
     status: int = 400,
-) -> CliResult[Never]:
+) -> CliResult[T]:
     """Create failed result from explicit ProblemDetail fields.
 
     Use this for domain-specific errors that don't fit the standard categories.
@@ -241,7 +241,7 @@ def fail_with_problem(
 
     Returns
     -------
-    CliResult[Never]
+    CliResult[T]
         Failed result with the specified error.
     """
     return CliResult.fail(
@@ -254,11 +254,187 @@ def fail_with_problem(
     )
 
 
+# -----------------------------------------------------------------------------
+# Domain-Specific Error Factories
+# -----------------------------------------------------------------------------
+
+
+def fail_job_not_found[T](job_id: str) -> CliResult[T]:
+    """Create failed result for job not found.
+
+    Parameters
+    ----------
+    job_id
+        Job identifier that was not found.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with job not found error.
+    """
+    return CliResult.fail(
+        ProblemDetail(
+            type="urn:codeintel:jobs:not-found",
+            title="Job Not Found",
+            detail=f"Job not found: {job_id}",
+            status=404,
+        )
+    )
+
+
+def fail_job_not_completed[T](job_id: str, current_status: str) -> CliResult[T]:
+    """Create failed result for job not in completed state.
+
+    Parameters
+    ----------
+    job_id
+        Job identifier.
+    current_status
+        Current status of the job.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with job not completed error.
+    """
+    return CliResult.fail(
+        ProblemDetail(
+            type="urn:codeintel:jobs:not-completed",
+            title="Job Not Completed",
+            detail=f"Job {job_id} is not completed (status: {current_status})",
+            status=400,
+        )
+    )
+
+
+def fail_job_cancel_failed[T](job_id: str) -> CliResult[T]:
+    """Create failed result for job cancellation failure.
+
+    Parameters
+    ----------
+    job_id
+        Job identifier that could not be cancelled.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with cancel failure error.
+    """
+    return CliResult.fail(
+        ProblemDetail(
+            type="urn:codeintel:jobs:cancel-failed",
+            title="Cancel Failed",
+            detail=f"Could not cancel job {job_id}",
+            status=400,
+        )
+    )
+
+
+def fail_operation_not_found[T](op_id: str) -> CliResult[T]:
+    """Create failed result for operation not found.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier that was not found.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with operation not found error.
+    """
+    return fail_not_found("operation", op_id)
+
+
+def fail_dataset_not_found[T](table_key: str) -> CliResult[T]:
+    """Create failed result for dataset not found.
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key that was not found.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with dataset not found error.
+    """
+    return fail_not_found("dataset", table_key)
+
+
+def fail_macro_validation[T](message: str, *, missing: list[str] | None = None) -> CliResult[T]:
+    """Create failed result for macro validation failure.
+
+    Parameters
+    ----------
+    message
+        Validation failure message.
+    missing
+        Optional list of missing macro names.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with macro validation error.
+    """
+    detail = message
+    if missing:
+        detail = f"{message}. Missing macros: {', '.join(missing)}"
+
+    return CliResult.fail(
+        ProblemDetail(
+            type="urn:codeintel:storage:macro-validation-failed",
+            title="Macro Validation Failed",
+            detail=detail,
+            status=400,
+        )
+    )
+
+
+def fail_invalid_param_format[T](
+    param: str, expected: str, got: str | None = None
+) -> CliResult[T]:
+    """Create failed result for invalid parameter format.
+
+    Parameters
+    ----------
+    param
+        Parameter name.
+    expected
+        Expected format description.
+    got
+        Optional actual value received.
+
+    Returns
+    -------
+    CliResult[T]
+        Failed result with invalid format error.
+    """
+    detail = f"Invalid format for '{param}': expected {expected}"
+    if got:
+        detail = f"{detail}, got: {got}"
+
+    return CliResult.fail(
+        validation_error(
+            ValidationErrorCode.INVALID_FORMAT,
+            param,
+            detail,
+        )
+    )
+
+
 __all__ = [
+    "fail_dataset_not_found",
     "fail_internal",
+    "fail_invalid_param_format",
     "fail_invalid_value",
+    "fail_job_cancel_failed",
+    "fail_job_not_completed",
+    "fail_job_not_found",
+    "fail_macro_validation",
     "fail_missing_required",
     "fail_not_found",
+    "fail_operation_not_found",
     "fail_storage_connection",
     "fail_storage_query",
     "fail_with_problem",

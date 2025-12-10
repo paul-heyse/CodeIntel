@@ -86,13 +86,13 @@ class HelpRenderer:
 
         return True
 
-    def _render_usage_example(self, info: OperationInfo) -> None:
+    def _render_usage_example(self, info: OperationSpec) -> None:
         """Render usage example for an operation.
 
         Parameters
         ----------
         info
-            Operation information.
+            Operation specification.
         """
         self.console.print("[heading]Usage[/heading]")
         # Generate basic CLI example from operation_id

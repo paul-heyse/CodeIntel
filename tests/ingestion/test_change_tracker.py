@@ -143,10 +143,10 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
         "full_rebuild": False,
         "change_set": lambda modules: ChangeSet(added=[], modified=[modules[1]], deleted=[]),
         "policy": lambda: IncrementalIngestPolicy(min_total_modules_for_ratio=1),
-        "module_filter": lambda modules: None,
+        "module_filter": lambda _modules: None,
         "expected_use_full": False,
         "expected_reparse": lambda modules: [modules[1]],
-        "expected_deleted": lambda modules: [],
+        "expected_deleted": lambda _modules: [],
     },
     {
         "id": "ratio_full",
@@ -158,7 +158,7 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
         "policy": lambda: IncrementalIngestPolicy(
             max_changed_ratio=0.5, min_total_modules_for_ratio=1
         ),
-        "module_filter": lambda modules: None,
+        "module_filter": lambda _modules: None,
         "expected_use_full": True,
         "expected_reparse": lambda modules: modules,
         "expected_deleted": lambda modules: [module.rel_path for module in modules],
@@ -175,12 +175,12 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
             added=[modules[0]], modified=[], deleted=[modules[2]]
         ),
         "policy": lambda: IncrementalIngestPolicy(min_total_modules_for_ratio=10),
-        "module_filter": lambda modules: (
+        "module_filter": lambda _modules: (
             lambda module: module.rel_path.endswith(".py") and module.rel_path.startswith("src/")
         ),
         "expected_use_full": False,
         "expected_reparse": lambda modules: [modules[0]],
-        "expected_deleted": lambda modules: [],
+        "expected_deleted": lambda _modules: [],
     },
     {
         "id": "flag_full_rebuild",
@@ -188,7 +188,7 @@ VIEW_SCENARIOS: tuple[ViewScenario, ...] = (
         "full_rebuild": True,
         "change_set": lambda modules: ChangeSet(added=[], modified=[modules[0]], deleted=[]),
         "policy": lambda: IncrementalIngestPolicy(),
-        "module_filter": lambda modules: None,
+        "module_filter": lambda _modules: None,
         "expected_use_full": True,
         "expected_reparse": lambda modules: modules,
         "expected_deleted": lambda modules: [module.rel_path for module in modules],

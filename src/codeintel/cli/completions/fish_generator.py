@@ -6,23 +6,8 @@ Generate fish shell completion scripts.
 from __future__ import annotations
 
 from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
+from codeintel.cli.completions.escaping import escape_fish
 from codeintel.cli.completions.generator import ShellBackend, generate_with_backend
-
-
-def _escape_fish_description(desc: str) -> str:
-    """Escape description for fish completion.
-
-    Parameters
-    ----------
-    desc
-        Description text.
-
-    Returns
-    -------
-    str
-        Escaped description.
-    """
-    return desc.replace("'", "\\'")
 
 
 class FishBackend(ShellBackend):
@@ -75,14 +60,14 @@ class FishBackend(ShellBackend):
             if flag.short:
                 parts.append(f"-s {flag.short}")
             parts.append(f"-l {flag.name}")
-            parts.append(f"-d '{_escape_fish_description(flag.description)}'")
+            parts.append(f"-d '{escape_fish(flag.description)}'")
             lines.append(" ".join(parts))
         lines.extend(["", "# Subcommands"])
 
         # Top-level commands
         lines.extend(
             f"{self._complete_prefix} -n '__fish_use_subcommand' "
-            f"-a {cmd.name} -d '{_escape_fish_description(cmd.description)}'"
+            f"-a {cmd.name} -d '{escape_fish(cmd.description)}'"
             for cmd in model.root_command.subcommands
         )
         lines.append("")
@@ -143,21 +128,21 @@ def _generate_fish_command(
         for sub in cmd.subcommands:
             lines.append(
                 f"complete -c {program} -n '{condition}' "
-                f"-a {sub.name} -d '{_escape_fish_description(sub.description)}'",
+                f"-a {sub.name} -d '{escape_fish(sub.description)}'",
             )
 
             # Subcommand flags
             sub_condition = f"{condition}; and __fish_seen_subcommand_from {sub.name}"
             lines.extend(
                 f"complete -c {program} -n '{sub_condition}' "
-                f"-l {flag.name} -d '{_escape_fish_description(flag.description)}'"
+                f"-l {flag.name} -d '{escape_fish(flag.description)}'"
                 for flag in sub.flags
             )
 
     else:
         lines.extend(
             f"complete -c {program} -n '{condition}' "
-            f"-l {flag.name} -d '{_escape_fish_description(flag.description)}'"
+            f"-l {flag.name} -d '{escape_fish(flag.description)}'"
             for flag in cmd.flags
         )
 

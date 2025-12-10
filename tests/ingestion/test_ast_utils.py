@@ -80,6 +80,7 @@ def test_indexes_requested_kinds(case_kinds: tuple[type[ast.AST], ...], label: s
     tree = ast.parse(SIMPLE_MODULE)
     index = AstSpanIndex.from_tree(tree, kinds=case_kinds)
 
+    _ = label
     _expect_index_has_kind(index, case_kinds)
 
 

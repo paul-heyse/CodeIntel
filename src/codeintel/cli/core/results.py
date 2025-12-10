@@ -2,6 +2,8 @@
 
 This module provides the CliResult protocol for handlers that return
 structured results, enabling composition, testing, and consistent output.
+All result types implement the SerializableResult protocol for unified
+JSON serialization.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Protocol, TextIO, runtime_checkable
 
 from codeintel.cli.core.serialization import serialize_result
 
@@ -21,6 +23,81 @@ if TYPE_CHECKING:
 
 # Text renderer protocol: callable that takes data and writer
 TextRenderer = Callable[[object, TextIO], None]
+
+
+@runtime_checkable
+class SerializableResult(Protocol):
+    """Protocol for CLI result types that can serialize to dictionary.
+
+    All result dataclasses should implement this protocol by providing
+    a `to_dict()` method. This enables unified JSON serialization.
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> from codeintel.cli.core.results import SerializableResult
+    >>> @dataclass
+    ... class MyResult:
+    ...     value: int
+    ...     def to_dict(self) -> dict[str, object]:
+    ...         return {"value": self.value}
+    >>> isinstance(MyResult(1), SerializableResult)
+    True
+    """
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation of the result.
+        """
+        ...
+
+
+def auto_serialize(data: object) -> object:
+    """Automatically serialize data for JSON output.
+
+    Handle different data types with the following precedence:
+    1. SerializableResult protocol (call to_dict())
+    2. Dataclass (serialize all fields)
+    3. Objects with __dict__ (use dict directly)
+    4. Return as-is (primitives, lists, dicts)
+
+    Parameters
+    ----------
+    data
+        Data to serialize.
+
+    Returns
+    -------
+    object
+        Serialized representation suitable for JSON.
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> @dataclass
+    ... class Simple:
+    ...     x: int
+    >>> auto_serialize(Simple(42))
+    {'x': 42}
+    """
+    # SerializableResult protocol takes precedence
+    if isinstance(data, SerializableResult):
+        return data.to_dict()
+
+    # Dataclass serialization
+    if is_dataclass(data) and not isinstance(data, type):
+        return serialize_result(data)
+
+    # Objects with __dict__
+    if hasattr(data, "__dict__") and not isinstance(data, type):
+        return data.__dict__
+
+    # Return as-is (primitives, lists, dicts)
+    return data
 
 
 @dataclass
@@ -80,17 +157,16 @@ class CliResult[T]:
     def _serialize_data(data: object) -> object:
         """Serialize data for JSON output.
 
+        Use the unified `auto_serialize` function to handle all result types
+        consistently, supporting SerializableResult protocol, dataclasses,
+        and plain objects.
+
         Returns
         -------
         object
             Serialized representation of the data.
         """
-        # Use generic serializer for dataclasses
-        if is_dataclass(data) and not isinstance(data, type):
-            return serialize_result(data)
-        if hasattr(data, "__dict__") and not isinstance(data, type):
-            return data.__dict__
-        return data
+        return auto_serialize(data)
 
     def to_json(self, *, indent: int | None = 2) -> str:
         """Serialize to JSON string.
@@ -223,5 +299,7 @@ class CliResult[T]:
 
 __all__ = [
     "CliResult",
+    "SerializableResult",
     "TextRenderer",
+    "auto_serialize",
 ]

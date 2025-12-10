@@ -6,23 +6,8 @@ Generate zsh completion scripts with rich descriptions and grouping.
 from __future__ import annotations
 
 from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
+from codeintel.cli.completions.escaping import escape_zsh
 from codeintel.cli.completions.generator import ShellBackend
-
-
-def _escape_zsh_description(desc: str) -> str:
-    """Escape description for zsh completion.
-
-    Parameters
-    ----------
-    desc
-        Description text.
-
-    Returns
-    -------
-    str
-        Escaped description.
-    """
-    return desc.replace("'", "'\\''")
 
 
 class ZshBackend(ShellBackend):
@@ -74,7 +59,7 @@ class ZshBackend(ShellBackend):
         double_indent = self._indent * 2
         for flag in model.global_flags:
             short = f"-{flag.short}" if flag.short else ""
-            desc = _escape_zsh_description(flag.description)
+            desc = escape_zsh(flag.description)
             if short:
                 lines.append(f"{double_indent}'{short}[{desc}]' \\")
             lines.append(f"{double_indent}'--{flag.name}[{desc}]' \\")
@@ -112,7 +97,7 @@ class ZshBackend(ShellBackend):
         ]
 
         for cmd in model.root_command.subcommands:
-            desc = _escape_zsh_description(cmd.description)
+            desc = escape_zsh(cmd.description)
             lines.append(f"{quad_indent}'{cmd.name}:{desc}'")
 
         lines.extend(
@@ -175,7 +160,7 @@ def _generate_zsh_command(
             ],
         )
         for sub in cmd.subcommands:
-            desc = _escape_zsh_description(sub.description)
+            desc = escape_zsh(sub.description)
             lines.append(f"{six_indent}'{sub.name}:{desc}'")
         lines.extend(
             [
@@ -186,7 +171,7 @@ def _generate_zsh_command(
     elif cmd.flags:
         lines.append(f"{five_indent}_arguments \\")
         for flag in cmd.flags:
-            desc = _escape_zsh_description(flag.description)
+            desc = escape_zsh(flag.description)
             if flag.takes_value:
                 lines.append(f"{six_indent}'--{flag.name}=[{desc}]' \\")
             else:

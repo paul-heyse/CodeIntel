@@ -151,7 +151,7 @@ def test_json_output_overhead(cli: CliTestHarness) -> None:
 def test_middleware_overhead_acceptable() -> None:
     """Test middleware stack doesn't add excessive overhead."""
 
-    def fast_handler(ctx: HandlerContext) -> CliResult[dict[str, int]]:
+    def fast_handler(_ctx: HandlerContext) -> CliResult[dict[str, int]]:
         """Return fast test result.
 
         Returns
@@ -204,7 +204,7 @@ def test_repeated_operations_no_memory_leak(
 def test_executor_cleanup() -> None:
     """Test executor cleans up properly."""
 
-    def handler(ctx: HandlerContext) -> CliResult[dict[str, int]]:
+    def handler(_ctx: HandlerContext) -> CliResult[dict[str, int]]:
         """Return test result.
 
         Returns

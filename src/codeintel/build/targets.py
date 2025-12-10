@@ -16,7 +16,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal
 
-from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
 from codeintel.build.resources import (
     DEFAULT_EXECUTION,
@@ -27,6 +27,18 @@ from codeintel.build.resources import (
 
 TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of which target module produces an output."""
+
+
+@dataclass(frozen=True)
+class TargetOptions:
+    """Optional configuration overrides for OutputTarget factories."""
+
+    artifacts: tuple[ArtifactSpec, ...] = ()
+    dependencies: tuple[str, ...] = ()
+    resources: TargetResources = DEFAULT_RESOURCES
+    execution: TargetExecution = DEFAULT_EXECUTION
+    parameters: TargetParameters = EMPTY_PARAMETERS
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,6 +108,52 @@ class OutputTarget:
     parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     description: str = ""
 
+    def __post_init__(self) -> None:
+        """Validate contract structure after initialization.
+
+        Raises
+        ------
+        ValueError
+            If the contract contains structural validation errors.
+        """
+        errors = self.contract.validate()
+        if errors:
+            message = "; ".join(errors)
+            raise ValueError(message)
+
+    @classmethod
+    def from_tables(
+        cls,
+        *,
+        name: str,
+        module: TargetModule,
+        plugin: str,
+        tables: Iterable[str],
+        options: TargetOptions | None = None,
+    ) -> OutputTarget:
+        """Create an OutputTarget from table keys and optional artifacts.
+
+        This factory provides compatibility for legacy call sites that
+        previously passed ``tables=...`` directly to the constructor.
+
+        Returns
+        -------
+        OutputTarget
+            Target configured with a simple contract derived from table keys.
+        """
+        opts = options or TargetOptions()
+        return cls(
+            name=name,
+            module=module,
+            plugin=plugin,
+            contract=OutputContract.simple(table_keys=tables, artifacts=opts.artifacts),
+            dependencies=opts.dependencies,
+            resources=opts.resources,
+            execution=opts.execution,
+            parameters=opts.parameters,
+            description=opts.description,
+        )
+
     @property
     def table_keys(self) -> tuple[str, ...]:
         """Return table keys from contract.
@@ -106,6 +164,17 @@ class OutputTarget:
             Fully-qualified table names this target writes to.
         """
         return self.contract.table_keys
+
+    @property
+    def tables(self) -> tuple[str, ...]:
+        """Deprecated alias for table_keys maintained for compatibility.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Fully-qualified table names.
+        """
+        return self.table_keys
 
     @property
     def estimated_duration_ms(self) -> int:
