@@ -23,15 +23,6 @@ from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
 
-# Export to_tuple as method references for backward compatibility
-cfg_block_to_tuple = CFGBlockRow.to_tuple
-cfg_edge_to_tuple = CFGEdgeRow.to_tuple
-dfg_edge_to_tuple = DFGEdgeRow.to_tuple
-import_edge_to_tuple = ImportEdgeRow.to_tuple
-import_module_to_tuple = ImportModuleRow.to_tuple
-symbol_use_to_tuple = SymbolUseRow.to_tuple
-
-
 # Call graph types remain TypedDicts as they are not duplicated in compute modules
 
 
@@ -170,10 +161,4 @@ __all__ = [
     "SymbolUseRow",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
-    "cfg_block_to_tuple",
-    "cfg_edge_to_tuple",
-    "dfg_edge_to_tuple",
-    "import_edge_to_tuple",
-    "import_module_to_tuple",
-    "symbol_use_to_tuple",
 ]

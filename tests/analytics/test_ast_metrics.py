@@ -112,7 +112,13 @@ def ast_metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 @pytest.fixture
 def ast_lookup(ast_metrics_ctx: TestContext) -> dict[int, FunctionAst]:
-    """Apply canonical AST artifacts and ensure GOIDs are registered."""
+    """Apply canonical AST artifacts and ensure GOIDs are registered.
+
+    Returns
+    -------
+    dict[int, FunctionAst]
+        Mapping from GOID to FunctionAst for seeded functions.
+    """
     artifacts = canonical_ast_artifacts(ast_metrics_ctx)
     if (
         ast_metrics_ctx.query_count(

@@ -5,18 +5,17 @@ Graph analytics plugin commands using the @cli_command decorator.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import OutputFmt, Verbose
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.graphs import (
     graph_plugins_list_handler,
     graph_plugins_plan_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.graphs.core.registry import DependencyPolicy, SelectionPolicy
 
 graphs_app = App(
@@ -52,8 +51,7 @@ class GraphPluginsListCommand:
             negative=("--exclude-disabled",),
         ),
     ] = True
-    output_format: OutputFmt = OutputFormat.TEXT
-    verbose: Verbose = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @graphs_app.command(name="plugins-plan")
@@ -99,8 +97,7 @@ class GraphPluginsPlanCommand:
             show_default=True,
         ),
     ] = DependencyPolicy.STRICT
-    output_format: OutputFmt = OutputFormat.TEXT
-    verbose: Verbose = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

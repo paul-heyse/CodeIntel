@@ -2,13 +2,13 @@
 
 Tool Registration Architecture
 ------------------------------
-All tools are now registered declaratively from the Operation catalog via
+All tools are registered declaratively from the Operation catalog via
 the ``tool_builder`` module. This module provides the top-level entry point
-that delegates to category-specific registration functions.
+``register_tools()`` which delegates to:
 
-The per-category registration functions still exist for backward compatibility
-and granular control, but the unified ``register_tools`` function is the
-preferred entry point for new code.
+1. ``register_tools_for_category()`` for standard operation-based tools
+2. ``register_architecture_tools()`` for subsystem/architecture tools
+3. ``register_meta_tools()`` for introspection tools
 
 See Also
 --------
@@ -25,10 +25,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
-from codeintel.serving.mcp.dataset_tools import register_dataset_tools
-from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
-from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_builder import (
     McpToolRegistrar,
     build_tool_from_operation,
@@ -40,6 +37,10 @@ from codeintel.serving.operations.catalog import iter_registry_operations
 
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig
+
+
+# Categories handled by the unified tool builder
+_STANDARD_CATEGORIES: set[str] = {"functions", "graph", "files", "profiles", "datasets"}
 
 
 class _ToolMethod(Protocol):
@@ -124,9 +125,11 @@ def register_tools(
 ) -> None:
     """Register all MCP tools on the given FastMCP instance.
 
-    This is the main entry point for MCP tool registration. It delegates
-    to category-specific registration functions which use the unified
-    ``tool_builder`` module.
+    This is the main entry point for MCP tool registration. It uses:
+
+    1. ``register_tools_for_category()`` for standard operation-based tools
+    2. ``register_architecture_tools()`` for subsystem/architecture tools
+    3. ``register_meta_tools()`` for introspection tools
 
     Parameters
     ----------
@@ -138,10 +141,11 @@ def register_tools(
         Optional serving config for auto-pipeline support.
     """
     registrar = as_registrar(mcp)
-    register_function_tools(registrar, backend, config)
-    register_profile_tools(registrar, backend, config)
+    # Register standard category-based tools via unified builder
+    register_tools_for_category(registrar, backend, _STANDARD_CATEGORIES, config)
+    # Register architecture/subsystem tools (custom implementation)
     register_architecture_tools(registrar, backend, config)
-    register_dataset_tools(registrar, backend, config)
+    # Register introspection/meta tools (custom implementation)
     register_meta_tools(registrar, backend)
     # Expose registered tools for callers that inspect `mcp.tools` in tests/utilities.
     _expose_tools(mcp)

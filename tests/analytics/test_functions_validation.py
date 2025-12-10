@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,13 +11,14 @@ import pytest
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config import SnapshotInit
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, insert_rows
 from tests._helpers.config_factory import function_analytics_cfg
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 
 
 def _insert_goid(
-    gateway: StorageGateway,
+    ctx: TestContext,
     *,
     rel_path: str,
     qualname: str,
@@ -25,13 +27,13 @@ def _insert_goid(
 ) -> None:
     now = datetime.now(UTC)
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             GoidRow(
                 goid_h128=1,
-                urn=f"urn:{qualname}",
-                repo="demo/repo",
-                commit="deadbeef",
+                urn=f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}",
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path=rel_path,
                 kind="function",
                 qualname=qualname,
@@ -44,37 +46,51 @@ def _insert_goid(
 
 
 def _function_analytics_cfg(
-    repo_root: Path, *, fail_on_missing_spans: bool = False
+    ctx: TestContext, *, fail_on_missing_spans: bool = False
 ) -> FunctionAnalyticsStepConfig:
-    snapshot = SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
+    snapshot = SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
     return function_analytics_cfg(
         snapshot,
         fail_on_missing_spans=fail_on_missing_spans,
     )
 
 
-def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
-    """Parse errors are persisted to analytics.function_validation."""
-    gateway = fresh_gateway
-    con = gateway.con
+@pytest.fixture
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Create a test context for function validation scenarios.
 
+    Yields
+    ------
+    TestContext
+        Context configured for function validation tests.
+    """
+    options = EnvOptions(repo="demo/repo", commit="deadbeef")
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
+def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
+    """Parse errors are persisted to analytics.function_validation."""
     rel_path = "mod.py"
-    file_path = tmp_path / rel_path
+    file_path = ctx.repo_root / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def broken(:\n    return 1\n", encoding="utf-8")
-    _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.broken")
+    _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.broken")
 
-    cfg = _function_analytics_cfg(tmp_path, fail_on_missing_spans=False)
-    summary = compute_function_metrics_and_types(gateway, cfg)
+    cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
+    summary = compute_function_metrics_and_types(ctx.gateway, cfg)
 
-    metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
-    validation_rows = con.execute(
+    metrics_rows = ctx.gateway.con.execute("SELECT * FROM analytics.function_metrics").fetchall()
+    validation_rows = ctx.gateway.con.execute(
         """
         SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,
-        ["demo/repo", "deadbeef"],
+        [ctx.repo, ctx.commit],
     ).fetchall()
 
     if metrics_rows:
@@ -85,27 +101,24 @@ def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_
         pytest.fail(f"Unexpected parse_failed count: {summary['validation_parse_failed']}")
 
 
-def test_span_not_found_is_recorded(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     """Missing spans produce span_not_found validation rows."""
-    gateway = fresh_gateway
-    con = gateway.con
-
     rel_path = "mod.py"
-    file_path = tmp_path / rel_path
+    file_path = ctx.repo_root / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
-    _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
+    _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
-    cfg = _function_analytics_cfg(tmp_path, fail_on_missing_spans=False)
-    summary = compute_function_metrics_and_types(gateway, cfg)
+    cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
+    summary = compute_function_metrics_and_types(ctx.gateway, cfg)
 
-    validation_rows = con.execute(
+    validation_rows = ctx.gateway.con.execute(
         """
         SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,
-        ["demo/repo", "deadbeef"],
+        [ctx.repo, ctx.commit],
     ).fetchall()
 
     if validation_rows != [(1, "span_not_found")]:

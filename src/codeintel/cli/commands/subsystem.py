@@ -5,12 +5,12 @@ This module wires Cyclopts command classes to unified handlers via @cli_command.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.subsystem import (
     subsystem_coverage_handler,
@@ -19,7 +19,6 @@ from codeintel.cli.handlers.subsystem import (
     subsystem_profiles_handler,
     subsystem_show_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 subsystem_app = App(
     name="subsystem",
@@ -57,28 +56,7 @@ class SubsystemListCommand:
             help="Limit the number of subsystems returned.",
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.show", handler=subsystem_show_handler, config=_SUBSYSTEM_CONFIG)
@@ -94,28 +72,7 @@ class SubsystemShowCommand:
             help="Subsystem identifier.",
         ),
     ] = ""
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.profiles", handler=subsystem_profiles_handler, config=_SUBSYSTEM_CONFIG)
@@ -131,28 +88,7 @@ class SubsystemProfilesCommand:
             help="Limit the number of profiles returned.",
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.coverage", handler=subsystem_coverage_handler, config=_SUBSYSTEM_CONFIG)
@@ -168,28 +104,7 @@ class SubsystemCoverageCommand:
             help="Limit the number of coverage rows returned.",
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command(
@@ -209,28 +124,7 @@ class SubsystemMembershipCommand:
             help="Module name (e.g., pkg.mod).",
         ),
     ] = ""
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["subsystem_app"]

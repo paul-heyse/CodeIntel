@@ -5,12 +5,13 @@ Provide commands to discover, list, and inspect CLI plugins.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.plugins import (
     plugins_discover_handler,
@@ -21,7 +22,6 @@ from codeintel.cli.handlers.plugins import (
     plugins_test_handler,
     plugins_validate_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 plugins_app = App(name="plugins", help="Manage CLI plugins")
 
@@ -39,14 +39,7 @@ class PluginsListCommand:
     operation count, and description.
     """
 
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.discover", handler=plugins_discover_handler, config=_PLUGINS_CONFIG)
@@ -59,14 +52,7 @@ class PluginsDiscoverCommand:
     their loading status.
     """
 
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.info", handler=plugins_info_handler, config=_PLUGINS_CONFIG)
@@ -80,14 +66,7 @@ class PluginsInfoCommand:
     """
 
     name: Annotated[str, Parameter(help="Plugin name")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.paths", handler=plugins_paths_handler, config=_PLUGINS_CONFIG)
@@ -100,14 +79,7 @@ class PluginsPathsCommand:
     with indicators for which paths exist.
     """
 
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.new", handler=plugins_new_handler, config=_PLUGINS_CONFIG)
@@ -125,14 +97,7 @@ class PluginsNewCommand:
         Path | None,
         Parameter(name="--output", help="Output directory"),
     ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.test", handler=plugins_test_handler, config=_PLUGINS_CONFIG)
@@ -146,14 +111,7 @@ class PluginsTestCommand:
     """
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("plugins.validate", handler=plugins_validate_handler, config=_PLUGINS_CONFIG)
@@ -167,14 +125,7 @@ class PluginsValidateCommand:
     """
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(name=["-v", "--verbose"], help="Verbosity level", count=True),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

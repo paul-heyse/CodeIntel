@@ -26,7 +26,13 @@ from tests._helpers.assertions import (
 
 @pytest.fixture
 def docs_profile_db(tmp_path: Path) -> Path:
-    """Provision a file-backed docs views database and return its path."""
+    """Provision a file-backed docs views database and return its path.
+
+    Returns
+    -------
+    Path
+        Filesystem path to the provisioned docs profiling database.
+    """
     db_path = tmp_path / "docs_profile.duckdb"
     ctx = docs_views_ready_gateway(
         tmp_path / "docs_profile_repo",

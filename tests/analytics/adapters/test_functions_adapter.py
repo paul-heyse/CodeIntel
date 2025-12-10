@@ -63,7 +63,13 @@ def _goid_row(
     start_line: int = 10,
     end_line: int | None = 20,
 ) -> GoidRow:
-    """Build a GoidRow dictionary for FunctionGoid.from_row tests."""
+    """Build a GoidRow dictionary for FunctionGoid.from_row tests.
+
+    Returns
+    -------
+    GoidRow
+        Dictionary payload matching `core.goids` schema order.
+    """
     return {
         "goid_h128": goid,
         "urn": f"urn:{DEMO_REPO}:{DEMO_COMMIT}:{rel_path}#{qualname}",
@@ -79,7 +85,13 @@ def _goid_row(
 
 
 def _function_catalog(repo: str, commit: str) -> FunctionCatalog:
-    """Create a FunctionCatalog aligned with the test constants."""
+    """Create a FunctionCatalog aligned with the test constants.
+
+    Returns
+    -------
+    FunctionCatalog
+        Catalog containing functions and module mappings for tests.
+    """
     functions = [
         function_meta(
             goid=1001,
@@ -118,7 +130,13 @@ def _function_catalog(repo: str, commit: str) -> FunctionCatalog:
 
 
 def _build_ctx(tmp_path: Path) -> TestContext:
-    """Construct a TestContext pinned to the module constants."""
+    """Construct a TestContext pinned to the module constants.
+
+    Returns
+    -------
+    TestContext
+        Context configured with canonical repo/commit identifiers.
+    """
     options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
     return create_test_context(tmp_path, options=options)
 

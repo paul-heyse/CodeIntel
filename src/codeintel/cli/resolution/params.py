@@ -1,7 +1,7 @@
 """Canonical runtime parameters type.
 
 This module defines RuntimeParams, the single source of truth for
-runtime parameters that replaces all RuntimeCliOptions variants.
+runtime parameters across all CLI operations.
 """
 
 from __future__ import annotations
@@ -45,8 +45,7 @@ class BackendFlags:
 class RuntimeParams:
     """Canonical runtime parameters from any input source.
 
-    This is THE type for runtime parameters. All other RuntimeCliOptions
-    variants are deprecated in favor of this single type.
+    Provides a unified type for runtime parameters across all CLI operations.
 
     Parameters
     ----------

@@ -85,11 +85,7 @@ class CliResult[T]:
         object
             Serialized representation of the data.
         """
-        # First try to_dict() for backward compatibility with existing result types
-        to_dict = getattr(data, "to_dict", None)
-        if callable(to_dict):
-            return to_dict()
-        # Use generic serializer for dataclasses without to_dict()
+        # Use generic serializer for dataclasses
         if is_dataclass(data) and not isinstance(data, type):
             return serialize_result(data)
         if hasattr(data, "__dict__") and not isinstance(data, type):

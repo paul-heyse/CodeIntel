@@ -7,7 +7,7 @@ import logging
 import sys
 import types
 from collections.abc import Callable, Iterable
-from dataclasses import MISSING, dataclass, make_dataclass
+from dataclasses import MISSING, dataclass, field, make_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import (
@@ -25,8 +25,10 @@ from typing import (
 from cyclopts import App, Group, Parameter
 
 from codeintel.cli.commands._common import (
+    SHARED_FLAGS_METADATA,
     OutputFormatCLI,
     RuntimeCLI,
+    SharedFlags,
     get_output_format,
     get_verbose,
     runtime_field,
@@ -229,22 +231,7 @@ class OpListCommand:
             help="Filter by operation category.",
         ),
     ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format.",
-            show_choices=True,
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("op.call", handler=op_call_handler, config=_OP_RUNTIME_CONFIG)
@@ -275,29 +262,7 @@ class OpCallCommand:
             negative=(),
         ),
     ] = False
-    root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format.",
-            show_choices=True,
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 # -----------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories.functions import FunctionRepository
 from tests._helpers import ProvisionedGateway
 from tests._helpers.assertions import (
@@ -17,6 +18,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.builders import RiskFactorRow, insert_rows
 from tests._helpers.context import TestContext
+from tests._helpers.rows import function_metrics_row, function_profile_row
 
 
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:
@@ -98,45 +100,25 @@ def test_list_high_risk_functions_with_tested_only_filter(
 ) -> None:
     """Verify list_high_risk_functions applies tested_only filter."""
     now = datetime.now(tz=UTC)
-
+    untested_goid = 999_001
+    insert_rows(
+        metrics_ctx.gateway,
+        [
+            function_metrics_row(
+                goid=untested_goid,
+                rel_path="test.py",
+                qualname="untested_fn",
+                snapshot=(metrics_ctx.repo, metrics_ctx.commit),
+                metrics={"complexity_bucket": "high", "cyclomatic_complexity": 5},
+            )
+        ],
+    )
     insert_rows(
         metrics_ctx.gateway,
         [
             RiskFactorRow(
-                function_goid_h128=1,
-                urn="urn:tested_fn",
-                repo=metrics_ctx.repo,
-                commit=metrics_ctx.commit,
-                rel_path="test.py",
-                language="python",
-                kind="function",
-                qualname="tested_fn",
-                loc=10,
-                logical_loc=8,
-                cyclomatic_complexity=2,
-                complexity_bucket="medium",
-                typedness_bucket="high",
-                typedness_source="annotation",
-                hotspot_score=0.3,
-                file_typed_ratio=1.0,
-                static_error_count=0,
-                has_static_errors=False,
-                executable_lines=2,
-                covered_lines=1,
-                coverage_ratio=0.5,
-                tested=True,
-                test_count=1,
-                failing_test_count=0,
-                last_test_status="passed",
-                risk_score=0.8,
-                risk_level="high",
-                tags="[]",
-                owners="[]",
-                created_at=now,
-            ),
-            RiskFactorRow(
-                function_goid_h128=2,
-                urn="urn:untested_fn",
+                function_goid_h128=untested_goid,
+                urn=f"urn:{metrics_ctx.repo}:{metrics_ctx.commit}:test.py#untested_fn",
                 repo=metrics_ctx.repo,
                 commit=metrics_ctx.commit,
                 rel_path="test.py",
@@ -145,7 +127,7 @@ def test_list_high_risk_functions_with_tested_only_filter(
                 qualname="untested_fn",
                 loc=12,
                 logical_loc=10,
-                cyclomatic_complexity=3,
+                cyclomatic_complexity=5,
                 complexity_bucket="high",
                 typedness_bucket="low",
                 typedness_source="inferred",
@@ -165,7 +147,7 @@ def test_list_high_risk_functions_with_tested_only_filter(
                 tags="[]",
                 owners="[]",
                 created_at=now,
-            ),
+            )
         ],
     )
 
@@ -179,15 +161,18 @@ def test_list_high_risk_functions_with_tested_only_filter(
     all_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
 
     expect_true(
-        any(row["function_goid_h128"] == 1 for row in tested_only_result),
-        message="tested_only should include tested_fn",
+        any(bool(row.get("tested")) for row in tested_only_result),
+        message="tested_only should include tested functions",
     )
     expect_is_not_none(tested_only_result[0]["tested"])
 
-    untested_goid = 2
     expect_true(
         any(row["function_goid_h128"] == untested_goid for row in all_result),
         message="all_result should include untested_fn",
+    )
+    expect_true(
+        all(row["function_goid_h128"] != untested_goid for row in tested_only_result),
+        message="tested_only should exclude untested_fn",
     )
 
 
@@ -208,29 +193,18 @@ def test_get_function_profile_returns_none_when_not_found(
 
 def test_get_function_profile_returns_row(metrics_ctx: TestContext) -> None:
     """Verify get_function_profile returns row when found."""
-    con = metrics_ctx.con
-    con.execute(
-        """
-        INSERT INTO analytics.function_profile (
-            repo, commit, function_goid_h128, urn, rel_path, qualname,
-            module, language, loc, cyclomatic_complexity, complexity_bucket,
-            doc_short, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_mapping_rows(
+        metrics_ctx.con,
+        "analytics.function_profile",
         [
-            metrics_ctx.repo,
-            metrics_ctx.commit,
-            1,
-            "urn:test_fn",
-            "test.py",
-            "test_fn",
-            "test_mod",
-            "python",
-            10,
-            2,
-            "low",
-            "Test function",
-            datetime.now(tz=UTC),
+            function_profile_row(
+                goid=1,
+                qualname="test_fn",
+                rel_path="test.py",
+                repo=metrics_ctx.repo,
+                commit=metrics_ctx.commit,
+                doc_short="Test function",
+            )
         ],
     )
 

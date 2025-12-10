@@ -13,7 +13,7 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import get_current_request_context
-from codeintel.serving.mcp.function_tools import FunctionToolOptions, register_function_tools
+from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -124,11 +124,12 @@ def test_register_function_tools_registers_and_executes() -> None:
             return _DomainModel
         return None
 
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         typed_backend,
+        {"functions"},
         config=None,
-        options=FunctionToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=_resolve_model,
         ),
@@ -172,11 +173,12 @@ def test_serialize_payload_validator_path() -> None:
             return _ValidatingModel
         return None
 
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"functions"},
         config=None,
-        options=FunctionToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=_resolve_model,
         ),
@@ -209,11 +211,12 @@ def test_function_tool_sets_scope_and_resets_context() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"graph"},
         config=None,
-        options=FunctionToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     result = mcp.registry["graph_scope"](scope="abc")
     expect_equal(result, {"value": "abc"})
@@ -245,11 +248,12 @@ def test_function_tool_resets_context_on_error(caplog: pytest.LogCaptureFixture)
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"graph"},
         config=None,
-        options=FunctionToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     with pytest.raises(RuntimeError):
         mcp.registry["graph_error"]()
@@ -281,11 +285,12 @@ def test_function_tool_from_domain_path() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"functions"},
         config=None,
-        options=FunctionToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=lambda name: _DomainModel if name == "_DomainModel" else None,
         ),
@@ -317,11 +322,12 @@ def test_function_tool_passes_through_raw_dict_when_no_model() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_function_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"functions"},
         config=None,
-        options=FunctionToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     expect_equal(
         mcp.registry["functions_raw"](),
@@ -363,11 +369,12 @@ def test_function_tool_invokes_auto_pipeline() -> None:
     previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
     os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
     try:
-        register_function_tools(
+        register_tools_for_category(
             mcp,
             cast("QueryBackendOrService", backend),
+            {"functions"},
             config=ServingConfig(mode="local_db"),
-            options=FunctionToolOptions(
+            options=ToolRegistrationOptions(
                 operations=(spec,),
                 model_resolver=lambda name: _DomainModel if name == "_DomainModel" else None,
                 prereq_runner=_ensure_prereqs_for_mcp,

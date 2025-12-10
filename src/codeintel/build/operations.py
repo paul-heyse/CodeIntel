@@ -174,7 +174,7 @@ def _build_table_to_target_index() -> dict[str, str]:
 
     index: dict[str, str] = {}
     for target in all_targets:
-        for table in target.tables:
+        for table in target.table_keys:
             index[table] = target.name
     return index
 

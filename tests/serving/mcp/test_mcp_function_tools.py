@@ -10,12 +10,11 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.function_tools import (
-    FUNCTION_TOOL_CATEGORIES,
-    FunctionToolOptions,
-    register_function_tools,
-)
 from codeintel.serving.mcp.models import FunctionSummaryResponse, FunctionSummaryRow
+from codeintel.serving.mcp.tool_builder import (
+    ToolRegistrationOptions,
+    register_tools_for_category,
+)
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
@@ -37,6 +36,9 @@ from tests.serving.mcp.conftest import McpBackendComponents
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
+# Categories for function-related tools
+FUNCTION_TOOL_CATEGORIES: set[str] = {"functions", "graph", "files", "function"}
+
 
 # =============================================================================
 # register_function_tools Tests
@@ -46,11 +48,11 @@ MAX_ROWS = 100
 def test_register_function_tools_success(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_function_tools registers tools successfully."""
+    """Verify function tool registration works successfully."""
     mcp = wrap_fastmcp("Test Function Tools")
 
     # Should not raise
-    register_function_tools(mcp, mcp_backend.backend)
+    register_tools_for_category(mcp, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Function Tools")
@@ -59,10 +61,10 @@ def test_register_function_tools_success(
 def test_register_function_tools_with_service(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
-    """Verify register_function_tools works with service directly."""
+    """Verify function tool registration works with service directly."""
     mcp = wrap_fastmcp("Test Service")
 
-    register_function_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, FUNCTION_TOOL_CATEGORIES)
 
     expect_equal(mcp.name, "Test Service")
 
@@ -70,11 +72,11 @@ def test_register_function_tools_with_service(
 def test_register_function_tools_with_config(
     mcp_backend: McpBackendComponents,
 ) -> None:
-    """Verify register_function_tools works with serving config."""
+    """Verify function tool registration works with serving config."""
     mcp = wrap_fastmcp("Test With Config")
     config = ServingConfig()
 
-    register_function_tools(mcp, mcp_backend.backend, config=config)
+    register_tools_for_category(mcp, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
@@ -84,11 +86,11 @@ def test_register_function_tools_on_multiple_servers(
 ) -> None:
     """Verify tools can be registered on multiple servers."""
     mcp1 = wrap_fastmcp("Server 1")
-    register_function_tools(mcp1, mcp_backend.backend)
+    register_tools_for_category(mcp1, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_function_tools(mcp2, mcp_backend.backend)
+    register_tools_for_category(mcp2, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -296,7 +298,7 @@ def test_register_function_tools_preserves_backend_state(
     original_commit = mcp_backend.backend.commit
     original_limits = mcp_backend.backend.limits
 
-    register_function_tools(mcp, mcp_backend.backend)
+    register_tools_for_category(mcp, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES)
 
     expect_equal(mcp_backend.backend.repo, original_repo)
     expect_equal(mcp_backend.backend.commit, original_commit)
@@ -313,7 +315,7 @@ def test_local_query_service_as_backend(
 ) -> None:
     """Verify LocalQueryService can be used as backend."""
     mcp = wrap_fastmcp("Test Local Service")
-    register_function_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, FUNCTION_TOOL_CATEGORIES)
 
     expect_equal(mcp.name, "Test Local Service")
 
@@ -347,10 +349,11 @@ def test_function_tools_serialize_unicode_summary() -> None:
 
     registrar = RecordingMcpRegistrar("function-recorder")
     ops = [spec for spec in iter_operations() if spec.id == "function.summary"]
-    register_function_tools(
+    register_tools_for_category(
         registrar,
         backend,
-        options=FunctionToolOptions(operations=ops),
+        FUNCTION_TOOL_CATEGORIES,
+        options=ToolRegistrationOptions(operations=ops),
     )
 
     tool = registrar.registry["get_function_summary"]
@@ -378,10 +381,11 @@ def test_function_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> 
     registrar = RecordingMcpRegistrar("function-errors")
     ops = [spec for spec in iter_operations() if spec.id == "function.summary"]
 
-    register_function_tools(
+    register_tools_for_category(
         registrar,
         failing_backend,
-        options=FunctionToolOptions(operations=ops),
+        FUNCTION_TOOL_CATEGORIES,
+        options=ToolRegistrationOptions(operations=ops),
     )
 
     class _ResponseWrapper:

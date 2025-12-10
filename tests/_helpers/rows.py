@@ -919,14 +919,20 @@ class DataModelSeed:
     repo: str = DEFAULT_REPO
     commit: str = DEFAULT_COMMIT
     goid: int | None = None
-    base_classes_json: list[str] | None = None
+    base_classes_json: list[dict[str, str]] | list[str] | None = None
     doc_short: str | None = None
     doc_long: str | None = None
     created_at: datetime | None = None
 
 
 def data_model_row(seed: DataModelSeed) -> tuple[object, ...]:
-    """Row for analytics.data_models."""
+    """Row for analytics.data_models.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row values ordered for analytics.data_models.
+    """
     return (
         seed.repo,
         seed.commit,
@@ -961,7 +967,13 @@ class DataModelFieldSeed:
 
 
 def data_model_field_row(seed: DataModelFieldSeed) -> tuple[object, ...]:
-    """Row for analytics.data_model_fields."""
+    """Row for analytics.data_model_fields.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row values ordered for analytics.data_model_fields.
+    """
     return (
         seed.repo,
         seed.commit,
@@ -998,7 +1010,13 @@ class DataModelRelationshipSeed:
 
 
 def data_model_relationship_row(seed: DataModelRelationshipSeed) -> tuple[object, ...]:
-    """Row for analytics.data_model_relationships."""
+    """Row for analytics.data_model_relationships.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row values ordered for analytics.data_model_relationships.
+    """
     return (
         seed.repo,
         seed.commit,

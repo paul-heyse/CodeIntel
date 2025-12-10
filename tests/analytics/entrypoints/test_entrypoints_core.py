@@ -18,14 +18,11 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.builders import (
-    CoverageFunctionRow,
-    TestCatalogRow,
-    TestCoverageEdgeRow,
-    insert_rows,
-)
+from tests._helpers.builders import CoverageFunctionRow, insert_rows
+from tests._helpers.catalogs import ensure_catalog_with_goids
+from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
-from tests._helpers.graphs import build_ast_map, build_module_map, insert_goids, insert_modules
+from tests._helpers.graphs import build_ast_map, build_module_map, insert_modules
 
 
 def _seed_entrypoint_ctx(
@@ -37,7 +34,13 @@ def _seed_entrypoint_ctx(
     Path,
     FunctionAst,
 ]:
-    """Seed a coverage/graph-ready context with a FastAPI entrypoint."""
+    """Seed a coverage/graph-ready context with a FastAPI entrypoint.
+
+    Returns
+    -------
+    tuple[MockFunctionCatalog, dict[str, str], FunctionAstFeatures, Path, FunctionAst]
+        Catalog, module map, AST features, module path, and function AST for the seeded entrypoint.
+    """
     module_path = ctx.repo_root / "pkg" / "api.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
     module_path.write_text(
@@ -67,7 +70,6 @@ def _seed_entrypoint_ctx(
         target_names={"pkg.api": "list_items"},
     )
     insert_modules(ctx.gateway, ctx.snapshot, paths)
-    insert_goids(ctx.gateway, ctx.snapshot, ast_map, now=datetime.now(tz=UTC))
     module_map = build_module_map(ast_map, {goids["list_items"]: "pkg.api"})
     func_ast = ast_map[goids["list_items"]]
 
@@ -84,6 +86,7 @@ def _seed_entrypoint_ctx(
         ],
         module_by_path={func_ast.rel_path: "pkg.api"},
     )
+    ensure_catalog_with_goids(ctx, catalog)
     features = FunctionAstFeatures(
         goid=goids["list_items"],
         rel_path=func_ast.rel_path,
@@ -136,65 +139,34 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
             )
         ],
     )
-    insert_rows(
-        ctx.gateway,
+    synthesize_coverage_edges(
+        ctx,
         [
-            TestCatalogRow(
-                test_id="tests/test_api.py::test_failed",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path="tests/test_api.py",
-                qualname="test_failed",
-                status="failed",
-                duration_ms=800,
-                flaky=False,
-                created_at=now,
-            ),
-            TestCatalogRow(
-                test_id="tests/test_api.py::test_slow_flaky",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path="tests/test_api.py",
-                qualname="test_slow_flaky",
-                status="passed",
-                duration_ms=1500,
-                flaky=True,
-                created_at=now,
-            ),
+            ("tests/test_api.py::test_failed", features.goid),
+            ("tests/test_api.py::test_slow_flaky", features.goid),
         ],
-    )
-    insert_rows(
-        ctx.gateway,
-        [
-            TestCoverageEdgeRow(
-                test_id="tests/test_api.py::test_failed",
-                function_goid_h128=features.goid,
-                urn="urn:pkg.api.list_items",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
-                qualname=features.qualname,
-                covered_lines=5,
-                executable_lines=10,
-                coverage_ratio=0.5,
-                last_status="failed",
-                created_at=now,
-            ),
-            TestCoverageEdgeRow(
-                test_id="tests/test_api.py::test_slow_flaky",
-                function_goid_h128=features.goid,
-                urn="urn:pkg.api.list_items",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
-                qualname=features.qualname,
-                covered_lines=4,
-                executable_lines=10,
-                coverage_ratio=0.4,
-                last_status="passed",
-                created_at=now,
-            ),
-        ],
+        test_meta={
+            "tests/test_api.py::test_failed": {"status": "failed", "duration_ms": 800},
+            "tests/test_api.py::test_slow_flaky": {
+                "status": "passed",
+                "duration_ms": 1500,
+                "flaky": True,
+            },
+        },
+        edge_meta={
+            "tests/test_api.py::test_failed": {
+                "covered_lines": 5,
+                "executable_lines": 10,
+                "coverage_ratio": 0.5,
+                "last_status": "failed",
+            },
+            "tests/test_api.py::test_slow_flaky": {
+                "covered_lines": 4,
+                "executable_lines": 10,
+                "coverage_ratio": 0.4,
+                "last_status": "passed",
+            },
+        },
     )
 
     try:

@@ -7,6 +7,7 @@ helpers are retained for legacy tests; prefer applying CoveragePack via
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -151,27 +152,32 @@ def build_fake_coverage(ctx: TestContext) -> FakeCoverage:
 
 
 def synthesize_coverage_edges(
-    ctx: TestContext, edges: list[tuple[str, int]], *, status: str = "passed"
+    ctx: TestContext,
+    edges: list[tuple[str, int]],
+    *,
+    status: str = "passed",
+    test_meta: Mapping[str, Mapping[str, object]] | None = None,
+    edge_meta: Mapping[str, Mapping[str, object]] | None = None,
 ) -> None:
-    """Create minimal test_catalog + coverage_edges + coverage_functions rows."""
-    now = ctx.gateway.con.execute("SELECT NOW()").fetchone()[0]
-    tests = {
-        test_id: TestCatalogRow(
-            test_id=test_id,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            rel_path=test_id.split("::")[0],
-            qualname=test_id.split("::")[-1],
-            status=status,
-            kind="unit",
-            duration_ms=0,
-            markers="[]",
-            parametrized=False,
-            flaky=False,
-            created_at=now,
-        )
-        for test_id, _ in edges
-    }
+    """Create minimal test_catalog + coverage_edges + coverage_functions rows.
+
+    Raises
+    ------
+    ValueError
+        If the TestContext is missing a gateway.
+    RuntimeError
+        If the database fails to return a current timestamp.
+    """
+    gateway = ctx.gateway
+    if gateway is None:
+        msg = "TestContext.gateway must be populated to synthesize coverage edges"
+        raise ValueError(msg)
+    row = gateway.con.execute("SELECT NOW()").fetchone()
+    if row is None:
+        msg = "SELECT NOW() returned no rows"
+        raise RuntimeError(msg)
+    now = row[0]
+    tests = {}
     edge_rows: list[TestCoverageEdgeRow] = []
     coverage_rows: list[CoverageFunctionRow] = []
     coverage_counts: dict[int, int] = {}
@@ -180,8 +186,13 @@ def synthesize_coverage_edges(
         rel_path = test_id.split("::")[0]
         qualname = test_id.split("::")[-1]
         urn = f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}"
+        meta = (edge_meta or {}).get(test_id, {})
         coverage_counts[goid] = coverage_counts.get(goid, 0) + 1
         first_span.setdefault(goid, (rel_path, qualname))
+        covered_lines = int(meta.get("covered_lines", 1))
+        executable_lines = int(meta.get("executable_lines", 1))
+        ratio = float(meta.get("coverage_ratio", covered_lines / executable_lines))
+        last_status = str(meta.get("last_status", status))
         edge_rows.append(
             TestCoverageEdgeRow(
                 test_id=test_id,
@@ -192,12 +203,30 @@ def synthesize_coverage_edges(
                 commit=ctx.commit,
                 rel_path=rel_path,
                 qualname=qualname,
-                covered_lines=1,
-                executable_lines=1,
-                coverage_ratio=1.0,
-                last_status=status,
+                covered_lines=covered_lines,
+                executable_lines=executable_lines,
+                coverage_ratio=ratio,
+                last_status=last_status,
                 created_at=now,
             )
+        )
+        test_meta_payload = (test_meta or {}).get(test_id, {})
+        tests.setdefault(
+            test_id,
+            TestCatalogRow(
+                test_id=test_id,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=rel_path,
+                qualname=qualname,
+                status=str(test_meta_payload.get("status", status)),
+                kind=str(test_meta_payload.get("kind", "unit")),
+                duration_ms=int(test_meta_payload.get("duration_ms", 0)),
+                markers=test_meta_payload.get("markers", "[]"),
+                parametrized=bool(test_meta_payload.get("parametrized", False)),
+                flaky=bool(test_meta_payload.get("flaky", False)),
+                created_at=now,
+            ),
         )
 
     for goid, count in coverage_counts.items():

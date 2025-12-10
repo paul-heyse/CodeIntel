@@ -53,13 +53,7 @@ from codeintel.serving.services.query_service import (
     QueryService,
     ServiceObservability,
 )
-from codeintel.serving.types import (
-    AggregatedBackendProtocol,
-    BaseBackendProtocol,
-    FunctionBackendProtocol,
-    ProfileBackendProtocol,
-    SubsystemBackendProtocol,
-)
+from codeintel.serving.types import AggregatedBackendProtocol
 from codeintel.storage.gateway import StorageGateway
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
@@ -87,18 +81,8 @@ async def _get_async(
     return await client.get(path, params=params)
 
 
-# =============================================================================
-# Type Aliases for Backward Compatibility
-# =============================================================================
-# These protocols are now defined in codeintel.serving.types. The aliases below
-# maintain backward compatibility for code that imports from this module.
-# New code should import directly from codeintel.serving.types.
-BaseBackend = BaseBackendProtocol
-FunctionBackend = FunctionBackendProtocol
-ProfileBackend = ProfileBackendProtocol
-SubsystemBackend = SubsystemBackendProtocol
+# Canonical alias for the aggregated backend protocol
 QueryBackend = AggregatedBackendProtocol
-# Note: DatasetBackendProtocol is imported directly from types.py
 
 
 class DatasetBackendMixin:

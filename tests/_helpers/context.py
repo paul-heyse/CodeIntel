@@ -26,6 +26,7 @@ from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.repo import write_canonical_repo
+from tests._helpers.seeds import CORE_PACK, COVERAGE_LINES_PACK, COVERAGE_PACK, GRAPH_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -475,9 +476,13 @@ def _ensure_sample_repo(repo_root: Path) -> None:
 
 
 def coverage_ready_context(tmp_path: Path) -> TestContext:
-    """Create a TestContext seeded with core + coverage packs and sample files."""
-    from tests._helpers.seeds import CORE_PACK, COVERAGE_LINES_PACK, COVERAGE_PACK
+    """Create a TestContext seeded with core + coverage packs and sample files.
 
+    Returns
+    -------
+    TestContext
+        Context with coverage seeds and canonical sample repository.
+    """
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK)
@@ -485,9 +490,13 @@ def coverage_ready_context(tmp_path: Path) -> TestContext:
 
 
 def graph_ready_context(tmp_path: Path) -> TestContext:
-    """Create a TestContext seeded with core + graph packs and sample files."""
-    from tests._helpers.seeds import CORE_PACK, GRAPH_PACK
+    """Create a TestContext seeded with core + graph packs and sample files.
 
+    Returns
+    -------
+    TestContext
+        Context with graph seeds and canonical sample repository.
+    """
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, GRAPH_PACK)
@@ -495,9 +504,13 @@ def graph_ready_context(tmp_path: Path) -> TestContext:
 
 
 def coverage_and_graph_context(tmp_path: Path) -> TestContext:
-    """Create a TestContext with both coverage and graph packs pre-applied."""
-    from tests._helpers.seeds import CORE_PACK, COVERAGE_LINES_PACK, COVERAGE_PACK, GRAPH_PACK
+    """Create a TestContext with both coverage and graph packs pre-applied.
 
+    Returns
+    -------
+    TestContext
+        Context populated with both coverage and graph seed packs.
+    """
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK, GRAPH_PACK)

@@ -31,7 +31,10 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     )
     gateway = test_ctx.gateway
     con = gateway.con
-    if con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()[0] == 0:
+    initial_row = con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
+    if initial_row is None:
+        pytest.fail("Expected count row from analytics.coverage_lines")
+    if initial_row[0] == 0:
         insert_rows(
             gateway,
             [
@@ -44,7 +47,7 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                     is_covered=True,
                     hits=1,
                     context_count=1,
-                    created_at=test_ctx.snapshot.created_at,
+                    created_at=None,
                 )
             ],
         )

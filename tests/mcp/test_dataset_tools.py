@@ -13,7 +13,7 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import get_current_request_context
-from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
+from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
@@ -141,11 +141,12 @@ def test_register_dataset_tools_registers_and_executes() -> None:
             return _FromDomainModel
         return None
 
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         typed_backend,
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=_resolve_model,
         ),
@@ -188,11 +189,12 @@ def test_serialize_list_payload_prefers_model_dump_when_no_model_cls() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     result = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_models"])()
     expect_equal(
@@ -234,11 +236,12 @@ def test_serialize_payload_uses_validator_fallback() -> None:
             return _ValidatingModel
         return None
 
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=_resolve_model,
         ),
@@ -277,11 +280,12 @@ def test_dataset_tool_resets_context_on_error(caplog: pytest.LogCaptureFixture) 
             return _FromDomainModel
         return None
 
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(
+        options=ToolRegistrationOptions(
             operations=(spec,),
             model_resolver=_resolve_model,
         ),
@@ -326,11 +330,12 @@ def test_dataset_tool_invokes_auto_pipeline() -> None:
     previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
     os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
     try:
-        register_dataset_tools(
+        register_tools_for_category(
             mcp,
             backend,
+            {"datasets"},
             config=ServingConfig(mode="local_db"),
-            options=DatasetToolOptions(
+            options=ToolRegistrationOptions(
                 operations=(spec,),
                 model_resolver=lambda name: _FromDomainModel
                 if name == "_FromDomainModel"
@@ -371,11 +376,12 @@ def test_serialize_payload_passes_through_raw_dict_when_no_model() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     expect_equal(
         cast("Callable[[], dict[str, object]]", mcp.registry["datasets_raw"])(),
@@ -407,11 +413,12 @@ def test_serialize_list_payload_passes_through_raw_dicts() -> None:
     )
     backend = _Backend()
     mcp = RecordingMcp()
-    register_dataset_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"datasets"},
         config=None,
-        options=DatasetToolOptions(operations=(spec,)),
+        options=ToolRegistrationOptions(operations=(spec,)),
     )
     expect_equal(
         cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_raw_list"])(),

@@ -434,10 +434,10 @@ class TargetExecutionContext:
         if validate:
             schema = self.contract.get_table(table_key)
             if schema is None:
-                # Check if it's in the legacy tables
-                if table_key not in self.target.tables:
+                # Table must be declared in the contract
+                if table_key not in self.target.table_keys:
                     raise SchemaNotFoundError(self.target_name, table_key)
-                # Legacy table - skip validation
+                # Table exists but has no schema - skip validation
                 schema = None
 
             if schema is not None:

@@ -15,8 +15,8 @@ from codeintel.build.contracts import OutputContract
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import TableSchema
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -49,13 +49,13 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
-TResult = TypeVar("TResult", bound=TargetResult, covariant=True)
+TResult_co = TypeVar("TResult_co", bound=TargetResult, covariant=True)
 
 
-class TargetPluginProtocol(Protocol[TResult]):
+class TargetPluginProtocol(Protocol[TResult_co]):
     """Protocol for target plugins with an execute method."""
 
-    async def execute(self, ctx: TargetExecutionContext) -> TResult:  # pragma: no cover - protocol
+    async def execute(self, ctx: TargetExecutionContext) -> TResult_co:  # pragma: no cover - protocol
         ...
 
 __all__ = [

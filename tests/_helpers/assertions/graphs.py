@@ -14,6 +14,9 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
+
+    from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
 
@@ -93,6 +96,183 @@ def assert_coverage_ratio_between(ctx: TestContext, goid: int, *, low: float, hi
     )[0]
     ratio = float(cast("float", row.coverage_ratio))
     expect_true(low <= ratio <= high, message=f"coverage_ratio {ratio} outside [{low}, {high}]")
+
+
+def assert_graph_metrics_table_counts(
+    con: DuckDBPyConnection,
+    snapshot: SnapshotRef,
+    *,
+    functions: int | None = None,
+    modules: int | None = None,
+    modules_min: int | None = None,
+    functions_ext: int | None = None,
+    modules_ext_min: int | None = None,
+    modules_ext: int | None = None,
+    config_keys: int | None = None,
+    config_projection_min: int | None = None,
+    graph_stats_min: int | None = None,
+    subsystem_metrics_min: int | None = None,
+    subsystem_agreement_min: int | None = None,
+    symbol_functions_min: int | None = None,
+    symbol_modules_min: int | None = None,
+) -> None:
+    """Assert core graph metrics table counts for a snapshot."""
+
+    def _count(query: str) -> int:
+        result = con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
+        return int(result[0])  # type: ignore[index]
+
+    if config_keys is not None:
+        expect_equal(
+            _count(
+                "SELECT COUNT(*) FROM analytics.config_graph_metrics_keys "
+                "WHERE repo = ? AND commit = ?"
+            ),
+            config_keys,
+        )
+    if config_projection_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.config_projection_module_edges "
+                "WHERE repo = ? AND commit = ?"
+            )
+            >= config_projection_min
+        )
+    if functions is not None:
+        expect_equal(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_functions "
+                "WHERE repo = ? AND commit = ?"
+            ),
+            functions,
+        )
+    if modules is not None:
+        expect_equal(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?"
+            ),
+            modules,
+        )
+    if modules_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?"
+            )
+            >= modules_min
+        )
+    if functions_ext is not None:
+        expect_equal(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext "
+                "WHERE repo = ? AND commit = ?"
+            ),
+            functions_ext,
+        )
+    if modules_ext is not None:
+        expect_equal(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext "
+                "WHERE repo = ? AND commit = ?"
+            ),
+            modules_ext,
+        )
+    if modules_ext_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext "
+                "WHERE repo = ? AND commit = ?"
+            )
+            >= modules_ext_min
+        )
+    if graph_stats_min is not None:
+        expect_true(
+            _count("SELECT COUNT(*) FROM analytics.graph_stats WHERE repo = ? AND commit = ?")
+            >= graph_stats_min
+        )
+    if subsystem_metrics_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.subsystem_graph_metrics "
+                "WHERE repo = ? AND commit = ?"
+            )
+            >= subsystem_metrics_min
+        )
+    if subsystem_agreement_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?"
+            )
+            >= subsystem_agreement_min
+        )
+    if symbol_modules_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules "
+                "WHERE repo = ? AND commit = ?"
+            )
+            >= symbol_modules_min
+        )
+    if symbol_functions_min is not None:
+        expect_true(
+            _count(
+                "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions "
+                "WHERE repo = ? AND commit = ?"
+            )
+            >= symbol_functions_min
+        )
+
+
+def assert_graph_metrics_function_row(
+    con: DuckDBPyConnection,
+    *,
+    goid: int,
+    fan_in: int,
+    fan_out: int,
+    in_degree: int,
+    out_degree: int,
+    cycle_member: bool,
+) -> None:
+    """Assert a graph_metrics_functions row matches expected values."""
+    row = con.execute(
+        """
+        SELECT call_fan_in, call_fan_out, call_in_degree, call_out_degree, call_cycle_member
+        FROM analytics.graph_metrics_functions
+        WHERE function_goid_h128 = ?
+        """,
+        [goid],
+    ).fetchone()
+    expect_is_not_none(row, message=f"Missing graph_metrics_functions row for GOID {goid}")
+    if row is None:
+        return
+    expect_equal(tuple(row), (fan_in, fan_out, in_degree, out_degree, cycle_member))
+
+
+def assert_graph_metrics_module_row(
+    con: DuckDBPyConnection,
+    *,
+    module: str,
+    import_fan_in: int,
+    import_fan_out: int,
+    symbol_fan_in: int,
+    symbol_fan_out: int,
+    import_cycle_member: bool,
+) -> None:
+    """Assert a graph_metrics_modules row matches expected values."""
+    row = con.execute(
+        """
+        SELECT import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member
+        FROM analytics.graph_metrics_modules
+        WHERE module = ?
+        """,
+        [module],
+    ).fetchone()
+    expect_is_not_none(row, message=f"Missing graph_metrics_modules row for {module}")
+    if row is None:
+        return
+    expect_equal(
+        tuple(row),
+        (import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member),
+    )
 
 
 def expect_graph_equal(

@@ -212,5 +212,5 @@ class OutputContract:
         return errors
 
 
-# Empty contract for targets with legacy table definitions
+# Empty contract for targets that don't produce tables
 EMPTY_CONTRACT: OutputContract = OutputContract()

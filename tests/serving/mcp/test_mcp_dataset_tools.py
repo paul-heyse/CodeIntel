@@ -10,9 +10,9 @@ import pytest
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
+from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
@@ -33,6 +33,9 @@ from tests.serving.mcp.conftest import McpBackendComponents
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
+# Dataset tools category
+DATASET_CATEGORIES: set[str] = {"datasets"}
+
 
 # =============================================================================
 # Helper Functions
@@ -51,7 +54,7 @@ def test_register_dataset_tools_success(
     mcp = wrap_fastmcp("Test Dataset Tools")
 
     # Should not raise
-    register_dataset_tools(mcp, mcp_backend.backend)
+    register_tools_for_category(mcp, mcp_backend.backend, DATASET_CATEGORIES)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Dataset Tools")
@@ -63,7 +66,7 @@ def test_register_dataset_tools_with_service(
     """Verify register_dataset_tools works with service directly."""
     mcp = wrap_fastmcp("Test Service")
 
-    register_dataset_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, DATASET_CATEGORIES)
 
     expect_equal(mcp.name, "Test Service")
 
@@ -75,7 +78,7 @@ def test_register_dataset_tools_with_config(
     mcp = wrap_fastmcp("Test With Config")
     config = None
 
-    register_dataset_tools(mcp, mcp_backend.backend, config=config)
+    register_tools_for_category(mcp, mcp_backend.backend, DATASET_CATEGORIES, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
@@ -85,11 +88,11 @@ def test_register_dataset_tools_on_multiple_servers(
 ) -> None:
     """Verify tools can be registered on multiple servers."""
     mcp1 = wrap_fastmcp("Server 1")
-    register_dataset_tools(mcp1, mcp_backend.backend)
+    register_tools_for_category(mcp1, mcp_backend.backend, DATASET_CATEGORIES)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_dataset_tools(mcp2, mcp_backend.backend)
+    register_tools_for_category(mcp2, mcp_backend.backend, DATASET_CATEGORIES)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -108,10 +111,11 @@ def test_dataset_tools_serialize_unicode_payloads(
 
     registrar = RecordingMcpRegistrar("dataset-errors")
     ops = [spec for spec in iter_operations() if spec.id == "datasets.list"]
-    register_dataset_tools(
+    register_tools_for_category(
         registrar,
         failing_backend,
-        options=DatasetToolOptions(operations=ops),
+        DATASET_CATEGORIES,
+        options=ToolRegistrationOptions(operations=ops),
     )
 
     with caplog.at_level("WARNING"):
@@ -277,7 +281,7 @@ def test_register_dataset_tools_preserves_backend_state(
     original_commit = backend.commit
     original_limits = backend.limits
 
-    register_dataset_tools(mcp, backend)
+    register_tools_for_category(mcp, backend, DATASET_CATEGORIES)
 
     expect_equal(backend.repo, original_repo)
     expect_equal(backend.commit, original_commit)
@@ -289,6 +293,6 @@ def test_local_query_service_as_backend(
 ) -> None:
     """Verify LocalQueryService can be used as backend."""
     mcp = wrap_fastmcp("Test Local Service")
-    register_dataset_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, DATASET_CATEGORIES)
 
     expect_equal(mcp.name, "Test Local Service")

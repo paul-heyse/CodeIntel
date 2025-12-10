@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from codeintel.build.context import TargetExecutionContext
-from codeintel.build.result import TargetResult
 from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from tests._helpers.assertions import (
     expect_equal,
@@ -40,8 +38,7 @@ def _assert_config_rows(ctx: TargetExecutionContext) -> int:
 @pytest.mark.anyio
 async def test_execute_with_no_config_files_returns_empty_result(tmp_path: Path) -> None:
     """When no config files are found, plugin should succeed with no rows."""
-    ctx, raw_result = await run_ingestion_scenario(ConfigIngestPlugin, tmp_path)
-    result = cast("TargetResult", raw_result)
+    ctx, result = await run_ingestion_scenario(ConfigIngestPlugin, tmp_path)
 
     expect_true(result.success is True)
     expect_equal(result.row_counts, {})
@@ -55,12 +52,11 @@ async def test_execute_ingests_valid_configs_and_logs_invalid(
     """Valid configs are ingested while invalid files only emit warnings."""
     repo_root, _ = build_repo_with_configs(tmp_path, include_invalid=True)
     caplog.set_level("WARNING")
-    ctx, raw_result = await run_ingestion_scenario(
+    ctx, result = await run_ingestion_scenario(
         ConfigIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
     )
-    result = cast("TargetResult", raw_result)
 
     expect_true(result.success is True)
     ingested_rows = _assert_config_rows(ctx)
@@ -80,12 +76,11 @@ async def test_execute_only_invalid_configs_fails(tmp_path: Path) -> None:
     )
     invalid_structure = variants["with_invalid"].repo_structure or {}
     repo_root = build_repo_tree(tmp_path / "repo", invalid_structure)
-    ctx, raw_result = await run_ingestion_scenario(
+    ctx, result = await run_ingestion_scenario(
         ConfigIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root),
     )
-    result = cast("TargetResult", raw_result)
 
     expect_true(result.success is False)
     error_message = expect_is_not_none(result.error_message)

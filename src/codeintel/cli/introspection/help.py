@@ -14,8 +14,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from codeintel.cli.execution.registry import OperationSpec
 from codeintel.cli.introspection.discovery import (
-    OperationInfo,
     get_operation_info,
     list_all_operations,
     list_operations_by_group,

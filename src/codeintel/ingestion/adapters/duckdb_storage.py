@@ -124,7 +124,13 @@ def _build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
 
 
 def _jsonify_nested_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert dict/list columns to JSON strings for DuckDB compatibility."""
+    """Convert dict/list columns to JSON strings for DuckDB compatibility.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with nested columns serialized to JSON strings when needed.
+    """
     for col in df.columns:
         contains_nested = bool(df[col].apply(lambda x: isinstance(x, (dict, list))).any())
         if contains_nested:

@@ -6,9 +6,9 @@ profile data using real DuckDB instances.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -19,8 +19,8 @@ from codeintel.analytics.adapters.profiles import (
 )
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import expect_equal
-from tests._helpers.contracts import count_rows
 from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import file_profile_row, function_profile_row, module_profile_row
 
@@ -50,7 +50,13 @@ TEST_FILE_COUNT_5 = 5
 
 @pytest.fixture
 def ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Create a test context aligned with the demo repo/commit."""
+    """Create a test context aligned with the demo repo/commit.
+
+    Yields
+    ------
+    TestContext
+        Context with schemas applied for profile adapter tests.
+    """
     options = EnvOptions(repo=DEMO_REPO, commit=DEMO_COMMIT)
     context = create_test_context(tmp_path, options=options)
     try:
@@ -61,7 +67,13 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 @pytest.fixture
 def snapshot(ctx: TestContext) -> SnapshotRef:
-    """Expose the snapshot from the shared test context."""
+    """Expose the snapshot from the shared test context.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot associated with the shared test context.
+    """
     return ctx.snapshot
 
 

@@ -5,12 +5,12 @@ HTTP and MCP server commands using the @cli_command decorator.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands._common import ProjectRoot, Verbose
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.handlers.ops import serve_http_handler, serve_mcp_handler
 
@@ -56,8 +56,7 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    project_root: ProjectRoot = None
-    verbose: Verbose = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @serve_app.command(name="mcp")
@@ -74,8 +73,7 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    project_root: ProjectRoot = None
-    verbose: Verbose = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

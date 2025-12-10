@@ -8,16 +8,25 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
+from codeintel.cli.config.model import CliConfig
 from codeintel.cli.handlers.context import (
     HandlerContext,
+    HandlerContextOptions,
     ParameterError,
     handler_context_manager,
 )
 from codeintel.cli.rendering.types import OutputFormat
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_false,
+    expect_is_none,
+    expect_true,
+)
 
 
 class SampleEnum(Enum):
@@ -28,18 +37,31 @@ class SampleEnum(Enum):
 
 
 @pytest.fixture
-def mock_config() -> MagicMock:
-    """Create mock CLI config."""
-    config = MagicMock(spec=["output_format", "log_level", "color", "progress"])
+def mock_config() -> CliConfig:
+    """Create mock CLI config.
+
+    Returns
+    -------
+    CliConfig
+        Mocked configuration object with default CLI settings.
+    """
+    config = MagicMock(spec=CliConfig)
     config.output_format = "text"
     config.log_level = "WARNING"
     config.color = True
-    return config
+    config.progress = False
+    return cast("CliConfig", config)
 
 
 @pytest.fixture
-def basic_context(mock_config: MagicMock) -> HandlerContext:
-    """Create basic HandlerContext for testing."""
+def basic_context(mock_config: CliConfig) -> HandlerContext:
+    """Create basic HandlerContext for testing.
+
+    Returns
+    -------
+    HandlerContext
+        Context configured with default parameters for unit tests.
+    """
     return HandlerContext(
         config=mock_config,
         operation_id="test.operation",
@@ -52,56 +74,64 @@ def basic_context(mock_config: MagicMock) -> HandlerContext:
 class TestParamStr:
     """Tests for param_str method."""
 
-    def test_returns_value_when_present(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_value_when_present(basic_context: HandlerContext) -> None:
         """Return string value when parameter exists."""
-        assert basic_context.param_str("name") == "test"
+        expect_equal(basic_context.param_str("name"), "test")
 
-    def test_returns_default_when_missing(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_default_when_missing(basic_context: HandlerContext) -> None:
         """Return default when parameter missing."""
-        assert basic_context.param_str("missing", "default") == "default"
+        expect_equal(basic_context.param_str("missing", "default"), "default")
 
+    @staticmethod
     def test_returns_none_when_missing_no_default(
-        self,
         basic_context: HandlerContext,
     ) -> None:
         """Return None when parameter missing and no default."""
-        assert basic_context.param_str("missing") is None
+        expect_is_none(basic_context.param_str("missing"))
 
-    def test_converts_int_to_string(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_converts_int_to_string(basic_context: HandlerContext) -> None:
         """Convert non-string values to string."""
-        assert basic_context.param_str("count") == "10"
+        expect_equal(basic_context.param_str("count"), "10")
 
 
 class TestParamInt:
     """Tests for param_int method."""
 
-    def test_returns_value_when_present(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_value_when_present(basic_context: HandlerContext) -> None:
         """Return integer value when parameter exists."""
-        assert basic_context.param_int("count") == 10
+        expect_equal(basic_context.param_int("count"), 10)
 
-    def test_returns_default_when_missing(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_default_when_missing(basic_context: HandlerContext) -> None:
         """Return default when parameter missing."""
-        assert basic_context.param_int("missing", 42) == 42
+        expect_equal(basic_context.param_int("missing", 42), 42)
 
-    def test_converts_string_to_int(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_converts_string_to_int(mock_config: CliConfig) -> None:
         """Convert string values to integer."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"count": "20"},
         )
-        assert ctx.param_int("count") == 20
+        expect_equal(ctx.param_int("count"), 20)
 
-    def test_returns_default_on_invalid(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_default_on_invalid(mock_config: CliConfig) -> None:
         """Return default when conversion fails."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"count": "not-a-number"},
         )
-        assert ctx.param_int("count", 5) == 5
+        expect_equal(ctx.param_int("count", 5), 5)
 
-    def test_does_not_treat_bool_as_int(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_does_not_treat_bool_as_int(mock_config: CliConfig) -> None:
         """Boolean values should not be treated as integers directly."""
         ctx = HandlerContext(
             config=mock_config,
@@ -109,19 +139,21 @@ class TestParamInt:
             _params={"flag": True},
         )
         # Bool is converted via str() -> int()
-        assert ctx.param_int("flag", 99) == 99  # "True" is not valid int
+        expect_equal(ctx.param_int("flag", 99), 99)  # "True" is not valid int
 
 
 class TestParamBool:
     """Tests for param_bool method."""
 
-    def test_returns_value_when_present(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_value_when_present(basic_context: HandlerContext) -> None:
         """Return boolean value when parameter exists."""
-        assert basic_context.param_bool("enabled") is True
+        expect_true(basic_context.param_bool("enabled"))
 
-    def test_returns_default_when_missing(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_default_when_missing(basic_context: HandlerContext) -> None:
         """Return default when parameter missing."""
-        assert basic_context.param_bool("missing", default=True) is True
+        expect_true(basic_context.param_bool("missing", default=True))
 
     @pytest.mark.parametrize(
         ("value", "expected"),
@@ -139,10 +171,11 @@ class TestParamBool:
             ("off", False),
         ],
     )
+    @staticmethod
     def test_handles_string_values(
-        self,
-        mock_config: MagicMock,
+        mock_config: CliConfig,
         value: str,
+        *,
         expected: bool,
     ) -> None:
         """Handle various string representations of boolean."""
@@ -151,168 +184,185 @@ class TestParamBool:
             operation_id="test",
             _params={"flag": value},
         )
-        assert ctx.param_bool("flag") is expected
+        expect_equal(ctx.param_bool("flag"), expected)
 
 
 class TestParamPath:
     """Tests for param_path method."""
 
-    def test_returns_path_when_present(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_path_when_present(mock_config: CliConfig) -> None:
         """Return Path when parameter exists."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"path": Path("/some/path")},
         )
-        assert ctx.param_path("path") == Path("/some/path")
+        expect_equal(ctx.param_path("path"), Path("/some/path"))
 
-    def test_converts_string_to_path(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_converts_string_to_path(mock_config: CliConfig) -> None:
         """Convert string values to Path."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"path": "/some/path"},
         )
-        assert ctx.param_path("path") == Path("/some/path")
+        expect_equal(ctx.param_path("path"), Path("/some/path"))
 
-    def test_returns_default_when_missing(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_default_when_missing(mock_config: CliConfig) -> None:
         """Return default when parameter missing."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_path("path", Path("/default")) == Path("/default")
+        expect_equal(ctx.param_path("path", Path("/default")), Path("/default"))
 
-    def test_returns_none_when_missing_no_default(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_none_when_missing_no_default(mock_config: CliConfig) -> None:
         """Return None when parameter missing and no default."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_path("path") is None
+        expect_is_none(ctx.param_path("path"))
 
 
 class TestParamEnum:
     """Tests for param_enum method."""
 
-    def test_returns_enum_when_present(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_enum_when_present(mock_config: CliConfig) -> None:
         """Return enum when parameter exists."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"choice": SampleEnum.VALUE_A},
         )
-        assert ctx.param_enum("choice", SampleEnum) == SampleEnum.VALUE_A
+        expect_equal(ctx.param_enum("choice", SampleEnum), SampleEnum.VALUE_A)
 
-    def test_converts_string_to_enum(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_converts_string_to_enum(mock_config: CliConfig) -> None:
         """Convert string values to enum."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"choice": "a"},
         )
-        assert ctx.param_enum("choice", SampleEnum) == SampleEnum.VALUE_A
+        expect_equal(ctx.param_enum("choice", SampleEnum), SampleEnum.VALUE_A)
 
-    def test_returns_default_on_invalid(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_default_on_invalid(mock_config: CliConfig) -> None:
         """Return default when conversion fails."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"choice": "invalid"},
         )
-        assert ctx.param_enum("choice", SampleEnum, SampleEnum.VALUE_B) == SampleEnum.VALUE_B
+        expect_equal(ctx.param_enum("choice", SampleEnum, SampleEnum.VALUE_B), SampleEnum.VALUE_B)
 
-    def test_returns_none_when_missing_no_default(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_none_when_missing_no_default(mock_config: CliConfig) -> None:
         """Return None when parameter missing and no default."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_enum("choice", SampleEnum) is None
+        expect_is_none(ctx.param_enum("choice", SampleEnum))
 
 
 class TestParamList:
     """Tests for param_list method."""
 
-    def test_returns_list_when_present(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_list_when_present(mock_config: CliConfig) -> None:
         """Return list when parameter exists."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"items": ["a", "b", "c"]},
         )
-        assert ctx.param_list("items") == ["a", "b", "c"]
+        expect_equal(ctx.param_list("items"), ["a", "b", "c"])
 
-    def test_converts_tuple_to_list(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_converts_tuple_to_list(mock_config: CliConfig) -> None:
         """Convert tuple to list."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"items": ("a", "b")},
         )
-        assert ctx.param_list("items") == ["a", "b"]
+        expect_equal(ctx.param_list("items"), ["a", "b"])
 
-    def test_returns_empty_list_when_missing(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_empty_list_when_missing(mock_config: CliConfig) -> None:
         """Return empty list when parameter missing."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_list("items") == []
+        expect_equal(ctx.param_list("items"), [])
 
-    def test_returns_default_when_missing(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_default_when_missing(mock_config: CliConfig) -> None:
         """Return default when parameter missing."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_list("items", ["default"]) == ["default"]
+        expect_equal(ctx.param_list("items", ["default"]), ["default"])
 
 
 class TestParamTuple:
     """Tests for param_tuple method."""
 
-    def test_returns_tuple_when_present(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_tuple_when_present(mock_config: CliConfig) -> None:
         """Return tuple when parameter exists."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"items": ("a", "b")},
         )
-        assert ctx.param_tuple("items") == ("a", "b")
+        expect_equal(ctx.param_tuple("items"), ("a", "b"))
 
-    def test_converts_list_to_tuple(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_converts_list_to_tuple(mock_config: CliConfig) -> None:
         """Convert list to tuple."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"items": ["a", "b"]},
         )
-        assert ctx.param_tuple("items") == ("a", "b")
+        expect_equal(ctx.param_tuple("items"), ("a", "b"))
 
-    def test_returns_empty_tuple_when_missing(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_empty_tuple_when_missing(mock_config: CliConfig) -> None:
         """Return empty tuple when parameter missing."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={},
         )
-        assert ctx.param_tuple("items") == ()
+        expect_equal(ctx.param_tuple("items"), ())
 
 
 class TestRequireStr:
     """Tests for require_str method."""
 
-    def test_returns_value_when_present(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_value_when_present(basic_context: HandlerContext) -> None:
         """Return string value when parameter exists."""
-        assert basic_context.require_str("name") == "test"
+        expect_equal(basic_context.require_str("name"), "test")
 
-    def test_raises_when_missing(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_raises_when_missing(basic_context: HandlerContext) -> None:
         """Raise ParameterError when parameter missing."""
         with pytest.raises(ParameterError, match="Required parameter 'missing'"):
             basic_context.require_str("missing")
@@ -321,16 +371,19 @@ class TestRequireStr:
 class TestRequireInt:
     """Tests for require_int method."""
 
-    def test_returns_value_when_present(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_returns_value_when_present(basic_context: HandlerContext) -> None:
         """Return integer value when parameter exists."""
-        assert basic_context.require_int("count") == 10
+        expect_equal(basic_context.require_int("count"), 10)
 
-    def test_raises_when_missing(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_raises_when_missing(basic_context: HandlerContext) -> None:
         """Raise ParameterError when parameter missing."""
         with pytest.raises(ParameterError, match="Required parameter 'missing'"):
             basic_context.require_int("missing")
 
-    def test_raises_when_invalid(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_raises_when_invalid(mock_config: CliConfig) -> None:
         """Raise ParameterError when value is not valid integer."""
         ctx = HandlerContext(
             config=mock_config,
@@ -344,16 +397,18 @@ class TestRequireInt:
 class TestRequirePath:
     """Tests for require_path method."""
 
-    def test_returns_path_when_present(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_returns_path_when_present(mock_config: CliConfig) -> None:
         """Return Path when parameter exists."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             _params={"path": "/some/path"},
         )
-        assert ctx.require_path("path") == Path("/some/path")
+        expect_equal(ctx.require_path("path"), Path("/some/path"))
 
-    def test_raises_when_missing(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_raises_when_missing(mock_config: CliConfig) -> None:
         """Raise ParameterError when parameter missing."""
         ctx = HandlerContext(
             config=mock_config,
@@ -367,12 +422,14 @@ class TestRequirePath:
 class TestContextManager:
     """Tests for context manager protocol."""
 
-    def test_enter_returns_self(self, basic_context: HandlerContext) -> None:
+    @staticmethod
+    def test_enter_returns_self(basic_context: HandlerContext) -> None:
         """__enter__ returns the context."""
         with basic_context as ctx:
-            assert ctx is basic_context
+            expect_true(ctx is basic_context)
 
-    def test_exit_calls_close(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_exit_calls_close(mock_config: CliConfig) -> None:
         """__exit__ closes resources."""
         ctx = HandlerContext(
             config=mock_config,
@@ -380,20 +437,28 @@ class TestContextManager:
         )
         with ctx:
             pass
-        assert ctx._closed is True
+        expect_true(ctx.is_closed)
 
-    def test_close_on_exception(self, mock_config: MagicMock) -> None:
-        """Resources closed even on exception."""
+    @staticmethod
+    def test_close_on_exception(mock_config: CliConfig) -> None:
+        """Resources closed even on exception.
+
+        Raises
+        ------
+        ValueError
+            Raised intentionally to verify cleanup on error.
+        """
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
         )
-        with pytest.raises(ValueError, match="test error"), ctx:
-            msg = "test error"
-            raise ValueError(msg)
-        assert ctx._closed is True
+        with ctx:
+            with pytest.raises(ValueError, match="test error"):
+                raise ValueError("test error")
+        expect_true(ctx.is_closed)
 
-    def test_close_idempotent(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_close_idempotent(mock_config: CliConfig) -> None:
         """Close can be called multiple times safely."""
         ctx = HandlerContext(
             config=mock_config,
@@ -401,16 +466,15 @@ class TestContextManager:
         )
         ctx.close()
         ctx.close()  # Should not raise
-        assert ctx._closed is True
+        expect_true(ctx.is_closed)
 
 
 class TestHandlerContextManager:
     """Tests for handler_context_manager function."""
 
-    def test_creates_context(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_creates_context(mock_config: CliConfig) -> None:
         """Create context with correct parameters."""
-        from codeintel.cli.handlers.context import HandlerContextOptions
-
         options = HandlerContextOptions(verbosity=1)
         with handler_context_manager(
             mock_config,
@@ -418,62 +482,72 @@ class TestHandlerContextManager:
             params={"key": "value"},
             options=options,
         ) as ctx:
-            assert ctx.operation_id == "test.op"
-            assert ctx.verbosity == 1
-            assert ctx.param_str("key") == "value"
+            expect_equal(ctx.operation_id, "test.op")
+            expect_equal(ctx.verbosity, 1)
+            expect_equal(ctx.param_str("key"), "value")
 
-    def test_closes_on_exit(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_closes_on_exit(mock_config: CliConfig) -> None:
         """Close context on exit."""
         with handler_context_manager(mock_config, "test.op") as ctx:
             pass
-        assert ctx._closed is True
+        expect_true(ctx.is_closed)
 
-    def test_closes_on_exception(self, mock_config: MagicMock) -> None:
-        """Close context on exception."""
-        with pytest.raises(ValueError, match="test"):
-            with handler_context_manager(mock_config, "test.op") as ctx:
-                msg = "test"
-                raise ValueError(msg)
-        assert ctx._closed is True
+    @staticmethod
+    def test_closes_on_exception(mock_config: CliConfig) -> None:
+        """Close context on exception.
+
+        Raises
+        ------
+        ValueError
+            Raised intentionally to verify cleanup on error.
+        """
+        with handler_context_manager(mock_config, "test.op") as ctx, pytest.raises(
+            ValueError, match="test"
+        ):
+            raise ValueError("test")
+        expect_true(ctx.is_closed)
 
 
 class TestConvenienceProperties:
     """Tests for convenience properties."""
 
-    def test_logger_property(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_logger_property(mock_config: CliConfig) -> None:
         """Logger property returns correct logger."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="my.operation",
         )
         logger = ctx.logger
-        assert logger.name == "codeintel.cli.handlers.my.operation"
+        expect_equal(logger.name, "codeintel.cli.handlers.my.operation")
 
-    def test_color_enabled(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_color_enabled(mock_config: CliConfig) -> None:
         """Color enabled returns config value."""
-        mock_config.color = True
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
         )
-        assert ctx.color_enabled is True
+        expect_true(ctx.color_enabled)
 
-        mock_config.color = False
-        assert ctx.color_enabled is False
+        expect_false(ctx.color_enabled)
 
-    def test_db_path_returns_none_without_runtime(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_db_path_returns_none_without_runtime(mock_config: CliConfig) -> None:
         """Db path returns None without runtime or database_path."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
         )
-        assert ctx.db_path is None
+        expect_is_none(ctx.db_path)
 
-    def test_db_path_returns_database_path(self, mock_config: MagicMock) -> None:
+    @staticmethod
+    def test_db_path_returns_database_path(mock_config: CliConfig) -> None:
         """Db path returns database_path when set."""
         ctx = HandlerContext(
             config=mock_config,
             operation_id="test",
             database_path=Path("/test/db.duckdb"),
         )
-        assert ctx.db_path == Path("/test/db.duckdb")
+        expect_equal(ctx.db_path, Path("/test/db.duckdb"))

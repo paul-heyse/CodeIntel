@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from textwrap import dedent
 from typing import cast
 
 import pytest
@@ -24,13 +23,7 @@ from tests._helpers.ingestion import (
     build_repo_tree,
     run_ingestion_scenario,
 )
-
-TYPED_SOURCE = dedent(
-    """\
-    def fn(x: int) -> int:
-        return x
-    """
-)
+from tests._helpers.ingestion_samples import TYPED_SOURCE
 
 
 def _make_plugin(
@@ -61,7 +54,7 @@ async def test_typing_plugin_skips_without_type_checker(
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/typed.py": TYPED_SOURCE})
     caplog.set_level("INFO")
 
-    ctx, result = await run_ingestion_scenario(
+    _ctx, result = await run_ingestion_scenario(
         TypingIngestPlugin,
         tmp_path,
         config=TargetContextConfig(

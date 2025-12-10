@@ -5,16 +5,16 @@ This module wires Cyclopts command classes to unified handlers via @cli_command.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.history import history_timeseries_handler
-from codeintel.cli.rendering.types import OutputFormat
 
 history_app = App(
     name="history",
@@ -104,21 +104,7 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["history_app"]

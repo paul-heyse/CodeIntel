@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -27,7 +27,7 @@ class RouteApp:
     """Bundled FastAPI app and TestClient factory for route-focused tests."""
 
     app: FastAPI
-    client_factory: Callable[[], Iterator[TestClient]]
+    client_factory: Callable[[], AbstractContextManager[TestClient]]
 
     @contextmanager
     def client(self) -> Iterator[TestClient]:
@@ -112,19 +112,19 @@ def service_app_factory_with_routes(
     repo: str
     commit: str
     backend_resource: BackendResource
-    try:
-        gateway, snapshot = backend_source  # type: ignore[misc]
-        repo, commit = snapshot  # type: ignore[misc]
+    if isinstance(backend_source, tuple):
+        gateway, snapshot = backend_source
+        repo, commit = snapshot
         service_app = build_service_app(
             gateway,
-            snapshot=snapshot,  # type: ignore[arg-type]
+            snapshot=snapshot,
             limits=opts.limits,
             observability=opts.observability,
         )
         backend_resource = _backend_resource_from_service_app(service_app)
         repo, commit = service_app.repo, service_app.commit
-    except (TypeError, ValueError):
-        components = backend_source  # type: ignore[assignment]
+    else:
+        components = backend_source
         service = components.service
         if opts.observability is not None:
             service.observability = opts.observability
@@ -160,7 +160,7 @@ def service_app_factory_with_routes(
         app.include_router(router)
 
     @contextmanager
-    def _client() -> Iterator[TestClient]:
+    def _client() -> AbstractContextManager[TestClient]:
         with TestClient(app) as client:
             yield client
 

@@ -6,11 +6,12 @@ for long-running operations.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.jobs import (
     jobs_cancel_handler,
@@ -19,7 +20,6 @@ from codeintel.cli.handlers.jobs import (
     jobs_output_handler,
     jobs_status_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 jobs_app = App(name="jobs", help="Manage background jobs")
 
@@ -42,13 +42,7 @@ class JobsListCommand:
         Parameter(help="Filter by status"),
     ] = None
     limit: Annotated[int, Parameter(help="Maximum jobs to show")] = 20
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--output-format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("jobs.status", handler=jobs_status_handler, config=_JOBS_CONFIG)
@@ -62,13 +56,7 @@ class JobsStatusCommand:
     """
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--output-format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("jobs.output", handler=jobs_output_handler, config=_JOBS_CONFIG)
@@ -82,13 +70,7 @@ class JobsOutputCommand:
     """
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--output-format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("jobs.cancel", handler=jobs_cancel_handler, config=_JOBS_CONFIG)
@@ -102,13 +84,7 @@ class JobsCancelCommand:
     """
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--output-format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("jobs.cleanup", handler=jobs_cleanup_handler, config=_JOBS_CONFIG)
@@ -122,13 +98,7 @@ class JobsCleanupCommand:
     """
 
     max_age_days: Annotated[int, Parameter(help="Maximum age in days")] = 7
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--output-format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int, Parameter(name=["-v", "--verbose"], count=True, help="Increase verbosity level")
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

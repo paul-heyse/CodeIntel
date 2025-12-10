@@ -252,6 +252,10 @@ def datasets_diff_handler(
 
 
 __all__ = [
+    "DatasetDiffResult",
+    "DatasetLintResult",
+    "DatasetListResult",
+    "DatasetSnapshotResult",
     "datasets_diff_handler",
     "datasets_lint_handler",
     "datasets_list_handler",

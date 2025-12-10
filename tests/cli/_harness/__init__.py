@@ -483,8 +483,8 @@ class OperationTestHarness:
 
     render: bool = False
 
+    @staticmethod
     def execute(
-        self,
         operation_id: str,
         params: dict[str, object] | None = None,
     ) -> CliInvocationResult:

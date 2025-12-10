@@ -53,7 +53,13 @@ DATAFLOW_EDGES: tuple[DatasetDataflowEdgeRow, ...] = (
 
 @pytest.fixture
 def dataflow_ctx(test_ctx: TestContext) -> TestContext:
-    """Seed dataset dataflow tables for repository tests."""
+    """Seed dataset dataflow tables for repository tests.
+
+    Returns
+    -------
+    TestContext
+        Context with dataset dataflow tables populated for testing.
+    """
     con = test_ctx.gateway.con
     base_counts = (
         len(con.execute("SELECT id FROM metadata.dataset_dataflow_nodes").fetchall()),
@@ -67,7 +73,13 @@ def dataflow_ctx(test_ctx: TestContext) -> TestContext:
 
 @pytest.fixture
 def dataflow_repo(dataflow_ctx: TestContext) -> DataflowRepository:
-    """Provide a DataflowRepository backed by a seeded TestContext."""
+    """Provide a DataflowRepository backed by a seeded TestContext.
+
+    Returns
+    -------
+    DataflowRepository
+        Repository instance configured for the seeded context.
+    """
     return DataflowRepository(
         gateway=dataflow_ctx.gateway,
         repo=dataflow_ctx.repo,

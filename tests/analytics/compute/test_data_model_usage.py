@@ -35,7 +35,13 @@ def _function_ast(code: str, *, goid: int, rel_path: str, qualname: str) -> Func
 
 @pytest.fixture
 def data_model_ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Provide a test context with schema ready for data model usage."""
+    """Provide a test context with schema ready for data model usage.
+
+    Yields
+    ------
+    TestContext
+        Context with database schema prepared for data model usage tests.
+    """
     ctx = create_test_context(tmp_path)
     try:
         yield ctx

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
+from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from tests._helpers.assertions import (
     expect_equal,
@@ -195,15 +198,38 @@ def test_list_subsystem_profiles_uses_cache_when_present(
     """Verify list_subsystem_profiles uses cache table when available."""
     repo = subsystem_ctx.repo
     commit = subsystem_ctx.commit
-    con = subsystem_ctx.con
 
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_profile_cache (
-            repo, commit, subsystem_id, module_count, name
-        ) VALUES (?, ?, ?, ?, ?)
-        """,
-        [repo, commit, "cached_sub", 5, "Cached Subsystem"],
+    insert_mapping_rows(
+        subsystem_ctx.con,
+        "analytics.subsystem_profile_cache",
+        [
+            {
+                "repo": repo,
+                "commit": commit,
+                "subsystem_id": "cached_sub",
+                "name": "Cached Subsystem",
+                "description": None,
+                "module_count": 5,
+                "modules_json": None,
+                "entrypoints_json": None,
+                "internal_edge_count": None,
+                "external_edge_count": None,
+                "fan_in": None,
+                "fan_out": None,
+                "function_count": None,
+                "avg_risk_score": None,
+                "max_risk_score": None,
+                "high_risk_function_count": None,
+                "risk_level": None,
+                "import_in_degree": None,
+                "import_out_degree": None,
+                "import_pagerank": None,
+                "import_betweenness": None,
+                "import_closeness": None,
+                "import_layer": None,
+                "created_at": datetime.now(tz=UTC),
+            }
+        ],
     )
 
     repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
@@ -219,15 +245,42 @@ def test_list_subsystem_coverage_uses_cache_when_present(
     """Verify list_subsystem_coverage uses cache table when available."""
     repo = subsystem_ctx.repo
     commit = subsystem_ctx.commit
-    con = subsystem_ctx.con
 
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_coverage_cache (
-            repo, commit, subsystem_id, test_count, name
-        ) VALUES (?, ?, ?, ?, ?)
-        """,
-        [repo, commit, "cached_cov", 3, "Cached Coverage"],
+    insert_mapping_rows(
+        subsystem_ctx.con,
+        "analytics.subsystem_coverage_cache",
+        [
+            {
+                "repo": repo,
+                "commit": commit,
+                "subsystem_id": "cached_cov",
+                "name": "Cached Coverage",
+                "description": None,
+                "module_count": None,
+                "test_count": 3,
+                "passed_test_count": None,
+                "failed_test_count": None,
+                "skipped_test_count": None,
+                "xfail_test_count": None,
+                "flaky_test_count": None,
+                "total_functions_covered": None,
+                "avg_functions_covered": None,
+                "max_functions_covered": None,
+                "min_functions_covered": None,
+                "function_count": None,
+                "risk_level": None,
+                "avg_risk_score": None,
+                "max_risk_score": None,
+                "function_coverage_ratio": None,
+                "function_gap_ratio": None,
+                "functions_tested": None,
+                "functions_untested": None,
+                "statement_gap_count": None,
+                "statement_coverage_ratio": None,
+                "statement_gap_ratio": None,
+                "created_at": datetime.now(tz=UTC),
+            }
+        ],
     )
 
     repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)

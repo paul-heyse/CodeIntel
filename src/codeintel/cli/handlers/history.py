@@ -1,6 +1,6 @@
 """Handlers for history timeseries commands.
 
-Migrate to use HandlerContext and return CliResult.
+Provide analytics aggregation across multiple commit snapshots.
 """
 
 from __future__ import annotations

@@ -12,7 +12,13 @@ from tests._helpers.context import TestContext
 
 
 def _repo(ctx: TestContext) -> ModuleRepository:
-    """Build a ModuleRepository for the provided context."""
+    """Build a ModuleRepository for the provided context.
+
+    Returns
+    -------
+    ModuleRepository
+        Repository bound to the given test context.
+    """
     return ModuleRepository(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
 
 
