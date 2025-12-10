@@ -1,8 +1,13 @@
-"""Typer-free storage validation helpers used by the Cyclopts CLI."""
+"""Typer-free storage validation helpers used by the Cyclopts CLI.
+
+.. deprecated:: 2.0
+    This module is deprecated. Use codeintel.cli.handlers.storage instead.
+"""
 
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -25,6 +30,12 @@ from codeintel.storage.metadata import (
 
 if TYPE_CHECKING:
     from codeintel.cli.execution.context import ExecutionContext
+
+warnings.warn(
+    "codeintel.cli.storage_handlers is deprecated. Use codeintel.cli.handlers.storage instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG = logging.getLogger(__name__)
 

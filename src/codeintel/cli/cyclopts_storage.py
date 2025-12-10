@@ -1,22 +1,28 @@
 """Cyclopts wiring for storage commands.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified handler functions
+via command_context().
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.execution.adapter import CycloptsAdapter
-from codeintel.cli.storage_handlers import (
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    command_context,
+)
+from codeintel.cli.handlers.storage import (
     MacroRequirement,
-    generate_macros_structured,
-    profile_storage_structured,
-    storage_validate_macros_structured,
+    generate_macros_handler,
+    profile_storage_handler,
+    validate_macros_handler,
 )
 
 storage_app = App(
@@ -60,10 +66,33 @@ class ValidateMacrosCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage validate-macros command."""
-        CycloptsAdapter("storage.validate_macros", storage_validate_macros_structured)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+
+        params: dict[str, object] = {
+            "db_path": str(self.db_path) if self.db_path else None,
+            "macro_requirement": self.macro_requirement,
+        }
+
+        with command_context(
+            "storage.validate_macros",
+            runtime_cli,
+            self.output_format,
+            params=params,
+        ) as (ctx, renderer):
+            result = validate_macros_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @storage_app.command(name="generate-macros")
@@ -78,6 +107,13 @@ class GenerateMacrosCommand:
             help="Tables to generate macros for (repeatable).",
         ),
     ] = None
+    project_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--root",
+            help="Project root directory.",
+        ),
+    ] = None
     verbose: Annotated[
         int,
         Parameter(
@@ -86,10 +122,32 @@ class GenerateMacrosCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage generate-macros command."""
-        CycloptsAdapter("storage.generate_macros", generate_macros_structured)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+
+        params: dict[str, object] = {
+            "tables": self.tables,
+        }
+
+        with command_context(
+            "storage.generate_macros",
+            runtime_cli,
+            self.output_format,
+            params=params,
+        ) as (ctx, renderer):
+            result = generate_macros_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @storage_app.command(name="profile")
@@ -110,19 +168,12 @@ class ProfileStorageCommand:
             name="--output-dir",
             help="Output directory for profile report.",
         ),
-    ] = Path("build/storage_profile")
-    format: Annotated[
-        str,
-        Parameter(
-            name="--format",
-            help="Output format (text, json, csv).",
-        ),
-    ] = "text"
-    include_samples: Annotated[
+    ] = field(default_factory=lambda: Path("build/storage_profile"))
+    include_views: Annotated[
         bool,
         Parameter(
-            name="--include-samples",
-            help="Include sample data in profile.",
+            name="--include-views",
+            help="Include views in profiling.",
             negative=(),
         ),
     ] = False
@@ -141,10 +192,34 @@ class ProfileStorageCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the storage profile command."""
-        CycloptsAdapter("storage.profile", profile_storage_structured)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+
+        params: dict[str, object] = {
+            "db_path": str(self.db_path) if self.db_path else None,
+            "output_dir": str(self.output_dir),
+            "include_views": self.include_views,
+        }
+
+        with command_context(
+            "storage.profile",
+            runtime_cli,
+            self.output_format,
+            params=params,
+        ) as (ctx, renderer):
+            result = profile_storage_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["storage_app"]

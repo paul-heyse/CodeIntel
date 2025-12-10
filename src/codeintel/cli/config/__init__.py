@@ -2,6 +2,7 @@
 
 This package provides the single source of truth for CLI configuration:
 
+- ``ConfigService``: Unified configuration service
 - ``CliConfig``: The root configuration model with nested sections
 - ``load_config``: Load configuration from files, environment, and CLI flags
 - ``generate_schema``: Generate JSON Schema 2020-12 from the model
@@ -47,13 +48,23 @@ from codeintel.cli.config.model import (
     TelemetryConfig,
 )
 from codeintel.cli.config.schema import export_schema, generate_schema
+from codeintel.cli.config.service import (
+    CONFIG_ENV_PREFIX,
+    CONFIG_PATH_ENV_VAR,
+    TOML_CONFIG_PATHS,
+    ConfigService,
+)
 from codeintel.cli.config.validation import validate_config, validate_with_json_schema
 
 __all__ = [
+    "CONFIG_ENV_PREFIX",
+    "CONFIG_PATH_ENV_VAR",
     "DEFAULT_CONFIG_PATHS",
     "ENV_MAPPINGS",
+    "TOML_CONFIG_PATHS",
     "CliConfig",
     "ConfigLoadError",
+    "ConfigService",
     "ConfigValidationError",
     "LogLevel",
     "OutputFormat",

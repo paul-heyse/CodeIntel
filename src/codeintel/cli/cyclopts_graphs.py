@@ -1,22 +1,24 @@
 """Cyclopts wiring for graph commands.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified handlers via command_context.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.cli_types import OutputFormat
-from codeintel.cli.execution.adapter import CycloptsAdapter
-from codeintel.cli.graphs_handlers import (
-    DependencyPolicy,
-    SelectionPolicy,
-    graph_plugins_ctx,
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
+from codeintel.cli.handlers.graphs import (
+    graph_plugins_list_handler,
+    graph_plugins_plan_handler,
 )
+from codeintel.graphs.core.registry import DependencyPolicy, SelectionPolicy
 
 graphs_app = App(
     name="graph",
@@ -100,7 +102,36 @@ class GraphPluginsCommand:
 
     def __call__(self) -> None:
         """Execute the graph plugins command."""
-        CycloptsAdapter("graph.plugins", graph_plugins_ctx)(self)
+        # Build runtime and output CLI objects
+        runtime_cli = RuntimeCLI(verbose=self.verbose)
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        # Build params dict
+        params: dict[str, object] = {
+            "names": tuple(self.names) if self.names else None,
+            "enable": tuple(self.enable) if self.enable else None,
+            "disable": tuple(self.disable) if self.disable else (),
+            "selection_policy": self.selection_policy.value,
+            "dependency_policy": self.dependency_policy.value,
+            "include_disabled": True,  # Include all when listing
+        }
+
+        with command_context(
+            "graph.plugins",
+            runtime_cli,
+            output_cli,
+            params=params,
+            require_runtime=False,  # No project needed for listing plugins
+        ) as (ctx, renderer):
+            # Choose handler based on mode and render
+            if self.plan or self.validate_plan:
+                plan_result = graph_plugins_plan_handler(ctx)
+                exit_code = renderer.render_result(plan_result)
+            else:
+                list_result = graph_plugins_list_handler(ctx)
+                exit_code = renderer.render_result(list_result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["graphs_app"]

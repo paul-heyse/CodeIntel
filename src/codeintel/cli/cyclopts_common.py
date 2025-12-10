@@ -16,16 +16,17 @@ dataclasses with ``__call__`` will run naturally under this policy.
 
 from __future__ import annotations
 
-import os
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated
 
 from cyclopts import App, Parameter
-from cyclopts import config as cyclopts_config
 
 from codeintel.cli.cli_types import BackendFlags, OutputFormat
+from codeintel.cli.command_context import command_context
 from codeintel.cli.common_handlers import RuntimeCliOptions, build_config_from_options
+from codeintel.cli.config import ConfigService
 from codeintel.cli.project import (
     ProjectConfig,
     ProjectNotFoundError,
@@ -38,44 +39,11 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
-CONFIG_ENV_PREFIX = "CODEINTEL_"
-CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
-DEFAULT_CONFIG_PATH = Path("codeintel.toml")
-
-_ENV_CONFIG = cyclopts_config.Env(CONFIG_ENV_PREFIX)
-
-
-def _resolve_config_path() -> Path:
-    """Return the configured TOML path (env override or default).
-
-    Returns
-    -------
-    Path
-        Path to the config file, defaulting to ``codeintel.toml``.
-    """
-    env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
-    return Path(env_path) if env_path else DEFAULT_CONFIG_PATH
-
-
-def _optional_toml_config(apps: object, commands: tuple[str, ...], arguments: object) -> object:
-    """Apply TOML config if present; otherwise return the arguments unchanged.
-
-    Returns
-    -------
-    object
-        Possibly updated arguments after applying TOML overrides.
-    """
-    path = _resolve_config_path()
-    if not path.exists():
-        return arguments
-    toml_loader = cast("Any", cyclopts_config.Toml(str(path)))
-    app_arg = cast("App", apps)
-    args_arg = cast("Any", arguments)
-    return toml_loader(app_arg, commands, args_arg)
-
 
 def make_root_app() -> App:
     """Construct the root Cyclopts application with shared defaults.
+
+    Use ConfigService for unified configuration loading with proper precedence.
 
     Returns
     -------
@@ -88,7 +56,7 @@ def make_root_app() -> App:
         default_parameter=Parameter(
             show_default=True,
         ),
-        config=[_optional_toml_config, _ENV_CONFIG],
+        config=ConfigService.get_cyclopts_config_chain(),
         result_action=["call_if_callable", "return_value"],
         print_error=True,
     )
@@ -293,6 +261,45 @@ def runtime_cli_to_options(
 ) -> RuntimeCliOptions:
     """Convert a RuntimeCLI dataclass to RuntimeCliOptions.
 
+    .. deprecated:: 2.0
+        Use ``RuntimeParams.from_cyclopts()`` instead.
+        This function will be removed in version 3.0.
+
+    Returns
+    -------
+    RuntimeCliOptions
+        Options object suitable for runtime construction.
+    """
+    warnings.warn(
+        "runtime_cli_to_options is deprecated. Use RuntimeParams.from_cyclopts() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    resolved_cli = cli or RuntimeCLI()
+    return RuntimeCliOptions(
+        project_root=resolved_cli.project_root,
+        repo=resolved_cli.repo,
+        commit=resolved_cli.commit,
+        db_path=resolved_cli.db_path,
+        build_dir=resolved_cli.build_dir,
+        repo_root=resolved_cli.repo_root,
+        document_output_dir=resolved_cli.document_output_dir,
+        backend=backend or BackendFlags(),
+    )
+
+
+def _runtime_cli_to_options_internal(
+    cli: RuntimeCLI | None, *, backend: BackendFlags | None = None
+) -> RuntimeCliOptions:
+    """Convert a RuntimeCLI dataclass to RuntimeCliOptions (internal, no warning).
+
+    Parameters
+    ----------
+    cli
+        RuntimeCLI instance or None.
+    backend
+        Backend flags or None.
+
     Returns
     -------
     RuntimeCliOptions
@@ -318,6 +325,10 @@ def build_runtime_from_cli(
 ) -> ProjectRuntime:
     """Build a :class:`ProjectRuntime` from CLI options without Typer exits.
 
+    .. deprecated:: 2.0
+        Use ``RuntimeResolver.resolve(RuntimeParams)`` instead.
+        This function will be removed in version 3.0.
+
     Returns
     -------
     ProjectRuntime
@@ -328,10 +339,15 @@ def build_runtime_from_cli(
     RuntimeCliError
         If a project cannot be resolved from the provided options.
     """
+    warnings.warn(
+        "build_runtime_from_cli is deprecated. Use RuntimeResolver.resolve(RuntimeParams) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if options is None:
         options = RuntimeCLI()
     if isinstance(options, RuntimeCLI):
-        options = runtime_cli_to_options(options)
+        options = _runtime_cli_to_options_internal(options)
 
     try:
         return build_project_runtime(options.project_root)
@@ -451,10 +467,14 @@ def make_handler_context(
     tuple[RuntimeCliOptions, int, OutputFormat]
         Runtime options, verbosity count, and output format.
     """
-    runtime_opts = runtime_cli_to_options(runtime_cli)
+    runtime_opts = _runtime_cli_to_options_internal(runtime_cli)
     verbose = get_verbose(runtime_cli)
     output_format = get_output_format(output_cli, default=default_output)
     return runtime_opts, verbose, output_format
+
+
+# command_context is imported from codeintel.cli.command_context
+# and re-exported here for backwards compatibility and convenience
 
 
 __all__ = [
@@ -479,6 +499,7 @@ __all__ = [
     "StorageCLI",
     "Verbose",
     "build_runtime_from_cli",
+    "command_context",
     "get_output_format",
     "get_verbose",
     "make_handler_context",

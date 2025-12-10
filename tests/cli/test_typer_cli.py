@@ -103,8 +103,10 @@ def test_op_list_json_output() -> None:
     result = run_cli(["op", "list", "--output-format", "json"])
 
     expect_equal(result.exit_code, 0)
-    data = json.loads(result.stdout)
-    # New handler returns {"operations": [...], "count": N}
+    output = json.loads(result.stdout)
+    # New handler wraps data: {"data": {"operations": [...], "count": N}}
+    expect_in("data", output)
+    data = output["data"]
     expect_in("operations", data)
     operations = data["operations"]
     expect_is_instance(operations, list)

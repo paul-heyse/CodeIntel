@@ -1,23 +1,35 @@
 """Cyclopts wiring for subsystem exploration commands.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified EnhancedHandlerContext handlers.
+Commands use the command_context() helper for standardized infrastructure:
+
+- Configuration loading via ConfigService
+- Runtime resolution
+- Logging setup based on verbosity
+- Unified rendering via UnifiedRenderer
+- Automatic resource cleanup
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.execution.adapter import CycloptsAdapter
-from codeintel.cli.subsystem_handlers import (
-    subsystem_coverage_ctx,
-    subsystem_list_ctx,
-    subsystem_module_memberships_ctx,
-    subsystem_profiles_ctx,
-    subsystem_show_ctx,
+from codeintel.cli.cyclopts_common import (
+    OutputFormatCLI,
+    RuntimeCLI,
+    command_context,
+)
+from codeintel.cli.handlers.subsystem import (
+    subsystem_coverage_handler,
+    subsystem_list_handler,
+    subsystem_module_memberships_handler,
+    subsystem_profiles_handler,
+    subsystem_show_handler,
 )
 
 subsystem_app = App(
@@ -67,10 +79,31 @@ class SubsystemListCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem list command."""
-        CycloptsAdapter("subsystem.list", subsystem_list_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        params: dict[str, object] = {
+            "role": self.role,
+            "query": self.query,
+            "limit": self.limit,
+        }
+
+        with command_context("subsystem.list", runtime_cli, self.output_format, params=params) as (
+            ctx,
+            renderer,
+        ):
+            result = subsystem_list_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @subsystem_app.command(name="show")
@@ -100,10 +133,27 @@ class SubsystemShowCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem show command."""
-        CycloptsAdapter("subsystem.show", subsystem_show_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        params: dict[str, object] = {"subsystem_id": self.subsystem_id}
+
+        with command_context("subsystem.show", runtime_cli, self.output_format, params=params) as (
+            ctx,
+            renderer,
+        ):
+            result = subsystem_show_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @subsystem_app.command(name="profiles")
@@ -133,10 +183,26 @@ class SubsystemProfilesCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem profiles command."""
-        CycloptsAdapter("subsystem.profiles", subsystem_profiles_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        params: dict[str, object] = {"limit": self.limit}
+
+        with command_context(
+            "subsystem.profiles", runtime_cli, self.output_format, params=params
+        ) as (ctx, renderer):
+            result = subsystem_profiles_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @subsystem_app.command(name="coverage")
@@ -166,10 +232,26 @@ class SubsystemCoverageCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem coverage command."""
-        CycloptsAdapter("subsystem.coverage", subsystem_coverage_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        params: dict[str, object] = {"limit": self.limit}
+
+        with command_context(
+            "subsystem.coverage", runtime_cli, self.output_format, params=params
+        ) as (ctx, renderer):
+            result = subsystem_coverage_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @subsystem_app.command(name="module-memberships")
@@ -199,10 +281,26 @@ class SubsystemMembershipCommand:
             count=True,
         ),
     ] = 0
+    output_format: Annotated[
+        OutputFormatCLI,
+        Parameter(name="*"),
+    ] = field(default_factory=OutputFormatCLI)
 
     def __call__(self) -> None:
         """Execute the subsystem module-memberships command."""
-        CycloptsAdapter("subsystem.module_memberships", subsystem_module_memberships_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        params: dict[str, object] = {"module": self.module}
+
+        with command_context(
+            "subsystem.module_memberships", runtime_cli, self.output_format, params=params
+        ) as (ctx, renderer):
+            result = subsystem_module_memberships_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["subsystem_app"]

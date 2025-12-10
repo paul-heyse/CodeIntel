@@ -1,5 +1,9 @@
 """Typer-free handlers for IDE integration commands.
 
+.. deprecated:: 2.0
+    This module is deprecated. Use :mod:`codeintel.cli.handlers.ide` instead.
+    This module will be removed in version 3.0.
+
 These helpers keep operational logic while allowing Cyclopts to invoke
 them without importing Typer. All user-facing errors surface as
 :class:`~codeintel.cli.cli_errors.ValidationError`.
@@ -8,6 +12,7 @@ them without importing Typer. All user-facing errors surface as
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -34,6 +39,13 @@ if TYPE_CHECKING:
     from codeintel.config.models import CodeIntelConfig
 
 LOG = logging.getLogger(__name__)
+
+# Emit deprecation warning on import
+warnings.warn(
+    "codeintel.cli.ide_handlers is deprecated. Use codeintel.cli.handlers.ide instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 # -----------------------------------------------------------------------------

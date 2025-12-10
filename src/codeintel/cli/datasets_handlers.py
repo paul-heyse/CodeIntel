@@ -3,12 +3,16 @@
 These helpers keep operational logic while allowing Cyclopts to invoke
 them without importing Typer. All user-facing errors surface as
 :class:`~codeintel.cli.cli_errors.ValidationError`.
+
+.. deprecated:: 2.0
+    This module is deprecated. Use codeintel.cli.handlers.datasets instead.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -48,6 +52,12 @@ from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway
 from codeintel.storage.schema.json_schema import generate_export_schemas
 from codeintel.storage.validation import collect_contract_issues
 from codeintel.storage.validation.conformance import run_conformance
+
+warnings.warn(
+    "codeintel.cli.datasets_handlers is deprecated. Use codeintel.cli.handlers.datasets instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG = logging.getLogger(__name__)
 

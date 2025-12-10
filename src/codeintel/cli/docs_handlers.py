@@ -4,6 +4,9 @@ These helpers keep operational logic while allowing Cyclopts to invoke
 them without importing Typer. All user-facing errors surface as
 :class:`~codeintel.cli.cli_errors.ValidationError` or
 :class:`~codeintel.cli.errors.DocsValidationError`.
+
+.. deprecated:: 2.0
+    This module is deprecated. Use codeintel.cli.handlers.docs instead.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ import json
 import logging
 import os
 import sys
+import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -56,6 +60,12 @@ from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, log_problem
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+
+warnings.warn(
+    "codeintel.cli.docs_handlers is deprecated. Use codeintel.cli.handlers.docs instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 LOG = logging.getLogger(__name__)
 

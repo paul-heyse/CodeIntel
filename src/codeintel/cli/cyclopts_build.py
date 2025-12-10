@@ -1,23 +1,25 @@
 """Cyclopts wiring for the build command group.
 
-This module wires Cyclopts command classes to unified ExecutionContext handlers.
+This module wires Cyclopts command classes to unified handlers via command_context.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.build_handlers import (
-    build_history_ctx,
-    build_run_ctx,
-    build_status_ctx,
-)
 from codeintel.cli.cli_types import OutputFormat
-from codeintel.cli.execution.adapter import CycloptsAdapter
+from codeintel.cli.command_context import command_context
+from codeintel.cli.cyclopts_common import OutputFormatCLI, RuntimeCLI
+from codeintel.cli.handlers.build import (
+    build_history_handler,
+    build_run_handler,
+    build_status_handler,
+)
 
 build_app = App(
     name="build",
@@ -93,7 +95,30 @@ class BuildRunCommand:
 
     def __call__(self) -> None:
         """Execute the build run command."""
-        CycloptsAdapter("build.run", build_run_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {
+            "targets": self.targets,
+            "module": self.module,
+            "all_targets": self.all_targets,
+            "dry_run": self.dry_run,
+            "force": self.force,
+        }
+
+        with command_context(
+            "build.run",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = build_run_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @build_app.command(name="status")
@@ -134,7 +159,26 @@ class BuildStatusCommand:
 
     def __call__(self) -> None:
         """Execute the build status command."""
-        CycloptsAdapter("build.status", build_status_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {
+            "module": self.module,
+        }
+
+        with command_context(
+            "build.status",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = build_status_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 @build_app.command(name="history")
@@ -181,7 +225,27 @@ class BuildHistoryCommand:
 
     def __call__(self) -> None:
         """Execute the build history command."""
-        CycloptsAdapter("build.history", build_history_ctx)(self)
+        runtime_cli = RuntimeCLI(
+            project_root=self.project_root,
+            verbose=self.verbose,
+        )
+        output_cli = OutputFormatCLI(output_format=self.output_format)
+
+        params: dict[str, object] = {
+            "run_id": self.run_id,
+            "limit": self.limit,
+        }
+
+        with command_context(
+            "build.history",
+            runtime_cli,
+            output_cli,
+            params=params,
+        ) as (ctx, renderer):
+            result = build_history_handler(ctx)
+            exit_code = renderer.render_result(result)
+            if exit_code != 0:
+                sys.exit(exit_code)
 
 
 __all__ = ["build_app"]

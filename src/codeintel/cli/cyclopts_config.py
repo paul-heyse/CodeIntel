@@ -1,6 +1,6 @@
 """Configuration introspection commands for the CodeIntel CLI.
 
-Provides commands to inspect effective configuration after merging
+Provide commands to inspect effective configuration after merging
 all sources (defaults, file, environment, CLI flags).
 """
 
@@ -16,26 +16,43 @@ from typing import TYPE_CHECKING, Annotated, Literal, TextIO
 
 from cyclopts import App, Parameter
 
-from codeintel.cli.config import DEFAULT_CONFIG_PATHS
+from codeintel.cli.config import (
+    DEFAULT_CONFIG_PATHS,
+    ConfigService,
+    config_to_dict,
+)
+from codeintel.cli.config.service import (
+    CONFIG_ENV_PREFIX,
+    CONFIG_PATH_ENV_VAR,
+    TOML_CONFIG_PATHS,
+)
 
 if TYPE_CHECKING:
     from codeintel.cli.cyclopts_common import RuntimeCLI
 
-CONFIG_ENV_PREFIX = "CODEINTEL_"
-CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
-DEFAULT_CONFIG_PATH = Path("codeintel.toml")
-
 
 def _resolve_config_path() -> Path:
     """Return the configured TOML path (env override or default).
+
+    Check environment override first, then search default TOML locations.
 
     Returns
     -------
     Path
         Path to the config file.
     """
+    # Check environment override
     env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
-    return Path(env_path) if env_path else DEFAULT_CONFIG_PATH
+    if env_path:
+        return Path(env_path)
+
+    # Search TOML config paths
+    for path in TOML_CONFIG_PATHS:
+        if path.exists():
+            return path
+
+    # Default to codeintel.toml (even if it doesn't exist)
+    return Path("codeintel.toml")
 
 
 def _load_toml_config() -> dict[str, object]:
@@ -215,7 +232,7 @@ config_app = App(name="config", help="Configuration inspection and management.")
 class ConfigShowCommand:
     """Show effective configuration after merging all sources.
 
-    Displays the merged configuration with source tracking, showing
+    Display the merged configuration with source tracking, showing
     which values come from file, environment, or defaults.
     """
 
@@ -230,9 +247,24 @@ class ConfigShowCommand:
 
     def __call__(self) -> None:
         """Execute the config show command."""
-        # For now, we don't have a RuntimeCLI in this context
-        cfg = _resolve_effective_config(None)
-        _render_config(cfg, self.source, self.output_format)
+        # Use ConfigService for comprehensive config loading
+        service = ConfigService.load(validate=False)
+        cfg_dict = config_to_dict(service.config)
+        writer = sys.stdout
+
+        if self.output_format == "json":
+            output: dict[str, object] = {
+                "config": cfg_dict,
+                "sources": list(service.sources),
+            }
+            writer.write(json.dumps(output, indent=2, default=str))
+            writer.write("\n")
+        else:
+            writer.write("Effective Configuration:\n")
+            writer.write("-" * 40 + "\n")
+            for key, value in sorted(cfg_dict.items()):
+                writer.write(f"{key}: {value}\n")
+            writer.write("\nSources: " + " → ".join(service.sources) + "\n")
 
 
 @config_app.command(name="path")
@@ -403,10 +435,8 @@ class ConfigPathsCommand:
         writer.write("Configuration File Search Paths:\n")
         writer.write("-" * 40 + "\n")
 
-        # Also include the TOML config path
-        toml_path = _resolve_config_path()
-
-        all_paths = [toml_path, *DEFAULT_CONFIG_PATHS]
+        # Include TOML config paths and YAML/JSON config paths
+        all_paths = [*TOML_CONFIG_PATHS, *DEFAULT_CONFIG_PATHS]
         seen: set[str] = set()
 
         for path in all_paths:
@@ -417,6 +447,11 @@ class ConfigPathsCommand:
 
             exists = "✓" if path.exists() else "✗"
             writer.write(f"  {exists} {path}\n")
+
+        # Show current active config path if set via env
+        active_path = ConfigService.get_toml_config_path()
+        if active_path:
+            writer.write(f"\nActive config: {active_path}\n")
 
 
 __all__ = [
