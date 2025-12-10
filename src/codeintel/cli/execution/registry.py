@@ -33,6 +33,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from codeintel.cli.execution.executor import OperationCategory
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -102,6 +104,20 @@ class OperationSpec:
     # Metadata
     tags: tuple[str, ...] = ()
     hidden: bool = False
+
+    # Execution mode flags (for executor compatibility)
+    # Note: Handler-based operations are always sync via HandlerContext
+    is_async: bool = False
+    is_streaming: bool = False
+
+    # Legacy fields for executor compatibility (not used by handler-based ops)
+    category: OperationCategory = OperationCategory.READ
+    param_schema: object | None = None
+    requires_progress: bool = False
+    estimated_duration: float | None = None
+    retryable: bool = True
+    retry_policy: object | None = None
+    timeout: float | None = None
 
 
 @dataclass

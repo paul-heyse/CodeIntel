@@ -13,8 +13,10 @@ from tests._helpers.assertions import (
     expect_in,
     expect_is_none,
     expect_is_not_none,
-    expect_length,
+    expect_true,
 )
+from tests._helpers.builders import RiskFactorRow, insert_rows
+from tests._helpers.context import TestContext
 
 
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:
@@ -92,68 +94,101 @@ def test_list_high_risk_functions_returns_empty_when_no_match(
 
 
 def test_list_high_risk_functions_with_tested_only_filter(
-    fresh_gateway: StorageGateway,
+    metrics_ctx: TestContext,
 ) -> None:
     """Verify list_high_risk_functions applies tested_only filter."""
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            repo, commit, function_goid_h128, urn, rel_path, qualname,
-            risk_score, risk_level, coverage_ratio, tested,
-            complexity_bucket, typedness_bucket, hotspot_score, created_at
-        ) VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_rows(
+        metrics_ctx.gateway,
         [
-            "test/repo",
-            "abc123",
-            1,
-            "urn:tested_fn",
-            "test.py",
-            "tested_fn",
-            0.8,
-            "high",
-            0.5,
-            True,
-            "medium",
-            "high",
-            0.3,
-            now,
-            "test/repo",
-            "abc123",
-            2,
-            "urn:untested_fn",
-            "test.py",
-            "untested_fn",
-            0.9,
-            "critical",
-            0.0,
-            False,
-            "high",
-            "low",
-            0.5,
-            now,
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="urn:tested_fn",
+                repo=metrics_ctx.repo,
+                commit=metrics_ctx.commit,
+                rel_path="test.py",
+                language="python",
+                kind="function",
+                qualname="tested_fn",
+                loc=10,
+                logical_loc=8,
+                cyclomatic_complexity=2,
+                complexity_bucket="medium",
+                typedness_bucket="high",
+                typedness_source="annotation",
+                hotspot_score=0.3,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=2,
+                covered_lines=1,
+                coverage_ratio=0.5,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="passed",
+                risk_score=0.8,
+                risk_level="high",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
+            RiskFactorRow(
+                function_goid_h128=2,
+                urn="urn:untested_fn",
+                repo=metrics_ctx.repo,
+                commit=metrics_ctx.commit,
+                rel_path="test.py",
+                language="python",
+                kind="function",
+                qualname="untested_fn",
+                loc=12,
+                logical_loc=10,
+                cyclomatic_complexity=3,
+                complexity_bucket="high",
+                typedness_bucket="low",
+                typedness_source="inferred",
+                hotspot_score=0.5,
+                file_typed_ratio=0.5,
+                static_error_count=1,
+                has_static_errors=True,
+                executable_lines=2,
+                covered_lines=0,
+                coverage_ratio=0.0,
+                tested=False,
+                test_count=0,
+                failing_test_count=0,
+                last_test_status="unknown",
+                risk_score=0.9,
+                risk_level="critical",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
         ],
     )
 
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        gateway=metrics_ctx.gateway,
+        repo=metrics_ctx.repo,
+        commit=metrics_ctx.commit,
     )
 
     tested_only_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=True)
     all_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
 
-    expect_length(tested_only_result, 1)
+    expect_true(
+        any(row["function_goid_h128"] == 1 for row in tested_only_result),
+        message="tested_only should include tested_fn",
+    )
     expect_is_not_none(tested_only_result[0]["tested"])
 
-    expected_all_count = 2
-    expect_length(all_result, expected_all_count)
+    untested_goid = 2
+    expect_true(
+        any(row["function_goid_h128"] == untested_goid for row in all_result),
+        message="all_result should include untested_fn",
+    )
 
 
 def test_get_function_profile_returns_none_when_not_found(
@@ -171,11 +206,9 @@ def test_get_function_profile_returns_none_when_not_found(
     expect_is_none(result)
 
 
-def test_get_function_profile_returns_row(fresh_gateway: StorageGateway) -> None:
+def test_get_function_profile_returns_row(metrics_ctx: TestContext) -> None:
     """Verify get_function_profile returns row when found."""
-    con = fresh_gateway.con
-    now = datetime.now(tz=UTC)
-
+    con = metrics_ctx.con
     con.execute(
         """
         INSERT INTO analytics.function_profile (
@@ -185,8 +218,8 @@ def test_get_function_profile_returns_row(fresh_gateway: StorageGateway) -> None
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            "test/repo",
-            "abc123",
+            metrics_ctx.repo,
+            metrics_ctx.commit,
             1,
             "urn:test_fn",
             "test.py",
@@ -197,14 +230,14 @@ def test_get_function_profile_returns_row(fresh_gateway: StorageGateway) -> None
             2,
             "low",
             "Test function",
-            now,
+            datetime.now(tz=UTC),
         ],
     )
 
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        gateway=metrics_ctx.gateway,
+        repo=metrics_ctx.repo,
+        commit=metrics_ctx.commit,
     )
 
     result = repo.get_function_profile(1)

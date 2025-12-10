@@ -108,13 +108,12 @@ def test_greedy_directed_graph_converted() -> None:
 
 def test_greedy_weighted_edges() -> None:
     """Weighted edges are respected when weight parameter provided."""
-    graph = empty_graph()
-    # Strong connection between 1-2, weak to 3
-    graph.add_edge(1, 2, weight=10.0)
-    graph.add_edge(2, 3, weight=0.1)
+    graph = bridged_cliques_graph(2, 2)
+    graph.add_edge("a0", "b0", weight=10.0)
+    graph.add_edge("a1", "b1", weight=0.1)
     result = detect_communities_greedy(graph, weight="weight")
 
-    expect_length(result, EXPECTED_NODE_COUNT_THREE)
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
 
 
 def test_greedy_resolution_parameter() -> None:
@@ -213,10 +212,9 @@ def test_louvain_resolution_parameter() -> None:
 
 def test_louvain_weighted_edges() -> None:
     """Weighted edges are respected."""
-    graph = empty_graph()
-    graph.add_edge(1, 2, weight=100.0)
-    graph.add_edge(2, 3, weight=0.001)
-    graph.add_edge(3, 4, weight=100.0)
+    graph = bridged_cliques_graph(2, 2)
+    graph.add_edge("a0", "b0", weight=100.0)
+    graph.add_edge("a1", "b1", weight=0.001)
 
     result = detect_communities_louvain(graph, weight="weight")
 

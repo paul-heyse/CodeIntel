@@ -59,9 +59,7 @@ def _apply_packs(ctx: TestContext, packs: tuple[SeedPack, ...]) -> None:
 
 
 @contextmanager
-def plugin_harness_with_packs(
-    tmp_path: Path, *packs: SeedPack
-) -> Iterator[AnalyticsPluginHarness]:
+def plugin_harness_with_packs(tmp_path: Path, *packs: SeedPack) -> Iterator[AnalyticsPluginHarness]:
     """Create a plugin harness with the provided seed packs applied."""
     ctx = create_test_context(tmp_path)
     _apply_packs(ctx, packs)

@@ -8,11 +8,13 @@ import pytest
 
 from codeintel.analytics.runtime import build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.graphs import build_graph_engine_double
+from tests._helpers.fakes.graph_runtime import graph_engine_with_cache
+from tests._helpers.graphs import call_graph_fixture
 
 
 def test_maybe_enable_nx_gpu_success() -> None:
@@ -55,9 +57,10 @@ def test_maybe_enable_nx_gpu_strict_raises() -> None:
 def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTestEnv) -> None:
     """Runtime should expose backend metadata recorded during engine construction."""
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
-    engine_with_metadata: Any = build_graph_engine_double(
+    engine_with_metadata: Any = graph_engine_with_cache(
         graph_executor_env.gateway,
         graph_executor_env.snapshot,
+        {GraphKind.CALL_GRAPH: call_graph_fixture()},
     )
     engine_with_metadata.backend_info = BackendEnablement(
         requested_backend=cfg.backend,

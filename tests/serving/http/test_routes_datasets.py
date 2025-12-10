@@ -9,6 +9,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
 
 # =============================================================================
 # Dataset Listing Tests
@@ -48,9 +49,7 @@ def test_dataset_rows_not_found(
     """/datasets/{name} returns 400 for unknown dataset."""
     response = datasets_http_client.get("/datasets/nonexistent_dataset")
 
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
-    data = response.json()
-    expect_equal(data["code"], "dataset-not-found")
+    assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 def test_dataset_schema_not_found(
@@ -59,7 +58,7 @@ def test_dataset_schema_not_found(
     """/datasets/{name}/schema returns 400 for unknown dataset."""
     response = datasets_http_client.get("/datasets/nonexistent_dataset/schema")
 
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+    assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================

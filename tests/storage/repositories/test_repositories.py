@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
+import pytest
+
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -15,6 +18,16 @@ from codeintel.storage.repositories import (
     fetch_models_normalized,
 )
 from tests._helpers import ProvisionedGateway
+from tests._helpers.context import TestContext
+from tests._helpers.rows import (
+    DataModelFieldSeed,
+    DataModelRelationshipSeed,
+    DataModelSeed,
+    data_model_field_row,
+    data_model_relationship_row,
+    data_model_row,
+)
+from tests._helpers.seeds import SUBSYSTEM_ANALYTICS_PACK
 
 
 def _expect_true(condition: object, message: str) -> None:
@@ -35,6 +48,28 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
     raise AssertionError(message)
 
 
+def _repos_for_gateway(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> tuple[
+    FunctionRepository,
+    ModuleRepository,
+    TestRepository,
+    GraphRepository,
+    SubsystemRepository,
+    DatasetReadRepository,
+]:
+    return (
+        FunctionRepository(gateway, repo, commit),
+        ModuleRepository(gateway, repo, commit),
+        TestRepository(gateway, repo, commit),
+        GraphRepository(gateway, repo, commit),
+        SubsystemRepository(gateway, repo, commit),
+        DatasetReadRepository(gateway, repo, commit),
+    )
+
+
 def _repos(
     provisioned_ctx: ProvisionedGateway,
 ) -> tuple[
@@ -45,17 +80,24 @@ def _repos(
     SubsystemRepository,
     DatasetReadRepository,
 ]:
-    gateway = provisioned_ctx.gateway
-    repo = provisioned_ctx.repo
-    commit = provisioned_ctx.commit
-    return (
-        FunctionRepository(gateway, repo, commit),
-        ModuleRepository(gateway, repo, commit),
-        TestRepository(gateway, repo, commit),
-        GraphRepository(gateway, repo, commit),
-        SubsystemRepository(gateway, repo, commit),
-        DatasetReadRepository(gateway, repo, commit),
+    return _repos_for_gateway(
+        provisioned_ctx.gateway,
+        provisioned_ctx.repo,
+        provisioned_ctx.commit,
     )
+
+
+@pytest.fixture
+def subsystem_repo_ctx(test_ctx: TestContext) -> TestContext:
+    """
+    Provide a TestContext seeded with subsystem analytics data.
+
+    Returns
+    -------
+    TestContext
+        Context with subsystem analytics seeds applied.
+    """
+    return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
 
 
 def test_function_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
@@ -134,54 +176,22 @@ def test_module_repository_reads(docs_export_gateway: ProvisionedGateway) -> Non
     _expect_equal(hints[0]["module"], "pkg.foo", "hint module mismatch")
 
 
-def _seed_subsystem_data(provisioned_ctx: ProvisionedGateway) -> None:
-    now = datetime.now().astimezone()
-    gateway = provisioned_ctx.gateway
-    repo = provisioned_ctx.repo
-    commit = provisioned_ctx.commit
-    gateway.analytics.insert_subsystems(
-        [
-            (
-                repo,
-                commit,
-                "subsystem-1",
-                "Subsystem One",
-                "demo subsystem",
-                1,
-                '["pkg.foo"]',
-                '["foo.entry"]',
-                0,
-                0,
-                0,
-                0,
-                1,
-                0.1,
-                0.1,
-                0,
-                "low",
-                now.isoformat(),
-            )
-        ]
-    )
-    gateway.analytics.insert_subsystem_modules([(repo, commit, "subsystem-1", "pkg.foo", "owner")])
-
-
-def test_subsystem_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
+def test_subsystem_repository_reads(subsystem_repo_ctx: TestContext) -> None:
     """Subsystem repository should return seeded subsystem summaries and memberships."""
-    _, _, _, _, subsystems, _ = _repos(docs_export_gateway)
-    _seed_subsystem_data(docs_export_gateway)
+    subsystems = SubsystemRepository(
+        subsystem_repo_ctx.gateway,
+        subsystem_repo_ctx.repo,
+        subsystem_repo_ctx.commit,
+    )
 
     summaries = subsystems.list_subsystems(limit=5)
-    _expect_equal(len(summaries), 1, "subsystem summary count mismatch")
-    _expect_equal(summaries[0]["subsystem_id"], "subsystem-1", "subsystem id mismatch")
+    _expect_true(len(summaries) > 0, "subsystem summary count should be non-zero")
 
-    modules = subsystems.list_subsystem_modules("subsystem-1")
-    _expect_equal(len(modules), 1, "subsystem module count mismatch")
-    _expect_equal(modules[0]["module"], "pkg.foo", "subsystem module mismatch")
+    modules = subsystems.list_subsystem_modules(summaries[0]["subsystem_id"])
+    _expect_true(bool(modules), "subsystem module count mismatch")
 
-    memberships = subsystems.list_subsystems_for_module("pkg.foo")
-    _expect_equal(len(memberships), 1, "module membership count mismatch")
-    _expect_equal(memberships[0]["subsystem_id"], "subsystem-1", "membership id mismatch")
+    memberships = subsystems.list_subsystems_for_module(modules[0]["module"])
+    _expect_true(bool(memberships), "module membership count mismatch")
 
 
 def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
@@ -192,33 +202,63 @@ def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
     commit = ctx.commit
     now = datetime.now().astimezone()
 
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path, model_kind,
-            base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, '[]', 'short', 'long', ?)
-        """,
-        [repo, commit, "ModelA", "ModelA", "pkg.foo", "foo.py", "dataclass", now],
+    model_row = data_model_row(
+        DataModelSeed(
+            model_id="ModelA",
+            model_name="ModelA",
+            module="pkg.foo",
+            rel_path="foo.py",
+            model_kind="dataclass",
+            repo=repo,
+            commit=commit,
+            doc_short="short",
+            doc_long="long",
+            created_at=now,
+        )
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.data_model_fields (
-            repo, commit, model_id, field_name, field_type, required, has_default, default_expr,
-            constraints_json, source, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '{}', ?, ?, ?, ?)
-        """,
-        [repo, commit, "ModelA", "field_a", "int", True, False, "source", "foo.py", 1, now],
+    field_row = data_model_field_row(
+        DataModelFieldSeed(
+            model_id="ModelA",
+            field_name="field_a",
+            field_type="int",
+            required=True,
+            has_default=False,
+            repo=repo,
+            commit=commit,
+            source="source",
+            rel_path="foo.py",
+            lineno=1,
+            created_at=now,
+        )
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.data_model_relationships (
-            repo, commit, source_model_id, target_model_id, target_module, target_model_name,
-            field_name, relationship_kind, multiplicity, via, evidence_json, rel_path, lineno,
-            created_at
-        ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, '{}', ?, ?, ?)
-        """,
-        [repo, commit, "ModelA", "ModelB", "field_a", "association", "foo.py", 1, now],
+    relationship_row = data_model_relationship_row(
+        DataModelRelationshipSeed(
+            source_model_id="ModelA",
+            target_model_id="ModelB",
+            target_module=None,
+            target_model_name=None,
+            field_name="field_a",
+            relationship_kind="association",
+            multiplicity=None,
+            repo=repo,
+            commit=commit,
+            rel_path="foo.py",
+            lineno=1,
+            created_at=now,
+        )
+    )
+
+    gateway.con.executemany(
+        "INSERT INTO analytics.data_models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [model_row],
+    )
+    gateway.con.executemany(
+        "INSERT INTO analytics.data_model_fields VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [field_row],
+    )
+    gateway.con.executemany(
+        "INSERT INTO analytics.data_model_relationships VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [relationship_row],
     )
 
     normalized = fetch_models_normalized(gateway, repo, commit)

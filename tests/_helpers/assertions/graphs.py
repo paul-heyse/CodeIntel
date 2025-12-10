@@ -82,9 +82,7 @@ def assert_cycle_counts(graph: nx.DiGraph, expected: int) -> None:
     expect_equal(len(tuple(nx.simple_cycles(graph))), expected)
 
 
-def assert_coverage_ratio_between(
-    ctx: TestContext, goid: int, *, low: float, high: float
-) -> None:
+def assert_coverage_ratio_between(ctx: TestContext, goid: int, *, low: float, high: float) -> None:
     """Assert coverage ratio for a GOID falls within bounds."""
     row = ctx.query(
         """
@@ -105,13 +103,16 @@ def expect_graph_equal(
 ) -> None:
     """Assert that two graphs have identical nodes and edges (including attributes)."""
 
-    def node_payload(graph: nx.Graph | nx.DiGraph) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
+    def node_payload(
+        graph: nx.Graph | nx.DiGraph,
+    ) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
         return {(node, tuple(sorted(data.items()))) for node, data in graph.nodes(data=True)}
 
-    def edge_payload(graph: nx.Graph | nx.DiGraph) -> set[tuple[object, object, tuple[tuple[str, object], ...]]]:
+    def edge_payload(
+        graph: nx.Graph | nx.DiGraph,
+    ) -> set[tuple[object, object, tuple[tuple[str, object], ...]]]:
         return {
-            (src, dst, tuple(sorted(data.items())))
-            for src, dst, data in graph.edges(data=True)
+            (src, dst, tuple(sorted(data.items()))) for src, dst, data in graph.edges(data=True)
         }
 
     node_label = message or "graph_nodes"
@@ -130,19 +131,20 @@ def expect_same_nodes_edges(
 ) -> None:
     """Assert graphs share the same nodes/edges, optionally ignoring attributes."""
 
-    def nodes(graph: nx.Graph | nx.DiGraph) -> set[object] | set[tuple[object, tuple[tuple[str, object], ...]]]:
+    def nodes(
+        graph: nx.Graph | nx.DiGraph,
+    ) -> set[object] | set[tuple[object, tuple[tuple[str, object], ...]]]:
         if not node_attrs:
             return set(graph.nodes)
         return {(node, tuple(sorted(data.items()))) for node, data in graph.nodes(data=True)}
 
-    def edges(graph: nx.Graph | nx.DiGraph) -> set[tuple[object, object]] | set[
-        tuple[object, object, tuple[tuple[str, object], ...]]
-    ]:
+    def edges(
+        graph: nx.Graph | nx.DiGraph,
+    ) -> set[tuple[object, object]] | set[tuple[object, object, tuple[tuple[str, object], ...]]]:
         if not edge_attrs:
             return set(graph.edges)
         return {
-            (src, dst, tuple(sorted(data.items())))
-            for src, dst, data in graph.edges(data=True)
+            (src, dst, tuple(sorted(data.items()))) for src, dst, data in graph.edges(data=True)
         }
 
     label = message or "graph"

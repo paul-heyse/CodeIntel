@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -25,8 +26,8 @@ from codeintel.config.datasets import (
     ProfileRowModel,
     get_dataset_contracts_by_table_key,
 )
+from tests._helpers import CORE_PACK, TestContext, create_test_context
 from tests._helpers.contracts import ContractCtx, count_rows
-from tests._helpers.gateway import GatewayFactory
 
 
 def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:
@@ -140,19 +141,20 @@ def _count_table_rows(ctx: ContractCtx, table_key: str) -> int:
 
 
 @pytest.fixture
-def contract_ctx() -> Iterator[ContractCtx]:
-    """Contract context with an in-memory gateway.
+def contract_ctx(tmp_path: Path) -> Iterator[ContractCtx]:
+    """Contract context with an in-memory gateway and standard core schema.
 
     Yields
     ------
     ContractCtx
         Context containing gateway, repo, and commit.
     """
-    gateway = GatewayFactory().with_snapshot("demo/repo", "deadbeef").open()
+    ctx: TestContext = create_test_context(tmp_path)
+    ctx.require(CORE_PACK)
     try:
-        yield ContractCtx(gateway=gateway, repo="demo/repo", commit="deadbeef")
+        yield ContractCtx(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
     finally:
-        gateway.close()
+        ctx.close()
 
 
 @pytest.mark.parametrize(

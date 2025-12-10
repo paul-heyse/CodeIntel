@@ -20,6 +20,7 @@ from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
+    assert_problem_detail_response,
     expect_equal,
     expect_in,
     expect_is_not_none,
@@ -383,14 +384,22 @@ def test_function_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> 
         options=FunctionToolOptions(operations=ops),
     )
 
+    class _ResponseWrapper:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.status_code = 400
+            self._payload = payload
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
     with caplog.at_level("WARNING"):
         result = cast(
             "dict[str, object]", registrar.registry["get_function_summary"](goid_h128=None)
         )
 
-    expect_true("error" in result)
     error_payload = cast("dict[str, object]", result["error"])
-    expect_equal(error_payload["title"], "Invalid argument")
+
+    assert_problem_detail_response(_ResponseWrapper(error_payload), status_code=400)
     assert_logged(
         caplog.records,
         level="WARNING",

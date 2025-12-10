@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.graphs.engine.views import load_call_graph
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
+from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.builders import (
     CallGraphNodeRow,
     FunctionTypesRow,
@@ -28,19 +28,6 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import GatewayFactory
-
-REPO = "test/repo"
-COMMIT = "deadbeef"
-
-
-@contextmanager
-def _gateway_with_schema() -> Iterator[StorageGateway]:
-    gateway = GatewayFactory().with_views().open()
-    try:
-        yield gateway
-    finally:
-        gateway.close()
 
 
 def _write_fixture(repo_root: Path, rel_path: str, content: str) -> Path:
@@ -50,7 +37,9 @@ def _write_fixture(repo_root: Path, rel_path: str, content: str) -> Path:
     return abs_path
 
 
-def _goid_rows_for_defs(rel_path: str, source: str, start: int) -> list[GoidRow]:
+def _goid_rows_for_defs(
+    rel_path: str, source: str, start: int, *, repo: str, commit: str
+) -> list[GoidRow]:
     tree = ast.parse(source)
     rows: list[GoidRow] = []
     counter = start
@@ -63,9 +52,9 @@ def _goid_rows_for_defs(rel_path: str, source: str, start: int) -> list[GoidRow]
             rows.append(
                 GoidRow(
                     goid_h128=counter,
-                    urn=f"goid:{REPO}/{rel_path}#{qualname}",
-                    repo=REPO,
-                    commit=COMMIT,
+                    urn=f"goid:{repo}/{rel_path}#{qualname}",
+                    repo=repo,
+                    commit=commit,
                     rel_path=rel_path,
                     kind=kind,
                     qualname=qualname,
@@ -157,10 +146,10 @@ def _seed_function_types(gateway: StorageGateway, goids: Iterable[GoidRow]) -> N
     insert_rows(gateway, rows)
 
 
-def _seed_config_values(con: DuckDBConnection, rel_path: str) -> None:
+def _seed_config_values(con: DuckDBConnection, rel_path: str, *, repo: str, commit: str) -> None:
     con.execute(
         "DELETE FROM analytics.config_values WHERE repo = ? AND commit = ?",
-        [REPO, COMMIT],
+        [repo, commit],
     )
     con.execute(
         """
@@ -169,8 +158,8 @@ def _seed_config_values(con: DuckDBConnection, rel_path: str) -> None:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            REPO,
-            COMMIT,
+            repo,
+            commit,
             "config.yaml",
             "yaml",
             "feature.flag",
@@ -181,7 +170,7 @@ def _seed_config_values(con: DuckDBConnection, rel_path: str) -> None:
     )
 
 
-def _seed_entrypoints(con: DuckDBConnection, handler_goid: int) -> None:
+def _seed_entrypoints(con: DuckDBConnection, handler_goid: int, *, repo: str, commit: str) -> None:
     con.execute(
         """
         INSERT INTO analytics.entrypoints (
@@ -190,8 +179,8 @@ def _seed_entrypoints(con: DuckDBConnection, handler_goid: int) -> None:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            REPO,
-            COMMIT,
+            repo,
+            commit,
             "ep1",
             "api",
             handler_goid,
@@ -205,7 +194,7 @@ def _seed_entrypoints(con: DuckDBConnection, handler_goid: int) -> None:
 
 
 def _prepare_repo(
-    repo_root: Path,
+    repo_root: Path, *, repo: str, commit: str
 ) -> tuple[list[GoidRow], list[ModuleRow], dict[str, int], str]:
     fixture_root = Path(__file__).parents[1] / "fixtures" / "heuristics"
     fixture_specs = (
@@ -229,11 +218,11 @@ def _prepare_repo(
             ModuleRow(
                 module=rel_module,
                 path=rel_path_str,
-                repo=REPO,
-                commit=COMMIT,
+                repo=repo,
+                commit=commit,
             )
         )
-        rows = _goid_rows_for_defs(rel_path_str, content, start)
+        rows = _goid_rows_for_defs(rel_path_str, content, start, repo=repo, commit=commit)
         goid_rows.extend(rows)
         for row in rows:
             qualname_leaf = row.qualname.split(".")[-1]
@@ -244,11 +233,11 @@ def _prepare_repo(
     return goid_rows, module_rows, goid_index, "tests/fixtures/heuristics/config_usage.py"
 
 
-def _assert_models(gateway: StorageGateway) -> dict[str, str]:
+def _assert_models(gateway: StorageGateway, *, repo: str, commit: str) -> dict[str, str]:
     models: list[NormalizedDataModel] = fetch_models_normalized(
         gateway,
-        REPO,
-        COMMIT,
+        repo,
+        commit,
     )
     if not any(model.model_name == "User" and model.model_kind == "orm_model" for model in models):
         pytest.fail("Expected User ORM model in analytics.data_models")
@@ -268,14 +257,16 @@ def _assert_models(gateway: StorageGateway) -> dict[str, str]:
     return {model.model_name: model.model_id for model in models}
 
 
-def _assert_field_relationship_tables(con: DuckDBConnection, model_ids: dict[str, str]) -> None:
+def _assert_field_relationship_tables(
+    con: DuckDBConnection, model_ids: dict[str, str], *, repo: str, commit: str
+) -> None:
     fields_rows = con.execute(
         """
         SELECT field_name, field_type, source
         FROM analytics.data_model_fields
         WHERE repo = ? AND commit = ? AND model_id = ?
         """,
-        [REPO, COMMIT, model_ids["UserPayload"]],
+        [repo, commit, model_ids["UserPayload"]],
     ).fetchall()
     if not any(field == "name" and source == "pydantic_field" for field, _, source in fields_rows):
         pytest.fail("Expected UserPayload.name field in data_model_fields")
@@ -286,20 +277,22 @@ def _assert_field_relationship_tables(con: DuckDBConnection, model_ids: dict[str
         FROM analytics.data_model_relationships
         WHERE repo = ? AND commit = ? AND source_model_id = ?
         """,
-        [REPO, COMMIT, model_ids["Post"]],
+        [repo, commit, model_ids["Post"]],
     ).fetchall()
     if not any(target == "User" for target, _, _ in relationships_rows):
         pytest.fail("Expected Post->User relationship in data_model_relationships")
 
 
-def _assert_model_usage(con: DuckDBConnection, goid_index: dict[str, int]) -> None:
+def _assert_model_usage(
+    con: DuckDBConnection, goid_index: dict[str, int], *, repo: str, commit: str
+) -> None:
     usage_rows = con.execute(
         """
         SELECT model_id, function_goid_h128, usage_kinds_json
         FROM analytics.data_model_usage
         WHERE repo = ? AND commit = ?
         """,
-        [REPO, COMMIT],
+        [repo, commit],
     ).fetchall()
     usage_by_func = {row[1]: json.loads(row[2]) for row in usage_rows}
     if "create" not in usage_by_func.get(goid_index["create_user"], []):
@@ -310,14 +303,14 @@ def _assert_model_usage(con: DuckDBConnection, goid_index: dict[str, int]) -> No
         pytest.fail("Expected serialize usage for serialize_payload")
 
 
-def _assert_config_usage(con: DuckDBConnection) -> None:
+def _assert_config_usage(con: DuckDBConnection, *, repo: str, commit: str) -> None:
     config_rows = con.execute(
         """
         SELECT usage_kind, evidence_json
         FROM analytics.config_data_flow
         WHERE repo = ? AND commit = ? AND config_key = 'feature.flag'
         """,
-        [REPO, COMMIT],
+        [repo, commit],
     ).fetchall()
     kinds = {row[0] for row in config_rows}
     if {"read", "write", "conditional_branch"} - kinds:
@@ -326,38 +319,38 @@ def _assert_config_usage(con: DuckDBConnection) -> None:
 
 def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
     """Validate heuristics pipeline across SQLAlchemy, Pydantic, usage, and config fixtures."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    goid_rows, module_rows, goid_index, config_rel_path = _prepare_repo(repo_root)
+    ctx = create_test_context(tmp_path)
+    ctx.require(CORE_PACK)
+    repo_root = ctx.repo_root
+    goid_rows, module_rows, goid_index, config_rel_path = _prepare_repo(
+        repo_root, repo=ctx.repo, commit=ctx.commit
+    )
 
-    with _gateway_with_schema() as gateway:
+    try:
+        gateway = ctx.gateway
         con = gateway.con
         _seed_modules(gateway, module_rows)
         _seed_goids(gateway, goid_rows)
         _seed_call_graph_nodes(gateway, [row for row in goid_rows if row.kind == "function"])
         _seed_function_types(gateway, goid_rows)
-        _seed_config_values(con, config_rel_path)
-        _seed_entrypoints(con, goid_index["config_checks"])
+        _seed_config_values(con, config_rel_path, repo=ctx.repo, commit=ctx.commit)
+        _seed_entrypoints(con, goid_index["config_checks"], repo=ctx.repo, commit=ctx.commit)
 
         builder = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=repo_root),
+            snapshot=SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=repo_root),
         )
-        snapshot = make_snapshot(repo_root=repo_root, repo=REPO, commit=COMMIT)
+        snapshot = make_snapshot(repo_root=repo_root, repo=ctx.repo, commit=ctx.commit)
 
-        # Load module map
         module_map_provider = ModuleMapProvider(gateway, snapshot)
         module_map = module_map_provider.get()
 
-        # Load function ASTs
         ast_request = FunctionAstLoadRequest(
-            repo=REPO,
-            commit=COMMIT,
+            repo=ctx.repo,
+            commit=ctx.commit,
             repo_root=repo_root,
         )
         ast_by_goid, missing_goids = load_function_asts(gateway, ast_request)
-
-        # Build call graph for config data flow
-        call_graph = load_call_graph(gateway, repo=REPO, commit=COMMIT)
+        call_graph = load_call_graph(gateway, repo=ctx.repo, commit=ctx.commit)
 
         compute_data_models(gateway, builder.analytics.data_models())
         compute_data_model_usage(
@@ -375,7 +368,9 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
             missing_goids=missing_goids,
         )
 
-        model_ids = _assert_models(gateway)
-        _assert_field_relationship_tables(con, model_ids)
-        _assert_model_usage(con, goid_index)
-        _assert_config_usage(con)
+        model_ids = _assert_models(gateway, repo=ctx.repo, commit=ctx.commit)
+        _assert_field_relationship_tables(con, model_ids, repo=ctx.repo, commit=ctx.commit)
+        _assert_model_usage(con, goid_index, repo=ctx.repo, commit=ctx.commit)
+        _assert_config_usage(con, repo=ctx.repo, commit=ctx.commit)
+    finally:
+        ctx.close()

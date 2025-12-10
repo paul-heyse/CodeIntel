@@ -1,11 +1,47 @@
 # Phase 6: Legacy Cleanup — Detailed Implementation Plan
 
-> **Phase:** 6 of 6 (Final)  
+> **Phase:** 6 of 6 (Final) ✅ **COMPLETE**  
 > **Duration:** 2-3 days  
 > **Risk Level:** Low  
 > **Dependencies:** Phase 5 complete ✅  
 > **Parallelizable:** Partially  
-> **Last Updated:** December 2024 (Post-Phase 5)  
+> **Last Updated:** December 2024 (Implementation Complete)  
+
+---
+
+## Implementation Summary
+
+Phase 6 cleanup was completed successfully with the following changes:
+
+### Files Deleted
+- `src/codeintel/cli/operations/*.py` (9 files) — LEGACY operation registrations
+- `src/codeintel/cli/introspection/registry.py` — LEGACY registry (replaced by `execution/registry.py`)
+- `src/codeintel/cli/_migration_flags.py` — Temporary migration feature flags
+
+### Files Updated
+- `src/codeintel/cli/introspection/__init__.py` — Now uses `execution/registry.py`
+- `src/codeintel/cli/introspection/discovery.py` — Uses new `OperationInfo` structure
+- `src/codeintel/cli/introspection/help.py` — Updated for new `OperationInfo` fields
+- `src/codeintel/cli/handlers/__init__.py` — Exports both new and legacy context types
+- `src/codeintel/cli/handlers/context.py` — Removed `handler_context_from_enhanced` adapter
+- `src/codeintel/cli/commands/help_commands.py` — Updated for renamed functions
+- `src/codeintel/cli/execution/registry.py` — Added legacy compatibility fields
+- `tests/cli/_harness/__init__.py` — Updated to handle handler-based operations
+
+### Backward Compatibility
+- `get_operation_registry()` now returns the unified `get_registry()` from `execution/registry.py`
+- NEW `OperationSpec` includes legacy fields (`category`, `is_async`, `param_schema`, etc.) for executor compatibility
+- `LegacyHandlerContext` alias provided for old code
+
+### Test Results
+- 540 CLI tests pass
+- 2 pre-existing failures from Phase 5 (not caused by Phase 6):
+  - `test_datasets_scaffold_existing_name` 
+  - `test_history_timeseries_cli_happy_path`
+
+### Not Completed (Optional)
+- `graphs.py` and `serve.py` migration to `@cli_command` — Retained manual `__call__` due to complex conditional logic
+- `commands/context.py` deletion — Still used by special-case commands
 
 ---
 

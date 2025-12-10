@@ -13,8 +13,8 @@ from codeintel.analytics.dependencies.core import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
+from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.assertions import (
     assert_mapping_list,
     expect_equal,
@@ -23,7 +23,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.builders import ConfigValueRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.rows import function_meta
 
 
@@ -61,7 +60,9 @@ def _build_function_ast(
 
 def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
     """Dependency calls are collected, then aggregated with config keys and modes."""
-    repo_root = tmp_path / "repo"
+    ctx = create_test_context(tmp_path)
+    ctx.require(CORE_PACK)
+    repo_root = ctx.repo_root
     module_path = repo_root / "pkg" / "client.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
     module_path.write_text(
@@ -94,8 +95,8 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    snapshot = SnapshotRef(repo="demo", commit="abc123", repo_root=repo_root)
-    gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
+    snapshot = ctx.to_snapshot_ref()
+    gateway = ctx.gateway
 
     goid = 5001
     func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
@@ -191,12 +192,14 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
         expect_equal(_as_list(httpx_dep[2]), ["API_TOKEN"])
         expect_equal(httpx_dep[3], "high")
     finally:
-        gateway.close()
+        ctx.close()
 
 
 def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
     """Calls are skipped when features indicate no IO usage."""
-    repo_root = tmp_path / "repo"
+    ctx = create_test_context(tmp_path)
+    ctx.require(CORE_PACK)
+    repo_root = ctx.repo_root
     module_path = repo_root / "pkg" / "client.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
     module_path.write_text(
@@ -210,7 +213,7 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    snapshot = SnapshotRef(repo="demo", commit="def456", repo_root=repo_root)
+    snapshot = ctx.to_snapshot_ref()
     cfg = ExternalDependenciesStepConfig(snapshot=snapshot)
     patterns_path = repo_root / "config" / "dependency_patterns.yml"
     patterns_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,7 +221,7 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
         'libs:\n  requests:\n    patterns:\n      - mode: ["read"]\n        method: "get"\n',
         encoding="utf-8",
     )
-    gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
+    gateway = ctx.gateway
 
     goid = 6001
     func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
@@ -274,4 +277,4 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
         if rows is not None:
             expect_equal(rows[0], 0)
     finally:
-        gateway.close()
+        ctx.close()

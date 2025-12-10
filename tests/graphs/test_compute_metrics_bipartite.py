@@ -23,9 +23,11 @@ from tests._helpers.assertions import (
     require_projection_graph,
 )
 from tests._helpers.fakes.networkx_graphs import (
+    acyclic_bipartite_flow,
     bipartite_graph,
     empty_graph,
     shared_neighbors_graph,
+    weighted_star_graph,
 )
 
 # ---------------------------------------------------------------------------
@@ -63,9 +65,7 @@ def test_bipartite_degrees_empty_graph() -> None:
 
 def test_bipartite_degrees_empty_primary_partition() -> None:
     """Empty primary partition returns empty centrality."""
-    graph = empty_graph()
-    graph.add_nodes_from([1, 2, 3])
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = acyclic_bipartite_flow(0, 3)
 
     result = compute_bipartite_degrees(graph, set(), {1, 2, 3})
 
@@ -76,9 +76,7 @@ def test_bipartite_degrees_empty_primary_partition() -> None:
 
 def test_bipartite_degrees_empty_secondary_partition() -> None:
     """Empty secondary partition returns empty centrality."""
-    graph = empty_graph()
-    graph.add_nodes_from([1, 2, 3])
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = acyclic_bipartite_flow(3, 0)
 
     result = compute_bipartite_degrees(graph, {1, 2, 3}, set())
 
@@ -123,21 +121,16 @@ def test_bipartite_degrees_unweighted() -> None:
 
 def test_bipartite_degrees_weighted() -> None:
     """Weighted degree computation."""
-    graph = empty_graph()
-    graph.add_edge(1, "a", weight=WEIGHT_VALUE)
-    graph.add_edge(1, "b", weight=1.0)
-    graph.add_edge(2, "b", weight=WEIGHT_VALUE)
-    primary = {1, 2}
-    secondary = {"a", "b"}
+    graph = weighted_star_graph(2, weight=WEIGHT_VALUE).to_undirected(as_view=False)
+    graph.add_edge("hub", "b", weight=1.0)
+    primary = {"hub"}
+    secondary = {"spoke1", "spoke2", "b"}
 
     result = compute_bipartite_degrees(graph, primary, secondary, weight="weight")
 
-    # Node 1: weighted degree = 2.5 + 1.0 = 3.5
-    expected_weighted_1: float = WEIGHT_VALUE + 1.0
-    expect_true(abs(result.weighted_degree[1] - expected_weighted_1) < TOLERANCE)
-
-    # Node 2: weighted degree = 2.5
-    expect_true(abs(result.weighted_degree[2] - WEIGHT_VALUE) < TOLERANCE)
+    expected_weighted_hub: float = WEIGHT_VALUE * 2 + 1.0
+    expect_true(abs(result.weighted_degree["hub"] - expected_weighted_hub) < TOLERANCE)
+    expect_true(abs(result.weighted_degree["spoke1"] - WEIGHT_VALUE) < TOLERANCE)
 
 
 def test_bipartite_degrees_degree_centrality() -> None:

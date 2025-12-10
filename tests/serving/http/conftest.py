@@ -172,7 +172,9 @@ __all__ += [
 ]
 
 
-def _provisioned_backend_source(provisioned_repo: ProvisionedGateway) -> tuple[StorageGateway, tuple[str, str]]:
+def _provisioned_backend_source(
+    provisioned_repo: ProvisionedGateway,
+) -> tuple[StorageGateway, tuple[str, str]]:
     return provisioned_repo.gateway, (provisioned_repo.repo, provisioned_repo.commit)
 
 

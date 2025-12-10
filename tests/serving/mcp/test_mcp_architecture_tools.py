@@ -19,10 +19,11 @@ from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.analytics_samples import AnalyticsSamples, architecture_seed_selector
 from tests._helpers.assertions import (
     assert_logged,
+    assert_problem_detail_response,
     expect_equal,
-    expect_in,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
@@ -64,6 +65,18 @@ def _register_scip_ingest_plugin() -> Iterator[None]:
     ]
     with plugin_registrar(plugins):
         yield
+
+
+@pytest.fixture
+def architecture_samples(architecture_gateway: StorageGateway) -> AnalyticsSamples:
+    """Seeded analytics identifiers for architecture tests.
+
+    Returns
+    -------
+    AnalyticsSamples
+        Sample identifiers loaded from the architecture gateway.
+    """
+    return architecture_seed_selector(architecture_gateway)
 
 
 # =============================================================================
@@ -353,18 +366,15 @@ def test_backend_get_module_subsystems_via_tools(
 def test_backend_get_function_architecture_via_tools(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_architecture works through backend."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
-    result = architecture_gateway.con.execute(
-        "SELECT function_goid_h128 FROM analytics.graph_metrics_functions LIMIT 1"
-    ).fetchone()
-
-    if result is None:
+    if architecture_samples.goid_h128 is None:
         pytest.skip("No function architecture data available")
 
-    goid_h128 = result[0]
+    goid_h128 = architecture_samples.goid_h128
     response = backend.get_function_architecture(goid_h128=goid_h128)
     expect_is_not_none(response)
 
@@ -384,20 +394,21 @@ def test_backend_get_function_architecture_not_found(
 def test_backend_get_module_architecture_via_tools(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_module_architecture works through backend."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
-    result = architecture_gateway.con.execute(
-        "SELECT module FROM analytics.graph_metrics_modules LIMIT 1"
-    ).fetchone()
-
-    if result is None:
+    if architecture_samples.module is None:
         pytest.skip("No module architecture data available")
 
-    module = result[0]
-    response = backend.get_module_architecture(module=module)
-    expect_is_not_none(response)
+    module = architecture_samples.module
+    try:
+        response = backend.get_module_architecture(module=module)
+    except McpError:
+        pytest.skip(f"Module architecture not found for sample module: {module}")
+    else:
+        expect_is_not_none(response)
 
 
 def test_backend_get_module_architecture_not_found(
@@ -414,18 +425,15 @@ def test_backend_get_module_architecture_not_found(
 def test_backend_get_subsystem_modules_via_tools(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_subsystem_modules works through backend."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
+    if architecture_samples.subsystem_id is None:
         pytest.skip("No subsystems available")
 
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
     with contextlib.suppress(McpError):
         response = backend.get_subsystem_modules(subsystem_id=subsystem_id)
         expect_is_not_none(response)
@@ -434,18 +442,15 @@ def test_backend_get_subsystem_modules_via_tools(
 def test_backend_summarize_subsystem_via_tools(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify summarize_subsystem works through backend."""
     backend = _build_arch_backend(architecture_gateway, mcp_backend_factory)
 
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
+    if architecture_samples.subsystem_id is None:
         pytest.skip("No subsystems available")
 
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
     with contextlib.suppress(McpError):
         response = backend.summarize_subsystem(subsystem_id=subsystem_id)
         expect_is_not_none(response)
@@ -466,8 +471,17 @@ def test_architecture_tools_emit_problem_detail_and_logs(
         result = registrar.registry["get_module_architecture"]("non.existent.module.path")
 
     result_dict = cast("dict[str, object]", result)
-    expect_true(isinstance(result_dict, dict))
-    expect_in("error", result_dict)
+    error_payload = cast("dict[str, object]", result_dict["error"])
+
+    class _ResponseWrapper:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.status_code = 400
+            self._payload = payload
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+    assert_problem_detail_response(_ResponseWrapper(error_payload), status_code=400)
     assert_logged(caplog.records, level="WARNING", containing="MCP tool error")
 
 

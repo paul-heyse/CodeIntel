@@ -12,6 +12,7 @@ from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.analytics.testing.coverage import edges as coverage_edges
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
+from tests._helpers import coverage_ready_context
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_not_none,
@@ -20,7 +21,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.config_factory import coverage_analytics_cfg
-from tests._helpers import coverage_ready_context
 from tests._helpers.context import TestContext
 from tests._helpers.coverage import (
     CoverageLineSeedData,

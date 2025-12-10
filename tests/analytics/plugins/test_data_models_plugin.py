@@ -21,9 +21,7 @@ def test_data_models_plugin_extracts_models_and_usage(tmp_path: Path) -> None:
             model_count > 0,
             message="Data models table should have rows after plugin execution",
         )
-        first = harness.ctx.query(
-            "SELECT model_name, module FROM analytics.data_models LIMIT 1"
-        )[0]
+        first = harness.ctx.query("SELECT model_name, module FROM analytics.data_models LIMIT 1")[0]
         expect_true(bool(first.model_name))
         expect_true(bool(first.module))
 

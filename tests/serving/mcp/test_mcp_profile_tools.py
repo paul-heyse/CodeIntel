@@ -14,6 +14,7 @@ from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.operations import get_operation
 from tests._helpers.assertions import (
     assert_logged,
+    assert_problem_detail_response,
     expect_equal,
     expect_is_not_none,
     expect_true,
@@ -54,13 +55,22 @@ def test_profile_tools_return_problem_detail_on_missing_function(
     registrar = RecordingMcpRegistrar("ProfileTools")
     register_profile_tools(registrar, mcp_backend.backend)
 
+    class _ResponseWrapper:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.status_code = 404
+            self._payload = payload
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
     with caplog.at_level("WARNING"):
         result = cast(
             "dict[str, object]",
             registrar.registry["get_function_profile"](goid_h128=999_999_999_999),
         )
-    expect_true(isinstance(result, dict))
-    expect_true("error" in result)
+    error_payload = cast("dict[str, object]", result["error"])
+
+    assert_problem_detail_response(_ResponseWrapper(error_payload))
     assert_logged(caplog.records, level="WARNING", containing="MCP tool error")
 
 

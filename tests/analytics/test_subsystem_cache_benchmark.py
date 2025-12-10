@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.subsystems.materialize import refresh_subsystem_caches
 from tests._helpers import TestContext, create_test_context

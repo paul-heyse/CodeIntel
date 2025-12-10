@@ -67,19 +67,21 @@ DEFAULT_CONFIG = CommandConfig()
 # Fields that are standard infrastructure, not command params
 # Note: repo, repo_root, commit are NOT excluded because some commands
 # (like history.timeseries) use them as actual parameters
-_INFRASTRUCTURE_FIELDS = frozenset({
-    "output_format",
-    "verbose",
-    "json",
-    "project",
-    "project_root",  # Used for runtime resolution
-    "db_path",
-    "database_path",
-    "commit",
-    "build_dir",
-    "repo_root",
-    "index_path",
-})
+_INFRASTRUCTURE_FIELDS = frozenset(
+    {
+        "output_format",
+        "verbose",
+        "json",
+        "project",
+        "project_root",  # Used for runtime resolution
+        "db_path",
+        "database_path",
+        "commit",
+        "build_dir",
+        "repo_root",
+        "index_path",
+    }
+)
 
 
 def cli_command[T, R](
@@ -124,7 +126,6 @@ def cli_command[T, R](
     >>> from codeintel.cli.core import CliResult
     >>> def my_handler(ctx: HandlerContext) -> CliResult[dict[str, str]]:
     ...     return CliResult.ok({"status": "done"})
-    ...
     >>> # @cli_command("my.op", handler=my_handler)
     >>> # @dataclass
     >>> # class MyCommand:
