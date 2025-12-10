@@ -8,7 +8,7 @@ from __future__ import annotations
 from io import StringIO
 from pathlib import Path
 
-from codeintel.cli.results import CliResult
+from codeintel.cli.core import CliResult
 from codeintel.cli.shell import (
     InteractiveShell,
     ShellCompleter,

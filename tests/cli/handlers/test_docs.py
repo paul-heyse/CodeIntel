@@ -6,7 +6,7 @@ import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from codeintel.cli.cli_errors import ValidationError
+from codeintel.cli.errors import ValidationError
 from codeintel.cli.handlers.docs import (
     DocsExportResult,
     DocsValidateResult,

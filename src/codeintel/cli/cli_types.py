@@ -1,126 +1,49 @@
-"""Canonical CLI type definitions.
+"""Compatibility shim for cli_types module.
 
-This module is the single source of truth for all CLI-related types.
-Other modules should import from here rather than defining their own.
+.. deprecated::
+    This module is deprecated. Import types from their canonical locations:
+    - ``OutputFormat`` from ``codeintel.cli.rendering.types``
+    - ``BackendFlags``, ``RuntimeParams`` from ``codeintel.cli.resolution.params``
+    This shim will be removed in a future version.
+
+Example migration::
+
+    # Old (deprecated):
+    from codeintel.cli.cli_types import OutputFormat, BackendFlags
+
+    # New (preferred):
+    from codeintel.cli.rendering.types import OutputFormat
+    from codeintel.cli.resolution.params import BackendFlags
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
-from pathlib import Path
+import warnings
 from typing import Literal
 
+warnings.warn(
+    "Importing from 'codeintel.cli.cli_types' is deprecated. "
+    "Use 'codeintel.cli.rendering.types' for OutputFormat and "
+    "'codeintel.cli.resolution.params' for BackendFlags/RuntimeParams. "
+    "This compatibility shim will be removed in a future version.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-class OutputFormat(Enum):
-    """Output rendering format for CLI commands."""
+# Re-export from canonical locations
+from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.params import BackendFlags, RuntimeParams
 
-    TEXT = "text"
-    JSON = "json"
-
-
-@dataclass(frozen=True)
-class BackendFlags:
-    """Backend preferences provided via CLI.
-
-    Parameters
-    ----------
-    use_gpu
-        Whether to attempt GPU acceleration.
-    backend
-        Backend selection (auto, cpu, or nx-cugraph).
-    strict
-        Whether to enforce strict backend compatibility.
-    """
-
-    use_gpu: bool = False
-    backend: str = "auto"
-    strict: bool = False
-
-
-@dataclass(frozen=True)
-class RuntimeOptions:
-    """Unified runtime discovery and backend options.
-
-    This is the canonical runtime options structure used across all CLI modules.
-
-    Parameters
-    ----------
-    project_root
-        Root directory for project discovery.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    db_path
-        Path to the database file.
-    build_dir
-        Build output directory.
-    repo_root
-        Repository root path.
-    document_output_dir
-        Document output directory.
-    backend
-        Backend configuration flags.
-    """
-
-    project_root: Path | None = None
-    repo: str | None = None
-    commit: str | None = None
-    db_path: Path | None = None
-    build_dir: Path | None = None
-    repo_root: Path | None = None
-    document_output_dir: Path | None = None
-    backend: BackendFlags = field(default_factory=BackendFlags)
-
-
-@dataclass(frozen=True)
-class RepoSelection:
-    """Repository identification inputs.
-
-    Parameters
-    ----------
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    """
-
-    repo: str | None
-    commit: str | None
-
-
-@dataclass(frozen=True)
-class PathSelection:
-    """Repository path inputs for storage and builds.
-
-    Parameters
-    ----------
-    repo_root
-        Repository root path.
-    db_path
-        Path to the database file.
-    build_dir
-        Build output directory.
-    document_output_dir
-        Document output directory.
-    """
-
-    repo_root: Path | None
-    db_path: Path | None
-    build_dir: Path | None
-    document_output_dir: Path | None = None
-
-
-# Type alias for help level
+# Type alias for help level (kept here as it's simple)
 HelpLevel = Literal["brief", "full"]
 
+# Backward compatibility alias
+RuntimeOptions = RuntimeParams
 
 __all__ = [
     "BackendFlags",
     "HelpLevel",
     "OutputFormat",
-    "PathSelection",
-    "RepoSelection",
     "RuntimeOptions",
+    "RuntimeParams",
 ]

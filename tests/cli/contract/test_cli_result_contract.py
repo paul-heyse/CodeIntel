@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from codeintel.cli.cli_errors import ProblemDetail
-from codeintel.cli.results import CliResult
+from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.core import CliResult
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

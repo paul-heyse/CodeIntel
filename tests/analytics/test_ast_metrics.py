@@ -7,20 +7,27 @@ This module tests:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
 
 from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
 from codeintel.config import HotspotsStepConfig
+from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
+    assert_logged,
     expect_equal,
     expect_in,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
+from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK, MEDIUM_COMPLEXITY
+from tests._helpers.seeds.core import MOD_A_PATH
 from tests._helpers.rows import AstMetricSeed, ast_metric_row
 
 # Test constants (non-repo/commit)
@@ -51,6 +58,16 @@ def hotspots_config(tmp_path: Path) -> HotspotsStepConfig:
     """
     snapshot = make_snapshot(repo_root=tmp_path)
     return HotspotsStepConfig(snapshot=snapshot, max_commits=100)
+
+
+@pytest.fixture
+def ast_metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide a seeded TestContext with AST metrics data."""
+    ctx = TestScenario.minimal().with_seeds(AST_METRICS_PACK).build(tmp_path)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
 
 
 def _insert_ast_metrics(gateway: StorageGateway, seeds: list[AstMetricSeed]) -> None:
@@ -413,3 +430,86 @@ def test_build_hotspots_negative_complexity(
     score = float(score_obj)
     # Score should be non-negative due to max(complexity, 0.0)
     expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
+
+
+def test_build_hotspots_from_seeded_ast_metrics(ast_metrics_ctx: TestContext) -> None:
+    """Build hotspots using seeded AST metrics pack data."""
+    cfg = HotspotsStepConfig(snapshot=ast_metrics_ctx.to_snapshot_ref(), max_commits=0)
+    con = ast_metrics_ctx.con
+    con.execute("DELETE FROM analytics.hotspots")
+
+    build_hotspots(ast_metrics_ctx.gateway, cfg)
+
+    result = con.execute(
+        """
+        SELECT rel_path, commit_count, author_count, complexity, score
+        FROM analytics.hotspots
+        WHERE rel_path = ?
+        """,
+        [MOD_A_PATH],
+    ).fetchone()
+
+    expect_is_not_none(result)
+    if result is None:
+        pytest.fail("Expected hotspot row for seeded AST metrics")
+
+    rel_path, commit_count, author_count, complexity, score = result
+    expect_equal(rel_path, MOD_A_PATH)
+    expect_equal(commit_count, 0)
+    expect_equal(author_count, 0)
+    expect_equal(float(complexity), MEDIUM_COMPLEXITY)
+    expect_true(float(score) > HOTSPOT_SCORE_THRESHOLD)
+
+
+def test_build_hotspots_logs_git_failure(
+    ast_metrics_ctx: TestContext,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Git failures warn but do not abort hotspot computation."""
+
+    class _FailingRunner(ToolRunner):
+        def __init__(self) -> None:
+            super().__init__(cache_dir=Path.cwd())
+            self.invocations = 0
+
+        def run(
+            self,
+            tool: ToolName | str,
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            output_path: Path | None = None,
+            timeout_s: float | None = None,
+        ) -> ToolRunResult:
+            _ = (cwd, output_path, timeout_s)
+            self.invocations += 1
+            resolved_tool = tool if isinstance(tool, ToolName) else ToolName(tool)
+            return ToolRunResult(
+                tool=resolved_tool,
+                args=tuple(args),
+                returncode=2,
+                stdout="ok",
+                stderr="fatal: not a git repo",
+                duration_s=0.0,
+            )
+
+    cfg = HotspotsStepConfig(snapshot=ast_metrics_ctx.to_snapshot_ref(), max_commits=5)
+    caplog.set_level("WARNING", logger="codeintel.analytics.compute.hotspots.metrics")
+
+    build_hotspots(ast_metrics_ctx.gateway, cfg, runner=_FailingRunner())
+
+    row = ast_metrics_ctx.con.execute(
+        "SELECT commit_count, author_count FROM analytics.hotspots LIMIT 1"
+    ).fetchone()
+    expect_is_not_none(row)
+    if row is None:
+        pytest.fail("Expected hotspot row after git failure")
+
+    commit_count, author_count = row
+    expect_equal(commit_count, 0)
+    expect_equal(author_count, 0)
+    assert_logged(
+        caplog.records,
+        level="WARNING",
+        containing="git log exited with code 2",
+    )

@@ -1,0 +1,459 @@
+"""Configuration introspection commands for the CodeIntel CLI.
+
+Provide commands to inspect effective configuration after merging
+all sources (defaults, file, environment, CLI flags).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated, Literal, TextIO
+
+from cyclopts import App, Parameter
+
+from codeintel.cli.config import (
+    DEFAULT_CONFIG_PATHS,
+    ConfigService,
+    config_to_dict,
+)
+from codeintel.cli.config.service import (
+    CONFIG_ENV_PREFIX,
+    CONFIG_PATH_ENV_VAR,
+    TOML_CONFIG_PATHS,
+)
+
+if TYPE_CHECKING:
+    from codeintel.cli.commands._common import RuntimeCLI
+
+
+def _resolve_config_path() -> Path:
+    """Return the configured TOML path (env override or default).
+
+    Check environment override first, then search default TOML locations.
+
+    Returns
+    -------
+    Path
+        Path to the config file.
+    """
+    # Check environment override
+    env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
+    if env_path:
+        return Path(env_path)
+
+    # Search TOML config paths
+    for path in TOML_CONFIG_PATHS:
+        if path.exists():
+            return path
+
+    # Default to codeintel.toml (even if it doesn't exist)
+    return Path("codeintel.toml")
+
+
+def _load_toml_config() -> dict[str, object]:
+    """Load configuration from TOML file.
+
+    Returns
+    -------
+    dict[str, object]
+        Configuration loaded from TOML, or empty dict if not found.
+    """
+    path = _resolve_config_path()
+    if not path.exists():
+        return {}
+
+    with path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _load_env_config() -> dict[str, object]:
+    """Load configuration from environment variables.
+
+    Returns
+    -------
+    dict[str, object]
+        Configuration values from CODEINTEL_* environment variables.
+    """
+    result: dict[str, object] = {}
+    for key, value in os.environ.items():
+        if key.startswith(CONFIG_ENV_PREFIX):
+            config_key = key[len(CONFIG_ENV_PREFIX) :].lower()
+            result[config_key] = value
+    return result
+
+
+def _cli_to_dict(cli: RuntimeCLI | None) -> dict[str, object]:
+    """Convert RuntimeCLI to dictionary.
+
+    Parameters
+    ----------
+    cli
+        RuntimeCLI instance or None.
+
+    Returns
+    -------
+    dict[str, object]
+        Dictionary of non-None CLI values.
+    """
+    if cli is None:
+        return {}
+
+    result: dict[str, object] = {}
+    if cli.repo is not None:
+        result["repo"] = cli.repo
+    if cli.commit is not None:
+        result["commit"] = cli.commit
+    if cli.db_path is not None:
+        result["db_path"] = str(cli.db_path)
+    if cli.build_dir is not None:
+        result["build_dir"] = str(cli.build_dir)
+    if cli.repo_root is not None:
+        result["repo_root"] = str(cli.repo_root)
+    if cli.document_output_dir is not None:
+        result["document_output_dir"] = str(cli.document_output_dir)
+    return result
+
+
+def _resolve_effective_config(cli: RuntimeCLI | None) -> dict[str, object]:
+    """Merge config from file, env, and CLI with precedence.
+
+    Parameters
+    ----------
+    cli
+        RuntimeCLI instance with CLI-provided values.
+
+    Returns
+    -------
+    dict[str, object]
+        Merged configuration with source tracking.
+    """
+    result: dict[str, object] = {}
+    sources: dict[str, list[str]] = {
+        "file": [],
+        "env": [],
+        "cli": [],
+    }
+
+    # 1. Load file config (lowest precedence)
+    file_cfg = _load_toml_config()
+    for key, value in file_cfg.items():
+        result[key] = value
+        sources["file"].append(key)
+
+    # 2. Apply env overrides
+    env_cfg = _load_env_config()
+    for key, value in env_cfg.items():
+        result[key] = value
+        sources["env"].append(key)
+
+    # 3. Apply CLI overrides (highest precedence)
+    cli_cfg = _cli_to_dict(cli)
+    for key, value in cli_cfg.items():
+        result[key] = value
+        sources["cli"].append(key)
+
+    result["_sources"] = sources
+    return result
+
+
+def _render_config(
+    config: dict[str, object],
+    source_filter: str | None,
+    output_format: Literal["text", "json"],
+    writer: TextIO = sys.stdout,
+) -> None:
+    """Render configuration to output.
+
+    Parameters
+    ----------
+    config
+        Configuration dictionary with _sources metadata.
+    source_filter
+        Filter to specific source (file, env, cli) or None for all.
+    output_format
+        Output format (text or json).
+    writer
+        Output writer.
+    """
+    raw_sources = config.pop("_sources", {})
+    sources: dict[str, list[str]] = raw_sources if isinstance(raw_sources, dict) else {}
+
+    if source_filter and source_filter != "all":
+        filtered_keys = sources.get(source_filter, [])
+        config = {k: v for k, v in config.items() if k in filtered_keys}
+
+    if output_format == "json":
+        output: dict[str, object] = {"config": config, "sources": sources}
+        writer.write(json.dumps(output, indent=2, default=str))
+        writer.write("\n")
+    else:
+        writer.write("Effective Configuration:\n")
+        writer.write("-" * 40 + "\n")
+        for key, value in sorted(config.items()):
+            source = _find_source(key, sources)
+            writer.write(f"{key}: {value} [{source}]\n")
+
+
+def _find_source(key: str, sources: dict[str, list[str]]) -> str:
+    """Find the source of a config key.
+
+    Parameters
+    ----------
+    key
+        Configuration key.
+    sources
+        Sources dictionary mapping source name to list of keys.
+
+    Returns
+    -------
+    str
+        Source name (file, env, cli, or unknown).
+    """
+    for source, keys in sources.items():
+        if key in keys:
+            return source
+    return "unknown"
+
+
+# -----------------------------------------------------------------------------
+# Command Group
+# -----------------------------------------------------------------------------
+
+config_app = App(name="config", help="Configuration inspection and management.")
+
+
+@config_app.command(name="show")
+@dataclass
+class ConfigShowCommand:
+    """Show effective configuration after merging all sources.
+
+    Display the merged configuration with source tracking, showing
+    which values come from file, environment, or defaults.
+    """
+
+    source: Annotated[
+        Literal["all", "file", "env", "cli"] | None,
+        Parameter(help="Show only config from specific source."),
+    ] = None
+    output_format: Annotated[
+        Literal["text", "json"],
+        Parameter(name="--format", help="Output format."),
+    ] = "text"
+
+    def __call__(self) -> None:
+        """Execute the config show command."""
+        # Use ConfigService for comprehensive config loading
+        service = ConfigService.load(validate=False)
+        cfg_dict = config_to_dict(service.config)
+        writer = sys.stdout
+
+        if self.output_format == "json":
+            output: dict[str, object] = {
+                "config": cfg_dict,
+                "sources": list(service.sources),
+            }
+            writer.write(json.dumps(output, indent=2, default=str))
+            writer.write("\n")
+        else:
+            writer.write("Effective Configuration:\n")
+            writer.write("-" * 40 + "\n")
+            for key, value in sorted(cfg_dict.items()):
+                writer.write(f"{key}: {value}\n")
+            writer.write("\nSources: " + " → ".join(service.sources) + "\n")
+
+
+@config_app.command(name="path")
+@dataclass
+class ConfigPathCommand:
+    """Show path to configuration file.
+
+    Displays the resolved configuration file path and whether it exists.
+    """
+
+    def __call__(self) -> None:
+        """Execute the config path command."""
+        path = _resolve_config_path()
+        writer = sys.stdout
+        writer.write(f"Config file: {path}\n")
+        writer.write(f"Absolute:    {path.absolute()}\n")
+        writer.write(f"Exists:      {path.exists()}\n")
+        if path.exists():
+            writer.write(f"Size:        {path.stat().st_size} bytes\n")
+
+
+@config_app.command(name="validate")
+@dataclass
+class ConfigValidateCommand:
+    """Validate configuration file syntax and schema.
+
+    Checks the configuration file for syntax errors and validates
+    against the expected schema.
+
+    Raises
+    ------
+    SystemExit
+        If the configuration file is invalid.
+    """
+
+    def __call__(self) -> None:
+        """Execute the config validate command.
+
+        Raises
+        ------
+        SystemExit
+            If the configuration file is invalid.
+        """
+        path = _resolve_config_path()
+        writer = sys.stdout
+
+        if not path.exists():
+            writer.write(f"Config file not found: {path}\n")
+            return
+
+        try:
+            with path.open("rb") as f:
+                config = tomllib.load(f)
+            writer.write(f"Config file: {path}\n")
+            writer.write("Status: VALID\n")
+            writer.write(f"Keys: {', '.join(config.keys())}\n")
+        except tomllib.TOMLDecodeError as exc:
+            writer.write(f"Config file: {path}\n")
+            writer.write("Status: INVALID\n")
+            writer.write(f"Error: {exc}\n")
+            raise SystemExit(1) from exc
+
+
+@config_app.command(name="env")
+@dataclass
+class ConfigEnvCommand:
+    """Show environment variable configuration.
+
+    Lists all CODEINTEL_* environment variables that affect configuration.
+    """
+
+    output_format: Annotated[
+        Literal["text", "json"],
+        Parameter(name="--format", help="Output format."),
+    ] = "text"
+
+    def __call__(self) -> None:
+        """Execute the config env command."""
+        env_cfg = _load_env_config()
+        writer = sys.stdout
+
+        if self.output_format == "json":
+            writer.write(json.dumps(env_cfg, indent=2))
+            writer.write("\n")
+        else:
+            writer.write("Environment Configuration:\n")
+            writer.write("-" * 40 + "\n")
+            if env_cfg:
+                for key, value in sorted(env_cfg.items()):
+                    writer.write(f"{CONFIG_ENV_PREFIX}{key.upper()}: {value}\n")
+            else:
+                writer.write("No CODEINTEL_* environment variables set.\n")
+
+
+@config_app.command(name="init")
+@dataclass
+class ConfigInitCommand:
+    """Create a default configuration file.
+
+    Generate a configuration file with default values and documentation
+    at the specified path or default location.
+    """
+
+    target: Annotated[
+        Path | None,
+        Parameter(help="Target path for config file."),
+    ] = None
+
+    def __call__(self) -> None:
+        """Execute the config init command.
+
+        Raises
+        ------
+        SystemExit
+            If the config file already exists.
+        """
+        target = self.target or (Path.home() / ".codeintel" / "config.yaml")
+        writer = sys.stdout
+
+        if target.exists():
+            writer.write(f"Config file already exists: {target}\n")
+            writer.write("Use --target to specify a different path.\n")
+            raise SystemExit(1)
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        default_config = """# CodeIntel CLI Configuration
+# https://codeintel.dev/docs/cli/configuration
+
+# Output settings
+output_format: text  # text, json
+color: true
+progress: true
+progress_threshold: 2.0  # seconds before showing progress
+
+# Telemetry
+telemetry_enabled: true
+
+# Logging
+log_level: WARNING  # DEBUG, INFO, WARNING, ERROR
+
+# Retry policy
+retry:
+  max_attempts: 3
+  initial_delay: 0.5
+  backoff_factor: 2.0
+
+# Project defaults (optional)
+# project_root: /path/to/project
+"""
+
+        target.write_text(default_config)
+        writer.write(f"Created configuration file: {target}\n")
+
+
+@config_app.command(name="paths")
+@dataclass
+class ConfigPathsCommand:
+    """Show configuration file search paths.
+
+    Display all paths where configuration files are searched,
+    with indicators for which paths exist.
+    """
+
+    def __call__(self) -> None:
+        """Execute the config paths command."""
+        writer = sys.stdout
+        writer.write("Configuration File Search Paths:\n")
+        writer.write("-" * 40 + "\n")
+
+        # Include TOML config paths and YAML/JSON config paths
+        all_paths = [*TOML_CONFIG_PATHS, *DEFAULT_CONFIG_PATHS]
+        seen: set[str] = set()
+
+        for path in all_paths:
+            path_str = str(path.absolute())
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+
+            exists = "✓" if path.exists() else "✗"
+            writer.write(f"  {exists} {path}\n")
+
+        # Show current active config path if set via env
+        active_path = ConfigService.get_toml_config_path()
+        if active_path:
+            writer.write(f"\nActive config: {active_path}\n")
+
+
+__all__ = [
+    "config_app",
+]

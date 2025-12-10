@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.cli.cli_errors import ProblemDetail
-from codeintel.cli.cli_validation import IntValidator, StringValidator
+from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.introspection import IntValidator, StringValidator
 from codeintel.cli.config import validate_with_json_schema
-from codeintel.cli.error_taxonomy import INTERNAL_ERROR
-from codeintel.cli.results import CliResult
+from codeintel.cli.errors import INTERNAL_ERROR
+from codeintel.cli.core import CliResult
 from tests._helpers.assertions import (
     expect_false,
     expect_true,

@@ -231,7 +231,7 @@ def _track_and_close_gateways(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]
     monkeypatch.setattr("codeintel.storage.gateway.factory.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.cli.handlers.storage.open_gateway", _wrapped_open)
     monkeypatch.setattr("codeintel.cli.handlers.ops.open_gateway", _wrapped_open)
-    monkeypatch.setattr("codeintel.cli.project.open_gateway", _wrapped_open)
+    monkeypatch.setattr("codeintel.cli.project._project.open_gateway", _wrapped_open)
 
     try:
         yield

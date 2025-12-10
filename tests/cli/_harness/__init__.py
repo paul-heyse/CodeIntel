@@ -23,7 +23,7 @@ from pathlib import Path
 
 from codeintel.cli.cyclopts_app import app as cli_app
 from codeintel.cli.execution import get_executor
-from codeintel.cli.operation_registry import get_operation_registry
+from codeintel.cli.introspection import get_operation_registry
 
 
 @dataclass

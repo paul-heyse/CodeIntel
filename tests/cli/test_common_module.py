@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.cli_errors import ValidationError, runtime_required
-from codeintel.cli.cli_types import BackendFlags, OutputFormat
+from codeintel.cli.errors import ValidationError, runtime_required
 from codeintel.cli.config import (
     build_config_from_options,
     build_graph_backend_config,
@@ -21,6 +20,8 @@ from codeintel.cli.cyclopts_common import (
     get_verbose,
     resolve_output_format,
 )
+from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.params import BackendFlags
 from codeintel.config.models import CliPathsInput
 from tests._helpers.assertions import expect_equal, expect_true
 

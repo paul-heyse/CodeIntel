@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, TypeVar
 
-from codeintel.cli.results import CliResult
+from codeintel.cli.core.results import CliResult
 
 T = TypeVar("T")
 
