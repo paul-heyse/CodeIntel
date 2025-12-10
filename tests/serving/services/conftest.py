@@ -23,7 +23,12 @@ from tests._helpers.serving_contexts import (
     build_provisioned_service_context,
 )
 from tests._helpers.serving_harnesses import RecordingObservability
-from tests.serving.mcp.conftest import McpBackendComponents
+from tests.serving.mcp.conftest import (
+    McpBackendComponents,
+    mcp_backend_factory as _mcp_backend_factory,
+)
+
+mcp_backend_factory = _mcp_backend_factory
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway

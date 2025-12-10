@@ -13,7 +13,7 @@ from typing import Any
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.handlers._utilities import setup_logging
+from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -119,7 +119,7 @@ def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseri
     CliResult[HistoryTimeseriesResult]
         Result with output path and counts.
     """
-    setup_logging(ctx.verbosity)
+    bootstrap_cli(verbosity=ctx.verbosity)
 
     # Check commits first since it's a command-specific required parameter
     commits = ctx.param_list("commits")

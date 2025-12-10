@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from codeintel.cli.execution import OperationSpec
+from codeintel.cli.execution.registry import OperationSpec
 from codeintel.cli.introspection import OperationRegistry, get_operation_registry
 from codeintel.cli.plugins.discovery import DEFAULT_PLUGIN_PATHS
 from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadResult
@@ -41,12 +41,12 @@ class PluginProtocol(Protocol):
         """Plugin description."""
         ...
 
-    def get_operations(self) -> list[OperationSpec[Any]]:
+    def get_operations(self) -> list[OperationSpec]:
         """Get operations provided by this plugin.
 
         Returns
         -------
-        list[OperationSpec[Any]]
+        list[OperationSpec]
             Operations to register.
         """
         ...
@@ -129,7 +129,7 @@ def _register_new_api(
     class RegistrationProxy:
         """Proxy for registry that counts registrations."""
 
-        def register(self, spec: OperationSpec[Any]) -> OperationSpec[Any]:
+        def register(self, spec: OperationSpec) -> OperationSpec:
             """Register an operation spec.
 
             Parameters
@@ -139,7 +139,7 @@ def _register_new_api(
 
             Returns
             -------
-            OperationSpec[Any]
+            OperationSpec
                 The registered spec.
             """
             _ = self  # Required for method signature

@@ -8,18 +8,22 @@ This package provides:
 
 Examples
 --------
->>> from codeintel.cli.handlers import setup_logging, HandlerContext
+>>> from codeintel.cli.handlers import HandlerContext
 >>> from codeintel.cli.handlers.build import build_status_handler
->>> setup_logging(verbosity=1)
+>>> from codeintel.cli.execution.bootstrap import bootstrap_cli
+>>> bootstrap_cli(verbosity=1)  # doctest: +SKIP
+<codeintel.cli.config.model.CliConfig object at ...>
 """
 
 from __future__ import annotations
+
+# Bootstrap for logging/signal setup
+from codeintel.cli.execution.bootstrap import bootstrap_cli
 
 # Utilities
 from codeintel.cli.handlers._utilities import (
     get_handler_logger,
     open_handler_gateway,
-    setup_logging,
 )
 
 # Domain handlers and result types
@@ -186,6 +190,7 @@ __all__ = [
     "SubsystemProfilesResult",
     "SubsystemShowResult",
     "ValidateMacrosResult",
+    "bootstrap_cli",
     # Handler functions
     "build_history_handler",
     "build_run_handler",
@@ -227,7 +232,6 @@ __all__ = [
     "profile_storage_handler",
     "serve_http_handler",
     "serve_mcp_handler",
-    "setup_logging",
     "subsystem_coverage_handler",
     "subsystem_list_handler",
     "subsystem_module_memberships_handler",

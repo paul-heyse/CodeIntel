@@ -44,7 +44,12 @@ LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class OperationSpec:
-    """Specification for a CLI operation.
+    """Unified specification for a CLI operation.
+
+    This is the single, canonical OperationSpec for all CLI operations.
+    Core fields are required. Resource requirements default to True for
+    backward compatibility. Execution hints are optional for future
+    middleware integration.
 
     Parameters
     ----------
@@ -68,6 +73,12 @@ class OperationSpec:
         Optional tags for filtering/categorization.
     hidden
         If True, operation is hidden from help output.
+    timeout
+        Optional maximum execution time in seconds.
+    retryable
+        Whether the operation can be retried on failure.
+    estimated_duration
+        Optional estimated duration in seconds (for progress display).
 
     Examples
     --------
@@ -88,6 +99,7 @@ class OperationSpec:
     ... )
     """
 
+    # Core identification (required)
     operation_id: str
     name: str
     description: str
@@ -102,6 +114,11 @@ class OperationSpec:
     # Metadata
     tags: tuple[str, ...] = ()
     hidden: bool = False
+
+    # Execution hints (optional, for future middleware integration)
+    timeout: float | None = None
+    retryable: bool = False
+    estimated_duration: float | None = None
 
 
 @dataclass
@@ -361,9 +378,61 @@ def reset_registry() -> None:
     _REGISTRY = None
 
 
+def execute_operation(
+    spec: OperationSpec,
+    params: dict[str, Any],
+) -> CliResult[Any]:
+    """Execute an operation directly via its handler.
+
+    This is the simple execution path that creates a HandlerContext and
+    calls the handler. For programmatic execution of registered operations.
+
+    Parameters
+    ----------
+    spec
+        Operation specification (from registry).
+    params
+        Operation parameters dict.
+
+    Returns
+    -------
+    CliResult[Any]
+        Result from the handler.
+
+    Examples
+    --------
+    >>> from codeintel.cli.execution.registry import get_registry, execute_operation
+    >>> spec = get_registry().get("some.operation")  # doctest: +SKIP
+    >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
+    """
+    # Import here to avoid circular imports
+    from codeintel.cli.config import load_config  # noqa: PLC0415
+    from codeintel.cli.handlers.context import HandlerContext  # noqa: PLC0415
+    from codeintel.cli.rendering.types import OutputFormat  # noqa: PLC0415
+
+    # Load config for context creation
+    config = load_config(validate=False)
+
+    # Create handler context
+    ctx = HandlerContext(
+        config=config,
+        operation_id=spec.operation_id,
+        output_format=OutputFormat.JSON,  # Default to JSON for programmatic use
+        verbosity=0,
+        _params=params,
+    )
+
+    try:
+        # Execute handler
+        return spec.handler(ctx)
+    finally:
+        ctx.close()
+
+
 __all__ = [
     "OperationRegistry",
     "OperationSpec",
+    "execute_operation",
     "get_registry",
     "register_operation",
     "reset_registry",

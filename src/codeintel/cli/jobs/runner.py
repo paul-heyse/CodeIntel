@@ -11,7 +11,7 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
-from codeintel.cli.execution import get_executor
+from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_operation_registry
 from codeintel.cli.jobs import JobStatus, JobStore
 
@@ -42,22 +42,20 @@ def main() -> None:
         store.save(job)
         sys.exit(1)
 
-    executor = get_executor()
-
     try:
-        result = executor.execute(spec, job.params, render=False)
+        result = execute_operation(spec, job.params)
 
-        if result.result.success:
+        if result.success:
             job.status = JobStatus.COMPLETED
-            store.save_output(job.job_id, result.result.to_dict())
+            store.save_output(job.job_id, result.to_dict())
         else:
             job.status = JobStatus.FAILED
             error_detail = ""
-            if result.result.error:
-                error_detail = result.result.error.detail or "Unknown error"
+            if result.error:
+                error_detail = result.error.detail or "Unknown error"
             job.error = error_detail
 
-        job.exit_code = 0 if result.result.success else 1
+        job.exit_code = 0 if result.success else 1
 
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as e:
         job.status = JobStatus.FAILED

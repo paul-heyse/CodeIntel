@@ -22,7 +22,6 @@ from codeintel.analytics.runtime import (
     GraphRuntimeOptions,
     build_graph_runtime,
 )
-from codeintel.cli.handlers._lazy_resources import lazy_resolve_runtime
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
@@ -668,13 +667,30 @@ class HandlerContext:
         -------
         ResolvedRuntime
             Resolved runtime.
+
+        Notes
+        -----
+        Uses RuntimeResolver directly, constructing a minimal ExecutionContext
+        for resolution. This eliminates the intermediate _lazy_resources module.
         """
-        return lazy_resolve_runtime(
+        # Import here to avoid circular imports (ExecutionContext imports from resolution)
+        from codeintel.cli.execution.context import ExecutionContext  # noqa: PLC0415
+        from codeintel.cli.resolution.runtime import RuntimeResolver  # noqa: PLC0415
+
+        # Build params dict with project_root and db_path
+        exec_params: dict[str, object] = dict(self._params)
+        if self.project_root is not None:
+            exec_params["project_root"] = self.project_root
+        if self.database_path is not None:
+            exec_params["db_path"] = self.database_path
+
+        # Create minimal execution context for resolution
+        exec_ctx = ExecutionContext(
             operation_id=self.operation_id,
-            params=self._params,
-            project_root=self.project_root,
-            database_path=self.database_path,
+            params=exec_params,
         )
+
+        return RuntimeResolver.resolve(exec_ctx)
 
     def _open_gateway(self) -> StorageGateway:
         """Open storage gateway.

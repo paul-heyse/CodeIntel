@@ -11,17 +11,14 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import Any, TextIO
 
 import yaml
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
-from codeintel.cli.execution import get_executor
+from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_operation_registry
-
-if TYPE_CHECKING:
-    from codeintel.cli.execution import ExecutionResult
 
 
 @dataclass
@@ -253,7 +250,6 @@ def execute_batch(
         Batch execution result.
     """
     config = config or PipelineConfig()
-    executor = get_executor()
     registry = get_operation_registry()
     renderer = StreamingRenderer() if config.stream_output else None
 
@@ -283,14 +279,8 @@ def execute_batch(
                     status=404,
                 )
             )
-            exec_result: ExecutionResult[Any] | None = None
         else:
-            exec_result = executor.execute(
-                spec,
-                batch_op.params,
-                render=False,
-            )
-            result = exec_result.result
+            result = execute_operation(spec, batch_op.params)
 
         if result.success:
             succeeded += 1
