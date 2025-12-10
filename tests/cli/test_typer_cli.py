@@ -93,22 +93,25 @@ def test_op_list_shows_operations() -> None:
     result = run_cli(["op", "list"])
 
     expect_equal(result.exit_code, 0)
-    expect_in("Available operations", result.stdout)
-    # Check for some known operations
+    # New output format uses structured CliResult
+    expect_in("operations:", result.stdout)
     expect_in("function.summary", result.stdout)
 
 
 def test_op_list_json_output() -> None:
-    """Verify op list --json produces valid JSON."""
-    result = run_cli(["op", "list", "--json"])
+    """Verify op list --output-format json produces valid JSON."""
+    result = run_cli(["op", "list", "--output-format", "json"])
 
     expect_equal(result.exit_code, 0)
     data = json.loads(result.stdout)
-    expect_is_instance(data, list)
-    expect_true(len(data) > 0)
+    # New handler returns {"operations": [...], "count": N}
+    expect_in("operations", data)
+    operations = data["operations"]
+    expect_is_instance(operations, list)
+    expect_true(len(operations) > 0)
     # Check structure
-    expect_in("id", data[0])
-    expect_in("category", data[0])
+    expect_in("id", operations[0])
+    expect_in("category", operations[0])
 
 
 def test_op_list_filter_by_category() -> None:
@@ -129,7 +132,7 @@ def test_dataset_describe_known_dataset() -> None:
     result = run_cli(["dataset", "describe", "core.goids"])
 
     expect_equal(result.exit_code, 0)
-    expect_in("Dataset:", result.stdout)
+    # New handler uses structured output
     expect_in("core.goids", result.stdout)
 
 

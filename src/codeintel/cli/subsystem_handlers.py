@@ -7,9 +7,7 @@ them without importing Typer. All user-facing errors surface as
 
 from __future__ import annotations
 
-import json
 import logging
-import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -246,136 +244,6 @@ def _build_backend(runtime: SubsystemRuntime) -> DuckDBBackend:
         msg = "Expected DuckDBBackend for local_db mode"
         raise ValidationError(msg)
     return backend
-
-
-# -----------------------------------------------------------------------------
-# Handlers
-# -----------------------------------------------------------------------------
-
-
-def subsystem_list_handler(options: SubsystemListOptions) -> None:
-    """List inferred subsystems with role/risk metadata.
-
-    Parameters
-    ----------
-    options
-        List options.
-    """
-    backend = _build_backend(options.runtime)
-    response = backend.list_subsystems(
-        limit=options.limit,
-        role=options.role,
-        q=options.query,
-    )
-    payload = {
-        "subsystems": [row.model_dump() for row in response.subsystems],
-        "meta": response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
-
-
-def subsystem_show_handler(options: SubsystemIdOptions) -> None:
-    """Show subsystem detail and modules.
-
-    Parameters
-    ----------
-    options
-        Subsystem ID options.
-
-    Raises
-    ------
-    ValidationError
-        If the subsystem cannot be found.
-    """
-    backend = _build_backend(options.runtime)
-    response = backend.get_subsystem_modules(subsystem_id=options.subsystem_id)
-
-    if not response.found or response.subsystem is None:
-        LOG.error("Subsystem not found: %s", options.subsystem_id)
-        msg = f"Subsystem not found: {options.subsystem_id}"
-        raise ValidationError(msg)
-
-    payload = {
-        "subsystem": response.subsystem.model_dump(),
-        "modules": [row.model_dump() for row in response.modules],
-        "meta": response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
-
-
-def subsystem_profiles_handler(options: SubsystemProfilesOptions) -> None:
-    """List subsystem profiles from docs.v_subsystem_profile.
-
-    Parameters
-    ----------
-    options
-        Profiles options.
-    """
-    backend = _build_backend(options.runtime)
-    response = backend.service.list_subsystem_profiles(limit=options.limit)
-    profile_response = (
-        response
-        if isinstance(response, SubsystemProfileResponse)
-        else SubsystemProfileResponse.from_domain(response)
-    )
-    profiles = [
-        row if isinstance(row, SubsystemProfileRow) else SubsystemProfileRow.model_validate(row)
-        for row in profile_response.profiles
-    ]
-    payload = {
-        "profiles": [row.model_dump() for row in profiles],
-        "meta": profile_response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
-
-
-def subsystem_coverage_handler(options: SubsystemCoverageOptions) -> None:
-    """List subsystem coverage rollups from docs.v_subsystem_coverage.
-
-    Parameters
-    ----------
-    options
-        Coverage options.
-    """
-    backend = _build_backend(options.runtime)
-    response = backend.service.list_subsystem_coverage(limit=options.limit)
-    coverage_response = (
-        response
-        if isinstance(response, SubsystemCoverageResponse)
-        else SubsystemCoverageResponse.from_domain(response)
-    )
-    coverage_rows = [
-        row if isinstance(row, SubsystemCoverageRow) else SubsystemCoverageRow.model_validate(row)
-        for row in coverage_response.coverage
-    ]
-    payload = {
-        "coverage": [row.model_dump() for row in coverage_rows],
-        "meta": coverage_response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
-
-
-def subsystem_module_memberships_handler(options: SubsystemMembershipOptions) -> None:
-    """List subsystem memberships for a module.
-
-    Parameters
-    ----------
-    options
-        Membership options.
-    """
-    backend = _build_backend(options.runtime)
-    response = backend.get_module_subsystems(module=options.module)
-    payload = {
-        "found": response.found,
-        "memberships": [row.model_dump() for row in response.memberships],
-        "meta": response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
 
 
 # -----------------------------------------------------------------------------
@@ -779,13 +647,8 @@ __all__ = [
     "open_gateway_from_config",
     "setup_logging",
     "subsystem_coverage_ctx",
-    "subsystem_coverage_handler",
     "subsystem_list_ctx",
-    "subsystem_list_handler",
     "subsystem_module_memberships_ctx",
-    "subsystem_module_memberships_handler",
     "subsystem_profiles_ctx",
-    "subsystem_profiles_handler",
     "subsystem_show_ctx",
-    "subsystem_show_handler",
 ]

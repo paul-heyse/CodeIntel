@@ -8,13 +8,11 @@ them without importing Typer. All user-facing errors surface as
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.cli.cli_errors import ValidationError
 
 # Import consolidated setup_logging from handlers.base
 from codeintel.cli.handlers.base import setup_logging as _setup_logging_impl
@@ -159,90 +157,6 @@ def bundle_history_timeseries(cli_kwargs: dict[str, object]) -> dict[str, object
         ),
         "verbose": int(verbose_raw or 0),
     }
-
-
-# -----------------------------------------------------------------------------
-# Handler
-# -----------------------------------------------------------------------------
-
-
-def history_timeseries_handler(
-    repo: str,
-    commits: list[str],
-    options: HistoryOptions,
-    verbose: int,
-) -> None:
-    """Aggregate analytics.history_timeseries across multiple commits.
-
-    Collects analytics data from per-commit DuckDB snapshots and aggregates
-    them into a unified history timeseries table.
-
-    Parameters
-    ----------
-    repo
-        Repository slug (e.g., 'my-org/my-repo').
-    commits
-        Commits to include in the timeseries (latest first).
-    options
-        History options.
-    verbose
-        Verbosity level.
-
-    Raises
-    ------
-    ValidationError
-        If required inputs are missing or history aggregation fails.
-    """
-    setup_logging(verbose)
-
-    commit_list = list(commits)
-    if not commit_list:
-        msg = "At least one commit is required"
-        raise ValidationError(msg)
-
-    runner = ToolRunner(cache_dir=options.repo_root / "build" / ".tool_cache")
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=repo, commit=commit_list[0], repo_root=options.repo_root),
-    )
-    cfg = builder.history_timeseries(
-        commits=tuple(commit_list),
-        entity_kind=options.entity_kind,
-        max_entities=options.max_entities,
-        selection_strategy=options.selection_strategy,
-    )
-
-    storage_cfg = StorageConfig.for_ingest(options.output_db)
-    gateway = open_gateway(storage_cfg)
-    snapshot_resolver = build_snapshot_gateway_resolver(
-        db_dir=options.db_dir,
-        repo=repo,
-        primary_gateway=gateway,
-    )
-
-    try:
-        compute_history_timeseries_gateways(
-            gateway,
-            cfg,
-            snapshot_resolver,
-            runner=runner,
-        )
-    except FileNotFoundError:
-        LOG.exception("Missing snapshot database for history_timeseries")
-        msg = "Missing snapshot database for one or more commits"
-        raise ValidationError(msg) from None
-    except DuckDBError:
-        LOG.exception("Failed to compute history_timeseries")
-        msg = "Failed to compute history_timeseries"
-        raise ValidationError(msg) from None
-
-    LOG.info(
-        "history_timeseries written to %s for %d commits",
-        options.output_db,
-        len(commit_list),
-    )
-    sys.stdout.write(
-        f"History timeseries written to {options.output_db} for {len(commit_list)} commits.\n"
-    )
 
 
 # -----------------------------------------------------------------------------
@@ -450,6 +364,5 @@ __all__ = [
     "HistoryTimeseriesResult",
     "bundle_history_timeseries",
     "history_timeseries_ctx",
-    "history_timeseries_handler",
     "setup_logging",
 ]

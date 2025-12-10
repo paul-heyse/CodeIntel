@@ -7,9 +7,7 @@ them without importing Typer. All user-facing errors surface as
 
 from __future__ import annotations
 
-import json
 import logging
-import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -164,52 +162,6 @@ def build_graph_runtime(
 
 
 # -----------------------------------------------------------------------------
-# Handler
-# -----------------------------------------------------------------------------
-
-
-def ide_hints_handler(options: IdeHintsOptions) -> None:
-    """Emit IDE hints (module + subsystem context) for a relative file path.
-
-    Parameters
-    ----------
-    options
-        IDE hints options.
-
-    Raises
-    ------
-    ValidationError
-        If hints cannot be resolved.
-    """
-    setup_logging(options.verbose)
-
-    runtime = build_runtime_from_cli(options.runtime_options)
-
-    gateway = open_gateway_from_config(runtime.cfg, read_only=True)
-    graph_runtime = build_graph_runtime(runtime.cfg, gateway)
-
-    resource = build_backend_resource(
-        runtime.serving,
-        gateway=gateway,
-        options=BackendResourceOptions(graph_runtime=graph_runtime),
-    )
-
-    response = resource.backend.get_file_hints(rel_path=options.rel_path)
-    if not response.found or not response.hints:
-        LOG.error("No IDE hints found for %s", options.rel_path)
-        msg = f"No hints found for: {options.rel_path}"
-        raise ValidationError(msg)
-
-    payload = {
-        "rel_path": options.rel_path,
-        "hints": [hint.model_dump() for hint in response.hints],
-        "meta": response.meta.model_dump(),
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.write("\n")
-
-
-# -----------------------------------------------------------------------------
 # Result Types
 # -----------------------------------------------------------------------------
 
@@ -319,7 +271,6 @@ __all__ = [
     "build_graph_runtime",
     "build_runtime_from_cli",
     "ide_hints_ctx",
-    "ide_hints_handler",
     "open_gateway_from_config",
     "setup_logging",
 ]
