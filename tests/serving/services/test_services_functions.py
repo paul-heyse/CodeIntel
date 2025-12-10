@@ -19,6 +19,7 @@ from codeintel.serving.services.base import BaseFunctionQueries, BaseSubsystemQu
 from codeintel.serving.services.errors import ProblemDetail, ProblemError
 from codeintel.serving.services.transport import HttpTransport, LocalTransport
 from tests._helpers.assertions import (
+    assert_problem_detail_response,
     expect_equal,
     expect_in,
     expect_is_instance,
@@ -107,7 +108,7 @@ def test_get_function_summary_no_params_returns_error(
     with provisioned_service_app.client() as client:
         response = client.get("/function/summary")
 
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+    assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================

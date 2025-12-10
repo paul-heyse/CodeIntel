@@ -20,11 +20,11 @@ from codeintel.graphs.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.sql import QueryBuilder, SafeTable, render_sql
 from tests._helpers.assertions import (
-    expect_equal,
     expect_in,
+    expect_is_instance,
     expect_is_not_none,
-    expect_length,
     expect_row_value,
+    expect_rows_equal,
     expect_true,
 )
 
@@ -198,8 +198,7 @@ def test_duckdb_adapter_execute_fetch_all(graph_gateway: StorageGateway) -> None
     result = adapter.execute("SELECT unnest([1, 2, 3]) AS value")
     rows = result.fetchall()
 
-    expect_length(rows, len(UNNEST_VALUES))
-    expect_equal([r[0] for r in rows], list(UNNEST_VALUES))
+    expect_rows_equal(rows, [(value,) for value in UNNEST_VALUES])
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +233,7 @@ def test_duckdb_adapter_insert_and_select(graph_gateway: StorageGateway) -> None
     result = adapter.execute(_select_ordered_sql(TABLE_INSERT, "id"))
     rows = result.fetchall()
 
-    expect_length(rows, INSERT_ROW_COUNT)
-    expect_equal(rows[0], (1, "test1"))
-    expect_equal(rows[1], (2, "test2"))
+    expect_rows_equal(rows, [(1, "test1"), (2, "test2")])
 
 
 # ---------------------------------------------------------------------------
@@ -299,8 +296,7 @@ def test_duckdb_adapter_list_tables(graph_gateway: StorageGateway) -> None:
     )
 
     rows = result.fetchall()
-    # Should have some tables
-    expect_true(isinstance(rows, list))
+    expect_is_instance(rows, list)
 
 
 def test_duckdb_adapter_table_columns(graph_gateway: StorageGateway) -> None:
@@ -364,6 +360,4 @@ def test_duckdb_adapter_aggregate_query(graph_gateway: StorageGateway) -> None:
     result = adapter.execute(_aggregate_sql(TABLE_AGG))
 
     rows = result.fetchall()
-    expect_length(rows, len(AGG_EXPECTED))
-    expect_equal(rows[0], AGG_EXPECTED[0])
-    expect_equal(rows[1], AGG_EXPECTED[1])
+    expect_rows_equal(rows, AGG_EXPECTED)

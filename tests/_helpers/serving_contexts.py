@@ -46,6 +46,21 @@ class ProvisionedServiceContext:
     def limits(self) -> BackendLimits:
         return self.context.limits
 
+    @property
+    def service(self) -> object:
+        """Return the underlying LocalQueryService."""
+        return self.context.service
+
+    @property
+    def backend(self) -> object:
+        """Return the underlying backend instance."""
+        return self.context.backend
+
+    @property
+    def app(self) -> object:
+        """Return the FastAPI app bound to the context."""
+        return self.context.app
+
     @contextmanager
     def client(self) -> Iterator[TestClient]:
         """Provide a TestClient bound to the underlying app.

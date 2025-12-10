@@ -7,9 +7,9 @@ module. Prefer these over bespoke harness setup in plugin tests.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from tests._helpers.context import SeedPack
 from tests._helpers.harnesses import (

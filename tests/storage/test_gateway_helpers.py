@@ -11,11 +11,6 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.config.datasets import GraphMetricsFunctionsRow, GraphMetricsModulesRow
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.gateway.rows.analytics import (
-    AnalyticsTestCatalogRow,
-    AnalyticsTestCoverageEdgesRow,
-)
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -24,7 +19,6 @@ from tests._helpers.builders import (
     CoverageLineRow,
     FunctionMetricsRow,
     GoidRow,
-    GraphMetricsModulesExtRow,
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
@@ -32,6 +26,8 @@ from tests._helpers.builders import (
     StaticDiagnosticsRow,
     SubsystemModuleRow,
     SubsystemRow,
+    TestCatalogRow,
+    TestCoverageEdgeRow,
     TypednessRow,
     insert_symbol_use_edges,
 )
@@ -46,13 +42,15 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
     gateway = test_ctx.gateway
     con = gateway.con
     now = datetime.now(tz=UTC)
-    now_str = now.isoformat()
 
     insert_rows(
         gateway,
+        [RepoMapRow(repo="r", commit="c", modules={}, overlays={}, generated_at=now)],
+    )
+    insert_rows(gateway, [ModuleRow(module="m", path="m.py", repo="r", commit="c")])
+    insert_rows(
+        gateway,
         [
-            RepoMapRow(repo="r", commit="c", modules={}, overlays={}, generated_at=now),
-            ModuleRow(module="m", path="m.py", repo="r", commit="c"),
             GoidRow(
                 goid_h128=1,
                 urn="urn:fn",
@@ -64,7 +62,7 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 start_line=1,
                 end_line=2,
                 created_at=now,
-            ),
+            )
         ],
     )
 
@@ -78,7 +76,12 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 arity=0,
                 is_public=True,
                 rel_path="m.py",
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             CallGraphEdgeRow(
                 repo="r",
                 commit="c",
@@ -92,7 +95,12 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 resolved_via="local_name",
                 confidence=1.0,
                 evidence={},
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             ImportGraphEdgeRow(
                 repo="r",
                 commit="c",
@@ -102,7 +110,7 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 dst_fan_in=1,
                 cycle_group=1,
                 module_layer=None,
-            ),
+            )
         ],
     )
     insert_symbol_use_edges(
@@ -180,9 +188,14 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 covered_lines=2,
                 coverage_ratio=1.0,
                 tested=True,
-                last_status="",
+                untested_reason=None,
                 created_at=now,
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             CoverageLineRow(
                 repo="r",
                 commit="c",
@@ -193,7 +206,12 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 hits=1,
                 context_count=1,
                 created_at=now,
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             RiskFactorRow(
                 function_goid_h128=1,
                 urn="urn:fn",
@@ -206,37 +224,46 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 loc=4,
                 logical_loc=3,
                 cyclomatic_complexity=1,
-                risk_score=0.0,
-                risk_level="low",
+                complexity_bucket="low",
                 typedness_bucket="typed",
-                hotspot_reason="analysis",
-                typedness_score=1.0,
-                complexity_score=0.0,
+                typedness_source="analysis",
                 hotspot_score=0.0,
-                has_tests=True,
-                coverage_functions=2,
-                coverage_lines=2,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=2,
+                covered_lines=2,
                 coverage_ratio=1.0,
                 tested=True,
-                total_tests=1,
-                flaky_tests=0,
-                last_status="passed",
-                risk_weight=0.1,
-                risk_component_coverage="low",
-                risk_component_static="[]",
-                risk_component_hotspot="[]",
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="passed",
+                risk_score=0.0,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
                 created_at=now,
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             ConfigValueRow(
                 repo="r",
                 commit="c",
-                path="cfg.yaml",
+                config_path="cfg.yaml",
                 format="yaml",
                 key="feature.flag",
-                raw_value="[]",
-                parsed_value='["pkg.m"]',
-                version=1,
-            ),
+                reference_paths=["cfg.yaml"],
+                reference_modules=["pkg.m"],
+                reference_count=1,
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             TypednessRow(
                 repo="r",
                 commit="c",
@@ -245,17 +272,63 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 annotation_ratio='{"params":1}',
                 untyped_defs=0,
                 overlay_needed=False,
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             StaticDiagnosticsRow(
                 repo="r",
                 commit="c",
                 rel_path="m.py",
-                type_error_count=0,
-                lint_error_count=0,
-                format_error_count=0,
-                security_error_count=0,
-                has_blocking_errors=False,
-            ),
+                pyrefly_errors=0,
+                pyright_errors=0,
+                ruff_errors=0,
+                total_errors=0,
+                has_errors=False,
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="test_case",
+                test_goid_h128=10,
+                urn="urn:test",
+                repo="r",
+                commit="c",
+                rel_path="m_test.py",
+                qualname="test_case",
+                kind="unit",
+                status="passed",
+                duration_ms=5,
+                markers="[]",
+                parametrized=False,
+                flaky=False,
+                created_at=now,
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            TestCoverageEdgeRow(
+                test_id="test_case",
+                test_goid_h128=10,
+                function_goid_h128=1,
+                urn="urn:fn",
+                repo="r",
+                commit="c",
+                rel_path="m.py",
+                qualname="m.fn",
+                covered_lines=2,
+                executable_lines=2,
+                coverage_ratio=1.0,
+                last_status="passed",
+                created_at=now,
+            )
         ],
     )
     function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
@@ -314,7 +387,7 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 commit="c",
                 subsystem_id="sub1",
                 name="Subsystem",
-                description=None,
+                description="Subsystem",
                 module_count=1,
                 modules_json='["m"]',
                 entrypoints_json="[]",
@@ -327,21 +400,20 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
                 max_risk_score=0.1,
                 high_risk_function_count=0,
                 risk_level="low",
-                import_in_degree=None,
-                import_out_degree=None,
-                import_pagerank=None,
-                import_betweenness=None,
-                import_closeness=None,
-                import_layer=None,
                 created_at=now,
-            ),
+            )
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
             SubsystemModuleRow(
                 repo="r",
                 commit="c",
                 subsystem_id="sub1",
                 module="m",
-                member_kind="member",
-            ),
+                role="member",
+            )
         ],
     )
 

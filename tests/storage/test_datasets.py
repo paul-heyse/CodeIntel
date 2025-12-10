@@ -17,7 +17,6 @@ from codeintel.config.datasets import (
     JSON_SCHEMA_BY_DATASET_NAME,
     DatasetContract,
     RowBinding,
-    get_dataset_contracts_by_table_key,
 )
 from codeintel.storage.datasets import (
     DatasetRegistry,
@@ -37,8 +36,8 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.dataset_factories import sample_dataset_registry
+from tests._helpers.gateway import GatewayFactory
 
 
 def _sample_registry() -> DatasetRegistry:

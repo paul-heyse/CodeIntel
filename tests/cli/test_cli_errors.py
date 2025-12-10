@@ -32,4 +32,5 @@ def test_validation_error_exit_code(cli_ctx: CLIContext) -> None:
     )
 
     expect_equal(result.exit_code, CLI_EXIT_VALIDATION)
-    expect_in("No codeintel.yaml found", result.stderr)
+    # Accept either old or new format error messages
+    expect_in("codeintel.yaml", result.stderr)

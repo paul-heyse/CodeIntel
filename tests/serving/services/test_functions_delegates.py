@@ -36,7 +36,7 @@ from tests._helpers.serving_harnesses import (
 
 if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
-    from tests._helpers.serving_apps import ServiceApp
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 # Test constants
 LOW_RISK: Final = 0.3
@@ -52,7 +52,7 @@ def _expect(*, condition: bool, message: str) -> None:
 
 
 def _build_local_service(
-    provisioned_service_app: ServiceApp,
+    service_ctx: ProvisionedServiceContext,
 ) -> LocalQueryService:
     """Return the shared LocalQueryService from the provisioned service app.
 
@@ -61,7 +61,7 @@ def _build_local_service(
     LocalQueryService
         Service instance wired to the provisioned gateway snapshot.
     """
-    return provisioned_service_app.service
+    return service_ctx.service  # type: ignore[no-any-return]
 
 
 # =============================================================================
@@ -70,11 +70,11 @@ def _build_local_service(
 
 
 def test_get_function_summary_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary returns domain FunctionSummaryResult."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     summary = service.get_function_summary(goid_h128=analytics_samples.goid_h128)
 
@@ -85,11 +85,11 @@ def test_get_function_summary_returns_domain_result(
 
 
 def test_get_function_summary_with_urn(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary with URN parameter."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     summary = service.get_function_summary(urn=analytics_samples.urn)
 
@@ -100,11 +100,11 @@ def test_get_function_summary_with_urn(
 
 
 def test_get_function_summary_with_rel_path_qualname(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary with rel_path and qualname."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     summary = service.get_function_summary(
         rel_path=analytics_samples.rel_path,
@@ -118,10 +118,10 @@ def test_get_function_summary_with_rel_path_qualname(
 
 
 def test_list_high_risk_functions_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_high_risk_functions returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK)
 
@@ -136,10 +136,10 @@ def test_list_high_risk_functions_returns_domain_result(
 
 
 def test_list_high_risk_functions_with_tested_only(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_high_risk_functions with tested_only filter."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     result = service.list_high_risk_functions(min_risk=LOW_RISK, tested_only=True)
 
@@ -150,10 +150,10 @@ def test_list_high_risk_functions_with_tested_only(
 
 
 def test_list_high_risk_functions_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify list_high_risk_functions respects limit."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     limit_value = 5
     result = service.list_high_risk_functions(min_risk=LOW_RISK, limit=limit_value)
@@ -169,11 +169,11 @@ def test_list_high_risk_functions_with_limit(
 
 
 def test_get_callgraph_neighbors_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     neighbors = service.get_callgraph_neighbors(goid_h128=analytics_samples.goid_h128)
 
@@ -184,11 +184,11 @@ def test_get_callgraph_neighbors_returns_domain_result(
 
 
 def test_get_callgraph_neighbors_direction_incoming(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with incoming direction."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     neighbors = service.get_callgraph_neighbors(
         goid_h128=analytics_samples.goid_h128,
@@ -202,11 +202,11 @@ def test_get_callgraph_neighbors_direction_incoming(
 
 
 def test_get_callgraph_neighbors_direction_outgoing(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with outgoing direction."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     neighbors = service.get_callgraph_neighbors(
         goid_h128=analytics_samples.goid_h128,
@@ -220,11 +220,11 @@ def test_get_callgraph_neighbors_direction_outgoing(
 
 
 def test_get_tests_for_function_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     tests = service.get_tests_for_function(goid_h128=analytics_samples.goid_h128)
 
@@ -235,11 +235,11 @@ def test_get_tests_for_function_returns_domain_result(
 
 
 def test_get_tests_for_function_with_urn(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function with URN."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     tests = service.get_tests_for_function(urn=analytics_samples.urn)
 
@@ -250,11 +250,11 @@ def test_get_tests_for_function_with_urn(
 
 
 def test_get_callgraph_neighborhood_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     neighborhood = service.get_callgraph_neighborhood(
         goid_h128=analytics_samples.goid_h128,
@@ -268,11 +268,11 @@ def test_get_callgraph_neighborhood_returns_domain_result(
 
 
 def test_get_callgraph_neighborhood_with_max_nodes(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood with max_nodes."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     max_nodes = 5
     neighborhood = service.get_callgraph_neighborhood(
@@ -288,11 +288,11 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
 
 def test_get_import_boundary_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     boundary = service.get_import_boundary(subsystem_id=analytics_samples.subsystem_id)
 
@@ -303,11 +303,11 @@ def test_get_import_boundary_returns_domain_result(
 
 
 def test_get_import_boundary_with_max_edges(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary with max_edges."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     max_edges = 10
     boundary = service.get_import_boundary(
@@ -322,11 +322,11 @@ def test_get_import_boundary_with_max_edges(
 
 
 def test_get_file_summary_returns_domain_result(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_summary returns domain result."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     summary = service.get_file_summary(rel_path=analytics_samples.rel_path)
 
@@ -342,10 +342,10 @@ def test_get_file_summary_returns_domain_result(
 
 
 def test_get_function_summary_not_found(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_function_summary handles not found case."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     # Use a nonexistent goid_h128
     nonexistent_goid = 99999999
@@ -358,11 +358,11 @@ def test_get_function_summary_not_found(
 
 
 def test_get_callgraph_neighbors_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with limit."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     limit_value = 3
     neighbors = service.get_callgraph_neighbors(
@@ -377,11 +377,11 @@ def test_get_callgraph_neighbors_with_limit(
 
 
 def test_get_tests_for_function_with_limit(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
     analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function with limit."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     limit_value = 5
     tests = service.get_tests_for_function(
@@ -396,10 +396,10 @@ def test_get_tests_for_function_with_limit(
 
 
 def test_get_import_boundary_nonexistent_subsystem(
-    provisioned_service_app: ServiceApp,
+    provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_import_boundary handles nonexistent subsystem."""
-    service = _build_local_service(provisioned_service_app)
+    service = _build_local_service(provisioned_service_ctx)
 
     boundary = service.get_import_boundary(subsystem_id="nonexistent_subsystem_xyz")
 

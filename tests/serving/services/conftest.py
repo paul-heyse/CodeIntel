@@ -9,12 +9,18 @@ import pytest
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
+from tests._helpers.analytics_samples import (
+    AnalyticsSamples,
+    architecture_seed_selector,
+    load_analytics_samples,
+)
 from tests._helpers.serving_apps import (
     ServiceApp,
-    ServiceContext,
     build_service_app,
-    build_service_context_from_components,
+)
+from tests._helpers.serving_contexts import (
+    ProvisionedServiceContext,
+    build_provisioned_service_context,
 )
 from tests._helpers.serving_harnesses import RecordingObservability
 from tests.serving.mcp.conftest import McpBackendComponents
@@ -85,16 +91,21 @@ def provisioned_service_app(
 
 @pytest.fixture
 def provisioned_service_ctx(
-    mcp_backend_components: McpBackendComponents,
-) -> ServiceContext:
-    """Service context constructed from the provisioned gateway snapshot.
+    provisioned_repo: ProvisionedGateway,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
+) -> ProvisionedServiceContext:
+    """Provisioned service context with rebuild helpers.
 
     Returns
     -------
-    ServiceContext
-        Aggregated service/backend/app bound to the provisioned repo.
+    ProvisionedServiceContext
+        Context bound to the provisioned repo snapshot.
     """
-    return build_service_context_from_components(mcp_backend_components)
+    return build_provisioned_service_context(
+        mcp_backend_factory,
+        gateway=provisioned_repo.gateway,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
+    )
 
 
 @pytest.fixture
@@ -120,20 +131,19 @@ def architecture_service_app(
 def architecture_service_ctx(
     architecture_gateway: StorageGateway,
     mcp_backend_factory: Callable[..., McpBackendComponents],
-) -> ServiceContext:
+) -> ProvisionedServiceContext:
     """Service context constructed from the architecture gateway snapshot.
 
     Returns
     -------
-    ServiceContext
-        Aggregated service/backend/app bound to the architecture data snapshot.
+    ProvisionedServiceContext
+        Context backed by the architecture gateway and snapshot.
     """
-    components = mcp_backend_factory(
+    return build_provisioned_service_context(
+        mcp_backend_factory,
         gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
+        snapshot=("demo/repo", "deadbeef"),
     )
-    return build_service_context_from_components(components)
 
 
 @pytest.fixture
@@ -161,7 +171,7 @@ def architecture_samples(
     AnalyticsSamples
         Sample identifiers from the architecture gateway.
     """
-    return load_analytics_samples(architecture_service_app.gateway)
+    return architecture_seed_selector(architecture_service_app.gateway)
 
 
 __all__ = [

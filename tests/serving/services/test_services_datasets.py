@@ -14,38 +14,51 @@ from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
+    assert_problem_detail_response,
     expect_equal,
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.serving_apps import ServiceApp
+from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 SAMPLE_LIMIT = 5
 OFFSET_ZERO = 0
 
 
 @pytest.fixture
-def service(provisioned_service_app: ServiceApp) -> LocalQueryService:
+def service_ctx(provisioned_service_ctx: ProvisionedServiceContext) -> ProvisionedServiceContext:
+    """Service context wrapper for dataset tests.
+
+    Returns
+    -------
+    ProvisionedServiceContext
+        Context bound to the provisioned repo snapshot.
+    """
+    return provisioned_service_ctx
+
+
+@pytest.fixture
+def service(service_ctx: ProvisionedServiceContext) -> LocalQueryService:
     """Expose the configured LocalQueryService for reuse across tests.
 
     Returns
     -------
     LocalQueryService
-        Service instance backed by the provisioned gateway snapshot.
+        Service instance backed by the provisioned context.
     """
-    return provisioned_service_app.service
+    return service_ctx.service  # type: ignore[no-any-return]
 
 
 @pytest.fixture
-def service_client(provisioned_service_app: ServiceApp) -> Iterator[TestClient]:
+def service_client(service_ctx: ProvisionedServiceContext) -> Iterator[TestClient]:
     """Provide a TestClient bound to the provisioned service app.
 
     Yields
     ------
-    TestClient
+    Iterator[TestClient]
         Client connected to the provisioned service FastAPI app.
     """
-    with provisioned_service_app.client() as client:
+    with service_ctx.client() as client:
         yield client
 
 
@@ -155,12 +168,9 @@ def test_read_dataset_rows_nonexistent_dataset(service_client: TestClient) -> No
     """Verify read_dataset_rows returns error for nonexistent dataset."""
     response = service_client.get("/datasets/nonexistent_dataset_name_xyz")
 
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-        }
+    assert_problem_detail_response(
+        response,
+        status_code=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -180,12 +190,9 @@ def test_dataset_schema_nonexistent_dataset(service_client: TestClient) -> None:
     """Verify dataset_schema returns error for nonexistent dataset."""
     response = service_client.get("/datasets/nonexistent_dataset_name_xyz/schema")
 
-    expect_true(
-        response.status_code
-        in {
-            status.HTTP_400_BAD_REQUEST,
-            status.HTTP_404_NOT_FOUND,
-        }
+    assert_problem_detail_response(
+        response,
+        status_code=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -281,11 +288,11 @@ def test_dataset_schema_response_structure(
 
 
 def test_local_dataset_mixin_uses_query_gateway(
-    provisioned_service_app: ServiceApp,
+    service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify LocalDatasetMixin uses query gateway for dataset mapping."""
     service = LocalQueryService(
-        query=provisioned_service_app.service.query,
+        query=service_ctx.service.query,
         dataset_tables=None,
     )
 
@@ -294,12 +301,12 @@ def test_local_dataset_mixin_uses_query_gateway(
 
 
 def test_local_dataset_mixin_with_explicit_tables(
-    provisioned_service_app: ServiceApp,
+    service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify LocalDatasetMixin uses explicit dataset_tables when provided."""
     service = LocalQueryService(
-        query=provisioned_service_app.service.query,
-        dataset_tables=dict(provisioned_service_app.gateway.datasets.mapping),
+        query=service_ctx.service.query,
+        dataset_tables=dict(service_ctx.gateway.datasets.mapping),
     )
 
     datasets = service.list_datasets()

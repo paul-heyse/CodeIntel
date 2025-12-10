@@ -24,6 +24,8 @@ from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
     expect_false,
+    expect_graph_is_dag,
+    expect_has_cycle,
     expect_in,
     expect_is_instance,
     expect_length,
@@ -270,6 +272,7 @@ def test_loop_headers_entry_not_in_graph_returns_empty() -> None:
 def test_loop_headers_dag_has_no_loops() -> None:
     """DAG has no loop headers."""
     graph = chain_graph(5)
+    expect_graph_is_dag(graph)
     result = find_natural_loop_headers(graph, entry="A")
     expect_equal(result, set())
 
@@ -277,6 +280,7 @@ def test_loop_headers_dag_has_no_loops() -> None:
 def test_loop_headers_simple_cycle() -> None:
     """Simple cycle has one loop header."""
     graph = cyclic_graph(3)  # A -> B -> C -> A
+    expect_has_cycle(graph)
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is the loop header (back edge from C to A)
@@ -287,6 +291,7 @@ def test_loop_headers_self_loop() -> None:
     """Self-loop node is a loop header."""
     graph = self_loop_graph("B")
     graph.add_edge("A", "B")
+    expect_has_cycle(graph)
     result = find_natural_loop_headers(graph, entry="A")
 
     expect_in("B", result)
@@ -295,6 +300,7 @@ def test_loop_headers_self_loop() -> None:
 def test_loop_headers_nested_loops() -> None:
     """Nested loops have multiple headers."""
     graph = nested_loop_graph()
+    expect_has_cycle(graph)
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is outer loop header, B is inner loop header
@@ -305,6 +311,7 @@ def test_loop_headers_nested_loops() -> None:
 def test_loop_headers_while_loop_pattern() -> None:
     """While loop pattern identifies correct header."""
     graph = while_loop_cfg()
+    expect_has_cycle(graph)
     result = find_natural_loop_headers(graph, entry="entry")
 
     expect_in("condition", result)
@@ -356,6 +363,7 @@ def test_longest_path_cyclic_graph_uses_condensation() -> None:
 def test_longest_path_mixed_dag_and_cycle() -> None:
     """Graph with both DAG part and cycle computes correct path."""
     graph = dag_to_cycle_graph()
+    expect_has_cycle(graph)
     result = compute_cfg_longest_path(graph)
 
     # Condensation has: entry -> SCC(A,B,C) -> exit

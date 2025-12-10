@@ -65,15 +65,16 @@ class CommandConfig:
 DEFAULT_CONFIG = CommandConfig()
 
 # Fields that are standard infrastructure, not command params
+# Note: repo, repo_root, commit are NOT excluded because some commands
+# (like history.timeseries) use them as actual parameters
 _INFRASTRUCTURE_FIELDS = frozenset({
     "output_format",
     "verbose",
     "json",
     "project",
-    "project_root",
+    "project_root",  # Used for runtime resolution
     "db_path",
     "database_path",
-    "repo",
     "commit",
     "build_dir",
     "repo_root",

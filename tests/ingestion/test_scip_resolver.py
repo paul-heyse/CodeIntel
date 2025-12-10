@@ -16,7 +16,6 @@ from codeintel.ingestion.infrastructure import (
     ScipResolverInput,
     resolve_scip_inputs,
 )
-from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -30,8 +29,8 @@ from tests._helpers.ingestion import (
 )
 
 # Test constants for magic values
-EXPECTED_START_LINE = 5
-EXPECTED_END_LINE = 10
+EXPECTED_START_LINE = 1
+EXPECTED_END_LINE = 1
 
 
 # --- ResolvedScipConfig Tests ---
@@ -152,13 +151,7 @@ def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None
 
 def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
     """Test creating ScipResolverInput with pre-computed modules."""
-    module = ModuleRecord(
-        rel_path="main.py",
-        module_name="main",
-        file_path=tmp_path / "main.py",
-        index=1,
-        total=1,
-    )
+    modules = module_records_for_paths(["main.py"], tmp_path)
 
     inputs = ScipResolverInput(
         repo="test-repo",
@@ -166,7 +159,7 @@ def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
         repo_root=tmp_path,
         build_dir=tmp_path / "build",
         document_output_dir=tmp_path / "docs",
-        modules=[module],
+        modules=modules,
     )
 
     modules = inputs.modules
@@ -242,63 +235,49 @@ def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
     """Test resolving with modules passed as first argument."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-
-    module = ModuleRecord(
-        rel_path="main.py",
-        module_name="main",
-        file_path=repo_root / "main.py",
-        index=1,
-        total=1,
-    )
+    context = build_ingestion_context_bundle(tmp_path)
+    repo_root = context.repo_root
+    modules = module_records_for_paths(context.module_paths, repo_root)
 
     result = resolve_scip_inputs(
-        [module],
+        modules,
         ScipResolverInput.build(
-            repo="test-repo",
-            commit="abc",
+            repo=context.ctx.repo,
+            commit=context.ctx.commit,
             paths=ScipPathConfig.from_strings(
                 repo_root=repo_root,
-                build_dir=tmp_path / "build",
-                document_output_dir=tmp_path / "docs",
+                build_dir=context.ctx.build_dir,
+                document_output_dir=context.ctx.build_dir / "docs",
             ),
         ),
     )
 
-    expect_equal(len(result.modules), 1)
-    expect_equal(result.modules[0].module_name, "main")
+    expect_equal(len(result.modules), len(modules))
+    expect_equal(result.modules[0].module_name, modules[0].module_name)
 
 
 def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
     """Test resolving with modules passed via ScipResolverInput."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-
-    module = ModuleRecord(
-        rel_path="util.py",
-        module_name="util",
-        file_path=repo_root / "util.py",
-        index=1,
-        total=1,
-    )
+    context = build_ingestion_context_bundle(tmp_path)
+    repo_root = context.repo_root
+    modules = module_records_for_paths(context.module_paths, repo_root)
 
     result = resolve_scip_inputs(
         [],  # Empty, modules in input takes precedence
         ScipResolverInput.build(
-            repo="test-repo",
-            commit="abc",
+            repo=context.ctx.repo,
+            commit=context.ctx.commit,
             paths=ScipPathConfig.from_strings(
                 repo_root=repo_root,
-                build_dir=tmp_path / "build",
-                document_output_dir=tmp_path / "docs",
+                build_dir=context.ctx.build_dir,
+                document_output_dir=context.ctx.build_dir / "docs",
             ),
-            modules=[module],
+            modules=modules,
         ),
     )
 
-    expect_equal(len(result.modules), 1)
-    expect_equal(result.modules[0].module_name, "util")
+    expect_equal(len(result.modules), len(modules))
+    expect_equal(result.modules[0].module_name, modules[0].module_name)
 
 
 def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> None:
@@ -405,31 +384,18 @@ def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
 
 def test_module_record_create(tmp_path: Path) -> None:
     """Test creating a ModuleRecord with all fields."""
-    file_path = tmp_path / "src" / "module.py"
+    repo_root = build_ingestion_context_bundle(tmp_path).repo_root
+    module = module_records_for_paths(["src/module.py"], repo_root)[0]
 
-    record = ModuleRecord(
-        rel_path="src/module.py",
-        module_name="src.module",
-        file_path=file_path,
-        index=EXPECTED_START_LINE,
-        total=EXPECTED_END_LINE,
-    )
-
-    expect_equal(record.rel_path, "src/module.py")
-    expect_equal(record.module_name, "src.module")
-    expect_equal(record.file_path, file_path)
-    expect_equal(record.index, EXPECTED_START_LINE)
-    expect_equal(record.total, EXPECTED_END_LINE)
+    expect_equal(module.rel_path, "src/module.py")
+    expect_equal(module.module_name, "src.module")
+    expect_equal(module.file_path, repo_root / "src/module.py")
+    expect_equal(module.index, EXPECTED_START_LINE)
+    expect_equal(module.total, EXPECTED_END_LINE)
 
 
 def test_module_record_frozen(tmp_path: Path) -> None:
     """Test that ModuleRecord is immutable."""
-    record = ModuleRecord(
-        rel_path="main.py",
-        module_name="main",
-        file_path=tmp_path / "main.py",
-        index=1,
-        total=1,
-    )
+    module = module_records_for_paths(["main.py"], tmp_path)[0]
 
-    assert_cannot_setattr(record, "module_name", "new_name")
+    assert_cannot_setattr(module, "module_name", "new_name")

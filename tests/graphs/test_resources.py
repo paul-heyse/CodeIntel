@@ -20,6 +20,7 @@ from tests._helpers.assertions import (
     expect_in,
     expect_is_instance,
     expect_row_value,
+    expect_rows_equal,
     expect_true,
 )
 
@@ -544,15 +545,14 @@ def test_storage_resource_execute_query(storage_resource: StorageResource) -> No
     """StorageResource executes queries."""
     result = storage_resource.execute_query("SELECT 1 as value")
 
-    expect_equal(len(result.rows), EXPECTED_ONE)
+    expect_rows_equal(result.rows, [(EXPECTED_ONE,)])
 
 
 def test_storage_resource_execute_query_with_params(storage_resource: StorageResource) -> None:
     """StorageResource executes queries with parameters."""
     result = storage_resource.execute_query("SELECT ? + ? as value", [1, 2])
 
-    expect_equal(len(result.rows), EXPECTED_ONE)
-    expect_equal(result.rows[0][0], EXPECTED_THREE)
+    expect_rows_equal(result.rows, [(EXPECTED_THREE,)])
 
 
 def test_storage_resource_execute_query_empty_result(storage_resource: StorageResource) -> None:
@@ -560,7 +560,7 @@ def test_storage_resource_execute_query_empty_result(storage_resource: StorageRe
     storage_resource.gateway.con.execute("CREATE TEMP TABLE test_empty (id INT)")
     result = storage_resource.execute_query("SELECT * FROM test_empty WHERE id > 999")
 
-    expect_equal(len(result.rows), 0)
+    expect_rows_equal(result.rows, [])
 
 
 def test_storage_resource_execute_mutation(storage_resource: StorageResource) -> None:

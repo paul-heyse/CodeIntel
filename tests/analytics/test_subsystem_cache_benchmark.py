@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.subsystems.materialize import refresh_subsystem_caches
-from tests._helpers.gateway import GatewayFactory
+from tests._helpers import TestContext, create_test_context
 
 
-def _seed_subsystem(con: DuckDBPyConnection, *, repo: str, commit: str) -> None:
-    con.execute(
+def _seed_subsystem(ctx: TestContext) -> None:
+    """Insert a minimal subsystem row for cache refresh tests."""
+    ctx.gateway.con.execute(
         """
         INSERT INTO analytics.subsystems (
             repo,
@@ -37,8 +39,8 @@ def _seed_subsystem(con: DuckDBPyConnection, *, repo: str, commit: str) -> None:
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            repo,
-            commit,
+            ctx.repo,
+            ctx.commit,
             "subsys-1",
             "demo_subsystem",
             "demo description",
@@ -59,17 +61,18 @@ def _seed_subsystem(con: DuckDBPyConnection, *, repo: str, commit: str) -> None:
     )
 
 
-def test_refresh_and_benchmark_returns_timings() -> None:
+def test_refresh_and_benchmark_returns_timings(tmp_path: Path) -> None:
     """Refreshing caches with benchmarking enabled should emit timing data."""
-    gateway = GatewayFactory().without_validation().open()
-    _seed_subsystem(gateway.con, repo="demo/repo", commit="deadbeef")
+    ctx = create_test_context(tmp_path)
+    _seed_subsystem(ctx)
     result = refresh_subsystem_caches(
-        gateway,
-        repo="demo/repo",
-        commit="deadbeef",
+        ctx.gateway,
+        repo=ctx.repo,
+        commit=ctx.commit,
         benchmark=True,
         benchmark_limit=5,
     )
+    ctx.close()
     if result is None:
         pytest.fail("Expected benchmark results when benchmark flag is set")
     if result.profile_view_ms < 0 or result.profile_cache_ms < 0:

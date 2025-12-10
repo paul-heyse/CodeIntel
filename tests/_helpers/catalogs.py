@@ -9,7 +9,6 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, Fu
 from tests._helpers.context import TestContext
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
-
 CatalogLike = FunctionCatalog | FunctionCatalogService | MockFunctionCatalog
 
 
@@ -17,7 +16,7 @@ def _normalize_catalog(catalog: CatalogLike) -> FunctionCatalog | MockFunctionCa
     if isinstance(catalog, (FunctionCatalog, MockFunctionCatalog)):
         return catalog
     if hasattr(catalog, "catalog"):
-        maybe = getattr(catalog, "catalog")
+        maybe = catalog.catalog
         if callable(maybe):
             return maybe()  # type: ignore[no-any-return]
         return maybe  # type: ignore[return-value]
