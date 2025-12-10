@@ -26,6 +26,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.assertions.http_responses import assert_ok_or_not_found
 from tests._helpers.serving_harnesses import RecordingObservability
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
@@ -70,7 +71,7 @@ def test_get_function_summary_with_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get(f"/function/summary?goid_h128={analytics_samples.goid_h128}")
 
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_function_summary_with_rel_path_and_qualname(
@@ -92,7 +93,7 @@ def test_get_function_summary_with_rel_path_and_qualname(
             f"&qualname={analytics_samples.qualname}"
         )
 
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_function_summary_no_params_returns_error(
@@ -134,74 +135,26 @@ def test_list_high_risk_functions_default(
     expect_in("functions", data)
 
 
-def test_list_high_risk_functions_with_low_min_risk(
+@pytest.mark.parametrize(
+    ("query", "status_code"),
+    [
+        ("", status.HTTP_200_OK),
+        (f"?min_risk={LOW_RISK_THRESHOLD}", status.HTTP_200_OK),
+        (f"?min_risk={HIGH_RISK_THRESHOLD}", status.HTTP_200_OK),
+        ("?tested_only=true", status.HTTP_200_OK),
+        ("?limit=5", status.HTTP_200_OK),
+    ],
+)
+def test_list_high_risk_functions_variations(
     provisioned_service_app: ServiceApp,
+    query: str,
+    status_code: int,
 ) -> None:
-    """Verify list_high_risk_functions with low min_risk returns more results.
-
-    Parameters
-    ----------
-    provisioned_service_app
-        Provisioned service app fixture.
-    """
+    """Verify list_high_risk_functions handles common parameter variations."""
     with provisioned_service_app.client() as client:
-        response = client.get(f"/functions/high-risk?min_risk={LOW_RISK_THRESHOLD}")
+        response = client.get(f"/functions/high-risk{query}")
 
-    expect_equal(response.status_code, status.HTTP_200_OK)
-    data = response.json()
-    expect_in("functions", data)
-
-
-def test_list_high_risk_functions_with_high_min_risk(
-    provisioned_service_app: ServiceApp,
-) -> None:
-    """Verify list_high_risk_functions with high min_risk filters results.
-
-    Parameters
-    ----------
-    provisioned_service_app
-        Provisioned service app fixture.
-    """
-    with provisioned_service_app.client() as client:
-        response = client.get(f"/functions/high-risk?min_risk={HIGH_RISK_THRESHOLD}")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
-    data = response.json()
-    expect_in("functions", data)
-
-
-def test_list_high_risk_functions_tested_only_true(
-    provisioned_service_app: ServiceApp,
-) -> None:
-    """Verify list_high_risk_functions with tested_only=true.
-
-    Parameters
-    ----------
-    provisioned_service_app
-        Provisioned service app fixture.
-    """
-    with provisioned_service_app.client() as client:
-        response = client.get("/functions/high-risk?tested_only=true")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
-    data = response.json()
-    expect_in("functions", data)
-
-
-def test_list_high_risk_functions_with_limit(
-    provisioned_service_app: ServiceApp,
-) -> None:
-    """Verify list_high_risk_functions respects limit parameter.
-
-    Parameters
-    ----------
-    provisioned_service_app
-        Provisioned service app fixture.
-    """
-    with provisioned_service_app.client() as client:
-        response = client.get("/functions/high-risk?limit=5")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
+    expect_equal(response.status_code, status_code)
     data = response.json()
     expect_in("functions", data)
     expect_true(len(data["functions"]) <= MAX_NODES_SMALL)
@@ -436,7 +389,7 @@ def test_get_import_boundary_nonexistent_subsystem(
         response = client.get("/graph/import/boundary?subsystem_id=nonexistent_subsystem")
 
     # Should return empty result or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================
@@ -497,8 +450,7 @@ def test_get_tests_for_function_no_params_returns_error(
     with provisioned_service_app.client() as client:
         response = client.get("/function/tests")
 
-    # Should return 400 because no identifier was provided
-    expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+    assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -541,7 +493,7 @@ def test_get_file_summary_nonexistent_file(
         response = client.get("/file/summary?rel_path=nonexistent/path/file.py")
 
     # Should return empty result or 404
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_file_summary_missing_param(
@@ -558,7 +510,7 @@ def test_get_file_summary_missing_param(
         response = client.get("/file/summary")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 # =============================================================================
@@ -730,7 +682,7 @@ def test_callgraph_neighbors_missing_goid_h128(
         response = client.get("/function/callgraph")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_callgraph_neighborhood_missing_goid_h128(
@@ -747,7 +699,7 @@ def test_callgraph_neighborhood_missing_goid_h128(
         response = client.get("/graph/call/neighborhood")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_import_boundary_missing_subsystem_id(
@@ -764,7 +716,7 @@ def test_import_boundary_missing_subsystem_id(
         response = client.get("/graph/import/boundary")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 # =============================================================================

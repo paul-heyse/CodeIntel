@@ -13,11 +13,11 @@ from fastapi import status
 from codeintel.serving.mcp.errors import McpError
 from tests._helpers.assertions import (
     assert_problem_detail_response,
-    expect_equal,
     expect_in,
     expect_is_instance,
     expect_is_not_none,
 )
+from tests._helpers.assertions.http_responses import assert_ok_or_not_found
 
 if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
@@ -50,7 +50,7 @@ def test_get_function_profile_with_goid_h128(
         response = client.get(f"/profiles/function?goid_h128={analytics_samples.goid_h128}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_function_profile_missing_goid_h128(
@@ -84,7 +84,7 @@ def test_get_function_profile_invalid_goid_h128(
         response = client.get("/profiles/function?goid_h128=999999999999")
 
     # Should return 404 or empty result
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================
@@ -109,7 +109,7 @@ def test_get_file_profile_with_rel_path(
         response = client.get(f"/profiles/file?rel_path={analytics_samples.rel_path}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_file_profile_missing_rel_path(
@@ -142,7 +142,7 @@ def test_get_file_profile_nonexistent_file(
         response = client.get("/profiles/file?rel_path=nonexistent/path/file.py")
 
     # Should return 404 or empty result
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================
@@ -167,7 +167,7 @@ def test_get_module_profile_with_module(
         response = client.get(f"/profiles/module?module={analytics_samples.module}")
 
     # May return 404 if profile doesn't exist, or 200 if found
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_module_profile_missing_module(
@@ -184,7 +184,7 @@ def test_get_module_profile_missing_module(
         response = client.get("/profiles/module")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_module_profile_nonexistent_module(
@@ -201,7 +201,7 @@ def test_get_module_profile_nonexistent_module(
         response = client.get("/profiles/module?module=nonexistent.module.name")
 
     # Should return 404 or empty result
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================
@@ -226,7 +226,7 @@ def test_get_function_architecture_with_goid_h128(
         response = client.get(f"/architecture/function?goid_h128={analytics_samples.goid_h128}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_function_architecture_missing_goid_h128(
@@ -243,7 +243,7 @@ def test_get_function_architecture_missing_goid_h128(
         response = client.get("/architecture/function")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_function_architecture_invalid_goid_h128(
@@ -260,7 +260,7 @@ def test_get_function_architecture_invalid_goid_h128(
         response = client.get("/architecture/function?goid_h128=999999999999")
 
     # Should return 404 or empty result
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================
@@ -285,7 +285,7 @@ def test_get_module_architecture_with_module(
         response = client.get(f"/architecture/module?module={analytics_samples.module}")
 
     # May return 404 if architecture doesn't exist, or 200 if found
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_get_module_architecture_missing_module(
@@ -302,7 +302,7 @@ def test_get_module_architecture_missing_module(
         response = client.get("/architecture/module")
 
     # Should return 422 validation error (missing required param)
-    expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def test_get_module_architecture_nonexistent_module(
@@ -319,7 +319,7 @@ def test_get_module_architecture_nonexistent_module(
         response = client.get("/architecture/module?module=nonexistent.module.name")
 
     # Should return 404 or empty result
-    expect_in(response.status_code, {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 # =============================================================================

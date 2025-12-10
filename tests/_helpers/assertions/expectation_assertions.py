@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import cast
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, cast
 
 
 def _prefix(label: str | None) -> str:
@@ -154,6 +154,32 @@ def expect_row_count(rows: Sequence[object], expected: int, *, label: str | None
     if actual != expected:
         failure_message = f"{_prefix(label)}expected {expected} rows, got {actual}"
         raise AssertionError(failure_message)
+
+
+def expect_table_row_count(
+    con: Any,
+    table: str,
+    expected_count: int,
+    *,
+    label: str | None = None,
+) -> None:
+    """Assert that a table has the expected row count."""
+    row = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+    actual = int(row[0]) if row else 0
+    expect_equal(actual, expected_count, label=label or f"{table}_row_count")
+
+
+def expect_table_schema(
+    con: Any,
+    table: str,
+    *,
+    expected_columns: Mapping[str, str],
+    label: str | None = None,
+) -> None:
+    """Assert that a table's schema matches expected column names/types."""
+    rows = con.execute(f"PRAGMA table_info('{table}')").fetchall()
+    observed = {cast(str, row[1]): cast(str, row[2]) for row in rows} if rows else {}
+    expect_equal(observed, dict(expected_columns), label=label or f"{table}_schema")
 
 
 def expect_is_not(actual: object, unexpected: object, *, label: str | None = None) -> None:

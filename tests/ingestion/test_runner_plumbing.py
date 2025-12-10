@@ -15,14 +15,18 @@ from codeintel.ingestion import (
     TypingIngestStep,
 )
 from tests._helpers.assertions import expect_equal, expect_rows_equal
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import ScanSetupOptions, closing_gateway, make_scan_setup
-from tests._helpers.orchestration.tooling import ToolingOutputs, build_tooling_context
+from tests._helpers.ingestion import (
+    ScanSetupOptions,
+    build_scan_profile,
+    closing_gateway,
+    create_scan_step,
+    make_scan_setup,
+)
+from tests._helpers.orchestration.tooling import ToolingOutputs
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-pytest_plugins = ["tests._helpers.orchestration.tooling"]
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
@@ -90,35 +94,34 @@ def test_coverage_ingest_uses_runner(
 @pytest.mark.skip(
     reason="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)"
 )
-def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
+def test_typing_ingest_uses_shared_runner(
+    tooling_outputs_session: ToolingOutputs,
+    ingestion_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
-    context = build_tooling_context(tmp_path)
-    scan_setup = make_scan_setup(
-        tmp_path,
-        options=ScanSetupOptions(
-            repo_structure={"pkg/mod.py": "def add(x, y):\n    return x + y\n"},
-            gateway_factory=GatewayFactory(),
-        ),
-    )
-    gateway = scan_setup.gateway
-    scan_step, storage, discovery = scan_setup.scan_step, scan_setup.storage, scan_setup.discovery
-    tools = ToolRunnerAdapter(context.service)
+    tooling = tooling_outputs_session
+    repo_root = tooling.context.repo_root
+    profile = build_scan_profile(repo_root)
+    scan_step, storage, discovery = create_scan_step(ingestion_gateway, repo_root, tmp_path)
+    tools = ToolRunnerAdapter(tooling.context.service)
 
     _, modules, _ = scan_step.execute(
-        repo="r", commit="c", repo_root=scan_setup.repo_root, profile=scan_setup.profile
+        repo="r",
+        commit="c",
+        repo_root=repo_root,
+        profile=profile,
     )
 
     typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
     result = asyncio.run(
-        typing_step.execute_async(
-            list(modules), repo="r", commit="c", repo_root=str(scan_setup.repo_root)
-        )
+        typing_step.execute_async(list(modules), repo="r", commit="c", repo_root=str(repo_root))
     )
 
     if not result.success:
         errors = "; ".join(result.errors) if result.errors else "unknown"
         pytest.fail(f"Typing ingest failed: {errors}")
 
-    row = gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
+    row = ingestion_gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
     if (row[0] if row else 0) < 1:
         pytest.fail("Typedness ingestion wrote no rows")

@@ -18,7 +18,6 @@ from tests._helpers.fakes.ingestion_plugins import (
     make_recording_step_factory,
 )
 from tests._helpers.fakes.recording_gateways import FailingGateway
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_target_context_for_plugin,
@@ -54,40 +53,42 @@ RESOURCE_CASES = make_resource_case_params()
     [params for _, params in RESOURCE_CASES],
     ids=[name for name, _ in RESOURCE_CASES],
 )
-async def test_docstrings_wiring_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
+async def test_docstrings_wiring_scenarios(
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+) -> None:
     """Shared wiring coverage for DocstringsIngestPlugin."""
     await run_sync_plugin_wiring_scenario(
         _make_plugin,
         tmp_path,
         table_key="core.docstrings",
         options=options,
+        gateway=ingestion_gateway,
     )
 
 
 @pytest.mark.anyio
-async def test_gateway_errors_log_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+async def test_gateway_errors_log_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, ingestion_gateway
+) -> None:
     """Database lookup failures should be logged and yield an empty module set."""
     capture = StepCallCapture()
     plugin = _make_plugin(capture)
-    failing_gateway = FailingGateway(GatewayFactory().with_macros().open(), "db down")
+    failing_gateway = FailingGateway(ingestion_gateway, "db down")
     caplog.set_level("WARNING")
 
-    try:
-        ctx = build_target_context_for_plugin(
-            plugin,
-            tmp_path,
-            config=TargetContextConfig(
-                gateway=failing_gateway,
-                resources=TargetResourceOverrides(modules=()),
-            ),
-        )
-        result = await plugin.execute(ctx)
+    ctx = build_target_context_for_plugin(
+        plugin,
+        tmp_path,
+        config=TargetContextConfig(
+            gateway=failing_gateway,
+            resources=TargetResourceOverrides(modules=()),
+        ),
+    )
+    result = await plugin.execute(ctx)
 
-        expect_true(result.success)
-        expect_equal(capture.modules, [])
-        assert_logged(caplog.records, level="WARNING", containing="gateway error")
-    finally:
-        failing_gateway.close()
+    expect_true(result.success)
+    expect_equal(capture.modules, [])
+    assert_logged(caplog.records, level="WARNING", containing="gateway error")
 
 
 @pytest.mark.anyio

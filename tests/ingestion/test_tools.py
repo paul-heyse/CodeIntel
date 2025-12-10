@@ -333,7 +333,7 @@ def test_coverage_result_with_files() -> None:
         files=[file1, file2],
     )
 
-    expect_true(len(result.files) == EXPECTED_FILE_COUNT)
+    expect_equal(len(result.files), EXPECTED_FILE_COUNT)
     expect_true(result.files[0].rel_path == "a.py")
 
 
@@ -409,8 +409,8 @@ def test_port_scip_document_attributes() -> None:
     )
 
     expect_true(doc.relative_path == "src/module.py")
-    expect_true(len(doc.symbols) == 1)
-    expect_true(len(doc.occurrences) == 1)
+    expect_equal(len(doc.symbols), 1)
+    expect_equal(len(doc.occurrences), 1)
 
 
 def test_port_scip_document_defaults() -> None:
@@ -448,7 +448,7 @@ def test_scip_result_with_documents() -> None:
         documents=[doc],
     )
 
-    expect_true(len(result.documents) == 1)
+    expect_equal(len(result.documents), 1)
 
 
 # =============================================================================
@@ -521,7 +521,7 @@ def test_test_result_with_tests() -> None:
 
     result = TestResult(status=ToolStatus.OK, tests=tests)
 
-    expect_true(len(result.tests) == EXPECTED_TEST_COUNT)
+    expect_equal(len(result.tests), EXPECTED_TEST_COUNT)
 
 
 def test_test_result_passed_count() -> None:
@@ -583,7 +583,7 @@ def test_tool_result_diagnostic_workflow() -> None:
 
     # Verify structure
     expect_true(diag_result.status == ToolStatus.OK)
-    expect_true(len(diag_result.diagnostics) == 1)
+    expect_equal(len(diag_result.diagnostics), 1)
     expect_true(diag_result.errors_by_path() == {"src/a.py": 1})
 
 
@@ -834,7 +834,7 @@ def test_coverage_report_from_file_reports() -> None:
         ("b.py", {1}, set()),
     ]
     result = CoverageReport.from_file_reports(reports)
-    expect_true(len(result.files) == EXPECTED_COUNT_2)
+    expect_equal(len(result.files), EXPECTED_COUNT_2)
     expect_true(result.total_executed == EXPECTED_TEST_COUNT)
     expect_true(result.total_missing == 1)
 
@@ -890,7 +890,7 @@ def test_test_report_from_test_entries() -> None:
     ]
     report = TestReport.from_test_entries(entries)
     expected_tests = 4
-    expect_true(len(report.tests) == expected_tests)
+    expect_equal(len(report.tests), expected_tests)
     expect_true(report.passed_count == 1)
     expect_true(report.failed_count == 1)
     expect_true(report.skipped_count == 1)
@@ -905,7 +905,7 @@ def test_test_report_from_entries_skips_empty_nodeid() -> None:
         {"nodeid": "test::valid", "outcome": "passed"},
     ]
     report = TestReport.from_test_entries(entries)
-    expect_true(len(report.tests) == 1)
+    expect_equal(len(report.tests), 1)
 
 
 def test_test_report_empty() -> None:
@@ -928,7 +928,7 @@ def test_results_scip_document_attributes() -> None:
     occ = ScipOccurrence(symbol="sym", range_=(1, 0, 1, 3))
     doc = ScipDocument(relative_path="src/mod.py", occurrences=(occ,))
     expect_true(doc.relative_path == "src/mod.py")
-    expect_true(len(doc.occurrences) == 1)
+    expect_equal(len(doc.occurrences), 1)
 
 
 def test_parse_scip_range_three_elements() -> None:
@@ -987,7 +987,7 @@ def test_scip_index_result_from_json_documents() -> None:
         },
     ]
     result = ScipIndexResult.from_json_documents(docs)
-    expect_true(len(result.documents) == 1)
+    expect_equal(len(result.documents), 1)
     expect_true(result.definition_count == 1)
     expect_true(result.reference_count == 1)
 
@@ -1000,7 +1000,7 @@ def test_scip_index_result_skips_invalid_docs() -> None:
         {"relative_path": "valid.py", "occurrences": []},
     ]
     result = ScipIndexResult.from_json_documents(docs)
-    expect_true(len(result.documents) == 1)
+    expect_equal(len(result.documents), 1)
 
 
 def test_scip_index_result_empty() -> None:

@@ -26,6 +26,10 @@ from tests._helpers.rows import (
     data_model_field_row,
     data_model_relationship_row,
     data_model_row,
+    insert_rows,
+)
+from tests._helpers.rows import (
+    DataModelSeed,
 )
 from tests._helpers.seeds import SUBSYSTEM_ANALYTICS_PACK
 
@@ -248,17 +252,20 @@ def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
         )
     )
 
-    gateway.con.executemany(
-        "INSERT INTO analytics.data_models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_rows(
+        gateway,
         [model_row],
+        table="analytics.data_models",
     )
-    gateway.con.executemany(
-        "INSERT INTO analytics.data_model_fields VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_rows(
+        gateway,
         [field_row],
+        table="analytics.data_model_fields",
     )
-    gateway.con.executemany(
-        "INSERT INTO analytics.data_model_relationships VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_rows(
+        gateway,
         [relationship_row],
+        table="analytics.data_model_relationships",
     )
 
     normalized = fetch_models_normalized(gateway, repo, commit)

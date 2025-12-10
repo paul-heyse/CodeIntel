@@ -36,9 +36,8 @@ from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import OutputEnvelope, iter_stdin_records
 from codeintel.cli.core.output import merge_stdin_with_args
 from codeintel.cli.errors import ValidationError
-from codeintel.cli.execution import ExecutionContext, get_middleware_stack
+from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.ops import (
-    invoke_operation,
     op_call_handler,
     op_list_handler,
 )
@@ -50,12 +49,12 @@ from codeintel.cli.introspection import (
 )
 from codeintel.cli.project import (
     ProjectNotFoundError,
-    ProjectRuntime,
-    build_project_runtime,
     plan_dry_run,
     render_dry_run,
 )
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution import ResolutionError, resolve_from_params
+from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.operations.catalog import (
@@ -595,7 +594,7 @@ def _make_operation_params_dataclass(metadata: OperationCliMetadata) -> type[Any
     return params_cls
 
 
-def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
+def _runtime_from_cli(cli: RuntimeCLI) -> ResolvedRuntime:
     """Build a runtime from CLI flags with Cyclopts-native error handling.
 
     Parameters
@@ -605,7 +604,7 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
 
     Returns
     -------
-    ProjectRuntime
+    ResolvedRuntime
         Resolved runtime for invoking operations.
 
     Raises
@@ -614,8 +613,9 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
         If runtime resolution fails.
     """
     try:
-        return build_project_runtime(cli.project_root)
-    except ProjectNotFoundError as exc:
+        params: dict[str, object] = {"project_root": cli.project_root}
+        return resolve_from_params(params)
+    except (ProjectNotFoundError, ResolutionError) as exc:
         msg = str(exc) or "No codeintel.yaml found. Provide --root or create a project file."
         raise ValidationError(msg) from exc
 
@@ -623,35 +623,47 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ProjectRuntime:
 def _invoke_operation_with_prereqs(
     op_id: str,
     params: dict[str, Any],
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
     *,
     skip_prereqs: bool,
     verbose: bool,
 ) -> None:
-    """Run optional prerequisites then invoke the operation."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    """Run optional prerequisites then invoke the operation and print result.
 
-    middleware = get_middleware_stack()
-    ctx = ExecutionContext.for_sync(op_id, params)
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    params
+        Operation parameters.
+    runtime
+        Resolved runtime context.
+    skip_prereqs
+        Whether to skip prerequisite execution.
+    verbose
+        Whether to emit verbose output.
+    """
+    import json  # noqa: PLC0415
+    import sys  # noqa: PLC0415
 
-    with middleware.wrap(ctx):
-        if not skip_prereqs:
-            run_operation_prereqs(
-                op_id=op_id,
-                gateway=runtime.gateway,
-                snapshot=runtime.snapshot,
-                paths=runtime.paths,
-                tools=runtime.tools,
-            )
+    sys.stdout.write(f"Invoking operation '{op_id}'...\n")
 
-        invoke_operation(op_id, params, runtime)
+    result = _invoke_operation_for_result(
+        op_id,
+        params,
+        runtime,
+        skip_prereqs=skip_prereqs,
+        verbose=verbose,
+    )
+
+    sys.stdout.write(json.dumps(result, indent=2, default=str))
+    sys.stdout.write("\n")
 
 
 def _invoke_operation_for_result(
     op_id: str,
     params: dict[str, Any],
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
     *,
     skip_prereqs: bool = False,
     verbose: bool = False,
@@ -665,7 +677,7 @@ def _invoke_operation_for_result(
     params
         Operation parameters.
     runtime
-        Project runtime context.
+        Resolved runtime context.
     skip_prereqs
         Whether to skip prerequisite execution.
     verbose
@@ -689,38 +701,39 @@ def _invoke_operation_for_result(
         message = f"Unknown operation: {op_id}"
         raise ValidationError(message)
 
-    if not skip_prereqs:
-        run_operation_prereqs(
-            op_id=op_id,
-            gateway=runtime.gateway,
-            snapshot=runtime.snapshot,
-            paths=runtime.paths,
-            tools=runtime.tools,
-        )
+    with runtime_gateway(runtime) as gateway:
+        if not skip_prereqs:
+            run_operation_prereqs(
+                op_id=op_id,
+                gateway=gateway,
+                snapshot=runtime.snapshot,
+                paths=runtime.paths,
+                tools=runtime.tools,
+            )
 
-    stack = build_service_stack(runtime.serving, gateway=runtime.gateway)
-    try:
-        method = getattr(stack.service, op.backend_method, None)
-        if method is None:
-            message = f"Backend method not found: {op.backend_method}"
-            raise ValidationError(message)
+        stack = build_service_stack(runtime.serving, gateway=gateway)
+        try:
+            method = getattr(stack.service, op.backend_method, None)
+            if method is None:
+                message = f"Backend method not found: {op.backend_method}"
+                raise ValidationError(message)
 
-        result = method(**params)
+            result = method(**params)
 
-        # Convert result to dict
-        if hasattr(result, "model_dump"):
-            return result.model_dump(mode="json")
-        if hasattr(result, "__dict__"):
-            return dict(result.__dict__)
-        return {"value": result}
-    finally:
-        stack.close()
+            # Convert result to dict
+            if hasattr(result, "model_dump"):
+                return result.model_dump(mode="json")
+            if hasattr(result, "__dict__"):
+                return dict(result.__dict__)
+            return {"value": result}
+        finally:
+            stack.close()
 
 
 def _execute_from_stdin(
     metadata: OperationCliMetadata,
     cfg: OperationCliArgs,
-    runtime: ProjectRuntime,
+    runtime: ResolvedRuntime,
     *,
     verbose: bool,
 ) -> None:
@@ -733,7 +746,7 @@ def _execute_from_stdin(
     cfg
         CLI configuration with explicit arguments.
     runtime
-        Project runtime context.
+        Resolved runtime context.
     verbose
         Whether to emit verbose output.
     """

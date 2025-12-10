@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codeintel.cli.execution.registry import OperationSpec
-from codeintel.cli.introspection import OperationRegistry, get_operation_registry
+from codeintel.cli.introspection import OperationRegistry, get_registry
 from codeintel.cli.plugins.discovery import DEFAULT_PLUGIN_PATHS
 from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadResult
 from codeintel.cli.plugins.manifest import PluginCapability
@@ -77,7 +77,7 @@ def register_plugin_operations(
     int
         Number of operations registered.
     """
-    reg = registry or get_operation_registry()
+    reg = registry or get_registry()
 
     if not plugin.has_capability(PluginCapability.REGISTER_OPERATIONS):
         LOG.warning(
@@ -237,7 +237,7 @@ def register_all_plugins(
     dict[str, int]
         Map of plugin name to number of operations registered.
     """
-    reg = registry or get_operation_registry()
+    reg = registry or get_registry()
     registrations: dict[str, int] = {}
 
     for plugin in result.loaded:
@@ -380,7 +380,7 @@ class PluginManager:
         loader = PluginLoader(sandbox_enabled=False)
         try:
             loaded = loader.load_single(path)
-            count = register_plugin_operations(loaded, get_operation_registry())
+            count = register_plugin_operations(loaded, get_registry())
 
             info = PluginInfo(
                 name=loaded.manifest.name,

@@ -12,7 +12,7 @@ import sys
 from datetime import UTC, datetime
 
 from codeintel.cli.execution.registry import execute_operation
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
 from codeintel.cli.jobs import JobStatus, JobStore
 
 
@@ -32,7 +32,7 @@ def main() -> None:
     if job is None:
         sys.exit(1)
 
-    registry = get_operation_registry()
+    registry = get_registry()
     spec = registry.get(job.operation_id)
 
     if spec is None:

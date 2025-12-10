@@ -12,14 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.project import (
-    ProjectNotFoundError,
-    ProjectRuntime,
-    build_project_runtime,
-    find_project_root,
-)
+from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.validation import collect_contract_issues
 
@@ -154,34 +150,6 @@ class DatasetDiffResult:
         }
 
 
-def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from handler context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Resolved project runtime.
-
-    Raises
-    ------
-    ValidationError
-        If project cannot be resolved.
-    """
-    project_root = ctx.param_path("project_root")
-
-    try:
-        project_root_resolved = find_project_root(project_root)
-        return build_project_runtime(project_root_resolved)
-    except ProjectNotFoundError as exc:
-        msg = f"Project not found: {exc}"
-        raise ValidationError(msg) from exc
-
-
 def datasets_list_handler(
     ctx: HandlerContext,
 ) -> CliResult[DatasetsListResult]:
@@ -203,9 +171,10 @@ def datasets_list_handler(
     category = ctx.param_str("category")
     include_internal = ctx.param_bool("include_internal")
 
+    # Trigger runtime resolution to validate project exists
     try:
-        runtime = _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        _ = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:datasets:project-error",
@@ -232,8 +201,6 @@ def datasets_list_handler(
     # Sort by name for consistent ordering
     dataset_dicts.sort(key=lambda d: d["name"])
 
-    runtime.gateway.close()
-
     return CliResult.ok(
         DatasetsListResult(
             datasets=dataset_dicts,
@@ -259,8 +226,8 @@ def datasets_lint_handler(
         Lint result with any issues found.
     """
     try:
-        runtime = _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        runtime = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:datasets:project-error",
@@ -272,8 +239,8 @@ def datasets_lint_handler(
 
     LOG.info("Linting datasets")
 
-    issues = collect_contract_issues(runtime.gateway.con)
-    runtime.gateway.close()
+    with runtime_gateway(runtime) as gateway:
+        issues = collect_contract_issues(gateway.con)
 
     passed = len(issues) == 0
 

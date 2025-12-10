@@ -416,7 +416,7 @@ class CommonOptions:
     ] = False
 
     def to_params(self) -> dict[str, object]:
-        """Convert to parameter dictionary for ExecutionContext.
+        """Convert to parameter dictionary for HandlerContext.
 
         Returns
         -------

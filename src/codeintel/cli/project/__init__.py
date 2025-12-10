@@ -4,7 +4,6 @@ This package provides:
 
 - ``ProjectConfig``: Project configuration models
 - ``find_project_root()``: Project root detection
-- ``ProjectRuntime``: Runtime project context
 - Pipeline and batch execution
 - Dry-run planning
 """
@@ -20,9 +19,7 @@ from codeintel.cli.project._project import (
     ProjectConfig,
     ProjectConfigError,
     ProjectNotFoundError,
-    ProjectRuntime,
     StorageProjectConfig,
-    build_project_runtime,
     detect_commit,
     find_project_root,
     load_project_config,
@@ -41,7 +38,6 @@ from codeintel.cli.project.pipelines import (
     BatchOperation,
     BatchResult,
     PipelineConfig,
-    StreamingRenderer,
     execute_batch,
     load_batch,
     read_stdin_operations,
@@ -62,10 +58,7 @@ __all__ = [
     "ProjectConfig",
     "ProjectConfigError",
     "ProjectNotFoundError",
-    "ProjectRuntime",
     "StorageProjectConfig",
-    "StreamingRenderer",
-    "build_project_runtime",
     "detect_commit",
     "execute_batch",
     "find_project_root",

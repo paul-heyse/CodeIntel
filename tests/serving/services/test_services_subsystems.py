@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from fastapi import status
 
 from codeintel.serving import domain_models as dm
@@ -37,36 +38,18 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
+@pytest.mark.parametrize("query", ["", "limit=5"])
 def test_list_subsystems_returns_data(
     architecture_service_ctx: ProvisionedServiceContext,
+    query: str,
 ) -> None:
-    """Verify subsystem listing returns results.
+    """Verify subsystem listing returns results with optional limit."""
+    path = "/architecture/subsystems"
+    if query:
+        path = f"{path}?{query}"
 
-    Parameters
-    ----------
-    architecture_service_ctx
-        Service app wired to architecture data.
-    """
     with architecture_service_ctx.client() as client:
-        response = client.get("/architecture/subsystems")
-
-    expect_equal(response.status_code, status.HTTP_200_OK)
-    data = response.json()
-    expect_true("subsystems" in data or isinstance(data, list))
-
-
-def test_list_subsystems_with_limit(
-    architecture_service_ctx: ProvisionedServiceContext,
-) -> None:
-    """Verify subsystem listing respects limit parameter.
-
-    Parameters
-    ----------
-    architecture_service_ctx
-        Service app wired to architecture data.
-    """
-    with architecture_service_ctx.client() as client:
-        response = client.get("/architecture/subsystems?limit=5")
+        response = client.get(path)
 
     expect_equal(response.status_code, status.HTTP_200_OK)
 

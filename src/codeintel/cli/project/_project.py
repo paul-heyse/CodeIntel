@@ -28,16 +28,10 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
-
-from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig, ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.config.serving_models import ServingConfig
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger(__name__)
 
@@ -339,133 +333,6 @@ def detect_commit(root: Path) -> str:
     return "HEAD"
 
 
-# -----------------------------------------------------------------------------
-# Project Runtime
-# -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ProjectRuntime:
-    """Runtime wiring derived from project config and current repo state.
-
-    This dataclass bundles all the configuration objects needed to run
-    pipeline commands or serve operations for a project.
-
-    Parameters
-    ----------
-    root
-        Absolute path to project root.
-    project
-        Parsed project configuration.
-    cfg
-        CodeIntelConfig derived from project settings.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths for the project.
-    gateway
-        Storage gateway connected to the project database.
-    tools
-        Tools configuration for external binaries.
-    serving
-        Serving configuration for HTTP/MCP servers.
-    """
-
-    root: Path
-    project: ProjectConfig
-    cfg: CodeIntelConfig
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    gateway: StorageGateway
-    tools: ToolsConfig
-    serving: ServingConfig
-
-
-def build_project_runtime(root: Path | None = None) -> ProjectRuntime:
-    """Build runtime context from project config and environment.
-
-    Used by all CLI commands to construct SnapshotRef, BuildPaths,
-    StorageGateway, ToolsConfig, and ServingConfig from the project file.
-
-    Parameters
-    ----------
-    root
-        Optional project root (defaults to discovery via find_project_root).
-
-    Returns
-    -------
-    ProjectRuntime
-        Complete runtime context for CLI operations.
-
-    Notes
-    -----
-    This function may propagate ProjectNotFoundError or ProjectConfigError
-    from the underlying find_project_root and load_project_config calls.
-    """
-    resolved_root = find_project_root(root)
-    project = load_project_config(resolved_root)
-
-    commit = detect_commit(resolved_root)
-    repo_cfg = RepoConfig(repo=project.repo, commit=commit)
-
-    db_path = resolved_root / project.storage.db_path
-    paths_cfg = CliPathsInput(
-        repo_root=resolved_root,
-        build_dir=resolved_root / ".codeintel",
-        db_path=db_path,
-        document_output_dir=None,
-    )
-
-    cfg = CodeIntelConfig.from_cli_args(
-        repo_cfg=repo_cfg,
-        paths_cfg=paths_cfg,
-        options=None,
-    )
-
-    snapshot = SnapshotRef(
-        repo=cfg.repo.repo,
-        commit=cfg.repo.commit,
-        repo_root=cfg.paths.repo_root,
-    )
-    paths = cfg.build_paths
-
-    # Ensure database directory exists
-    paths.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    storage_cfg = StorageConfig.for_ingest(db_path=paths.db_path)
-    gateway = open_gateway(storage_cfg)
-
-    tools = cfg.tools
-
-    serving = ServingConfig(
-        mode="local_db",
-        repo_root=cfg.paths.repo_root,
-        repo=cfg.repo.repo,
-        commit=cfg.repo.commit,
-        db_path=paths.db_path,
-        read_only=True,
-    )
-
-    LOG.info(
-        "project.runtime repo=%s commit=%s root=%s db=%s",
-        project.repo,
-        commit,
-        resolved_root,
-        paths.db_path,
-    )
-
-    return ProjectRuntime(
-        root=resolved_root,
-        project=project,
-        cfg=cfg,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=tools,
-        serving=serving,
-    )
-
-
 __all__ = [
     "PROJECT_FILE",
     "AnalyticsProjectConfig",
@@ -474,9 +341,7 @@ __all__ = [
     "ProjectConfig",
     "ProjectConfigError",
     "ProjectNotFoundError",
-    "ProjectRuntime",
     "StorageProjectConfig",
-    "build_project_runtime",
     "detect_commit",
     "find_project_root",
     "load_project_config",

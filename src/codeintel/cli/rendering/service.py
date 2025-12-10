@@ -310,6 +310,61 @@ class UnifiedRenderer:
                 progress_obj["message"] = message
             self._write_jsonl(progress_obj)
 
+    # --- Streaming Methods (for batch/pipeline output) ---
+
+    def emit_stream_result(self, result: CliResult[T]) -> None:
+        """Emit result as JSON line for streaming.
+
+        Use for batch/pipeline output where results are streamed incrementally.
+        Always writes JSONL regardless of format setting.
+
+        Parameters
+        ----------
+        result
+            Result to emit.
+        """
+        data = result.to_dict()
+        self._ctx.writer.write(json.dumps(data, default=str))
+        self._ctx.writer.write("\n")
+        self._ctx.writer.flush()
+
+    def emit_stream_progress(self, index: int, total: int, operation_id: str) -> None:
+        """Emit progress indicator for streaming.
+
+        Use for batch/pipeline progress tracking.
+
+        Parameters
+        ----------
+        index
+            Current index.
+        total
+            Total items.
+        operation_id
+            Current operation.
+        """
+        data: dict[str, object] = {
+            "type": "progress",
+            "index": index,
+            "total": total,
+            "operation_id": operation_id,
+        }
+        self._ctx.writer.write(json.dumps(data))
+        self._ctx.writer.write("\n")
+        self._ctx.writer.flush()
+
+    def emit_stream_summary(self, summary: dict[str, object]) -> None:
+        """Emit summary at end of batch.
+
+        Parameters
+        ----------
+        summary
+            Summary data.
+        """
+        data = {"type": "summary", **summary}
+        self._ctx.writer.write(json.dumps(data, default=str))
+        self._ctx.writer.write("\n")
+        self._ctx.writer.flush()
+
     # --- Private Methods ---
 
     def _emit_warning(self, warning: str) -> None:

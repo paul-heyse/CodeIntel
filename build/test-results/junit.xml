@@ -1,27 +1,69 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="10" time="11.674" timestamp="2025-12-10T11:32:51.067287-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.cli.unit.test_operation_handlers" name="test_build_operations_have_required_group" time="0.002" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_build_status_no_params" time="0.003" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_op_call_with_unknown_operation" time="0.003" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_registry_lookup_nonexistent" time="0.002" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_op_list_returns_operations" time="0.003" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_registry_has_operations" time="0.002" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_dataset_list_returns_datasets" time="0.003"><failure message="codeintel.cli.resolution.errors.ResolutionError: No codeintel.yaml found. Provide --repo and --commit explicitly. Missing: repo, commit">tests/cli/unit/test_operation_handlers.py:81: in test_dataset_list_returns_datasets
-    result = op_harness.execute("dataset.list")
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/cli/_harness/__init__.py:517: in execute
-    result = execute_operation(spec, params)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/cli/execution/registry.py:427: in execute_operation
-    return spec.handler(ctx)
-           ^^^^^^^^^^^^^^^^^
-src/codeintel/cli/handlers/ops.py:375: in dataset_list_handler
-    project_runtime = resolved_to_project_runtime(ctx.runtime)
-                                                  ^^^^^^^^^^^
-src/codeintel/cli/handlers/context.py:529: in runtime
-    self._runtime = self._resolve_runtime()
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/cli/handlers/context.py:693: in _resolve_runtime
-    return RuntimeResolver.resolve(exec_ctx)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/cli/resolution/runtime.py:110: in resolve
-    return _resolve_from_params(ctx)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/cli/resolution/runtime.py:163: in _resolve_from_params
-    repo, commit = _extract_required_params(ctx)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/cli/resolution/runtime.py:241: in _extract_required_params
-    raise ResolutionError(_MSG_MISSING_PARAMS, missing_params=missing)
-E   codeintel.cli.resolution.errors.ResolutionError: No codeintel.yaml found. Provide --repo and --commit explicitly. Missing: repo, commit</failure></testcase><testcase classname="tests.cli.unit.test_operation_handlers" name="test_storage_status_returns_info" time="0.002" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_build_status_returns_structured_result" time="0.003" /><testcase classname="tests.cli.unit.test_operation_handlers" name="test_operations_have_required_fields" time="0.004" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="1" skipped="0" tests="17" time="16.957" timestamp="2025-12-10T12:42:28.122423-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="" name="tests.storage.repositories.test_repositories" time="0.000"><error message="collection failure">ImportError while importing test module '/home/paul/CodeIntel/tests/storage/repositories/test_repositories.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/storage/repositories/test_repositories.py:22: in &lt;module&gt;
+    from tests._helpers.rows import (
+E   ImportError: cannot import name 'insert_rows' from 'tests._helpers.rows' (/home/paul/CodeIntel/tests/_helpers/rows.py)</error></testcase><testcase classname="tests.storage.test_gateway_helpers" name="test_insert_helpers_write_expected_rows" time="1.391"><failure message="Failed: Insert helper row counts mismatch for analytics.coverage_lines: 0 &lt; 1">test_ctx = TestContext(snapshot=SnapshotRef(repo='demo/repo', commit='deadbeef', repo_root=PosixPath('/tmp/pytest-of-paul/pytest-.../db/codeintel_logs.duckdb')), seeds_applied={'core', 'metrics', 'graph', 'coverage', 'subsystems_analytics'}, extra={})
+
+    def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -&gt; None:
+        """Insert helpers should populate tables without manual SQL."""
+        test_ctx.require(
+            CORE_PACK,
+            GRAPH_PACK,
+            METRICS_PACK,
+            COVERAGE_PACK,
+            SUBSYSTEM_ANALYTICS_PACK,
+        )
+        gateway = test_ctx.gateway
+        con = gateway.con
+    
+        def _count(query: str) -&gt; int:
+            row = con.execute(query).fetchone()
+            if row is None or row[0] is None:
+                pytest.fail(f"Missing row count for query: {query}")
+            return int(row[0])
+    
+        counts = {
+            "core.repo_map": _count("SELECT COUNT(*) FROM core.repo_map"),
+            "core.modules": _count("SELECT COUNT(*) FROM core.modules"),
+            "core.goids": _count("SELECT COUNT(*) FROM core.goids"),
+            "graph.call_graph_nodes": _count("SELECT COUNT(*) FROM graph.call_graph_nodes"),
+            "graph.call_graph_edges": _count("SELECT COUNT(*) FROM graph.call_graph_edges"),
+            "graph.import_graph_edges": _count("SELECT COUNT(*) FROM graph.import_graph_edges"),
+            "graph.symbol_use_edges": _count("SELECT COUNT(*) FROM graph.symbol_use_edges"),
+            "graph.cfg_blocks": _count("SELECT COUNT(*) FROM graph.cfg_blocks"),
+            "graph.cfg_edges": _count("SELECT COUNT(*) FROM graph.cfg_edges"),
+            "graph.dfg_edges": _count("SELECT COUNT(*) FROM graph.dfg_edges"),
+            "analytics.function_metrics": _count("SELECT COUNT(*) FROM analytics.function_metrics"),
+            "analytics.coverage_functions": _count("SELECT COUNT(*) FROM analytics.coverage_functions"),
+            "analytics.coverage_lines": _count("SELECT COUNT(*) FROM analytics.coverage_lines"),
+            "analytics.test_catalog": _count("SELECT COUNT(*) FROM analytics.test_catalog"),
+            "analytics.test_coverage_edges": _count(
+                "SELECT COUNT(*) FROM analytics.test_coverage_edges"
+            ),
+            "analytics.goid_risk_factors": _count("SELECT COUNT(*) FROM analytics.goid_risk_factors"),
+            "analytics.config_values": _count("SELECT COUNT(*) FROM analytics.config_values"),
+            "analytics.typedness": _count("SELECT COUNT(*) FROM analytics.typedness"),
+            "analytics.static_diagnostics": _count("SELECT COUNT(*) FROM analytics.static_diagnostics"),
+            "analytics.graph_metrics_functions": _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_functions"
+            ),
+            "analytics.graph_metrics_modules": _count(
+                "SELECT COUNT(*) FROM analytics.graph_metrics_modules"
+            ),
+            "analytics.subsystems": _count("SELECT COUNT(*) FROM analytics.subsystems"),
+            "analytics.subsystem_modules": _count("SELECT COUNT(*) FROM analytics.subsystem_modules"),
+        }
+        expected_min = {
+            "analytics.goid_risk_factors": 0,
+        }
+        for key, value in counts.items():
+            minimum = expected_min.get(key, 1)
+            if value &lt; minimum:
+&gt;               pytest.fail(f"Insert helper row counts mismatch for {key}: {value} &lt; {minimum}")
+E               Failed: Insert helper row counts mismatch for analytics.coverage_lines: 0 &lt; 1
+
+tests/storage/test_gateway_helpers.py:74: Failed</failure></testcase><testcase classname="tests.storage.repositories.test_functions" name="test_list_high_risk_functions_with_tested_only_filter" time="1.390" /><testcase classname="tests.storage.repositories.test_functions" name="test_get_function_profile_returns_row" time="1.427" /><testcase classname="tests.storage.repositories.test_functions" name="test_list_function_goids_returns_empty_when_no_data" time="6.839" /><testcase classname="tests.storage.repositories.test_functions" name="test_get_function_architecture_returns_none_when_not_found" time="6.857" /><testcase classname="tests.storage.test_ingest_perf" name="test_ingest_macro_perf_reasonable[analytics.function_metrics]" time="6.990" /><testcase classname="tests.storage.repositories.test_functions" name="test_list_high_risk_functions_returns_empty_when_no_match" time="6.890" /><testcase classname="tests.storage.repositories.test_functions" name="test_list_function_summaries_for_file_returns_empty_when_no_match" time="6.892" /><testcase classname="tests.storage.repositories.test_functions" name="test_resolve_function_goid_returns_none_when_no_identifiers" time="6.898" /><testcase classname="tests.storage.test_ingest_prepared_dynamic" name="test_ingest_macros_registered" time="7.109" /><testcase classname="tests.storage.repositories.test_functions" name="test_get_function_profile_returns_none_when_not_found" time="6.905" /><testcase classname="tests.storage.test_ingest_perf" name="test_ingest_macro_perf_reasonable[analytics.function_effects]" time="7.023" /><testcase classname="tests.storage.test_ingest_prepared_dynamic" name="test_dynamic_prepared_statements_match_registry" time="6.918" /><testcase classname="tests.storage.repositories.test_functions" name="test_resolve_function_goid_passthrough" time="6.918" /><testcase classname="tests.storage.repositories.test_functions" name="test_get_function_summary_by_goid_returns_none_when_not_found" time="6.934" /><testcase classname="tests.storage.repositories.test_functions" name="test_function_repository_with_docs_export" time="7.687" /></testsuite></testsuites>

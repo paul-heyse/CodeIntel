@@ -25,6 +25,7 @@ from tests._helpers.ingestion import (
     build_target_context_for_plugin,
     make_resource_case_params,
     write_scip_index,
+    run_ingestion_scenario,
 )
 from tests.ingestion.plugins._wiring import run_module_path_resolution_scenarios
 
@@ -48,7 +49,9 @@ RESOURCE_CASES = make_resource_case_params()
     [params for _, params in RESOURCE_CASES],
     ids=[name for name, _ in RESOURCE_CASES],
 )
-def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
+def test_module_path_resolution_scenarios(
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+) -> None:
     """Shared module path resolution coverage for ScipIngestPlugin."""
     run_module_path_resolution_scenarios(
         lambda _capture: ScipIngestPlugin(),
@@ -56,6 +59,7 @@ def test_module_path_resolution_scenarios(tmp_path: Path, options: dict[str, boo
         tmp_path,
         resources_path="pkg/a.py",
         options=options,
+        gateway=ingestion_gateway,
     )
 
 
@@ -77,7 +81,6 @@ def _write_scip_json(target_dir: Path) -> Path:
 @pytest.mark.anyio
 async def test_execute_ingests_symbols_and_occurrences(tmp_path: Path) -> None:
     """SCIP ingestion should write symbols/occurrences and artifacts."""
-    plugin = ScipIngestPlugin()
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/a.py": "def a():\n    return 1\n"})
     fake_providers = FakeProviders()
     overrides = TargetResourceOverrides(
@@ -98,14 +101,12 @@ async def test_execute_ingests_symbols_and_occurrences(tmp_path: Path) -> None:
             role="definition",
         ),
     )
-    ctx = build_target_context_for_plugin(
-        plugin,
+    ctx, result = await run_ingestion_scenario(
+        ScipIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
+        seed_fn=lambda context: _write_scip_json(context.scip_dir),
     )
-
-    _write_scip_json(ctx.scip_dir)
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is True)
     expect_true("index.scip" in result.artifacts_written)
@@ -116,7 +117,6 @@ async def test_execute_ingests_symbols_and_occurrences(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_execute_fails_when_indexer_returns_error(tmp_path: Path) -> None:
     """Failed index run should propagate as failed TargetResult."""
-    plugin = ScipIngestPlugin()
     repo_root = build_repo_tree(tmp_path / "repo", {"pkg/a.py": "def a():\n    return 1\n"})
     fake_providers = FakeProviders()
     fake_providers.scip_indexer.index_success = False
@@ -124,14 +124,12 @@ async def test_execute_fails_when_indexer_returns_error(tmp_path: Path) -> None:
         providers=cast("Providers", fake_providers),
         modules=("pkg/a.py",),
     )
-    ctx = build_target_context_for_plugin(
-        plugin,
+    ctx, result = await run_ingestion_scenario(
+        ScipIngestPlugin,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, resources=overrides),
+        seed_fn=lambda context: _write_scip_json(context.scip_dir),
     )
-    _write_scip_json(ctx.scip_dir)
-
-    result = await plugin.execute(ctx)
 
     expect_true(result.success is False)
     expect_true("SCIP ingest failed" in (result.error_message or ""))

@@ -53,9 +53,6 @@ from codeintel.cli.introspection.validation import (
     Validator,
 )
 
-# Alias for backward compatibility
-get_operation_registry = get_registry
-
 __all__ = [
     "CliParamSpec",
     "HelpRenderer",
@@ -80,7 +77,6 @@ __all__ = [
     "get_help_panel_for_role",
     "get_help_renderer",
     "get_operation_info",
-    "get_operation_registry",
     "get_operations_with_cli_support",
     "get_registry",
     "list_all_operations",

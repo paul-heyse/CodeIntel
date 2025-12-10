@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/context.py
+# hypothesis_version: 6.148.7
+
+['1', 'E', 'HandlerContext', 'ParameterError', 'db_path', 'on', 'project_root', 'true', 'yes']

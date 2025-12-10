@@ -6,6 +6,8 @@ SCIP ingestion inputs into a resolved configuration.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -23,8 +25,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.ingestion import (
-    RepoVariantOptions,
-    build_ingestion_context_bundle,
+    ScipIngestContext,
+    build_scip_repo_fixture,
+    closing_gateway,
     module_records_for_paths,
 )
 
@@ -33,62 +36,64 @@ EXPECTED_START_LINE = 1
 EXPECTED_END_LINE = 1
 
 
+@contextmanager
+def _scip_context(tmp_path: Path) -> Iterator[ScipIngestContext]:
+    context = build_scip_repo_fixture(tmp_path)
+    with closing_gateway(context.gateway):
+        yield context
+
+
 # --- ResolvedScipConfig Tests ---
 
 
 def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
     """Test creating ResolvedScipConfig with minimal required fields."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    build_dir = tmp_path / "build"
-    doc_dir = tmp_path / "docs"
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        build_dir = context.build_dir
+        doc_dir = build_dir / "docs"
 
-    config = ResolvedScipConfig(
-        repo="test-org/test-repo",
-        commit="abc123",
-        repo_root=repo_root,
-        build_dir=build_dir,
-        document_output_dir=doc_dir,
-        scip_python_bin=None,
-        scip_bin=None,
-        modules=[],
-    )
+        config = ResolvedScipConfig(
+            repo="test-org/test-repo",
+            commit="abc123",
+            repo_root=repo_root,
+            build_dir=build_dir,
+            document_output_dir=doc_dir,
+            scip_python_bin=None,
+            scip_bin=None,
+            modules=[],
+        )
 
-    expect_equal(config.repo, "test-org/test-repo")
-    expect_equal(config.commit, "abc123")
-    expect_equal(config.repo_root, repo_root)
-    expect_equal(config.build_dir, build_dir)
-    expect_equal(config.document_output_dir, doc_dir)
-    expect_is_none(config.scip_python_bin)
-    expect_is_none(config.scip_bin)
-    expect_equal(config.modules, [])
+        expect_equal(config.repo, "test-org/test-repo")
+        expect_equal(config.commit, "abc123")
+        expect_equal(config.repo_root, repo_root)
+        expect_equal(config.build_dir, build_dir)
+        expect_equal(config.document_output_dir, doc_dir)
+        expect_is_none(config.scip_python_bin)
+        expect_is_none(config.scip_bin)
+        expect_equal(config.modules, [])
 
 
 def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
     """Test creating ResolvedScipConfig with module records."""
-    context = build_ingestion_context_bundle(
-        tmp_path,
-        variants=RepoVariantOptions(
-            repo_structure={"src/main.py": "def main() -> None:\n    pass\n"}
-        ),
-    )
-    module = module_records_for_paths(["src/main.py"], context.repo_root)[0]
+    with _scip_context(tmp_path) as context:
+        module = module_records_for_paths(["pkg/mod.py"], context.repo_root)[0]
 
-    config = ResolvedScipConfig(
-        repo="test-org/test-repo",
-        commit="abc123",
-        repo_root=context.repo_root,
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "docs",
-        scip_python_bin="/usr/bin/scip-python",
-        scip_bin="/usr/bin/scip",
-        modules=[module],
-    )
+        config = ResolvedScipConfig(
+            repo="test-org/test-repo",
+            commit="abc123",
+            repo_root=context.repo_root,
+            build_dir=context.build_dir,
+            document_output_dir=context.build_dir / "docs",
+            scip_python_bin="/usr/bin/scip-python",
+            scip_bin="/usr/bin/scip",
+            modules=[module],
+        )
 
-    expect_equal(len(config.modules), 1)
-    expect_equal(config.modules[0].module_name, "src.main")
-    expect_equal(config.scip_python_bin, "/usr/bin/scip-python")
-    expect_equal(config.scip_bin, "/usr/bin/scip")
+        expect_equal(len(config.modules), 1)
+        expect_equal(config.modules[0].module_name, "pkg.mod")
+        expect_equal(config.scip_python_bin, "/usr/bin/scip-python")
+        expect_equal(config.scip_bin, "/usr/bin/scip")
 
 
 def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
@@ -126,48 +131,50 @@ def test_scip_resolver_input_create_empty() -> None:
 
 def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None:
     """Test creating ScipResolverInput with explicit parameters."""
-    repo_root = tmp_path / "repo"
-    build_dir = tmp_path / "build"
-    doc_dir = tmp_path / "docs"
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        build_dir = context.build_dir
+        doc_dir = build_dir / "docs"
 
-    inputs = ScipResolverInput(
-        repo="test-org/test-repo",
-        commit="abc123",
-        repo_root=repo_root,
-        build_dir=build_dir,
-        document_output_dir=doc_dir,
-        scip_python_bin="/usr/bin/scip-python",
-        scip_bin="/usr/bin/scip",
-    )
+        inputs = ScipResolverInput(
+            repo="test-org/test-repo",
+            commit="abc123",
+            repo_root=repo_root,
+            build_dir=build_dir,
+            document_output_dir=doc_dir,
+            scip_python_bin="/usr/bin/scip-python",
+            scip_bin="/usr/bin/scip",
+        )
 
-    expect_equal(inputs.repo, "test-org/test-repo")
-    expect_equal(inputs.commit, "abc123")
-    expect_equal(inputs.repo_root, repo_root)
-    expect_equal(inputs.build_dir, build_dir)
-    expect_equal(inputs.document_output_dir, doc_dir)
-    expect_equal(inputs.scip_python_bin, "/usr/bin/scip-python")
-    expect_equal(inputs.scip_bin, "/usr/bin/scip")
+        expect_equal(inputs.repo, "test-org/test-repo")
+        expect_equal(inputs.commit, "abc123")
+        expect_equal(inputs.repo_root, repo_root)
+        expect_equal(inputs.build_dir, build_dir)
+        expect_equal(inputs.document_output_dir, doc_dir)
+        expect_equal(inputs.scip_python_bin, "/usr/bin/scip-python")
+        expect_equal(inputs.scip_bin, "/usr/bin/scip")
 
 
 def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
     """Test creating ScipResolverInput with pre-computed modules."""
-    modules = module_records_for_paths(["main.py"], tmp_path)
+    with _scip_context(tmp_path) as context:
+        modules = module_records_for_paths(["pkg/mod.py"], context.repo_root)
 
-    inputs = ScipResolverInput(
-        repo="test-repo",
-        commit="abc",
-        repo_root=tmp_path,
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "docs",
-        modules=modules,
-    )
+        inputs = ScipResolverInput(
+            repo="test-repo",
+            commit="abc",
+            repo_root=context.repo_root,
+            build_dir=context.build_dir,
+            document_output_dir=context.build_dir / "docs",
+            modules=modules,
+        )
 
-    modules = inputs.modules
-    if modules is None:
-        pytest.fail("Expected modules to be populated")
+        resolved_modules = inputs.modules
+        if resolved_modules is None:
+            pytest.fail("Expected modules to be populated")
 
-    expect_equal(len(modules), 1)
-    expect_equal(modules[0].module_name, "main")
+        expect_equal(len(resolved_modules), 1)
+        expect_equal(resolved_modules[0].module_name, "pkg.mod")
 
 
 def test_scip_resolver_input_frozen_dataclass() -> None:
@@ -182,102 +189,102 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
 
 def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
     """Test resolving with explicit ScipResolverInput.build()."""
-    context = build_ingestion_context_bundle(tmp_path)
-    repo_root = context.repo_root
-    build_dir = tmp_path / "build"
-    doc_dir = tmp_path / "docs"
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        build_dir = context.build_dir
+        doc_dir = build_dir / "docs"
 
-    result = resolve_scip_inputs(
-        [],
-        ScipResolverInput.build(
-            repo="test-org/test-repo",
-            commit="abc123",
-            paths=ScipPathConfig.from_strings(
-                repo_root=repo_root,
-                build_dir=build_dir,
-                document_output_dir=doc_dir,
+        result = resolve_scip_inputs(
+            [],
+            ScipResolverInput.build(
+                repo="test-org/test-repo",
+                commit="abc123",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=repo_root,
+                    build_dir=build_dir,
+                    document_output_dir=doc_dir,
+                ),
             ),
-        ),
-    )
+        )
 
-    expect_true(isinstance(result, ResolvedScipConfig))
-    expect_equal(result.repo, "test-org/test-repo")
-    expect_equal(result.commit, "abc123")
-    expect_equal(result.repo_root, repo_root)
-    expect_equal(result.build_dir, build_dir)
-    expect_equal(result.document_output_dir, doc_dir)
+        expect_true(isinstance(result, ResolvedScipConfig))
+        expect_equal(result.repo, "test-org/test-repo")
+        expect_equal(result.commit, "abc123")
+        expect_equal(result.repo_root, repo_root)
+        expect_equal(result.build_dir, build_dir)
+        expect_equal(result.document_output_dir, doc_dir)
 
 
 def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
     """Test resolving with ScipResolverInput dataclass."""
-    context = build_ingestion_context_bundle(tmp_path)
-    repo_root = context.repo_root
-    build_dir = tmp_path / "build"
-    doc_dir = tmp_path / "docs"
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        build_dir = context.build_dir
+        doc_dir = build_dir / "docs"
 
-    inputs = ScipResolverInput(
-        repo="test-org/test-repo",
-        commit="def456",
-        repo_root=repo_root,
-        build_dir=build_dir,
-        document_output_dir=doc_dir,
-        scip_python_bin="/usr/bin/scip-python",
-        scip_bin="/usr/bin/scip",
-    )
+        inputs = ScipResolverInput(
+            repo="test-org/test-repo",
+            commit="def456",
+            repo_root=repo_root,
+            build_dir=build_dir,
+            document_output_dir=doc_dir,
+            scip_python_bin="/usr/bin/scip-python",
+            scip_bin="/usr/bin/scip",
+        )
 
-    result = resolve_scip_inputs([], inputs)
+        result = resolve_scip_inputs([], inputs)
 
-    expect_equal(result.repo, "test-org/test-repo")
-    expect_equal(result.commit, "def456")
-    expect_equal(result.scip_python_bin, "/usr/bin/scip-python")
-    expect_equal(result.scip_bin, "/usr/bin/scip")
+        expect_equal(result.repo, "test-org/test-repo")
+        expect_equal(result.commit, "def456")
+        expect_equal(result.scip_python_bin, "/usr/bin/scip-python")
+        expect_equal(result.scip_bin, "/usr/bin/scip")
 
 
 def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
     """Test resolving with modules passed as first argument."""
-    context = build_ingestion_context_bundle(tmp_path)
-    repo_root = context.repo_root
-    modules = module_records_for_paths(context.module_paths, repo_root)
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
-    result = resolve_scip_inputs(
-        modules,
-        ScipResolverInput.build(
-            repo=context.ctx.repo,
-            commit=context.ctx.commit,
-            paths=ScipPathConfig.from_strings(
-                repo_root=repo_root,
-                build_dir=context.ctx.build_dir,
-                document_output_dir=context.ctx.build_dir / "docs",
+        result = resolve_scip_inputs(
+            modules,
+            ScipResolverInput.build(
+                repo="demo/repo",
+                commit="deadbeef",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=repo_root,
+                    build_dir=context.build_dir,
+                    document_output_dir=context.build_dir / "docs",
+                ),
             ),
-        ),
-    )
+        )
 
-    expect_equal(len(result.modules), len(modules))
-    expect_equal(result.modules[0].module_name, modules[0].module_name)
+        expect_equal(len(result.modules), len(modules))
+        expect_equal(result.modules[0].module_name, modules[0].module_name)
 
 
 def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
     """Test resolving with modules passed via ScipResolverInput."""
-    context = build_ingestion_context_bundle(tmp_path)
-    repo_root = context.repo_root
-    modules = module_records_for_paths(context.module_paths, repo_root)
+    with _scip_context(tmp_path) as context:
+        repo_root = context.repo_root
+        modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
-    result = resolve_scip_inputs(
-        [],  # Empty, modules in input takes precedence
-        ScipResolverInput.build(
-            repo=context.ctx.repo,
-            commit=context.ctx.commit,
-            paths=ScipPathConfig.from_strings(
-                repo_root=repo_root,
-                build_dir=context.ctx.build_dir,
-                document_output_dir=context.ctx.build_dir / "docs",
+        result = resolve_scip_inputs(
+            [],  # Empty, modules in input takes precedence
+            ScipResolverInput.build(
+                repo="demo/repo",
+                commit="deadbeef",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=repo_root,
+                    build_dir=context.build_dir,
+                    document_output_dir=context.build_dir / "docs",
+                ),
+                modules=modules,
             ),
-            modules=modules,
-        ),
-    )
+        )
 
-    expect_equal(len(result.modules), len(modules))
-    expect_equal(result.modules[0].module_name, modules[0].module_name)
+        expect_equal(len(result.modules), len(modules))
+        expect_equal(result.modules[0].module_name, modules[0].module_name)
 
 
 def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> None:
@@ -362,21 +369,19 @@ def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(tmp_
 
 def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
     """Test that ScipResolverInput values are used correctly."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
+    with _scip_context(tmp_path) as context:
+        inputs = ScipResolverInput(
+            repo="inputs-repo",
+            commit="inputs-commit",
+            repo_root=context.repo_root,
+            build_dir=context.build_dir,
+            document_output_dir=context.build_dir / "inputs-docs",
+        )
 
-    inputs = ScipResolverInput(
-        repo="inputs-repo",
-        commit="inputs-commit",
-        repo_root=repo_root,
-        build_dir=tmp_path / "inputs-build",
-        document_output_dir=tmp_path / "inputs-docs",
-    )
+        result = resolve_scip_inputs([], inputs)
 
-    result = resolve_scip_inputs([], inputs)
-
-    expect_equal(result.repo, "inputs-repo")
-    expect_equal(result.commit, "inputs-commit")
+        expect_equal(result.repo, "inputs-repo")
+        expect_equal(result.commit, "inputs-commit")
 
 
 # --- ModuleRecord Tests ---
@@ -384,12 +389,12 @@ def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
 
 def test_module_record_create(tmp_path: Path) -> None:
     """Test creating a ModuleRecord with all fields."""
-    repo_root = build_ingestion_context_bundle(tmp_path).repo_root
-    module = module_records_for_paths(["src/module.py"], repo_root)[0]
+    with _scip_context(tmp_path) as context:
+        module = module_records_for_paths(["pkg/mod.py"], context.repo_root)[0]
 
-    expect_equal(module.rel_path, "src/module.py")
-    expect_equal(module.module_name, "src.module")
-    expect_equal(module.file_path, repo_root / "src/module.py")
+    expect_equal(module.rel_path, "pkg/mod.py")
+    expect_equal(module.module_name, "pkg.mod")
+    expect_equal(module.file_path, context.repo_root / "pkg/mod.py")
     expect_equal(module.index, EXPECTED_START_LINE)
     expect_equal(module.total, EXPECTED_END_LINE)
 

@@ -13,7 +13,7 @@ import pytest
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution import OperationCategory, OperationExecutor, OperationSpec
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import expect_true
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ def test_read_operations_are_fast(
 @pytest.mark.benchmark
 def test_operation_registry_lookup_fast() -> None:
     """Test operation registry lookup is fast."""
-    registry = get_operation_registry()
+    registry = get_registry()
 
     # Warm up
     _ = registry.get("build.status")

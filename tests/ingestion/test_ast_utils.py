@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from textwrap import dedent
-
+from typing import Callable
 import pytest
 
 from codeintel.config.datasets import get_table_columns
@@ -25,56 +25,22 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
+from tests._helpers.ingestion_samples import (
+    MULTILINE_FUNCTION,
+    SIMPLE_MODULE,
+    SYNTAX_ERROR_CODE,
+    UNICODE_MODULE,
+)
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 
-# =============================================================================
-# Test Data
-# =============================================================================
-
-SIMPLE_MODULE = dedent('''
-    """Module docstring."""
-
-    def foo(x: int) -> int:
-        """Function docstring."""
-        return x + 1
-
-    class Bar:
-        """Class docstring."""
-
-        def baz(self) -> None:
-            """Method docstring."""
-            pass
-''').strip()
-
-MULTILINE_FUNCTION = dedent('''
-    def complex_function(
-        arg1: int,
-        arg2: str,
-        arg3: float,
-    ) -> dict[str, int]:
-        """Multi-line function."""
-        result = {}
-        for i in range(arg1):
-            result[f"{arg2}_{i}"] = int(arg3)
-        return result
-''').strip()
-
-SYNTAX_ERROR_CODE = dedent("""
-    def broken(
-        return "missing colon"
-""").strip()
-
-UNICODE_MODULE = dedent('''
-    """Unicode test: café, naïve, 日本語."""
-
-    def grüß() -> str:
-        """Return greeting."""
-        return "Hallo"
-''').strip()
-
 # Test constants
 EXPECTED_SOURCE_LINES = 3
+INDEX_CASES = [
+    (("functions", (ast.FunctionDef,), ast.FunctionDef), "function defs"),
+    (("classes", (ast.ClassDef,), ast.ClassDef), "class defs"),
+    (("both", (ast.FunctionDef, ast.ClassDef), (ast.FunctionDef, ast.ClassDef)), "mixed defs"),
+]
 
 
 # =============================================================================
@@ -82,38 +48,37 @@ EXPECTED_SOURCE_LINES = 3
 # =============================================================================
 
 
-def test_indexes_function_defs() -> None:
-    """Should index FunctionDef nodes by span."""
+def _expect_index_has_kind(index: AstSpanIndex, kinds: tuple[type[ast.AST], ...]) -> None:
+    expect_true(index.node_map)
+    expect_true(
+        any(isinstance(node, kinds) for node in index.node_map.values()),
+        message="Expected at least one node of requested kinds",
+    )
+
+
+def _build_index_for_functions() -> AstSpanIndex:
     tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
-
-    # Should have indexed foo and baz functions
-    expect_true(len(index.node_map) >= 1)
-    # Verify at least one function is indexed
-    spans = list(index.node_map.keys())
-    expect_true(all(isinstance(s[0], int) and isinstance(s[1], int) for s in spans))
+    return AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
 
 
-def test_indexes_class_defs() -> None:
-    """Should index ClassDef nodes by span."""
+def _first_function_span(index: AstSpanIndex) -> tuple[tuple[int, int], ast.FunctionDef]:
+    for span, node in index.node_map.items():
+        if isinstance(node, ast.FunctionDef):
+            return span, node
+    message = "Expected at least one FunctionDef in index"
+    raise AssertionError(message)
+
+
+@pytest.mark.parametrize(
+    ("case_kinds", "label"),
+    [(c[0][1], c[1]) for c in INDEX_CASES],
+)
+def test_indexes_requested_kinds(case_kinds: tuple[type[ast.AST], ...], label: str) -> None:
+    """Should index requested node kinds by span."""
     tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.ClassDef,))
+    index = AstSpanIndex.from_tree(tree, kinds=case_kinds)
 
-    # Should have indexed Bar class
-    expect_true(len(index.node_map) >= 1)
-    # Check that we have a ClassDef
-    found_class = any(isinstance(n, ast.ClassDef) for n in index.node_map.values())
-    expect_true(found_class)
-
-
-def test_indexes_multiple_kinds() -> None:
-    """Should index multiple node kinds."""
-    tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef, ast.ClassDef))
-
-    # Should have function and class nodes
-    node_types = {type(n).__name__ for n in index.node_map.values()}
-    expect_true("FunctionDef" in node_types or "ClassDef" in node_types)
+    _expect_index_has_kind(index, case_kinds)
 
 
 def test_empty_tree_returns_empty_index() -> None:
@@ -139,55 +104,39 @@ def test_ignores_nodes_without_lineno() -> None:
 # =============================================================================
 
 
-def test_exact_span_match() -> None:
-    """Should find node with exact span match."""
-    tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
+LookupSpan = tuple[int, int | None]
+LookupCase = tuple[str, Callable[[LookupSpan], LookupSpan], str]
 
-    # Find exact span of first function (foo starts at line 4)
-    for (start, end), node in index.node_map.items():
-        if isinstance(node, ast.FunctionDef) and node.name == "foo":
-            result = index.lookup(start, end)
-            expect_true(result is node)
-            break
+LOOKUP_CASES: tuple[LookupCase, ...] = (
+    ("exact_span_match", lambda span: span, "exact"),
+    ("enclosing_span_match", lambda span: (span[0] + 1, span[0] + 1), "enclosing"),
+    ("no_match_returns_none", lambda _span: (9999, 9999), "missing"),
+    ("none_end_line_uses_start", lambda span: (span[0], None), "none_end"),
+)
 
 
-def test_enclosing_span_match() -> None:
-    """Should find node that encloses the requested span."""
-    tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
+@pytest.mark.parametrize(
+    ("_case_name", "build_span", "mode"),
+    LOOKUP_CASES,
+)
+def test_lookup_cases(
+    _case_name: str, build_span: Callable[[LookupSpan], LookupSpan], mode: str
+) -> None:
+    """Lookup should handle exact, enclosing, missing, and None end spans."""
+    index = _build_index_for_functions()
+    (span_start, span_end), func = _first_function_span(index)
 
-    # Find a function and lookup a line inside it
-    for (start, end), node in index.node_map.items():
-        if isinstance(node, ast.FunctionDef) and end > start:
-            # Lookup a middle line
-            mid_line = start + 1
-            result = index.lookup(mid_line, mid_line)
-            # Should return the enclosing function
-            expect_true(result is not None)
-            break
+    start, end = build_span((span_start, span_end))
 
+    result = index.lookup(start, end)
 
-def test_no_match_returns_none() -> None:
-    """Should return None when no match found."""
-    tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
-
-    # Lookup a line that doesn't exist
-    result = index.lookup(9999, 9999)
-    expect_is_none(result)
-
-
-def test_none_end_line_uses_start() -> None:
-    """Should use start_line as end when end_line is None."""
-    tree = ast.parse(SIMPLE_MODULE)
-    index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
-
-    # Find any function
-    if index.node_map:
-        (start, _end), _ = next(iter(index.node_map.items()))
-        # Lookup with None end should work
-        result = index.lookup(start, None)
+    if mode == "exact":
+        expect_true(result is func)
+    elif mode == "enclosing":
+        expect_true(result is not None)
+    elif mode == "missing":
+        expect_is_none(result)
+    else:
         expect_true(result is not None)
 
 
@@ -432,26 +381,8 @@ def test_ast_visitor_records_decorator_span() -> None:
     rows = [dict(zip(AST_NODES_COLUMNS, row, strict=True)) for row in visitor.ast_rows]
     func_rows = [row for row in rows if row["node_type"] == "FunctionDef"]
 
-    if len(func_rows) != 1:
-        message = f"Expected one function row, got {len(func_rows)}"
-        pytest.fail(message)
-
+    expect_equal(len(func_rows), 1)
     func = func_rows[0]
-    expected_def_line = 3
-    expected_decorator_start = 1
-    expected_decorator_end = 2
-    if func["lineno"] != expected_def_line:
-        message = f"Expected def line {expected_def_line}, got {func['lineno']}"
-        pytest.fail(message)
-    if func["decorator_start_line"] != expected_decorator_start:
-        message = (
-            f"Expected decorator_start_line={expected_decorator_start}, "
-            f"got {func['decorator_start_line']}"
-        )
-        pytest.fail(message)
-    if func["decorator_end_line"] != expected_decorator_end:
-        message = (
-            f"Expected decorator_end_line={expected_decorator_end}, "
-            f"got {func['decorator_end_line']}"
-        )
-        pytest.fail(message)
+    expect_equal(func["lineno"], 3)
+    expect_equal(func["decorator_start_line"], 1)
+    expect_equal(func["decorator_end_line"], 2)

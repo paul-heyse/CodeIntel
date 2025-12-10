@@ -10,14 +10,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.handlers.context import HandlerContext
-from codeintel.cli.project import (
-    ProjectNotFoundError,
-    ProjectRuntime,
-    build_project_runtime,
-    find_project_root,
-)
+from codeintel.cli.resolution.errors import ResolutionError
 
 LOG = logging.getLogger(__name__)
 
@@ -118,34 +113,6 @@ class DocsValidateResult:
         }
 
 
-def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from handler context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-
-    Returns
-    -------
-    ProjectRuntime
-        Resolved project runtime.
-
-    Raises
-    ------
-    ValidationError
-        If project cannot be resolved.
-    """
-    project_root = ctx.param_path("project_root")
-
-    try:
-        project_root_resolved = find_project_root(project_root)
-        return build_project_runtime(project_root_resolved)
-    except ProjectNotFoundError as exc:
-        msg = f"Project not found: {exc}"
-        raise ValidationError(msg) from exc
-
-
 def docs_export_handler(
     ctx: HandlerContext,
 ) -> CliResult[DocsExportResult]:
@@ -178,8 +145,9 @@ def docs_export_handler(
     skip_prereqs = ctx.param_bool("skip_prereqs")
 
     try:
-        _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        # Access runtime to trigger resolution and validate project
+        _ = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:docs:project-error",
@@ -239,8 +207,9 @@ def docs_validate_handler(
         Validation result.
     """
     try:
-        _build_runtime_from_ctx(ctx)
-    except ValidationError as e:
+        # Access runtime to trigger resolution and validate project
+        _ = ctx.runtime
+    except ResolutionError as e:
         return CliResult.fail(
             ProblemDetail(
                 type="urn:codeintel:docs:project-error",

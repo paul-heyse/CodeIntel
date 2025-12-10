@@ -50,13 +50,16 @@ RESOURCE_CASES = make_resource_case_params()
     [params for _, params in RESOURCE_CASES],
     ids=[name for name, _ in RESOURCE_CASES],
 )
-async def test_cst_extract_wiring_scenarios(tmp_path: Path, options: dict[str, bool]) -> None:
+async def test_cst_extract_wiring_scenarios(
+    tmp_path: Path, options: dict[str, bool], ingestion_gateway
+) -> None:
     """Shared wiring coverage for CstExtractPlugin."""
     await run_sync_plugin_wiring_scenario(
         _make_plugin,
         tmp_path,
         table_key="core.cst_nodes",
         options=options,
+        gateway=ingestion_gateway,
     )
 
 

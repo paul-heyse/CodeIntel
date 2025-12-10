@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.cli.project import ProjectConfig
-    from codeintel.config.models import CodeIntelConfig
+    from codeintel.config.models import CodeIntelConfig, ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.serving_models import ServingConfig
 
@@ -23,7 +23,7 @@ class ResolvedRuntime:
     """Fully resolved runtime - the immutable result of runtime resolution.
 
     This dataclass contains all resolved project information needed by handlers.
-    It is created by RuntimeResolver and cached in ExecutionContext.
+    It is created by resolve_from_params() and cached in HandlerContext.
 
     All fields are required and immutable (frozen=True).
 
@@ -102,6 +102,17 @@ class ResolvedRuntime:
             Repository root directory.
         """
         return self.snapshot.repo_root
+
+    @property
+    def tools(self) -> ToolsConfig:
+        """Get tools configuration shortcut.
+
+        Returns
+        -------
+        ToolsConfig
+            Tools configuration for external binaries.
+        """
+        return self.config.tools
 
 
 __all__ = ["ResolvedRuntime"]

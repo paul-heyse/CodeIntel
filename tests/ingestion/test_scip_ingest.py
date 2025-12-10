@@ -14,6 +14,7 @@ from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngest
 from tests._helpers.ingestion import (
     ScipIngestContext,
     build_scip_ingest_context,
+    closing_gateway,
 )
 from tests._helpers.sql import count_table_rows
 
@@ -54,7 +55,7 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
         ),
     )
 
-    try:
+    with closing_gateway(gateway):
         scip_dir = build_dir / "scip"
 
         config = ScipIngestConfig(
@@ -81,8 +82,6 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
         if count == 0:
             pytest.fail("core.scip_symbols is empty; expected rows after ingest")
 
-    finally:
-        gateway.close()
 
 
 def test_scip_ingest_result_factory() -> None:

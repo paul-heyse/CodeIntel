@@ -19,6 +19,7 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+from tests._helpers.assertions.http_responses import assert_ok_or_not_found
 from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 SAMPLE_LIMIT = 5
@@ -183,7 +184,7 @@ def test_dataset_schema_http(
     """Verify dataset_schema works over HTTP with and without sample_limit."""
     response = service_client.get(f"/datasets/{dataset_name}/{path_suffix}")
 
-    expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
+    assert_ok_or_not_found(response)
 
 
 def test_dataset_schema_nonexistent_dataset(service_client: TestClient) -> None:

@@ -18,8 +18,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from codeintel.cli.execution.retry import RetryPolicy
-
 # =============================================================================
 # Type Aliases
 # =============================================================================
@@ -88,21 +86,6 @@ class RetryConfig:
     initial_delay: float = 0.5
     backoff_factor: float = 2.0
     max_delay: float = 30.0
-
-    def to_retry_policy(self) -> RetryPolicy:
-        """Convert to RetryPolicy for executor use.
-
-        Returns
-        -------
-        RetryPolicy
-            Configured retry policy.
-        """
-        return RetryPolicy(
-            max_attempts=self.max_attempts,
-            initial_delay=self.initial_delay,
-            backoff_factor=self.backoff_factor,
-            max_delay=self.max_delay,
-        )
 
 
 @dataclass(frozen=True)
@@ -227,17 +210,6 @@ class CliConfig:
     # Schema metadata
     SCHEMA_ID: ClassVar[str] = "https://codeintel.dev/schemas/cli-config.json"
     SCHEMA_TITLE: ClassVar[str] = "CodeIntel CLI Configuration"
-
-    @property
-    def retry_policy(self) -> RetryPolicy:
-        """Get retry policy from config.
-
-        Returns
-        -------
-        RetryPolicy
-            Configured retry policy.
-        """
-        return self.retry.to_retry_policy()
 
     @property
     def config_sources(self) -> list[str]:

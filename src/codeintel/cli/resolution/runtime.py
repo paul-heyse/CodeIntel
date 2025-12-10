@@ -1,10 +1,12 @@
 """Runtime resolution - single source of truth for project/runtime resolution.
 
-This module consolidates all runtime resolution logic. The RuntimeResolver
-provides a single, unified implementation that handles:
+This module consolidates all runtime resolution logic with a single,
+unified implementation that handles:
 1. Project file discovery (codeintel.yaml)
 2. Fallback to explicit CLI parameters
 3. Construction of ResolvedRuntime with all necessary configuration
+
+The primary API is `resolve_from_params()` which takes a params dict directly.
 """
 
 from __future__ import annotations
@@ -12,13 +14,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.cli.project import (
     ProjectConfig,
     ProjectNotFoundError,
     StorageProjectConfig,
-    build_project_runtime,
+    detect_commit,
+    find_project_root,
+    load_project_config,
 )
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.cli.resolution.types import ResolvedRuntime
@@ -30,10 +33,49 @@ from codeintel.config.primitives import (
 )
 from codeintel.config.serving_models import ServingConfig
 
-if TYPE_CHECKING:
-    from codeintel.cli.execution.context import ExecutionContext
-
 LOG = logging.getLogger(__name__)
+
+
+def _to_path_or_none(value: object) -> Path | None:
+    """Convert value to Path or None.
+
+    Parameters
+    ----------
+    value
+        Value to convert (may be str, Path, or None).
+
+    Returns
+    -------
+    Path | None
+        Converted path or None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Path):
+        return value
+    return Path(str(value))
+
+
+def _to_path_with_default(value: object, default: Path) -> Path:
+    """Convert value to Path with default.
+
+    Parameters
+    ----------
+    value
+        Value to convert (may be str, Path, or None).
+    default
+        Default path if value is None.
+
+    Returns
+    -------
+    Path
+        Converted path or default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, Path):
+        return value
+    return Path(str(value))
 
 
 # Error message constants
@@ -54,60 +96,52 @@ class _ConfigParams:
     use_gpu: bool
 
 
-class RuntimeResolver:
-    """Resolve project runtime from ExecutionContext parameters.
+def resolve_from_params(
+    params: dict[str, object],
+    *,
+    allow_fallback: bool = True,
+) -> ResolvedRuntime:
+    """Resolve runtime from params dict directly.
 
-    Resolution follows this order:
-    1. Try project file discovery (codeintel.yaml) from project_root
-    2. Fall back to explicit parameters (repo, commit, db_path, etc.)
+    This is the primary API for runtime resolution. It tries project file
+    discovery first, then falls back to explicit parameters.
 
-    The resolver is stateless - all state lives in the ExecutionContext.
+    Parameters
+    ----------
+    params
+        Parameters dict with keys like project_root, repo, commit, db_path, etc.
+    allow_fallback
+        If True, attempt fallback to explicit params when no project file.
+        If False, raise immediately when project file not found.
+
+    Returns
+    -------
+    ResolvedRuntime
+        Fully resolved runtime.
+
+    Raises
+    ------
+    ResolutionError
+        If resolution fails (no project file and missing required params).
 
     Examples
     --------
-    >>> resolver = RuntimeResolver()
-    >>> runtime = resolver.resolve(ctx)  # doctest: +SKIP
+    >>> runtime = resolve_from_params({"project_root": Path(".")})  # doctest: +SKIP
     >>> runtime.db_path  # doctest: +SKIP
     PosixPath('build/db/codeintel.duckdb')
     """
+    project_root_raw = params.get("project_root")
+    project_root = _to_path_or_none(project_root_raw)
 
-    @staticmethod
-    def resolve(
-        ctx: ExecutionContext,
-        *,
-        allow_fallback: bool = True,
-    ) -> ResolvedRuntime:
-        """Resolve runtime from context parameters.
+    # Try project file discovery first
+    try:
+        return _resolve_from_project(project_root)
+    except ProjectNotFoundError as exc:
+        if not allow_fallback:
+            raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
 
-        Parameters
-        ----------
-        ctx
-            Execution context with params.
-        allow_fallback
-            If True, attempt fallback to explicit params when no project file.
-            If False, raise immediately when project file not found.
-
-        Returns
-        -------
-        ResolvedRuntime
-            Fully resolved runtime.
-
-        Raises
-        ------
-        ResolutionError
-            If resolution fails (no project file and missing required params).
-        """
-        project_root = ctx.params.get("project_root")
-
-        # Try project file discovery first
-        try:
-            return _resolve_from_project(project_root)
-        except ProjectNotFoundError as exc:
-            if not allow_fallback:
-                raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
-
-        # Fall back to explicit params
-        return _resolve_from_params(ctx)
+    # Fall back to explicit params
+    return _resolve_from_params_dict(params)
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
@@ -125,30 +159,75 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
 
     Notes
     -----
-    This function propagates ProjectNotFoundError from build_project_runtime
+    This function propagates ProjectNotFoundError from find_project_root
     when no project file is found.
     """
-    # build_project_runtime handles discovery and construction
+    # Discover project root and load config
     # May raise ProjectNotFoundError if no project file found
-    project_runtime = build_project_runtime(project_root)
+    resolved_root = find_project_root(project_root)
+    project = load_project_config(resolved_root)
+
+    commit = detect_commit(resolved_root)
+    repo_cfg = RepoConfig(repo=project.repo, commit=commit)
+
+    db_path = resolved_root / project.storage.db_path
+    paths_cfg = CliPathsInput(
+        repo_root=resolved_root,
+        build_dir=resolved_root / ".codeintel",
+        db_path=db_path,
+        document_output_dir=None,
+    )
+
+    cfg = CodeIntelConfig.from_cli_args(
+        repo_cfg=repo_cfg,
+        paths_cfg=paths_cfg,
+        options=None,
+    )
+
+    snapshot = SnapshotRef(
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        repo_root=cfg.paths.repo_root,
+    )
+    paths = cfg.build_paths
+
+    # Ensure database directory exists
+    paths.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    serving = ServingConfig(
+        mode="local_db",
+        repo_root=cfg.paths.repo_root,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        db_path=paths.db_path,
+        read_only=True,
+    )
+
+    LOG.info(
+        "project.runtime repo=%s commit=%s root=%s db=%s",
+        project.repo,
+        commit,
+        resolved_root,
+        paths.db_path,
+    )
 
     return ResolvedRuntime(
-        root=project_runtime.root,
-        project=project_runtime.project,
-        snapshot=project_runtime.snapshot,
-        paths=project_runtime.paths,
-        config=project_runtime.cfg,
-        serving=project_runtime.serving,
+        root=resolved_root,
+        project=project,
+        snapshot=snapshot,
+        paths=paths,
+        config=cfg,
+        serving=serving,
     )
 
 
-def _resolve_from_params(ctx: ExecutionContext) -> ResolvedRuntime:
+def _resolve_from_params_dict(params: dict[str, object]) -> ResolvedRuntime:
     """Resolve from explicit CLI parameters.
 
     Parameters
     ----------
-    ctx
-        Execution context with params.
+    params
+        Parameters dict with keys like repo, commit, db_path, etc.
 
     Returns
     -------
@@ -157,24 +236,20 @@ def _resolve_from_params(ctx: ExecutionContext) -> ResolvedRuntime:
 
     Notes
     -----
-    Propagates ResolutionError from _extract_required_params if required
+    Propagates ResolutionError from _extract_required_params_dict if required
     parameters (repo, commit) are missing.
     """
-    repo, commit = _extract_required_params(ctx)
-    repo_root_raw = ctx.params.get("repo_root")
-    repo_root = Path(repo_root_raw) if repo_root_raw else Path.cwd()
+    repo, commit = _extract_required_params_dict(params)
+    repo_root = _to_path_with_default(params.get("repo_root"), Path.cwd())
 
     # Normalize other path params from string or Path
-    db_path_raw = ctx.params.get("db_path")
-    db_path = Path(db_path_raw) if db_path_raw else Path("build/db/codeintel.duckdb")
+    db_path = _to_path_with_default(params.get("db_path"), Path("build/db/codeintel.duckdb"))
+    build_dir = _to_path_with_default(params.get("build_dir"), Path("build"))
+    document_output_dir = _to_path_or_none(params.get("document_output_dir"))
 
-    build_dir_raw = ctx.params.get("build_dir")
-    build_dir = Path(build_dir_raw) if build_dir_raw else Path("build")
-
-    doc_output_raw = ctx.params.get("document_output_dir")
-    document_output_dir = Path(doc_output_raw) if doc_output_raw else None
-
-    # Build configuration from context params
+    # Build configuration from params
+    use_gpu_raw = params.get("use_gpu", False)
+    use_gpu = bool(use_gpu_raw) if use_gpu_raw is not None else False
     config = _build_config(
         _ConfigParams(
             repo=repo,
@@ -183,7 +258,7 @@ def _resolve_from_params(ctx: ExecutionContext) -> ResolvedRuntime:
             db_path=db_path,
             build_dir=build_dir,
             document_output_dir=document_output_dir,
-            use_gpu=ctx.params.get("use_gpu", False),
+            use_gpu=use_gpu,
         )
     )
 
@@ -210,13 +285,13 @@ def _resolve_from_params(ctx: ExecutionContext) -> ResolvedRuntime:
     )
 
 
-def _extract_required_params(ctx: ExecutionContext) -> tuple[str, str]:
+def _extract_required_params_dict(params: dict[str, object]) -> tuple[str, str]:
     """Extract and validate required repo and commit params.
 
     Parameters
     ----------
-    ctx
-        Execution context with params.
+    params
+        Parameters dict.
 
     Returns
     -------
@@ -228,8 +303,8 @@ def _extract_required_params(ctx: ExecutionContext) -> tuple[str, str]:
     ResolutionError
         If required parameters are missing.
     """
-    repo = ctx.params.get("repo")
-    commit = ctx.params.get("commit")
+    repo = params.get("repo")
+    commit = params.get("commit")
 
     missing: list[str] = []
     if repo is None:
@@ -279,34 +354,6 @@ def _build_config(params: _ConfigParams) -> CodeIntelConfig:
     )
 
 
-def resolve_runtime(
-    ctx: ExecutionContext,
-    *,
-    allow_fallback: bool = True,
-) -> ResolvedRuntime:
-    """Resolve runtime from context (module-level convenience function).
-
-    Parameters
-    ----------
-    ctx
-        Execution context with params.
-    allow_fallback
-        If True, attempt fallback to explicit params.
-
-    Returns
-    -------
-    ResolvedRuntime
-        Fully resolved runtime.
-
-    Notes
-    -----
-    Propagates ResolutionError from RuntimeResolver.resolve if resolution fails
-    due to missing project file and missing required CLI parameters.
-    """
-    return RuntimeResolver.resolve(ctx, allow_fallback=allow_fallback)
-
-
 __all__ = [
-    "RuntimeResolver",
-    "resolve_runtime",
+    "resolve_from_params",
 ]
