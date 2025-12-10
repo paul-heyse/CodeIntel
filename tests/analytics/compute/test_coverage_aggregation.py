@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -14,6 +13,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
 from tests._helpers import coverage_ready_context
 from tests._helpers.assertions import (
+    assert_coverage_function_row,
     expect_equal,
     expect_is_not_none,
     expect_length,
@@ -90,20 +90,6 @@ def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
     return coverage_analytics_cfg(snapshot)
 
 
-def _query_coverage_function(
-    ctx: TestContext,
-    goid_h128: int,
-) -> tuple[object, ...] | None:
-    return ctx.con.execute(
-        """
-        SELECT executable_lines, covered_lines, coverage_ratio, tested, untested_reason
-        FROM analytics.coverage_functions
-        WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
-        """,
-        [ctx.repo, ctx.commit, goid_h128],
-    ).fetchone()
-
-
 def test_load_coverage_data_missing_file(
     tmp_path: Path,
     coverage_ctx: TestContext,
@@ -158,13 +144,16 @@ def test_single_function_fully_covered(coverage_ctx: TestContext) -> None:
     cfg = _coverage_config(snapshot)
     compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(coverage_ctx, HASH_1)
-    result = expect_is_not_none(result)
-    expect_equal(result[0], EXPECTED_EXECUTABLE_5)
-    expect_equal(result[1], EXPECTED_EXECUTABLE_5)
-    expect_equal(result[2], 1.0)
-    expect_true(result[3] is True)
-    expect_equal(result[4], "")
+    assert_coverage_function_row(
+        con,
+        snapshot=snapshot,
+        goid=HASH_1,
+        executable=EXPECTED_EXECUTABLE_5,
+        covered=EXPECTED_EXECUTABLE_5,
+        ratio=1.0,
+        tested=True,
+        untested_reason="",
+    )
 
 
 def test_single_function_partially_covered(coverage_ctx: TestContext) -> None:
@@ -194,16 +183,16 @@ def test_single_function_partially_covered(coverage_ctx: TestContext) -> None:
     cfg = _coverage_config(snapshot)
     compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(coverage_ctx, HASH_2)
-    result = expect_is_not_none(result)
-    expect_equal(result[0], EXPECTED_EXECUTABLE_3)
-    expect_equal(result[1], EXPECTED_COVERED_2)
-    ratio = result[2]
-    expect_true(isinstance(ratio, (int, float)))
-    ratio_float = float(cast("float", ratio))
-    expect_true(abs(ratio_float - (2 / 3)) < COVERAGE_TOLERANCE)
-    expect_true(result[3] is True)
-    expect_equal(result[4], "")
+    assert_coverage_function_row(
+        con,
+        snapshot=snapshot,
+        goid=HASH_2,
+        executable=EXPECTED_EXECUTABLE_3,
+        covered=EXPECTED_COVERED_2,
+        ratio=0.6666666666666666,
+        tested=True,
+        untested_reason="",
+    )
 
 
 def test_function_no_coverage_data(coverage_ctx: TestContext) -> None:
@@ -220,13 +209,16 @@ def test_function_no_coverage_data(coverage_ctx: TestContext) -> None:
     cfg = _coverage_config(snapshot)
     compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(coverage_ctx, HASH_3)
-    result = expect_is_not_none(result)
-    expect_equal(result[0], 0)
-    expect_equal(result[1], 0)
-    expect_true(result[2] is None)
-    expect_true(result[3] is False)
-    expect_equal(result[4], "no_executable_code")
+    assert_coverage_function_row(
+        con,
+        snapshot=snapshot,
+        goid=HASH_3,
+        executable=0,
+        covered=0,
+        ratio=None,
+        tested=False,
+        untested_reason="no_executable_code",
+    )
 
 
 def test_function_with_executable_but_no_covered_lines(coverage_ctx: TestContext) -> None:
@@ -247,13 +239,16 @@ def test_function_with_executable_but_no_covered_lines(coverage_ctx: TestContext
     cfg = _coverage_config(snapshot)
     compute_coverage_functions(coverage_ctx.gateway, cfg)
 
-    result = _query_coverage_function(coverage_ctx, HASH_4)
-    result = expect_is_not_none(result)
-    expect_equal(result[0], EXPECTED_EXECUTABLE_6)
-    expect_equal(result[1], 0)
-    expect_equal(result[2], 0.0)
-    expect_true(result[3] is False)
-    expect_equal(result[4], "no_tests")
+    assert_coverage_function_row(
+        con,
+        snapshot=snapshot,
+        goid=HASH_4,
+        executable=EXPECTED_EXECUTABLE_6,
+        covered=0,
+        ratio=0.0,
+        tested=False,
+        untested_reason="no_tests",
+    )
 
 
 def test_method_kind_included(coverage_ctx: TestContext) -> None:

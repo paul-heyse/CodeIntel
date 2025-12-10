@@ -46,7 +46,13 @@ from tests._helpers.seeds import DATA_MODELS_PACK
 
 @pytest.fixture
 def data_models_ctx(test_ctx: TestContext) -> TestContext:
-    """Provide a TestContext seeded with data models pack for realistic layout."""
+    """Provide a TestContext seeded with data models pack for realistic layout.
+
+    Returns
+    -------
+    TestContext
+        Context populated with data model seeds for repository tests.
+    """
     test_ctx.require(DATA_MODELS_PACK)
     return test_ctx
 

@@ -59,11 +59,8 @@ from codeintel.config.datasets.rows import (
     behavioral_coverage_row_to_tuple,
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
-    cfg_block_to_tuple,
-    cfg_edge_to_tuple,
     config_value_to_tuple,
     coverage_line_to_tuple,
-    dfg_edge_to_tuple,
     docstring_row_to_tuple,
     file_profile_row_to_tuple,
     function_ast_features_row_to_tuple,
@@ -71,16 +68,12 @@ from codeintel.config.datasets.rows import (
     function_profile_row_to_tuple,
     function_types_row_to_tuple,
     function_validation_row_to_tuple,
-    goid_crosswalk_to_tuple,
-    goid_to_tuple,
     graph_metrics_functions_ext_row_to_tuple,
     graph_metrics_functions_row_to_tuple,
     graph_metrics_modules_ext_row_to_tuple,
     graph_metrics_modules_row_to_tuple,
     graph_validation_row_to_tuple,
     hotspot_row_to_tuple,
-    import_edge_to_tuple,
-    import_module_to_tuple,
     module_profile_row_to_tuple,
     serialize_test_catalog_row,
     serialize_test_coverage_edge,
@@ -88,7 +81,6 @@ from codeintel.config.datasets.rows import (
     static_diagnostic_to_tuple,
     subsystem_coverage_cache_to_tuple,
     subsystem_profile_cache_to_tuple,
-    symbol_use_to_tuple,
     typedness_row_to_tuple,
 )
 from codeintel.config.datasets.schema_provider import composite_schemas, table_schemas
@@ -770,11 +762,11 @@ def _build_row_bindings() -> dict[str, RowBinding]:
         ),
         "core.goids": _row_binding(
             row_type=GoidRow,
-            to_tuple=goid_to_tuple,
+            to_tuple=GoidRow.to_tuple,
         ),
         "core.goid_crosswalk": _row_binding(
             row_type=GoidCrosswalkRow,
-            to_tuple=goid_crosswalk_to_tuple,
+            to_tuple=GoidCrosswalkRow.to_tuple,
         ),
         "analytics.function_profile": _row_binding(
             row_type=FunctionProfileRowModel,
@@ -802,27 +794,27 @@ def _build_row_bindings() -> dict[str, RowBinding]:
         ),
         "graph.import_graph_edges": _row_binding(
             row_type=ImportEdgeRow,
-            to_tuple=import_edge_to_tuple,
+            to_tuple=ImportEdgeRow.to_tuple,
         ),
         "graph.import_modules": _row_binding(
             row_type=ImportModuleRow,
-            to_tuple=import_module_to_tuple,
+            to_tuple=ImportModuleRow.to_tuple,
         ),
         "graph.cfg_blocks": _row_binding(
             row_type=CFGBlockRow,
-            to_tuple=cfg_block_to_tuple,
+            to_tuple=CFGBlockRow.to_tuple,
         ),
         "graph.cfg_edges": _row_binding(
             row_type=CFGEdgeRow,
-            to_tuple=cfg_edge_to_tuple,
+            to_tuple=CFGEdgeRow.to_tuple,
         ),
         "graph.dfg_edges": _row_binding(
             row_type=DFGEdgeRow,
-            to_tuple=dfg_edge_to_tuple,
+            to_tuple=DFGEdgeRow.to_tuple,
         ),
         "graph.symbol_use_edges": _row_binding(
             row_type=SymbolUseRow,
-            to_tuple=symbol_use_to_tuple,
+            to_tuple=SymbolUseRow.to_tuple,
         ),
         "analytics.graph_metrics_functions": _row_binding(
             row_type=GraphMetricsFunctionsRow,

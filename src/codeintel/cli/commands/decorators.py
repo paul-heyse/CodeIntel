@@ -77,6 +77,7 @@ _INFRASTRUCTURE_FIELDS = frozenset(
         "build_dir",
         "repo_root",
         "index_path",
+        "flags",  # SharedFlags mixin field
     }
 )
 
@@ -193,32 +194,24 @@ def _execute_command[R](
     handler
         Handler function.
     """
-    # Extract verbosity
-    verbosity: int = getattr(command, "verbose", 0)
+    # Extract standard infrastructure from SharedFlags mixin or inline fields
+    infra = _extract_infrastructure(command)
 
     # Bootstrap CLI
-    cli_config = bootstrap_cli(verbosity=verbosity)
-
-    # Extract output format
-    output_format = _get_output_format(command)
+    cli_config = bootstrap_cli(verbosity=infra.verbosity)
 
     # Extract parameters
     params = _extract_params(command)
-
-    # Extract runtime paths
-    project_root = _get_path_field(command, "project", "project_root")
-    database_path = _get_path_field(command, "db_path", "database_path")
-    index_path = _get_path_field(command, "index_path")
 
     # Create context
     ctx = HandlerContext(
         config=cli_config,
         operation_id=operation_id,
-        output_format=output_format,
-        verbosity=verbosity,
-        project_root=project_root,
-        database_path=database_path,
-        index_path=index_path,
+        output_format=infra.output_format,
+        verbosity=infra.verbosity,
+        project_root=infra.project_root,
+        database_path=infra.database_path,
+        index_path=infra.index_path,
         _params=params,
     )
 
@@ -231,11 +224,115 @@ def _execute_command[R](
         raise
 
     # Render result
-    renderer = get_renderer(output_format)
+    renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
 
     if exit_code != 0:
         sys.exit(exit_code)
+
+
+@dataclass(frozen=True)
+class _InfrastructureValues:
+    """Extracted infrastructure values from command instance."""
+
+    verbosity: int
+    output_format: OutputFormat
+    project_root: Path | None
+    database_path: Path | None
+    index_path: Path | None
+
+
+def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
+    """Extract infrastructure values from command, supporting SharedFlags mixin.
+
+    Check for SharedFlags mixin first, then fall back to inline fields.
+
+    Parameters
+    ----------
+    command
+        Command dataclass instance.
+
+    Returns
+    -------
+    _InfrastructureValues
+        Extracted infrastructure values.
+    """
+    # Check for SharedFlags mixin
+    flags = getattr(command, "flags", None)
+
+    if flags is not None and hasattr(flags, "verbose"):
+        # Extract from SharedFlags mixin
+        verbosity = getattr(flags, "verbose", 0)
+        output_format = _resolve_output_format_from_attrs(
+            getattr(flags, "output_format", None),
+            json_flag=getattr(flags, "json", False),
+        )
+        project_root = _convert_to_path(getattr(flags, "project_root", None))
+    else:
+        # Extract from inline fields
+        verbosity = getattr(command, "verbose", 0)
+        output_format = _get_output_format(command)
+        project_root = _get_path_field(command, "project", "project_root")
+
+    # These fields are always extracted from command directly
+    database_path = _get_path_field(command, "db_path", "database_path")
+    index_path = _get_path_field(command, "index_path")
+
+    return _InfrastructureValues(
+        verbosity=verbosity,
+        output_format=output_format,
+        project_root=project_root,
+        database_path=database_path,
+        index_path=index_path,
+    )
+
+
+def _resolve_output_format_from_attrs(
+    output_format: OutputFormat | None,
+    *,
+    json_flag: bool,
+) -> OutputFormat:
+    """Resolve output format from attribute values.
+
+    Parameters
+    ----------
+    output_format
+        Explicit output format value.
+    json_flag
+        JSON flag value.
+
+    Returns
+    -------
+    OutputFormat
+        Resolved output format.
+    """
+    if json_flag:
+        return OutputFormat.JSON
+    if output_format is not None:
+        if isinstance(output_format, OutputFormat):
+            return output_format
+        return OutputFormat(str(output_format))
+    return OutputFormat.TEXT
+
+
+def _convert_to_path(value: object) -> Path | None:
+    """Convert value to Path if not None.
+
+    Parameters
+    ----------
+    value
+        Value to convert.
+
+    Returns
+    -------
+    Path | None
+        Path value or None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Path):
+        return value
+    return Path(str(value))
 
 
 def _get_output_format(command: CommandInstance) -> OutputFormat:
@@ -329,6 +426,7 @@ __all__ = [
     "CommandConfig",
     "cli_command",
     # Exported for testing
+    "extract_infrastructure",
     "extract_params",
     "get_output_format",
     "get_path_field",
@@ -336,6 +434,7 @@ __all__ = [
 
 
 # Public aliases for testing (avoiding underscore prefix)
+extract_infrastructure = _extract_infrastructure
 extract_params = _extract_params
 get_output_format = _get_output_format
 get_path_field = _get_path_field

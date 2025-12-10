@@ -1,67 +1,16 @@
 """Introspection utilities for CLI operations.
 
 Provide runtime discovery of operations, their metadata, and examples.
+All introspection functions return `OperationSpec` directly from the registry,
+providing a single source of truth for operation metadata.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING
-
-from codeintel.cli.execution.registry import get_registry
-
-if TYPE_CHECKING:
-    from codeintel.cli.execution.registry import OperationSpec
+from codeintel.cli.execution.registry import OperationSpec, get_registry
 
 
-@dataclass(frozen=True)
-class OperationInfo:
-    """Detailed information about an operation.
-
-    Parameters
-    ----------
-    operation_id
-        Unique identifier.
-    name
-        Display name.
-    group
-        Operation group (e.g., "jobs", "build").
-    description
-        Human-readable description.
-    require_runtime
-        Whether operation needs ResolvedRuntime.
-    require_gateway
-        Whether operation needs StorageGateway.
-    require_graph_runtime
-        Whether operation needs GraphRuntime.
-    tags
-        Optional tags for categorization.
-    hidden
-        Whether operation is hidden from help.
-    """
-
-    operation_id: str
-    name: str
-    group: str
-    description: str
-    require_runtime: bool
-    require_gateway: bool
-    require_graph_runtime: bool
-    tags: tuple[str, ...]
-    hidden: bool
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return asdict(self)
-
-
-def get_operation_info(operation_id: str) -> OperationInfo | None:
+def get_operation_info(operation_id: str) -> OperationSpec | None:
     """Get detailed information about an operation.
 
     Parameters
@@ -71,16 +20,11 @@ def get_operation_info(operation_id: str) -> OperationInfo | None:
 
     Returns
     -------
-    OperationInfo | None
-        Operation information or None if not found.
+    OperationSpec | None
+        Operation specification or None if not found.
     """
     registry = get_registry()
-    spec = registry.get(operation_id)
-
-    if spec is None:
-        return None
-
-    return _spec_to_info(spec)
+    return registry.get(operation_id)
 
 
 def list_operations_by_group(*, include_hidden: bool = False) -> dict[str, list[str]]:
@@ -108,7 +52,7 @@ def list_operations_by_group(*, include_hidden: bool = False) -> dict[str, list[
     return result
 
 
-def search_operations(query: str, *, include_hidden: bool = False) -> list[OperationInfo]:
+def search_operations(query: str, *, include_hidden: bool = False) -> list[OperationSpec]:
     """Search operations by ID, name, or description.
 
     Parameters
@@ -120,24 +64,24 @@ def search_operations(query: str, *, include_hidden: bool = False) -> list[Opera
 
     Returns
     -------
-    list[OperationInfo]
+    list[OperationSpec]
         Matching operations.
     """
     registry = get_registry()
     query_lower = query.lower()
-    results = []
+    results: list[OperationSpec] = []
 
     for spec in registry.list_operations(include_hidden=include_hidden):
         match_id = query_lower in spec.operation_id.lower()
         match_name = query_lower in spec.name.lower()
         match_desc = query_lower in spec.description.lower()
         if match_id or match_name or match_desc:
-            results.append(_spec_to_info(spec))
+            results.append(spec)
 
     return results
 
 
-def list_all_operations(*, include_hidden: bool = False) -> list[OperationInfo]:
+def list_all_operations(*, include_hidden: bool = False) -> list[OperationSpec]:
     """List all registered operations.
 
     Parameters
@@ -147,41 +91,15 @@ def list_all_operations(*, include_hidden: bool = False) -> list[OperationInfo]:
 
     Returns
     -------
-    list[OperationInfo]
-        All operation info.
+    list[OperationSpec]
+        All registered operation specifications.
     """
     registry = get_registry()
-    return [_spec_to_info(spec) for spec in registry.list_operations(include_hidden=include_hidden)]
-
-
-def _spec_to_info(spec: OperationSpec) -> OperationInfo:
-    """Convert OperationSpec to OperationInfo.
-
-    Parameters
-    ----------
-    spec
-        Operation specification.
-
-    Returns
-    -------
-    OperationInfo
-        Operation information.
-    """
-    return OperationInfo(
-        operation_id=spec.operation_id,
-        name=spec.name,
-        group=spec.group,
-        description=spec.description,
-        require_runtime=spec.require_runtime,
-        require_gateway=spec.require_gateway,
-        require_graph_runtime=spec.require_graph_runtime,
-        tags=spec.tags,
-        hidden=spec.hidden,
-    )
+    return registry.list_operations(include_hidden=include_hidden)
 
 
 __all__ = [
-    "OperationInfo",
+    "OperationSpec",
     "get_operation_info",
     "list_all_operations",
     "list_operations_by_group",

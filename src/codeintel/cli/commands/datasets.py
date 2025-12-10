@@ -5,13 +5,14 @@ This module wires Cyclopts command classes to unified handlers via @cli_command.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.datasets import (
     datasets_diff_handler,
@@ -19,7 +20,6 @@ from codeintel.cli.handlers.datasets import (
     datasets_list_handler,
     datasets_snapshot_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 datasets_ext_app = App(
     name="datasets",
@@ -77,28 +77,7 @@ class LintCommand:
             help="Sampling mode: enabled or disabled.",
         ),
     ] = "disabled"
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.list", handler=datasets_list_handler, config=_DATASETS_CONFIG)
@@ -128,28 +107,7 @@ class ListDatasetsCommand:
             help="Maximum description length before truncation.",
         ),
     ] = 80
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.snapshot", handler=datasets_snapshot_handler, config=_DATASETS_CONFIG)
@@ -165,28 +123,7 @@ class SnapshotCommand:
             help="Output file path for JSON dataset specs.",
         ),
     ] = Path("build/dataset_specs.json")
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.diff", handler=datasets_diff_handler, config=_DATASETS_CONFIG)
@@ -223,28 +160,7 @@ class DiffCommand:
             help="Path of the snapshot file inside the git ref.",
         ),
     ] = Path("build/dataset_specs.json")
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["datasets_ext_app"]

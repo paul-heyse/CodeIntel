@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import networkx as nx
 import pytest
 
+from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.cli.handlers.context import HandlerContext
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs import ProvisionedGateway
@@ -26,6 +28,163 @@ type HandlerContextBuilder = Callable[
     [ProvisionedServiceContext, str, dict[str, object]],
     HandlerContext,
 ]
+
+
+class FakeGraphEngine:
+    """Minimal GraphEngine implementation for handler tests."""
+
+    def __init__(
+        self,
+        snapshot: SnapshotRef,
+        gateway: StorageGateway | None = None,
+    ) -> None:
+        self.snapshot = snapshot
+        self.gateway: StorageGateway = gateway or MagicMock(spec=StorageGateway)
+
+    @property
+    def use_gpu(self) -> bool:
+        """Indicate GPU is not used for the fake engine."""
+        return False
+
+    def call_graph(self) -> nx.DiGraph:
+        """Return an empty call graph.
+
+        Returns
+        -------
+        nx.DiGraph
+            Empty directed graph placeholder.
+        """
+        return self.load_call_graph()
+
+    @staticmethod
+    def load_call_graph() -> nx.DiGraph:
+        """Return an empty call graph.
+
+        Returns
+        -------
+        nx.DiGraph
+            Empty directed graph placeholder.
+        """
+        return nx.DiGraph()
+
+    def import_graph(self) -> nx.DiGraph:
+        """Return an empty import graph.
+
+        Returns
+        -------
+        nx.DiGraph
+            Empty directed graph placeholder.
+        """
+        return self.load_import_graph()
+
+    @staticmethod
+    def load_import_graph() -> nx.DiGraph:
+        """Return an empty import graph.
+
+        Returns
+        -------
+        nx.DiGraph
+            Empty directed graph placeholder.
+        """
+        return nx.DiGraph()
+
+    def symbol_module_graph(self) -> nx.Graph:
+        """Return an empty symbol-module graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return self.load_symbol_module_graph()
+
+    @staticmethod
+    def load_symbol_module_graph() -> nx.Graph:
+        """Return an empty symbol-module graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return nx.Graph()
+
+    def symbol_function_graph(self) -> nx.Graph:
+        """Return an empty symbol-function graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return self.load_symbol_function_graph()
+
+    @staticmethod
+    def load_symbol_function_graph() -> nx.Graph:
+        """Return an empty symbol-function graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return nx.Graph()
+
+    def config_module_bipartite(self) -> nx.Graph:
+        """Return an empty config-module bipartite graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return self.load_config_module_bipartite()
+
+    @staticmethod
+    def load_config_module_bipartite() -> nx.Graph:
+        """Return an empty config-module bipartite graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return nx.Graph()
+
+    def test_function_bipartite(self) -> nx.Graph:
+        """Return an empty test-function bipartite graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return self.load_test_function_bipartite()
+
+    @staticmethod
+    def load_test_function_bipartite() -> nx.Graph:
+        """Return an empty test-function bipartite graph.
+
+        Returns
+        -------
+        nx.Graph
+            Empty undirected graph placeholder.
+        """
+        return nx.Graph()
+
+
+class FakeGraphRuntime(GraphRuntime):
+    """Minimal graph runtime stand-in for handler tests."""
+
+    def __init__(
+        self,
+        snapshot: SnapshotRef,
+        gateway: StorageGateway | None = None,
+        backend: GraphBackendConfig | None = None,
+    ) -> None:
+        engine = FakeGraphEngine(snapshot=snapshot, gateway=gateway)
+        options = GraphRuntimeOptions(snapshot=snapshot, backend=backend)
+        super().__init__(options=options, engine=engine)
 
 
 @pytest.fixture
@@ -101,12 +260,11 @@ def handler_context_builder() -> HandlerContextBuilder:
         runtime.repo = service_ctx.repo
         runtime.commit = service_ctx.commit
 
-        runtime_backend = SimpleNamespace(backend="duckdb", use_gpu=False)
-        runtime_options = SimpleNamespace(features=None, snapshot=None, cache_key=None)
-        graph_runtime = SimpleNamespace(
-            options=runtime_options,
-            engine=None,
-            backend=runtime_backend,
+        snapshot = SnapshotRef(repo=service_ctx.repo, commit=service_ctx.commit, repo_root=repo_root)
+        graph_runtime = FakeGraphRuntime(
+            snapshot=snapshot,
+            gateway=service_ctx.gateway,
+            backend=GraphBackendConfig(),
         )
         return HandlerContext(
             config=MagicMock(),

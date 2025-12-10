@@ -12,7 +12,7 @@ from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
-    DatasetsListResult,
+    DatasetListResult,
     DatasetSnapshotResult,
     datasets_diff_handler,
     datasets_lint_handler,
@@ -49,7 +49,7 @@ def _make_mock_context(params: dict[str, Any]) -> HandlerContext:
 
 def test_datasets_list_result_to_dict() -> None:
     """Verify DatasetsListResult.to_dict returns correct structure."""
-    result = DatasetsListResult(
+    result = DatasetListResult(
         datasets=[
             {
                 "name": "test_dataset",

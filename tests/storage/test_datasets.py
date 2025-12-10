@@ -41,7 +41,13 @@ from tests._helpers.gateway import GatewayFactory
 
 
 def _sample_registry() -> DatasetRegistry:
-    """Create a sample dataset registry for testing."""
+    """Create a sample dataset registry for testing.
+
+    Returns
+    -------
+    DatasetRegistry
+        Registry augmented with a docs view dataset for tests.
+    """
     registry = sample_dataset_registry()
     view_key = "docs.v_function_summary"
     view_dataset = DatasetContract(

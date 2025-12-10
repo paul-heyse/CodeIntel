@@ -28,7 +28,13 @@ class DatasetDataflowNodeRow:
     description: str
 
     def to_tuple(self) -> tuple[str, str, str, str, str]:
-        """Serialize row to database insert order."""
+        """Serialize row to database insert order.
+
+        Returns
+        -------
+        tuple[str, str, str, str, str]
+            Field values ordered to match the database schema.
+        """
         return (self.id, self.kind, self.family, self.owner_package, self.description)
 
 
@@ -44,5 +50,11 @@ class DatasetDataflowEdgeRow:
     edge_type: str
 
     def to_tuple(self) -> tuple[str, str, str]:
-        """Serialize row to database insert order."""
+        """Serialize row to database insert order.
+
+        Returns
+        -------
+        tuple[str, str, str]
+            Field values ordered to match the database schema.
+        """
         return (self.src, self.dst, self.edge_type)

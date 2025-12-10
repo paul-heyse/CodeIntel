@@ -47,9 +47,9 @@ class OperationSpec:
     """Unified specification for a CLI operation.
 
     This is the single, canonical OperationSpec for all CLI operations.
-    Core fields are required. Resource requirements default to True for
-    backward compatibility. Execution hints and serving integration fields
-    are optional.
+    Core fields are required. Resource requirements default to False;
+    operations must explicitly declare their requirements. Execution hints
+    and serving integration fields are optional.
 
     Parameters
     ----------
@@ -114,9 +114,9 @@ class OperationSpec:
     handler: Callable[[HandlerContext], CliResult[Any]]
     group: str
 
-    # Resource requirements
-    require_runtime: bool = True
-    require_gateway: bool = True
+    # Resource requirements (explicitly declare what each operation needs)
+    require_runtime: bool = False
+    require_gateway: bool = False
     require_graph_runtime: bool = False
 
     # Metadata
@@ -133,6 +133,73 @@ class OperationSpec:
     http_path: str | None = None
     tool_name: str | None = None
     backend_method: str | None = None
+
+    def to_dict(self, *, include_handler: bool = False) -> dict[str, object]:
+        """Convert to dictionary representation.
+
+        Create a serializable dictionary of the operation specification.
+        By default, excludes the handler since it's not serializable.
+
+        Parameters
+        ----------
+        include_handler
+            If True, include handler reference in output. Default False.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation of the specification.
+
+        Examples
+        --------
+        >>> from codeintel.cli.execution.registry import OperationSpec
+        >>> spec = OperationSpec(  # doctest: +SKIP
+        ...     operation_id="test.op",
+        ...     name="Test",
+        ...     description="Test operation",
+        ...     handler=lambda ctx: None,
+        ...     group="test",
+        ... )
+        >>> d = spec.to_dict()  # doctest: +SKIP
+        >>> 'handler' in d  # doctest: +SKIP
+        False
+        """
+        result: dict[str, object] = {
+            "operation_id": self.operation_id,
+            "name": self.name,
+            "description": self.description,
+            "group": self.group,
+            "require_runtime": self.require_runtime,
+            "require_gateway": self.require_gateway,
+            "require_graph_runtime": self.require_graph_runtime,
+            "tags": list(self.tags),
+            "hidden": self.hidden,
+        }
+
+        # Add optional execution hints if set
+        if self.timeout is not None:
+            result["timeout"] = self.timeout
+        if self.retryable:
+            result["retryable"] = self.retryable
+        if self.estimated_duration is not None:
+            result["estimated_duration"] = self.estimated_duration
+
+        # Add serving integration fields if set
+        if self.serving_op_id is not None:
+            result["serving_op_id"] = self.serving_op_id
+        if self.http_path is not None:
+            result["http_path"] = self.http_path
+        if self.tool_name is not None:
+            result["tool_name"] = self.tool_name
+        if self.backend_method is not None:
+            result["backend_method"] = self.backend_method
+
+        # Include handler reference if requested
+        if include_handler:
+            handler_name = getattr(self.handler, "__name__", repr(self.handler))
+            result["handler"] = handler_name
+
+        return result
 
 
 @dataclass

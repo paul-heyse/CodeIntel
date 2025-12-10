@@ -21,10 +21,6 @@ from typing import Protocol, TypedDict
 # Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 
-# Export to_tuple as method references for backward compatibility
-goid_to_tuple = GoidRow.to_tuple
-goid_crosswalk_to_tuple = GoidCrosswalkRow.to_tuple
-
 
 class IngestRunStatus(StrEnum):
     """Outcome for an ingestion step run."""
@@ -340,7 +336,5 @@ __all__ = [
     "IngestRunStatus",
     "config_value_to_tuple",
     "docstring_row_to_tuple",
-    "goid_crosswalk_to_tuple",
-    "goid_to_tuple",
     "ingest_run_to_tuple",
 ]

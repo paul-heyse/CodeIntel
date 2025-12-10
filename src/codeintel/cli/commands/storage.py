@@ -11,6 +11,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
     MacroRequirement,
@@ -18,7 +19,6 @@ from codeintel.cli.handlers.storage import (
     profile_storage_handler,
     validate_macros_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 storage_app = App(
     name="storage",
@@ -50,28 +50,7 @@ class ValidateMacrosCommand:
             show_choices=True,
         ),
     ] = MacroRequirement.REQUIRE
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("storage.generate_macros", handler=generate_macros_handler, config=_STORAGE_CONFIG)
@@ -87,28 +66,7 @@ class GenerateMacrosCommand:
             help="Tables to generate macros for (repeatable).",
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
@@ -139,28 +97,7 @@ class ProfileStorageCommand:
             negative=(),
         ),
     ] = False
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["storage_app"]

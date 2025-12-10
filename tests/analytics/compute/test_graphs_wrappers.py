@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import networkx as nx
@@ -49,6 +50,56 @@ from tests._helpers.assertions import (
 
 def _context() -> GraphContext:
     return GraphContext(repo="demo", commit="abc", now=datetime.now(tz=UTC), seed=7)
+
+
+@dataclass(frozen=True)
+class CfgBlock:
+    """Typed representation of a CFG block."""
+
+    idx: int
+    label: str
+    predecessors: int
+    successors: int
+
+    def to_tuple(self) -> tuple[int, str, int, int]:
+        """Return values in tuple order matching CFG block schema."""
+        return (self.idx, self.label, self.predecessors, self.successors)
+
+
+@dataclass(frozen=True)
+class CfgEdge:
+    """Typed representation of a CFG edge."""
+
+    source: int
+    target: int
+    kind: str
+
+    def to_tuple(self) -> tuple[int, int, str]:
+        """Return values in tuple order matching CFG edge schema."""
+        return (self.source, self.target, self.kind)
+
+
+@dataclass(frozen=True)
+class DataFlowEdge:
+    """Typed representation of a DFG edge."""
+
+    source_block: int
+    target_block: int
+    source_symbol: str
+    target_symbol: str
+    is_phi: bool
+    edge_kind: str
+
+    def to_tuple(self) -> tuple[int, int, str, str, bool, str]:
+        """Return values in tuple order matching DFG edge schema."""
+        return (
+            self.source_block,
+            self.target_block,
+            self.source_symbol,
+            self.target_symbol,
+            self.is_phi,
+            self.edge_kind,
+        )
 
 
 def test_centrality_wrappers_and_neighbor_stats() -> None:
@@ -122,12 +173,18 @@ def test_component_metadata_and_global_stats() -> None:
 def test_cfg_helpers_and_metrics() -> None:
     """Validate CFG helpers including dominance and centrality."""
     blocks = [
-        (0, "entry", 0, 1),
-        (1, "body", 1, 1),
-        (2, "exit", 1, 0),
+        CfgBlock(idx=0, label="entry", predecessors=0, successors=1),
+        CfgBlock(idx=1, label="body", predecessors=1, successors=1),
+        CfgBlock(idx=2, label="exit", predecessors=1, successors=0),
     ]
-    edges = [(0, 1, "next"), (1, 2, "next")]
-    graph, entry_idx, exit_idx = build_cfg_graph(blocks, edges)
+    edges = [
+        CfgEdge(source=0, target=1, kind="next"),
+        CfgEdge(source=1, target=2, kind="next"),
+    ]
+    graph, entry_idx, exit_idx = build_cfg_graph(
+        [block.to_tuple() for block in blocks],
+        [edge.to_tuple() for edge in edges],
+    )
     expect_equal(entry_idx, 0)
     expect_equal(exit_idx, 2)
     dominance = cfg_dominance_metrics(graph, entry_idx)
@@ -149,10 +206,10 @@ def test_cfg_helpers_and_metrics() -> None:
 def test_dfg_helpers_and_metrics() -> None:
     """Validate DFG helpers including path lengths and centrality."""
     edges = [
-        (1, 2, "a", "b", True, "use"),
-        (2, 3, "b", "c", False, "use"),
+        DataFlowEdge(1, 2, "a", "b", is_phi=True, edge_kind="use"),
+        DataFlowEdge(2, 3, "b", "c", is_phi=False, edge_kind="use"),
     ]
-    graph, phi_edges, symbol_count = build_dfg_graph(edges)
+    graph, phi_edges, symbol_count = build_dfg_graph([edge.to_tuple() for edge in edges])
     expect_equal(phi_edges, 1)
     expect_equal(symbol_count, 3)
 

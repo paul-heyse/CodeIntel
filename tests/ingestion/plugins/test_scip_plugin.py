@@ -7,16 +7,16 @@ from typing import cast
 
 import pytest
 
-from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.context import TargetExecutionContext
+from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.protocols import ScipOccurrence, ScipSymbol
 from codeintel.build.providers import Providers
-from codeintel.storage.gateway import StorageGateway
 from codeintel.ingestion.plugins.scip_plugin import (
     ScipIngestPlugin,
     get_module_paths,
     paths_to_modules,
 )
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers import build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_scip_documents

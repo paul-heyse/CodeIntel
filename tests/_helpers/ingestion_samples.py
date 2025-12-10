@@ -53,9 +53,36 @@ UNICODE_MODULE = dedent(
     '''
 ).strip()
 
+TYPED_SOURCE = dedent(
+    """\
+    def fn(x: int) -> int:
+        return x
+    """
+).strip()
+
+NESTED_CLASS_FUNCTION = dedent(
+    """
+    class Outer:
+        def inner(self) -> None:
+            pass
+    """
+).strip()
+
+DECORATED_FUNCTION = dedent(
+    """\
+    @dec1
+    @dec2("x")
+    def foo() -> int:
+        return 1
+    """
+).strip()
+
 __all__ = [
+    "DECORATED_FUNCTION",
     "MULTILINE_FUNCTION",
+    "NESTED_CLASS_FUNCTION",
     "SIMPLE_MODULE",
     "SYNTAX_ERROR_CODE",
+    "TYPED_SOURCE",
     "UNICODE_MODULE",
 ]

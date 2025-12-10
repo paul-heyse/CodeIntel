@@ -40,7 +40,13 @@ def _function_effects_row(
     commit: str = DEFAULT_COMMIT,
     goid: int = 1,
 ) -> tuple[object, ...]:
-    """Row payload matching analytics.function_effects schema order."""
+    """Row payload matching analytics.function_effects schema order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row values aligned with analytics.function_effects schema.
+    """
     created_at = datetime.now(tz=UTC).isoformat()
     return (
         repo,

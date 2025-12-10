@@ -10,7 +10,7 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.errors import McpError
-from codeintel.serving.mcp.profile_tools import register_profile_tools
+from codeintel.serving.mcp.tool_builder import register_tools_for_category
 from codeintel.serving.operations import get_operation
 from tests._helpers.assertions import (
     assert_logged,
@@ -29,6 +29,9 @@ from tests.serving.mcp.conftest import McpBackendComponents
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
+# Profile tools category
+PROFILE_CATEGORIES: set[str] = {"profiles"}
+
 
 # =============================================================================
 # register_profile_tools Tests
@@ -42,7 +45,7 @@ def test_register_profile_tools_success(
     mcp = wrap_fastmcp("Test Profile Tools")
 
     # Should not raise
-    register_profile_tools(mcp, mcp_backend.backend)
+    register_tools_for_category(mcp, mcp_backend.backend, PROFILE_CATEGORIES)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Profile Tools")
@@ -53,7 +56,7 @@ def test_profile_tools_return_problem_detail_on_missing_function(
 ) -> None:
     """Profile tool should emit ProblemDetail payload for unknown goid."""
     registrar = RecordingMcpRegistrar("ProfileTools")
-    register_profile_tools(registrar, mcp_backend.backend)
+    register_tools_for_category(registrar, mcp_backend.backend, PROFILE_CATEGORIES)
 
     class _ResponseWrapper:
         def __init__(self, payload: dict[str, object]) -> None:
@@ -80,7 +83,7 @@ def test_register_profile_tools_with_service(
     """Verify register_profile_tools works with service directly."""
     mcp = wrap_fastmcp("Test Service")
 
-    register_profile_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, PROFILE_CATEGORIES)
 
     expect_equal(mcp.name, "Test Service")
 
@@ -92,7 +95,7 @@ def test_register_profile_tools_with_config(
     mcp = wrap_fastmcp("Test With Config")
     config = ServingConfig()
 
-    register_profile_tools(mcp, mcp_backend.backend, config=config)
+    register_tools_for_category(mcp, mcp_backend.backend, PROFILE_CATEGORIES, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
@@ -102,11 +105,11 @@ def test_register_profile_tools_on_multiple_servers(
 ) -> None:
     """Verify tools can be registered on multiple servers."""
     mcp1 = wrap_fastmcp("Server 1")
-    register_profile_tools(mcp1, mcp_backend.backend)
+    register_tools_for_category(mcp1, mcp_backend.backend, PROFILE_CATEGORIES)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_profile_tools(mcp2, mcp_backend.backend)
+    register_tools_for_category(mcp2, mcp_backend.backend, PROFILE_CATEGORIES)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -272,7 +275,7 @@ def test_register_profile_tools_preserves_backend_state(
     original_commit = backend.commit
     original_limits = backend.limits
 
-    register_profile_tools(mcp, backend)
+    register_tools_for_category(mcp, backend, PROFILE_CATEGORIES)
 
     expect_equal(backend.repo, original_repo)
     expect_equal(backend.commit, original_commit)
@@ -289,7 +292,7 @@ def test_local_query_service_as_backend(
 ) -> None:
     """Verify LocalQueryService can be used as backend."""
     mcp = wrap_fastmcp("Test Local Service")
-    register_profile_tools(mcp, mcp_backend_components.service)
+    register_tools_for_category(mcp, mcp_backend_components.service, PROFILE_CATEGORIES)
 
     expect_equal(mcp.name, "Test Local Service")
 

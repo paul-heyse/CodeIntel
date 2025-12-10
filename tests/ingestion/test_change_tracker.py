@@ -49,8 +49,14 @@ class ViewScenario(TypedDict):
 @pytest.fixture
 def scan_setup(
     tmp_path: Path, ingestion_gateway_factory: GatewayFactory
-) -> Generator[SimpleNamespace, None, None]:
-    """Provision a reusable scan setup with gateway and snapshot."""
+) -> Generator[SimpleNamespace]:
+    """Provision a reusable scan setup with gateway and snapshot.
+
+    Yields
+    ------
+    SimpleNamespace
+        Bundle containing repo root, gateway, snapshot, and supporting services.
+    """
     setup = make_scan_setup(
         tmp_path,
         options=ScanSetupOptions(gateway_factory=ingestion_gateway_factory),
@@ -75,7 +81,7 @@ def _modules(paths: list[str], *, repo_root: Path) -> list[ModuleRecord]:
     Returns
     -------
     list[ModuleRecord]
-    Module records derived from the provided relative paths.
+        Module records derived from the provided relative paths.
     """
     return module_records_for_paths(paths, repo_root)
 
@@ -98,7 +104,13 @@ def _seed_inventory(
 
 
 def _build_repo(repo_root: Path, structure: dict[str, str]) -> list[ModuleRecord]:
-    """Materialize a repo structure and build module records."""
+    """Materialize a repo structure and build module records.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Module records corresponding to the created repository structure.
+    """
     build_repo_tree(repo_root, structure)
     return _modules(list(structure.keys()), repo_root=repo_root)
 

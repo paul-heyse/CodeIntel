@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.profile_tools import ProfileToolOptions, register_profile_tools
+from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
@@ -180,11 +180,12 @@ def test_register_profile_tools_registers_and_serializes() -> None:
     previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
     os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
     try:
-        register_profile_tools(
+        register_tools_for_category(
             mcp,
             cast("QueryBackendOrService", backend),
+            {"profiles"},
             config=cast("ServingConfig", _ServingConfigStub(mode="local_db")),
-            options=ProfileToolOptions(
+            options=ToolRegistrationOptions(
                 operations=_profile_operations(),
                 model_resolver=_resolve_profile_model,
                 prereq_runner=_ensure_prereqs_for_mcp,
@@ -223,11 +224,12 @@ def test_profile_tools_wrap_mcp_error() -> None:
     """Backend McpError should serialize to error payload."""
     backend = _ExplodingBackend()
     mcp = RecordingMcp()
-    register_profile_tools(
+    register_tools_for_category(
         mcp,
         cast("QueryBackendOrService", backend),
+        {"profiles"},
         config=None,
-        options=ProfileToolOptions(
+        options=ToolRegistrationOptions(
             operations=_profile_operations(),
             model_resolver=_resolve_profile_model,
         ),
@@ -252,11 +254,12 @@ def test_profile_tools_skip_auto_pipeline_without_gateway() -> None:
 
     mcp = RecordingMcp()
     try:
-        register_profile_tools(
+        register_tools_for_category(
             mcp,
             cast("QueryBackendOrService", backend),
+            {"profiles"},
             config=cast("ServingConfig", _ServingConfigStub(mode="local_db")),
-            options=ProfileToolOptions(
+            options=ToolRegistrationOptions(
                 operations=_profile_operations(),
                 model_resolver=_resolve_profile_model,
                 prereq_runner=_record,

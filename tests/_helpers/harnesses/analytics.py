@@ -16,7 +16,10 @@ from codeintel.build.context import TargetResult
 from codeintel.build.parameters import TargetParameters
 from codeintel.build.plugin import TargetPlugin
 from tests._helpers.context import SeedPack, TestContext, create_test_context
-from tests._helpers.fakes.contexts import ExecutionContextBuilder
+from tests._helpers.fakes.contexts import (
+    ExecutionContextBuilder,
+    TargetResourceOverrides,
+)
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_LINES_PACK,
@@ -42,9 +45,15 @@ class AnalyticsPluginHarness:
         plugin: TargetPlugin,
         *,
         parameters: TargetParameters | None = None,
-        resources: object | None = None,
+        resources: TargetResourceOverrides | None = None,
     ) -> TargetResult:
-        """Execute a plugin using the harness's context."""
+        """Execute a plugin using the harness's context.
+
+        Returns
+        -------
+        TargetResult
+            Result produced by the executed plugin.
+        """
         builder = ExecutionContextBuilder(
             gateway=self.ctx.gateway,
             snapshot=self.ctx.snapshot,
@@ -60,7 +69,13 @@ def _apply_packs(ctx: TestContext, packs: tuple[SeedPack, ...]) -> None:
 
 @contextmanager
 def plugin_harness_with_packs(tmp_path: Path, *packs: SeedPack) -> Iterator[AnalyticsPluginHarness]:
-    """Create a plugin harness with the provided seed packs applied."""
+    """Create a plugin harness with the provided seed packs applied.
+
+    Yields
+    ------
+    AnalyticsPluginHarness
+        Harness with the requested seed packs applied.
+    """
     ctx = create_test_context(tmp_path)
     _apply_packs(ctx, packs)
     harness = AnalyticsPluginHarness(ctx=ctx)
@@ -72,7 +87,13 @@ def plugin_harness_with_packs(tmp_path: Path, *packs: SeedPack) -> Iterator[Anal
 
 @contextmanager
 def coverage_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
-    """Plugin harness seeded with core + coverage (catalog/edges/lines)."""
+    """Plugin harness seeded with core + coverage (catalog/edges/lines).
+
+    Yields
+    ------
+    AnalyticsPluginHarness
+        Harness seeded with coverage-related packs.
+    """
     with plugin_harness_with_packs(
         tmp_path,
         CORE_PACK,
@@ -84,21 +105,39 @@ def coverage_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
 
 @contextmanager
 def graph_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
-    """Plugin harness seeded with core + graph data."""
+    """Plugin harness seeded with core + graph data.
+
+    Yields
+    ------
+    AnalyticsPluginHarness
+        Harness seeded with graph packs.
+    """
     with plugin_harness_with_packs(tmp_path, CORE_PACK, GRAPH_PACK) as harness:
         yield harness
 
 
 @contextmanager
 def entrypoints_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
-    """Plugin harness seeded with entrypoints data and canonical sources."""
+    """Plugin harness seeded with entrypoints data and canonical sources.
+
+    Yields
+    ------
+    AnalyticsPluginHarness
+        Harness seeded with entrypoint packs.
+    """
     with plugin_harness_with_packs(tmp_path, CORE_PACK, ENTRYPOINTS_PACK) as harness:
         yield harness
 
 
 @contextmanager
 def data_models_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
-    """Plugin harness seeded with data models pack."""
+    """Plugin harness seeded with data models pack.
+
+    Yields
+    ------
+    AnalyticsPluginHarness
+        Harness seeded with data model packs.
+    """
     with plugin_harness_with_packs(tmp_path, CORE_PACK, DATA_MODELS_PACK) as harness:
         yield harness
 

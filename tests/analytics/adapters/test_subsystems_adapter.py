@@ -6,8 +6,8 @@ and module mapping data using real DuckDB instances.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -20,8 +20,8 @@ from tests._helpers.assertions import (
     expect_equal,
     require_row,
 )
-from tests._helpers.contracts import count_rows
 from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
     SubsystemModulePayloadSeed,
@@ -79,7 +79,13 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 @pytest.fixture
 def snapshot(ctx: TestContext) -> SnapshotRef:
-    """Expose the snapshot from the shared test context."""
+    """Expose the snapshot from the shared test context.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot associated with the shared test context.
+    """
     return ctx.snapshot
 
 

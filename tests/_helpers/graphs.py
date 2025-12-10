@@ -18,7 +18,6 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.builders import (
     ConfigValueRow,
-    GoidRow,
     ModuleRow,
     SubsystemModuleRow,
     SymbolEdgeOptions,
@@ -26,6 +25,7 @@ from tests._helpers.builders import (
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
 )
+from tests._helpers.catalogs import seed_goids_for_snapshot
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
     GraphEngineAdapter,
@@ -374,26 +374,25 @@ def insert_goids(
     *,
     now: datetime,
 ) -> None:
-    """Insert GOID rows for provided FunctionAst map."""
+    """Insert GOID rows for provided FunctionAst map using catalog-based seeding."""
+    _ = now
     ensure_schema(gateway.con, "core.goids")
-    insert_rows(
-        gateway,
-        [
-            GoidRow(
-                goid_h128=func_ast.goid,
-                urn=f"urn:{func_ast.qualname}",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                rel_path=func_ast.rel_path,
-                kind="class" if isinstance(func_ast.node, ast.ClassDef) else "function",
-                qualname=func_ast.qualname,
-                start_line=func_ast.start_line,
-                end_line=func_ast.end_line,
-                created_at=now,
-            )
-            for func_ast in ast_by_goid.values()
-        ],
-    )
+    kinds = {
+        func_ast.goid: "class" if isinstance(func_ast.node, ast.ClassDef) else "function"
+        for func_ast in ast_by_goid.values()
+    }
+    functions = [
+        function_meta(
+            goid=func_ast.goid,
+            rel_path=func_ast.rel_path,
+            qualname=func_ast.qualname,
+            snapshot=(snapshot.repo, snapshot.commit),
+            line_span=(func_ast.start_line, func_ast.end_line),
+        )
+        for func_ast in ast_by_goid.values()
+    ]
+    catalog = FunctionCatalog(functions=functions, module_by_path={})
+    seed_goids_for_snapshot(gateway, snapshot, catalog, kinds=kinds)
 
 
 def insert_config_values(

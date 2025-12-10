@@ -206,6 +206,57 @@ def output_field() -> OutputFormatCLI:
     return field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)
 
 
+@dataclass
+class SharedFlags:
+    """Unified infrastructure flags for all CLI commands.
+
+    Combine this mixin into command dataclasses to get consistent project root,
+    output format, JSON flag, and verbosity parameters without redeclaring them.
+
+    Use with ``SHARED_FLAGS_METADATA`` for Cyclopts nested parameter flattening::
+
+        @dataclass
+        class MyCommand:
+            flags: SharedFlags = field(
+                default_factory=SharedFlags,
+                metadata=SHARED_FLAGS_METADATA,
+            )
+            # Command-specific fields
+            name: str = "default"
+    """
+
+    project_root: ProjectRoot = None
+    output_format: OutputFmt = OutputFormat.TEXT
+    json: JsonFlag = False
+    verbose: Verbose = 0
+
+
+SHARED_FLAGS_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
+"""Metadata for SharedFlags field to enable Cyclopts nested parameter flattening."""
+
+
+def shared_flags_field() -> SharedFlags:
+    """Create a SharedFlags field with Cyclopts metadata for nested flattening.
+
+    Use this for dynamically created dataclasses. For static dataclasses, prefer
+    ``field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)``.
+
+    Returns
+    -------
+    SharedFlags
+        Dataclass field (typed as SharedFlags for type checker compatibility).
+
+    Examples
+    --------
+    >>> from dataclasses import dataclass
+    >>> from codeintel.cli.commands._common import SharedFlags, shared_flags_field
+    >>> @dataclass
+    ... class MyCommand:
+    ...     flags: SharedFlags = shared_flags_field()  # doctest: +SKIP
+    """
+    return field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+
+
 def resolve_output_format(
     *,
     json_flag: bool,
@@ -257,6 +308,7 @@ def get_output_format(
 __all__ = [
     "OUTPUT_PARAM_METADATA",
     "RUNTIME_PARAM_METADATA",
+    "SHARED_FLAGS_METADATA",
     "ExistingDir",
     "ExistingPath",
     "JsonFlag",
@@ -267,6 +319,7 @@ __all__ = [
     "ProjectRoot",
     "RuntimeCLI",
     "RuntimeCliError",
+    "SharedFlags",
     "Verbose",
     "get_output_format",
     "get_verbose",
@@ -274,4 +327,5 @@ __all__ = [
     "output_field",
     "resolve_output_format",
     "runtime_field",
+    "shared_flags_field",
 ]

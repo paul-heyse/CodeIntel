@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -27,8 +28,10 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
-from tests._helpers.factories import make_snapshot
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionSpan,
@@ -48,22 +51,38 @@ EXPECTED_GOID_COUNT = 2
 
 
 @pytest.fixture
-def contracts_config(tmp_path: Path) -> FunctionContractsStepConfig:
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Create a test context aligned with defaults.
+
+    Yields
+    ------
+    TestContext
+        Context configured with default repo and commit identifiers.
+    """
+    options = EnvOptions(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
+@pytest.fixture
+def contracts_config(ctx: TestContext) -> FunctionContractsStepConfig:
     """Create a test configuration for function contracts.
 
     Parameters
     ----------
-    tmp_path
-        Temporary directory for test repo.
+    ctx
+        Test context providing snapshot and gateway.
 
     Returns
     -------
     FunctionContractsStepConfig
         Configuration for testing.
     """
-    snapshot = make_snapshot(repo_root=tmp_path)
     return FunctionContractsStepConfig(
-        snapshot=snapshot,
+        snapshot=ctx.snapshot,
         max_conditions_per_func=TEST_MAX_CONDITIONS,
     )
 
@@ -216,7 +235,7 @@ def _seed_function_types(
 
 
 def test_compute_contracts_with_catalog_goid_iteration(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts iterates over GOIDs from catalog."""
@@ -231,15 +250,16 @@ def test_compute_contracts_with_catalog_goid_iteration(
     )
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "simple", 1, 3)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT function_goid_h128, preconditions_json, postconditions_json
         FROM analytics.function_contracts
@@ -253,22 +273,23 @@ def test_compute_contracts_with_catalog_goid_iteration(
 
 
 def test_compute_contracts_with_missing_ast(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts handles GOIDs without AST gracefully."""
     spans = [MockFunctionSpan(GOID_MISSING, "missing.py", "missing_func", 1, 3)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     # No AST map provided for the GOID
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT function_goid_h128, preconditions_json
         FROM analytics.function_contracts
@@ -284,7 +305,7 @@ def test_compute_contracts_with_missing_ast(
 
 
 def test_compute_contracts_with_docstring_data(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts uses docstring data for nullability inference."""
@@ -299,10 +320,11 @@ def test_compute_contracts_with_docstring_data(
     )
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "with_docs", 1, 3)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     # Seed docstring with optional parameter info
     _seed_docstrings(
-        fresh_gateway,
+        ctx.gateway,
         rel_path="module.py",
         qualname="with_docs",
         params=[
@@ -312,13 +334,13 @@ def test_compute_contracts_with_docstring_data(
     )
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT param_nullability_json
         FROM analytics.function_contracts
@@ -334,7 +356,7 @@ def test_compute_contracts_with_docstring_data(
 
 
 def test_compute_contracts_with_type_annotations(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts uses type annotations for nullability inference."""
@@ -349,23 +371,24 @@ def test_compute_contracts_with_type_annotations(
     )
     spans = [MockFunctionSpan(GOID_TYPED, "module.py", "typed_func", 1, 3)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     # Seed type info with nullable and non-nullable types
     _seed_function_types(
-        fresh_gateway,
+        ctx.gateway,
         goid=GOID_TYPED,
         return_type="int",
         param_types={"x": "int", "y": "Optional[int]"},
     )
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_TYPED: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT param_nullability_json, return_nullability
         FROM analytics.function_contracts
@@ -382,7 +405,7 @@ def test_compute_contracts_with_type_annotations(
 
 
 def test_compute_contracts_with_guards_and_catalog(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts extracts preconditions from guard clauses."""
@@ -401,15 +424,16 @@ def test_compute_contracts_with_guards_and_catalog(
     )
     spans = [MockFunctionSpan(GOID_GUARDED, "module.py", "guarded", 1, 6)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_GUARDED: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT preconditions_json, raises_json
         FROM analytics.function_contracts
@@ -427,7 +451,7 @@ def test_compute_contracts_with_guards_and_catalog(
 
 
 def test_compute_contracts_with_bool_return_type(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts detects bool return type for postconditions."""
@@ -442,22 +466,23 @@ def test_compute_contracts_with_bool_return_type(
     )
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "is_valid", 1, 3)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     _seed_function_types(
-        fresh_gateway,
+        ctx.gateway,
         goid=GOID_SIMPLE,
         return_type="bool",
         param_types={"x": "int"},
     )
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT postconditions_json
         FROM analytics.function_contracts
@@ -475,7 +500,7 @@ def test_compute_contracts_with_bool_return_type(
 
 
 def test_compute_contracts_confidence_score(
-    fresh_gateway: StorageGateway,
+    ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
 ) -> None:
     """Compute contracts calculates confidence score based on available data."""
@@ -492,29 +517,30 @@ def test_compute_contracts_confidence_score(
     )
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "well_documented", 1, 5)]
     catalog = _create_mock_catalog(spans)
+    ensure_catalog_with_goids(ctx, catalog)
 
     # Add both docstrings and type info for higher confidence
     _seed_docstrings(
-        fresh_gateway,
+        ctx.gateway,
         rel_path="module.py",
         qualname="well_documented",
         params=[{"name": "x", "desc": "Input value"}],
     )
     _seed_function_types(
-        fresh_gateway,
+        ctx.gateway,
         goid=GOID_SIMPLE,
         return_type="int",
         param_types={"x": "int"},
     )
 
     compute_function_contracts(
-        fresh_gateway,
+        ctx.gateway,
         contracts_config,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
 
-    result = fresh_gateway.con.execute(
+    result = ctx.gateway.con.execute(
         """
         SELECT contract_confidence
         FROM analytics.function_contracts

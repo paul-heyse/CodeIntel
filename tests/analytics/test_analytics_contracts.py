@@ -26,8 +26,11 @@ from codeintel.config.datasets import (
     ProfileRowModel,
     get_dataset_contracts_by_table_key,
 )
+from codeintel.graphs.catalog import FunctionCatalog
 from tests._helpers import CORE_PACK, TestContext, create_test_context
+from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.contracts import ContractCtx, count_rows
+from tests._helpers.rows import function_meta
 
 
 def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:
@@ -67,23 +70,19 @@ def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:
 
 def _graph_metrics_functions_row(ctx: ContractCtx) -> GraphMetricsFunctionsRow:
     now = datetime.now(UTC)
-    ctx.gateway.core.insert_goids(
-        [
-            (
-                10,
-                "urn:demo#fn",
-                ctx.repo,
-                ctx.commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.fn",
-                1,
-                2,
-                now.isoformat(),
+    catalog = FunctionCatalog(
+        functions=[
+            function_meta(
+                goid=10,
+                rel_path="pkg/mod.py",
+                qualname="pkg.mod.fn",
+                snapshot=(ctx.repo, ctx.commit),
+                line_span=(1, 2),
             )
-        ]
+        ],
+        module_by_path={"pkg/mod.py": "pkg.mod"},
     )
+    ensure_catalog_with_goids(ctx, catalog)
     return {
         "repo": ctx.repo,
         "commit": ctx.commit,

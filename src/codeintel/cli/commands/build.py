@@ -5,19 +5,18 @@ This module wires Cyclopts command classes to unified handlers via @cli_command.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
     build_history_handler,
     build_run_handler,
     build_status_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 build_app = App(
     name="build",
@@ -72,28 +71,7 @@ class BuildRunCommand:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
@@ -110,28 +88,7 @@ class BuildStatusCommand:
             show_choices=True,
         ),
     ] = None
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.history", handler=build_history_handler, config=_BUILD_CONFIG)
@@ -154,28 +111,7 @@ class BuildHistoryCommand:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["build_app"]

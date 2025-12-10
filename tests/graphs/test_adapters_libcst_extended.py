@@ -44,6 +44,11 @@ def _require_module(result: ParseResult) -> ParsedModule:
     -------
     ParsedModule
         Parsed module extracted from the result.
+
+    Raises
+    ------
+    AssertionError
+        If the parse result does not include a module.
     """
     module = result.module
     if module is None:

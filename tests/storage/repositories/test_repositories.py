@@ -8,6 +8,8 @@ from datetime import datetime
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
+from codeintel.storage.gateway.registry_generated import TABLE_REGISTRY
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -46,6 +48,11 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
     if member in container:
         return
     raise AssertionError(message)
+
+
+def _as_mapping(row: tuple[object, ...], table_key: str) -> dict[str, object]:
+    columns = TABLE_REGISTRY[table_key]["columns"]
+    return {column: value for column, value in zip(columns, row, strict=False)}
 
 
 def _repos_for_gateway(
@@ -248,33 +255,20 @@ def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
         )
     )
 
-    gateway.con.executemany(
-        """
-        INSERT INTO analytics.data_models (
-            repo, commit, model_id, goid_h128, model_name, module, rel_path,
-            model_kind, base_classes_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [model_row],
+    insert_mapping_rows(
+        gateway.con,
+        "analytics.data_models",
+        [_as_mapping(model_row, "analytics.data_models")],
     )
-    gateway.con.executemany(
-        """
-        INSERT INTO analytics.data_model_fields (
-            repo, commit, model_id, field_name, field_type, required, has_default,
-            default_expr, constraints_json, source, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [field_row],
+    insert_mapping_rows(
+        gateway.con,
+        "analytics.data_model_fields",
+        [_as_mapping(field_row, "analytics.data_model_fields")],
     )
-    gateway.con.executemany(
-        """
-        INSERT INTO analytics.data_model_relationships (
-            repo, commit, source_model_id, target_model_id, target_module,
-            target_model_name, field_name, relationship_kind, multiplicity, via,
-            evidence_json, rel_path, lineno, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [relationship_row],
+    insert_mapping_rows(
+        gateway.con,
+        "analytics.data_model_relationships",
+        [_as_mapping(relationship_row, "analytics.data_model_relationships")],
     )
 
     normalized = fetch_models_normalized(gateway, repo, commit)

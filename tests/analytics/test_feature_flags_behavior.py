@@ -2,22 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import networkx as nx
+import pytest
 
 from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphKind
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
-from tests._helpers.factories import make_snapshot
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.graphs import CountingGraphEngineAdapter, GraphStubEngine
 
 
 def _make_counting_engine(
-    gateway: StorageGateway, snapshot: SnapshotRef
+    gateway, snapshot: SnapshotRef
 ) -> CountingGraphEngineAdapter:
     runtime = GraphStubEngine(
         gateway=gateway,
@@ -28,12 +30,29 @@ def _make_counting_engine(
     return CountingGraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
 
+@pytest.fixture
+def ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Create a test context for graph feature flag scenarios.
+
+    Yields
+    ------
+    TestContext
+        Context configured for graph feature flag integration tests.
+    """
+    options = EnvOptions(repo="demo/repo", commit="deadbeef")
+    context = create_test_context(tmp_path, options=options)
+    try:
+        yield context
+    finally:
+        context.close()
+
+
 def test_eager_hydration_respects_feature_override(
-    tmp_path: Path, fresh_gateway: StorageGateway
+    ctx: TestContext,
 ) -> None:
     """Eager hydration should preload graphs when the feature flag is enabled."""
-    snapshot = make_snapshot(repo_root=tmp_path)
-    stub = _make_counting_engine(fresh_gateway, snapshot)
+    snapshot = ctx.snapshot
+    stub = _make_counting_engine(ctx.gateway, snapshot)
 
     opts = GraphRuntimeOptions(
         snapshot=snapshot,
@@ -42,7 +61,7 @@ def test_eager_hydration_respects_feature_override(
         engine=stub,
         features=GraphFeatureFlags(eager_hydration=True),
     )
-    build_graph_runtime(fresh_gateway, opts)
+    build_graph_runtime(ctx.gateway, opts)
 
     expect_true(
         stub.method_counts.get("load_call_graph", 0) > 0
@@ -52,11 +71,11 @@ def test_eager_hydration_respects_feature_override(
 
 
 def test_eager_hydration_off_defers_graph_loads(
-    tmp_path: Path, fresh_gateway: StorageGateway
+    ctx: TestContext,
 ) -> None:
     """Absent eager flag should defer graph loads until explicitly requested."""
-    snapshot = make_snapshot(repo_root=tmp_path)
-    stub = _make_counting_engine(fresh_gateway, snapshot)
+    snapshot = ctx.snapshot
+    stub = _make_counting_engine(ctx.gateway, snapshot)
 
     opts = GraphRuntimeOptions(
         snapshot=snapshot,
@@ -65,7 +84,7 @@ def test_eager_hydration_off_defers_graph_loads(
         engine=stub,
         features=GraphFeatureFlags(),
     )
-    build_graph_runtime(fresh_gateway, opts)
+    build_graph_runtime(ctx.gateway, opts)
 
     expect_true(
         stub.method_counts.get("load_call_graph", 0) == 0

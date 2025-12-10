@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable
 from pathlib import Path
-from textwrap import dedent
 
 import pytest
 
@@ -27,7 +26,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.ingestion_samples import (
+    DECORATED_FUNCTION,
     MULTILINE_FUNCTION,
+    NESTED_CLASS_FUNCTION,
     SIMPLE_MODULE,
     SYNTAX_ERROR_CODE,
     UNICODE_MODULE,
@@ -143,13 +144,7 @@ def test_lookup_cases(
 
 def test_smallest_enclosing_span_preferred() -> None:
     """Should prefer smallest enclosing span when multiple match."""
-    # Create nested structure
-    nested_code = dedent("""
-        class Outer:
-            def inner(self):
-                pass
-    """).strip()
-    tree = ast.parse(nested_code)
+    tree = ast.parse(NESTED_CLASS_FUNCTION)
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef, ast.ClassDef))
 
     # Get the inner function's lines
@@ -367,14 +362,7 @@ def test_multiline_function_span(tmp_path: Path) -> None:
 
 def test_ast_visitor_records_decorator_span() -> None:
     """Decorator spans should include lines above the function definition."""
-    source = dedent(
-        """\
-        @dec1
-        @dec2("x")
-        def foo():
-            return 1
-        """
-    )
+    source = DECORATED_FUNCTION
     tree = ast.parse(source, filename="mod.py")
     visitor = AstVisitor(rel_path="mod.py", module_name="mod")
     visitor.visit(tree)

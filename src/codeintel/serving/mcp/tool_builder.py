@@ -23,10 +23,6 @@ Registration Flow
          ▼
     register_tools_for_category()  ──▶ mcp.tool()
 
-All tools are derived from the Operation catalog. The per-category
-registration functions (``register_function_tools``, etc.) remain for
-backward compatibility but delegate to this unified builder.
-
 Auto-Pipeline Support
 ~~~~~~~~~~~~~~~~~~~~~
 When ``auto_pipeline`` is enabled, the tool builder automatically checks
@@ -211,6 +207,7 @@ class ToolRegistrationOptions:
 
     operations: Iterable[Operation] | None = None
     model_resolver: Callable[[str], ResponseFactory | None] | None = None
+    prereq_runner: Callable[[str, ServingConfig, QueryBackend], object] | None = None
 
 
 def register_tools_for_category(
@@ -236,7 +233,7 @@ def register_tools_for_category(
     config
         Optional serving config for auto-pipeline support.
     options
-        Optional overrides for operations and model resolution.
+        Optional overrides for operations, model resolution, and prereq runner.
     """
     opts = options or ToolRegistrationOptions()
     for spec in opts.operations or iter_operations():
@@ -247,6 +244,7 @@ def register_tools_for_category(
             backend,
             config,
             model_resolver=opts.model_resolver,
+            prereq_runner=opts.prereq_runner,
         )
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
@@ -277,7 +275,7 @@ def register_all_tools(
     config
         Optional serving config for auto-pipeline support.
     options
-        Optional overrides for operations and model resolution.
+        Optional overrides for operations, model resolution, and prereq runner.
     """
     opts = options or ToolRegistrationOptions()
     for spec in opts.operations or iter_operations():
@@ -288,6 +286,7 @@ def register_all_tools(
             backend,
             config,
             model_resolver=opts.model_resolver,
+            prereq_runner=opts.prereq_runner,
         )
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary

@@ -30,7 +30,14 @@ from tests._helpers import (
     seed_function_graph_cycle,
     seed_module_graph_inputs,
 )
-from tests._helpers.assertions import expect_equal, expect_in, expect_true
+from tests._helpers.assertions import (
+    assert_graph_metrics_function_row,
+    assert_graph_metrics_module_row,
+    assert_graph_metrics_table_counts,
+    expect_equal,
+    expect_in,
+    expect_true,
+)
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.graph_runtime_harness import (
     GraphRuntimeHarness,
@@ -76,96 +83,21 @@ def test_graph_metrics_end_to_end(graph_runtime_ctx: GraphRuntimeHarness) -> Non
     chain_json = chain_row[0]
     expect_in(str(graph_runtime_ctx.goids["func_a"]), chain_json)
 
-    expect_equal(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.config_graph_metrics_keys WHERE repo = ? AND commit = ?",
-            params,
-        ),
-        CONFIG_GRAPH_METRICS_KEY_COUNT,
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.config_projection_module_edges WHERE repo = ? AND commit = ?",
-            params,
-        )
-        > 0,
-    )
-
-    expect_equal(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
-            params,
-        ),
-        len(graph_runtime_ctx.fixtures.call_graph.nodes),
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= len(graph_runtime_ctx.fixtures.import_graph.nodes),
-    )
-    expect_equal(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
-            params,
-        ),
-        len(graph_runtime_ctx.fixtures.call_graph.nodes),
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= len(graph_runtime_ctx.fixtures.import_graph.nodes),
-    )
-
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= MIN_GRAPH_STATS_ROWS,
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= 1,
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= 1,
-    )
-
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= len(graph_runtime_ctx.fixtures.symbol_module_graph.nodes),
-    )
-    expect_true(
-        count_rows(
-            con,
-            "SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
-            params,
-        )
-        >= len(graph_runtime_ctx.fixtures.symbol_function_graph.nodes),
+    fixtures = graph_runtime_ctx.fixtures
+    assert_graph_metrics_table_counts(
+        con,
+        graph_runtime_ctx.snapshot,
+        config_keys=CONFIG_GRAPH_METRICS_KEY_COUNT,
+        config_projection_min=1,
+        functions=len(fixtures.call_graph.nodes),
+        modules_min=len(fixtures.import_graph.nodes),
+        functions_ext=len(fixtures.call_graph.nodes),
+        modules_ext_min=len(fixtures.import_graph.nodes),
+        graph_stats_min=MIN_GRAPH_STATS_ROWS,
+        subsystem_metrics_min=1,
+        subsystem_agreement_min=1,
+        symbol_modules_min=len(fixtures.symbol_module_graph.nodes),
+        symbol_functions_min=len(fixtures.symbol_function_graph.nodes),
     )
 
 
@@ -253,16 +185,15 @@ def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> Non
     cfg = builder.graph_metrics()
     compute_graph_metrics(ctx.gateway, cfg)
 
-    row = ctx.gateway.con.execute(
-        """
-        SELECT call_fan_in, call_fan_out, call_in_degree, call_out_degree,
-               call_cycle_member
-        FROM analytics.graph_metrics_functions
-        WHERE function_goid_h128 = 2
-        """
-    ).fetchone()
-    if row != (1, 1, 2, 1, True):
-        pytest.fail(f"Unexpected function metrics row: {row}")
+    assert_graph_metrics_function_row(
+        ctx.gateway.con,
+        goid=2,
+        fan_in=1,
+        fan_out=1,
+        in_degree=2,
+        out_degree=1,
+        cycle_member=True,
+    )
     ctx.close()
 
 
@@ -294,14 +225,13 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
     cfg = builder.graph_metrics()
     compute_graph_metrics(ctx.gateway, cfg)
 
-    row = ctx.gateway.con.execute(
-        """
-        SELECT import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member
-        FROM analytics.graph_metrics_modules
-        WHERE module = ?
-        """,
-        [MODULE_A],
-    ).fetchone()
-    if row != (0, 1, 0, 1, False):
-        pytest.fail(f"Unexpected module metrics row: {row}")
+    assert_graph_metrics_module_row(
+        ctx.gateway.con,
+        module=MODULE_A,
+        import_fan_in=0,
+        import_fan_out=1,
+        symbol_fan_in=0,
+        symbol_fan_out=1,
+        import_cycle_member=False,
+    )
     ctx.close()

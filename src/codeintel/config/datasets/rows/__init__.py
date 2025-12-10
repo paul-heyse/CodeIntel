@@ -51,8 +51,6 @@ from codeintel.config.datasets.rows.core import (
     IngestRunRow,
     config_value_to_tuple,
     docstring_row_to_tuple,
-    goid_crosswalk_to_tuple,
-    goid_to_tuple,
     ingest_run_to_tuple,
 )
 
@@ -68,12 +66,6 @@ from codeintel.config.datasets.rows.graph import (
     SymbolUseRow,
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
-    cfg_block_to_tuple,
-    cfg_edge_to_tuple,
-    dfg_edge_to_tuple,
-    import_edge_to_tuple,
-    import_module_to_tuple,
-    symbol_use_to_tuple,
 )
 
 # Profile table rows
@@ -181,11 +173,8 @@ __all__ = [
     "behavioral_coverage_row_to_tuple",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
-    "cfg_block_to_tuple",
-    "cfg_edge_to_tuple",
     "config_value_to_tuple",
     "coverage_line_to_tuple",
-    "dfg_edge_to_tuple",
     "docstring_row_to_tuple",
     "file_profile_row_to_tuple",
     "function_ast_features_row_to_tuple",
@@ -193,16 +182,12 @@ __all__ = [
     "function_profile_row_to_tuple",
     "function_types_row_to_tuple",
     "function_validation_row_to_tuple",
-    "goid_crosswalk_to_tuple",
-    "goid_to_tuple",
     "graph_metrics_functions_ext_row_to_tuple",
     "graph_metrics_functions_row_to_tuple",
     "graph_metrics_modules_ext_row_to_tuple",
     "graph_metrics_modules_row_to_tuple",
     "graph_validation_row_to_tuple",
     "hotspot_row_to_tuple",
-    "import_edge_to_tuple",
-    "import_module_to_tuple",
     "ingest_run_to_tuple",
     "module_profile_row_to_tuple",
     "serialize_test_catalog_row",
@@ -211,6 +196,5 @@ __all__ = [
     "static_diagnostic_to_tuple",
     "subsystem_coverage_cache_to_tuple",
     "subsystem_profile_cache_to_tuple",
-    "symbol_use_to_tuple",
     "typedness_row_to_tuple",
 ]

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -100,26 +100,26 @@ async def _run_resource_case(
     plugin = plugin_factory(capture)
     owns_gateway = gateway is None
     base_gateway = gateway or GatewayFactory().with_macros().open()
-    gateway: StorageGateway
+    active_gateway: StorageGateway
     recording_gateway: ConnectionRecordingGateway | None = None
     if simulate_gateway_failure:
-        gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
+        active_gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
     elif simulate_db_fallback:
         recording_gateway = ConnectionRecordingGateway(base_gateway)
-        gateway = recording_gateway
+        active_gateway = recording_gateway
     else:
-        gateway = base_gateway
+        active_gateway = base_gateway
 
     resources = TargetResourceOverrides(
         modules=("pkg/mod.py",) if simulate_resources else (),
     )
-    with closing_gateway(gateway) if owns_gateway else nullcontext(gateway):
+    with closing_gateway(active_gateway) if owns_gateway else nullcontext(active_gateway):
         ctx = build_target_context_for_plugin(
             plugin,
             tmp_path,
             config=TargetContextConfig(
                 repo_root=repo_root,
-                gateway=gateway,
+                gateway=active_gateway,
                 resources=resources,
             ),
         )
@@ -169,22 +169,22 @@ def _run_module_path_case(
     repo_root.mkdir(parents=True, exist_ok=True)
     owns_gateway = gateway is None
     base_gateway = gateway or GatewayFactory().with_macros().open()
-    gateway: StorageGateway
+    active_gateway: StorageGateway
     if simulate_gateway_failure:
-        gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
+        active_gateway = cast("StorageGateway", FailingGateway(base_gateway, "db down"))
     else:
-        gateway = base_gateway
+        active_gateway = base_gateway
 
     resources = TargetResourceOverrides(
         modules=(case.resources_path,) if simulate_resources else (),
     )
-    with closing_gateway(gateway) if owns_gateway else nullcontext(gateway):
+    with closing_gateway(active_gateway) if owns_gateway else nullcontext(active_gateway):
         ctx = build_target_context_for_plugin(
             plugin,
             tmp_path,
             config=TargetContextConfig(
                 repo_root=repo_root,
-                gateway=gateway,
+                gateway=active_gateway,
                 resources=resources,
             ),
         )

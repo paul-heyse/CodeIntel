@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -37,7 +37,9 @@ def assert_problem_detail_response(
     expect_true(hasattr(response, "status_code"))
     if status_code is not None:
         expect_equal(response.status_code, status_code)
-    payload = response.json() if hasattr(response, "json") else {}
+    payload_obj = response.json() if hasattr(response, "json") else {}
+    expect_true(isinstance(payload_obj, Mapping))
+    payload = cast("Mapping[str, Any]", payload_obj)
     expect_in("code", payload)
     expect_in("title", payload)
     expect_in("detail", payload)

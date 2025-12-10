@@ -61,9 +61,6 @@ class OutputTarget:
         Tuning parameters for this target.
     description
         Human-readable description.
-    tables
-        DEPRECATED: Use contract.table_keys instead.
-        Kept for backward compatibility during migration.
 
     Examples
     --------
@@ -98,21 +95,17 @@ class OutputTarget:
     # New: Tuning parameters
     parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     description: str = ""
-    # DEPRECATED: Use contract.table_keys instead
-    tables: tuple[str, ...] = ()
 
     @property
     def table_keys(self) -> tuple[str, ...]:
-        """Return table keys from contract, falling back to deprecated tables.
+        """Return table keys from contract.
 
         Returns
         -------
         tuple[str, ...]
             Fully-qualified table names this target writes to.
         """
-        if self.contract.tables:
-            return self.contract.table_keys
-        return self.tables
+        return self.contract.table_keys
 
     @property
     def estimated_duration_ms(self) -> int:
@@ -144,12 +137,13 @@ class TargetGraph:
     Examples
     --------
     >>> graph = TargetGraph()
+    >>> from codeintel.config.datasets.primitives import TableSchema, Column
     >>> graph.register(
     ...     OutputTarget(
     ...         name="modules",
     ...         module="ingestion",
     ...         plugin="repo_scan",
-    ...         tables=("core.modules",),
+    ...         contract=OutputContract(tables=(TableSchema("core", "modules", [Column("module", "VARCHAR")]),)),
     ...     )
     ... )
     >>> "modules" in graph

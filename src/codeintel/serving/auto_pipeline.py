@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,7 +29,6 @@ from codeintel.build.state import StateValidator
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.models import CliPathsInput, ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.core.execution import TriggerKind
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.tracking import PipelineRunRecord
 from codeintel.storage.validation import table_has_rows_for_snapshot
@@ -223,12 +222,12 @@ def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
         deps = graph.transitive_deps(target_name)
 
         # Add tables from this target
-        table_keys.update(target.tables)
+        table_keys.update(target.table_keys)
 
         # Add tables from all dependencies
         for dep_name in deps:
             dep_target = graph.get(dep_name)
-            table_keys.update(dep_target.tables)
+            table_keys.update(dep_target.table_keys)
 
     return frozenset(table_keys)
 
@@ -800,68 +799,12 @@ def _run_prereqs_build(
     )
 
 
-def _run_prereqs(
-    *,
-    op_id: str,
-    config: ServingConfig,
-    gateway: StorageGateway,
-    trigger: TriggerKind,
-) -> PipelineRunRecord | None:
-    """Execute prerequisites for an operation.
-
-    This is a compatibility shim that wraps _run_prereqs_build and converts
-    the BuildResult to a PipelineRunRecord for backward compatibility.
-
-    Parameters
-    ----------
-    op_id
-        Operation identifier.
-    config
-        Serving configuration.
-    gateway
-        Storage gateway with database connection.
-    trigger
-        Trigger kind for the pipeline run.
-
-    Returns
-    -------
-    PipelineRunRecord | None
-        The pipeline run record if executed, None if skipped.
-    """
-    result = _run_prereqs_build(
-        op_id=op_id,
-        config=config,
-        gateway=gateway,
-    )
-
-    if result is None:
-        return None
-
-    # Convert BuildResult to PipelineRunRecord for compatibility
-    # The build system now records its own runs in build.runs,
-    # but for backward compat we return a synthetic PipelineRunRecord
-    now = datetime.now(tz=UTC)
-    return PipelineRunRecord(
-        run_id=result.run_id,
-        repo=config.repo,
-        commit=config.commit,
-        kind="op_prereqs",
-        trigger=trigger,
-        status="succeeded" if result.success else "failed",
-        started_at=now,
-        completed_at=now,
-        requested_operation=op_id,
-        error_summary=result.error_summary,
-        pipeline_name="build_system",
-    )
-
-
 def ensure_prereqs_for_http(
     *,
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
-) -> PipelineRunRecord | None:
+) -> BuildResult | None:
     """Ensure prerequisites are run for an HTTP operation if needed.
 
     This function is called before serving an HTTP request. If auto-pipeline
@@ -879,8 +822,8 @@ def ensure_prereqs_for_http(
 
     Returns
     -------
-    PipelineRunRecord | None
-        The pipeline run record if a run was executed, None if skipped.
+    BuildResult | None
+        The build result if a run was executed, None if skipped.
     """
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
     if not should_run or gateway is None:
@@ -892,7 +835,7 @@ def ensure_prereqs_for_http(
         LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
         return None
 
-    return _run_prereqs(op_id=op_id, config=config, gateway=gateway, trigger="http")
+    return _run_prereqs_build(op_id=op_id, config=config, gateway=gateway)
 
 
 def ensure_prereqs_for_mcp(
@@ -900,7 +843,7 @@ def ensure_prereqs_for_mcp(
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
-) -> PipelineRunRecord | None:
+) -> BuildResult | None:
     """Ensure prerequisites are run for an MCP tool invocation if needed.
 
     This function is called before executing an MCP tool. If auto-pipeline
@@ -918,8 +861,8 @@ def ensure_prereqs_for_mcp(
 
     Returns
     -------
-    PipelineRunRecord | None
-        The pipeline run record if a run was executed, None if skipped.
+    BuildResult | None
+        The build result if a run was executed, None if skipped.
     """
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
     if not should_run or gateway is None:
@@ -931,7 +874,7 @@ def ensure_prereqs_for_mcp(
         LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
         return None
 
-    return _run_prereqs(op_id=op_id, config=config, gateway=gateway, trigger="mcp")
+    return _run_prereqs_build(op_id=op_id, config=config, gateway=gateway)
 
 
 __all__ = [

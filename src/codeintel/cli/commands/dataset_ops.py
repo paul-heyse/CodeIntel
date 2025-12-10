@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import (
     dataset_describe_handler,
     dataset_list_handler,
     dataset_verify_handler,
 )
-from codeintel.cli.rendering.types import OutputFormat
 
 dataset_app = App(
     name="dataset",
@@ -33,29 +32,7 @@ _DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=Tr
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format.",
-            show_choices=True,
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command(
@@ -73,22 +50,7 @@ class DatasetDescribeCommand:
             help="Dataset table key (e.g., 'core.goids').",
         ),
     ]
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format.",
-            show_choices=True,
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
@@ -104,29 +66,7 @@ class DatasetVerifyCommand:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    root: Annotated[
-        Path | None,
-        Parameter(
-            name=["--root", "-r"],
-            help="Project root directory.",
-        ),
-    ] = None
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format.",
-            show_choices=True,
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

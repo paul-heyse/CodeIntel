@@ -712,6 +712,11 @@ class HandlerContext:
 
     # --- Resource Management ---
 
+    @property
+    def is_closed(self) -> bool:
+        """Return True when the context has been closed."""
+        return self._closed
+
     def close(self) -> None:
         """Close managed resources.
 

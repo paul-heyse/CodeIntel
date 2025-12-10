@@ -6,6 +6,13 @@ handler-based operations with consistent progress tracking.
 The canonical `OperationSpec` is defined in `execution/registry.py` and
 is used by `@cli_command` decorator and the introspection system.
 
+Public surface
+--------------
+Use the registry-based APIs (`OperationSpec`, `register_operation`, `execute_operation`) as
+the supported entry points for defining and running operations. Legacy executor-style types
+such as OperationExecutor/OperationCategory are intentionally not re-exported here; build
+on the handler/registry flow instead.
+
 Examples
 --------
 Register an operation:

@@ -12,6 +12,7 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
+from tests._helpers.context import TestContext
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.harnesses import plugin_harness_with_packs
@@ -37,8 +38,14 @@ def _seed_test_module(repo_root: Path) -> None:
     )
 
 
-def _catalog_with_tests(ctx) -> FunctionCatalogService:
-    """Construct a catalog using canonical AST artifacts plus a test function."""
+def _catalog_with_tests(ctx: TestContext) -> FunctionCatalogService:
+    """Construct a catalog using canonical AST artifacts plus a test function.
+
+    Returns
+    -------
+    FunctionCatalogService
+        Catalog service combining canonical artifacts with a sample test function.
+    """
     artifacts = canonical_ast_artifacts(ctx)
     test_function = function_meta(
         goid=7101,
@@ -53,12 +60,12 @@ def _catalog_with_tests(ctx) -> FunctionCatalogService:
     return FunctionCatalogService(catalog)
 
 
-def _apply_catalog(ctx, catalog_provider: FunctionCatalogService) -> None:
+def _apply_catalog(ctx: TestContext, catalog_provider: FunctionCatalogService) -> None:
     """Ensure GOIDs are seeded for the provided catalog."""
     ensure_catalog_with_goids(ctx, catalog_provider)
 
 
-def _insert_function_metrics(ctx, created_at: datetime, goid: int) -> None:
+def _insert_function_metrics(ctx: TestContext, created_at: datetime, goid: int) -> None:
     """Insert minimal function metrics for the test function."""
     insert_rows(
         ctx.gateway,
@@ -74,7 +81,7 @@ def _insert_function_metrics(ctx, created_at: datetime, goid: int) -> None:
     )
 
 
-def _insert_module_row(ctx) -> None:
+def _insert_module_row(ctx: TestContext) -> None:
     """Insert module metadata for the test module."""
     insert_rows(
         ctx.gateway,

@@ -220,7 +220,7 @@ class BuilderOptions:
 class EnvOverrides:
     """Environment overrides for execution contexts."""
 
-    snapshot: tuple[str, str] | None = None
+    snapshot: SnapshotRef | tuple[str, str] | None = None
     gateway: StorageGateway | RecordingGateway | None = None
     tmp_path: Path | None = None
 
@@ -288,7 +288,11 @@ class ExecutionContextBuilder:
         opts = options or BuilderOptions()
         overrides = env_overrides or EnvOverrides()
         base_path = overrides.tmp_path or tmp_path
-        repo, commit = overrides.snapshot or (opts.repo, opts.commit)
+        if isinstance(overrides.snapshot, SnapshotRef):
+            repo = overrides.snapshot.repo
+            commit = overrides.snapshot.commit
+        else:
+            repo, commit = overrides.snapshot or (opts.repo, opts.commit)
         gateway = overrides.gateway
         snapshot = None
         build_paths = None

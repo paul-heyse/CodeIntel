@@ -6,14 +6,13 @@ configured and all dependencies are available.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Annotated
+from dataclasses import dataclass, field
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.health import health_check_handler
-from codeintel.cli.rendering.types import OutputFormat
 
 health_app = App(name="health", help="Check CLI environment health")
 
@@ -32,11 +31,7 @@ class HealthCheckCommand:
     are accessible.
     """
 
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format"),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[int, Parameter(name="-v", count=True, help="Verbosity level")] = 0
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

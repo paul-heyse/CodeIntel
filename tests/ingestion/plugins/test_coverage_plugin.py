@@ -8,16 +8,16 @@ from typing import cast
 
 import pytest
 
+from codeintel.build.context import TargetExecutionContext
 from codeintel.build.protocols import CoverageData
 from codeintel.build.providers import Providers
-from codeintel.build.context import TargetExecutionContext
-from codeintel.storage.gateway import StorageGateway
 from codeintel.ingestion.plugins.coverage_plugin import (
     CoverageIngestPlugin,
     get_module_paths,
     paths_to_modules,
     resolve_coverage_file,
 )
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -138,7 +138,7 @@ async def test_execute_ingests_coverage_with_fake_collector(tmp_path: Path) -> N
         modules=("pkg/mod.py", "pkg/naïve.py"),
     )
 
-    def _seed_coverage(context: TargetExecutionContext) -> None:
+    def _seed_coverage(_context: TargetExecutionContext) -> None:
         write_coverage_file(
             coverage_file.parent,
             filename=coverage_file.name,

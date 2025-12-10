@@ -5,16 +5,16 @@ This module wires Cyclopts command classes to unified handlers via @cli_command.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.docs import docs_export_handler
-from codeintel.cli.rendering.types import OutputFormat
 
 docs_app = App(
     name="docs",
@@ -77,13 +77,6 @@ class DocsExportCommand:
     """Export datasets to Document Output/."""
 
     # Project options
-    project_root: Annotated[
-        Path | None,
-        Parameter(
-            name="--root",
-            help="Project root directory.",
-        ),
-    ] = None
     repo: Annotated[
         str | None,
         Parameter(
@@ -171,22 +164,8 @@ class DocsExportCommand:
         ),
     ] = PrereqMode.RUN
 
-    # Output options
-    output_format: Annotated[
-        OutputFormat,
-        Parameter(
-            name="--output-format",
-            help="Output format (text or json).",
-        ),
-    ] = OutputFormat.TEXT
-    verbose: Annotated[
-        int,
-        Parameter(
-            name=["-v", "--verbose"],
-            help="Increase verbosity level.",
-            count=True,
-        ),
-    ] = 0
+    # Shared flags
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["docs_app"]

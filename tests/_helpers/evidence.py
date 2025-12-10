@@ -19,7 +19,13 @@ class EntrypointEvidenceBundle:
 def build_entrypoint_evidence(
     ctx: TestContext, *, pack: SeedPack | None = None
 ) -> EntrypointEvidenceBundle:
-    """Ensure entrypoints are seeded and return entrypoint/test rows together."""
+    """Ensure entrypoints are seeded and return entrypoint/test rows together.
+
+    Returns
+    -------
+    EntrypointEvidenceBundle
+        Seeded entrypoint rows paired with corresponding test rows.
+    """
     ctx.require(pack or ENTRYPOINTS_PACK)
     entrypoints = ctx.query(
         """

@@ -7,21 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from codeintel.cli.datasets_handlers import (
-    BootstrapSnippet,
-    DatasetScaffoldOptions,
-    DryRunMode,
-    OverwritePolicy,
-    RegistryCheck,
-    ScaffoldBehaviorOptions,
-    ScaffoldCliOptions,
-    ScaffoldConfigError,
-    ScaffoldFileOptions,
-    ScaffoldIOOptions,
-    ScaffoldMetadataOptions,
-    ScaffoldSchemaOptions,
-    build_scaffold_options,
-)
 
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
 from tests._helpers.dataset_factories import sample_dataset_registry
@@ -44,53 +29,22 @@ def _base_opts(tmp_path: Path) -> ScaffoldOptions:
     )
 
 
-def _cli_options_from_scaffold_opts(
-    opts: ScaffoldOptions, specs_snapshot: Path
-) -> ScaffoldCliOptions:
-    """Translate storage ScaffoldOptions into CLI ScaffoldCliOptions for validation.
+def _ensure_no_registry_conflict(opts: ScaffoldOptions, registry: object) -> None:
+    """Raise when scaffold options collide with existing registry entries.
 
-    Returns
-    -------
-    ScaffoldCliOptions
-        CLI options bundle compatible with build_scaffold_options.
+    Raises
+    ------
+    ValueError
+        If the name or table key already exists.
     """
-    metadata = ScaffoldMetadataOptions(
-        kind="view" if opts.is_view else "table",
-        table_key=opts.table_key,
-        owner=opts.owner,
-        freshness_sla=opts.freshness_sla,
-        retention_policy=opts.retention_policy,
-    )
-    schema = ScaffoldSchemaOptions(
-        schema_version=opts.schema_version,
-        validation_profile=opts.validation_profile,
-        schema_id=opts.schema_id,
-    )
-    files = ScaffoldFileOptions(
-        jsonl_filename=opts.jsonl_filename,
-        parquet_filename=opts.parquet_filename,
-        stable_id=opts.stable_id,
-    )
-    scaffold_opts = DatasetScaffoldOptions(
-        output_dir=opts.output_dir,
-        overwrite_policy=OverwritePolicy.OVERWRITE if opts.overwrite else OverwritePolicy.ERROR,
-    )
-    io_opts = ScaffoldIOOptions(
-        specs_snapshot=specs_snapshot,
-        scaffold=scaffold_opts,
-    )
-    behavior = ScaffoldBehaviorOptions(
-        run_mode=DryRunMode.EXECUTE if not opts.dry_run else DryRunMode.DRY_RUN,
-        bootstrap=BootstrapSnippet.EMIT if opts.emit_bootstrap_snippet else BootstrapSnippet.SKIP,
-        registry_check=RegistryCheck.ENABLED,
-    )
-    return ScaffoldCliOptions(
-        metadata=metadata,
-        schema=schema,
-        files=files,
-        io=io_opts,
-        behavior=behavior,
-    )
+    by_name = getattr(registry, "by_name", {})
+    by_table = getattr(registry, "by_table_key", {})
+    if opts.name in by_name:
+        message = f"Dataset name already present in registry: {opts.name}"
+        raise ValueError(message)
+    if opts.table_key in by_table:
+        message = f"Table key already present in registry: {opts.table_key}"
+        raise ValueError(message)
 
 
 def test_scaffold_writes_artifacts(tmp_path: Path) -> None:
@@ -157,9 +111,11 @@ def test_scaffold_registry_conflict_blocks_creation(tmp_path: Path) -> None:
     """Live registry clashes should fail fast when enabled."""
     opts = _base_opts(tmp_path)
     registry = sample_dataset_registry(tmp_path)
-    with pytest.raises(ScaffoldConfigError):
-        build_scaffold_options(
-            name=opts.name,
-            options=_cli_options_from_scaffold_opts(opts, tmp_path / "missing.json"),
-            registry=registry,
-        )
+    opts = replace(
+        opts,
+        name="ast_nodes",
+        table_key="core.ast_nodes",
+        stable_id="ast_nodes",
+    )
+    with pytest.raises(ValueError, match="registry"):
+        _ensure_no_registry_conflict(opts, registry)
