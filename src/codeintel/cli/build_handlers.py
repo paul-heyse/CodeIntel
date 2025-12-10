@@ -7,7 +7,6 @@ them without importing Typer. All user-facing errors surface as
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from collections.abc import Mapping
@@ -667,193 +666,6 @@ def bundle_build_run(cli_kwargs: Mapping[str, object]) -> dict[str, object]:
 
 
 # =============================================================================
-# Handlers
-# =============================================================================
-
-
-def build_status_handler(options: BuildStatusOptions) -> None:
-    """Show current state of all build targets.
-
-    Parameters
-    ----------
-    options
-        Status command options.
-
-    Raises
-    ------
-    ValidationError
-        If module selection is invalid.
-    """
-    setup_logging(options.verbose)
-
-    runtime = build_runtime_from_cli(options.runtime_options)
-    graph = get_target_graph()
-
-    LOG.info(
-        "build.status repo=%s commit=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-    )
-
-    validator = StateValidator(graph, runtime.gateway, runtime.snapshot)
-    state = validator.validate()
-
-    if options.module:
-        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
-        if options.module not in valid_modules:
-            msg = f"Unknown module: {options.module}. Valid: {', '.join(valid_modules)}"
-            raise ValidationError(msg)
-
-        module_targets = graph.targets_for_module(cast("TargetModule", options.module))
-        module_names = {t.name for t in module_targets}
-        filtered_targets = {
-            name: target_state
-            for name, target_state in state.targets.items()
-            if name in module_names
-        }
-        state = DatabaseState(
-            repo=state.repo,
-            commit=state.commit,
-            targets=filtered_targets,
-        )
-
-    if options.output_format is OutputFormat.JSON:
-        output = _format_status_json(state)
-        sys.stdout.write(json.dumps(output, indent=2))
-        sys.stdout.write("\n")
-        return
-
-    text = _format_status_text(state, runtime.snapshot.repo, runtime.snapshot.commit)
-    sys.stdout.write(text)
-    sys.stdout.write("\n")
-
-
-def build_run_handler(
-    options: BuildRunOptions,
-    ctx_opts: BuildRunContext,
-) -> None:
-    """Build targets with automatic dependency resolution.
-
-    Compute the minimal work needed to bring requested targets
-    up-to-date, respecting dependencies and detecting stale data.
-
-    Parameters
-    ----------
-    options
-        Build run selection options.
-    ctx_opts
-        Execution context options.
-
-    Raises
-    ------
-    ValidationError
-        If goal resolution fails or build execution encounters an error.
-    """
-    setup_logging(ctx_opts.verbose)
-
-    run_options = options
-    run_ctx = ctx_opts
-
-    runtime = build_runtime_from_cli(run_ctx.runtime_options)
-    graph = get_target_graph()
-
-    LOG.info(
-        "build.run repo=%s commit=%s targets=%s module=%s scope=%s run_mode=%s force=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-        run_options.targets,
-        run_options.module,
-        run_options.target_scope,
-        run_options.run_mode,
-        run_options.force,
-    )
-
-    # Resolve goals
-    goals = _resolve_goals(run_options.targets, run_options.module, run_options.target_scope, graph)
-
-    sys.stdout.write(f"Building targets: {', '.join(goals)}\n")
-    if run_options.force:
-        sys.stdout.write(f"Forcing recompute of: {', '.join(run_options.force)}\n")
-    if run_options.run_mode is RunMode.DRY_RUN:
-        sys.stdout.write("(dry-run mode)\n")
-    sys.stdout.write("\n")
-
-    # Execute build
-    try:
-        result, plan = _execute_build(runtime, goals, run_options.force, run_options.run_mode)
-    except Exception as exc:
-        LOG.exception("build.run.error")
-        raise ValidationError(str(exc)) from exc
-
-    # Output
-    if run_options.run_mode is RunMode.DRY_RUN:
-        if run_ctx.output_format is OutputFormat.JSON:
-            sys.stdout.write(json.dumps(plan.to_dict(), indent=2))
-            sys.stdout.write("\n")
-        else:
-            sys.stdout.write(_format_plan_text(plan))
-            sys.stdout.write("\n")
-        return
-
-    if result is None:
-        # Should not happen if dry_run is False
-        msg = "No result from build execution"
-        raise ValidationError(msg)
-
-    if run_ctx.output_format is OutputFormat.JSON:
-        sys.stdout.write(json.dumps(result.to_dict(), indent=2))
-        sys.stdout.write("\n")
-    else:
-        sys.stdout.write(_format_result_text(result))
-        sys.stdout.write("\n")
-
-    # Exit with error if build failed
-    if result.failed_targets:
-        msg = f"Build failed: {len(result.failed_targets)} targets"
-        raise ValidationError(msg)
-
-    sys.stdout.write("Build completed successfully\n")
-
-
-def build_history_handler(options: BuildHistoryOptions) -> None:
-    """Show build run history and details.
-
-    Parameters
-    ----------
-    options
-        History command options.
-    """
-    setup_logging(options.verbose)
-    runtime = build_runtime_from_cli(options.runtime_options)
-
-    if options.run_id:
-        record = _lookup_run_by_id(runtime, options.run_id)
-        if options.output_format is OutputFormat.JSON:
-            sys.stdout.write(json.dumps(record.to_dict(), indent=2))
-            sys.stdout.write("\n")
-            return
-        sys.stdout.write(_format_run_detail(record))
-        sys.stdout.write("\n")
-        return
-
-    runs = runtime.gateway.build.list_runs(repo=runtime.snapshot.repo, limit=options.limit)
-
-    if not runs:
-        sys.stdout.write("No build runs found.\n")
-        return
-
-    if options.output_format is OutputFormat.JSON:
-        sys.stdout.write(json.dumps([r.to_dict() for r in runs], indent=2))
-        sys.stdout.write("\n")
-        return
-
-    sys.stdout.write(f"Recent build runs (showing {len(runs)}):\n\n")
-    for record in runs:
-        sys.stdout.write(_format_run_summary(record))
-        sys.stdout.write("\n")
-
-
-# =============================================================================
 # Structured Handlers (return CliResult instead of printing)
 # =============================================================================
 
@@ -1285,13 +1097,10 @@ __all__ = [
     "RuntimeCliOptions",
     "TargetScope",
     "build_history_ctx",
-    "build_history_handler",
     "build_history_handler_structured",
     "build_run_ctx",
-    "build_run_handler",
     "build_runtime_from_cli",
     "build_status_ctx",
-    "build_status_handler",
     "build_status_handler_structured",
     "bundle_build_run",
     "setup_logging",

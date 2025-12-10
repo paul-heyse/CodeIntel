@@ -413,39 +413,6 @@ def bundle_graph_plugins(cli_kwargs: Mapping[str, object]) -> Mapping[str, objec
 
 
 # -----------------------------------------------------------------------------
-# Handler
-# -----------------------------------------------------------------------------
-
-
-def graph_plugins_handler(options: GraphPluginsOptions) -> None:
-    """List registered graph plugins or display an execution plan.
-
-    Parameters
-    ----------
-    options
-        Graph plugin options.
-    """
-    registry_logger, previous_registry_level = _configure_registry_logger(options.output_format)
-
-    try:
-        if options.mode is PlanMode.PLAN:
-            plan_result = _plan_plugins(options)
-            if plan_result is None:
-                _render_fallback_plan(options.output_format)
-                return
-            _render_plan(plan_result, options.output_format)
-            return
-
-        plugins = list_graph_plugins()
-        if options.output_format is OutputFormat.JSON:
-            _render_list_json(plugins)
-        else:
-            _render_list_text(plugins)
-    finally:
-        _restore_registry_logger(registry_logger, previous_registry_level)
-
-
-# -----------------------------------------------------------------------------
 # Structured Handlers (return CliResult instead of printing)
 # -----------------------------------------------------------------------------
 
@@ -604,7 +571,6 @@ __all__ = [
     "SelectionPolicy",
     "bundle_graph_plugins",
     "graph_plugins_ctx",
-    "graph_plugins_handler",
     "graph_plugins_handler_structured",
     "parse_graph_options",
 ]
