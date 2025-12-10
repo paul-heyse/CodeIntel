@@ -19,6 +19,7 @@ from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -29,7 +30,6 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:
     from codeintel.build.manifest import BuildRunRecord
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
     from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
@@ -118,92 +118,6 @@ class BuildHistoryResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _get_int_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: int = 0,
-) -> int:
-    """Extract integer parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    int
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    return int(str(value))
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
-
-
 def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
 
@@ -230,13 +144,13 @@ def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     )
 
 
-def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from enhanced handler context.
+def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
+    """Build ProjectRuntime from handler context.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context.
+        Handler context.
 
     Returns
     -------
@@ -248,8 +162,7 @@ def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
     ValidationError
         If project cannot be resolved.
     """
-    project_root_raw = ctx.params.get("project_root")
-    project_root = Path(str(project_root_raw)) if project_root_raw else None
+    project_root = ctx.param_path("project_root")
 
     try:
         project_root_resolved = find_project_root(project_root)
@@ -483,7 +396,7 @@ def _lookup_run_by_id(
 
 
 def build_status_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[BuildStatusResult]:
     """Show current state of all build targets.
 
@@ -499,7 +412,7 @@ def build_status_handler(
     CliResult[BuildStatusResult]
         Structured result with target status information.
     """
-    module = _get_str_param(ctx, "module")
+    module = ctx.param_str("module")
 
     try:
         runtime = _build_runtime_from_ctx(ctx)
@@ -562,7 +475,7 @@ class _BuildRunParams:
     force: list[str] | None
 
 
-def _extract_build_run_params(ctx: EnhancedHandlerContext) -> _BuildRunParams:
+def _extract_build_run_params(ctx: HandlerContext) -> _BuildRunParams:
     """Extract and normalize build run parameters from context.
 
     Parameters
@@ -575,29 +488,17 @@ def _extract_build_run_params(ctx: EnhancedHandlerContext) -> _BuildRunParams:
     _BuildRunParams
         Extracted parameters.
     """
-    targets_raw = ctx.params.get("targets")
-    targets: list[str] | None
-    if targets_raw is None:
-        targets = None
-    elif isinstance(targets_raw, list):
-        targets = [str(t) for t in targets_raw]
-    else:
-        targets = [str(targets_raw)]
+    targets_list = ctx.param_list("targets")
+    targets: list[str] | None = targets_list if targets_list else None
 
-    force_raw = ctx.params.get("force")
-    force: list[str] | None
-    if force_raw is None:
-        force = None
-    elif isinstance(force_raw, list):
-        force = [str(f) for f in force_raw]
-    else:
-        force = [str(force_raw)]
+    force_list = ctx.param_list("force")
+    force: list[str] | None = force_list if force_list else None
 
     return _BuildRunParams(
         targets=targets,
-        module=_get_str_param(ctx, "module"),
-        all_targets=_get_bool_param(ctx, "all_targets"),
-        dry_run=_get_bool_param(ctx, "dry_run"),
+        module=ctx.param_str("module"),
+        all_targets=ctx.param_bool("all_targets"),
+        dry_run=ctx.param_bool("dry_run"),
         force=force,
     )
 
@@ -644,7 +545,7 @@ def _validate_build_run_params(
 
 
 def build_run_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[BuildRunResult]:
     """Build targets with automatic dependency resolution.
 
@@ -765,7 +666,7 @@ def _execute_and_format_result(
 
 
 def build_history_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[BuildHistoryResult]:
     """Show build run history and details.
 
@@ -782,8 +683,8 @@ def build_history_handler(
     CliResult[BuildHistoryResult]
         Structured result with build history.
     """
-    run_id = _get_str_param(ctx, "run_id")
-    limit = _get_int_param(ctx, "limit", 10)
+    run_id = ctx.param_str("run_id")
+    limit = ctx.param_int("limit", 10)
 
     try:
         runtime = _build_runtime_from_ctx(ctx)

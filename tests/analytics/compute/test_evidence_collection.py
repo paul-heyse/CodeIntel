@@ -13,10 +13,9 @@ from codeintel.analytics.compute.evidence.collection import (
     EvidenceSample,
     validate_evidence_samples,
 )
-from tests._helpers.assertions import assert_mapping_value
+from tests._helpers.assertions import assert_evidence_snippet_contains, assert_mapping_value
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
-    expect_in,
     expect_length,
     expect_true,
 )
@@ -36,8 +35,7 @@ def test_evidence_sample_from_ast_and_to_dict() -> None:
     serialized = sample.to_dict()
     expect_equal(serialized["path"], "module.py")
     expect_equal(serialized["lineno"], 1)
-    snippet = assert_mapping_value(serialized, "snippet", str)
-    expect_in("def sample", snippet)
+    assert_evidence_snippet_contains(serialized, "def sample")
     expect_equal(assert_mapping_value(serialized, "details", dict), {"kind": "function"})
     expect_equal(assert_mapping_value(serialized, "tags", list), ["example"])
 

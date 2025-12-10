@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
 from codeintel.serving.backend.profile_backend import ProfileQueryLayer
 from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import StorageGateway
@@ -18,13 +17,6 @@ def _expect(*, condition: bool, message: str) -> None:
     expect_true(condition, message=message)
 
 
-def _build_components(
-    gateway: StorageGateway, limits: BackendLimits | None = None
-) -> tuple[BackendContext, DuckDBRepositories]:
-    components = build_backend_components(gateway, limits=limits)
-    return components.context, components.repositories
-
-
 # -----------------------------------------------------------------------------
 # Tests for backend properties
 # -----------------------------------------------------------------------------
@@ -32,8 +24,11 @@ def _build_components(
 
 def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
     """Verify con property returns DuckDB connection."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     con = backend.con
 
@@ -45,8 +40,11 @@ def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
 
 def test_backend_modules_property(architecture_gateway: StorageGateway) -> None:
     """Verify modules property returns module repository."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     modules = backend.modules
 
@@ -58,8 +56,11 @@ def test_backend_modules_property(architecture_gateway: StorageGateway) -> None:
 
 def test_backend_subsystems_property(architecture_gateway: StorageGateway) -> None:
     """Verify subsystems property returns subsystem repository."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     subsystems = backend.subsystems
 
@@ -76,8 +77,11 @@ def test_backend_subsystems_property(architecture_gateway: StorageGateway) -> No
 
 def test_get_file_profile_not_found(architecture_gateway: StorageGateway) -> None:
     """Return not-found metadata when file profile is missing."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     result = backend.get_file_profile(rel_path="nonexistent.py")
 
@@ -91,8 +95,11 @@ def test_get_file_profile_not_found(architecture_gateway: StorageGateway) -> Non
 
 def test_get_file_profile_success(architecture_gateway: StorageGateway) -> None:
     """Return file profile for seeded file path."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     # The architecture fixture seeds pkg/mod.py
     result = backend.get_file_profile(rel_path="pkg/mod.py")
@@ -111,8 +118,11 @@ def test_get_file_profile_success(architecture_gateway: StorageGateway) -> None:
 
 def test_get_file_summary_not_found(architecture_gateway: StorageGateway) -> None:
     """Raise not_found when file summary is missing."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.get_file_summary(rel_path="nonexistent_file.py")
@@ -125,8 +135,11 @@ def test_get_file_summary_not_found(architecture_gateway: StorageGateway) -> Non
 
 def test_get_file_summary_success(architecture_gateway: StorageGateway) -> None:
     """Return file summary for seeded file path."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     # Try to get summary for a known file - this may raise not_found
     # depending on fixture data, but we verify it handles the call correctly
@@ -145,8 +158,11 @@ def test_get_file_summary_success(architecture_gateway: StorageGateway) -> None:
 
 def test_get_file_summary_with_scope(architecture_gateway: StorageGateway) -> None:
     """Verify scope parameter is accepted (though currently unused)."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     scope = GraphRunScope(paths=("pkg/mod.py",), modules=("pkg.mod",))
 
@@ -171,8 +187,11 @@ def test_get_file_summary_with_scope(architecture_gateway: StorageGateway) -> No
 
 def test_get_module_profile_not_found(architecture_gateway: StorageGateway) -> None:
     """Raise not_found when module profile is missing."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.get_module_profile(module="nonexistent.module")
@@ -185,8 +204,11 @@ def test_get_module_profile_not_found(architecture_gateway: StorageGateway) -> N
 
 def test_get_module_profile_success(architecture_gateway: StorageGateway) -> None:
     """Return module profile for seeded module."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     # The architecture fixture seeds module_profile for pkg.mod
     result = backend.get_module_profile(module="pkg.mod")
@@ -209,8 +231,11 @@ def test_get_module_profile_success(architecture_gateway: StorageGateway) -> Non
 
 def test_get_module_architecture_success(architecture_gateway: StorageGateway) -> None:
     """Return module architecture for seeded module."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     result = backend.get_module_architecture(module="pkg.mod")
 
@@ -225,8 +250,11 @@ def test_get_module_architecture_success(architecture_gateway: StorageGateway) -
 
 def test_get_module_architecture_not_found(architecture_gateway: StorageGateway) -> None:
     """Raise not_found when module architecture is missing."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     with pytest.raises(errors.McpError) as excinfo:
         backend.get_module_architecture(module="nonexistent.module")
@@ -244,8 +272,11 @@ def test_get_module_architecture_not_found(architecture_gateway: StorageGateway)
 
 def test_get_file_hints_returns_result(architecture_gateway: StorageGateway) -> None:
     """Return file hints result for any path."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     result = backend.get_file_hints(rel_path="pkg/mod.py")
 
@@ -261,8 +292,11 @@ def test_get_file_hints_returns_result(architecture_gateway: StorageGateway) -> 
 
 def test_get_file_hints_empty_result(architecture_gateway: StorageGateway) -> None:
     """Return empty hints for nonexistent file (no error raised)."""
-    context, repositories = _build_components(architecture_gateway)
-    backend = ProfileQueryLayer(context=context, repositories=repositories)
+    components = build_backend_components(architecture_gateway)
+    backend = ProfileQueryLayer(
+        context=components.context,
+        repositories=components.repositories,
+    )
 
     result = backend.get_file_hints(rel_path="nonexistent_file_xyz.py")
 

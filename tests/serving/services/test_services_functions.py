@@ -61,11 +61,14 @@ def test_get_function_summary_with_goid_h128(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(f"/function/summary?goid_h128={analytics_samples.goid_h128}")
 
-    # May return 404 if function doesn't exist, or 200 if found
     expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
@@ -79,6 +82,8 @@ def test_get_function_summary_with_rel_path_and_qualname(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -86,7 +91,6 @@ def test_get_function_summary_with_rel_path_and_qualname(
             f"&qualname={analytics_samples.qualname}"
         )
 
-    # May return 404 if function doesn't exist, or 200 if found
     expect_true(response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND})
 
 
@@ -217,6 +221,8 @@ def test_get_callgraph_neighbors_direction_both(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -238,6 +244,8 @@ def test_get_callgraph_neighbors_direction_in(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -257,6 +265,8 @@ def test_get_callgraph_neighbors_direction_out(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -276,6 +286,8 @@ def test_get_callgraph_neighbors_with_limit(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -300,6 +312,8 @@ def test_get_callgraph_neighborhood_radius_one(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -322,6 +336,8 @@ def test_get_callgraph_neighborhood_radius_two(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -341,6 +357,8 @@ def test_get_callgraph_neighborhood_with_max_nodes(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -368,6 +386,8 @@ def test_get_import_boundary_with_subsystem_id(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -390,6 +410,8 @@ def test_get_import_boundary_with_max_edges(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(
@@ -431,6 +453,8 @@ def test_get_tests_for_function_with_goid_h128(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(f"/function/tests?goid_h128={analytics_samples.goid_h128}")
@@ -450,6 +474,8 @@ def test_get_tests_for_function_with_limit(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(f"/function/tests?goid_h128={analytics_samples.goid_h128}&limit=5")
@@ -489,6 +515,8 @@ def test_get_file_summary_with_rel_path(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     with provisioned_service_app.client() as client:
         response = client.get(f"/file/summary?rel_path={analytics_samples.rel_path}")
@@ -547,6 +575,8 @@ def test_local_query_service_get_function_summary(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     service = provisioned_service_app.service
 
@@ -581,6 +611,8 @@ def test_local_query_service_get_callgraph_neighbors(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     service = provisioned_service_app.service
 
@@ -601,6 +633,8 @@ def test_local_query_service_get_callgraph_neighborhood(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     service = provisioned_service_app.service
 
@@ -624,6 +658,8 @@ def test_local_query_service_get_file_summary(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     service = provisioned_service_app.service
 
@@ -641,6 +677,8 @@ def test_local_query_service_get_tests_for_function(
     ----------
     provisioned_service_app
         Provisioned service app fixture.
+    analytics_samples
+        Sample analytics identifiers for the provisioned gateway.
     """
     service = provisioned_service_app.service
 

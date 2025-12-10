@@ -8,19 +8,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.plugins import (
     PluginManifest,
     PluginTestHarness,
     create_plugin_scaffold,
     get_plugin_manager,
 )
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -229,61 +226,7 @@ class PluginValidateResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _require_str_param(ctx: EnhancedHandlerContext, name: str) -> str:
-    """Extract required string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str
-        Parameter value.
-
-    Raises
-    ------
-    ValueError
-        If parameter is missing.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        msg = f"{name} parameter is required"
-        raise ValueError(msg)
-    return str(value)
-
-
-def plugins_list_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginsListResult]:
+def plugins_list_handler(ctx: HandlerContext) -> CliResult[PluginsListResult]:
     """List installed plugins.
 
     Parameters
@@ -296,7 +239,7 @@ def plugins_list_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginsListRe
     CliResult[PluginsListResult]
         List of installed plugins.
     """
-    _ = ctx.params  # Acknowledge params
+    _ = ctx._params  # Acknowledge params
     LOG.info("Listing installed plugins")
 
     manager = get_plugin_manager()
@@ -308,7 +251,7 @@ def plugins_list_handler(ctx: EnhancedHandlerContext) -> CliResult[PluginsListRe
 
 
 def plugins_discover_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[PluginsDiscoverResult]:
     """Discover available plugins.
 
@@ -322,7 +265,7 @@ def plugins_discover_handler(
     CliResult[PluginsDiscoverResult]
         Discovered plugins and search paths.
     """
-    _ = ctx.params  # Acknowledge params
+    _ = ctx._params  # Acknowledge params
     LOG.info("Discovering available plugins")
 
     manager = get_plugin_manager()

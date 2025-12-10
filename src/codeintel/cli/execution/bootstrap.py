@@ -18,7 +18,10 @@ import logging
 import signal
 import sys
 import threading
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from codeintel.cli.config import load_config as load_cli_config
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -27,14 +30,26 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# Thread-safe initialization guard
-_BOOTSTRAP_LOCK = threading.Lock()
-_BOOTSTRAP_COMPLETE = False
-_BOOTSTRAP_CONFIG: CliConfig | None = None
-
 # Verbosity thresholds (same as handlers/base.py)
 VERBOSITY_DEBUG = 2
 VERBOSITY_INFO = 1
+
+
+@dataclass
+class _BootstrapState:
+    """Internal state for bootstrap management.
+
+    This class encapsulates the bootstrap state to avoid using global
+    variables with the global statement.
+    """
+
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    complete: bool = False
+    config: CliConfig | None = None
+
+
+# Module-level state instance (singleton)
+_state = _BootstrapState()
 
 
 def bootstrap_cli(
@@ -77,41 +92,34 @@ def bootstrap_cli(
     True
     >>> reset_bootstrap()  # Clean up after doctest
     """
-    global _BOOTSTRAP_COMPLETE, _BOOTSTRAP_CONFIG  # noqa: PLW0603
-
     # Fast path for already initialized
-    if _BOOTSTRAP_COMPLETE:
-        if _BOOTSTRAP_CONFIG is not None:
-            return _BOOTSTRAP_CONFIG
+    if _state.complete:
+        if _state.config is not None:
+            return _state.config
         # Shouldn't happen, but handle gracefully
-        from codeintel.cli.config import load_config
+        return load_cli_config(validate=False)
 
-        return load_config(validate=False)
-
-    with _BOOTSTRAP_LOCK:
+    with _state.lock:
         # Double-check after acquiring lock
-        if _BOOTSTRAP_COMPLETE and _BOOTSTRAP_CONFIG is not None:
-            return _BOOTSTRAP_CONFIG
+        if _state.complete and _state.config is not None:
+            return _state.config
 
         # Load configuration if not provided
-        if config is None:
-            from codeintel.cli.config import load_config
-
-            config = load_config(validate=False)
+        active_config = config if config is not None else load_cli_config(validate=False)
 
         # Configure logging
-        _configure_logging(verbosity, config)
+        _configure_logging(verbosity, active_config)
 
         # Register signal handlers
         _register_signal_handlers()
 
         # Mark as complete
-        _BOOTSTRAP_CONFIG = config
-        _BOOTSTRAP_COMPLETE = True
+        _state.config = active_config
+        _state.complete = True
 
         LOG.debug("CLI bootstrap complete (verbosity=%d)", verbosity)
 
-        return config
+        return active_config
 
 
 def _configure_logging(verbosity: int, config: CliConfig) -> None:
@@ -162,7 +170,7 @@ def _register_signal_handlers() -> None:
     if threading.current_thread() is not threading.main_thread():
         return
 
-    def _handle_signal(signum: int, frame: FrameType | None) -> None:
+    def _handle_signal(signum: int, _frame: FrameType | None) -> None:
         """Handle termination signal."""
         LOG.info("Received signal %d, initiating shutdown", signum)
         sys.exit(128 + signum)
@@ -191,11 +199,9 @@ def reset_bootstrap() -> None:
     >>> reset_bootstrap()
     >>> # Now bootstrap can be called again with new config
     """
-    global _BOOTSTRAP_COMPLETE, _BOOTSTRAP_CONFIG  # noqa: PLW0603
-
-    with _BOOTSTRAP_LOCK:
-        _BOOTSTRAP_COMPLETE = False
-        _BOOTSTRAP_CONFIG = None
+    with _state.lock:
+        _state.complete = False
+        _state.config = None
 
 
 def is_bootstrapped() -> bool:
@@ -219,7 +225,7 @@ def is_bootstrapped() -> bool:
     True
     >>> reset_bootstrap()
     """
-    return _BOOTSTRAP_COMPLETE
+    return _state.complete
 
 
 __all__ = [

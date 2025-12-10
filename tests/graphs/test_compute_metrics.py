@@ -81,6 +81,7 @@ from tests._helpers.fakes.networkx_graphs import (
     independent_modules_graph,
     linear_dependency_graph,
     star_graph,
+    two_cycle_graph,
     two_sccs_graph,
 )
 
@@ -617,7 +618,10 @@ def test_cycles_simple_cycle_detected() -> None:
 def test_cycles_limit_parameter_respected() -> None:
     """Limit parameter is respected."""
     # Graph with multiple cycles
-    graph = nx.DiGraph([(1, 2), (2, 1), (3, 4), (4, 3)])
+    graph = nx.relabel_nodes(
+        two_cycle_graph(),
+        mapping={"A": 1, "B": 2, "C": 3, "D": 4},
+    )
     result = find_cycles(graph, limit=1)
 
     expect_true(len(result) <= 1)

@@ -7,34 +7,63 @@ and middleware using real gateways and TestClient - no mocking.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.backend import BackendLimits
-from codeintel.serving.bootstrap import BackendResource, build_backend_resource
-from codeintel.serving.http.fastapi import (
-    create_app,
-    load_api_config,
-    problem_response,
-)
-from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.bootstrap import build_backend_resource
+from codeintel.serving.http.fastapi import load_api_config, problem_response
 from codeintel.serving.services.errors import ProblemDetail
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
+
+
+# =============================================================================
+# Shared fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def provisioned_http_app(
+    provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., FastAPI],
+) -> FastAPI:
+    """FastAPI app wired to the provisioned gateway snapshot.
+
+    Returns
+    -------
+    FastAPI
+        Application configured against the provisioned gateway snapshot.
+    """
+    return make_http_app(
+        gateway=provisioned_repo.gateway,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
+    )
+
+
+@pytest.fixture
+def provisioned_http_client(provisioned_http_app: FastAPI) -> Iterator[TestClient]:
+    """Provide a TestClient for the provisioned HTTP app.
+
+    Yields
+    ------
+    TestClient
+        Client bound to the provisioned FastAPI application.
+    """
+    with TestClient(provisioned_http_app) as client:
+        yield client
 
 
 # =============================================================================
@@ -227,50 +256,19 @@ def test_build_backend_resource_with_gateway(
 
 
 def test_create_app_with_provisioned_gateway(
+    provisioned_http_client: TestClient,
     provisioned_repo: ProvisionedGateway,
 ) -> None:
     """Verify create_app creates functional FastAPI app with real gateway.
 
     Parameters
     ----------
+    provisioned_http_client
+        Test client bound to the provisioned app.
     provisioned_repo
-        Provisioned gateway fixture.
+        Provisioned gateway snapshot metadata.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
-        response = client.get("/health")
+    response = provisioned_http_client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     payload = response.json()
@@ -279,99 +277,34 @@ def test_create_app_with_provisioned_gateway(
 
 
 def test_create_app_correlation_id_from_header(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_client: TestClient,
 ) -> None:
     """Verify correlation ID from X-Request-ID header is propagated.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_client
+        Test client bound to the provisioned app.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
+    response = provisioned_http_client.get(
+        "/health",
+        headers={"X-Request-ID": "test-correlation-id"},
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
-        response = client.get("/health", headers={"X-Request-ID": "test-correlation-id"})
 
     expect_equal(response.headers.get("X-Request-ID"), "test-correlation-id")
 
 
 def test_create_app_correlation_id_generated_when_missing(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_client: TestClient,
 ) -> None:
     """Verify correlation ID is generated when not provided in headers.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_client
+        Test client bound to the provisioned app.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
-        response = client.get("/health")
+    response = provisioned_http_client.get("/health")
 
     correlation_id = response.headers.get("X-Request-ID")
     correlation_id = expect_is_not_none(correlation_id)
@@ -379,50 +312,19 @@ def test_create_app_correlation_id_generated_when_missing(
 
 
 def test_create_app_x_correlation_id_header(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_client: TestClient,
 ) -> None:
     """Verify X-Correlation-ID header is also accepted.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_client
+        Test client bound to the provisioned app.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
+    response = provisioned_http_client.get(
+        "/health",
+        headers={"X-Correlation-ID": "alt-correlation-id"},
     )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
-    with TestClient(app) as client:
-        response = client.get("/health", headers={"X-Correlation-ID": "alt-correlation-id"})
 
     # Should use X-Correlation-ID when X-Request-ID is not present
     expect_equal(response.headers.get("X-Request-ID"), "alt-correlation-id")
@@ -434,51 +336,17 @@ def test_create_app_x_correlation_id_header(
 
 
 def test_exception_handler_problem_error(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_client: TestClient,
 ) -> None:
     """Verify ProblemError is converted to proper JSON response.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_client
+        Test client bound to the provisioned app.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
     # Request a non-existent dataset to trigger ProblemError
-    with TestClient(app) as client:
-        response = client.get("/datasets/nonexistent_dataset")
+    response = provisioned_http_client.get("/datasets/nonexistent_dataset")
 
     expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
     payload = response.json()
@@ -487,51 +355,17 @@ def test_exception_handler_problem_error(
 
 
 def test_exception_handler_validation_error(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_client: TestClient,
 ) -> None:
     """Verify validation errors return proper Problem Details.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_client
+        Test client bound to the provisioned app.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
     # Request with invalid limit value to trigger validation error
-    with TestClient(app) as client:
-        response = client.get("/functions/high-risk?limit=invalid")
+    response = provisioned_http_client.get("/functions/high-risk?limit=invalid")
 
     expect_equal(response.status_code, status.HTTP_422_UNPROCESSABLE_CONTENT)
     payload = response.json()
@@ -544,50 +378,17 @@ def test_exception_handler_validation_error(
 
 
 def test_register_routes_includes_all_routers(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_http_app: FastAPI,
 ) -> None:
     """Verify register_routes adds all expected route groups.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    provisioned_http_app
+        FastAPI app bound to the provisioned gateway.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    app = create_app(config_loader=load_config, backend_factory=backend_factory)
-
     routes: list[str] = []
-    for route in app.routes:
+    for route in provisioned_http_app.routes:
         if hasattr(route, "path"):
             path_value = getattr(route, "path", None)
             if isinstance(path_value, str):
@@ -602,6 +403,7 @@ def test_register_routes_includes_all_routers(
 
 def test_create_app_with_auto_pipeline_option(
     provisioned_repo: ProvisionedGateway,
+    make_http_app: Callable[..., FastAPI],
 ) -> None:
     """Verify create_app accepts auto_pipeline option.
 
@@ -609,42 +411,13 @@ def test_create_app_with_auto_pipeline_option(
     ----------
     provisioned_repo
         Provisioned gateway fixture.
+    make_http_app
+        Factory fixture that constructs FastAPI applications for serving tests.
     """
-    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
+    # Should not raise when auto_pipeline is enabled
+    app = make_http_app(
         gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-    def load_config() -> ServingConfig:
-        return ServingConfig(
-            mode="remote_api",
-            repo=provisioned_repo.repo,
-            commit=provisioned_repo.commit,
-            api_base_url="http://test",
-        )
-
-    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
-        return BackendResource(backend=backend, service=service, close=lambda: None)
-
-    # Should not raise
-    app = create_app(
-        config_loader=load_config,
-        backend_factory=backend_factory,
+        snapshot=(provisioned_repo.repo, provisioned_repo.commit),
         auto_pipeline=True,
     )
 

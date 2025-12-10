@@ -10,7 +10,6 @@ import pytest
 
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.plugins.typing_plugin import StepFactory, TypingIngestPlugin
-from tests._helpers import build_repo_tree
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.ingestion_plugins import (
@@ -20,7 +19,11 @@ from tests._helpers.fakes.ingestion_plugins import (
     make_recording_async_step_factory,
     make_recording_type_checker_factory,
 )
-from tests._helpers.ingestion import TargetContextConfig, build_target_context_for_plugin
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_repo_tree,
+    build_target_context_for_plugin,
+)
 
 TYPED_SOURCE = dedent(
     """\

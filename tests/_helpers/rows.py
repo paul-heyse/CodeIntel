@@ -13,6 +13,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, TypedDict
 
+from codeintel.analytics.adapters.dependencies import (
+    DependencyAggregateRow,
+    DependencyCallRow,
+    compute_dep_id,
+)
 from codeintel.graphs.catalog import FunctionMeta
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -397,6 +402,73 @@ def dependency_aggregate_payload(
         "risk_level": seed.risk_level,
         "created_at": created_at,
     }
+
+
+def dependency_call_row_from_payload(seed: DependencyCallPayloadSeed) -> DependencyCallRow:
+    """Build DependencyCallRow from the canonical payload seed.
+
+    Returns
+    -------
+    DependencyCallRow
+        Row ready for persistence.
+    """
+    payload = dependency_call_payload(seed)
+    repo = str(payload["repo"])
+    commit = str(payload["commit"])
+    library = str(payload["library"])
+    dep_id = compute_dep_id(repo, commit, library)
+    return DependencyCallRow(
+        repo=repo,
+        commit=commit,
+        dep_id=dep_id,
+        library=library,
+        service_name=str(payload["service_name"]),
+        function_goid_h128=payload["function_goid_h128"],
+        function_urn=str(payload["function_urn"]),
+        rel_path=str(payload["rel_path"]),
+        module=str(payload["module"]),
+        qualname=str(payload["qualname"]),
+        callsite_count=payload["callsite_count"],
+        modes=payload["modes"],
+        evidence_json=payload["evidence_json"],
+        created_at=payload["created_at"],
+    )
+
+
+def dependency_aggregate_row_from_payload(
+    seed: DependencyAggregatePayloadSeed,
+) -> DependencyAggregateRow:
+    """Build DependencyAggregateRow from the canonical payload seed.
+
+    Returns
+    -------
+    DependencyAggregateRow
+        Row ready for persistence.
+    """
+    payload = dependency_aggregate_payload(seed)
+    repo = str(payload["repo"])
+    commit = str(payload["commit"])
+    library = str(payload["library"])
+    dep_id = compute_dep_id(repo, commit, library)
+    return DependencyAggregateRow(
+        repo=repo,
+        commit=commit,
+        dep_id=dep_id,
+        library=library,
+        service_name=str(payload["service_name"]),
+        category=payload["category"],
+        language=str(payload["language"]),
+        severity=payload["severity"],
+        criticality=payload["criticality"],
+        risk_score=payload["risk_score"],
+        function_count=payload["function_count"],
+        callsite_count=payload["callsite_count"],
+        modules_json=payload["modules_json"],
+        usage_modes=payload["usage_modes"],
+        config_keys=payload["config_keys"],
+        risk_level=str(payload["risk_level"]),
+        created_at=payload["created_at"],
+    )
 
 
 @dataclass
@@ -1030,6 +1102,240 @@ def static_diagnostics_row(
     )
 
 
+# =============================================================================
+# Profile adapter row helpers
+# =============================================================================
+
+
+def function_profile_row(
+    *,
+    goid: Decimal = Decimal(12345),
+    qualname: str = "module.function_name",
+    rel_path: str = "src/module.py",
+    repo: str = DEFAULT_REPO,
+    commit: str = DEFAULT_COMMIT,
+    **overrides: object,
+) -> dict[str, Any]:
+    """Build a function_profile row mapping with sensible defaults.
+
+    Returns
+    -------
+    dict[str, Any]
+        Row mapping aligned with analytics.function_profile schema.
+    """
+    base: dict[str, Any] = {
+        "function_goid_h128": goid,
+        "urn": f"urn:{repo}::{qualname}",
+        "repo": repo,
+        "commit": commit,
+        "rel_path": rel_path,
+        "module": rel_path.replace("/", ".").replace(".py", ""),
+        "language": "python",
+        "kind": "function",
+        "qualname": qualname,
+        "start_line": 10,
+        "end_line": 30,
+        "loc": 50,
+        "logical_loc": 40,
+        "cyclomatic_complexity": 5,
+        "complexity_bucket": "low",
+        "param_count": 3,
+        "positional_params": 2,
+        "keyword_params": 1,
+        "vararg": False,
+        "kwarg": False,
+        "max_nesting_depth": 2,
+        "stmt_count": 15,
+        "decorator_count": 1,
+        "has_docstring": True,
+        "total_params": 3,
+        "annotated_params": 3,
+        "return_type": "str",
+        "param_types": ["int", "str", "bool"],
+        "fully_typed": True,
+        "partial_typed": False,
+        "untyped": False,
+        "typedness_bucket": "fully_typed",
+        "typedness_source": "annotations",
+        "file_typed_ratio": 0.95,
+        "static_error_count": 0,
+        "has_static_errors": False,
+        "executable_lines": 40,
+        "covered_lines": 35,
+        "coverage_ratio": 0.875,
+        "tested": True,
+        "untested_reason": None,
+        "tests_touching": 5,
+        "failing_tests": 0,
+        "slow_tests": 0,
+        "flaky_tests": 0,
+        "last_test_status": "passed",
+        "dominant_test_status": "passed",
+        "slow_test_threshold_ms": 1000.0,
+        "created_in_commit": commit,
+        "created_at_history": datetime.now(tz=UTC),
+        "last_modified_commit": commit,
+        "last_modified_at": datetime.now(tz=UTC),
+        "age_days": 30,
+        "commit_count": 10,
+        "author_count": 3,
+        "lines_added": 100,
+        "lines_deleted": 20,
+        "churn_score": 0.5,
+        "stability_bucket": "stable",
+        "call_fan_in": 5,
+        "call_fan_out": 3,
+        "call_edge_in_count": 5,
+        "call_edge_out_count": 3,
+        "call_is_leaf": False,
+        "call_is_entrypoint": False,
+        "call_is_public": True,
+        "risk_score": 0.25,
+        "risk_level": "low",
+        "risk_component_coverage": 0.1,
+        "risk_component_complexity": 0.05,
+        "risk_component_static": 0.0,
+        "risk_component_hotspot": 0.1,
+        "is_pure": True,
+        "uses_io": False,
+        "touches_db": False,
+        "uses_time": False,
+        "uses_randomness": False,
+        "modifies_globals": False,
+        "modifies_closure": False,
+        "spawns_threads_or_tasks": False,
+        "has_transitive_effects": False,
+        "purity_confidence": 0.95,
+        "param_nullability_json": [],
+        "return_nullability": "non_null",
+        "has_preconditions": False,
+        "has_postconditions": False,
+        "has_raises": False,
+        "contract_confidence": 0.9,
+        "role": "helper",
+        "framework": None,
+        "role_confidence": 0.85,
+        "role_sources_json": ["path_hint"],
+        "tags": [],
+        "owners": [],
+        "doc_short": "Test function.",
+        "doc_long": "A test function for unit tests.",
+        "doc_params": {"param1": "int", "param2": "str"},
+        "doc_returns": {"type": "str", "description": "A string result"},
+        "created_at": datetime.now(tz=UTC),
+    }
+    base.update(overrides)
+    return base
+
+
+def file_profile_row(
+    *,
+    rel_path: str = "src/services/api.py",
+    repo: str = DEFAULT_REPO,
+    commit: str = DEFAULT_COMMIT,
+    **overrides: object,
+) -> dict[str, Any]:
+    """Build a file_profile row mapping with sensible defaults.
+
+    Returns
+    -------
+    dict[str, Any]
+        Row mapping aligned with analytics.file_profile schema.
+    """
+    base: dict[str, Any] = {
+        "repo": repo,
+        "commit": commit,
+        "rel_path": rel_path,
+        "module": rel_path.replace("/", ".").replace(".py", ""),
+        "language": "python",
+        "node_count": 100,
+        "function_count": 10,
+        "class_count": 2,
+        "avg_depth": 2.5,
+        "max_depth": 5,
+        "ast_complexity": 15.0,
+        "hotspot_score": 0.75,
+        "commit_count": 50,
+        "author_count": 5,
+        "lines_added": 500,
+        "lines_deleted": 200,
+        "annotation_ratio": 0.85,
+        "untyped_defs": 2,
+        "overlay_needed": False,
+        "type_error_count": 0,
+        "static_error_count": 0,
+        "has_static_errors": False,
+        "total_functions": 10,
+        "public_functions": 8,
+        "avg_loc": 25.0,
+        "max_loc": 100,
+        "avg_cyclomatic_complexity": 3.5,
+        "max_cyclomatic_complexity": 8,
+        "high_risk_function_count": 1,
+        "medium_risk_function_count": 3,
+        "max_risk_score": 0.65,
+        "file_coverage_ratio": 0.85,
+        "tested_function_count": 8,
+        "untested_function_count": 2,
+        "tests_touching": 15,
+        "tags": [],
+        "owners": [],
+        "created_at": datetime.now(tz=UTC),
+    }
+    base.update(overrides)
+    return base
+
+
+def module_profile_row(
+    *,
+    module: str = "services.api",
+    repo: str = DEFAULT_REPO,
+    commit: str = DEFAULT_COMMIT,
+    **overrides: object,
+) -> dict[str, Any]:
+    """Build a module_profile row mapping with sensible defaults.
+
+    Returns
+    -------
+    dict[str, Any]
+        Row mapping aligned with analytics.module_profile schema.
+    """
+    base: dict[str, Any] = {
+        "repo": repo,
+        "commit": commit,
+        "module": module,
+        "path": module.replace(".", "/"),
+        "language": "python",
+        "file_count": 5,
+        "total_loc": 500,
+        "total_logical_loc": 400,
+        "function_count": 25,
+        "class_count": 5,
+        "avg_file_complexity": 10.0,
+        "max_file_complexity": 25.0,
+        "high_risk_function_count": 2,
+        "medium_risk_function_count": 5,
+        "low_risk_function_count": 18,
+        "max_risk_score": 0.85,
+        "avg_risk_score": 0.35,
+        "module_coverage_ratio": 0.75,
+        "tested_function_count": 20,
+        "untested_function_count": 5,
+        "import_fan_in": 10,
+        "import_fan_out": 15,
+        "cycle_group": None,
+        "in_cycle": False,
+        "role": "service",
+        "role_confidence": 0.9,
+        "role_sources_json": ["path_hint", "decorator"],
+        "tags": [],
+        "owners": [],
+        "created_at": datetime.now(tz=UTC),
+    }
+    base.update(overrides)
+    return base
+
+
 @dataclass
 class ConfigValueSeed:
     repo: str
@@ -1094,14 +1400,19 @@ __all__ = [
     "data_model_usage_row",
     "dependency_aggregate_payload",
     "dependency_aggregate_row",
+    "dependency_aggregate_row_from_payload",
     "dependency_call_payload",
     "dependency_call_row",
+    "dependency_call_row_from_payload",
     "entrypoint_payload",
     "entrypoint_row",
     "entrypoint_test_payload",
     "entrypoint_test_row",
+    "file_profile_row",
     "function_meta",
     "function_metrics_row",
+    "function_profile_row",
+    "module_profile_row",
     "module_row",
     "semantic_role_function_row",
     "semantic_role_module_row",

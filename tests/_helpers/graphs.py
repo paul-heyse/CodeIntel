@@ -40,7 +40,21 @@ from tests._helpers.fakes.networkx_graphs import (
     cyclic_graph,
     star_graph,
 )
-from tests._helpers.repo import write_canonical_repo
+from tests._helpers.repo import (
+    GOID_FUNC_A,
+    GOID_FUNC_B,
+    GOID_FUNC_C,
+    GOID_HELPER,
+    MOD_A_FQN,
+    MOD_A_PATH,
+    MOD_B_FQN,
+    MOD_B_PATH,
+    MOD_C_FQN,
+    MOD_C_PATH,
+    MOD_UTIL_FQN,
+    MOD_UTIL_PATH,
+    write_canonical_repo,
+)
 
 
 @dataclass
@@ -137,6 +151,35 @@ def build_source_files(repo_root: Path) -> dict[str, Path]:
     """
     canonical = write_canonical_repo(repo_root)
     return {module: repo_root / rel_path for module, rel_path in canonical.module_paths.items()}
+
+
+def build_canonical_ast_lookup(repo_root: Path) -> dict[int, FunctionAst]:
+    """Build FunctionAst lookup for the canonical sample repo.
+
+    Returns
+    -------
+    dict[int, FunctionAst]
+        Mapping of GOID to parsed AST metadata.
+    """
+    paths = {
+        MOD_A_FQN: repo_root / MOD_A_PATH,
+        MOD_B_FQN: repo_root / MOD_B_PATH,
+        MOD_C_FQN: repo_root / MOD_C_PATH,
+        MOD_UTIL_FQN: repo_root / MOD_UTIL_PATH,
+    }
+    goids = {
+        "func_a": GOID_FUNC_A,
+        "func_b": GOID_FUNC_B,
+        "func_c": GOID_FUNC_C,
+        "helper": GOID_HELPER,
+    }
+    target_names = {
+        MOD_A_FQN: "func_a",
+        MOD_B_FQN: "func_b",
+        MOD_C_FQN: "func_c",
+        MOD_UTIL_FQN: "helper",
+    }
+    return build_ast_map(paths, goids, repo_root, target_names=target_names)
 
 
 def _function_node(
@@ -423,15 +466,21 @@ def build_sample_graphs(goids: Mapping[str, int]) -> GraphFixtures:
     GraphFixtures
         Collection of seeded graph objects keyed by purpose.
     """
-    call_graph = nx.DiGraph()
-    call_graph.add_edge(goids["func_a"], goids["func_b"], weight=1.0)
-    call_graph.add_edge(goids["func_b"], goids["func_c"], weight=1.0)
+    call_graph = nx.relabel_nodes(
+        chain_graph(3),
+        {"A": goids["func_a"], "B": goids["func_b"], "C": goids["func_c"]},
+    )
     call_graph.add_edge(goids["func_a"], goids["func_c"], weight=0.5)
+    call_graph_weights = dict.fromkeys(call_graph.edges, 1.0)
+    call_graph_weights[goids["func_a"], goids["func_c"]] = 0.5
+    nx.set_edge_attributes(call_graph, call_graph_weights, "weight")
 
-    import_graph = nx.DiGraph()
-    import_graph.add_edge("pkg.mod_a", "pkg.mod_b", weight=2.0)
-    import_graph.add_edge("pkg.mod_b", "pkg.mod_c", weight=1.0)
-    import_graph.add_edge("pkg.mod_c", "pkg.mod_a", weight=0.5)
+    import_graph = nx.relabel_nodes(
+        cyclic_graph(3),
+        {"A": "pkg.mod_a", "B": "pkg.mod_b", "C": "pkg.mod_c"},
+    )
+    import_weights = dict.fromkeys(import_graph.edges, 1.0)
+    nx.set_edge_attributes(import_graph, import_weights, "weight")
 
     config_graph = nx.Graph()
     config_graph.add_node(("config_key", "API_TOKEN"), bipartite=0)
@@ -442,13 +491,35 @@ def build_sample_graphs(goids: Mapping[str, int]) -> GraphFixtures:
     config_graph.add_edge(("config_key", "API_TOKEN"), ("module", "pkg.mod_b"), weight=1.0)
     config_graph.add_edge(("config_key", "FEATURE_FLAG"), ("module", "pkg.mod_b"), weight=2.0)
 
-    symbol_module_graph = nx.Graph()
-    symbol_module_graph.add_edge("pkg.mod_a", "pkg.mod_b", weight=3.0)
-    symbol_module_graph.add_edge("pkg.mod_b", "pkg.mod_c", weight=1.0)
+    symbol_module_graph = nx.Graph(star_graph(2))
+    symbol_module_graph = nx.relabel_nodes(
+        symbol_module_graph,
+        {
+            "hub": "pkg.mod_a",
+            "spoke1": "pkg.mod_b",
+            "spoke2": "pkg.mod_c",
+        },
+    )
+    nx.set_edge_attributes(
+        symbol_module_graph,
+        dict.fromkeys(symbol_module_graph.edges, 1.0),
+        "weight",
+    )
 
-    symbol_function_graph = nx.Graph()
-    symbol_function_graph.add_edge(goids["func_a"], goids["func_b"], weight=1.5)
-    symbol_function_graph.add_edge(goids["func_b"], goids["func_c"], weight=1.0)
+    symbol_function_graph = nx.Graph(star_graph(2))
+    symbol_function_graph = nx.relabel_nodes(
+        symbol_function_graph,
+        {
+            "hub": goids["func_a"],
+            "spoke1": goids["func_b"],
+            "spoke2": goids["func_c"],
+        },
+    )
+    nx.set_edge_attributes(
+        symbol_function_graph,
+        dict.fromkeys(symbol_function_graph.edges, 1.0),
+        "weight",
+    )
 
     return GraphFixtures(
         call_graph=call_graph,
@@ -490,6 +561,7 @@ __all__ = [
     "GraphFixtures",
     "GraphStubEngine",
     "build_ast_map",
+    "build_canonical_ast_lookup",
     "build_graph_engine_double",
     "build_module_map",
     "build_sample_graphs",

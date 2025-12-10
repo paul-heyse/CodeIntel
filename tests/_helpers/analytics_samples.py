@@ -30,6 +30,11 @@ class AnalyticsSamples:
 def load_analytics_samples(gateway: StorageGateway) -> AnalyticsSamples:
     """Retrieve representative analytics identifiers from a seeded gateway.
 
+    Parameters
+    ----------
+    gateway
+        Gateway seeded with analytics data.
+
     Returns
     -------
     AnalyticsSamples
@@ -106,6 +111,11 @@ def dependency_library_patterns() -> dict[str, LibraryPattern]:
 def dependency_patterns_yaml(patterns: dict[str, LibraryPattern] | None = None) -> str:
     """Generate dependency_patterns.yml content from patterns.
 
+    Parameters
+    ----------
+    patterns
+        Optional map of library patterns to serialize. Defaults to standard patterns.
+
     Returns
     -------
     str
@@ -152,6 +162,11 @@ def dependency_calls_sample(
     factories: Iterable[Callable[[str], DependencyCall]] | None = None,
 ) -> list[DependencyCall]:
     """Return representative dependency calls grouped by library.
+
+    Parameters
+    ----------
+    factories
+        Optional iterable of call factories keyed by library name.
 
     Returns
     -------

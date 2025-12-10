@@ -7,24 +7,35 @@ This module provides the UnifiedRenderer which consolidates all rendering logic:
 - Table rendering with Rich or plain text
 - Error rendering with RFC 9457 Problem Details
 - Warning and metadata handling
+
+Factory Functions
+-----------------
+- ``get_renderer``: Create renderer with auto-detection
+- ``render_cli_result``: Convenience function to render results
+
+Classes
+-------
+- ``UnifiedRenderer``: Main renderer implementation
+- ``RenderingService``: Protocol for renderer interface
 """
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Protocol, TypeVar
+import sys
+from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
 from rich.console import Console
 from rich.table import Table
 from rich.theme import Theme
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.rendering.table import TableSpec
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.cli.core import CliResult
     from codeintel.cli.errors import ProblemDetail
 
 T = TypeVar("T")
@@ -449,8 +460,113 @@ class UnifiedRenderer:
         return 1  # User error
 
 
+def get_renderer(
+    output_format: OutputFormat = OutputFormat.TEXT,
+    *,
+    color: bool | None = None,
+    writer: TextIO | None = None,
+    err_writer: TextIO | None = None,
+) -> UnifiedRenderer:
+    """Get a renderer for the specified output format.
+
+    Factory function that creates UnifiedRenderer instances with appropriate
+    settings based on output format, environment, and TTY detection.
+
+    Parameters
+    ----------
+    output_format
+        Desired output format (TEXT, JSON, or JSONL).
+    color
+        Override color detection. If None, auto-detect based on TTY.
+    writer
+        Output stream (defaults to sys.stdout).
+    err_writer
+        Error stream (defaults to sys.stderr).
+
+    Returns
+    -------
+    UnifiedRenderer
+        Configured renderer instance.
+
+    Examples
+    --------
+    >>> renderer = get_renderer(OutputFormat.JSON)
+    >>> renderer.context.format
+    <OutputFormat.JSON: 'json'>
+
+    >>> renderer = get_renderer(color=False)
+    >>> renderer.context.color
+    False
+    """
+    # If custom streams are provided, construct context directly
+    if writer is not None or err_writer is not None:
+        is_tty = (writer or sys.stdout).isatty()
+        use_color = color if color is not None else (is_tty and output_format == OutputFormat.TEXT)
+        ctx = RenderContext(
+            format=output_format,
+            color=use_color,
+            writer=writer or sys.stdout,
+            err_writer=err_writer or sys.stderr,
+            is_tty=is_tty,
+        )
+    else:
+        ctx = RenderContext.auto_detect(
+            format_override=output_format,
+            color_override=color,
+        )
+    return UnifiedRenderer(ctx)
+
+
+def render_cli_result[T](
+    result: CliResult[T],
+    renderer: UnifiedRenderer | None = None,
+    *,
+    table_spec: TableSpec | None = None,
+    output_format: OutputFormat = OutputFormat.TEXT,
+) -> int:
+    """Render a CliResult and return exit code.
+
+    Convenience function that creates a renderer if not provided and renders
+    the result appropriately. Supports optional table rendering for list data.
+
+    Parameters
+    ----------
+    result
+        CLI result to render.
+    renderer
+        Optional renderer. If None, creates one based on output_format.
+    table_spec
+        Optional table spec for rendering list data as tables.
+    output_format
+        Output format (used if renderer is None).
+
+    Returns
+    -------
+    int
+        Exit code: 0 for success, non-zero for failure.
+
+    Examples
+    --------
+    >>> result = CliResult.ok({"status": "done"})
+    >>> exit_code = render_cli_result(result)
+    >>> exit_code
+    0
+    """
+    if renderer is None:
+        renderer = get_renderer(output_format)
+
+    # Handle table spec for list data
+    if table_spec is not None and result.success and isinstance(result.data, list):
+        renderer.render_table(result.data, table_spec)
+        return 0
+
+    return renderer.render_result(result)
+
+
 __all__ = [
     "CODEINTEL_THEME",
     "RenderingService",
     "UnifiedRenderer",
+    "get_renderer",
+    "render_cli_result",
 ]

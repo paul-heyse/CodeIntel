@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
+from textwrap import dedent
 from typing import TYPE_CHECKING
 
 from tests._helpers.builders import (
@@ -36,14 +38,14 @@ ENTRYPOINTS_MOD_PATH = "pkg/app.py"
 ENTRYPOINTS_MOD_FQN = "pkg.app"
 
 # GOID values for entrypoint functions
-ENTRYPOINTS_HELLO_GOID = 1001
-ENTRYPOINTS_CLI_GOID = 1002
+ENTRYPOINTS_HELLO_GOID = 12001
+ENTRYPOINTS_CLI_GOID = 12002
 
 # Line numbers for functions
 ENTRYPOINTS_HELLO_START = 9
 ENTRYPOINTS_HELLO_END = 15
 ENTRYPOINTS_CLI_START = 17
-ENTRYPOINTS_CLI_END = 23
+ENTRYPOINTS_CLI_END = 22
 
 
 # =============================================================================
@@ -188,6 +190,65 @@ class EntrypointsPack:
         insert_rows(ctx.gateway, rows)
 
 
+def entrypoints_source() -> str:
+    """Return canonical entrypoints source aligned with pack line numbers.
+
+    Returns
+    -------
+    str
+        Source code for the entrypoints module.
+    """
+    return dedent(
+        """
+        from fastapi import FastAPI
+        import typer
+
+        app = FastAPI()
+        cli = typer.Typer()
+
+
+        @app.get("/hello")
+        def hello(name: str | None = None) -> str:
+            \"\"\"Greet the caller.\"\"\"
+            greeting = "hello"
+            if name:
+                greeting = f"hello {name}"
+            log_msg = greeting.upper()
+            return greeting
+        @cli.command()
+        def cli_main(count: int = 1) -> str:
+            \"\"\"Print greeting count times.\"\"\"
+            outputs: list[str] = []
+            for _ in range(count):
+                outputs.append("hi")
+            return ", ".join(outputs)
+
+        if __name__ == "__main__":
+            cli()
+        """
+    ).strip("\n")
+
+
+def write_entrypoints_source(repo_root: Path) -> str:
+    """Write the canonical entrypoints source to the repo root.
+
+    Parameters
+    ----------
+    repo_root
+        Path to the repository root directory.
+
+    Returns
+    -------
+    str
+        Source code that was written to disk.
+    """
+    source = entrypoints_source()
+    path = repo_root / ENTRYPOINTS_MOD_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source, encoding="utf-8")
+    return source
+
+
 # Default instance for common usage
 ENTRYPOINTS_PACK = EntrypointsPack()
 
@@ -205,4 +266,6 @@ __all__ = [
     "ENTRYPOINTS_PACK",
     "ENTRYPOINTS_REPO",
     "EntrypointsPack",
+    "entrypoints_source",
+    "write_entrypoints_source",
 ]

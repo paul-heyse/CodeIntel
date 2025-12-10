@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.analytics_samples import AnalyticsSamples
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 
 HttpAppFactory = Callable[..., FastAPI]
@@ -164,6 +165,7 @@ def test_list_subsystems_with_query_filter(
 def test_module_subsystems_endpoint(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/module endpoint returns results.
 
@@ -173,14 +175,10 @@ def test_module_subsystems_endpoint(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    # Get a valid module name
-    result = architecture_gateway.con.execute("SELECT module FROM core.modules LIMIT 1").fetchone()
-
-    if result is None:
-        return  # Skip if no modules
-
-    module = result[0]
+    module = architecture_samples.module
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -219,6 +217,7 @@ def test_module_subsystems_missing_module(
 def test_subsystem_detail_endpoint(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/{subsystem_id} endpoint returns results.
 
@@ -228,16 +227,10 @@ def test_subsystem_detail_endpoint(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    # Get a valid subsystem_id
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -250,6 +243,7 @@ def test_subsystem_detail_endpoint(
 def test_subsystem_detail_with_module_limit(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /architecture/subsystem accepts module_limit.
 
@@ -259,15 +253,10 @@ def test_subsystem_detail_with_module_limit(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -306,6 +295,7 @@ def test_subsystem_detail_nonexistent(
 def test_subsystem_profiles_endpoint(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/profiles endpoint.
 
@@ -315,15 +305,10 @@ def test_subsystem_profiles_endpoint(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -336,6 +321,7 @@ def test_subsystem_profiles_endpoint(
 def test_subsystem_profiles_with_limit(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/profiles accepts limit.
 
@@ -345,15 +331,10 @@ def test_subsystem_profiles_with_limit(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -371,6 +352,7 @@ def test_subsystem_profiles_with_limit(
 def test_subsystem_coverage_endpoint(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/coverage endpoint.
 
@@ -380,15 +362,10 @@ def test_subsystem_coverage_endpoint(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:
@@ -401,6 +378,7 @@ def test_subsystem_coverage_endpoint(
 def test_subsystem_coverage_with_limit(
     architecture_gateway: StorageGateway,
     make_http_app: HttpAppFactory,
+    architecture_samples: AnalyticsSamples,
 ) -> None:
     """Verify /subsystems/{subsystem_id}/coverage accepts limit.
 
@@ -410,15 +388,10 @@ def test_subsystem_coverage_with_limit(
         Gateway with architecture data seeded.
     make_http_app
         Fixture that builds a FastAPI app bound to the gateway.
+    architecture_samples
+        Sample identifiers for architecture analytics data.
     """
-    result = architecture_gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystem_agreement WHERE subsystem_id IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        return  # Skip if no subsystems
-
-    subsystem_id = result[0]
+    subsystem_id = architecture_samples.subsystem_id
 
     app = _build_architecture_app(architecture_gateway, make_http_app)
     with TestClient(app) as client:

@@ -1,121 +1,106 @@
-"""Integration test for repository-backed graph metric filters on architecture seeds."""
+"""Integration and unit coverage for graph metric filters."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import networkx as nx
-
-from codeintel.analytics.graphs.graph_metrics import (
-    GraphMetricFilters,
-    GraphMetricsDeps,
-    build_graph_metric_filters,
-    compute_graph_metrics,
-)
-from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
-from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
-from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
-from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
-from tests._helpers.assertions.expectation_assertions import expect_equal
+from tests._helpers.assertions import (
+    assert_component_counts,
+    assert_filtered_graph,
+    assert_graph_counts,
+    expect_equal,
+)
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fakes.networkx_graphs import chain_graph, cyclic_graph, disconnected_graph
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
+from tests._helpers.graph_runtime_harness import (
+    GraphRuntimeHarness,
+    run_graph_metrics_pipeline,
+)
 
 
-def test_filters_prune_architecture_metrics(tmp_path: Path) -> None:
-    """Filters should restrict module/subsystem metrics derived from architecture data."""
-    gateway = open_seeded_architecture_gateway(
-        repo="demo/repo",
-        commit="deadbeef",
-        db_path=tmp_path / "arch.duckdb",
-        strict_schema=True,
-    )
-    snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = GraphMetricsStepConfig(snapshot=snapshot)
-    runtime = build_graph_runtime(gateway, GraphRuntimeOptions(snapshot=snapshot))
+def test_filters_prune_metrics(graph_runtime_ctx: GraphRuntimeHarness) -> None:
+    """Filters should restrict module and subsystem metrics from the canonical sample."""
     filters = GraphMetricFilters(
-        modules={"pkg.alpha"},
-        subsystems={"sub1"},
+        function_goids={
+            graph_runtime_ctx.goids["func_a"],
+            graph_runtime_ctx.goids["func_b"],
+        },
+        modules={"pkg.mod_a", "pkg.service"},
+        subsystems={"core"},
     )
 
-    compute_graph_metrics(
-        gateway,
-        cfg,
-        deps=GraphMetricsDeps(runtime=runtime, filters=filters),
-    )
-    compute_graph_metrics_functions_ext(
-        gateway,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        runtime=runtime,
-        filters=filters,
-    )
-    compute_graph_metrics_modules_ext(
-        gateway,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        runtime=runtime,
-        filters=filters,
-    )
-    compute_subsystem_graph_metrics(
-        gateway,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        runtime=runtime,
-        filters=filters,
-    )
+    run_graph_metrics_pipeline(graph_runtime_ctx, filters=filters)
 
+    params = [graph_runtime_ctx.snapshot.repo, graph_runtime_ctx.snapshot.commit]
+    gateway = graph_runtime_ctx.gateway
     modules = {
         row[0]
         for row in gateway.con.execute(
             "SELECT module FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
-            [snapshot.repo, snapshot.commit],
+            params,
         ).fetchall()
     }
     modules_ext = {
         row[0]
         for row in gateway.con.execute(
             "SELECT module FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
-            [snapshot.repo, snapshot.commit],
+            params,
         ).fetchall()
     }
     subsystems = {
         row[0]
         for row in gateway.con.execute(
             "SELECT subsystem_id FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-            [snapshot.repo, snapshot.commit],
+            params,
+        ).fetchall()
+    }
+    functions = {
+        row[0]
+        for row in gateway.con.execute(
+            "SELECT function_goid_h128 FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
+            params,
         ).fetchall()
     }
 
-    expect_equal(modules, {"pkg.alpha"})
-    expect_equal(modules_ext, {"pkg.alpha"})
-    expect_equal(subsystems, {"sub1"})
+    expect_equal(modules, {"pkg.mod_a"})
+    expect_equal(modules_ext, {"pkg.mod_a"})
+    expect_equal(subsystems, {"core"})
+    expect_equal(
+        functions,
+        {
+            graph_runtime_ctx.goids["func_a"],
+            graph_runtime_ctx.goids["func_b"],
+        },
+    )
 
 
 def test_filter_call_graph_prunes_nodes() -> None:
     """Call graph filter should restrict nodes to the provided GOIDs."""
-    graph = nx.DiGraph()
-    graph.add_edge(1, 2)
-    graph.add_edge(2, 3)
-    filters = GraphMetricFilters(function_goids={1, 2})
+    graph = chain_graph(3)
+    allowed_nodes = set(list(graph.nodes)[:2])
+    filters = GraphMetricFilters(function_goids=allowed_nodes)
 
     filtered = filters.filter_call_graph(graph)
 
-    expect_equal(set(filtered.nodes), {1, 2})
-    expect_equal(set(filtered.edges), {(1, 2)})
+    assert_filtered_graph(filtered, expected_nodes=allowed_nodes, expected_edges={("A", "B")})
+    assert_component_counts(filtered, weak=1, strong=2)
+    assert_graph_counts(filtered, nodes=2, edges=1)
 
 
 def test_filter_import_graph_noop_without_modules() -> None:
     """Import graph filter should no-op when no modules are configured."""
-    graph = nx.DiGraph()
-    graph.add_edge("a", "b")
+    graph = chain_graph(2)
     filters = GraphMetricFilters(modules=None)
 
     filtered = filters.filter_import_graph(graph)
 
-    expect_equal(set(filtered.nodes), {"a", "b"})
-    expect_equal(set(filtered.edges), {("a", "b")})
+    assert_filtered_graph(
+        filtered, expected_nodes=set(graph.nodes), expected_edges=set(graph.edges)
+    )
+    assert_component_counts(filtered, weak=1, strong=2)
 
 
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
@@ -146,12 +131,21 @@ def test_filter_subsystem_memberships_respects_allowlists() -> None:
 
 def test_filter_subsystem_graph_prunes_nodes() -> None:
     """Subsystem graph filter should restrict nodes to the provided allowlist."""
-    graph = nx.DiGraph()
-    graph.add_edge("s1", "s2")
-    graph.add_edge("s2", "s3")
-    filters = GraphMetricFilters(subsystems={"s1", "s2"})
+    graph = cyclic_graph(3)
+    filters = GraphMetricFilters(subsystems={"A", "B"})
 
     filtered = filters.filter_subsystem_graph(graph)
 
-    expect_equal(set(filtered.nodes), {"s1", "s2"})
-    expect_equal(set(filtered.edges), {("s1", "s2")})
+    assert_filtered_graph(filtered, expected_nodes={"A", "B"}, expected_edges={("A", "B")})
+    assert_component_counts(filtered, weak=1, strong=2)
+
+
+def test_filter_call_graph_preserves_component_counts() -> None:
+    """Filtering a disconnected graph should preserve component totals."""
+    graph = disconnected_graph()
+    filters = GraphMetricFilters(function_goids=set(graph.nodes))
+
+    filtered = filters.filter_call_graph(graph)
+
+    assert_graph_counts(filtered, nodes=6, edges=4)
+    assert_component_counts(filtered, weak=2, strong=6)

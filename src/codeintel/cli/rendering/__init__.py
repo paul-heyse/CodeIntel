@@ -18,11 +18,12 @@ Examples
 
 from __future__ import annotations
 
-from codeintel.cli.rendering.renderers import get_renderer, render_cli_result
 from codeintel.cli.rendering.service import (
     CODEINTEL_THEME,
     RenderingService,
     UnifiedRenderer,
+    get_renderer,
+    render_cli_result,
 )
 from codeintel.cli.rendering.specs import (
     BUILD_TARGETS_TABLE,

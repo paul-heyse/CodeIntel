@@ -9,13 +9,14 @@ import pytest
 
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO, build_repo_tree
+from tests._helpers import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_repo_target,
+    build_repo_tree,
     build_target_context_for_plugin,
 )
 

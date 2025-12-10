@@ -32,8 +32,11 @@ from tests._helpers.assertions import (
 from tests._helpers.fakes.networkx_graphs import (
     chain_graph,
     cyclic_graph,
+    dag_to_cycle_graph,
     diamond_graph,
     fork_join_cfg,
+    nested_loop_graph,
+    self_loop_graph,
     while_loop_cfg,
 )
 
@@ -280,9 +283,8 @@ def test_loop_headers_simple_cycle() -> None:
 
 def test_loop_headers_self_loop() -> None:
     """Self-loop node is a loop header."""
-    graph = nx.DiGraph()
+    graph = self_loop_graph("B")
     graph.add_edge("A", "B")
-    graph.add_edge("B", "B")  # Self-loop
     result = find_natural_loop_headers(graph, entry="A")
 
     expect_in("B", result)
@@ -290,18 +292,7 @@ def test_loop_headers_self_loop() -> None:
 
 def test_loop_headers_nested_loops() -> None:
     """Nested loops have multiple headers."""
-    graph = nx.DiGraph()
-    # Outer loop: A -> B -> C -> A
-    # Inner loop: B -> D -> B
-    graph.add_edges_from(
-        [
-            ("A", "B"),
-            ("B", "C"),
-            ("C", "A"),
-            ("B", "D"),
-            ("D", "B"),
-        ]
-    )
+    graph = nested_loop_graph()
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is outer loop header, B is inner loop header
@@ -362,18 +353,7 @@ def test_longest_path_cyclic_graph_uses_condensation() -> None:
 
 def test_longest_path_mixed_dag_and_cycle() -> None:
     """Graph with both DAG part and cycle computes correct path."""
-    graph = nx.DiGraph()
-    # entry -> A -> B -> C -> A (cycle)
-    #       -> exit
-    graph.add_edges_from(
-        [
-            ("entry", "A"),
-            ("A", "B"),
-            ("B", "C"),
-            ("C", "A"),  # Back edge creating cycle
-            ("C", "exit"),
-        ]
-    )
+    graph = dag_to_cycle_graph()
     result = compute_cfg_longest_path(graph)
 
     # Condensation has: entry -> SCC(A,B,C) -> exit

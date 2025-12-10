@@ -15,7 +15,10 @@ from tests._helpers.fakes.ingestion_plugins import (
     make_recording_adapter_factories,
     make_recording_step_factory,
 )
-from tests._helpers.ingestion import TargetContextConfig, build_target_context_for_plugin
+from tests._helpers.ingestion import (
+    TargetContextConfig,
+    build_target_context_for_plugin,
+)
 from tests.ingestion.plugins._wiring import run_sync_plugin_wiring_scenario
 
 

@@ -5,21 +5,18 @@ This module tests the dataset browsing MCP tools registered from Operation.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.dataset_tools import DatasetToolOptions, register_dataset_tools
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.serving.operations import iter_operations
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -28,9 +25,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.dataset_factories import make_descriptor
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers import ProvisionedGateway
@@ -48,130 +45,81 @@ MAX_ROWS = 100
 # =============================================================================
 
 
-def _build_backend(provisioned_repo: ProvisionedGateway) -> DuckDBBackend:
-    """Build a DuckDBBackend for testing.
-
-    Parameters
-    ----------
-    provisioned_repo
-        Provisioned gateway fixture.
-
-    Returns
-    -------
-    DuckDBBackend
-        Configured backend.
-    """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    return DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
-
-
 # =============================================================================
 # register_dataset_tools Tests
 # =============================================================================
 
 
 def test_register_dataset_tools_success(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_dataset_tools registers tools successfully.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    mcp_backend
+        Aggregated backend components for the provisioned gateway.
     """
     mcp = wrap_fastmcp("Test Dataset Tools")
-    backend = _build_backend(provisioned_repo)
 
     # Should not raise
-    register_dataset_tools(mcp, backend)
+    register_dataset_tools(mcp, mcp_backend.backend)
 
     # Server should be configured
     expect_equal(mcp.name, "Test Dataset Tools")
 
 
 def test_register_dataset_tools_with_service(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify register_dataset_tools works with service directly.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    mcp_backend_components
+        Aggregated backend components for the provisioned gateway.
     """
     mcp = wrap_fastmcp("Test Service")
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
 
-    register_dataset_tools(mcp, service)
+    register_dataset_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Service")
 
 
 def test_register_dataset_tools_with_config(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_dataset_tools works with serving config.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    mcp_backend
+        Aggregated backend components for the provisioned gateway.
     """
     mcp = wrap_fastmcp("Test With Config")
-    backend = _build_backend(provisioned_repo)
-    config = ServingConfig()
+    config = None
 
-    register_dataset_tools(mcp, backend, config=config)
+    register_dataset_tools(mcp, mcp_backend.backend, config=config)
 
     expect_equal(mcp.name, "Test With Config")
 
 
 def test_register_dataset_tools_on_multiple_servers(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify tools can be registered on multiple servers.
 
     Parameters
     ----------
-    provisioned_repo
-        Provisioned gateway fixture.
+    mcp_backend
+        Aggregated backend components for the provisioned gateway.
     """
-    backend = _build_backend(provisioned_repo)
-
     mcp1 = wrap_fastmcp("Server 1")
-    register_dataset_tools(mcp1, backend)
+    register_dataset_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server 1")
 
     mcp2 = wrap_fastmcp("Server 2")
-    register_dataset_tools(mcp2, backend)
+    register_dataset_tools(mcp2, mcp_backend.backend)
     expect_equal(mcp2.name, "Server 2")
 
 
@@ -284,7 +232,7 @@ def test_dataset_operations_have_required_fields() -> None:
 
 
 def test_backend_list_datasets(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.list_datasets works.
 
@@ -293,15 +241,13 @@ def test_backend_list_datasets(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend.backend.list_datasets()
 
     expect_is_instance(datasets, list)
 
 
 def test_backend_dataset_specs(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.dataset_specs works.
 
@@ -310,15 +256,13 @@ def test_backend_dataset_specs(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    specs = backend.dataset_specs()
+    specs = mcp_backend.backend.dataset_specs()
 
     expect_is_instance(specs, list)
 
 
 def test_backend_read_dataset_rows(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.read_dataset_rows works.
 
@@ -327,18 +271,16 @@ def test_backend_read_dataset_rows(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
-        rows = backend.read_dataset_rows(dataset_name=dataset_name, limit=5)
+        rows = mcp_backend.backend.read_dataset_rows(dataset_name=dataset_name, limit=5)
         expect_true(hasattr(rows, "dataset_name"))
         expect_true(hasattr(rows, "rows"))
 
 
 def test_backend_read_dataset_rows_with_offset(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.read_dataset_rows works with offset.
 
@@ -347,18 +289,16 @@ def test_backend_read_dataset_rows_with_offset(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
-        rows = backend.read_dataset_rows(dataset_name=dataset_name, limit=5, offset=0)
+        rows = mcp_backend.backend.read_dataset_rows(dataset_name=dataset_name, limit=5, offset=0)
         expect_true(hasattr(rows, "rows"))
         expect_true(hasattr(rows, "offset"))
 
 
 def test_backend_dataset_schema(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.dataset_schema works.
 
@@ -367,12 +307,10 @@ def test_backend_dataset_schema(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend.backend.list_datasets()
     if datasets:
         dataset_name = datasets[0].name
-        schema = backend.dataset_schema(dataset_name=dataset_name)
+        schema = mcp_backend.backend.dataset_schema(dataset_name=dataset_name)
         expect_is_not_none(schema)
 
 
@@ -382,7 +320,7 @@ def test_backend_dataset_schema(
 
 
 def test_backend_read_dataset_rows_nonexistent_dataset(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend raises error for nonexistent dataset.
 
@@ -391,10 +329,8 @@ def test_backend_read_dataset_rows_nonexistent_dataset(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
     with pytest.raises(McpError):
-        backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz", limit=5)
+        mcp_backend.backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz", limit=5)
 
 
 # =============================================================================
@@ -403,7 +339,8 @@ def test_backend_read_dataset_rows_nonexistent_dataset(
 
 
 def test_backend_with_custom_limits(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
+    mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Verify backend respects custom limits.
 
@@ -415,24 +352,12 @@ def test_backend_with_custom_limits(
     custom_limit = 25
     custom_max = 250
     limits = BackendLimits(default_limit=custom_limit, max_rows_per_call=custom_max)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
+    backend = mcp_backend_factory(
+        gateway=mcp_backend_components.gateway,
+        repo=mcp_backend_components.repo,
+        commit=mcp_backend_components.commit,
         limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-    backend = DuckDBBackend(
-        gateway=provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-        observability=None,
-        service=service,
-    )
+    ).backend
 
     expect_equal(backend.limits.default_limit, custom_limit)
     expect_equal(backend.limits.max_rows_per_call, custom_max)
@@ -444,7 +369,7 @@ def test_backend_with_custom_limits(
 
 
 def test_backend_list_datasets_returns_descriptors(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.list_datasets returns descriptors with name field.
 
@@ -453,9 +378,7 @@ def test_backend_list_datasets_returns_descriptors(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    datasets = backend.list_datasets()
+    datasets = mcp_backend.backend.list_datasets()
 
     # Verify we get objects with name attribute
     for dataset in datasets:
@@ -463,7 +386,7 @@ def test_backend_list_datasets_returns_descriptors(
 
 
 def test_backend_dataset_specs_returns_pydantic_models(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.dataset_specs returns Pydantic models.
 
@@ -472,9 +395,7 @@ def test_backend_dataset_specs_returns_pydantic_models(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    backend = _build_backend(provisioned_repo)
-
-    specs = backend.dataset_specs()
+    specs = mcp_backend.backend.dataset_specs()
 
     for spec in specs:
         expect_is_instance(spec, DatasetSpecDescriptor)
@@ -486,7 +407,7 @@ def test_backend_dataset_specs_returns_pydantic_models(
 
 
 def test_register_dataset_tools_preserves_backend_state(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify registration doesn't alter backend state.
 
@@ -496,8 +417,7 @@ def test_register_dataset_tools_preserves_backend_state(
         Provisioned gateway fixture.
     """
     mcp = wrap_fastmcp("Test State")
-    backend = _build_backend(provisioned_repo)
-
+    backend = mcp_backend.backend
     original_repo = backend.repo
     original_commit = backend.commit
     original_limits = backend.limits
@@ -510,7 +430,7 @@ def test_register_dataset_tools_preserves_backend_state(
 
 
 def test_local_query_service_as_backend(
-    provisioned_repo: ProvisionedGateway,
+    mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify LocalQueryService can be used as backend.
 
@@ -519,19 +439,7 @@ def test_local_query_service_as_backend(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    service = LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
-
     mcp = wrap_fastmcp("Test Local Service")
-    register_dataset_tools(mcp, service)
+    register_dataset_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Local Service")

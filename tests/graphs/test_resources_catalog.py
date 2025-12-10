@@ -11,133 +11,28 @@ This module tests the CatalogResource provider from
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
 from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
+from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
 from codeintel.graphs.resources.catalog import CatalogResource
 from tests._helpers.assertions import (
     expect_equal,
-    expect_in,
     expect_is_instance,
     expect_length,
     expect_true,
 )
 
+if TYPE_CHECKING:
+    from tests.graphs.conftest import CatalogSampleData
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 RESOURCE_NAME: Final[str] = "catalog"
-TEST_PATH_A: Final[str] = "pkg/module_a.py"
-TEST_PATH_B: Final[str] = "pkg/module_b.py"
-TEST_MODULE_A: Final[str] = "pkg.module_a"
-TEST_MODULE_B: Final[str] = "pkg.module_b"
-GOID_1: Final[int] = 1001
-GOID_2: Final[int] = 1002
-GOID_3: Final[int] = 1003
-URN_1: Final[str] = "urn:test:func1"
-URN_2: Final[str] = "urn:test:func2"
-URN_3: Final[str] = "urn:test:func3"
-QUALNAME_1: Final[str] = "func1"
-QUALNAME_2: Final[str] = "ClassA.method1"
-QUALNAME_3: Final[str] = "func2"
-START_LINE_1: Final[int] = 10
-START_LINE_2: Final[int] = 20
-START_LINE_3: Final[int] = 5
-END_LINE_1: Final[int] = 15
-END_LINE_2: Final[int] = 30
-END_LINE_3: Final[int] = 12
-EXPECTED_TOTAL_SPANS: Final[int] = 3
-EXPECTED_PATH_COUNT: Final[int] = 2
-EXPECTED_SPANS_IN_PATH_A: Final[int] = 2
-EXPECTED_SPANS_IN_PATH_B: Final[int] = 1
-
-
-# ---------------------------------------------------------------------------
-# Test Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_functions() -> list[FunctionMeta]:
-    """Create sample function metadata for testing.
-
-    Returns
-    -------
-    list[FunctionMeta]
-        List of sample function metadata.
-    """
-    return [
-        FunctionMeta(
-            goid=GOID_1,
-            rel_path=TEST_PATH_A,
-            qualname=QUALNAME_1,
-            start_line=START_LINE_1,
-            end_line=END_LINE_1,
-            urn=URN_1,
-        ),
-        FunctionMeta(
-            goid=GOID_2,
-            rel_path=TEST_PATH_A,
-            qualname=QUALNAME_2,
-            start_line=START_LINE_2,
-            end_line=END_LINE_2,
-            urn=URN_2,
-        ),
-        FunctionMeta(
-            goid=GOID_3,
-            rel_path=TEST_PATH_B,
-            qualname=QUALNAME_3,
-            start_line=START_LINE_3,
-            end_line=END_LINE_3,
-            urn=URN_3,
-        ),
-    ]
-
-
-@pytest.fixture
-def module_by_path() -> dict[str, str]:
-    """Create sample module mapping.
-
-    Returns
-    -------
-    dict[str, str]
-        Sample module path mapping.
-    """
-    return {
-        TEST_PATH_A: TEST_MODULE_A,
-        TEST_PATH_B: TEST_MODULE_B,
-    }
-
-
-@pytest.fixture
-def sample_catalog(
-    sample_functions: list[FunctionMeta],
-    module_by_path: dict[str, str],
-) -> FunctionCatalog:
-    """Create a sample FunctionCatalog.
-
-    Returns
-    -------
-    FunctionCatalog
-        Sample function catalog.
-    """
-    return FunctionCatalog(functions=sample_functions, module_by_path=module_by_path)
-
-
-@pytest.fixture
-def catalog_resource(sample_catalog: FunctionCatalog) -> CatalogResource:
-    """Create a CatalogResource wrapping the sample catalog.
-
-    Returns
-    -------
-    CatalogResource
-        Resource wrapping sample catalog.
-    """
-    return CatalogResource(catalog=sample_catalog)
 
 
 @pytest.fixture
@@ -215,10 +110,12 @@ def test_catalog_resource_require_returns_registered(
 # ===========================================================================
 
 
-def test_function_spans_returns_all_spans(catalog_resource: CatalogResource) -> None:
+def test_function_spans_returns_all_spans(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """Function_spans returns all function spans."""
     spans = catalog_resource.function_spans
-    expect_length(spans, EXPECTED_TOTAL_SPANS)
+    expect_length(spans, len(catalog_sample_data.functions))
 
 
 def test_function_spans_returns_span_data(catalog_resource: CatalogResource) -> None:
@@ -228,20 +125,23 @@ def test_function_spans_returns_span_data(catalog_resource: CatalogResource) -> 
         expect_is_instance(span, FunctionSpanData)
 
 
-def test_function_spans_contains_expected_goids(catalog_resource: CatalogResource) -> None:
+def test_function_spans_contains_expected_goids(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """function_spans contains expected GOIDs."""
     spans = catalog_resource.function_spans
     goids = {span.goid for span in spans}
-    expect_equal(goids, {GOID_1, GOID_2, GOID_3})
+    expect_equal(goids, {meta.goid for meta in catalog_sample_data.functions})
 
 
-def test_function_spans_contains_urns(catalog_resource: CatalogResource) -> None:
+def test_function_spans_contains_urns(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """function_spans includes URNs."""
     spans = catalog_resource.function_spans
     urns = {span.urn for span in spans}
-    expect_in(URN_1, urns)
-    expect_in(URN_2, urns)
-    expect_in(URN_3, urns)
+    expected_urns = {meta.urn for meta in catalog_sample_data.functions}
+    expect_equal(urns, expected_urns)
 
 
 def test_function_spans_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
@@ -286,12 +186,13 @@ def test_function_spans_repopulates_after_invalidate(
 # ===========================================================================
 
 
-def test_paths_returns_all_paths(catalog_resource: CatalogResource) -> None:
+def test_paths_returns_all_paths(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """Paths returns all unique file paths."""
     paths = catalog_resource.paths
-    expect_length(paths, EXPECTED_PATH_COUNT)
-    expect_in(TEST_PATH_A, paths)
-    expect_in(TEST_PATH_B, paths)
+    expected_paths = set(catalog_sample_data.module_by_path.keys())
+    expect_equal(set(paths), expected_paths)
 
 
 def test_paths_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
@@ -305,11 +206,12 @@ def test_paths_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
 # ===========================================================================
 
 
-def test_module_by_path_returns_mapping(catalog_resource: CatalogResource) -> None:
+def test_module_by_path_returns_mapping(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """module_by_path returns module mapping."""
     mapping = catalog_resource.module_by_path
-    expect_equal(mapping[TEST_PATH_A], TEST_MODULE_A)
-    expect_equal(mapping[TEST_PATH_B], TEST_MODULE_B)
+    expect_equal(mapping, catalog_sample_data.module_by_path)
 
 
 def test_module_by_path_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
@@ -323,24 +225,36 @@ def test_module_by_path_empty_catalog(empty_catalog_resource: CatalogResource) -
 # ===========================================================================
 
 
-def test_spans_for_path_returns_file_spans(catalog_resource: CatalogResource) -> None:
+def test_spans_for_path_returns_file_spans(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """Spans_for_path returns spans for specific file."""
-    spans = catalog_resource.spans_for_path(TEST_PATH_A)
-    expect_length(spans, EXPECTED_SPANS_IN_PATH_A)
+    target_path = "pkg/module_a.py"
+    spans = catalog_resource.spans_for_path(target_path)
+    expected_count = sum(
+        1 for meta in catalog_sample_data.functions if meta.rel_path == target_path
+    )
+    expect_length(spans, expected_count)
 
 
 def test_spans_for_path_returns_span_data(catalog_resource: CatalogResource) -> None:
     """spans_for_path returns FunctionSpanData objects."""
-    spans = catalog_resource.spans_for_path(TEST_PATH_A)
+    spans = catalog_resource.spans_for_path("pkg/module_a.py")
     for span in spans:
         expect_is_instance(span, FunctionSpanData)
 
 
-def test_spans_for_path_single_span_file(catalog_resource: CatalogResource) -> None:
+def test_spans_for_path_single_span_file(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """spans_for_path returns single span for single-function file."""
-    spans = catalog_resource.spans_for_path(TEST_PATH_B)
-    expect_length(spans, 1)
-    expect_equal(spans[0].goid, GOID_3)
+    target_path = "pkg/module_b.py"
+    spans = catalog_resource.spans_for_path(target_path)
+    expected_goids = [
+        meta.goid for meta in catalog_sample_data.functions if meta.rel_path == target_path
+    ]
+    expect_length(spans, len(expected_goids))
+    expect_equal({span.goid for span in spans}, set(expected_goids))
 
 
 def test_spans_for_path_nonexistent_file(catalog_resource: CatalogResource) -> None:
@@ -349,12 +263,17 @@ def test_spans_for_path_nonexistent_file(catalog_resource: CatalogResource) -> N
     expect_length(spans, 0)
 
 
-def test_spans_for_path_includes_urns(catalog_resource: CatalogResource) -> None:
+def test_spans_for_path_includes_urns(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """spans_for_path includes URNs in span data."""
-    spans = catalog_resource.spans_for_path(TEST_PATH_A)
+    target_path = "pkg/module_a.py"
+    spans = catalog_resource.spans_for_path(target_path)
     urns = {span.urn for span in spans}
-    expect_in(URN_1, urns)
-    expect_in(URN_2, urns)
+    expected_urns = {
+        meta.urn for meta in catalog_sample_data.functions if meta.rel_path == target_path
+    }
+    expect_equal(urns, expected_urns)
 
 
 # ===========================================================================
@@ -362,11 +281,16 @@ def test_spans_for_path_includes_urns(catalog_resource: CatalogResource) -> None
 # ===========================================================================
 
 
-def test_local_name_map_returns_mapping(catalog_resource: CatalogResource) -> None:
+def test_local_name_map_returns_mapping(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """local_name_map returns local name to GOID mapping."""
-    name_map = catalog_resource.local_name_map(TEST_PATH_A)
-    # Should have entries for local names
-    expect_is_instance(name_map, dict)
+    target_path = "pkg/module_a.py"
+    name_map = catalog_resource.local_name_map(target_path)
+    expected_names = {
+        meta.qualname for meta in catalog_sample_data.functions if meta.rel_path == target_path
+    }
+    expect_true(expected_names.issubset(name_map.keys()))
 
 
 def test_local_name_map_nonexistent_file(catalog_resource: CatalogResource) -> None:
@@ -380,33 +304,43 @@ def test_local_name_map_nonexistent_file(catalog_resource: CatalogResource) -> N
 # ===========================================================================
 
 
-def test_lookup_goid_finds_function(catalog_resource: CatalogResource) -> None:
+def test_lookup_goid_finds_function(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """lookup_goid finds function by path and line."""
-    goid = catalog_resource.lookup_goid(TEST_PATH_A, START_LINE_1, END_LINE_1, QUALNAME_1)
-    expect_equal(goid, GOID_1)
+    target = catalog_sample_data.functions[0]
+    goid = catalog_resource.lookup_goid(
+        target.rel_path, target.start_line, target.end_line, target.qualname
+    )
+    expect_equal(goid, target.goid)
 
 
-def test_lookup_goid_finds_method(catalog_resource: CatalogResource) -> None:
+def test_lookup_goid_finds_method(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """lookup_goid finds method by path and line."""
-    goid = catalog_resource.lookup_goid(TEST_PATH_A, START_LINE_2, END_LINE_2, QUALNAME_2)
-    expect_equal(goid, GOID_2)
+    target = catalog_sample_data.functions[1]
+    goid = catalog_resource.lookup_goid(
+        target.rel_path, target.start_line, target.end_line, target.qualname
+    )
+    expect_equal(goid, target.goid)
 
 
 def test_lookup_goid_not_found(catalog_resource: CatalogResource) -> None:
     """lookup_goid returns None when not found."""
-    goid = catalog_resource.lookup_goid(TEST_PATH_A, 999, 1000, "nonexistent")
+    goid = catalog_resource.lookup_goid("pkg/module_a.py", 999, 1000, "nonexistent")
     expect_true(goid is None)
 
 
 def test_lookup_goid_wrong_file(catalog_resource: CatalogResource) -> None:
     """lookup_goid returns None for wrong file."""
-    goid = catalog_resource.lookup_goid("wrong/file.py", START_LINE_1, END_LINE_1, QUALNAME_1)
+    goid = catalog_resource.lookup_goid("wrong/file.py", 10, 15, "func1")
     expect_true(goid is None)
 
 
 def test_lookup_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
     """lookup_goid returns None for empty catalog."""
-    goid = empty_catalog_resource.lookup_goid(TEST_PATH_A, 10, 20, "func")
+    goid = empty_catalog_resource.lookup_goid("pkg/module_a.py", 10, 20, "func")
     expect_true(goid is None)
 
 
@@ -415,17 +349,21 @@ def test_lookup_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> N
 # ===========================================================================
 
 
-def test_urn_for_goid_returns_urn(catalog_resource: CatalogResource) -> None:
+def test_urn_for_goid_returns_urn(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """urn_for_goid returns URN for known GOID."""
-    urn = catalog_resource.urn_for_goid(GOID_1)
-    expect_equal(urn, URN_1)
+    target = catalog_sample_data.functions[0]
+    urn = catalog_resource.urn_for_goid(target.goid)
+    expect_equal(urn, target.urn)
 
 
-def test_urn_for_goid_all_goids(catalog_resource: CatalogResource) -> None:
+def test_urn_for_goid_all_goids(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """urn_for_goid returns correct URN for all GOIDs."""
-    expect_equal(catalog_resource.urn_for_goid(GOID_1), URN_1)
-    expect_equal(catalog_resource.urn_for_goid(GOID_2), URN_2)
-    expect_equal(catalog_resource.urn_for_goid(GOID_3), URN_3)
+    for meta in catalog_sample_data.functions:
+        expect_equal(catalog_resource.urn_for_goid(meta.goid), meta.urn)
 
 
 def test_urn_for_goid_unknown_returns_none(catalog_resource: CatalogResource) -> None:
@@ -445,17 +383,20 @@ def test_urn_for_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> 
 # ===========================================================================
 
 
-def test_span_data_has_all_properties(catalog_resource: CatalogResource) -> None:
+def test_span_data_has_all_properties(
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+) -> None:
     """FunctionSpanData has all expected properties."""
     spans = catalog_resource.function_spans
-    span = next(s for s in spans if s.goid == GOID_1)
+    target_meta = catalog_sample_data.functions[0]
+    span = next(s for s in spans if s.goid == target_meta.goid)
 
-    expect_equal(span.goid, GOID_1)
-    expect_equal(span.rel_path, TEST_PATH_A)
-    expect_equal(span.qualname, QUALNAME_1)
-    expect_equal(span.start_line, START_LINE_1)
-    expect_equal(span.end_line, END_LINE_1)
-    expect_equal(span.urn, URN_1)
+    expect_equal(span.goid, target_meta.goid)
+    expect_equal(span.rel_path, target_meta.rel_path)
+    expect_equal(span.qualname, target_meta.qualname)
+    expect_equal(span.start_line, target_meta.start_line)
+    expect_equal(span.end_line, target_meta.end_line)
+    expect_equal(span.urn, target_meta.urn)
 
 
 # ===========================================================================
@@ -463,34 +404,26 @@ def test_span_data_has_all_properties(catalog_resource: CatalogResource) -> None
 # ===========================================================================
 
 
-@pytest.mark.parametrize(
-    ("goid", "expected_urn"),
-    [
-        (GOID_1, URN_1),
-        (GOID_2, URN_2),
-        (GOID_3, URN_3),
-        (9999, None),
-    ],
-)
 def test_urn_lookup_parametrized(
-    catalog_resource: CatalogResource, goid: int, expected_urn: str | None
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
     """URN lookup returns expected values."""
-    result = catalog_resource.urn_for_goid(goid)
-    expect_equal(result, expected_urn)
+    for meta in catalog_sample_data.functions:
+        expect_equal(catalog_resource.urn_for_goid(meta.goid), meta.urn)
+    expect_true(catalog_resource.urn_for_goid(9999) is None)
 
 
-@pytest.mark.parametrize(
-    ("path", "expected_count"),
-    [
-        (TEST_PATH_A, 2),
-        (TEST_PATH_B, 1),
-        ("nonexistent.py", 0),
-    ],
-)
 def test_spans_for_path_count(
-    catalog_resource: CatalogResource, path: str, expected_count: int
+    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
     """Spans for path returns expected count."""
-    spans = catalog_resource.spans_for_path(path)
-    expect_length(spans, expected_count)
+    path_counts: dict[str, int] = {}
+    for meta in catalog_sample_data.functions:
+        path_counts[meta.rel_path] = path_counts.get(meta.rel_path, 0) + 1
+
+    for path, expected_count in path_counts.items():
+        spans = catalog_resource.spans_for_path(path)
+        expect_length(spans, expected_count)
+
+    spans_missing = catalog_resource.spans_for_path("nonexistent.py")
+    expect_length(spans_missing, 0)

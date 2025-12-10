@@ -20,11 +20,11 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_length,
 )
-from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar
+from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
-    from tests._helpers import ProvisionedGateway
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
@@ -58,20 +58,6 @@ class _OperationSpecFake:
     required_graphs: tuple[str, ...]
     default_limit: int | None
     max_limit: int | None
-
-
-def _build_backend(provisioned_repo: ProvisionedGateway) -> LocalQueryService:
-    limits = BackendLimits(default_limit=DEFAULT_LIMIT, max_rows_per_call=MAX_ROWS)
-    query = build_duckdb_query_service(
-        provisioned_repo.gateway,
-        repo=provisioned_repo.repo,
-        commit=provisioned_repo.commit,
-        limits=limits,
-    )
-    return LocalQueryService(
-        query=query,
-        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
-    )
 
 
 def _sample_dataset_meta() -> list[_DatasetMetaFake]:
@@ -205,15 +191,9 @@ def _register_with_options(
 
 
 @pytest.fixture
-def backend(provisioned_repo: ProvisionedGateway) -> LocalQueryService:
-    """Build a backend for meta tool tests.
-
-    Returns
-    -------
-    LocalQueryService
-        Query service bound to the provisioned gateway.
-    """
-    return _build_backend(provisioned_repo)
+def backend(mcp_service: LocalQueryService) -> LocalQueryService:
+    """Backend (query service) for meta tool tests."""
+    return mcp_service
 
 
 def test_meta_tools_list_payloads_with_unicode(

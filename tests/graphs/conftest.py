@@ -21,7 +21,8 @@ graph_telemetry_context
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -29,27 +30,24 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.resources import ResourceRegistry
+from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
 from codeintel.graphs.core.context import GraphPluginExecutionContext
+from codeintel.graphs.resources.catalog import CatalogResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.fakes.graph_runtime import (
-    GraphRuntimeDouble as MockGraphRuntime,
-)
+from tests._helpers.fakes.graph_runtime import GraphRuntimeDouble as MockGraphRuntime
 from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.seeds.golden_graphs import (
-    GOLDEN_COMMIT,
-    GOLDEN_REPO,
-    seed_golden_graphs,
-)
+from tests._helpers.rows import function_meta
+from tests._helpers.seeds.golden_graphs import GOLDEN_COMMIT, GOLDEN_REPO, seed_golden_graphs
 
 # ---------------------------------------------------------------------------
 # Gateway Fixtures
@@ -205,6 +203,112 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
 # ---------------------------------------------------------------------------
 # Resource Fixtures
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CatalogSampleData:
+    """Sample catalog dataset for catalog resource tests."""
+
+    functions: list[FunctionMeta]
+    module_by_path: dict[str, str]
+
+
+@pytest.fixture
+def catalog_sample_data() -> CatalogSampleData:
+    """Provide sample function catalog data for catalog resource tests.
+
+    Returns
+    -------
+    CatalogSampleData
+        Sample functions and module mapping.
+    """
+    functions = [
+        FunctionMeta(
+            goid=1001,
+            rel_path="pkg/module_a.py",
+            qualname="func1",
+            start_line=10,
+            end_line=15,
+            urn="urn:test:func1",
+        ),
+        FunctionMeta(
+            goid=1002,
+            rel_path="pkg/module_a.py",
+            qualname="ClassA.method1",
+            start_line=20,
+            end_line=30,
+            urn="urn:test:func2",
+        ),
+        FunctionMeta(
+            goid=1003,
+            rel_path="pkg/module_b.py",
+            qualname="func2",
+            start_line=5,
+            end_line=12,
+            urn="urn:test:func3",
+        ),
+    ]
+    module_by_path = {
+        "pkg/module_a.py": "pkg.module_a",
+        "pkg/module_b.py": "pkg.module_b",
+    }
+    return CatalogSampleData(functions=functions, module_by_path=module_by_path)
+
+
+@pytest.fixture
+def sample_catalog(catalog_sample_data: CatalogSampleData) -> FunctionCatalog:
+    """Provide a sample FunctionCatalog for catalog resource tests.
+
+    Returns
+    -------
+    FunctionCatalog
+        Catalog populated with sample functions and module mapping.
+    """
+    return FunctionCatalog(
+        functions=catalog_sample_data.functions,
+        module_by_path=catalog_sample_data.module_by_path,
+    )
+
+
+@pytest.fixture
+def catalog_resource(sample_catalog: FunctionCatalog) -> CatalogResource:
+    """Provide a CatalogResource backed by the sample catalog.
+
+    Returns
+    -------
+    CatalogResource
+        Resource provider wrapping the sample catalog.
+    """
+    return CatalogResource(catalog=sample_catalog)
+
+
+@pytest.fixture
+def function_meta_factory() -> Callable[..., FunctionMeta]:
+    """Create FunctionMeta entries with normalized URNs.
+
+    Returns
+    -------
+    Callable[..., FunctionMeta]
+        Builder that constructs FunctionMeta with consistent URN formatting.
+    """
+
+    def _build(
+        *,
+        goid: int,
+        rel_path: str,
+        qualname: str,
+        snapshot: tuple[str, str] = ("demo/repo", "deadbeef"),
+        line_span: tuple[int, int] = (1, 1),
+    ) -> FunctionMeta:
+        return function_meta(
+            goid=goid,
+            rel_path=rel_path,
+            qualname=qualname,
+            snapshot=snapshot,
+            line_span=line_span,
+        )
+
+    return _build
 
 
 @pytest.fixture

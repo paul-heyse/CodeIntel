@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -32,8 +33,13 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
+from tests._helpers.fakes.tools import make_failing_tool_service, make_success_tool_service
 from tests._helpers.ingestion import write_pytest_report
+
+if TYPE_CHECKING:
+    from tests._helpers.orchestration.tooling import ToolingOutputs
+
+pytest_plugins = ["tests._helpers.orchestration.tooling"]
 
 # Test constants
 ROWS_WRITTEN_100 = 100
@@ -61,7 +67,7 @@ def success_tool_adapter() -> ToolRunnerAdapter:
     ToolRunnerAdapter
         Adapter with deterministic success responses.
     """
-    return ToolRunnerAdapter(_make_success_service())
+    return ToolRunnerAdapter(make_success_tool_service())
 
 
 @pytest.fixture
@@ -73,7 +79,30 @@ def failing_tool_adapter() -> ToolRunnerAdapter:
     ToolRunnerAdapter
         Adapter configured to raise errors.
     """
-    return ToolRunnerAdapter(_make_failing_service())
+    return ToolRunnerAdapter(make_failing_tool_service())
+
+
+@pytest.fixture
+def coverage_tool_adapter(tooling_outputs: ToolingOutputs) -> ToolRunnerAdapter:
+    """Provide a ToolRunnerAdapter seeded with real coverage summaries.
+
+    Returns
+    -------
+    ToolRunnerAdapter
+        Adapter backed by a fake service carrying real coverage data.
+    """
+    coverage_report = CoverageReport.from_file_reports(
+        [
+            (
+                summary.rel_path,
+                set(summary.executed_lines),
+                set(summary.missing_lines),
+            )
+            for summary in tooling_outputs.coverage_reports
+        ],
+        json_path=tooling_outputs.context.coverage_file,
+    )
+    return ToolRunnerAdapter(make_success_tool_service(coverage_report=coverage_report))
 
 
 # =============================================================================
@@ -466,48 +495,6 @@ def test_ingest_macros_has_core_modules() -> None:
 # =============================================================================
 
 
-def _make_success_service() -> FakeToolService:
-    """Create FakeToolService configured for successful responses.
-
-    Returns
-    -------
-    FakeToolService
-        Service with deterministic success responses.
-    """
-    return FakeToolService(
-        FakeToolServiceConfig(
-            pyright_errors={"mod.py": 2, "other.py": 0},
-            pyrefly_errors={"mod.py": 1},
-            ruff_errors={"style.py": 3},
-            coverage_report=CoverageReport.from_file_reports(
-                [
-                    ("mod.py", {1, 2, 3}, {4, 5}),
-                ]
-            ),
-            pytest_success=True,
-        )
-    )
-
-
-def _make_failing_service() -> FakeToolService:
-    """Create FakeToolService configured to raise errors.
-
-    Returns
-    -------
-    FakeToolService
-        Service configured to raise errors on all tool methods.
-    """
-    config = FakeToolServiceConfig(
-        raise_on_pyright=RuntimeError("pyright failed"),
-        raise_on_pyrefly=RuntimeError("pyrefly failed"),
-        raise_on_ruff=OSError("ruff failed"),
-        raise_on_coverage=ValueError("coverage failed"),
-        raise_on_scip=RuntimeError("SCIP failed"),
-        raise_on_pytest=RuntimeError("pytest failed"),
-    )
-    return FakeToolService(config)
-
-
 def test_tool_runner_adapter_initialization(success_tool_adapter: ToolRunnerAdapter) -> None:
     """ToolRunnerAdapter should initialize with ToolService."""
     expect_is_not_none(success_tool_adapter)
@@ -558,14 +545,23 @@ def test_tool_runner_adapter_diagnostic_tools_failure(
 
 
 def test_tool_runner_adapter_run_coverage_success(
-    success_tool_adapter: ToolRunnerAdapter,
+    coverage_tool_adapter: ToolRunnerAdapter,
+    tooling_outputs: ToolingOutputs,
 ) -> None:
     """ToolRunnerAdapter.run_coverage should return file data."""
-    result = asyncio.run(success_tool_adapter.run_coverage(Path()))
+    result = asyncio.run(
+        coverage_tool_adapter.run_coverage(
+            tooling_outputs.context.repo_root,
+            coverage_file=tooling_outputs.context.coverage_file,
+        )
+    )
 
     expect_equal(result.status, ToolStatus.OK)
-    expect_length(result.files, 1)
-    expect_equal(result.files[0].rel_path, "mod.py")
+    expect_length(result.files, len(tooling_outputs.coverage_reports))
+    expect_equal(
+        {file.rel_path for file in result.files},
+        {summary.rel_path for summary in tooling_outputs.coverage_reports},
+    )
 
 
 def test_tool_runner_adapter_run_coverage_failure(

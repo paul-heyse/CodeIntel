@@ -9,10 +9,10 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
 from codeintel.storage.macros.generation import render_macro
@@ -24,9 +24,6 @@ from codeintel.storage.metadata import (
     validate_macro_registry,
     validate_normalized_macro_schemas,
 )
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -143,59 +140,8 @@ class ProfileStorageResult:
         }
 
 
-def _get_str_param(ctx: EnhancedHandlerContext, name: str) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    str | None
-        Parameter value or None.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return None
-    return str(value)
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
-
-
 def validate_macros_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[ValidateMacrosResult]:
     """Validate macro registry hashes and normalized macro schemas.
 
@@ -212,10 +158,10 @@ def validate_macros_handler(
         Validation result with status and any issues found.
     """
     # Get db_path from params or runtime
-    db_path_str = _get_str_param(ctx, "db_path")
+    db_path_str = ctx.param_str("db_path")
     db_path = ctx.runtime.paths.db_path if db_path_str is None else Path(db_path_str)
 
-    macro_req_raw = ctx.params.get("macro_requirement", MacroRequirement.REQUIRE)
+    macro_req_raw = ctx._params.get("macro_requirement", MacroRequirement.REQUIRE)
     if isinstance(macro_req_raw, MacroRequirement):
         macro_requirement = macro_req_raw
     else:
@@ -284,7 +230,7 @@ def validate_macros_handler(
 
 
 def generate_macros_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[GenerateMacrosResult]:
     """Render normalized macro DDL for the requested tables.
 
@@ -300,13 +246,7 @@ def generate_macros_handler(
         Generated macro definitions.
     """
     # Get tables from params
-    tables_raw = ctx.params.get("tables")
-    if tables_raw is None:
-        tables: list[str] = []
-    elif isinstance(tables_raw, list):
-        tables = [str(t) for t in tables_raw]
-    else:
-        tables = [str(tables_raw)]
+    tables = ctx.param_list("tables")
 
     if not tables:
         return CliResult.fail(
@@ -330,7 +270,7 @@ def generate_macros_handler(
 
 
 def profile_storage_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[ProfileStorageResult]:
     """Run storage profiling.
 
@@ -348,10 +288,10 @@ def profile_storage_handler(
         Profiling result with paths and options used.
     """
     # Get db_path from params or runtime
-    db_path_str = _get_str_param(ctx, "db_path")
+    db_path_str = ctx.param_str("db_path")
     db_path = ctx.runtime.paths.db_path if db_path_str is None else Path(db_path_str)
 
-    output_dir_str = _get_str_param(ctx, "output_dir")
+    output_dir_str = ctx.param_str("output_dir")
     if output_dir_str is None:
         return CliResult.fail(
             ProblemDetail(
@@ -363,7 +303,7 @@ def profile_storage_handler(
         )
     output_dir = Path(output_dir_str)
 
-    include_views = _get_bool_param(ctx, "include_views", default=False)
+    include_views = ctx.param_bool("include_views", default=False)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=include_views)
 

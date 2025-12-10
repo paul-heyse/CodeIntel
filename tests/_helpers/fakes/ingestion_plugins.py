@@ -227,7 +227,23 @@ def make_recording_adapter_factories(
     Callable[[object], RecordingStorageAdapter],
     Callable[[Path], RecordingDiscoveryAdapter],
 ]:
-    """Create storage and discovery adapter factories sharing a capture."""
+    """Create storage and discovery adapter factories sharing a capture.
+
+    Parameters
+    ----------
+    capture
+        Shared call capture sink for recording interactions.
+    module_sources
+        Optional mapping of module sources to seed discovery.
+
+    Returns
+    -------
+    tuple[
+        Callable[[object], RecordingStorageAdapter],
+        Callable[[Path], RecordingDiscoveryAdapter],
+    ]
+        Factories for storage and discovery adapters.
+    """
 
     def storage_factory(gateway: object) -> RecordingStorageAdapter:
         return RecordingStorageAdapter(gateway, capture=capture)
@@ -248,7 +264,22 @@ def make_recording_step_factory(
     table_key: str,
     result: StepResult | None = None,
 ) -> Callable[[IngestStoragePort, ModuleDiscoveryPort], RecordingStep]:
-    """Build a factory for synchronous RecordingStep instances."""
+    """Build a factory for synchronous RecordingStep instances.
+
+    Parameters
+    ----------
+    capture
+        Shared call capture sink for recording interactions.
+    table_key
+        Target table key for the ingestion step.
+    result
+        Optional predetermined result to return.
+
+    Returns
+    -------
+    Callable[[IngestStoragePort, ModuleDiscoveryPort], RecordingStep]
+        Factory producing configured RecordingStep instances.
+    """
 
     def factory(storage: IngestStoragePort, discovery: ModuleDiscoveryPort) -> RecordingStep:
         return RecordingStep(
@@ -267,7 +298,23 @@ def make_recording_async_step_factory(
     *,
     result: StepResult | None = None,
 ) -> Callable[[IngestStoragePort, ModuleDiscoveryPort, IngestToolPort | None], RecordingAsyncStep]:
-    """Build a factory for async RecordingAsyncStep instances."""
+    """Build a factory for async RecordingAsyncStep instances.
+
+    Parameters
+    ----------
+    capture
+        Shared call capture sink for recording interactions.
+    result
+        Optional predetermined result to return.
+
+    Returns
+    -------
+    Callable[
+        [IngestStoragePort, ModuleDiscoveryPort, IngestToolPort | None],
+        RecordingAsyncStep,
+    ]
+        Factory producing configured RecordingAsyncStep instances.
+    """
 
     def factory(
         storage: IngestStoragePort, discovery: ModuleDiscoveryPort, tools: IngestToolPort | None
@@ -286,7 +333,18 @@ def make_recording_async_step_factory(
 def make_recording_type_checker_factory(
     checker: TypeChecker,
 ) -> Callable[[TypeChecker | None], TypeChecker]:
-    """Return a factory that always yields the provided checker."""
+    """Return a factory that always yields the provided checker.
+
+    Parameters
+    ----------
+    checker
+        TypeChecker to return from the generated factory.
+
+    Returns
+    -------
+    Callable[[TypeChecker | None], TypeChecker]
+        Factory that always yields the provided checker.
+    """
 
     def factory(_: TypeChecker | None) -> TypeChecker:
         return checker

@@ -8,10 +8,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     PlanningOptions,
@@ -19,9 +19,6 @@ from codeintel.graphs.core.registry import (
     list_graph_plugins,
     plan_graph_plugins,
 )
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -169,91 +166,8 @@ class GraphPlanResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
-
-
-def _extract_tuple_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-) -> tuple[str, ...] | None:
-    """Extract tuple parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    tuple[str, ...] | None
-        Tuple of strings or None.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return None
-    if isinstance(value, (list, tuple)):
-        return tuple(str(v) for v in value)
-    return (str(value),)
-
-
 def graph_plugins_list_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[GraphPluginsResult]:
     """List registered graph plugins.
 
@@ -271,8 +185,9 @@ def graph_plugins_list_handler(
     CliResult[GraphPluginsResult]
         List of plugins.
     """
-    names = _extract_tuple_param(ctx, "names")
-    include_disabled = _get_bool_param(ctx, "include_disabled")
+    names_tuple = ctx.param_tuple("names")
+    names: tuple[str, ...] | None = names_tuple if names_tuple else None
+    include_disabled = ctx.param_bool("include_disabled")
 
     LOG.info("Listing graph plugins (names=%s)", names)
 
@@ -305,7 +220,7 @@ def graph_plugins_list_handler(
 
 
 def graph_plugins_plan_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[GraphPlanResult]:
     """Display an execution plan for graph plugins.
 
@@ -324,11 +239,13 @@ def graph_plugins_plan_handler(
     CliResult[GraphPlanResult]
         Execution plan.
     """
-    names = _extract_tuple_param(ctx, "names")
-    enable = _extract_tuple_param(ctx, "enable")
-    disable = _extract_tuple_param(ctx, "disable") or ()
-    selection_policy_str = _get_str_param(ctx, "selection_policy", "lenient")
-    dependency_policy_str = _get_str_param(ctx, "dependency_policy", "strict")
+    names_tuple = ctx.param_tuple("names")
+    names: tuple[str, ...] | None = names_tuple if names_tuple else None
+    enable_tuple = ctx.param_tuple("enable")
+    enable: tuple[str, ...] | None = enable_tuple if enable_tuple else None
+    disable = ctx.param_tuple("disable") or ()
+    selection_policy_str = ctx.param_str("selection_policy", "lenient")
+    dependency_policy_str = ctx.param_str("dependency_policy", "strict")
 
     # Parse policies
     try:

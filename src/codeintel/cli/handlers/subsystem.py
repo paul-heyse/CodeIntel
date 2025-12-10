@@ -1,12 +1,12 @@
 """Subsystem exploration handlers following the unified handler pattern.
 
 This module provides handlers for subsystem commands using the
-EnhancedHandlerContext pattern for consistent resource management
+HandlerContext pattern for consistent resource management
 and output rendering.
 
 All handlers in this module:
 
-1. Accept EnhancedHandlerContext as their only argument
+1. Accept HandlerContext as their only argument
 2. Return CliResult[T]
 3. Never write to stdout/stderr directly
 4. Never call sys.exit()
@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
@@ -28,9 +29,6 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 

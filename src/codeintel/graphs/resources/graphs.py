@@ -6,14 +6,30 @@ This module provides a resource provider for graph engine access.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar, Protocol
 
 import networkx as nx
 
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.ports.engine import GraphData
 
-if TYPE_CHECKING:
-    from codeintel.graphs.engine import NxGraphEngine
+
+class GraphEngineWithCache(GraphEngine, Protocol):
+    """GraphEngine extension with cache controls and repo metadata."""
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit hash."""
+        ...
+
+    def clear_cache(self) -> None:
+        """Clear any cached graph state."""
+        ...
 
 
 @dataclass
@@ -31,7 +47,7 @@ class GraphResource:
 
     RESOURCE_NAME: ClassVar[str] = "graphs"
 
-    engine: NxGraphEngine
+    engine: GraphEngineWithCache
 
     @property
     def resource_name(self) -> str:

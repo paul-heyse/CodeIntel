@@ -10,8 +10,7 @@ import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
-from codeintel.serving.backend.core import GraphEngineProvider
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.function_backend import FunctionQueryLayer
 from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import StorageGateway
@@ -28,20 +27,6 @@ CALLEE_GOID: Final = 2
 def _expect(*, condition: bool, message: str) -> None:
     """Delegate assertions through shared helpers."""
     expect_true(condition, message=message)
-
-
-def _build_components(
-    gateway: StorageGateway,
-    *,
-    limits: BackendLimits | None = None,
-    graph_engine: GraphEngine | None = None,
-) -> tuple[BackendContext, DuckDBRepositories, GraphEngineProvider]:
-    components = build_backend_components(
-        gateway,
-        limits=limits,
-        graph_engine=graph_engine,
-    )
-    return components.context, components.repositories, components.provider
 
 
 @dataclass
@@ -160,11 +145,11 @@ def test_get_function_summary_by_urn(architecture_gateway: StorageGateway) -> No
 
 def test_list_high_risk_functions_basic(architecture_gateway: StorageGateway) -> None:
     """List high risk functions with default parameters."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.list_high_risk_functions()
@@ -181,11 +166,11 @@ def test_list_high_risk_functions_basic(architecture_gateway: StorageGateway) ->
 
 def test_list_high_risk_functions_with_min_risk(architecture_gateway: StorageGateway) -> None:
     """Filter high risk functions by minimum risk threshold."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Use a high min_risk to get fewer results
@@ -201,11 +186,11 @@ def test_list_high_risk_functions_with_min_risk(architecture_gateway: StorageGat
 def test_list_high_risk_functions_with_limit(architecture_gateway: StorageGateway) -> None:
     """Respect limit parameter for high risk functions."""
     limit_value = 5
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.list_high_risk_functions(limit=limit_value)
@@ -222,11 +207,11 @@ def test_list_high_risk_functions_with_limit(architecture_gateway: StorageGatewa
 
 def test_list_high_risk_functions_tested_only(architecture_gateway: StorageGateway) -> None:
     """Filter to only tested functions."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.list_high_risk_functions(tested_only=True)
@@ -244,11 +229,11 @@ def test_list_high_risk_functions_tested_only(architecture_gateway: StorageGatew
 
 def test_get_callgraph_neighbors_outgoing(architecture_gateway: StorageGateway) -> None:
     """Get outgoing call graph neighbors only."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_callgraph_neighbors(goid_h128=1, direction="outgoing")
@@ -266,11 +251,11 @@ def test_get_callgraph_neighbors_outgoing(architecture_gateway: StorageGateway) 
 
 def test_get_callgraph_neighbors_incoming(architecture_gateway: StorageGateway) -> None:
     """Get incoming call graph neighbors only."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_callgraph_neighbors(goid_h128=1, direction="incoming")
@@ -287,11 +272,11 @@ def test_get_callgraph_neighbors_incoming(architecture_gateway: StorageGateway) 
 
 def test_get_callgraph_neighbors_both(architecture_gateway: StorageGateway) -> None:
     """Get both incoming and outgoing neighbors."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_callgraph_neighbors(goid_h128=1, direction="both")
@@ -313,11 +298,11 @@ def test_get_callgraph_neighbors_both(architecture_gateway: StorageGateway) -> N
 def test_get_callgraph_neighbors_with_limit(architecture_gateway: StorageGateway) -> None:
     """Respect limit for call graph neighbors."""
     limit_value = 3
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_callgraph_neighbors(goid_h128=1, limit=limit_value)
@@ -335,11 +320,11 @@ def test_get_callgraph_neighbors_with_limit(architecture_gateway: StorageGateway
 
 def test_get_tests_for_function_not_found(architecture_gateway: StorageGateway) -> None:
     """Return message when function not found."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Use a nonexistent GOID
@@ -354,11 +339,11 @@ def test_get_tests_for_function_not_found(architecture_gateway: StorageGateway) 
 
 def test_get_tests_for_function_by_goid(architecture_gateway: StorageGateway) -> None:
     """Get tests for function by GOID."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_tests_for_function(goid_h128=1)
@@ -376,11 +361,11 @@ def test_get_tests_for_function_by_goid(architecture_gateway: StorageGateway) ->
 def test_get_tests_for_function_with_limit(architecture_gateway: StorageGateway) -> None:
     """Respect limit for tests."""
     limit_value = 2
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_tests_for_function(goid_h128=1, limit=limit_value)
@@ -403,13 +388,13 @@ def test_get_callgraph_neighborhood_node_not_in_graph(
     graph = nx.DiGraph()
     graph.add_edge(1, 2)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Query for a node not in the graph
@@ -428,13 +413,13 @@ def test_get_callgraph_neighborhood_with_radius(
     graph.add_edge(2, 3)
     graph.add_edge(3, 4)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Radius 2 should include 1, 2, 3
@@ -459,13 +444,13 @@ def test_get_import_boundary_subsystem_not_found(
     graph = nx.DiGraph()
     graph.add_edge("sub1", "sub2")
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     boundary = backend.get_import_boundary(subsystem_id="nonexistent")
@@ -480,13 +465,13 @@ def test_get_import_boundary_basic(architecture_gateway: StorageGateway) -> None
     graph.add_edge("sub1", "sub2", weight=1.0)
     graph.add_edge("sub3", "sub1", weight=0.5)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     boundary = backend.get_import_boundary(subsystem_id="sub1")
@@ -504,13 +489,13 @@ def test_get_import_boundary_with_max_edges(architecture_gateway: StorageGateway
     graph.add_edge("sub1", "sub3")
     graph.add_edge("sub1", "sub4")
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     max_edges_value = 1
@@ -524,13 +509,13 @@ def test_get_import_boundary_with_max_edges(architecture_gateway: StorageGateway
 
 def test_get_import_boundary_no_graph_engine(architecture_gateway: StorageGateway) -> None:
     """Return empty boundary when no graph engine available."""
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=None
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     boundary = backend.get_import_boundary(subsystem_id="sub1")
@@ -546,11 +531,11 @@ def test_get_import_boundary_no_graph_engine(architecture_gateway: StorageGatewa
 
 def test_get_function_profile_not_found(architecture_gateway: StorageGateway) -> None:
     """Raise not_found when profile doesn't exist."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     nonexistent_goid = 999999
@@ -570,11 +555,11 @@ def test_get_function_profile_not_found(architecture_gateway: StorageGateway) ->
 
 def test_get_function_architecture_not_found(architecture_gateway: StorageGateway) -> None:
     """Raise not_found when architecture doesn't exist."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     nonexistent_goid = 999999
@@ -594,11 +579,11 @@ def test_get_function_architecture_not_found(architecture_gateway: StorageGatewa
 
 def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
     """Verify con property returns connection."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     con = backend.con
@@ -611,11 +596,11 @@ def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
 
 def test_backend_functions_property(architecture_gateway: StorageGateway) -> None:
     """Verify functions property returns repository."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     functions = backend.functions
@@ -628,11 +613,11 @@ def test_backend_functions_property(architecture_gateway: StorageGateway) -> Non
 
 def test_backend_graphs_property(architecture_gateway: StorageGateway) -> None:
     """Verify graphs property returns repository."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     graphs = backend.graphs
@@ -652,11 +637,11 @@ def test_get_function_summary_by_rel_path_and_qualname(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Resolve function by rel_path and qualname combination."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # The architecture fixture seeds GOID 1 with rel_path=pkg/mod.py and qualname=pkg.mod.func
@@ -672,11 +657,11 @@ def test_get_function_summary_rel_path_without_qualname_raises(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Raise invalid-argument when rel_path provided without qualname."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     with pytest.raises(errors.McpError) as excinfo:
@@ -692,11 +677,11 @@ def test_get_function_summary_qualname_without_rel_path_raises(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Raise invalid-argument when qualname provided without rel_path."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     with pytest.raises(errors.McpError) as excinfo:
@@ -712,11 +697,11 @@ def test_get_function_summary_with_scope_parameter(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Verify scope parameter is accepted (though currently unused)."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     scope = GraphRunScope(paths=("pkg/mod.py",), modules=("pkg.mod",))
@@ -735,11 +720,11 @@ def test_get_function_summary_with_scope_parameter(
 
 def test_get_tests_for_function_by_urn_found(architecture_gateway: StorageGateway) -> None:
     """Resolve function by URN and return tests."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # The fixture seeds URN: goid:demo/repo#python:function:pkg.mod.func for GOID 1
@@ -757,11 +742,11 @@ def test_get_tests_for_function_by_urn_found(architecture_gateway: StorageGatewa
 
 def test_get_tests_for_function_by_urn_not_found(architecture_gateway: StorageGateway) -> None:
     """Return not_found message when URN doesn't resolve."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.get_tests_for_function(urn="nonexistent:urn")
@@ -780,11 +765,11 @@ def test_get_tests_for_function_empty_tests_adds_message(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Add not_found message when no tests exist for function."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Use GOID 1 which exists but may not have tests linked
@@ -816,13 +801,13 @@ def test_get_callgraph_neighborhood_with_edge_data(
         weight=0.9,
     )
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     neighborhood = backend.get_callgraph_neighborhood(goid_h128=1, radius=1)
@@ -857,13 +842,13 @@ def test_get_callgraph_neighborhood_edge_without_data(
     graph = nx.DiGraph()
     graph.add_edge(1, 2)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     neighborhood = backend.get_callgraph_neighborhood(goid_h128=1, radius=1)
@@ -893,13 +878,13 @@ def test_get_callgraph_neighborhood_multiple_nodes_truncated(
     graph.add_edge(1, 4)
     graph.add_edge(1, 5)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     neighborhood = backend.get_callgraph_neighborhood(goid_h128=1, radius=1, max_nodes=2)
@@ -928,13 +913,13 @@ def test_get_import_boundary_with_incoming_edges(
     graph.add_edge("sub3", "sub1", weight=0.5)
     graph.add_edge("sub4", "sub1", weight=0.8)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     boundary = backend.get_import_boundary(subsystem_id="sub1")
@@ -957,13 +942,13 @@ def test_get_import_boundary_truncates_during_in_edges(
     graph.add_edge("sub4", "sub1", weight=0.8)
     graph.add_edge("sub5", "sub1", weight=0.9)
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # Set max_edges to 2 so truncation happens during in_edges iteration
@@ -986,13 +971,13 @@ def test_get_import_boundary_edge_without_weight(
     graph = nx.DiGraph()
     graph.add_edge("sub1", "sub2")  # No weight attribute
     graph_engine = cast("GraphEngine", _FakeGraphEngine(graph=graph))
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, graph_engine=graph_engine
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     boundary = backend.get_import_boundary(subsystem_id="sub1")
@@ -1014,11 +999,11 @@ def test_get_import_boundary_edge_without_weight(
 
 def test_get_function_profile_found(architecture_gateway: StorageGateway) -> None:
     """Return function profile for seeded GOID."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # GOID 1 has a seeded function_profile
@@ -1041,11 +1026,11 @@ def test_get_function_profile_found(architecture_gateway: StorageGateway) -> Non
 
 def test_get_function_architecture_found(architecture_gateway: StorageGateway) -> None:
     """Return function architecture for seeded GOID."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     # GOID 1 has seeded graph_metrics_functions data
@@ -1070,11 +1055,11 @@ def test_list_high_risk_functions_normalizes_rows(
     architecture_gateway: StorageGateway,
 ) -> None:
     """Verify repo and commit are added to result rows."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.list_high_risk_functions(min_risk=0.0)
@@ -1092,11 +1077,11 @@ def test_list_high_risk_functions_normalizes_rows(
 
 def test_list_high_risk_functions_with_scope(architecture_gateway: StorageGateway) -> None:
     """Verify scope parameter is accepted."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     scope = GraphRunScope(paths=("pkg/mod.py",), modules=("pkg.mod",))
@@ -1115,11 +1100,11 @@ def test_list_high_risk_functions_with_scope(architecture_gateway: StorageGatewa
 
 def test_get_callgraph_neighbors_with_scope(architecture_gateway: StorageGateway) -> None:
     """Verify scope parameter is accepted."""
-    context, repositories, engine_provider = _build_components(architecture_gateway)
+    components = build_backend_components(architecture_gateway)
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     scope = GraphRunScope(paths=("pkg/mod.py",), modules=("pkg.mod",))
@@ -1139,13 +1124,13 @@ def test_get_callgraph_neighbors_with_scope(architecture_gateway: StorageGateway
 def test_backend_with_custom_limits(architecture_gateway: StorageGateway) -> None:
     """Verify custom limits are applied correctly."""
     custom_limits = BackendLimits(default_limit=10, max_rows_per_call=50)
-    context, repositories, engine_provider = _build_components(
+    components = build_backend_components(
         architecture_gateway, limits=custom_limits
     )
     backend = FunctionQueryLayer(
-        context=context,
-        repositories=repositories,
-        engine_provider=engine_provider,
+        context=components.context,
+        repositories=components.repositories,
+        engine_provider=components.provider,
     )
 
     result = backend.list_high_risk_functions()

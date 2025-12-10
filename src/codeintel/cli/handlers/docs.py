@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -22,7 +23,6 @@ from codeintel.cli.project import (
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
     from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
@@ -124,63 +124,6 @@ class DocsValidateResult:
         }
 
 
-def _get_str_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    default: str | None = None,
-) -> str | None:
-    """Extract string parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    str | None
-        Parameter value or default.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _get_bool_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Extract boolean parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-    default
-        Default value if not present.
-
-    Returns
-    -------
-    bool
-        Parameter value.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in {"true", "1", "yes"}
-
-
 def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     """Convert ResolvedRuntime to ProjectRuntime for backward compatibility.
 
@@ -207,13 +150,13 @@ def _resolved_to_project_runtime(runtime: ResolvedRuntime) -> ProjectRuntime:
     )
 
 
-def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
-    """Build ProjectRuntime from enhanced handler context.
+def _build_runtime_from_ctx(ctx: HandlerContext) -> ProjectRuntime:
+    """Build ProjectRuntime from handler context.
 
     Parameters
     ----------
     ctx
-        Enhanced handler context.
+        Handler context.
 
     Returns
     -------
@@ -225,8 +168,7 @@ def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
     ValidationError
         If project cannot be resolved.
     """
-    project_root_raw = ctx.params.get("project_root")
-    project_root = Path(str(project_root_raw)) if project_root_raw else None
+    project_root = ctx.param_path("project_root")
 
     try:
         project_root_resolved = find_project_root(project_root)
@@ -236,34 +178,8 @@ def _build_runtime_from_ctx(ctx: EnhancedHandlerContext) -> ProjectRuntime:
         raise ValidationError(msg) from exc
 
 
-def _extract_list_param(
-    ctx: EnhancedHandlerContext,
-    name: str,
-) -> list[str] | None:
-    """Extract list parameter from context.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-    name
-        Parameter name.
-
-    Returns
-    -------
-    list[str] | None
-        List of strings or None.
-    """
-    value = ctx.params.get(name)
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return [str(v) for v in value]
-    return [str(value)]
-
-
 def docs_export_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DocsExportResult]:
     """Export Parquet + JSONL datasets from DuckDB into Document Output/.
 
@@ -284,12 +200,14 @@ def docs_export_handler(
     CliResult[DocsExportResult]
         Export result.
     """
-    validation_str = _get_str_param(ctx, "validation", "required")
-    macro_req_str = _get_str_param(ctx, "macro_requirement", "require_normalized")
-    datasets = _extract_list_param(ctx, "datasets")
-    schemas = _extract_list_param(ctx, "schemas")
-    dry_run = _get_bool_param(ctx, "dry_run")
-    skip_prereqs = _get_bool_param(ctx, "skip_prereqs")
+    validation_str = ctx.param_str("validation", "required")
+    macro_req_str = ctx.param_str("macro_requirement", "require_normalized")
+    datasets_list = ctx.param_list("datasets")
+    datasets: list[str] | None = datasets_list if datasets_list else None
+    schemas_list = ctx.param_list("schemas")
+    schemas: list[str] | None = schemas_list if schemas_list else None
+    dry_run = ctx.param_bool("dry_run")
+    skip_prereqs = ctx.param_bool("skip_prereqs")
 
     try:
         _build_runtime_from_ctx(ctx)
@@ -337,7 +255,7 @@ def docs_export_handler(
 
 
 def docs_validate_handler(
-    ctx: EnhancedHandlerContext,
+    ctx: HandlerContext,
 ) -> CliResult[DocsValidateResult]:
     """Validate documentation exports.
 

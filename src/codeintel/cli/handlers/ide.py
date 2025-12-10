@@ -1,12 +1,12 @@
 """IDE integration handlers following the unified handler pattern.
 
 This module provides handlers for IDE helper commands using the
-EnhancedHandlerContext pattern for consistent resource management
+HandlerContext pattern for consistent resource management
 and output rendering.
 
 All handlers in this module:
 
-1. Accept EnhancedHandlerContext as their only argument
+1. Accept HandlerContext as their only argument
 2. Return CliResult[T]
 3. Never write to stdout/stderr directly
 4. Never call sys.exit()
@@ -16,14 +16,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
+from codeintel.cli.handlers.context import HandlerContext
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
-
-if TYPE_CHECKING:
-    from codeintel.cli.handlers.protocol import EnhancedHandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -71,10 +69,10 @@ class IdeHintsResult:
 # =============================================================================
 
 
-def ide_hints_handler(ctx: EnhancedHandlerContext) -> CliResult[IdeHintsResult]:
+def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
     """Emit IDE hints (module + subsystem context) for a relative file path.
 
-    This handler uses the EnhancedHandlerContext pattern:
+    This handler uses the HandlerContext pattern:
 
     - Gateway access is lazy via ctx.gateway
     - Graph runtime access is lazy via ctx.graph_runtime
@@ -83,7 +81,7 @@ def ide_hints_handler(ctx: EnhancedHandlerContext) -> CliResult[IdeHintsResult]:
     Parameters
     ----------
     ctx
-        Enhanced handler context with:
+        Handler context with:
 
         - params["rel_path"]: Relative path to query hints for
         - runtime: Resolved project runtime
@@ -102,7 +100,7 @@ def ide_hints_handler(ctx: EnhancedHandlerContext) -> CliResult[IdeHintsResult]:
     ...     result.success  # doctest: +SKIP
     True
     """
-    rel_path = _get_rel_path(ctx)
+    rel_path = ctx.require_str("rel_path")
 
     ctx.logger.debug("Resolving IDE hints for: %s", rel_path)
 
@@ -137,35 +135,6 @@ def ide_hints_handler(ctx: EnhancedHandlerContext) -> CliResult[IdeHintsResult]:
             meta=response.meta.model_dump(),
         )
     )
-
-
-def _get_rel_path(ctx: EnhancedHandlerContext) -> str:
-    """Extract and validate rel_path parameter.
-
-    Parameters
-    ----------
-    ctx
-        Handler context.
-
-    Returns
-    -------
-    str
-        Relative path.
-
-    Raises
-    ------
-    ValueError
-        If rel_path is missing or empty.
-    """
-    rel_path = ctx.params.get("rel_path")
-    if rel_path is None:
-        msg = "rel_path parameter is required"
-        raise ValueError(msg)
-    path_str = str(rel_path).strip()
-    if not path_str:
-        msg = "rel_path cannot be empty"
-        raise ValueError(msg)
-    return path_str
 
 
 __all__ = [

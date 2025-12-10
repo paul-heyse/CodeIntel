@@ -33,6 +33,49 @@ _ALPHABET_SIZE: Final[int] = 26
 _MIN_CYCLE_SIZE: Final[int] = 2
 
 
+def empty_graph() -> nx.Graph:
+    """Create an empty undirected graph.
+
+    Returns
+    -------
+    nx.Graph
+        Empty undirected graph instance.
+    """
+    return nx.Graph()
+
+
+def empty_digraph() -> nx.DiGraph:
+    """Create an empty directed graph.
+
+    Returns
+    -------
+    nx.DiGraph
+        Empty directed graph instance.
+    """
+    return nx.DiGraph()
+
+
+def barbell_graph_small(
+    clique_size: int = 5,
+    bridge_size: int = 1,
+) -> nx.Graph:
+    """Create a small barbell graph used across community tests.
+
+    Parameters
+    ----------
+    clique_size
+        Size of each clique on either end of the barbell.
+    bridge_size
+        Number of nodes in the path connecting the cliques.
+
+    Returns
+    -------
+    nx.Graph
+        Undirected barbell graph.
+    """
+    return nx.barbell_graph(clique_size, bridge_size)
+
+
 def chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> nx.DiGraph:
     """Create a simple chain (path) graph.
 
@@ -249,6 +292,58 @@ def complete_graph(n: int = DEFAULT_COMPLETE_SIZE) -> nx.Graph:
         Complete undirected graph.
     """
     return nx.complete_graph(n)
+
+
+def single_node_graph(node: str | int = "A") -> nx.Graph:
+    """Create an undirected graph with a single node.
+
+    Returns
+    -------
+    nx.Graph
+        Graph containing the provided node.
+    """
+    graph = nx.Graph()
+    graph.add_node(node)
+    return graph
+
+
+def single_node_digraph(node: str | int = "A") -> nx.DiGraph:
+    """Create a directed graph with a single node.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph containing the provided node.
+    """
+    graph = nx.DiGraph()
+    graph.add_node(node)
+    return graph
+
+
+def single_edge_graph(u: str | int = "A", v: str | int = "B") -> nx.Graph:
+    """Create an undirected graph with a single edge.
+
+    Returns
+    -------
+    nx.Graph
+        Graph containing a single undirected edge.
+    """
+    graph = nx.Graph()
+    graph.add_edge(u, v)
+    return graph
+
+
+def single_edge_digraph(u: str | int = "A", v: str | int = "B") -> nx.DiGraph:
+    """Create a directed graph with a single edge.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph containing a single directed edge.
+    """
+    graph = nx.DiGraph()
+    graph.add_edge(u, v)
+    return graph
 
 
 def bipartite_graph(left: int = 3, right: int = 3) -> nx.DiGraph:
@@ -564,6 +659,35 @@ def bridged_cliques_graph(
     return g
 
 
+def self_loop_graph(node: str = "A") -> nx.DiGraph:
+    """Create a graph containing a single self-loop.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph with one node that has a self-loop.
+    """
+    g = nx.DiGraph()
+    g.add_edge(node, node)
+    return g
+
+
+def nested_loop_graph() -> nx.DiGraph:
+    """Create a graph with nested loops (outer and inner).
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph containing outer and inner cycles.
+    """
+    g = nx.DiGraph()
+    # Outer loop: A -> B -> C -> A
+    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
+    # Inner loop: B -> D -> B
+    g.add_edges_from([("B", "D"), ("D", "B")])
+    return g
+
+
 def fork_join_cfg(
     *,
     entry: str = "entry",
@@ -653,11 +777,126 @@ def while_loop_cfg(
     return g
 
 
+def scc_with_tail_graph() -> nx.DiGraph:
+    """Create a graph with a single SCC feeding a DAG tail.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph containing an SCC connected to a linear tail.
+    """
+    g = nx.DiGraph()
+    # SCC: A -> B -> C -> A
+    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
+    # Tail: C -> D -> E
+    g.add_edges_from([("C", "D"), ("D", "E")])
+    return g
+
+
+def two_cycle_graph() -> nx.DiGraph:
+    """Create a graph with two disjoint 2-cycles.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph containing two separate 2-cycles.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from([("A", "B"), ("B", "A")])
+    g.add_edges_from([("C", "D"), ("D", "C")])
+    return g
+
+
+def dag_to_cycle_graph(
+    *,
+    entry: str = "entry",
+    exit_node: str = "exit",
+    cycle_nodes: tuple[str, str, str] = ("A", "B", "C"),
+) -> nx.DiGraph:
+    """Create a DAG prefix feeding into a 3-node cycle with a tail exit.
+
+    Structure:
+        entry -> n1 -> n2 -> n3 -> n1 (cycle)
+        entry -> exit
+        n3 -> exit (tail out of the cycle)
+
+    Parameters
+    ----------
+    entry
+        Entry node before the cycle.
+    exit_node
+        Exit node after the cycle.
+    cycle_nodes
+        Names for the three cycle nodes in order.
+
+    Returns
+    -------
+    nx.DiGraph
+        Graph combining a line into a cycle with an exit edge.
+    """
+    n1, n2, n3 = cycle_nodes
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            (entry, n1),
+            (n1, n2),
+            (n2, n3),
+            (n3, n1),
+            (entry, exit_node),
+            (n3, exit_node),
+        ]
+    )
+    return g
+
+
+def shared_neighbors_graph(
+    shared: int,
+    *,
+    primary: tuple[str, str] = ("p1", "p2"),
+    unique_first: int = 0,
+    unique_second: int = 0,
+) -> nx.Graph:
+    """Create a bipartite-style graph with two primary nodes sharing neighbors.
+
+    Parameters
+    ----------
+    shared
+        Number of shared secondary neighbors between the two primary nodes.
+    primary
+        Labels for the two primary nodes.
+    unique_first
+        Number of secondary neighbors connected only to the first primary node.
+    unique_second
+        Number of secondary neighbors connected only to the second primary node.
+
+    Returns
+    -------
+    nx.Graph
+        Undirected graph containing the specified shared and unique neighbors.
+    """
+    first, second = primary
+    g = nx.Graph()
+    g.add_nodes_from(primary)
+    shared_nodes = [f"s{i}" for i in range(shared)]
+    first_uniques = [f"{first}_u{i}" for i in range(unique_first)]
+    second_uniques = [f"{second}_u{i}" for i in range(unique_second)]
+
+    for node in shared_nodes:
+        g.add_edge(first, node)
+        g.add_edge(second, node)
+    for node in first_uniques:
+        g.add_edge(first, node)
+    for node in second_uniques:
+        g.add_edge(second, node)
+    return g
+
+
 __all__ = [
     "DEFAULT_CHAIN_LENGTH",
     "DEFAULT_COMPLETE_SIZE",
     "DEFAULT_CYCLE_SIZE",
     "DEFAULT_SPOKES",
+    "barbell_graph_small",
     "bidirectional_deps_graph",
     "bipartite_graph",
     "bridged_cliques_graph",
@@ -666,8 +905,11 @@ __all__ = [
     "complete_graph",
     "complex_sccs_graph",
     "cyclic_graph",
+    "dag_to_cycle_graph",
     "diamond_graph",
     "disconnected_graph",
+    "empty_digraph",
+    "empty_graph",
     "fork_join_cfg",
     "god_module_graph",
     "hub_and_spoke_graph",
@@ -675,8 +917,17 @@ __all__ = [
     "independent_modules_graph",
     "layered_graph",
     "linear_dependency_graph",
+    "nested_loop_graph",
+    "scc_with_tail_graph",
+    "self_loop_graph",
+    "shared_neighbors_graph",
+    "single_edge_digraph",
+    "single_edge_graph",
+    "single_node_digraph",
+    "single_node_graph",
     "star_graph",
     "tree_graph",
+    "two_cycle_graph",
     "two_sccs_graph",
     "while_loop_cfg",
 ]

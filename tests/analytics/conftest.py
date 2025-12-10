@@ -72,6 +72,10 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_import_graph,
 )
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.graph_runtime_harness import (
+    GraphRuntimeHarness,
+    build_graph_runtime_harness,
+)
 from tests.analytics.integration.sample_repo import SampleRepo, write_sample_repo
 
 if TYPE_CHECKING:
@@ -212,6 +216,22 @@ def test_snapshot(analytics_snapshot: SnapshotRef) -> SnapshotRef:
         Snapshot with standard test defaults.
     """
     return analytics_snapshot
+
+
+@pytest.fixture
+def graph_runtime_ctx(tmp_path: Path) -> Iterator[GraphRuntimeHarness]:
+    """Provide seeded graph runtime context shared across graph analytics tests.
+
+    Yields
+    ------
+    Iterator[GraphRuntimeHarness]
+        Harness with seeded graphs and gateway.
+    """
+    ctx = build_graph_runtime_harness(tmp_path)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
 
 
 # =============================================================================
