@@ -1333,9 +1333,7 @@ def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) 
     runner = PresetRunner(run)
     service = ToolService(runner)
 
-    report = asyncio.run(
-        service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json")
-    )
+    report = asyncio.run(service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json"))
 
     expect_true(report == CoverageReport.empty())
 

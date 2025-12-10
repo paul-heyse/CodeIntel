@@ -18,8 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.core import CliResult
+from codeintel.cli.errors import ProblemDetail
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 
 if TYPE_CHECKING:

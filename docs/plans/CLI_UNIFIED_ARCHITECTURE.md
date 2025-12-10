@@ -165,29 +165,38 @@ HandlerContext
 │   ├── output_format: OutputFormat
 │   └── verbosity: int
 │
+├── Runtime Resolution Parameters
+│   ├── project_root: Path | None
+│   ├── index_path: Path | None
+│   └── database_path: Path | None
+│
 ├── Lazy Resources (resolved on first access)
 │   ├── runtime: ResolvedRuntime
 │   ├── gateway: StorageGateway
 │   └── graph_runtime: GraphRuntime
 │
 ├── Parameter Access
-│   ├── params: Mapping[str, object]  (raw)
+│   ├── _params: dict[str, Any]  (internal storage)
 │   ├── param_str(key, default) -> str | None
 │   ├── param_int(key, default) -> int
 │   ├── param_bool(key, default) -> bool
 │   ├── param_path(key, default) -> Path | None
-│   ├── param_list(key) -> list[str]
+│   ├── param_enum(key, enum_type, default) -> E | None
 │   ├── require_str(key) -> str  (raises if missing)
+│   ├── require_int(key) -> int
 │   └── require_path(key) -> Path
 │
 ├── Utilities
 │   ├── logger: Logger  (named for operation)
-│   ├── elapsed_seconds: float
-│   └── is_dry_run: bool
+│   └── db_path: Path | None  (shortcut to runtime.db_path)
 │
 └── Lifecycle
-    └── close() -> None  (cleanup resources)
+    ├── close() -> None  (cleanup resources)
+    ├── __enter__() -> HandlerContext
+    └── __exit__() -> None
 ```
+
+**Note:** Properties like `elapsed_seconds` and `is_dry_run` can be added if needed but are not part of the core implementation. Handlers can compute elapsed time from `ctx.param_int("start_time")` if tracked, and dry-run is typically a param (`ctx.param_bool("dry_run")`).
 
 ### 3.3 Lazy Resolution Behavior
 
@@ -204,29 +213,38 @@ Resolution failures propagate as exceptions with appropriate `ProblemDetail` wra
 | Method | Missing Key | Type Mismatch |
 |--------|-------------|---------------|
 | `param_str(key, default=None)` | Returns `default` | Coerces via `str()` |
-| `param_int(key, default=0)` | Returns `default` | Coerces via `int()` |
-| `param_bool(key, default=False)` | Returns `default` | Truthy check or string parse |
+| `param_int(key, default=0)` | Returns `default` | Coerces via `int()`, returns default on error |
+| `param_bool(key, default=False)` | Returns `default` | Truthy check or string parse ("true"/"1"/"yes") |
 | `param_path(key, default=None)` | Returns `default` | Coerces via `Path()` |
+| `param_enum(key, enum_type, default=None)` | Returns `default` | Attempts `enum_type(value)`, returns default on error |
 | `require_str(key)` | Raises `ValueError` | Coerces via `str()` |
+| `require_int(key)` | Raises `ValueError` | Coerces via `int()`, raises on conversion error |
 | `require_path(key)` | Raises `ValueError` | Coerces via `Path()` |
-
-Enum parameters: Use `param_str()` then convert, or add `param_enum()` helper.
 
 ### 3.5 Context Manager Support
 
 ```python
-# Automatic cleanup via context manager protocol
-with handler_context(...) as ctx:
+# HandlerContext implements __enter__/__exit__ directly
+with HandlerContext(config=config, operation_id="my.op", ...) as ctx:
     result = my_handler(ctx)
 # gateway closed automatically
 
+# Or use the context manager factory function
+from codeintel.cli.handlers.context import handler_context_manager
+
+with handler_context_manager(config, "my.op", params={"key": "value"}) as ctx:
+    result = my_handler(ctx)
+# cleanup handled
+
 # Or explicit cleanup
-ctx = build_handler_context(...)
+ctx = HandlerContext(config=config, operation_id="my.op", ...)
 try:
     result = my_handler(ctx)
 finally:
     ctx.close()
 ```
+
+**Note:** The `@cli_command` decorator handles context creation and cleanup internally, so handler authors don't need to manage the context lifecycle directly.
 
 ---
 
@@ -285,26 +303,36 @@ The `@cli_command` decorator:
 ```python
 def cli_command(
     operation_id: str,
-    handler: Callable[[HandlerContext], CliResult[T]],
     *,
+    handler: Callable[[HandlerContext], CliResult[Any]],
     require_runtime: bool = True,
-    category: OperationCategory = OperationCategory.READ,
+    require_gateway: bool = True,
+    require_graph_runtime: bool = False,
+    description: str | None = None,
 ) -> Callable[[type[T]], type[T]]:
     """
     Decorator that transforms a Cyclopts command dataclass into
     a fully-wired command with automatic context and rendering.
     
-    Generates __call__ that:
+    At decoration time:
+    1. Registers operation with OperationRegistry (auto-registration)
+    2. Generates __call__ method for the class
+    
+    Generated __call__ behavior:
     1. Extracts verbosity from self.verbose (if present)
     2. Extracts output_format from self.output_format (if present)
     3. Collects all other fields into params dict
     4. Calls bootstrap_cli() for logging/config
-    5. Creates HandlerContext
-    6. Invokes handler
+    5. Creates HandlerContext with extracted params
+    6. Invokes handler within context manager (ensures cleanup)
     7. Renders result via UnifiedRenderer
     8. Calls sys.exit() with appropriate code
+    
+    The description defaults to the class docstring if not provided.
     """
 ```
+
+**Note:** The decorator handles execution directly rather than delegating to `CommandExecutor.execute()`. This simplifies the architecture while maintaining all required functionality. The existing `CommandExecutor` in `execution/executor.py` remains available for programmatic execution and middleware integration but is not in the critical path for CLI commands.
 
 ### 4.5 Standard Fields
 
@@ -598,47 +626,65 @@ Provide a **single registry** that:
 
 ```python
 @dataclass(frozen=True)
-class OperationSpec[T]:
+class OperationSpec:
     """Specification for a registered operation."""
     
-    operation_id: str                                    # e.g., "build.run"
-    handler: Callable[[HandlerContext], CliResult[T]]   # Handler function
-    category: OperationCategory                         # READ, WRITE, BUILD, etc.
-    description: str = ""                               # Human-readable
-    require_runtime: bool = True                        # Needs project context
-    param_schema: ValidationSchema | None = None        # Optional validation
+    operation_id: str                                    # e.g., "build.run", "jobs.list"
+    name: str                                            # Display name
+    description: str                                     # Human-readable help text
+    handler: Callable[[HandlerContext], CliResult[Any]] # Handler function
+    group: str                                           # Command group (e.g., "jobs", "build")
+    
+    # Resource requirements
+    require_runtime: bool = True                         # Needs ResolvedRuntime
+    require_gateway: bool = True                         # Needs StorageGateway
+    require_graph_runtime: bool = False                  # Needs GraphRuntime
+    
+    # Metadata
+    tags: tuple[str, ...] = ()                          # Optional tags for filtering
+    hidden: bool = False                                 # Hidden from help output
 
 class OperationRegistry:
     """Central registry for all CLI operations."""
     
-    def register(self, spec: OperationSpec[T]) -> OperationSpec[T]: ...
+    def register(self, spec: OperationSpec) -> OperationSpec: ...
     def get(self, operation_id: str) -> OperationSpec | None: ...
-    def list_operations(self, *, category: OperationCategory | None = None) -> list[OperationSpec]: ...
-    def execute(self, operation_id: str, params: dict) -> CliResult: ...
+    def require(self, operation_id: str) -> OperationSpec: ...  # Raises if not found
+    def list_operations(self, *, group: str | None = None, include_hidden: bool = False) -> list[OperationSpec]: ...
+    def list_groups(self) -> list[str]: ...
 ```
+
+**Design Note:** We use `group: str` rather than an enum because command groups are extensible and correspond directly to CLI subcommand names (e.g., `codeintel jobs list` → group="jobs"). The `tags` field provides additional categorization if needed.
 
 ### 8.3 Registration Patterns
 
-**Explicit registration:**
+**Explicit registration (in handler modules):**
 ```python
-# In handlers/__init__.py or handlers/registration.py
+# In handlers/jobs.py (at module level, after handler definitions)
 from codeintel.cli.execution.registry import register_operation, OperationSpec
 
 register_operation(OperationSpec(
     operation_id="jobs.list",
+    name="List Jobs",
+    description="List background jobs with optional status filtering",
     handler=jobs_list_handler,
-    category=OperationCategory.READ,
-    description="List background jobs",
+    group="jobs",
     require_runtime=False,
+    require_gateway=False,
 ))
 ```
 
 **Via decorator (when using @cli_command):**
 ```python
 # @cli_command automatically registers the operation
-@cli_command(operation_id="jobs.list", handler=jobs_list_handler, ...)
-class JobsListCommand: ...
+# The decorator extracts description from class docstring
+@cli_command("jobs.list", handler=jobs_list_handler, require_runtime=False)
+class JobsListCommand:
+    """List background jobs."""  # Becomes operation description
+    ...
 ```
+
+**Note:** With the `@cli_command` decorator pattern, explicit registration in handler modules is optional—the decorator handles registration automatically. Explicit registration is useful for operations that don't have a corresponding command class (e.g., programmatic-only operations).
 
 ### 8.4 Elimination of `operations/*_operations.py`
 
@@ -755,40 +801,40 @@ ProblemDetail:
 OutputFormat: Enum[TEXT, JSON, JSONL]
 ```
 
-### 10.2 Context Protocol
+### 10.2 HandlerContext Interface
 
-For testing and extensibility, `HandlerContext` implements:
+`HandlerContext` is a concrete dataclass, not a Protocol. For testing, create instances directly with mock/fake dependencies:
 
 ```python
-class HandlerContextProtocol(Protocol):
-    @property
-    def config(self) -> CliConfig: ...
-    @property
-    def operation_id(self) -> str: ...
-    @property
-    def runtime(self) -> ResolvedRuntime: ...
-    @property
-    def gateway(self) -> StorageGateway: ...
-    @property
-    def logger(self) -> logging.Logger: ...
-    
-    def param_str(self, key: str, default: str | None = None) -> str | None: ...
-    def param_int(self, key: str, default: int = 0) -> int: ...
-    def param_bool(self, key: str, *, default: bool = False) -> bool: ...
-    def require_str(self, key: str) -> str: ...
-    
-    def close(self) -> None: ...
+# Test fixture pattern
+def create_test_context(
+    operation_id: str = "test.op",
+    params: dict[str, Any] | None = None,
+    config: CliConfig | None = None,
+) -> HandlerContext:
+    """Create HandlerContext for testing."""
+    return HandlerContext(
+        config=config or create_test_config(),
+        operation_id=operation_id,
+        output_format=OutputFormat.TEXT,
+        verbosity=0,
+        _params=params or {},
+    )
 ```
 
-### 10.3 Renderer Protocol
+### 10.3 Renderer Interface
+
+`UnifiedRenderer` is a concrete class. The `RenderingService` Protocol in `rendering/service.py` defines the interface if abstraction is needed:
 
 ```python
-class RendererProtocol(Protocol):
+class RenderingService(Protocol):
     def render_result(self, result: CliResult[T]) -> int: ...
     def render_table(self, rows: Sequence[dict], spec: TableSpec) -> None: ...
     def render_error(self, error: ProblemDetail) -> None: ...
     def render_message(self, message: str, *, level: str = "info") -> None: ...
 ```
+
+**Note:** Formal Protocol definitions are optional. The concrete implementations (`HandlerContext`, `UnifiedRenderer`) are sufficient for the architecture. Protocols can be added later if interface abstraction becomes necessary for testing or extensibility.
 
 ---
 
@@ -802,7 +848,8 @@ src/codeintel/cli/
 │
 ├── commands/                    # Cyclopts command definitions
 │   ├── __init__.py
-│   ├── _common.py              # RuntimeCLI, OutputFormatCLI (kept for compat)
+│   ├── _common.py              # make_root_app(), Annotated type aliases (simplified)
+│   ├── _help.py                # Help text utilities
 │   ├── decorators.py           # NEW: @cli_command decorator
 │   ├── app.py                  # Root Cyclopts app
 │   ├── build.py
@@ -861,18 +908,28 @@ src/codeintel/cli/
 
 ### 11.2 Files to Delete
 
-After consolidation:
+After consolidation (Phase 6):
 
 | File | Reason |
 |------|--------|
-| `handlers/base.py` | Merged into `handlers/context.py` |
-| `handlers/protocol.py` | Merged into `handlers/context.py` |
+| `handlers/base.py` | Superseded by `handlers/context.py` |
+| `handlers/protocol.py` | Superseded by `handlers/context.py` |
+| `execution/context.py` | Superseded by `handlers/context.py` |
+| `execution/adapter.py` | Superseded by `commands/decorators.py` |
+| `commands/context.py` | Superseded by decorator internals |
 | `rendering/renderers.py` | Merged into `rendering/service.py` |
-| `execution/context.py` | Merged into `handlers/context.py` |
-| `execution/adapter.py` | Replaced by `@cli_command` decorator |
-| `commands/context.py` | Replaced by decorator + bootstrap |
 | `introspection/registry.py` | Moved to `execution/registry.py` |
-| `operations/*.py` | Eliminated (specs move to registration) |
+| `operations/build_operations.py` | Registrations move to handlers |
+| `operations/dataset_operations.py` | Registrations move to handlers |
+| `operations/docs_operations.py` | Registrations move to handlers |
+| `operations/graph_operations.py` | Registrations move to handlers |
+| `operations/history_operations.py` | Registrations move to handlers |
+| `operations/ide_operations.py` | Registrations move to handlers |
+| `operations/op_operations.py` | Registrations move to handlers |
+| `operations/storage_operations.py` | Registrations move to handlers |
+| `operations/subsystem_operations.py` | Registrations move to handlers |
+
+**Note:** `_common.py` is retained but simplified—`RuntimeCLI` and `OutputFormatCLI` classes can be removed as they're no longer needed with the decorator pattern. The file keeps `make_root_app()` and `Annotated` type aliases used in command definitions.
 
 ### 11.3 New Files
 
@@ -889,74 +946,55 @@ After consolidation:
 
 ### 12.1 Phase Overview
 
-| Phase | Focus | Duration |
-|-------|-------|----------|
-| Phase 1 | Foundation (context, bootstrap) | Week 1 |
-| Phase 2 | Handlers (param accessors) | Week 2 |
-| Phase 3 | Rendering (single stack) | Week 3 |
-| Phase 4 | Commands (decorator) | Week 4 |
-| Phase 5 | Registry & cleanup | Week 5 |
+| Phase | Name | Focus | Duration |
+|-------|------|-------|----------|
+| Phase 0 | Preparation | Baselines, inventories, scaffolding | 1-2 days |
+| Phase 1 | Foundation Layer | `HandlerContext`, `bootstrap_cli()` | 3-4 days |
+| Phase 2 | Rendering Consolidation | Single `UnifiedRenderer` stack | 2-3 days |
+| Phase 3 | Handler Migration | All handlers use new context | 5-7 days |
+| Phase 4 | Registry Unification | Single `OperationRegistry` | 2-3 days |
+| Phase 5 | Command Decorator | `@cli_command` + migrate commands | 5-7 days |
+| Phase 6 | Legacy Cleanup | Delete all superseded files | 2-3 days |
 
-### 12.2 Phase 1: Foundation
+**Total:** 4-6 weeks (20-29 working days)
 
-**Goal:** Create unified `HandlerContext` and `bootstrap_cli()`.
+### 12.2 Phase Dependencies
 
-1. Create `handlers/context.py` with new `HandlerContext`
-2. Implement all param accessor methods
-3. Implement lazy resolution for runtime, gateway, graph_runtime
-4. Create `execution/bootstrap.py` with `bootstrap_cli()`
-5. Update `commands/context.py` to use new `HandlerContext`
-6. Add deprecation warnings to old context types
+```
+Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
+                       └─────── Can overlap with early Phase 3
+```
 
-**Validation:** Existing commands still work with new context.
+### 12.3 Detailed Phase Plans
 
-### 12.3 Phase 2: Handlers
+Detailed implementation plans for each phase are available in:
 
-**Goal:** Migrate handlers to use `ctx.param_*` methods.
+- `docs/plans/phases/PHASE_0_PREPARATION.md`
+- `docs/plans/phases/PHASE_1_FOUNDATION.md`
+- `docs/plans/phases/PHASE_2_RENDERING.md`
+- `docs/plans/phases/PHASE_3_HANDLERS.md`
+- `docs/plans/phases/PHASE_4_REGISTRY.md`
+- `docs/plans/phases/PHASE_5_DECORATOR.md`
+- `docs/plans/phases/PHASE_6_CLEANUP.md`
 
-1. Delete local `_get_str_param`, `_get_int_param`, etc. from each handler
-2. Replace with `ctx.param_str()`, `ctx.param_int()`, etc.
-3. Ensure all handlers return `CliResult[T]`
-4. Update handler docstrings to document params
+Each plan includes:
+- Detailed task breakdown with effort estimates
+- Code examples and patterns
+- Testing requirements
+- Verification checklists
+- Exit criteria
+- Rollback procedures
 
-**Validation:** All handler tests pass.
+### 12.4 Key Milestones
 
-### 12.4 Phase 3: Rendering
-
-**Goal:** Single rendering implementation.
-
-1. Ensure `rendering/table.py` exports canonical `ColumnSpec`, `TableSpec`
-2. Remove duplicate definitions from `rendering/renderers.py`
-3. Merge `RichRenderer`, `PlainRenderer`, `get_renderer()` into `UnifiedRenderer`
-4. Update `execution/executor.py` to import from `rendering/service.py`
-5. Delete `rendering/renderers.py`
-6. Update all imports
-
-**Validation:** All output formatting works correctly.
-
-### 12.5 Phase 4: Commands
-
-**Goal:** Declarative command binding.
-
-1. Create `commands/decorators.py` with `@cli_command`
-2. Migrate one command (e.g., `jobs.py`) as proof of concept
-3. Incrementally migrate remaining commands
-4. Delete manual `__call__` boilerplate
-5. Remove `commands/context.py` (replaced by decorator internals)
-
-**Validation:** All CLI commands work with new decorator.
-
-### 12.6 Phase 5: Registry & Cleanup
-
-**Goal:** Unified registry, remove dead code.
-
-1. Move `introspection/registry.py` to `execution/registry.py`
-2. Integrate `OperationSpec` with `@cli_command` decorator
-3. Delete `operations/*.py` placeholder files
-4. Delete old context types (`handlers/base.py`, `handlers/protocol.py`)
-5. Final cleanup pass
-
-**Validation:** Full test suite passes, `codeintel --help` works.
+| Milestone | Phase | Validation |
+|-----------|-------|------------|
+| New context available | 1 | `HandlerContext` unit tests pass |
+| Rendering unified | 2 | `renderers.py` deleted, all output works |
+| All handlers migrated | 3 | No `_get_*_param` helpers remain |
+| Registry unified | 4 | Operations registered in handlers |
+| All commands migrated | 5 | No manual `__call__` methods remain |
+| Migration complete | 6 | All legacy files deleted, full tests pass |
 
 ---
 
@@ -1083,7 +1121,12 @@ def jobs_list_handler(ctx: EnhancedHandlerContext) -> CliResult[JobsListResult]:
 
 ```python
 # commands/jobs.py
-@cli_command(operation_id="jobs.list", handler=jobs_list_handler, require_runtime=False)
+@cli_command(
+    "jobs.list",
+    handler=jobs_list_handler,
+    require_runtime=False,
+    require_gateway=False,
+)
 @jobs_app.command(name="list")
 @dataclass
 class JobsListCommand:
@@ -1112,6 +1155,11 @@ def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
     limit = ctx.param_int("limit", 20)
     # ... implementation (same business logic)
 ```
+
+**Note:** The decorator's first positional argument is `operation_id`, and `handler` is keyword-only. The decorator automatically:
+1. Registers the operation with `OperationRegistry`
+2. Uses the class docstring as the operation description
+3. Generates a `__call__` method that handles all CLI infrastructure
 
 ---
 

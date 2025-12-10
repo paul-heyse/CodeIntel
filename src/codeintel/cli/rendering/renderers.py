@@ -19,8 +19,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.theme import Theme
 
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.core import CliResult
+from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

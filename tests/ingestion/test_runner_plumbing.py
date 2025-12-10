@@ -11,51 +11,15 @@ import pytest
 from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    RepoScanStep,
     ToolRunnerAdapter,
     TypingIngestStep,
 )
-from codeintel.ingestion.infrastructure.scanning import ScanProfile
-from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-from tests._helpers import build_repo_tree
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import (
-    TargetContextConfig,
-    build_ingestion_adapters,
-    build_target_context_for_plugin,
-)
+from tests._helpers.ingestion import build_scan_profile, create_scan_step
 from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
-
-
-def build_repo_with_configs(
-    tmp_path: Path,
-    *,
-    include_invalid: bool = False,
-) -> tuple[Path, tuple[str, ...]]:
-    """Create a realistic repo layout with Python modules and config files.
-
-    Returns
-    -------
-    tuple[Path, tuple[str, ...]]
-        Repository root path and the relative module paths created.
-    """
-    structure: dict[str, str] = {
-        "pkg/__init__.py": "",
-        "pkg/service.py": "def add(x: int, y: int) -> int:\n    return x + y\n",
-        "config/app.yaml": "service:\n  retries: 3\n  hosts:\n    - api.local\n",
-        "config/settings.toml": 'feature = true\n[db]\nurl = "duckdb:///tmp.db"\n',
-        "config/app.ini": "[service]\ntimeout=30\n",
-    }
-    if include_invalid:
-        structure["config/broken.yml"] = ":\n  - invalid\n"
-
-    repo_root = build_repo_tree(tmp_path / "repo", structure)
-    modules = tuple(path for path in structure if path.endswith(".py"))
-    return repo_root, modules
 
 
 def _setup_gateway() -> StorageGateway:
@@ -66,7 +30,7 @@ def _setup_gateway() -> StorageGateway:
     StorageGateway
         Gateway instance opened for tests.
     """
-    return GatewayFactory().open()
+    return GatewayFactory().with_macros().open()
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
@@ -79,15 +43,10 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     (keep_dir / "a.py").write_text("print('ok')\n", encoding="utf8")
     (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
 
-    gateway = _setup_gateway()
-    profile = ScanProfile(
-        repo_root=repo_root,
-        source_roots=(repo_root,),
-        include_globs=("*.py",),
-        ignore_dirs=("ignore",),
-    )
+    gateway = GatewayFactory().with_macros().open()
+    profile = build_scan_profile(repo_root, ignore_dirs=("ignore",))
 
-    step, _, _ = _create_scan_step(gateway, repo_root)
+    step, _, _ = create_scan_step(gateway, repo_root, tmp_path)
     step.execute(repo="r", commit="c", repo_root=repo_root, profile=profile)
 
     rows = gateway.con.table("core.modules").select("path").fetchall()
@@ -101,7 +60,7 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
     tooling_outputs = run_static_tooling(context)
     repo_root = context.repo_root
     tool_service = context.service
-    gateway = _setup_gateway()
+    gateway = GatewayFactory().open()
     expected_lines = sum(
         len(report.executed_lines | report.missing_lines)
         for report in tooling_outputs.coverage_reports
@@ -132,27 +91,6 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         pytest.fail(f"Expected {expected_lines} coverage rows, got {count}")
 
 
-def _create_scan_step(
-    gateway: StorageGateway,
-    repo_root: Path,
-) -> tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]:
-    """Create scan step and adapters for a repository.
-
-    Returns
-    -------
-    tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
-        Scan step and the adapters used to create it.
-    """
-    ctx = build_target_context_for_plugin(
-        RepoScanPlugin(),
-        repo_root,
-        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
-    )
-    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
-    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
-    return scan_step, storage, discovery
-
-
 @pytest.mark.skip(
     reason="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)"
 )
@@ -160,14 +98,9 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
     context = build_tooling_context(tmp_path)
     gateway = _setup_gateway()
-    scan_profile = ScanProfile(
-        repo_root=context.repo_root,
-        source_roots=(context.repo_root,),
-        include_globs=("*.py",),
-        ignore_dirs=(),
-    )
+    scan_profile = build_scan_profile(context.repo_root)
 
-    scan_step, storage, discovery = _create_scan_step(gateway, context.repo_root)
+    scan_step, storage, discovery = create_scan_step(gateway, context.repo_root, tmp_path)
     tools = ToolRunnerAdapter(context.service)
 
     _, modules, _ = scan_step.execute(

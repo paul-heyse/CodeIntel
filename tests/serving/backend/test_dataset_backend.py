@@ -12,6 +12,10 @@ from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.backend_components import build_backend_components
+from tests._helpers.datasets_assertions import (
+    expect_spec_has_capabilities,
+    expect_spec_has_columns,
+)
 
 # Test constants
 SAMPLE_LIMIT_FIVE: Final = 5
@@ -84,10 +88,11 @@ def test_dataset_specs_includes_schema_columns(architecture_gateway: StorageGate
     specs = backend.dataset_specs()
 
     # At least some specs should have schema_columns
-    has_columns = any(
-        spec.schema_columns is not None and len(spec.schema_columns) > 0 for spec in specs
-    )
-    expect_true(has_columns or len(specs) > 0)
+    spec_with_columns = next((spec for spec in specs if spec.schema_columns), None)
+    if spec_with_columns is not None:
+        expect_spec_has_columns(spec_with_columns)
+    else:
+        expect_true(len(specs) > 0)
 
 
 def test_dataset_specs_includes_capabilities(architecture_gateway: StorageGateway) -> None:
@@ -101,7 +106,7 @@ def test_dataset_specs_includes_capabilities(architecture_gateway: StorageGatewa
     specs = backend.dataset_specs()
 
     for spec in specs[:3]:
-        expect_true(spec.capabilities is not None)
+        expect_spec_has_capabilities(spec)
 
 
 # -----------------------------------------------------------------------------

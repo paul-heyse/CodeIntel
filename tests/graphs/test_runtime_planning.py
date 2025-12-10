@@ -13,6 +13,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
@@ -24,7 +25,7 @@ from codeintel.config.steps_graphs import (
     GraphRunScope,
 )
 from codeintel.core.execution.retry import RetryPolicy
-from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
+from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.core.registry import (
     PlanningOptions,
@@ -66,13 +67,7 @@ BUILD_PLUGIN_SETTINGS = _PLANNING_PRIVATES["_build_plugin_settings"]
 
 
 def _make_test_plugin(
-    name: str,
-    *,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    severity: PluginSeverity = "fatal",
-    resource_hints: PluginResourceHints | None = None,
-    options_default: object | None = None,
+    name: str, metadata: Mapping[str, object] | None = None
 ) -> GraphPluginProtocol:
     """Create a configurable test plugin for planning tests.
 
@@ -80,35 +75,21 @@ def _make_test_plugin(
     ----------
     name
         Plugin name.
-    depends_on
-        Plugin dependencies.
-    provides
-        Capabilities provided by the plugin.
-    severity
-        Failure severity for the plugin.
-    resource_hints
-        Resource hints attached to metadata.
-    options_default
-        Default options for the plugin.
+    metadata
+        Optional metadata overrides (depends_on, provides, severity,
+        resource_hints, options_default).
 
     Returns
     -------
     GraphPluginProtocol
         Configured test plugin.
     """
-    metadata = {
-        "depends_on": depends_on,
-        "provides": provides,
-        "severity": severity,
-        "resource_hints": resource_hints,
-        "options_default": options_default,
-    }
-    return make_graph_plugin(name, metadata=metadata)
+    return make_graph_plugin(name, metadata=metadata or {})
 
 
 def test_resolve_plugin_options_map_uses_default() -> None:
     """Plugin default options used when no config or runtime options."""
-    plugin = _make_test_plugin("opt_default", options_default={"default_key": "value"})
+    plugin = _make_test_plugin("opt_default", {"options_default": {"default_key": "value"}})
 
     resolved = RESOLVE_PLUGIN_OPTIONS_MAP(
         plugins=[plugin],
@@ -121,7 +102,7 @@ def test_resolve_plugin_options_map_uses_default() -> None:
 
 def test_resolve_plugin_options_map_config_overrides_default() -> None:
     """Config options override plugin defaults."""
-    plugin = _make_test_plugin("opt_cfg", options_default={"key": "default"})
+    plugin = _make_test_plugin("opt_cfg", {"options_default": {"key": "default"}})
 
     resolved = RESOLVE_PLUGIN_OPTIONS_MAP(
         plugins=[plugin],
@@ -134,7 +115,7 @@ def test_resolve_plugin_options_map_config_overrides_default() -> None:
 
 def test_resolve_plugin_options_map_runtime_overrides_config() -> None:
     """Runtime options override both config and default options."""
-    plugin = _make_test_plugin("opt_runtime", options_default={"key": "default"})
+    plugin = _make_test_plugin("opt_runtime", {"options_default": {"key": "default"}})
 
     resolved = RESOLVE_PLUGIN_OPTIONS_MAP(
         plugins=[plugin],
@@ -147,8 +128,8 @@ def test_resolve_plugin_options_map_runtime_overrides_config() -> None:
 
 def test_resolve_plugin_options_map_merges_multiple_plugins() -> None:
     """Options resolved correctly for multiple plugins."""
-    plugin_a = _make_test_plugin("opt_a", options_default={"a": 1})
-    plugin_b = _make_test_plugin("opt_b", options_default=None)
+    plugin_a = _make_test_plugin("opt_a", {"options_default": {"a": 1}})
+    plugin_b = _make_test_plugin("opt_b")
 
     resolved = RESOLVE_PLUGIN_OPTIONS_MAP(
         plugins=[plugin_a, plugin_b],
@@ -186,7 +167,7 @@ def test_resolve_plugin_options_map_unknown_runtime_plugin_raises() -> None:
 
 def test_effective_severity_uses_policy_default() -> None:
     """Effective severity uses policy default when no override."""
-    plugin = _make_test_plugin("sev_default", severity="fatal")
+    plugin = _make_test_plugin("sev_default", {"severity": "fatal"})
     policy = GraphPluginPolicy(default_severity="soft_fail")
 
     severity = EFFECTIVE_SEVERITY(plugin, policy)
@@ -196,7 +177,7 @@ def test_effective_severity_uses_policy_default() -> None:
 
 def test_effective_severity_uses_override() -> None:
     """Severity override in policy takes precedence."""
-    plugin = _make_test_plugin("sev_override", severity="fatal")
+    plugin = _make_test_plugin("sev_override", {"severity": "fatal"})
     policy = GraphPluginPolicy(
         default_severity="soft_fail",
         severity_overrides={"sev_override": "skip_on_error"},
@@ -222,7 +203,7 @@ def test_effective_timeout_uses_policy_override() -> None:
 def test_effective_timeout_uses_resource_hints() -> None:
     """Timeout from plugin resource hints used when no policy override."""
     hints = PluginResourceHints(max_runtime_ms=TIMEOUT_DEFAULT_MS)
-    plugin = _make_test_plugin("timeout_hints", resource_hints=hints)
+    plugin = _make_test_plugin("timeout_hints", {"resource_hints": hints})
     policy = GraphPluginPolicy()
 
     timeout = EFFECTIVE_TIMEOUT(plugin, policy)
@@ -400,7 +381,7 @@ def test_plan_graph_plugin_run_with_scope_override() -> None:
 
 def test_plan_graph_plugin_run_with_plugin_options() -> None:
     """Plugin options included in plan."""
-    plugin = _make_test_plugin("options_plan", options_default={"default": True})
+    plugin = _make_test_plugin("options_plan", {"options_default": {"default": True}})
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with plugin_registrar([plugin]):
@@ -467,8 +448,8 @@ def test_plan_graph_plugin_run_includes_settings() -> None:
 
 def test_plan_graph_plugin_run_with_dependencies() -> None:
     """Plan orders plugins by dependencies."""
-    plugin_a = _make_test_plugin("dep_a", provides=("capability_a",))
-    plugin_b = _make_test_plugin("dep_b", depends_on=("dep_a",))
+    plugin_a = _make_test_plugin("dep_a", {"provides": ("capability_a",)})
+    plugin_b = _make_test_plugin("dep_b", {"depends_on": ("dep_a",)})
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with plugin_registrar([plugin_a, plugin_b]):
@@ -489,8 +470,8 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
 
 def test_graph_plugin_execution_plan_dep_graph() -> None:
     """Plan includes dependency graph mapping."""
-    plugin_a = _make_test_plugin("graph_a", provides=("cap_a",))
-    plugin_b = _make_test_plugin("graph_b", depends_on=("graph_a",))
+    plugin_a = _make_test_plugin("graph_a", {"provides": ("cap_a",)})
+    plugin_b = _make_test_plugin("graph_b", {"depends_on": ("graph_a",)})
     snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with plugin_registrar([plugin_a, plugin_b]):

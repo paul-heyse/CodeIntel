@@ -15,6 +15,7 @@ from typing import Final
 
 import pytest
 
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
 from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
 from codeintel.graphs.resources.catalog import CatalogResource
@@ -187,6 +188,26 @@ def test_catalog_resource_get_returns_self(catalog_resource: CatalogResource) ->
 def test_catalog_resource_implements_catalog_port(catalog_resource: CatalogResource) -> None:
     """CatalogResource implements CatalogPort protocol."""
     expect_is_instance(catalog_resource, CatalogPort)
+
+
+def test_catalog_resource_registers_with_registry(
+    storage_registry: ResourceRegistry, catalog_resource: CatalogResource
+) -> None:
+    """CatalogResource can be registered and retrieved from registry."""
+    storage_registry.register_provider(catalog_resource)
+
+    retrieved = storage_registry.get_by_name(CatalogResource.RESOURCE_NAME)
+    expect_true(retrieved is catalog_resource)
+
+
+def test_catalog_resource_require_returns_registered(
+    storage_registry: ResourceRegistry, catalog_resource: CatalogResource
+) -> None:
+    """Require returns the registered CatalogResource."""
+    storage_registry.register_provider(catalog_resource)
+
+    required = storage_registry.require_by_name(CatalogResource.RESOURCE_NAME)
+    expect_true(required is catalog_resource)
 
 
 # ===========================================================================

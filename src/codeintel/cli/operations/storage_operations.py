@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.introspection import register_operation
-from codeintel.cli.core import CliResult
 
 
 @dataclass

@@ -72,7 +72,9 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         str(row.subsystem_id): (
             set(json.loads(str(row.modules_json))),
             str(row.risk_level),
-            int(str(row.high_risk_function_count)) if row.high_risk_function_count is not None else 0,
+            int(str(row.high_risk_function_count))
+            if row.high_risk_function_count is not None
+            else 0,
         )
         for row in subsystems
     }
@@ -97,7 +99,9 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
     expect_in("pkg.misc", low_modules)
     expect_equal(low_count, 0)
 
-    memberships = subsystem_ctx.query("SELECT subsystem_id, module FROM analytics.subsystem_modules")
+    memberships = subsystem_ctx.query(
+        "SELECT subsystem_id, module FROM analytics.subsystem_modules"
+    )
     expect_length(memberships, EXPECTED_MEMBERSHIP_COUNT)
     assigned_modules = {str(row.module) for row in memberships}
     expect_equal(assigned_modules, EXPECTED_MODULES)

@@ -13,9 +13,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
-    from codeintel.cli.rendering.types import OutputFormat
-
     from codeintel.cli.errors import ProblemDetail
+    from codeintel.cli.rendering.types import OutputFormat
 
 
 # Text renderer protocol: callable that takes data and writer

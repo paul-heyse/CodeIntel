@@ -29,7 +29,13 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.networkx_graphs import chain_graph, cyclic_graph, diamond_graph
+from tests._helpers.fakes.networkx_graphs import (
+    chain_graph,
+    cyclic_graph,
+    diamond_graph,
+    fork_join_cfg,
+    while_loop_cfg,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -59,7 +65,7 @@ def test_dominator_tree_empty_graph_returns_empty() -> None:
 
 def test_dominator_tree_entry_not_in_graph_returns_empty() -> None:
     """Entry node not in graph returns empty dict."""
-    graph = nx.DiGraph([("A", "B"), ("B", "C")])
+    graph = chain_graph(3)
     result = compute_dominator_tree(graph, entry="X")
     expect_equal(result, {})
 
@@ -113,11 +119,7 @@ def test_dominator_tree_multiple_paths() -> None:
 
     Entry node is not included in result (only dominated nodes).
     """
-    graph = nx.DiGraph()
-    # A -> B -> D
-    # A -> C -> D
-    # A dominates B, C, D; B doesn't dominate D (path via C)
-    graph.add_edges_from([("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")])
+    graph = diamond_graph()
     result = compute_dominator_tree(graph, entry="A")
 
     expect_false("A" in result)  # Entry node not in result
@@ -170,18 +172,7 @@ def test_dominance_frontier_diamond_graph() -> None:
 
 def test_dominance_frontier_if_then_else() -> None:
     """If-then-else pattern has correct frontier."""
-    graph = nx.DiGraph()
-    # Entry -> If -> Then -> Join
-    #       -> If -> Else -> Join
-    graph.add_edges_from(
-        [
-            ("entry", "if"),
-            ("if", "then"),
-            ("if", "else"),
-            ("then", "join"),
-            ("else", "join"),
-        ]
-    )
+    graph = fork_join_cfg(entry="entry", branch="if", left="then", right="else", join="join")
     result = compute_dominance_frontier(graph, entry="entry")
 
     # Then and else have join in their frontier
@@ -266,7 +257,7 @@ def test_loop_headers_empty_graph_returns_empty() -> None:
 
 def test_loop_headers_entry_not_in_graph_returns_empty() -> None:
     """Entry not in graph returns empty set."""
-    graph = nx.DiGraph([("A", "B")])
+    graph = chain_graph(2)
     result = find_natural_loop_headers(graph, entry="X")
     expect_equal(result, set())
 
@@ -320,17 +311,7 @@ def test_loop_headers_nested_loops() -> None:
 
 def test_loop_headers_while_loop_pattern() -> None:
     """While loop pattern identifies correct header."""
-    graph = nx.DiGraph()
-    # entry -> condition -> body -> condition (back edge)
-    #                    -> exit
-    graph.add_edges_from(
-        [
-            ("entry", "condition"),
-            ("condition", "body"),
-            ("condition", "exit"),
-            ("body", "condition"),
-        ]
-    )
+    graph = while_loop_cfg()
     result = find_natural_loop_headers(graph, entry="entry")
 
     expect_in("condition", result)

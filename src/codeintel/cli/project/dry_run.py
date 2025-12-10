@@ -10,8 +10,8 @@ import json
 import sys
 from typing import Any, TextIO
 
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.core.result_types import DryRunResult, DryRunStep
+from codeintel.cli.rendering.types import OutputFormat
 from codeintel.serving.operations.catalog import get_operation
 
 

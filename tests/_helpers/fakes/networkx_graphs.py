@@ -522,6 +522,137 @@ def layered_graph(layers: tuple[int, ...] = (2, 3, 2)) -> nx.DiGraph:
     return g
 
 
+def bridged_cliques_graph(
+    clique1_size: int = 3,
+    clique2_size: int = 3,
+    *,
+    bridge_from: str = "a0",
+    bridge_to: str = "b0",
+) -> nx.Graph:
+    """Create two cliques connected by a single bridge edge.
+
+    Parameters
+    ----------
+    clique1_size
+        Number of nodes in the first clique (named a0, a1, ...).
+    clique2_size
+        Number of nodes in the second clique (named b0, b1, ...).
+    bridge_from
+        Node in the first clique to connect across the bridge.
+    bridge_to
+        Node in the second clique to connect across the bridge.
+
+    Returns
+    -------
+    nx.Graph
+        Undirected graph with two complete subgraphs joined by one edge.
+    """
+    g = nx.Graph()
+    clique1_nodes = [f"a{i}" for i in range(clique1_size)]
+    clique2_nodes = [f"b{i}" for i in range(clique2_size)]
+
+    g.add_nodes_from(clique1_nodes + clique2_nodes)
+    # Add full cliques
+    for i, src in enumerate(clique1_nodes):
+        for dst in clique1_nodes[i + 1 :]:
+            g.add_edge(src, dst)
+    for i, src in enumerate(clique2_nodes):
+        for dst in clique2_nodes[i + 1 :]:
+            g.add_edge(src, dst)
+    # Bridge
+    g.add_edge(bridge_from, bridge_to)
+    return g
+
+
+def fork_join_cfg(
+    *,
+    entry: str = "entry",
+    branch: str = "branch",
+    left: str = "left",
+    right: str = "right",
+    join: str = "join",
+) -> nx.DiGraph:
+    r"""Create a simple fork/join control-flow graph.
+
+    Structure:
+    entry -> branch
+            /     \
+         left    right
+            \\   //
+             join
+
+    Parameters
+    ----------
+    entry
+        Name of the entry node.
+    branch
+        Node where control splits.
+    left
+        Name of the left branch node.
+    right
+        Name of the right branch node.
+    join
+        Node where the branches reconverge.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph with a fork and join.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            (entry, branch),
+            (branch, left),
+            (branch, right),
+            (left, join),
+            (right, join),
+        ]
+    )
+    return g
+
+
+def while_loop_cfg(
+    *,
+    entry: str = "entry",
+    condition: str = "condition",
+    body: str = "body",
+    exit_node: str = "exit",
+) -> nx.DiGraph:
+    r"""Create a simple while-loop control-flow graph.
+
+    Structure:
+    entry -> condition -> body -> condition (back edge)
+                     \\-> exit
+
+    Parameters
+    ----------
+    entry
+        Entry node before the loop condition.
+    condition
+        Node representing the loop guard.
+    body
+        Node executed when the condition is true.
+    exit_node
+        Node reached when the condition is false.
+
+    Returns
+    -------
+    nx.DiGraph
+        Directed graph modeling a while loop with an exit edge.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            (entry, condition),
+            (condition, body),
+            (condition, exit_node),
+            (body, condition),
+        ]
+    )
+    return g
+
+
 __all__ = [
     "DEFAULT_CHAIN_LENGTH",
     "DEFAULT_COMPLETE_SIZE",
@@ -529,6 +660,7 @@ __all__ = [
     "DEFAULT_SPOKES",
     "bidirectional_deps_graph",
     "bipartite_graph",
+    "bridged_cliques_graph",
     "chain_graph",
     "complete_digraph",
     "complete_graph",
@@ -536,6 +668,7 @@ __all__ = [
     "cyclic_graph",
     "diamond_graph",
     "disconnected_graph",
+    "fork_join_cfg",
     "god_module_graph",
     "hub_and_spoke_graph",
     "hub_dependencies_graph",
@@ -545,4 +678,5 @@ __all__ = [
     "star_graph",
     "tree_graph",
     "two_sccs_graph",
+    "while_loop_cfg",
 ]

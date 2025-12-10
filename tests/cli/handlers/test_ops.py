@@ -6,12 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.ops import (
-    ServeStartResult,
-    op_list_handler,
-)
-from codeintel.cli.handlers.protocol import EnhancedHandlerContext
-from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
@@ -19,6 +13,12 @@ from codeintel.cli.core.result_types import (
     OperationCallResult,
     OperationListResult,
 )
+from codeintel.cli.handlers.ops import (
+    ServeStartResult,
+    op_list_handler,
+)
+from codeintel.cli.handlers.protocol import EnhancedHandlerContext
+from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (

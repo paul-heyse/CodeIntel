@@ -583,70 +583,67 @@ def make_graph_plugin(
     runtime = runtime or {}
     builder = GraphPluginBuilder(name=f"{prefix}{name}")
 
-    metadata_handlers: dict[str, tuple[object, callable]] = {
-        "kind": (metadata.get("kind"), lambda b, v: b.with_kind(cast("GraphPluginKind", v))),
-        "stage": (metadata.get("stage"), lambda b, v: b.with_stage(cast("GraphPluginStage", v))),
-        "depends_on": (
+    metadata_handlers: list[
+        tuple[object, Callable[[GraphPluginBuilder, object], GraphPluginBuilder]]
+    ] = [
+        (metadata.get("kind"), lambda b, v: b.with_kind(cast("GraphPluginKind", v))),
+        (
+            metadata.get("stage"),
+            lambda b, v: b.with_stage(cast("GraphPluginStage", v)),
+        ),
+        (
             metadata.get("depends_on"),
             lambda b, v: b.with_dependencies(*cast("tuple[str, ...]", v)),
         ),
-        "provides": (
+        (
             metadata.get("provides"),
             lambda b, v: b.with_provides(*cast("tuple[str, ...]", v)),
         ),
-        "requires": (
+        (
             metadata.get("requires"),
             lambda b, v: b.with_requires(*cast("tuple[str, ...]", v)),
         ),
-        "produces_tables": (
+        (
             metadata.get("produces_tables"),
             lambda b, v: b.with_produces_tables(*cast("tuple[str, ...]", v)),
         ),
-        "options_default": (
+        (
             metadata.get("options_default"),
             lambda b, v: b.with_options_default(v),
         ),
-        "severity": (
+        (
             metadata.get("severity"),
             lambda b, v: b.with_severity(cast("PluginSeverity", v)),
         ),
-        "resource_hints": (
+        (
             metadata.get("resource_hints"),
             lambda b, v: b.with_resource_hints(cast("PluginResourceHints | None", v)),
         ),
-    }
+    ]
 
-    for value, handler in metadata_handlers.values():
+    for value, handler in metadata_handlers:
         if value:
             builder = handler(builder, value)
 
-    runtime_handlers: dict[str, tuple[object, callable]] = {
-        "delay_ms": (
-            runtime.get("delay_ms"),
-            lambda b, v: b.with_delay(cast(int, v)),
-        ),
-        "input_hash": (
-            runtime.get("input_hash"),
-            lambda b, v: b.with_input_hash(cast(str, v)),
-        ),
-        "options_hash": (
-            runtime.get("options_hash"),
-            lambda b, v: b.with_options_hash(cast(str, v)),
-        ),
-        "row_counts": (
-            runtime.get("row_counts"),
-            lambda b, v: b.with_row_counts(cast("dict[str, int]", v)),
-        ),
-        "exception_type": (
+    runtime_handlers: list[
+        tuple[object, Callable[[GraphPluginBuilder, object], GraphPluginBuilder]]
+    ] = [
+        (runtime.get("delay_ms"), lambda b, v: b.with_delay(cast("int", v))),
+        (runtime.get("input_hash"), lambda b, v: b.with_input_hash(cast("str", v))),
+        (runtime.get("options_hash"), lambda b, v: b.with_options_hash(cast("str", v))),
+        (runtime.get("row_counts"), lambda b, v: b.with_row_counts(cast("dict[str, int]", v))),
+        (
             runtime.get("exception_type"),
             lambda b, v: b.raising(
                 cast("type[Exception]", v),
-                str(runtime.get("exception_message")) if runtime.get("exception_message") else "Test exception",
+                str(runtime.get("exception_message"))
+                if runtime.get("exception_message")
+                else "Test exception",
             ),
         ),
-    }
+    ]
 
-    for value, handler in runtime_handlers.values():
+    for value, handler in runtime_handlers:
         if value:
             builder = handler(builder, value)
 

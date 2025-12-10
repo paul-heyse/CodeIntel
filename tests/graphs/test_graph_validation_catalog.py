@@ -5,29 +5,26 @@ Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
 
 from __future__ import annotations
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.validation import run_graph_validations
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal
-from tests._helpers.factories import make_snapshot
+from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 
-def test_graph_validation_orphan_uses_catalog_map(graph_gateway: StorageGateway) -> None:
+def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestEnv) -> None:
     """Graph validation should fall back to catalog module map when modules are absent."""
-    gateway = graph_gateway
+    gateway = graph_executor_env.gateway
     con = gateway.con
     provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.a"})
-    repo = "r"
-    commit = "c"
-    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    snapshot = make_snapshot(repo=repo, commit=commit)
+    snapshot = graph_executor_env.snapshot
+    seed_graph_validation_gaps(gateway, repo=snapshot.repo, commit=snapshot.commit)
     run_graph_validations(
         gateway,
         snapshot=snapshot,
         catalog_provider=provider,
-        runtime=GraphRuntimeOptions(snapshot=snapshot),
+        runtime=make_graph_runtime_options(snapshot=snapshot),
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
     expect_equal(rows, [("pkg/a.py",)], label="graph_validation_paths")

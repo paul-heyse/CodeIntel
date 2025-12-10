@@ -24,7 +24,6 @@ from typing import (
 
 from cyclopts import App, Group, Parameter
 
-from codeintel.cli.errors import ValidationError
 from codeintel.cli.commands._common import (
     OutputFormatCLI,
     RuntimeCLI,
@@ -34,7 +33,9 @@ from codeintel.cli.commands._common import (
 )
 from codeintel.cli.commands._help import _AppCallKwargs
 from codeintel.cli.commands.context import command_context
-from codeintel.cli.project import plan_dry_run, render_dry_run
+from codeintel.cli.core import OutputEnvelope, iter_stdin_records
+from codeintel.cli.core.output import merge_stdin_with_args
+from codeintel.cli.errors import ValidationError
 from codeintel.cli.execution import ExecutionContext, get_middleware_stack
 from codeintel.cli.handlers.ops import (
     invoke_operation,
@@ -47,12 +48,12 @@ from codeintel.cli.introspection import (
     build_operation_cli_metadata,
     get_operations_with_cli_support,
 )
-from codeintel.cli.core import OutputEnvelope, iter_stdin_records
-from codeintel.cli.core.output import merge_stdin_with_args
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
     build_project_runtime,
+    plan_dry_run,
+    render_dry_run,
 )
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.serving.auto_pipeline import run_operation_prereqs

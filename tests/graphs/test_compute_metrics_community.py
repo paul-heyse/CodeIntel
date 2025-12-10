@@ -24,6 +24,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.networkx_graphs import (
+    bridged_cliques_graph,
     chain_graph,
     complete_digraph,
     complete_graph,
@@ -80,19 +81,16 @@ def test_greedy_complete_graph() -> None:
 
 def test_greedy_disconnected_components_separate_communities() -> None:
     """Disconnected components are in separate communities."""
-    graph = nx.Graph()
-    # Two separate cliques
-    graph.add_edges_from([(1, 2), (2, 3), (1, 3)])  # Clique 1
-    graph.add_edges_from([(10, 11), (11, 12), (10, 12)])  # Clique 2
+    graph = bridged_cliques_graph(3, 3)
     result = detect_communities_greedy(graph)
 
     # Nodes in same clique should have same community
-    expect_equal(result[1], result[2])
-    expect_equal(result[2], result[3])
-    expect_equal(result[10], result[11])
-    expect_equal(result[11], result[12])
+    expect_equal(result["a0"], result["a1"])
+    expect_equal(result["a1"], result["a2"])
+    expect_equal(result["b0"], result["b1"])
+    expect_equal(result["b1"], result["b2"])
     # Different cliques should have different communities
-    expect_true(result[1] != result[10])
+    expect_true(result["a0"] != result["b0"])
 
 
 def test_greedy_directed_graph_converted() -> None:
@@ -255,17 +253,15 @@ def test_label_propagation_complete_graph() -> None:
 
 def test_label_propagation_disconnected_components() -> None:
     """Disconnected components get separate communities."""
-    graph = nx.Graph()
-    graph.add_edges_from([(1, 2), (2, 3)])
-    graph.add_edges_from([(10, 11), (11, 12)])
+    graph = bridged_cliques_graph(3, 3)
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_SIX)
     # Same component should have same community
-    expect_equal(result[1], result[2])
-    expect_equal(result[2], result[3])
-    expect_equal(result[10], result[11])
-    expect_equal(result[11], result[12])
+    expect_equal(result["a0"], result["a1"])
+    expect_equal(result["a1"], result["a2"])
+    expect_equal(result["b0"], result["b1"])
+    expect_equal(result["b1"], result["b2"])
 
 
 def test_label_propagation_directed_graph_converted() -> None:
@@ -317,13 +313,8 @@ def test_modularity_single_community() -> None:
 
 def test_modularity_optimal_partition() -> None:
     """Well-separated communities have high modularity."""
-    graph = nx.Graph()
-    # Two cliques with weak connection
-    graph.add_edges_from([(1, 2), (2, 3), (1, 3)])  # Clique 1
-    graph.add_edges_from([(10, 11), (11, 12), (10, 12)])  # Clique 2
-    graph.add_edge(3, 10)  # Weak connection
-
-    communities = {1: 0, 2: 0, 3: 0, 10: 1, 11: 1, 12: 1}
+    graph = bridged_cliques_graph(3, 3)
+    communities = {node: 0 if node.startswith("a") else 1 for node in graph.nodes()}
     result = compute_modularity(graph, communities)
 
     # Should have positive modularity for good partition
@@ -462,17 +453,7 @@ def test_louvain_various_sizes(graph_size: int) -> None:
 )
 def test_two_cliques_detected_separately(clique1_size: int, clique2_size: int) -> None:
     """Two cliques connected by single edge are detected as separate."""
-    graph = nx.Graph()
-    # Clique 1
-    for i in range(clique1_size):
-        for j in range(i + 1, clique1_size):
-            graph.add_edge(f"a{i}", f"a{j}")
-    # Clique 2
-    for i in range(clique2_size):
-        for j in range(i + 1, clique2_size):
-            graph.add_edge(f"b{i}", f"b{j}")
-    # Bridge
-    graph.add_edge("a0", "b0")
+    graph = bridged_cliques_graph(clique1_size, clique2_size)
 
     result = detect_communities_louvain(graph, seed=RANDOM_SEED)
     communities = set(result.values())

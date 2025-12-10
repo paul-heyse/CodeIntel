@@ -6,12 +6,11 @@ list, describe, and verify commands.
 
 from __future__ import annotations
 
-from codeintel.cli.introspection import StringValidator, ValidationSchema
+from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import DatasetDescribeResult, DatasetListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.handlers.ops import dataset_describe_structured
-from codeintel.cli.introspection import register_operation
-from codeintel.cli.core.result_types import DatasetDescribeResult, DatasetListResult
-from codeintel.cli.core import CliResult
+from codeintel.cli.introspection import StringValidator, ValidationSchema, register_operation
 
 
 def _dataset_list_handler() -> CliResult[DatasetListResult]:

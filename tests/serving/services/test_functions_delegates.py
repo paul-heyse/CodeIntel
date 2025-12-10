@@ -35,6 +35,7 @@ from tests._helpers.serving_harnesses import (
 )
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
 # Test constants
@@ -53,7 +54,13 @@ def _expect(*, condition: bool, message: str) -> None:
 def _build_local_service(
     provisioned_service_app: ServiceApp,
 ) -> LocalQueryService:
-    """Return the shared LocalQueryService from the provisioned service app."""
+    """Return the shared LocalQueryService from the provisioned service app.
+
+    Returns
+    -------
+    LocalQueryService
+        Service instance wired to the provisioned gateway snapshot.
+    """
     return provisioned_service_app.service
 
 
@@ -64,19 +71,12 @@ def _build_local_service(
 
 def test_get_function_summary_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary returns domain FunctionSummaryResult."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    summary = service.get_function_summary(goid_h128=goid_h128)
+    summary = service.get_function_summary(goid_h128=analytics_samples.goid_h128)
 
     _expect(
         condition=isinstance(summary, dm.FunctionSummaryResult),
@@ -86,19 +86,12 @@ def test_get_function_summary_returns_domain_result(
 
 def test_get_function_summary_with_urn(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary with URN parameter."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT urn FROM core.goids WHERE urn IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No URNs available in test data")
-
-    urn = result[0]
-    summary = service.get_function_summary(urn=urn)
+    summary = service.get_function_summary(urn=analytics_samples.urn)
 
     _expect(
         condition=isinstance(summary, dm.FunctionSummaryResult),
@@ -108,19 +101,15 @@ def test_get_function_summary_with_urn(
 
 def test_get_function_summary_with_rel_path_qualname(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_function_summary with rel_path and qualname."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT rel_path, qualname FROM analytics.function_metrics LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No function metrics available")
-
-    rel_path, qualname = result
-    summary = service.get_function_summary(rel_path=rel_path, qualname=qualname)
+    summary = service.get_function_summary(
+        rel_path=analytics_samples.rel_path,
+        qualname=analytics_samples.qualname,
+    )
 
     _expect(
         condition=isinstance(summary, dm.FunctionSummaryResult),
@@ -181,19 +170,12 @@ def test_list_high_risk_functions_with_limit(
 
 def test_get_callgraph_neighbors_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128)
+    neighbors = service.get_callgraph_neighbors(goid_h128=analytics_samples.goid_h128)
 
     _expect(
         condition=isinstance(neighbors, dm.CallGraphNeighbors),
@@ -203,19 +185,15 @@ def test_get_callgraph_neighbors_returns_domain_result(
 
 def test_get_callgraph_neighbors_direction_incoming(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with incoming direction."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128, direction="incoming")
+    neighbors = service.get_callgraph_neighbors(
+        goid_h128=analytics_samples.goid_h128,
+        direction="incoming",
+    )
 
     _expect(
         condition=isinstance(neighbors, dm.CallGraphNeighbors),
@@ -225,19 +203,15 @@ def test_get_callgraph_neighbors_direction_incoming(
 
 def test_get_callgraph_neighbors_direction_outgoing(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with outgoing direction."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128, direction="outgoing")
+    neighbors = service.get_callgraph_neighbors(
+        goid_h128=analytics_samples.goid_h128,
+        direction="outgoing",
+    )
 
     _expect(
         condition=isinstance(neighbors, dm.CallGraphNeighbors),
@@ -247,19 +221,12 @@ def test_get_callgraph_neighbors_direction_outgoing(
 
 def test_get_tests_for_function_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    tests = service.get_tests_for_function(goid_h128=goid_h128)
+    tests = service.get_tests_for_function(goid_h128=analytics_samples.goid_h128)
 
     _expect(
         condition=isinstance(tests, dm.TestsForFunctionResult),
@@ -269,19 +236,12 @@ def test_get_tests_for_function_returns_domain_result(
 
 def test_get_tests_for_function_with_urn(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function with URN."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT urn FROM core.goids WHERE urn IS NOT NULL LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No URNs available in test data")
-
-    urn = result[0]
-    tests = service.get_tests_for_function(urn=urn)
+    tests = service.get_tests_for_function(urn=analytics_samples.urn)
 
     _expect(
         condition=isinstance(tests, dm.TestsForFunctionResult),
@@ -291,19 +251,15 @@ def test_get_tests_for_function_with_urn(
 
 def test_get_callgraph_neighborhood_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
-    neighborhood = service.get_callgraph_neighborhood(goid_h128=goid_h128, radius=RADIUS_ONE)
+    neighborhood = service.get_callgraph_neighborhood(
+        goid_h128=analytics_samples.goid_h128,
+        radius=RADIUS_ONE,
+    )
 
     _expect(
         condition=isinstance(neighborhood, dm.GraphNeighborhood),
@@ -313,21 +269,16 @@ def test_get_callgraph_neighborhood_returns_domain_result(
 
 def test_get_callgraph_neighborhood_with_max_nodes(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighborhood with max_nodes."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
     max_nodes = 5
     neighborhood = service.get_callgraph_neighborhood(
-        goid_h128=goid_h128, radius=RADIUS_ONE, max_nodes=max_nodes
+        goid_h128=analytics_samples.goid_h128,
+        radius=RADIUS_ONE,
+        max_nodes=max_nodes,
     )
 
     _expect(
@@ -338,19 +289,12 @@ def test_get_callgraph_neighborhood_with_max_nodes(
 
 def test_get_import_boundary_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
-    boundary = service.get_import_boundary(subsystem_id=subsystem_id)
+    boundary = service.get_import_boundary(subsystem_id=analytics_samples.subsystem_id)
 
     _expect(
         condition=isinstance(boundary, dm.ImportBoundary),
@@ -360,20 +304,16 @@ def test_get_import_boundary_returns_domain_result(
 
 def test_get_import_boundary_with_max_edges(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_import_boundary with max_edges."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No subsystems available in test data")
-
-    subsystem_id = result[0]
     max_edges = 10
-    boundary = service.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges)
+    boundary = service.get_import_boundary(
+        subsystem_id=analytics_samples.subsystem_id,
+        max_edges=max_edges,
+    )
 
     _expect(
         condition=isinstance(boundary, dm.ImportBoundary),
@@ -383,19 +323,12 @@ def test_get_import_boundary_with_max_edges(
 
 def test_get_file_summary_returns_domain_result(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_file_summary returns domain result."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT path FROM core.modules WHERE language = 'python' LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No Python files available")
-
-    rel_path = result[0]
-    summary = service.get_file_summary(rel_path=rel_path)
+    summary = service.get_file_summary(rel_path=analytics_samples.rel_path)
 
     _expect(
         condition=isinstance(summary, dm.FileSummaryResult),
@@ -426,20 +359,16 @@ def test_get_function_summary_not_found(
 
 def test_get_callgraph_neighbors_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_callgraph_neighbors with limit."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
     limit_value = 3
-    neighbors = service.get_callgraph_neighbors(goid_h128=goid_h128, limit=limit_value)
+    neighbors = service.get_callgraph_neighbors(
+        goid_h128=analytics_samples.goid_h128,
+        limit=limit_value,
+    )
 
     _expect(
         condition=isinstance(neighbors, dm.CallGraphNeighbors),
@@ -449,20 +378,16 @@ def test_get_callgraph_neighbors_with_limit(
 
 def test_get_tests_for_function_with_limit(
     provisioned_service_app: ServiceApp,
+    analytics_samples: AnalyticsSamples,
 ) -> None:
     """Verify get_tests_for_function with limit."""
     service = _build_local_service(provisioned_service_app)
 
-    result = provisioned_service_app.gateway.con.execute(
-        "SELECT goid_h128 FROM core.goids LIMIT 1"
-    ).fetchone()
-
-    if result is None:
-        pytest.skip("No goids available in test data")
-
-    goid_h128 = result[0]
     limit_value = 5
-    tests = service.get_tests_for_function(goid_h128=goid_h128, limit=limit_value)
+    tests = service.get_tests_for_function(
+        goid_h128=analytics_samples.goid_h128,
+        limit=limit_value,
+    )
 
     _expect(
         condition=isinstance(tests, dm.TestsForFunctionResult),

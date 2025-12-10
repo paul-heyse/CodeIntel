@@ -21,6 +21,12 @@ from tests._helpers.assertions.common import (
 )
 from tests._helpers.assertions.coverage_assertions import assert_single_edge
 from tests._helpers.assertions.dataclass_assertions import assert_cannot_setattr
+from tests._helpers.assertions.dependencies import (
+    assert_cycle_count,
+    assert_edge_count,
+    assert_no_cycles,
+    build_dependency_graph,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_empty,
     expect_equal,
@@ -54,6 +60,8 @@ __all__ = [
     "HasSuccessAndError",
     "assert_cannot_setattr",
     "assert_columns_not_null",
+    "assert_cycle_count",
+    "assert_edge_count",
     "assert_failure",
     "assert_has_error",
     "assert_invalid",
@@ -61,6 +69,7 @@ __all__ = [
     "assert_mapping_list",
     "assert_mapping_value",
     "assert_meta_contains",
+    "assert_no_cycles",
     "assert_no_error",
     "assert_row_count",
     "assert_single_edge",
@@ -68,6 +77,7 @@ __all__ = [
     "assert_table_has_rows",
     "assert_valid",
     "assert_validation_error",
+    "build_dependency_graph",
     "expect_empty",
     "expect_equal",
     "expect_false",

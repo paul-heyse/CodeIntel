@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail, ValidationError
 from codeintel.cli.project import (
     ProjectNotFoundError,
@@ -18,7 +19,6 @@ from codeintel.cli.project import (
     build_project_runtime,
     find_project_root,
 )
-from codeintel.cli.core import CliResult
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.validation import collect_contract_issues

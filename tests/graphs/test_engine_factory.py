@@ -23,8 +23,13 @@ def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) ->
     )
     expect_true(engine.use_gpu, message="Engine did not inherit GPU preference")
     graph: nx.DiGraph = engine.call_graph()
-    expect_true(isinstance(graph, nx.DiGraph), message="Engine did not return a DiGraph for call_graph")
-    expect_true(env.get("NX_CUGRAPH_AUTOCONFIG") == "True", message="GPU backend env flag was not set by factory")
+    expect_true(
+        isinstance(graph, nx.DiGraph), message="Engine did not return a DiGraph for call_graph"
+    )
+    expect_true(
+        env.get("NX_CUGRAPH_AUTOCONFIG") == "True",
+        message="GPU backend env flag was not set by factory",
+    )
 
 
 def test_build_graph_engine_cpu_backend_leaves_env_clean(graph_gateway: StorageGateway) -> None:
@@ -39,4 +44,6 @@ def test_build_graph_engine_cpu_backend_leaves_env_clean(graph_gateway: StorageG
         ),
     )
     expect_true(not engine.use_gpu, message="Engine should not request GPU when use_gpu is False")
-    expect_true("NX_CUGRAPH_AUTOCONFIG" not in env, message="CPU backend should not set GPU env flags")
+    expect_true(
+        "NX_CUGRAPH_AUTOCONFIG" not in env, message="CPU backend should not set GPU env flags"
+    )

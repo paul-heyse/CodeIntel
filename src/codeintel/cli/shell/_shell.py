@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.execution import get_executor
-from codeintel.cli.introspection import list_all_operations, search_operations
-from codeintel.cli.introspection import get_operation_registry
+from codeintel.cli.introspection import (
+    get_operation_registry,
+    list_all_operations,
+    search_operations,
+)
 
 if TYPE_CHECKING:
     from typing import TextIO

@@ -22,9 +22,9 @@ from enum import Enum
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.execution.middleware import Middleware
-from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from codeintel.cli.execution.context import ExecutionContext

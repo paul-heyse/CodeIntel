@@ -9,12 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion import (
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-    RepoScanStep,
-)
+from codeintel.ingestion import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import (
     ast_extract,
     config_ingest,
@@ -25,8 +20,10 @@ from codeintel.ingestion.compute import (
 )
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.helpers.module_index import load_module_map
+from tests._helpers import build_repo_tree
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.ingestion import create_scan_step
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -37,11 +34,13 @@ def _source(module: ModuleType) -> str:
 
 
 def _make_test_snapshot(tmp_path: Path) -> SnapshotRef:
-    repo_root = tmp_path / "repo"
-    src_dir = repo_root / "src" / "pkg"
-    src_dir.mkdir(parents=True)
-    (src_dir / "a.py").write_text("print('a')\n", encoding="utf8")
-    (src_dir / "b.py").write_text("print('b')\n", encoding="utf8")
+    repo_root = build_repo_tree(
+        tmp_path / "repo",
+        {
+            "src/pkg/a.py": "print('a')\n",
+            "src/pkg/b.py": "print('b')\n",
+        },
+    )
     return make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
 
 
@@ -72,19 +71,10 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
     snapshot = _make_test_snapshot(tmp_path)
-    gateway = GatewayFactory().open()
+    gateway = GatewayFactory().with_macros().open()
     profile = default_code_profile(snapshot.repo_root)
 
-    # Use Step-based API
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(snapshot.repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-
-    scan_step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
-    )
+    scan_step, _, _ = create_scan_step(gateway, snapshot.repo_root, tmp_path)
     _, modules, _ = scan_step.execute(
         repo=snapshot.repo,
         commit=snapshot.commit,

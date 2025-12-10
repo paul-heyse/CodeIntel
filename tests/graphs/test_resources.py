@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Final, cast
+from typing import TYPE_CHECKING, ClassVar, Final
 
 import pytest
 
@@ -475,37 +475,6 @@ def test_resource_provider_base_protocol_conformance() -> None:
     expect_is_instance(provider, ResourceProvider)
 
 
-# ---------------------------------------------------------------------------
-# StorageResource fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def storage_resource(graph_gateway: StorageGateway, tmp_path: Path) -> StorageResource:
-    """Provide a reusable StorageResource instance for graph tests.
-
-    Returns
-    -------
-    StorageResource
-        Storage resource bound to the graph gateway and tmp_path.
-    """
-    return StorageResource(gateway=graph_gateway, _repo_root=tmp_path)
-
-
-@pytest.fixture
-def storage_registry(storage_resource: StorageResource) -> ResourceRegistry:
-    """Provide a registry pre-loaded with StorageResource.
-
-    Returns
-    -------
-    ResourceRegistry
-        Registry containing the storage resource provider.
-    """
-    registry = ResourceRegistry()
-    registry.register_provider(storage_resource)
-    return registry
-
-
 # ===========================================================================
 # StorageResource Tests
 # ===========================================================================
@@ -639,11 +608,10 @@ def test_storage_resource_retrieval(storage_registry: ResourceRegistry) -> None:
     retrieved = storage_registry.get_by_name(StorageResource.RESOURCE_NAME)
 
     expect_true(retrieved is not None)
-    if retrieved is None:
+    if not isinstance(retrieved, StorageResource):
         return
 
-    typed_retrieved = cast(StorageResource, retrieved)
-    expect_true(typed_retrieved.resource_name == STORAGE_RESOURCE_NAME)
+    expect_true(retrieved.resource_name == STORAGE_RESOURCE_NAME)
 
 
 def test_storage_resource_require(storage_registry: ResourceRegistry) -> None:

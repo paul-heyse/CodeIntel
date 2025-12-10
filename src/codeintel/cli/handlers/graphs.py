@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.core import CliResult
+from codeintel.cli.errors import ProblemDetail
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     PlanningOptions,

@@ -6,10 +6,10 @@ list and show commands.
 
 from __future__ import annotations
 
+from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import SubsystemDetailResult, SubsystemListResult
 from codeintel.cli.execution import OperationCategory, OperationSpec
 from codeintel.cli.introspection import register_operation
-from codeintel.cli.core.result_types import SubsystemDetailResult, SubsystemListResult
-from codeintel.cli.core import CliResult
 
 
 def _subsystem_list_handler(

@@ -27,13 +27,13 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from codeintel.cli.core import CliResult
 from codeintel.cli.execution.types import (
     ProgressConfig,
     ProgressEvent,
     ProgressState,
     StreamingResult,
 )
-from codeintel.cli.core import CliResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable

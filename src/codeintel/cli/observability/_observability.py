@@ -12,8 +12,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from codeintel.cli.execution import ExecutionContext, Middleware
 from codeintel.cli.core.results import CliResult
+from codeintel.cli.execution import ExecutionContext, Middleware
 from codeintel.cli.observability._telemetry import (
     OperationMetrics,
     TelemetryProvider,

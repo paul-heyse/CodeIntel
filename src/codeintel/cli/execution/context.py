@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.execution.types import ProgressEvent, ProgressState
+from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -378,10 +378,6 @@ def make_type_checker_factory(
 
 
 __all__ = [
-    "make_recording_adapter_factories",
-    "make_recording_async_step_factory",
-    "make_recording_step_factory",
-    "make_recording_type_checker_factory",
     "RecordingAsyncStep",
     "RecordingDiscoveryAdapter",
     "RecordingStep",
@@ -389,5 +385,9 @@ __all__ = [
     "RecordingToolPort",
     "RecordingTypeChecker",
     "StepCallCapture",
+    "make_recording_adapter_factories",
+    "make_recording_async_step_factory",
+    "make_recording_step_factory",
+    "make_recording_type_checker_factory",
     "make_type_checker_factory",
 ]
