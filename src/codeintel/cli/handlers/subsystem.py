@@ -1,12 +1,12 @@
 """Subsystem exploration handlers following the unified handler pattern.
 
 This module provides handlers for subsystem commands using the
-HandlerContext pattern for consistent resource management
+CommandContext pattern for consistent resource management
 and output rendering.
 
 All handlers in this module:
 
-1. Accept HandlerContext as their only argument
+1. Accept CommandContext as their only argument
 2. Return CliResult[T]
 3. Never write to stdout/stderr directly
 4. Never call sys.exit()
@@ -18,9 +18,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import fail_subsystem_not_found
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.errors.results import fail_subsystem_not_found
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
@@ -196,13 +197,13 @@ class SubsystemMembershipResult:
 # =============================================================================
 
 
-def _build_backend(ctx: HandlerContext) -> DuckDBBackend:
+def _build_backend(ctx: CommandContext) -> DuckDBBackend:
     """Build a DuckDBBackend from context.
 
     Parameters
     ----------
     ctx
-        Handler context.
+        Command context.
 
     Returns
     -------
@@ -214,10 +215,16 @@ def _build_backend(ctx: HandlerContext) -> DuckDBBackend:
     TypeError
         If resolved backend is not DuckDBBackend.
     """
+    # Build graph runtime for this operation
+    graph_runtime = build_graph_runtime(
+        gateway=ctx.gateway,
+        options=GraphRuntimeOptions(snapshot=ctx.runtime.snapshot),
+    )
+
     resource = build_backend_resource(
         ctx.runtime.serving,
         gateway=ctx.gateway,
-        options=BackendResourceOptions(graph_runtime=ctx.graph_runtime),
+        options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
 
     backend = resource.backend
@@ -232,13 +239,13 @@ def _build_backend(ctx: HandlerContext) -> DuckDBBackend:
 # =============================================================================
 
 
-def subsystem_list_handler(ctx: HandlerContext) -> CliResult[SubsystemListResult]:
+def subsystem_list_handler(ctx: CommandContext) -> CliResult[SubsystemListResult]:
     """List inferred subsystems with role/risk metadata.
 
     Parameters
     ----------
     ctx
-        Handler context with optional params:
+        Command context with optional params:
 
         - role: Optional role filter
         - query: Optional search query
@@ -253,9 +260,9 @@ def subsystem_list_handler(ctx: HandlerContext) -> CliResult[SubsystemListResult
     backend = _build_backend(ctx)
 
     response = backend.list_subsystems(
-        limit=ctx.param_int("limit"),
-        role=ctx.param_str("role"),
-        q=ctx.param_str("query"),
+        limit=ctx.params.get_int("limit"),
+        role=ctx.params.get_str("role"),
+        q=ctx.params.get_str("query"),
     )
 
     return CliResult.ok(
@@ -266,13 +273,13 @@ def subsystem_list_handler(ctx: HandlerContext) -> CliResult[SubsystemListResult
     )
 
 
-def subsystem_show_handler(ctx: HandlerContext) -> CliResult[SubsystemShowResult]:
+def subsystem_show_handler(ctx: CommandContext) -> CliResult[SubsystemShowResult]:
     """Show subsystem detail and modules.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
 
         - subsystem_id: Subsystem ID to show (required)
 
@@ -281,7 +288,7 @@ def subsystem_show_handler(ctx: HandlerContext) -> CliResult[SubsystemShowResult
     CliResult[SubsystemShowResult]
         Result with subsystem details.
     """
-    subsystem_id = ctx.require_str("subsystem_id")
+    subsystem_id = ctx.params.require_str("subsystem_id")
     ctx.logger.debug("Showing subsystem: %s", subsystem_id)
 
     backend = _build_backend(ctx)
@@ -300,13 +307,13 @@ def subsystem_show_handler(ctx: HandlerContext) -> CliResult[SubsystemShowResult
     )
 
 
-def subsystem_profiles_handler(ctx: HandlerContext) -> CliResult[SubsystemProfilesResult]:
+def subsystem_profiles_handler(ctx: CommandContext) -> CliResult[SubsystemProfilesResult]:
     """List subsystem profiles from docs.v_subsystem_profile.
 
     Parameters
     ----------
     ctx
-        Handler context with optional params:
+        Command context with optional params:
 
         - limit: Optional result limit
 
@@ -318,7 +325,7 @@ def subsystem_profiles_handler(ctx: HandlerContext) -> CliResult[SubsystemProfil
     ctx.logger.debug("Listing subsystem profiles")
     backend = _build_backend(ctx)
 
-    response = backend.service.list_subsystem_profiles(limit=ctx.param_int("limit"))
+    response = backend.service.list_subsystem_profiles(limit=ctx.params.get_int("limit"))
     profile_response = (
         response
         if isinstance(response, SubsystemProfileResponse)
@@ -337,13 +344,13 @@ def subsystem_profiles_handler(ctx: HandlerContext) -> CliResult[SubsystemProfil
     )
 
 
-def subsystem_coverage_handler(ctx: HandlerContext) -> CliResult[SubsystemCoverageResult]:
+def subsystem_coverage_handler(ctx: CommandContext) -> CliResult[SubsystemCoverageResult]:
     """List subsystem coverage rollups from docs.v_subsystem_coverage.
 
     Parameters
     ----------
     ctx
-        Handler context with optional params:
+        Command context with optional params:
 
         - limit: Optional result limit
 
@@ -355,7 +362,7 @@ def subsystem_coverage_handler(ctx: HandlerContext) -> CliResult[SubsystemCovera
     ctx.logger.debug("Listing subsystem coverage")
     backend = _build_backend(ctx)
 
-    response = backend.service.list_subsystem_coverage(limit=ctx.param_int("limit"))
+    response = backend.service.list_subsystem_coverage(limit=ctx.params.get_int("limit"))
     coverage_response = (
         response
         if isinstance(response, SubsystemCoverageResponse)
@@ -375,14 +382,14 @@ def subsystem_coverage_handler(ctx: HandlerContext) -> CliResult[SubsystemCovera
 
 
 def subsystem_module_memberships_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[SubsystemMembershipResult]:
     """List subsystem memberships for a module.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
 
         - module: Module path to query (required)
 
@@ -391,7 +398,7 @@ def subsystem_module_memberships_handler(
     CliResult[SubsystemMembershipResult]
         Result with membership list.
     """
-    module = ctx.require_str("module")
+    module = ctx.params.require_str("module")
     ctx.logger.debug("Getting subsystem memberships for module: %s", module)
 
     backend = _build_backend(ctx)

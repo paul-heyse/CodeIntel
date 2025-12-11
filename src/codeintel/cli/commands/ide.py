@@ -1,6 +1,11 @@
-"""Cyclopts wiring for IDE helper commands.
+"""IDE helper commands.
 
-This module wires Cyclopts command classes to unified handlers via @cli_command.
+Provide commands for IDE integration.
+
+Architecture Note: IDE commands require deep runtime/serving/graph access
+(config, graph_runtime, snapshot resolution). The handler pattern is the
+appropriate choice for these complex commands - Command[T] is designed for
+simpler operations that don't need full runtime context.
 """
 
 from __future__ import annotations
@@ -20,14 +25,18 @@ ide_app = App(
 )
 
 # Config for IDE commands - requires runtime and gateway
-_IDE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_IDE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True, require_graph_runtime=True)
 
 
 @cli_command("ide.hints", handler=ide_hints_handler, config=_IDE_CONFIG)
 @ide_app.command(name="hints")
 @dataclass
 class IdeHintsCommand:
-    """Emit IDE hints (module + subsystem context) for a relative file path."""
+    """Emit IDE hints (module + subsystem context) for a relative file path.
+
+    This command uses the handler pattern because it requires complex
+    runtime/serving/graph access.
+    """
 
     rel_path: Annotated[
         str,
@@ -36,7 +45,7 @@ class IdeHintsCommand:
             help="File path relative to repo root (e.g., pkg/module.py).",
         ),
     ] = ""
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
-__all__ = ["ide_app"]
+__all__ = ["IdeHintsCommand", "ide_app"]

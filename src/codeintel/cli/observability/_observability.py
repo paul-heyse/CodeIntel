@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 
 LOG = logging.getLogger(__name__)
 
+
 # Minimal protocols to describe OpenTelemetry trace module and span context.
 @runtime_checkable
 class _TraceContext(Protocol):

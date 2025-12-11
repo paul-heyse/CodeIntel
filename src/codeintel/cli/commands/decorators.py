@@ -25,26 +25,50 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, Protocol, TypeGuard, TypeVar, cast
 
+from codeintel.cli.commands._common import SharedFlags
+from codeintel.cli.context import CommandContextBuilder
+from codeintel.cli.context_compat import (
+    deps_from_command_context,
+    handler_context_from_command_context,
+)
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.command import Command
+from codeintel.cli.deps.compat import deps_from_handler_context
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from codeintel.cli.core.command import Command
-
 LOG = logging.getLogger(__name__)
 
-# Protocol for command dataclass instances
-CommandInstance = object  # Runtime type for dataclass instances
+# Runtime type for command dataclass instances (legacy pattern)
+CommandInstance = object
+
+
+class _DataclassCommand(Protocol):
+    __dataclass_fields__: dict[str, dataclasses.Field[object]]
+
+    def __init__(self, **kwargs: object) -> None: ...
+
+
+def _is_dataclass_command_type(cls: type[object]) -> TypeGuard[type[_DataclassCommand]]:
+    """Return True when cls is a dataclass command.
+
+    Returns
+    -------
+    bool
+        True when cls is a dataclass Command type.
+    """
+    return dataclasses.is_dataclass(cls)
+
+
+CommandType = TypeVar("CommandType", bound=Command[Any])
 
 
 @dataclass(frozen=True)
@@ -86,9 +110,6 @@ _INFRASTRUCTURE_FIELDS = frozenset(
         "project_root",  # Used for runtime resolution
         "db_path",
         "database_path",
-        "commit",
-        "build_dir",
-        "repo_root",
         "index_path",
         "flags",  # SharedFlags mixin field
     }
@@ -161,9 +182,14 @@ def cli_command[T, R](
         is_new_pattern = _is_command_subclass(cls)
 
         if is_new_pattern and handler is None:
-            return _decorate_new_style(
-                cls, operation_id, require_storage=require_storage, require_serving=require_serving
+            command_cls = cast("type[Command[Any]]", cls)
+            decorated = _decorate_new_style(
+                command_cls,
+                operation_id,
+                require_storage=require_storage,
+                require_serving=require_serving,
             )
+            return cast("type[T]", decorated)
 
         if handler is not None:
             return _decorate_legacy(cls, operation_id, handler, config)
@@ -251,24 +277,25 @@ def _decorate_legacy[T, R](
     )
 
     # Generate __call__ method
-    def generated_call(command_self: CommandInstance) -> None:
+    def generated_call(command_self: CommandInstance, *args: object, **kwargs: object) -> None:
+        del args, kwargs
         _execute_command(
             command=command_self,
             operation_id=operation_id,
             handler=handler,
         )
 
-    cls.__call__ = generated_call  # type: ignore[attr-defined]
+    cls.__call__ = cast("Callable[..., object]", generated_call)
     return cls
 
 
-def _decorate_new_style[T](
-    cls: type[T],
+def _decorate_new_style(
+    cls: type[Command[Any]],
     operation_id: str,
     *,
     require_storage: bool,
     require_serving: bool,
-) -> type[T]:
+) -> type[Command[Any]]:
     """Decorate with new Command[T] pattern.
 
     Parameters
@@ -284,16 +311,16 @@ def _decorate_new_style[T](
 
     Returns
     -------
-    type[T]
+    type[CommandT]
         Decorated class.
     """
     # Set class attributes if not already defined
     if not hasattr(cls, "__operation_id__"):
-        cls.__operation_id__ = operation_id  # type: ignore[attr-defined]
+        cls.__operation_id__ = operation_id
     if not hasattr(cls, "__require_storage__"):
-        cls.__require_storage__ = require_storage  # type: ignore[attr-defined]
+        cls.__require_storage__ = require_storage
     if not hasattr(cls, "__require_serving__"):
-        cls.__require_serving__ = require_serving  # type: ignore[attr-defined]
+        cls.__require_serving__ = require_serving
 
     # Extract description
     op_description = cls.__doc__ or f"Execute {operation_id}"
@@ -305,12 +332,9 @@ def _decorate_new_style[T](
     def command_handler(ctx: HandlerContext) -> CliResult[object]:
         # This is called if someone uses execute_operation() from registry
         # We need to convert HandlerContext to Deps and call execute()
-        from codeintel.cli.deps.compat import deps_from_handler_context
-
         deps = deps_from_handler_context(ctx)
-        # Reconstruct command from context params
         cmd = _reconstruct_command(cls, ctx)
-        return cmd.execute(deps)  # type: ignore[union-attr]
+        return cmd.execute(deps)
 
     # Register operation
     register_operation(
@@ -327,18 +351,22 @@ def _decorate_new_style[T](
     )
 
     # Generate __call__ method for CLI invocation
-    def generated_call(command_self: CommandInstance) -> None:
+    def generated_call(command_self: Command[Any], *args: object, **kwargs: object) -> None:
+        del args, kwargs
         _execute_new_command(
-            command_self,  # type: ignore[arg-type]
+            command_self,
             require_storage=require_storage,
             require_serving=require_serving,
         )
 
-    cls.__call__ = generated_call  # type: ignore[attr-defined]
+    cls.__call__ = cast("Callable[..., object]", generated_call)
     return cls
 
 
-def _reconstruct_command[T](cls: type[T], ctx: HandlerContext) -> T:
+def _reconstruct_command(
+    cls: type[Command[Any]],
+    ctx: HandlerContext,
+) -> Command[Any]:
     """Reconstruct command instance from HandlerContext params.
 
     Parameters
@@ -350,18 +378,23 @@ def _reconstruct_command[T](cls: type[T], ctx: HandlerContext) -> T:
 
     Returns
     -------
-    T
+    CommandType
         Reconstructed command instance.
+
+    Raises
+    ------
+    TypeError
+        If cls is not a dataclass Command type.
     """
-    # Get dataclass fields
-    if not dataclasses.is_dataclass(cls):
-        return cls()  # type: ignore[return-value]
+    if not _is_dataclass_command_type(cls):
+        msg = f"{cls.__name__} must be a dataclass Command"
+        raise TypeError(msg)
 
     kwargs: dict[str, object] = {}
-    for fld in dataclasses.fields(cls):  # type: ignore[arg-type]
+    dataclass_cls = cast("Any", cls)
+    for fld in dataclasses.fields(dataclass_cls):
         if fld.name == "flags":
             # Create SharedFlags from context
-            from codeintel.cli.commands._common import SharedFlags
 
             kwargs["flags"] = SharedFlags(
                 output_format=ctx.output_format,
@@ -375,7 +408,7 @@ def _reconstruct_command[T](cls: type[T], ctx: HandlerContext) -> T:
         elif fld.default_factory is not dataclasses.MISSING:
             kwargs[fld.name] = fld.default_factory()
 
-    return cls(**kwargs)  # type: ignore[return-value]
+    return cast("Command[Any]", cls(**kwargs))
 
 
 def _execute_new_command[T](
@@ -384,7 +417,7 @@ def _execute_new_command[T](
     require_storage: bool,
     require_serving: bool,
 ) -> None:
-    """Execute a new-style Command[T].
+    """Execute a new-style Command[T] using unified CommandContext.
 
     Parameters
     ----------
@@ -395,28 +428,32 @@ def _execute_new_command[T](
     require_serving
         Whether serving is required.
     """
-    from codeintel.cli.deps import DepsBuilder
-
     # Extract infrastructure from command
     infra = _extract_infrastructure(command)
+    params = _extract_params(command)
 
     # Bootstrap CLI
     bootstrap_cli(verbosity=infra.verbosity)
 
-    # Build deps
-    builder = DepsBuilder().with_verbosity(infra.verbosity)
+    # Build CommandContext using the new unified builder
+    builder = (
+        CommandContextBuilder()
+        .with_params(params)
+        .with_output_format(infra.output_format)
+        .with_verbosity(infra.verbosity)
+        .with_operation_id(getattr(command, "__operation_id__", "unknown"))
+    )
 
-    if infra.project_root is not None:
-        builder = builder.with_project(infra.project_root)
-
-    if require_storage:
+    if require_storage or require_serving:
         builder = builder.with_storage(db_path=infra.database_path)
 
     if require_serving:
         builder = builder.with_serving()
 
-    # Execute with deps
-    with builder.build() as deps:
+    # Execute with unified context
+    with builder.build() as ctx:
+        # Convert to Deps for backward compatibility with Command[T].execute()
+        deps = deps_from_command_context(ctx)
         result = command.execute(deps)
 
     # Render result
@@ -432,7 +469,7 @@ def _execute_command[R](
     operation_id: str,
     handler: Callable[[HandlerContext], CliResult[R]],
 ) -> None:
-    """Execute a CLI command.
+    """Execute a CLI command using unified CommandContext.
 
     Parameters
     ----------
@@ -445,32 +482,44 @@ def _execute_command[R](
     """
     # Extract standard infrastructure from SharedFlags mixin or inline fields
     infra = _extract_infrastructure(command)
-
-    # Bootstrap CLI
-    cli_config = bootstrap_cli(verbosity=infra.verbosity)
-
-    # Extract parameters
     params = _extract_params(command)
 
-    # Create context
-    ctx = HandlerContext(
-        config=cli_config,
-        operation_id=operation_id,
-        output_format=infra.output_format,
-        verbosity=infra.verbosity,
-        project_root=infra.project_root,
-        database_path=infra.database_path,
-        index_path=infra.index_path,
-        _params=params,
+    # Bootstrap CLI
+    bootstrap_cli(verbosity=infra.verbosity)
+
+    # Build unified CommandContext
+    # Legacy handlers always need runtime/storage for backwards compatibility
+    builder = (
+        CommandContextBuilder()
+        .with_params(params)
+        .with_output_format(infra.output_format)
+        .with_verbosity(infra.verbosity)
+        .with_operation_id(operation_id)
+        .with_runtime(project_root=infra.project_root)
+        .with_storage(db_path=infra.database_path)
     )
 
-    # Execute handler with context manager for cleanup
-    try:
-        with ctx:
-            result = handler(ctx)
-    except Exception:
-        LOG.exception("Handler %s raised exception", operation_id)
-        raise
+    # Execute with unified context
+    with builder.build() as ctx:
+        # Convert to legacy HandlerContext for backward compatibility
+        handler_ctx = handler_context_from_command_context(ctx)
+        # Set additional legacy fields
+        handler_ctx = HandlerContext(
+            config=ctx.config,
+            operation_id=operation_id,
+            output_format=infra.output_format,
+            verbosity=infra.verbosity,
+            project_root=infra.project_root,
+            database_path=infra.database_path,
+            index_path=infra.index_path,
+            _params=params,
+        )
+        try:
+            with handler_ctx:
+                result = handler(handler_ctx)
+        except Exception:
+            LOG.exception("Handler %s raised exception", operation_id)
+            raise
 
     # Render result
     renderer = get_renderer(infra.output_format)

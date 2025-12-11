@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         GraphTables,
     )
     from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.tracking import PipelineRunTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
 
@@ -55,6 +56,7 @@ class StorageGateway(Protocol):
     datasets: DatasetRegistry
     docs: DocsViews
     graph: GraphTables
+    ibis: IbisGateway
     runs: PipelineRunTracking
 
     @property

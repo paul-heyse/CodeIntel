@@ -6,7 +6,6 @@ Validate CliConfig instances against type constraints and business rules.
 from __future__ import annotations
 
 import re
-
 from types import ModuleType
 
 from codeintel.cli.config.model import CliConfig, ConfigValidationError

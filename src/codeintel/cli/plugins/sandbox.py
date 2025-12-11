@@ -84,7 +84,13 @@ class SandboxedImporter(MetaPathFinder, Loader):
         self._allowed = self._compute_allowed_modules()
 
     def _compute_allowed_modules(self) -> frozenset[str]:
-        """Compute set of allowed modules."""
+        """Compute set of allowed modules.
+
+        Returns
+        -------
+        frozenset[str]
+            Allowed module names including capability-derived entries.
+        """
         allowed = set(ALLOWED_MODULES)
 
         for capability in self._config.allowed_capabilities:
@@ -94,7 +100,13 @@ class SandboxedImporter(MetaPathFinder, Loader):
         return frozenset(allowed)
 
     def _is_allowed(self, name: str) -> bool:
-        """Return True when module import is permitted."""
+        """Return True when module import is permitted.
+
+        Returns
+        -------
+        bool
+            True if the module may be imported inside the sandbox.
+        """
         entry_parts = self._manifest.entry_point.split(".", maxsplit=1)
         if entry_parts and name.startswith(entry_parts[0]):
             return True
@@ -108,15 +120,27 @@ class SandboxedImporter(MetaPathFinder, Loader):
         path: Sequence[str] | None,
         target: ModuleType | None = None,
     ) -> ModuleSpec | None:
-        """Return spec when blocking an import."""
+        """Return spec when blocking an import.
+
+        Returns
+        -------
+        ModuleSpec | None
+            Module spec when import should be blocked, otherwise None.
+        """
         _ = (path, target)
         if self._is_allowed(fullname):
             return None
         return ModuleSpec(fullname, self)
 
     def create_module(self, spec: ModuleSpec) -> ModuleType | None:
-        """Use default module creation semantics."""
-        _ = spec
+        """Use default module creation semantics.
+
+        Returns
+        -------
+        ModuleType | None
+            None to delegate to default module creation.
+        """
+        _ = (self, spec)
         return None
 
     def exec_module(self, module: ModuleType) -> None:

@@ -1,38 +1,4 @@
-"""Composable seed packs for hexagonal test architecture.
-
-This package provides reusable seed packs that populate test data in a
-composable way. Each pack seeds specific tables and can depend on other packs.
-
-Seed packs follow the Testing Charter principles:
-- Use real DuckDB tables (same technology as production)
-- Data is realistic in structure and content
-- Packs can be composed for complex test scenarios
-
-Available Packs
----------------
-CORE_PACK
-    Minimal core data: repo_map, modules, goids.
-GRAPH_PACK
-    Graph data: call graph nodes/edges, import graph, cfg/dfg.
-COVERAGE_PACK
-    Coverage data: test catalog, coverage edges, coverage functions.
-METRICS_PACK
-    Metrics data: function metrics, risk factors, graph metrics.
-DOCSTRING_PACK
-    Documentation data: parsed docstrings.
-SUBSYSTEM_PACK
-    Architecture data: subsystems and subsystem_modules.
-SUBSYSTEM_ANALYTICS_PACK
-    Extended subsystem data with risk factors for analytics tests.
-SYMBOL_PACK
-    Symbol data: symbol use edges.
-CONFIG_PACK
-    Configuration data: config file references.
-DATA_MODELS_PACK
-    Data models and config data flow for model heuristics tests.
-FUNCTION_TYPES_PACK
-    Function type annotations for typing analytics tests.
-"""
+"""Composable seed packs for hexagonal test architecture."""
 
 from __future__ import annotations
 

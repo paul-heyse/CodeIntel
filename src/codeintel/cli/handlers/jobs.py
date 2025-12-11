@@ -9,13 +9,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_job_cancel_failed,
     fail_job_not_completed,
     fail_job_not_found,
 )
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.jobs import JobStatus, get_job_manager
 
 LOG = logging.getLogger(__name__)
@@ -177,13 +177,13 @@ class JobsCleanupResult:
         }
 
 
-def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
+def jobs_list_handler(ctx: CommandContext) -> CliResult[JobsListResult]:
     """List background jobs.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - status: Optional status filter
         - limit: Maximum jobs to return (default 20)
 
@@ -192,8 +192,8 @@ def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
     CliResult[JobsListResult]
         List of jobs.
     """
-    status_str = ctx.param_str("status")
-    limit = ctx.param_int("limit", 20)
+    status_str = ctx.params.get_str("status")
+    limit = ctx.params.get_int("limit", 20)
 
     LOG.info("Listing jobs with status=%s, limit=%d", status_str, limit)
 
@@ -206,13 +206,13 @@ def jobs_list_handler(ctx: HandlerContext) -> CliResult[JobsListResult]:
     return CliResult.ok(JobsListResult(jobs=job_dicts, count=len(jobs)))
 
 
-def jobs_status_handler(ctx: HandlerContext) -> CliResult[JobStatusResult]:
+def jobs_status_handler(ctx: CommandContext) -> CliResult[JobStatusResult]:
     """Get status of a background job.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - job_id: Job ID
 
     Returns
@@ -220,7 +220,7 @@ def jobs_status_handler(ctx: HandlerContext) -> CliResult[JobStatusResult]:
     CliResult[JobStatusResult]
         Job status details.
     """
-    job_id = ctx.require_str("job_id")
+    job_id = ctx.params.require_str("job_id")
 
     LOG.info("Getting status for job: %s", job_id)
 
@@ -243,13 +243,13 @@ def jobs_status_handler(ctx: HandlerContext) -> CliResult[JobStatusResult]:
     )
 
 
-def jobs_output_handler(ctx: HandlerContext) -> CliResult[JobOutputResult]:
+def jobs_output_handler(ctx: CommandContext) -> CliResult[JobOutputResult]:
     """Get output of a completed job.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - job_id: Job ID
 
     Returns
@@ -257,7 +257,7 @@ def jobs_output_handler(ctx: HandlerContext) -> CliResult[JobOutputResult]:
     CliResult[JobOutputResult]
         Job output.
     """
-    job_id = ctx.require_str("job_id")
+    job_id = ctx.params.require_str("job_id")
 
     LOG.info("Getting output for job: %s", job_id)
 
@@ -281,13 +281,13 @@ def jobs_output_handler(ctx: HandlerContext) -> CliResult[JobOutputResult]:
     )
 
 
-def jobs_cancel_handler(ctx: HandlerContext) -> CliResult[JobCancelResult]:
+def jobs_cancel_handler(ctx: CommandContext) -> CliResult[JobCancelResult]:
     """Cancel a running job.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - job_id: Job ID
 
     Returns
@@ -295,7 +295,7 @@ def jobs_cancel_handler(ctx: HandlerContext) -> CliResult[JobCancelResult]:
     CliResult[JobCancelResult]
         Cancellation result.
     """
-    job_id = ctx.require_str("job_id")
+    job_id = ctx.params.require_str("job_id")
 
     LOG.info("Cancelling job: %s", job_id)
 
@@ -308,13 +308,13 @@ def jobs_cancel_handler(ctx: HandlerContext) -> CliResult[JobCancelResult]:
     return CliResult.ok(JobCancelResult(job_id=job_id, cancelled=True))
 
 
-def jobs_cleanup_handler(ctx: HandlerContext) -> CliResult[JobsCleanupResult]:
+def jobs_cleanup_handler(ctx: CommandContext) -> CliResult[JobsCleanupResult]:
     """Clean up old completed jobs.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - max_age_days: Maximum age in days (default 7)
 
     Returns
@@ -322,7 +322,7 @@ def jobs_cleanup_handler(ctx: HandlerContext) -> CliResult[JobsCleanupResult]:
     CliResult[JobsCleanupResult]
         Cleanup result.
     """
-    max_age_days = ctx.param_int("max_age_days", 7)
+    max_age_days = ctx.params.get_int("max_age_days", 7)
 
     LOG.info("Cleaning up jobs older than %d days", max_age_days)
 

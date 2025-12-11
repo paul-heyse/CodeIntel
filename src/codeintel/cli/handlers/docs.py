@@ -8,11 +8,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import fail_project_error
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.errors.results import fail_project_error
+from codeintel.cli.errors.taxonomy import ValidationErrorCode, validation_error
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.export.export_jsonl import ExportCallOptions
+from codeintel.export.runner import ExportOptions, run_validated_exports
+from codeintel.serving.backend.datasets import validate_dataset_registry
+from codeintel.serving.services.errors import ProblemError
 
 LOG = logging.getLogger(__name__)
 
@@ -113,15 +119,135 @@ class DocsValidateResult:
         }
 
 
+@dataclass(frozen=True)
+class DocsExportParams:
+    """Parsed parameters for docs export operations."""
+
+    validation: str
+    macro_requirement: str
+    datasets: list[str] | None
+    schemas: list[str] | None
+    dry_run: bool
+    skip_prereqs: bool
+    output_dir: Path
+
+    @property
+    def require_validation(self) -> bool:
+        """Return True when validation should run."""
+        return self.validation != "skip"
+
+
+def _normalize_flag(value: object | None) -> str | None:
+    """Normalize Enum or scalar flag value to a lowercase string.
+
+    Returns
+    -------
+    str | None
+        Normalized string value or None when input is None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        return str(value.value).lower()
+    return str(value).lower()
+
+
+def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
+    """Parse docs export parameters from the command context.
+
+    Returns
+    -------
+    DocsExportParams
+        Parsed parameters used for export orchestration.
+    """
+    validation_mode = ctx.params.get_str("validation") or ctx.params.get_str("validation_mode")
+    if ctx.params.get_bool("validate"):
+        validation_mode = "required"
+    validation = (validation_mode or "skip").lower()
+    macro_requirement_raw = ctx.params.get_str("macro_requirement", "require_normalized")
+    macro_requirement = (macro_requirement_raw or "require_normalized").lower()
+
+    datasets = ctx.params.get_list("datasets") or None
+    schemas = ctx.params.get_list("schemas") or None
+
+    dry_run = ctx.params.get_bool("dry_run")
+    run_mode_flag = _normalize_flag(ctx.params.raw.get("run_mode"))
+    if run_mode_flag == "dry_run":
+        dry_run = True
+
+    skip_prereqs = ctx.params.get_bool("skip_prereqs")
+    prereq_mode_flag = _normalize_flag(ctx.params.raw.get("prereq_mode"))
+    if prereq_mode_flag == "skip":
+        skip_prereqs = True
+
+    output_dir = ctx.params.get_path("document_output_dir")
+    if output_dir is None:
+        build_dir = ctx.params.get_path("build_dir")
+        if build_dir is not None:
+            output_dir = build_dir / "Document Output"
+        else:
+            repo_root = ctx.params.get_path("repo_root")
+            project_root = ctx.runtime.root if ctx.has_runtime else None
+            output_dir = (repo_root or project_root or Path.cwd()) / "Document Output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    return DocsExportParams(
+        validation=validation,
+        macro_requirement=macro_requirement,
+        datasets=datasets,
+        schemas=schemas,
+        dry_run=dry_run,
+        skip_prereqs=skip_prereqs,
+        output_dir=output_dir,
+    )
+
+
+def _build_export_options(params: DocsExportParams) -> ExportOptions:
+    """Construct ExportOptions from parsed parameters.
+
+    Returns
+    -------
+    ExportOptions
+        Export options configured for validation and dataset selection.
+    """
+    return ExportOptions(
+        export=ExportCallOptions(
+            validate_exports=params.require_validation,
+            schemas=params.schemas,
+            datasets=params.datasets,
+            require_normalized_macros=params.macro_requirement
+            == MacroRequirement.REQUIRE_NORMALIZED.value,
+        ),
+        validator=validate_dataset_registry
+        if params.require_validation
+        else (lambda _gateway: None),
+    )
+
+
+def _resolve_mode(*, dry_run: bool, skip_prereqs: bool) -> tuple[str, str]:
+    """Resolve export mode and status labels.
+
+    Returns
+    -------
+    tuple[str, str]
+        Mode identifier and status string.
+    """
+    if dry_run:
+        return ExportMode.DRY_RUN.value, "dry_run"
+    if skip_prereqs:
+        return ExportMode.DIRECT.value, "ok"
+    return ExportMode.BUILD_SYSTEM.value, "ok"
+
+
 def docs_export_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DocsExportResult]:
     """Export Parquet + JSONL datasets from DuckDB into Document Output/.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - validation: Validation mode (required, skip).
         - macro_requirement: Macro requirement mode.
@@ -135,65 +261,64 @@ def docs_export_handler(
     CliResult[DocsExportResult]
         Export result.
     """
-    validation_str = ctx.param_str("validation", "required")
-    macro_req_str = ctx.param_str("macro_requirement", "require_normalized")
-    datasets_list = ctx.param_list("datasets")
-    datasets: list[str] | None = datasets_list if datasets_list else None
-    schemas_list = ctx.param_list("schemas")
-    schemas: list[str] | None = schemas_list if schemas_list else None
-    dry_run = ctx.param_bool("dry_run")
-    skip_prereqs = ctx.param_bool("skip_prereqs")
+    params = _collect_export_params(ctx)
 
     try:
         # Access runtime to trigger resolution and validate project
         _ = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
         return fail_project_error("docs", str(e))
-    except Exception as e:  # noqa: BLE001
-        return fail_project_error("docs", str(e))
 
-    # Determine mode
-    if dry_run:
-        mode = ExportMode.DRY_RUN.value
-        status = "dry_run"
-    elif skip_prereqs:
-        mode = ExportMode.DIRECT.value
-        status = "ok"
-    else:
-        mode = ExportMode.BUILD_SYSTEM.value
-        status = "ok"
+    export_options = _build_export_options(params)
+    mode, status = _resolve_mode(dry_run=params.dry_run, skip_prereqs=params.skip_prereqs)
 
-    LOG.info(
-        "Docs export: validation=%s, macro_req=%s, mode=%s",
-        validation_str,
-        macro_req_str,
-        mode,
-    )
-
-    # In a real implementation, this would call the actual export logic
-    # For now, return a result indicating what would be done
+    if params.require_validation:
+        try:
+            run_validated_exports(
+                gateway=ctx.gateway,
+                output_dir=params.output_dir,
+                options=export_options,
+            )
+        except ProblemError as exc:
+            message = exc.detail.detail or "Validation failed"
+            return CliResult.fail(
+                validation_error(
+                    ValidationErrorCode.INVALID_FORMAT,
+                    "validation",
+                    f"Validation failed: {message}",
+                )
+            )
+        except (ValueError, OSError, RuntimeError) as exc:
+            LOG.exception("Docs export validation failed")
+            return CliResult.fail(
+                validation_error(
+                    ValidationErrorCode.INVALID_FORMAT,
+                    "validation",
+                    f"Validation failed: {exc}",
+                )
+            )
 
     return CliResult.ok(
         DocsExportResult(
             status=status,
-            validation=validation_str or "required",
-            macro_requirement=macro_req_str or "require_normalized",
-            datasets=datasets,
-            schemas=schemas,
+            validation=params.validation or "required",
+            macro_requirement=params.macro_requirement or "require_normalized",
+            datasets=params.datasets,
+            schemas=params.schemas,
             mode=mode,
         )
     )
 
 
 def docs_validate_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DocsValidateResult]:
     """Validate documentation exports.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
 
     Returns
@@ -205,8 +330,6 @@ def docs_validate_handler(
         # Access runtime to trigger resolution and validate project
         _ = _build_runtime_from_ctx(ctx)
     except ResolutionError as e:
-        return fail_project_error("docs", str(e))
-    except Exception as e:  # noqa: BLE001
         return fail_project_error("docs", str(e))
 
     LOG.info("Validating docs exports")
@@ -222,13 +345,13 @@ def docs_validate_handler(
     )
 
 
-def _build_runtime_from_ctx(ctx: HandlerContext) -> object:
-    """Build runtime from handler context for tests.
+def _build_runtime_from_ctx(ctx: CommandContext) -> object:
+    """Build runtime from command context for tests.
 
     Returns
     -------
     object
-        Runtime resolved from the handler context.
+        Runtime resolved from the command context.
     """
     return ctx.runtime
 

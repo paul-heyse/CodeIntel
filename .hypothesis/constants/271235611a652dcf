@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/operations/errors/problem_detail.py
+# hypothesis_version: 6.148.7
+
+['ERROR_TYPE_BASE', 'ErrorType', 'ProblemDetail', 'detail', 'instance', 'status', 'title', 'type']

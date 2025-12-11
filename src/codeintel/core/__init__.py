@@ -27,9 +27,19 @@ from codeintel.core.config.registry import (
     ConfigTypeError,
     ConfigValidationError,
 )
+from codeintel.core.process import (
+    CommandExecutionError,
+    CommandExecutor,
+    CommandNotAllowedError,
+    CommandResult,
+)
 from codeintel.core.singleton import SingletonHolder
 
 __all__ = [
+    "CommandExecutionError",
+    "CommandExecutor",
+    "CommandNotAllowedError",
+    "CommandResult",
     "ConfigAccessor",
     "ConfigNotFoundError",
     "ConfigRegistry",

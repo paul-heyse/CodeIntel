@@ -15,18 +15,18 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     GenerateMacrosResult,
     ProfileStorageResult,
     ValidateMacrosResult,
 )
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
     fail_no_tables,
 )
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
 from codeintel.storage.macros.generation import render_macro
@@ -76,14 +76,14 @@ class MacroRequirement(Enum):
 
 
 def validate_macros_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[ValidateMacrosResult]:
     """Validate macro registry hashes and normalized macro schemas.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - db_path: Path to database (optional, uses runtime if not provided)
         - macro_requirement: MacroRequirement enum value or string
 
@@ -96,9 +96,9 @@ def validate_macros_handler(
     -----
     Uses explicit gateway when db_path is provided, otherwise uses ctx.gateway.
     """
-    db_path_str = ctx.param_str("db_path")
+    db_path_str = ctx.params.get_str("db_path")
     macro_requirement = (
-        ctx.param_enum("macro_requirement", MacroRequirement, MacroRequirement.REQUIRE)
+        ctx.params.get_enum("macro_requirement", MacroRequirement, MacroRequirement.REQUIRE)
         or MacroRequirement.REQUIRE
     )
 
@@ -121,7 +121,7 @@ def validate_macros_handler(
                 )
             )
     else:
-        # No explicit path - use HandlerContext's gateway (runtime-resolved)
+        # No explicit path - use CommandContext's gateway (runtime-resolved)
         return _validate_macros(ctx.gateway, macro_requirement)
 
 
@@ -183,14 +183,14 @@ def _validate_macros(
 
 
 def generate_macros_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[GenerateMacrosResult]:
     """Render normalized macro DDL for the requested tables.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - tables: List of table names to generate macros for
 
     Returns
@@ -199,7 +199,7 @@ def generate_macros_handler(
         Generated macro definitions.
     """
     # Get tables from params
-    tables = ctx.param_list("tables")
+    tables = ctx.params.get_list("tables")
 
     if not tables:
         return fail_no_tables("No tables available to render macros for.")
@@ -216,14 +216,14 @@ def generate_macros_handler(
 
 
 def profile_storage_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[ProfileStorageResult]:
     """Run storage profiling.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - db_path: Path to database (optional, uses runtime if not provided)
         - output_dir: Output directory for profile results
         - include_views: Whether to include views in profiling
@@ -234,15 +234,15 @@ def profile_storage_handler(
         Profiling result with paths and options used.
     """
     # Get db_path from params or runtime
-    db_path_str = ctx.param_str("db_path")
+    db_path_str = ctx.params.get_str("db_path")
     db_path = ctx.runtime.paths.db_path if db_path_str is None else Path(db_path_str)
 
-    output_dir_str = ctx.param_str("output_dir")
+    output_dir_str = ctx.params.get_str("output_dir")
     if output_dir_str is None:
         return fail_missing_output_path("output_dir")
     output_dir = Path(output_dir_str)
 
-    include_views = ctx.param_bool("include_views", default=False)
+    include_views = ctx.params.get_bool("include_views", default=False)
 
     run_profile(db_path=db_path, output_dir=output_dir, analyze=include_views)
 

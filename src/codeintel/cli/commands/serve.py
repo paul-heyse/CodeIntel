@@ -1,6 +1,6 @@
-"""Cyclopts wiring for serve command group.
+"""Serve command group for HTTP and MCP servers.
 
-HTTP and MCP server commands using the @cli_command decorator.
+Note: Serve commands require runtime/gateway access via handler pattern.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @serve_app.command(name="mcp")
@@ -73,7 +73,7 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

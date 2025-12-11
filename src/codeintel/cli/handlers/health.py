@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
 
@@ -432,14 +432,14 @@ def get_health_checker() -> HealthChecker:
 
 
 def health_check_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[HealthCheckResult]:
     """Run all health checks.
 
     Parameters
     ----------
     ctx
-        Handler context (no params required).
+        Command context (no params required).
 
     Returns
     -------
@@ -447,7 +447,7 @@ def health_check_handler(
         Health check results.
     """
     # Use ctx for logging context
-    _ = ctx.params  # Acknowledge params even if empty
+    _ = ctx.params.raw  # Acknowledge params even if empty
     LOG.info("Running health checks")
 
     checker = get_health_checker()

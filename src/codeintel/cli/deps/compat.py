@@ -66,7 +66,13 @@ class _DataclassCommand(Protocol):
 
 
 def _is_dataclass_command(value: object) -> TypeGuard[_DataclassCommand]:
-    """Return True when the value is a dataclass command instance."""
+    """Return True when the value is a dataclass command instance.
+
+    Returns
+    -------
+    bool
+        True if the object is a dataclass command instance.
+    """
     return dataclasses.is_dataclass(value) and not isinstance(value, type)
 
 
@@ -122,13 +128,16 @@ def handler_context_from_deps[T](deps: Deps, cmd: Command[T]) -> HandlerContext:
     from codeintel.cli.handlers.context import HandlerContext
     from codeintel.cli.rendering.types import OutputFormat
 
-    # Extract params from command dataclass fields
+    if not _is_dataclass_command(cmd):
+        msg = "handler_context_from_deps requires a dataclass command instance"
+        raise TypeError(msg)
+
     params: dict[str, object] = {}
     flags_output_format = OutputFormat.TEXT
     flags_verbosity = 0
     flags_project_root = None
 
-    for fld in dataclasses.fields(cmd):  # type: ignore[arg-type]
+    for fld in dataclasses.fields(cmd):
         value = getattr(cmd, fld.name)
         if fld.name == "flags" and value is not None:
             # Extract SharedFlags values

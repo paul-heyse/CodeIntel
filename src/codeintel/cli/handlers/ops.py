@@ -11,6 +11,7 @@ import sys
 
 import uvicorn
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
@@ -20,13 +21,12 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
     ServeStartResult,
 )
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_dataset_not_found,
     fail_invalid_param,
     fail_unknown_operation,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.http.fastapi import create_app as create_http_app
@@ -89,13 +89,13 @@ def op_list_structured(*, category: str | None) -> CliResult[OperationListResult
     return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
 
 
-def op_list_handler(ctx: HandlerContext) -> CliResult[OperationListResult]:
+def op_list_handler(ctx: CommandContext) -> CliResult[OperationListResult]:
     """List available serving operations.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - category: Optional category filter
 
     Returns
@@ -103,17 +103,17 @@ def op_list_handler(ctx: HandlerContext) -> CliResult[OperationListResult]:
     CliResult[OperationListResult]
         List of operations matching the filter.
     """
-    category = ctx.param_str("category")
+    category = ctx.params.get_str("category")
     return op_list_structured(category=category)
 
 
-def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
+def op_call_handler(ctx: CommandContext) -> CliResult[OperationCallResult]:
     """Invoke an operation end-to-end with optional prerequisites.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - op_id: Operation ID to invoke
         - params: List of key=value parameter strings
         - skip_prereqs: Skip prerequisite execution
@@ -123,9 +123,9 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
     CliResult[OperationCallResult]
         Operation result.
     """
-    op_id = ctx.require_str("op_id")
-    params_list = ctx.param_list("params")
-    skip_prereqs = ctx.param_bool("skip_prereqs", default=False)
+    op_id = ctx.params.require_str("op_id")
+    params_list = ctx.params.get_list("params")
+    skip_prereqs = ctx.params.get_bool("skip_prereqs", default=False)
 
     # Validate operation exists first
     op = get_operation(op_id)
@@ -140,8 +140,8 @@ def op_call_handler(ctx: HandlerContext) -> CliResult[OperationCallResult]:
         key, value = param_str.split("=", 1)
         kwargs[key] = parse_cli_value(value)
 
-    # Use unified serving operation invocation
-    result = ctx.invoke_serving_operation(op_id, kwargs, skip_prereqs=skip_prereqs)
+    # Use unified serving operation invocation via serving service
+    result = ctx.serving.invoke(op_id, kwargs, skip_prereqs=skip_prereqs)
     return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
 
@@ -182,13 +182,13 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     )
 
 
-def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
+def dataset_list_handler(ctx: CommandContext) -> CliResult[DatasetListResult]:
     """List datasets from the registry.
 
     Parameters
     ----------
     ctx
-        Handler context.
+        Command context.
 
     Returns
     -------
@@ -213,14 +213,14 @@ def dataset_list_handler(ctx: HandlerContext) -> CliResult[DatasetListResult]:
 
 
 def dataset_describe_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetDescribeResult]:
     """Show contract details for a dataset.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - table_key: Dataset table key
 
     Returns
@@ -228,19 +228,19 @@ def dataset_describe_handler(
     CliResult[DatasetDescribeResult]
         Dataset details.
     """
-    table_key = ctx.require_str("table_key")
+    table_key = ctx.params.require_str("table_key")
     return dataset_describe_structured(table_key=table_key)
 
 
 def dataset_verify_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetVerifyResult]:
     """Verify dataset contracts against actual data.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - table_key: Optional dataset table key filter
 
     Returns
@@ -248,7 +248,7 @@ def dataset_verify_handler(
     CliResult[DatasetVerifyResult]
         Verification result.
     """
-    table_key = ctx.param_str("table_key")
+    table_key = ctx.params.get_str("table_key")
     gateway = ctx.gateway
     issues = collect_contract_issues(gateway.con)
 
@@ -258,13 +258,13 @@ def dataset_verify_handler(
     return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
-def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
+def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     """Start the HTTP server.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - host: Server host (default: 127.0.0.1)
         - port: Server port (default: 8000)
         - auto_pipeline: Enable auto-pipeline
@@ -279,10 +279,10 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     -----
     This function blocks while the server is running.
     """
-    host = ctx.param_str("host", "127.0.0.1") or "127.0.0.1"
-    port = ctx.param_int("port", 8000)
-    auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
-    reload = ctx.param_bool("reload", default=False)
+    host = ctx.params.get_str("host", "127.0.0.1") or "127.0.0.1"
+    port = ctx.params.get_int("port", 8000)
+    auto_pipeline = ctx.params.get_bool("auto_pipeline", default=False)
+    reload = ctx.params.get_bool("reload", default=False)
 
     runtime = ctx.runtime
 
@@ -323,13 +323,13 @@ def serve_http_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     )
 
 
-def serve_mcp_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
+def serve_mcp_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     """Start the MCP server.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - auto_pipeline: Enable auto-pipeline
 
     Notes
@@ -337,7 +337,7 @@ def serve_mcp_handler(ctx: HandlerContext) -> CliResult[ServeStartResult]:
     This function blocks while the server is running and exits the process
     via sys.exit(), so it never returns normally.
     """
-    auto_pipeline = ctx.param_bool("auto_pipeline", default=False)
+    auto_pipeline = ctx.params.get_bool("auto_pipeline", default=False)
 
     _setup_serving_env(ctx.runtime, auto_pipeline=auto_pipeline)
 

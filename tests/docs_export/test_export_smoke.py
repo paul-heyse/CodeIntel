@@ -16,28 +16,27 @@ from codeintel.export.export_jsonl import (
 )
 from codeintel.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.datasets import DatasetRegistry
-from tests._helpers import ProvisionedGateway, provision_docs_export_ready
+from tests._helpers import TestContext, provision_docs_export_ready
 
 
 @pytest.fixture
-def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+def docs_export_gateway(tmp_path: Path) -> Iterator[TestContext]:
     """Provision docs-export-ready gateway and ensure cleanup.
 
     Yields
     ------
-    ProvisionedGateway
-        Provisioned gateway seeded for docs export.
+    TestContext
+        Provisioned context seeded for docs export.
     """
-    ctx = provision_docs_export_ready(tmp_path, repo="r", commit="c", file_backed=False)
+    provisioned = provision_docs_export_ready(tmp_path, repo="r", commit="c", file_backed=False)
+    ctx = TestContext.from_provisioned(provisioned)
     try:
         yield ctx
     finally:
         ctx.close()
 
 
-def test_export_all_writes_expected_files(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
-) -> None:
+def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_path: Path) -> None:
     """
     Seed a minimal DB and verify Parquet/JSONL exports are produced.
 
@@ -108,7 +107,7 @@ def test_export_all_writes_expected_files(
 
 
 def test_export_validation_passes_on_minimal_data(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Ensure validation succeeds when provided with conforming exports."""
     output_dir = tmp_path / "Document Output"
@@ -119,9 +118,7 @@ def test_export_validation_passes_on_minimal_data(
     )
 
 
-def test_export_subset_by_dataset_name(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
-) -> None:
+def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_path: Path) -> None:
     """Exports honor dataset-name selection using the registry."""
     output_dir = tmp_path / "Document Output"
     selected = ["function_metrics", "goids"]
@@ -166,7 +163,7 @@ def test_export_subset_by_dataset_name(
 
 
 def test_export_subset_validates_dataset_names(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Dataset selection rejects unknown names."""
     output_dir = tmp_path / "Document Output"
@@ -179,7 +176,7 @@ def test_export_subset_validates_dataset_names(
 
 
 def test_export_helpers_resolve_dataset_names(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Dataset-aware export helpers resolve registry names to filenames."""
     output_dir = tmp_path / "Document Output"
@@ -211,7 +208,7 @@ def test_export_helpers_resolve_dataset_names(
 
 
 def test_export_validation_runs_against_registry(
-    docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Exports should validate the dataset registry before writing files."""
     output_dir = tmp_path / "Document Output"

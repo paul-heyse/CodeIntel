@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/operations/__init__.py
+# hypothesis_version: 6.148.7
+
+['Capability', 'Operation', 'OperationRegistry', 'OperationSpec', 'Result', 'Serializable', 'get_default_registry', 'operation', 'result_type']

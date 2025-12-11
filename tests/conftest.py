@@ -41,6 +41,19 @@ from tests._helpers.seeds import (
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Register shared plugins explicitly via pluggy to avoid pytest_plugins."""
+    for plugin_name in (
+        "tests._helpers.orchestration.tooling",
+        "tests._helpers.plugins.mcp",
+    ):
+        try:
+            config.pluginmanager.import_plugin(plugin_name)
+        except ValueError:
+            # Already registered by pytest's normal discovery.
+            continue
+
+
 @pytest.fixture
 def fresh_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     """Provide an in-memory gateway with schema and views applied.

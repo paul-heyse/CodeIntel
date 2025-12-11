@@ -9,14 +9,14 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_invalid_plugin_manifest,
     fail_invalid_plugin_name,
     fail_plugin_no_manifest,
     fail_plugin_not_found,
 )
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.plugins import (
     PluginManifest,
     PluginTestHarness,
@@ -231,20 +231,20 @@ class PluginValidateResult:
         }
 
 
-def plugins_list_handler(ctx: HandlerContext) -> CliResult[PluginsListResult]:
+def plugins_list_handler(ctx: CommandContext) -> CliResult[PluginsListResult]:
     """List installed plugins.
 
     Parameters
     ----------
     ctx
-        Handler context (no params required).
+        Command context (no params required).
 
     Returns
     -------
     CliResult[PluginsListResult]
         List of installed plugins.
     """
-    _ = ctx.params  # Acknowledge params
+    _ = ctx.params.raw  # Acknowledge params
     LOG.info("Listing installed plugins")
 
     manager = get_plugin_manager()
@@ -256,21 +256,21 @@ def plugins_list_handler(ctx: HandlerContext) -> CliResult[PluginsListResult]:
 
 
 def plugins_discover_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[PluginsDiscoverResult]:
     """Discover available plugins.
 
     Parameters
     ----------
     ctx
-        Handler context (no params required).
+        Command context (no params required).
 
     Returns
     -------
     CliResult[PluginsDiscoverResult]
         Discovered plugins and search paths.
     """
-    _ = ctx.params  # Acknowledge params
+    _ = ctx.params.raw  # Acknowledge params
     LOG.info("Discovering available plugins")
 
     manager = get_plugin_manager()
@@ -299,13 +299,13 @@ def plugins_discover_handler(
     )
 
 
-def plugins_info_handler(ctx: HandlerContext) -> CliResult[PluginInfoResult]:
+def plugins_info_handler(ctx: CommandContext) -> CliResult[PluginInfoResult]:
     """Get details about a plugin.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - name: Plugin name
 
     Returns
@@ -313,7 +313,7 @@ def plugins_info_handler(ctx: HandlerContext) -> CliResult[PluginInfoResult]:
     CliResult[PluginInfoResult]
         Plugin details.
     """
-    name = ctx.require_str("name")
+    name = ctx.params.require_str("name")
     LOG.info("Getting info for plugin: %s", name)
 
     manager = get_plugin_manager()
@@ -334,20 +334,20 @@ def plugins_info_handler(ctx: HandlerContext) -> CliResult[PluginInfoResult]:
     )
 
 
-def plugins_paths_handler(ctx: HandlerContext) -> CliResult[PluginPathsResult]:
+def plugins_paths_handler(ctx: CommandContext) -> CliResult[PluginPathsResult]:
     """Show plugin search paths.
 
     Parameters
     ----------
     ctx
-        Handler context (no params required).
+        Command context (no params required).
 
     Returns
     -------
     CliResult[PluginPathsResult]
         Plugin search paths.
     """
-    _ = ctx.params  # Acknowledge params
+    _ = ctx.params.raw  # Acknowledge params
     LOG.info("Listing plugin search paths")
 
     manager = get_plugin_manager()
@@ -360,13 +360,13 @@ def plugins_paths_handler(ctx: HandlerContext) -> CliResult[PluginPathsResult]:
     return CliResult.ok(PluginPathsResult(paths=paths))
 
 
-def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
+def plugins_new_handler(ctx: CommandContext) -> CliResult[PluginNewResult]:
     """Create a new plugin scaffold.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - name: Plugin name
         - output: Optional output directory
 
@@ -377,8 +377,8 @@ def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
     """
     import re
 
-    name = ctx.require_str("name")
-    output_dir = ctx.param_path("output") or Path.cwd()
+    name = ctx.params.require_str("name")
+    output_dir = ctx.params.get_path("output") or Path.cwd()
 
     LOG.info("Creating plugin scaffold: %s in %s", name, output_dir)
 
@@ -394,13 +394,13 @@ def plugins_new_handler(ctx: HandlerContext) -> CliResult[PluginNewResult]:
     return CliResult.ok(PluginNewResult(plugin_dir=str(plugin_dir), name=name))
 
 
-def plugins_test_handler(ctx: HandlerContext) -> CliResult[PluginTestResult]:
+def plugins_test_handler(ctx: CommandContext) -> CliResult[PluginTestResult]:
     """Test a plugin.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - path: Plugin directory path
 
     Returns
@@ -408,7 +408,7 @@ def plugins_test_handler(ctx: HandlerContext) -> CliResult[PluginTestResult]:
     CliResult[PluginTestResult]
         Test results.
     """
-    path = ctx.param_path("path") or Path.cwd()
+    path = ctx.params.get_path("path") or Path.cwd()
 
     LOG.info("Testing plugin at: %s", path)
 
@@ -451,14 +451,14 @@ def plugins_test_handler(ctx: HandlerContext) -> CliResult[PluginTestResult]:
 
 
 def plugins_validate_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[PluginValidateResult]:
     """Validate a plugin manifest.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - path: Plugin directory path
 
     Returns
@@ -466,7 +466,7 @@ def plugins_validate_handler(
     CliResult[PluginValidateResult]
         Validation results.
     """
-    path = ctx.param_path("path") or Path.cwd()
+    path = ctx.params.get_path("path") or Path.cwd()
 
     LOG.info("Validating plugin at: %s", path)
 

@@ -21,9 +21,6 @@ from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
 from tests._helpers.cli_project import CLIProjectContext, create_cli_project
 from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
 
-# Load shared MCP backend fixtures for handler tests from a single top-level plugin.
-pytest_plugins = ["tests.serving.mcp.conftest"]
-
 _GATEWAY_CACHE: dict[Path, StorageGateway] = {}
 
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/deps/container.py
+# hypothesis_version: 6.148.7
+
+['Deps', 'DepsBuilder', 'codeintel.cli']

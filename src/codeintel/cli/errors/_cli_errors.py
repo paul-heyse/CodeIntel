@@ -350,9 +350,14 @@ def run_structured_handler[ResultT](
     """
     try:
         result: CliResult[ResultT] = handler(*args, **kwargs)
-        result.render(output_format, sys.stdout)
-        if not result.success:
-            raise SystemExit(CLI_EXIT_VALIDATION)
+        # Use UnifiedRenderer instead of CliResult.render()
+        # Import here to avoid circular dependency
+        from codeintel.cli.rendering.service import get_renderer  # noqa: PLC0415
+
+        renderer = get_renderer(output_format)
+        exit_code = renderer.render_result(result)
+        if exit_code != 0:
+            raise SystemExit(exit_code)
     except ValidationError as exc:
         problem = _exception_to_problem(exc)
         if output_format == OutputFormat.JSON:

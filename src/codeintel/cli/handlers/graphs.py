@@ -9,10 +9,10 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import fail_invalid_policy
+from codeintel.cli.errors.results import fail_invalid_policy
 from codeintel.cli.execution.registry import OperationSpec, register_operation
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.graphs.core.registry import (
     DependencyPolicy,
     PlanningOptions,
@@ -168,14 +168,14 @@ class GraphPlanResult:
 
 
 def graph_plugins_list_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[GraphPluginsResult]:
     """List registered graph plugins.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - names: Optional plugin names to filter.
         - enable: Optional plugins to enable.
         - disable: Optional plugins to disable.
@@ -186,9 +186,9 @@ def graph_plugins_list_handler(
     CliResult[GraphPluginsResult]
         List of plugins.
     """
-    names_tuple = ctx.param_tuple("names")
+    names_tuple = ctx.params.get_tuple("names")
     names: tuple[str, ...] | None = names_tuple if names_tuple else None
-    include_disabled = ctx.param_bool("include_disabled")
+    include_disabled = ctx.params.get_bool("include_disabled")
 
     LOG.info("Listing graph plugins (names=%s)", names)
 
@@ -221,14 +221,14 @@ def graph_plugins_list_handler(
 
 
 def graph_plugins_plan_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[GraphPlanResult]:
     """Display an execution plan for graph plugins.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - names: Optional plugin names to include.
         - enable: Optional plugins to enable.
         - disable: Optional plugins to disable.
@@ -240,13 +240,13 @@ def graph_plugins_plan_handler(
     CliResult[GraphPlanResult]
         Execution plan.
     """
-    names_tuple = ctx.param_tuple("names")
+    names_tuple = ctx.params.get_tuple("names")
     names: tuple[str, ...] | None = names_tuple if names_tuple else None
-    enable_tuple = ctx.param_tuple("enable")
+    enable_tuple = ctx.params.get_tuple("enable")
     enable: tuple[str, ...] | None = enable_tuple if enable_tuple else None
-    disable = ctx.param_tuple("disable") or ()
-    selection_policy_str = ctx.param_str("selection_policy", "lenient")
-    dependency_policy_str = ctx.param_str("dependency_policy", "strict")
+    disable = ctx.params.get_tuple("disable") or ()
+    selection_policy_str = ctx.params.get_str("selection_policy", "lenient")
+    dependency_policy_str = ctx.params.get_str("dependency_policy", "strict")
 
     # Parse policies
     try:

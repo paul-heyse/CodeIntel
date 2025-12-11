@@ -17,10 +17,8 @@ from codeintel.cli.jobs._jobs import (
     JobStatus,
     JobStore,
     get_job_manager,
+    run_job,
 )
-
-# Job runner (main function exposed for console_scripts)
-from codeintel.cli.jobs.runner import main as run_job
 
 __all__ = [
     "JobInfo",

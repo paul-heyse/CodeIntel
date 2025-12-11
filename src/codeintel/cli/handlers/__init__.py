@@ -1,10 +1,26 @@
 """Unified CLI handlers package.
 
-This package provides:
+This package provides business logic handlers for CLI commands. Two patterns exist:
 
-1. Shared utilities in `handlers._utilities`
-2. Domain-specific handlers in `handlers.<domain>`
-3. Unified HandlerContext in `handlers.context`
+Command[T] Pattern (preferred for simple commands):
+    Commands like jobs, health, plugins, graphs use `Command[T]` base class
+    with an `execute(deps: Deps)` method. These have business logic in the
+    command class itself.
+
+Handler Pattern (for complex commands):
+    Commands requiring runtime/gateway access (build, datasets, storage,
+    subsystem, docs, history, ops, serve, ide) use handler functions with
+    `HandlerContext`. This provides full access to resolved runtime,
+    storage gateway, and snapshot information.
+
+Components:
+    - handlers._utilities: Shared utilities (gateway opening, logging)
+    - handlers.context: HandlerContext and related types
+    - handlers.<domain>: Domain-specific handler functions
+
+Note:
+    Some handlers (jobs, health, plugins, graphs) still exist for backward
+    compatibility but the primary code path is now through Command[T].execute().
 
 Examples
 --------

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 from codeintel.cli.handlers.context import HandlerContext
@@ -18,9 +19,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.configs import ProvisionedGateway
 from tests._helpers.serving_contexts import build_provisioned_service_context
 from tests.serving.mcp.conftest import McpBackendComponents
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def test_full_param_workflow() -> None:
@@ -153,7 +156,7 @@ def test_database_path_fallback() -> None:
 
 
 def test_context_with_provisioned_service_backend(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> None:
     """Context can build backend resources against provisioned services."""

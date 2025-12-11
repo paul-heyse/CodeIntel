@@ -20,7 +20,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
-from tests.serving.mcp.conftest import McpBackendComponents
+from tests._helpers.plugins.mcp import McpBackendComponents
 
 # =============================================================================
 # Constants

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Self
 
 import networkx as nx
 
@@ -62,7 +63,81 @@ class SampleRepo:
     module_map: dict[str, str]
 
 
-def write_sample_repo(tmp_path: Path) -> SampleRepo:
+@dataclass
+class AnalyticsProjectBuilder:
+    """Builder for the analytics sample repo with override hooks."""
+
+    repo: str = "demo"
+    commit: str = "abc123"
+    repo_root: Path | None = None
+
+    def with_repo(self, repo: str) -> Self:
+        """Override repository identifier used in seeds.
+
+        Returns
+        -------
+        Self
+            Builder with updated repo.
+        """
+        self.repo = repo
+        return self
+
+    def with_commit(self, commit: str) -> Self:
+        """Override commit hash used in seeds.
+
+        Returns
+        -------
+        Self
+            Builder with updated commit.
+        """
+        self.commit = commit
+        return self
+
+    def with_repo_root(self, repo_root: Path) -> Self:
+        """Provide an explicit repo root path instead of temp layout.
+
+        Returns
+        -------
+        Self
+            Builder with explicit repo root.
+        """
+        self.repo_root = repo_root
+        return self
+
+    def build(self, base_path: Path) -> SampleRepo:
+        """Construct the seeded sample repository.
+
+        Returns
+        -------
+        SampleRepo
+            Seeded repository bundle.
+        """
+        return write_sample_repo(
+            base_path,
+            repo=self.repo,
+            commit=self.commit,
+            repo_root=self.repo_root,
+        )
+
+
+def analytics_project() -> AnalyticsProjectBuilder:
+    """Return a builder for the analytics sample project.
+
+    Returns
+    -------
+    AnalyticsProjectBuilder
+        Builder configured with default repo/commit.
+    """
+    return AnalyticsProjectBuilder()
+
+
+def write_sample_repo(
+    tmp_path: Path,
+    *,
+    repo: str = "demo",
+    commit: str = "abc123",
+    repo_root: Path | None = None,
+) -> SampleRepo:
     """
     Seed a small repository layout for analytics integration tests.
 
@@ -70,13 +145,19 @@ def write_sample_repo(tmp_path: Path) -> SampleRepo:
     ----------
     tmp_path
         Temporary directory provided by pytest.
+    repo
+        Repository identifier to record in seeds.
+    commit
+        Commit hash to record in seeds.
+    repo_root
+        Optional repository root path (defaults to tmp_path / "repo").
 
     Returns
     -------
     SampleRepo
         Seeded repository metadata and handles.
     """
-    repo_root = tmp_path / "repo"
+    repo_root = repo_root or (tmp_path / "repo")
     api_path = repo_root / "pkg" / "api.py"
     api_path.parent.mkdir(parents=True, exist_ok=True)
     source = "\n".join(
@@ -117,8 +198,8 @@ def write_sample_repo(tmp_path: Path) -> SampleRepo:
         encoding="utf-8",
     )
 
-    snapshot = SnapshotRef(repo="demo", commit="abc123", repo_root=repo_root)
-    gateway = GatewayFactory().with_snapshot(repo="demo", commit="abc123").open()
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    gateway = GatewayFactory().with_snapshot(repo=repo, commit=commit).open()
     now = datetime.now(tz=UTC)
 
     ensure_schema(gateway.con, "analytics.coverage_functions")
