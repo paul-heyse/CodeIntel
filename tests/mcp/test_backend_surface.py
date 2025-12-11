@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -12,9 +12,12 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DatasetBackendMixin
 from codeintel.serving.mcp.models import DatasetDescriptor
 from codeintel.serving.services.errors import ProblemDetail
-from codeintel.serving.services.query_service import QueryService
-from tests._helpers import FakeQueryService, ModelLike, RecordingAsyncClient
+from tests._helpers import FakeQueryService, RecordingAsyncClient
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.serving.services.query_service import QueryService
+    from tests._helpers import ModelLike
 
 
 @pytest.mark.anyio

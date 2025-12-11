@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from fastapi import status
-from fastapi.testclient import TestClient
 
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 
 @runtime_checkable

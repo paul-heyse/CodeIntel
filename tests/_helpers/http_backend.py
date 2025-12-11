@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import httpx
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.backend import HttpBackend
-from codeintel.serving.services.query_service import HttpQueryService
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.serving.services.query_service import HttpQueryService
 
 
 @dataclass

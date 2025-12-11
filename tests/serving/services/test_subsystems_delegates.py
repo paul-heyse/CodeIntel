@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.services.query_service import LocalQueryService
 
 if TYPE_CHECKING:
+    from codeintel.serving.services.query_service import LocalQueryService
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 

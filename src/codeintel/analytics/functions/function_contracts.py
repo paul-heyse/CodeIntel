@@ -5,23 +5,24 @@ from __future__ import annotations
 import ast
 import json
 import logging
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import pandas as pd
-
 from codeintel.analytics.compute.graphs import normalize_decimal_id
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
-from codeintel.config import FunctionContractsStepConfig
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    import pandas as pd
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config import FunctionContractsStepConfig
     from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

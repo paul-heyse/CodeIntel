@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.utilities.ast import safe_unparse
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from datetime import datetime
+
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
 

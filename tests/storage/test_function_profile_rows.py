@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
-    FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
 from tests._helpers.factories import blank_function_profile_row
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets import (
+        FunctionProfileRowModel,
+    )
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:

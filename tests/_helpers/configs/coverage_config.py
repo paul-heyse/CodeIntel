@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config import ConfigBuilder
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.config import ConfigBuilder
+    from codeintel.storage.gateway import StorageGateway
 
 # Default constants for coverage tests
 REPO = "demo/repo"

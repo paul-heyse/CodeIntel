@@ -7,8 +7,7 @@ introduced in Phase 1 of the CLI migration.
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +23,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_false,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 @pytest.fixture(autouse=True)

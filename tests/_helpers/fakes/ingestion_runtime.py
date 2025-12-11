@@ -8,13 +8,19 @@ real implementations when provided.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from codeintel.build.executor import BuildExecutor, BuildResult
-from codeintel.build.plan import BuildPlan
+from codeintel.build.executor import BuildResult
 from codeintel.ingestion.adapters.duckdb_storage import IngestStorageService
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.build.executor import BuildExecutor
+    from codeintel.build.plan import BuildPlan
+    from codeintel.storage.gateway import StorageGateway
 
 BatchCall = tuple[str, Sequence[Sequence[object]], Sequence[object] | None, str | None]
 """Recorded call tuple for run_batch invocations."""

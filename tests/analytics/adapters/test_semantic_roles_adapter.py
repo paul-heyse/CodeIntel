@@ -6,9 +6,7 @@ classification data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -16,13 +14,12 @@ from codeintel.analytics.adapters.semantic_roles import (
     SemanticRolesFunctionsAdapter,
     SemanticRolesModulesAdapter,
 )
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     expect_true,
     require_row,
 )
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
@@ -31,6 +28,13 @@ from tests._helpers.rows import (
     semantic_role_function_row,
     semantic_role_module_row,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

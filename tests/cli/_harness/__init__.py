@@ -16,12 +16,11 @@ import io
 import json
 import os
 import sys
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
@@ -30,6 +29,9 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
 from tests._helpers.gateway import GatewayFactory
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass

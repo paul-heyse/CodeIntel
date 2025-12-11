@@ -11,9 +11,11 @@ This module provides TypedDict definitions for test-related DuckDB tables:
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import datetime
-from typing import Final, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Final, TypedDict, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
 _Column = TypeVar("_Column", bound=str)
 

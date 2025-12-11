@@ -17,12 +17,11 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
 
 @runtime_checkable

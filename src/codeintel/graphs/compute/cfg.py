@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @dataclass

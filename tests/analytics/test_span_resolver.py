@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,6 +13,9 @@ from codeintel.analytics.parsing.span_resolver import (
     build_span_index,
     resolve_span,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_build_span_index_skips_missing_goids(tmp_path: Path) -> None:

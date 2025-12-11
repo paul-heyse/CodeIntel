@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, TypeGuard
+from typing import TYPE_CHECKING, Literal, TypeGuard
 
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.plugins.registry.base import BasePluginRegistry, RegistryHooks
@@ -25,13 +24,19 @@ from codeintel.core.plugins.types.result import PluginResult
 from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
-    GraphPluginMetadata,
     GraphPluginMetadataConfig,
     GraphPluginPlan,
     GraphPluginProtocol,
     GraphPluginSkip,
     create_graph_metadata,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.graphs.core.protocol import (
+        GraphPluginMetadata,
+    )
 
 log = logging.getLogger(__name__)
 

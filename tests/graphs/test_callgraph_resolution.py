@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs.adapters import callgraph_persistence as call_persist
 from codeintel.graphs.compute import callgraph as call_resolution
 from tests._helpers.assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets import CallGraphEdgeRow
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234

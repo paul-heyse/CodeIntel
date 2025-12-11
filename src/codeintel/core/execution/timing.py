@@ -8,11 +8,13 @@ in a consistent manner across the codebase. It replaces ad-hoc
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 T = TypeVar("T")
 

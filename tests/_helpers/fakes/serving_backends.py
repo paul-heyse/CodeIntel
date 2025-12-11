@@ -7,12 +7,16 @@ deterministic close semantics for tests.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass

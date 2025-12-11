@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from codeintel.config.datasets import (
     FunctionValidationRow,
@@ -13,7 +12,11 @@ from codeintel.config.datasets import (
     function_validation_row_to_tuple,
     graph_validation_row_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.storage.gateway import StorageGateway
 
 FUNCTION_VALIDATION_COLS = [
     "repo",

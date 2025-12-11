@@ -6,8 +6,12 @@ in-function imports and keep import order explicit.
 
 from __future__ import annotations
 
-from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
+from typing import TYPE_CHECKING
+
 from codeintel.config.datasets.schemas import COMPOSITE_SCHEMAS, TABLE_SCHEMAS
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
 
 
 def table_schemas() -> dict[str, TableSchema]:

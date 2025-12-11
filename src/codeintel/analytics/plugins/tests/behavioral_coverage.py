@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
-from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
+    from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 BEHAVIORAL_COVERAGE_METADATA = CorePluginMetadata(

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/checks/anomaly.py
+# hypothesis_version: 6.148.7
+
+[', ', 'Any', 'check_name', 'commit', 'communities', 'context', 'detail', 'empty', 'info', 'modules', 'path', 'repo', 'severity', 'sym_count', 'warning']

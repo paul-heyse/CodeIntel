@@ -11,8 +11,7 @@ live in codeintel.graphs.data_models.rows.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 # Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import (
@@ -23,6 +22,9 @@ from codeintel.core.data_models.rows import (
     ImportModuleRow,
     SymbolUseRow,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 # Simple alias to align with serializer naming used in tests and contracts.

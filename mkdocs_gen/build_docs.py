@@ -27,15 +27,17 @@ from __future__ import annotations
 import logging
 import sys
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from tqdm import tqdm
 
 from mkdocs_gen.command_runner import CommandError, run_command_sync, stream_command_sync
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

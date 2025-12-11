@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
 
 log = logging.getLogger(__name__)
 

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
-from typing import ClassVar, TypeVar, cast
+from typing import TYPE_CHECKING, ClassVar, TypeVar, cast
 
 import libcst as cst
 import libcst.matchers as m
 from libcst.codemod import CodemodCommand, CodemodContext
 
-from tools.analytics_refactors.tuple_row_config import ALL_SPECS, TupleRowSpec
+from tools.analytics_refactors.tuple_row_config import ALL_SPECS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from tools.analytics_refactors.tuple_row_config import TupleRowSpec
 
 CSTNodeT = TypeVar("CSTNodeT", bound=cst.CSTNode)
 

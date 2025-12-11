@@ -15,15 +15,13 @@ The symbol uses plugin performs the following steps:
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import SymbolUsesStepConfig
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.plugins.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.ingestion.adapters import IngestStorageService
@@ -31,7 +29,11 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

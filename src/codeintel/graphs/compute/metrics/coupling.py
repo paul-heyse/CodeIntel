@@ -6,11 +6,13 @@ and community detection without any database or file I/O.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 try:
     from networkx.algorithms.community import (

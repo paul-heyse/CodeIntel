@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
-
-from duckdb import DuckDBPyConnection
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS,
@@ -17,6 +15,11 @@ from codeintel.config.datasets import (
 from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.sql import safe_macro_call
 from codeintel.storage.views import create_all_views
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from duckdb import DuckDBPyConnection
 
 
 def _canonical_type(type_str: str) -> str:

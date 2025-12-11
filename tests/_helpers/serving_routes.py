@@ -2,23 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.http.routes.functions import RouterOptions
-from tests._helpers.serving_apps import ServiceApp, build_service_app
+from tests._helpers.serving_apps import build_service_app
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
+    from contextlib import AbstractContextManager
+
+    from fastapi import APIRouter, FastAPI
+
+    from codeintel.serving.backend import BackendLimits
     from codeintel.serving.services.observability import ServiceObservability
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.serving_apps import ServiceApp
     from tests.serving.mcp.conftest import McpBackendComponents
 
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
-from codeintel.analytics.testing.profiles.types import ImportanceInputs, IoFlags
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.analytics.testing.profiles.types import ImportanceInputs, IoFlags
 
 
 def compute_flakiness_score(

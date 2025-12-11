@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.storage.gateway import StorageGateway
 
 CATALOG_MODULE_TABLE = "temp.catalog_modules"
 DEFAULT_MODULE_TABLE = "core.modules"

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
 

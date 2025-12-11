@@ -36,10 +36,12 @@ from __future__ import annotations
 import logging
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from codeintel.build.parameters import TargetParameters
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _T = TypeVar("_T")
 

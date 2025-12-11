@@ -9,7 +9,7 @@ Consolidated from:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -28,7 +28,6 @@ from codeintel.storage.datasets import (
     list_dataset_specs,
     load_dataset_registry,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -38,6 +37,11 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.dataset_factories import sample_dataset_registry
 from tests._helpers.gateway import GatewayFactory
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _sample_registry() -> DatasetRegistry:

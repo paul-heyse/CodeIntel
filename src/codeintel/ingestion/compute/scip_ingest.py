@@ -8,16 +8,17 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSymbol, ToolStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort

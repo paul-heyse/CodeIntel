@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.observability import ServiceObservability
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend, build_duckdb_query_service
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.backend import DuckDBQueryService
+    from codeintel.serving.mcp.backend import DuckDBBackend
+    from codeintel.serving.services.observability import ServiceObservability
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
 DEFAULT_LIMIT = 10

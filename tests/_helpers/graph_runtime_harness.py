@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.graphs.graph_metrics import (
-    GraphMetricFilters,
     GraphMetricsDeps,
     compute_graph_metrics,
 )
@@ -22,11 +21,9 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ConfigDataFlowStepConfig, GraphMetricsStepConfig
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
@@ -37,7 +34,6 @@ from tests._helpers.fakes.graph_runtime import (
 )
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
-    GraphFixtures,
     build_ast_map,
     build_module_map,
     build_sample_graphs,
@@ -58,6 +54,18 @@ from tests._helpers.repo import (
     MOD_B_FQN,
     MOD_C_FQN,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.analytics.graphs.graph_metrics import (
+        GraphMetricFilters,
+    )
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.graphs import (
+        GraphFixtures,
+    )
 
 
 @dataclass

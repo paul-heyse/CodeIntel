@@ -10,11 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.core.execution.telemetry import RuntimeTelemetry, get_runtime_telemetry
+from codeintel.core.execution.telemetry import get_runtime_telemetry
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.execution import RunContext
+    from codeintel.core.execution.telemetry import RuntimeTelemetry
     from codeintel.storage.gateway import StorageGateway
 
 

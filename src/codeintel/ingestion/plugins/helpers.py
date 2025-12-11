@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
-from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.ibis_types import ibis_bool
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 
 __all__ = [
     "build_scan_profile",

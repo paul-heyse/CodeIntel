@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.analytics.testing.profiles.types import TestRecord
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
-from codeintel.storage.gateway import DuckDBConnection
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
     from codeintel.analytics.testing.profiles.types import (
         FunctionCoverageEntryProtocol,
         SubsystemCoverageEntryProtocol,
         TestGraphMetricsProtocol,
     )
+    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.storage.gateway import DuckDBConnection
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4
 

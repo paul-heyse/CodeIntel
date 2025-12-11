@@ -7,12 +7,14 @@ from typing import TypedDict
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema.json_schema import (
     build_validator,
     json_schema_from_typeddict,
     validate_row_with_schema,
 )
+
+if typing.TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Test Data

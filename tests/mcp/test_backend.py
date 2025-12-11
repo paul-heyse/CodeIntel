@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
-from codeintel.storage.gateway import StorageGateway
+from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT
 from tests._helpers import seed_mcp_backend
 from tests._helpers.gateway import build_duckdb_backend
+
+if TYPE_CHECKING:
+    from codeintel.serving.mcp.backend import DuckDBBackend
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

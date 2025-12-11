@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from codeintel.cli.plugins.manifest import PluginCapability, PluginManifest
+from codeintel.cli.plugins.manifest import PluginCapability
 from codeintel.cli.plugins.sandbox import PluginSandbox, SandboxConfig
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.cli.plugins.manifest import PluginManifest
 
 
 @runtime_checkable

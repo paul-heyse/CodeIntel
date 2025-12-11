@@ -6,11 +6,9 @@ call and aggregate data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import replace
 from decimal import Decimal
-from pathlib import Path
-from typing import TypedDict, Unpack
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 import pytest
 
@@ -20,7 +18,6 @@ from codeintel.analytics.adapters.dependencies import (
     compute_dep_id,
     to_decimal,
 )
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -32,7 +29,7 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
@@ -41,6 +38,13 @@ from tests._helpers.rows import (
     dependency_aggregate_row_from_payload,
     dependency_call_row_from_payload,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

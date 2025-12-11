@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,7 +18,6 @@ from codeintel.build.state import (
 )
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -27,6 +26,11 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Test Fixtures

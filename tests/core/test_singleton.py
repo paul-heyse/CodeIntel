@@ -10,10 +10,9 @@ This module tests the thread-safe singleton holder pattern including:
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import pytest
 
@@ -26,6 +25,9 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # =============================================================================
 # Test Fixture Classes

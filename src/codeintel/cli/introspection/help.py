@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from codeintel.cli.execution.registry import OperationSpec
 from codeintel.cli.introspection.discovery import (
     get_operation_info,
     list_all_operations,
@@ -22,6 +21,9 @@ from codeintel.cli.introspection.discovery import (
     search_operations,
 )
 from codeintel.cli.rendering import CODEINTEL_THEME
+
+if TYPE_CHECKING:
+    from codeintel.cli.execution.registry import OperationSpec
 
 # Minimum number of parts in operation_id for group/action split (e.g., "jobs.list")
 _MIN_OPERATION_ID_PARTS = 2

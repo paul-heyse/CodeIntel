@@ -14,10 +14,10 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HotspotsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 HOTSPOTS_METADATA = CorePluginMetadata(
@@ -112,12 +112,13 @@ class HotspotsPlugin(TargetPlugin):
         row_counts: dict[str, int] = {}
         for table_key in ctx.contract.table_keys:
             try:
-                count = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
-                    f"WHERE repo = ? AND commit = ?",
+                relation = ctx.gateway.con.table(table_key)
+                count_row = relation.filter(
+                    "repo = ? AND commit = ?",
                     [ctx.repo, ctx.commit],
-                ).fetchone()
-                row_counts[table_key] = int(count[0]) if count else 0
+                ).aggregate("count(*)").fetchone()
+                count = int(count_row[0]) if count_row else 0
+                row_counts[table_key] = count
             except (RuntimeError, OSError):
                 row_counts[table_key] = 0
         return row_counts

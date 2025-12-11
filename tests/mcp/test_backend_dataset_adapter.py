@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     FunctionValidationRow,
     RepoMapRow,
     insert_rows,
 )
 from tests._helpers.gateway import build_duckdb_backend
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

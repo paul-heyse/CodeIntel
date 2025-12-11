@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from tests._helpers.builders._common import _iso
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 __all__ = [
     "ConfigValueRow",

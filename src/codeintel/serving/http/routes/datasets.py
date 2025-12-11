@@ -6,21 +6,27 @@ import hashlib
 import json
 import logging
 from dataclasses import asdict, is_dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from starlette.responses import Response
 
-from codeintel.serving import domain_models as dm
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
-from codeintel.serving.http.routes.functions import RouterOptions
+from codeintel.serving.http.dependencies import make_op_prereq_dependency
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
     DatasetRowsResponse,
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
 )
-from codeintel.serving.operations import Operation, get_operation
+from codeintel.serving.operations import get_operation
+
+if TYPE_CHECKING:
+    from fastapi import Request
+
+    from codeintel.serving import domain_models as dm
+    from codeintel.serving.http.dependencies import ServiceDep
+    from codeintel.serving.http.routes.functions import RouterOptions
+    from codeintel.serving.operations import Operation
 
 LOG = logging.getLogger("codeintel.serving.http.routes.datasets")
 

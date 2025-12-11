@@ -29,11 +29,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.targets import TargetModule
-
 if TYPE_CHECKING:
     from codeintel.build.resolver import ResolutionResult
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.targets import TargetGraph, TargetModule
 
 log = logging.getLogger(__name__)
 

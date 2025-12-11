@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-from duckdb import DuckDBPyConnection
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS,
@@ -12,11 +11,17 @@ from codeintel.config.datasets import (
     JSON_SCHEMA_BY_DATASET_NAME,
 )
 from codeintel.storage.datasets.registry import (
-    DatasetRegistry,
     build_dataset_dependency_graph,
     load_dataset_registry,
 )
 from codeintel.storage.metadata import NORMALIZED_MACROS
+
+if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
+
+    from codeintel.storage.datasets.registry import (
+        DatasetRegistry,
+    )
 
 BINDING_REQUIRED_DATASETS: set[str] = {
     name

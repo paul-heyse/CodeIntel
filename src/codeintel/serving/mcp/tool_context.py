@@ -7,18 +7,25 @@ patching global state.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.serialization import ResponseFactory
 from codeintel.serving.mcp.tool_builder import (
-    McpToolRegistrar,
     ToolRegistrationOptions,
     register_tools_for_category,
 )
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
-from codeintel.serving.operations import Operation
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.tool_builder import (
+        McpToolRegistrar,
+    )
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.operations import Operation
 
 ModelResolver = Callable[[str], ResponseFactory | None]
 

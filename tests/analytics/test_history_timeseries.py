@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder, SnapshotInit
@@ -13,6 +13,9 @@ from tests._helpers.env_options import GatewayOptions
 from tests._helpers.gateway import analytics_gateway
 from tests._helpers.orchestration.history import create_snapshot_db
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:

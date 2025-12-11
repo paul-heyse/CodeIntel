@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.storage.gateway import StorageGateway
+from typing import TYPE_CHECKING
+
 from codeintel.storage.schema import (
     assert_schema_alignment,
     create_schemas,
@@ -15,6 +16,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_apply_and_validate_schema_alignment(fresh_gateway: StorageGateway) -> None:

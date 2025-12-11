@@ -15,17 +15,21 @@ Consolidated from:
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.views import DERIVED_DOCS_VIEWS
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
 from tests._helpers.docs_views import list_indexes, seed_subsystem
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 # Constants
 EXPECTED_MODULE_COUNT_42 = 42

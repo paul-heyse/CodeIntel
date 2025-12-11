@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from anyio import to_thread
 
@@ -26,6 +25,9 @@ from codeintel.ingestion.engine.infrastructure import (
 from codeintel.ingestion.engine.results import CoverageReport, ScipIndexResult
 from codeintel.ingestion.engine.service import ToolService
 from tests._helpers.records import CallRecorder, ToolRunCall
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 
 def _mkdir_parents(path: Path) -> None:

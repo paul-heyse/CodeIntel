@@ -8,26 +8,13 @@ without mocking.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from pydantic import BaseModel
 
 from codeintel.serving.domain_models import DatasetRows, Message, ResponseMeta
 from codeintel.serving.types import (
-    BackendFactory,
-    FunctionRepositoryProtocol,
-    GraphEngineProtocol,
     HasClose,
-    HasModelDump,
-    JsonPayload,
-    ModuleRepositoryProtocol,
-    QueryBackendProtocol,
-    QueryServiceProtocol,
-    RepositoryProtocol,
-    RowDict,
-    ServiceFactory,
-    StorageGatewayProtocol,
-    SubsystemRepositoryProtocol,
 )
 from tests._helpers.assertions import (
     expect_equal,
@@ -37,6 +24,23 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.serving.types import (
+        BackendFactory,
+        FunctionRepositoryProtocol,
+        GraphEngineProtocol,
+        HasModelDump,
+        JsonPayload,
+        ModuleRepositoryProtocol,
+        QueryBackendProtocol,
+        QueryServiceProtocol,
+        RepositoryProtocol,
+        RowDict,
+        ServiceFactory,
+        StorageGatewayProtocol,
+        SubsystemRepositoryProtocol,
+    )
 
 # Constants for test values
 LIMIT_TEN = 10

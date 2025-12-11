@@ -19,16 +19,22 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
-from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.dependencies.classification import (
-    LibraryPattern,
     classify_modes,
     risk_score,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from codeintel.analytics.compute.dependencies.classification import (
+        LibraryPattern,
+    )
 
 
 @dataclass(frozen=True)

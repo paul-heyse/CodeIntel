@@ -5,11 +5,15 @@ This module tests the dataset-related HTTP endpoints using real gateways.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import status
-from fastapi.testclient import TestClient
 
 from tests._helpers.assertions import expect_equal, expect_is_instance, expect_true
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 # =============================================================================
 # Dataset Listing Tests

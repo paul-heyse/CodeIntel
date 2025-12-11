@@ -15,26 +15,22 @@ Design Principles
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.repo import write_canonical_repo
-from tests._helpers.seeds.core import CORE_PACK
-from tests._helpers.seeds.coverage import COVERAGE_PACK
-from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
-from tests._helpers.seeds.graph import GRAPH_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.provisioning_config import ProvisionedGateway
 
 
@@ -513,6 +509,10 @@ def coverage_ready_context(tmp_path: Path) -> TestContext:
     TestContext
         Context with coverage seeds and canonical sample repository.
     """
+    from tests._helpers.seeds.core import CORE_PACK
+    from tests._helpers.seeds.coverage import COVERAGE_PACK
+    from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
+
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK)
@@ -527,6 +527,9 @@ def graph_ready_context(tmp_path: Path) -> TestContext:
     TestContext
         Context with graph seeds and canonical sample repository.
     """
+    from tests._helpers.seeds.core import CORE_PACK
+    from tests._helpers.seeds.graph import GRAPH_PACK
+
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, GRAPH_PACK)
@@ -541,6 +544,11 @@ def coverage_and_graph_context(tmp_path: Path) -> TestContext:
     TestContext
         Context populated with both coverage and graph seed packs.
     """
+    from tests._helpers.seeds.core import CORE_PACK
+    from tests._helpers.seeds.coverage import COVERAGE_PACK
+    from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
+    from tests._helpers.seeds.graph import GRAPH_PACK
+
     ctx = create_test_context(tmp_path)
     _ensure_sample_repo(ctx.repo_root)
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK, GRAPH_PACK)

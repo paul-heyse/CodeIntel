@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import status
-from fastapi.testclient import TestClient
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.errors import McpError
@@ -20,7 +19,13 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.assertions.http_responses import assert_ok_or_not_found
-from tests._helpers.serving_contexts import ProvisionedServiceContext
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from fastapi.testclient import TestClient
+
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 SAMPLE_LIMIT = 5
 OFFSET_ZERO = 0

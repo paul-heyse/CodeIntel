@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from codeintel.storage.pandera_schemas import validate_dataset_df
-from codeintel.storage.repositories.base import BaseRepository, RowDict
+from codeintel.storage.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from codeintel.storage.repositories.base import RowDict
 
 MAX_ROW_LIMIT = 9_223_372_036_854_775_807
 

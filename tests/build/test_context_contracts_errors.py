@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,6 +18,9 @@ from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers import make_build_paths, make_snapshot
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _context_with_contract(contract: OutputContract, tmp_path: Path) -> TargetExecutionContext:

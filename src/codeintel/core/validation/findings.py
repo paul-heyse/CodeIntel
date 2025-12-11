@@ -9,10 +9,13 @@ at minimum a ``check_name`` (or similar identifier) and ``severity`` field.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import cast
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, cast
 
-from codeintel.core.validation.options import ValidationSeverity
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.core.validation.options import ValidationSeverity
 
 
 def apply_severity_overrides[T: Mapping[str, object]](

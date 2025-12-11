@@ -6,7 +6,6 @@ step dependencies so tests can assert wiring without monkeypatching.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,7 +13,6 @@ from typing import TYPE_CHECKING
 from codeintel.build.protocols import TypeCheckResult, TypeDiagnostic
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-from codeintel.ingestion.ports.storage import IngestStoragePort
 from codeintel.ingestion.ports.tools import (
     CoverageResult,
     DiagnosticEntry,
@@ -27,7 +25,10 @@ from codeintel.ingestion.ports.tools import (
 from tests._helpers.fakes.storage import FakeIngestStorage
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from codeintel.build.protocols import TypeChecker
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 else:  # pragma: no cover - runtime placeholder
 
     class TypeChecker:  # pragma: no cover - minimal stub

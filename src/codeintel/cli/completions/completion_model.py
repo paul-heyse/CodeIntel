@@ -10,9 +10,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from codeintel.cli.execution.registry import OperationRegistry, get_registry
+from codeintel.cli.execution.registry import get_registry
 
 if TYPE_CHECKING:
+    from codeintel.cli.execution.registry import OperationRegistry
     from codeintel.cli.introspection import ValidationSchema
 
 # Minimum number of parts for a valid operation ID (group.subcommand)

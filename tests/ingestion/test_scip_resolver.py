@@ -6,9 +6,8 @@ SCIP ingestion inputs into a resolved configuration.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -25,11 +24,18 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.ingestion import (
-    ScipIngestContext,
     build_scip_repo_fixture,
     closing_gateway,
     module_records_for_paths,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests._helpers.ingestion import (
+        ScipIngestContext,
+    )
 
 # Test constants for magic values
 EXPECTED_START_LINE = 1

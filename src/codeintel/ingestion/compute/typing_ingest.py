@@ -11,7 +11,6 @@ import ast
 import asyncio
 import json
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +29,8 @@ from codeintel.ingestion.ports.tools import ToolStatus
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort

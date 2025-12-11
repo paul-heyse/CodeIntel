@@ -14,11 +14,13 @@ This module provides TypedDict definitions for analytics DuckDB tables:
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
-from datetime import datetime
-from typing import Final, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Final, TypedDict, TypeVar
 
 from codeintel.config.datasets.schemas import TABLE_SCHEMAS
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
 _Column = TypeVar("_Column", bound=str)
 

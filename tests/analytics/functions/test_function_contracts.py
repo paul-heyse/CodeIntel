@@ -7,7 +7,7 @@ the public compute_function_contracts API and the ConditionContext dataclass.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,12 +17,16 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_is_none
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.contracts import count_rows
 from tests._helpers.factories import make_snapshot
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
 CONFIDENCE_FULL = 0.9

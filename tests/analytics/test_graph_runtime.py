@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import pytest
 from networkx.readwrite import json_graph
 
 from codeintel.analytics.compute.graphs import (
-    BipartiteDegrees,
     bipartite_degrees,
     bounded_simple_path_count,
     centrality_directed,
@@ -40,7 +40,12 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
-from tests._helpers.graph_runtime_harness import GraphRuntimeHarness
+
+if TYPE_CHECKING:
+    from codeintel.analytics.compute.graphs import (
+        BipartiteDegrees,
+    )
+    from tests._helpers.graph_runtime_harness import GraphRuntimeHarness
 
 
 def test_disk_cache_round_trip(graph_runtime_ctx: GraphRuntimeHarness) -> None:

@@ -37,11 +37,13 @@ Or using the combinator:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis.expr.types as it
 from ibis import window
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 
 def ibis_bool(expr: object) -> it.BooleanValue:
@@ -246,7 +248,13 @@ def and_predicates(*predicates: object) -> it.BooleanValue:
 
 
 def bool_and(*predicates: it.BooleanValue) -> it.BooleanValue:
-    """Alias for ``and_predicates`` for backward compatibility."""
+    """Alias for ``and_predicates`` for backward compatibility.
+
+    Returns
+    -------
+    it.BooleanValue
+        Combined predicate.
+    """
     return and_predicates(*predicates)
 
 

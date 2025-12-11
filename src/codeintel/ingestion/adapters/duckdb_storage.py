@@ -10,7 +10,6 @@ directly.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -26,6 +25,8 @@ from codeintel.storage.sql import render_sql
 from codeintel.storage.sql.primitives import quote_identifier, quote_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)

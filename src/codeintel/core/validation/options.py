@@ -6,9 +6,11 @@ graph validation and ingestion validation frameworks.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 ValidationSeverity = Literal["info", "warning", "error"]
 """Severity level for validation findings."""

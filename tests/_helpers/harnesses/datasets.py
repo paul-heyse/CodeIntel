@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.handlers.datasets import DatasetDependencies
 from codeintel.config.datasets.contracts import DatasetContract
 from codeintel.storage.validation import collect_contract_issues
-from tests._helpers.cli_context import CliTestContext, create_cli_test_context
+from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.cli.context import CommandContext
+    from tests._helpers.cli_context import CliTestContext
 
 
 @dataclass

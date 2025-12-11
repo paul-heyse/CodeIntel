@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
-from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.meta_tools import DatasetMetaLike, MetaToolOptions, register_meta_tools
+from codeintel.serving.mcp.meta_tools import MetaToolOptions, register_meta_tools
 from codeintel.serving.operations.catalog import iter_registry_operations
-from codeintel.serving.services.query_service import LocalQueryService, QueryService
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -21,6 +18,13 @@ from tests._helpers.assertions import (
     expect_length,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.serving.backend import BackendLimits
+    from codeintel.serving.mcp.meta_tools import DatasetMetaLike
+    from codeintel.serving.services.query_service import LocalQueryService, QueryService
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100

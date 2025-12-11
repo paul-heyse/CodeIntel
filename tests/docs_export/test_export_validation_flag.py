@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,6 +11,9 @@ from codeintel.cli.errors import CLI_EXIT_USAGE
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_rows
 from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:

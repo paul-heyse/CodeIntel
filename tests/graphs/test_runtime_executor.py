@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -26,7 +26,6 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
 from codeintel.graphs.core.context import (
     GraphPluginExecutionContextBuilder,
 )
-from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.runtime import graph_executor
@@ -45,10 +44,13 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
 from tests._helpers.fakes.graph_runtime import graph_engine_with_cache
 from tests._helpers.graphs import call_graph_fixture
+
+if TYPE_CHECKING:
+    from codeintel.graphs.core.protocol import GraphPluginProtocol
+    from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 
 class _MockFunctionCatalogProvider(FunctionCatalogProvider):

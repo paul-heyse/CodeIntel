@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.cli.errors import CLI_EXIT_USAGE
 from tests._helpers.assertions import expect_equal, expect_in
-from tests._helpers.cli import CLIContext, run_cli
+from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from tests._helpers.cli import CLIContext
 
 UNKNOWN_OPTION_CASES: list[tuple[list[str], str]] = [
     (["build", "run", "--bogus"], "--bogus"),

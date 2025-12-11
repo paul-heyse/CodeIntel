@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
@@ -12,6 +11,8 @@ from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from duckdb import DuckDBPyConnection
 
 

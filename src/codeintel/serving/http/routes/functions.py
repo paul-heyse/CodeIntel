@@ -5,24 +5,30 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.dependencies import make_op_prereq_dependency
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     FileSummaryResponse,
     FunctionSummaryResponse,
     GraphNeighborhoodResponse,
-    GraphScopePayload,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.serving.operations import Operation, get_operation
+from codeintel.serving.operations import get_operation
+
+if TYPE_CHECKING:
+    from codeintel.serving.http.dependencies import ServiceDep
+    from codeintel.serving.mcp.models import (
+        GraphScopePayload,
+    )
+    from codeintel.serving.operations import Operation
 
 RouteDeps = Sequence[Any]  # FastAPI dependencies list
 

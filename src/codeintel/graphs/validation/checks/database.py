@@ -6,7 +6,6 @@ by querying the database for inconsistencies.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, cast
 
 import ibis
@@ -15,6 +14,8 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import filter_by, ibis_bool, isin_values
 
 if TYPE_CHECKING:
+    import logging
+
     from codeintel.graphs.catalog import FunctionCatalog
     from codeintel.storage.gateway import StorageGateway
 

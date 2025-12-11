@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal, Self, overload
 
 from codeintel.config.primitives import (
     BuildLayoutOptions,
-    BuildPaths,
     GraphBackendConfig,
     ScanProfiles,
-    SnapshotInit,
-    SnapshotRef,
     ToolBinaries,
 )
 from codeintel.config.steps_analytics import (
@@ -47,6 +42,16 @@ from codeintel.config.steps_graphs import (
     ImportGraphStepConfig,
     SymbolUsesStepConfig,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from codeintel.config.primitives import (
+        BuildPaths,
+        SnapshotInit,
+        SnapshotRef,
+    )
 
 
 @dataclass(frozen=True)

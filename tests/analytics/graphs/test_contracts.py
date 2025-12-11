@@ -10,6 +10,7 @@ This module tests the contract checking functionality for graph metric plugins:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -29,7 +30,6 @@ from codeintel.analytics.graphs.contracts import (
     table_exists_checker,
     table_not_empty_checker,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -39,6 +39,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
 MIN_FRACTION_HIGH = 0.95

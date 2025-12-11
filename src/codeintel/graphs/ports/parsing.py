@@ -7,12 +7,12 @@ without coupling to specific parsing libraries.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import ast
+    from collections.abc import Sequence
 
     import libcst as cst
 

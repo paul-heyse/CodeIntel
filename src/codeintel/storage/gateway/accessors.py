@@ -2,49 +2,51 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
-from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
-from codeintel.storage.gateway.rows.analytics import (
-    AnalyticsConfigValuesRow,
-    AnalyticsCoverageFunctionsRow,
-    AnalyticsCoverageLinesRow,
-    AnalyticsFunctionMetricsRow,
-    AnalyticsGoidRiskFactorsRow,
-    AnalyticsStaticDiagnosticsRow,
-    AnalyticsSubsystemModulesRow,
-    AnalyticsSubsystemsRow,
-    AnalyticsTestCatalogRow,
-    AnalyticsTestCoverageEdgesRow,
-    AnalyticsTypednessRow,
-)
-from codeintel.storage.gateway.rows.core import (
-    CoreFileStateRow,
-    CoreGoidsRow,
-    CoreModulesRow,
-    CoreRepoMapRow,
-    CoreScipOccurrencesRow,
-)
-from codeintel.storage.gateway.rows.graph import (
-    GraphCallGraphEdgesRow,
-    GraphCallGraphNodesRow,
-    GraphCfgBlocksRow,
-    GraphCfgEdgesRow,
-    GraphDfgEdgesRow,
-    GraphImportGraphEdgesRow,
-    GraphSymbolUseEdgesRow,
-)
 from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
+    from codeintel.storage.gateway.rows.analytics import (
+        AnalyticsConfigValuesRow,
+        AnalyticsCoverageFunctionsRow,
+        AnalyticsCoverageLinesRow,
+        AnalyticsFunctionMetricsRow,
+        AnalyticsGoidRiskFactorsRow,
+        AnalyticsStaticDiagnosticsRow,
+        AnalyticsSubsystemModulesRow,
+        AnalyticsSubsystemsRow,
+        AnalyticsTestCatalogRow,
+        AnalyticsTestCoverageEdgesRow,
+        AnalyticsTypednessRow,
+    )
+    from codeintel.storage.gateway.rows.core import (
+        CoreFileStateRow,
+        CoreGoidsRow,
+        CoreModulesRow,
+        CoreRepoMapRow,
+        CoreScipOccurrencesRow,
+    )
+    from codeintel.storage.gateway.rows.graph import (
+        GraphCallGraphEdgesRow,
+        GraphCallGraphNodesRow,
+        GraphCfgBlocksRow,
+        GraphCfgEdgesRow,
+        GraphDfgEdgesRow,
+        GraphImportGraphEdgesRow,
+        GraphSymbolUseEdgesRow,
+    )
 
 __all__ = [
     "AnalyticsTables",

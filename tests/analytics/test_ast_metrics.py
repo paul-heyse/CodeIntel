@@ -8,8 +8,8 @@ This module tests:
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,10 +18,8 @@ from codeintel.analytics.compute.hotspots.metrics import (
     build_hotspots,
     parse_git_log_lines,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import HotspotsStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -33,7 +31,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
 from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.repo import (
@@ -49,6 +46,13 @@ from tests._helpers.repo import (
 from tests._helpers.rows import AstMetricSeed, ast_metric_row
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
 
 # Test constants (non-repo/commit)
 EXPECTED_COMMIT_COUNT = 2

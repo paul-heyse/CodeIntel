@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
@@ -14,6 +12,11 @@ from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _seed_dependency_sources(ctx_repo_root: Path) -> None:

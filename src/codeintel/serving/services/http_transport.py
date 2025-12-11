@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.observability import (
     ServiceCallContext,
     ServiceCallMetrics,
-    ServiceObservability,
     _observe_call,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.backend import BackendLimits
+    from codeintel.serving.services.observability import (
+        ServiceObservability,
+    )
 
 T = TypeVar("T")
 

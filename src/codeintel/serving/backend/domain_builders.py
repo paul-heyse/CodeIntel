@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
-from typing import Literal, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, cast, runtime_checkable
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.view_utils import normalize_entrypoints_rows
 from codeintel.storage.repositories.base import RowDict
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @runtime_checkable

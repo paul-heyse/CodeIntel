@@ -10,20 +10,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
-from codeintel.config import ExternalDependenciesStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
@@ -64,6 +58,13 @@ EXTERNAL_DEPENDENCIES_COLS = [
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
+
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config import ExternalDependenciesStepConfig
+    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 

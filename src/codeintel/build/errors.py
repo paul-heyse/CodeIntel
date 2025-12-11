@@ -22,7 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from difflib import get_close_matches
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 __all__ = [
     "ArtifactNotFoundError",

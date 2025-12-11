@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend import BackendContext, BackendLimits, DuckDBRepositories
 from codeintel.serving.backend.core import GraphEngineProvider
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import networkx as nx
 
 from codeintel.config.models import GraphBackendConfig
 from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) -> None:

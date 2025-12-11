@@ -6,10 +6,13 @@ Validate CliConfig instances against type constraints and business rules.
 from __future__ import annotations
 
 import re
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 from codeintel.cli.config.model import CliConfig, ConfigValidationError
 from codeintel.cli.config.schema import generate_schema
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 # Validation constraints
 VALID_OUTPUT_FORMATS = {"text", "json"}

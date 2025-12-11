@@ -3,27 +3,33 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.analytics.ast_features.model import IoFlags
-from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
+from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS
 from codeintel.analytics.testing.profiles.types import (
     BehavioralContext,
     BehavioralLLMRequest,
-    BehavioralLLMRunner,
     TestAstInfo,
     TestRecord,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
-from codeintel.config import BehavioralCoverageStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+    from pathlib import Path
+
+    from codeintel.analytics.ast_features.patterns import AstFeaturePatterns
+    from codeintel.analytics.testing.profiles.types import (
+        BehavioralLLMRunner,
+    )
+    from codeintel.config import BehavioralCoverageStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 @dataclass(frozen=True)

@@ -15,12 +15,14 @@ Design Notes
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.storage.gateway import StorageGateway
 
 

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -22,7 +21,6 @@ from codeintel.build.state import (
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -31,6 +29,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.build import ManifestParams, sample_manifest
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 class FakeBuildStore:

@@ -12,13 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
 from codeintel.cli.errors.builder import ProblemBuilder
@@ -30,6 +29,9 @@ from codeintel.cli.handlers.datasets import (
     datasets_snapshot_handler,
 )
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 datasets_ext_app = App(
     name="datasets",

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.ingestion.ports.discovery import ModuleRecord
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 
 @dataclass(frozen=True)

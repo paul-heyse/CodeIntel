@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,8 +17,7 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.graphs.engine.views import load_call_graph
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
+from codeintel.storage.repositories import fetch_models_normalized
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.builders import (
     CallGraphNodeRow,
@@ -28,6 +27,12 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.factories import make_snapshot
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.repositories import NormalizedDataModel
 
 
 def _write_fixture(repo_root: Path, rel_path: str, content: str) -> Path:

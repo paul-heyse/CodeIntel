@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import DatasetContract
 from codeintel.export.manifest import compute_file_hash
-from codeintel.storage.datasets.registry import DatasetRegistry
-from codeintel.storage.gateway import DuckDBConnection, DuckDBError
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.repositories.base import fetch_all_dicts
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+
+    from codeintel.config.datasets import DatasetContract
+    from codeintel.storage.datasets.registry import DatasetRegistry
+    from codeintel.storage.gateway import DuckDBConnection
 
 
 @dataclass(frozen=True)

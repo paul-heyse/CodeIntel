@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
-from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
@@ -17,16 +15,24 @@ from codeintel.serving.mcp.models import (
     DataflowNodePayload,
     DatasetMetaResponse,
     OperationMetaResponse,
-    ProblemDetail,
 )
-from codeintel.serving.mcp.tool_builder import McpToolRegistrar
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
+from codeintel.serving.mcp.tool_utils import _wrap
 from codeintel.serving.operations.catalog import (
     build_dataset_meta,
     build_serving_dataflow_graph,
     iter_registry_operations,
 )
-from codeintel.serving.services.query_service import QueryService
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
+    from codeintel.serving.mcp.models import (
+        ProblemDetail,
+    )
+    from codeintel.serving.mcp.tool_builder import McpToolRegistrar
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.services.query_service import QueryService
 
 logger = logging.getLogger(__name__)
 

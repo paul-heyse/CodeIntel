@@ -9,12 +9,17 @@ from __future__ import annotations
 import importlib
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 from codeintel.cli.plugins.discovery import DiscoveredPlugin, discover_plugins
-from codeintel.cli.plugins.manifest import PluginCapability, PluginManifest
+from codeintel.cli.plugins.manifest import PluginManifest
 from codeintel.cli.plugins.sandbox import PluginSandbox, SandboxConfig
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
+
+    from codeintel.cli.plugins.manifest import PluginCapability
 
 LOG = logging.getLogger(__name__)
 

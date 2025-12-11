@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.serving.mcp import tool_builder
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass

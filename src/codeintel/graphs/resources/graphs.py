@@ -6,12 +6,13 @@ This module provides a resource provider for graph engine access.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Protocol
-
-import networkx as nx
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.ports.engine import GraphData
+
+if TYPE_CHECKING:
+    import networkx as nx
 
 
 class GraphEngineWithCache(GraphEngine, Protocol):

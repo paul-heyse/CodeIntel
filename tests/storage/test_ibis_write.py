@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
@@ -16,6 +15,8 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 

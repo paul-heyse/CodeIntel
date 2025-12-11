@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -31,15 +30,17 @@ from codeintel.core.plugins.types.report import BaseExecutionReport
 from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.core.resources.registry import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.core.execution.telemetry import RuntimeTelemetry
     from codeintel.core.plugins.execution.settings import PluginExecutionSettings
     from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.graphs.core.protocol import GraphPluginProtocol
     from codeintel.graphs.engine import GraphEngine, NxGraphEngine
 
 log = logging.getLogger(__name__)

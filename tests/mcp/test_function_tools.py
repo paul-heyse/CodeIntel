@@ -6,7 +6,7 @@ import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -14,7 +14,6 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp.tool_builder import ToolRegistrationOptions, register_tools_for_category
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
     assert_logged,
@@ -23,6 +22,9 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
+
+if TYPE_CHECKING:
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
 LOGGER = logging.getLogger(__name__)
 

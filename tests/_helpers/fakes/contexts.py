@@ -53,33 +53,36 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
-from codeintel.build.context import ContextResources, TargetExecutionContext, TargetResult
+from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.contracts import EMPTY_CONTRACT
-from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
-from codeintel.build.plugin import TargetPlugin
+from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.targets import OutputTarget
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.core.execution import RunContext
 from codeintel.core.plugins.execution.context import (
     ConfigProvider,
     PluginExecutionContext,
     PluginScratch,
 )
 from codeintel.core.resources import ResourceRegistry
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from tests._helpers.context import create_test_context
 from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.env_options import EnvOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from pathlib import Path
 
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
     from codeintel.analytics.runtime import GraphRuntime
+    from codeintel.build.context import TargetResult
+    from codeintel.build.parameters import TargetParameters
+    from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
+    from codeintel.core.execution import RunContext
     from codeintel.ingestion.tracker import ChangeTracker
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 T = TypeVar("T")
 
@@ -294,14 +297,9 @@ class ExecutionContextBuilder:
         else:
             repo, commit = overrides.snapshot or (opts.repo, opts.commit)
         gateway = overrides.gateway
-        snapshot = None
-        build_paths = None
+        snapshot: SnapshotRef | None
+        build_paths: BuildPaths | None
         if gateway is None:
-            # Lazy import to avoid circular dependency with tests._helpers.context
-            from tests._helpers.context import (  # noqa: PLC0415
-                create_test_context,
-            )
-
             env_ctx = create_test_context(
                 base_path,
                 options=EnvOptions(

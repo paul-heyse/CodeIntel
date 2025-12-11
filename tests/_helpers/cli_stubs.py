@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.context import CommandContext, CommandContextBuilder
-from codeintel.storage.gateway import StorageGateway
+from codeintel.cli.context import CommandContextBuilder
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from codeintel.cli.context import CommandContext
+    from codeintel.storage.gateway import StorageGateway
 
 
 @contextmanager

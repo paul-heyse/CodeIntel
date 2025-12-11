@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
@@ -21,7 +21,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests.cli.handlers.conftest import DatasetHandlerHarness
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests.cli.handlers.conftest import DatasetHandlerHarness
 
 
 def test_datasets_list_result_to_dict() -> None:

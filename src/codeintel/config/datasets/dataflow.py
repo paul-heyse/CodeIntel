@@ -11,9 +11,8 @@ how data flows from source tables through profile compositions to views.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets.contracts import (
     get_composite_schemas,
@@ -21,6 +20,9 @@ from codeintel.config.datasets.contracts import (
     get_dataset_contracts_by_table_key,
 )
 from codeintel.storage.views import ALIAS_DOCS_VIEWS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
 
 # ---------------------------------------------------------------------------
 # Dataflow Graph Primitives

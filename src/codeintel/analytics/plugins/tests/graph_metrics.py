@@ -13,10 +13,10 @@ from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -109,9 +109,9 @@ class TestGraphMetricsPlugin(TargetPlugin):
             "analytics.test_graph_metrics_tests",
             "analytics.test_graph_metrics_functions",
         ):
-            row = ctx.gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
-                [repo, commit],
+            relation = ctx.gateway.con.table(table)
+            row = relation.filter("repo = ? AND commit = ?", [repo, commit]).aggregate(
+                "count(*)"
             ).fetchone()
             row_counts[table] = int(row[0]) if row else 0
 

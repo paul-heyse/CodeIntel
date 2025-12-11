@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.gateway.registry_generated import TABLE_REGISTRY
 from codeintel.storage.repositories import (
@@ -20,7 +18,6 @@ from codeintel.storage.repositories import (
     TestRepository,
     fetch_models_normalized,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -30,6 +27,12 @@ from tests._helpers.rows import (
     data_model_row,
 )
 from tests._helpers.seeds.subsystems_analytics import SUBSYSTEM_ANALYTICS_PACK
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
 
 
 def _expect_true(condition: object, message: str) -> None:

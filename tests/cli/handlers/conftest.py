@@ -12,22 +12,20 @@ New tests should prefer:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack, contextmanager
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 from codeintel.cli.context import CommandContext, CommandContextBuilder
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.cli_context import CliTestContext, create_cli_test_context
+from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.harnesses.cli import CliHandlerHarness
-from tests._helpers.harnesses.datasets import DatasetHandlerHarness, dataset_handler_harness
-from tests._helpers.harnesses.docs import DocsHandlerHarness, docs_handler_harness
-from tests._helpers.harnesses.storage import StorageHandlerHarness, storage_macro_harness
+from tests._helpers.harnesses.datasets import dataset_handler_harness
+from tests._helpers.harnesses.docs import docs_handler_harness
+from tests._helpers.harnesses.storage import storage_macro_harness
 from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, GRAPH_PACK, SUBSYSTEM_PACK
 from tests._helpers.serving_contexts import (
@@ -35,7 +33,18 @@ from tests._helpers.serving_contexts import (
     build_provisioned_service_context,
 )
 from tests.cli._harness import OperationTestHarness
-from tests.serving.mcp.conftest import McpBackendComponents
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.cli_context import CliTestContext
+    from tests._helpers.context import TestContext
+    from tests._helpers.harnesses.datasets import DatasetHandlerHarness
+    from tests._helpers.harnesses.docs import DocsHandlerHarness
+    from tests._helpers.harnesses.storage import StorageHandlerHarness
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 # Type aliases exported for use by test modules
 type CommandContextBuilder_ = Callable[

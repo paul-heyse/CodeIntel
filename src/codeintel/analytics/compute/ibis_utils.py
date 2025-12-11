@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis
-import ibis.expr.types as it
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import ibis.expr.types as it
 
 
 def bool_and(*predicates: it.BooleanValue) -> it.BooleanValue:

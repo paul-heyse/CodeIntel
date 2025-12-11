@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Callable
-
-from cyclopts import App
+from typing import TYPE_CHECKING
 
 from codeintel.cli.commands._common import make_root_app
 from codeintel.cli.commands._help import build_patched_app
@@ -28,6 +26,11 @@ from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
 from codeintel.cli.errors import OutputFormat, handle_cli_error
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from cyclopts import App
 
 # Optional imports for initialization - may not be available during packaging
 _init_plugins: Callable[..., object] | None

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.dependencies.core import (
@@ -24,6 +24,9 @@ from tests._helpers.assertions import (
 from tests._helpers.builders import ConfigValueRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.rows import function_meta
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _as_list(value: object) -> list[object]:

@@ -15,11 +15,10 @@ Covers all safe_* functions for 80%+ coverage:
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -40,7 +39,6 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_table_exists,
 )
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -56,6 +54,12 @@ from tests._helpers.ingestion import (
     build_target_context_for_plugin,
     seed_ingestion_tables,
 )
+
+if TYPE_CHECKING:
+    from types import SimpleNamespace
+
+    from codeintel.build.context import TargetExecutionContext
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants (non-repo/commit)
 EXPECTED_COUNT_2 = 2

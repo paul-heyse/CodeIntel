@@ -12,9 +12,8 @@ This module tests:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, TypedDict, Unpack
+from typing import TYPE_CHECKING, ClassVar, TypedDict, Unpack
 
 import pytest
 
@@ -24,7 +23,7 @@ from codeintel.core.plugins.registry.base import (
     PluginSkip,
     RegistrablePlugin,
 )
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -35,6 +34,11 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 # Test constants
 EXPECTED_PLUGIN_COUNT = 2

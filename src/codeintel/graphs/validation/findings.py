@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
-from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.runtime import GraphRuntime
 from codeintel.core.validation import (
     BaseValidationOptions,
     ValidationSeverity,
@@ -24,6 +24,7 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
+    from codeintel.analytics.runtime import GraphRuntimeOptions
     from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================

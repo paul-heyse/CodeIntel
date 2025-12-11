@@ -17,7 +17,6 @@ from codeintel.build.readiness import (
     BlockerInfo,
     DatabaseReadinessView,
     DependencyStatus,
-    SelfStatus,
     TargetReadiness,
     TargetReadinessView,
 )
@@ -39,6 +38,9 @@ MIN_ESTIMATED_TIME_MS = 5000
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.build.readiness import (
+        SelfStatus,
+    )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 

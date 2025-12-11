@@ -9,13 +9,17 @@ from __future__ import annotations
 import importlib
 import json
 import logging
-from collections.abc import Iterable
 from decimal import Decimal
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

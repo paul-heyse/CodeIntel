@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.config import SubsystemsStepConfig
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    from codeintel.config import SubsystemsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

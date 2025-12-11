@@ -6,7 +6,6 @@ maps used in function analytics.
 
 from __future__ import annotations
 
-import ast
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
@@ -18,6 +17,8 @@ from codeintel.analytics.parsing.ast_cache import (
 from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
 
 if TYPE_CHECKING:
+    import ast
+
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider

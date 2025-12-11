@@ -5,19 +5,24 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import networkx as nx
 from networkx.readwrite import json_graph
 
-from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
-from codeintel.graphs.engine import GraphEngine, GraphKind
-from codeintel.graphs.engine.backend import BackendEnablement
+from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
+from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, MutableMapping
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.engine.backend import BackendEnablement
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

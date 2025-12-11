@@ -26,21 +26,21 @@ codeintel.ingestion.ports.tools : Port interface types
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib import import_module
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.engine.infrastructure import (
-    ToolName,
-    ToolRunner,
-    ToolRunResult,
-)
-
 if TYPE_CHECKING:
+    from collections.abc import Mapping, MutableMapping
+    from pathlib import Path
+
+    from codeintel.config.models import ToolsConfig
+    from codeintel.ingestion.engine.infrastructure import (
+        ToolName,
+        ToolRunner,
+        ToolRunResult,
+    )
     from codeintel.ingestion.engine.results import ParsedToolResult
 
 log = logging.getLogger(__name__)

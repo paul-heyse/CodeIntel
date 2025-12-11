@@ -5,10 +5,13 @@ from __future__ import annotations
 import importlib
 import logging
 import os
-from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.config.primitives import GraphBackendConfig
+if TYPE_CHECKING:
+    from collections.abc import Callable, MutableMapping
+
+    from codeintel.config.primitives import GraphBackendConfig
 
 LOG = logging.getLogger(__name__)
 _GPU_AUTOCONFIG_ENV = "NX_CUGRAPH_AUTOCONFIG"

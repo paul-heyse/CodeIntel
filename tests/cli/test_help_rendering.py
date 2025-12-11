@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_in, expect_not_in
-from tests._helpers.cli import CLIContext, run_cli
+from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from tests._helpers.cli import CLIContext
 
 # NOTE: These tests target option-bearing subcommands directly instead of root
 # help to reduce brittleness and align with Cyclopts' help structure.

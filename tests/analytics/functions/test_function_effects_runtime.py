@@ -5,10 +5,9 @@ from __future__ import annotations
 import ast
 import json
 import textwrap
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
-import pytest
 
 from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
@@ -24,6 +23,11 @@ from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.graphs import build_graph_engine_double
 from tests._helpers.rows import function_meta
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _build_function_ast_map(

@@ -36,24 +36,17 @@ Or using the builder directly::
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginExecutionContext
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.constants import DEFAULT_RUN_ID
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
-    TargetResourceOverrides,
 )
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
@@ -73,13 +66,27 @@ from tests._helpers.fakes.graph_runtime import (
 )
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graph_runtime_harness import (
-    GraphRuntimeHarness,
     build_graph_runtime_harness,
 )
-from tests.analytics.integration.sample_repo import SampleRepo, write_sample_repo
+from tests.analytics.integration.sample_repo import write_sample_repo
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.build.context import TargetResult
     from codeintel.build.parameters import TargetParameters
+    from codeintel.build.plugin import TargetPlugin
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
+    from tests._helpers.fakes.contexts import (
+        TargetResourceOverrides,
+    )
+    from tests._helpers.graph_runtime_harness import (
+        GraphRuntimeHarness,
+    )
+    from tests.analytics.integration.sample_repo import SampleRepo
 
 # =============================================================================
 # Standard Analytics Test Fixtures

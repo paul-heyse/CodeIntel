@@ -7,10 +7,9 @@ correctly generates typed commands for serving operations.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Generator
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, cast, get_args
+from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import pytest
 from cyclopts import Group, Parameter
@@ -20,7 +19,6 @@ from codeintel.cli.commands import ops
 from codeintel.cli.introspection import (
     CliParamSpec,
     OperationCliMetadata,
-    ParamRole,
     build_operation_cli_metadata,
     classify_param_role,
     get_backend_signature_for_operation,
@@ -41,6 +39,13 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from codeintel.cli.introspection import (
+        ParamRole,
+    )
 
 
 @pytest.fixture(autouse=True)

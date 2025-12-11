@@ -17,7 +17,7 @@ import logging
 import re
 import sys
 from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -30,6 +30,9 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MKDOCS_GEN_DIR = REPO_ROOT / "mkdocs_gen"

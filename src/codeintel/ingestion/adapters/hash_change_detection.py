@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import ibis
@@ -16,7 +15,6 @@ import ibis
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.ingestion.ports.change_detection import (
-    ChangeRequest,
     ChangeSet,
     FileDigest,
 )
@@ -26,7 +24,11 @@ from codeintel.storage.ibis_types import filter_by, ibis_bool, window_over
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
+    from codeintel.ingestion.ports.change_detection import (
+        ChangeRequest,
+    )
     from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.storage.gateway import StorageGateway
 

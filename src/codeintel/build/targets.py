@@ -12,18 +12,25 @@ The OutputTarget is now the single source of truth for:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
-from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
+from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import (
     DEFAULT_EXECUTION,
     DEFAULT_RESOURCES,
-    TargetExecution,
-    TargetResources,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
+    from codeintel.build.contracts import ArtifactSpec
+    from codeintel.build.parameters import TargetParameters
+    from codeintel.build.resources import (
+        TargetExecution,
+        TargetResources,
+    )
 
 TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of which target module produces an output."""

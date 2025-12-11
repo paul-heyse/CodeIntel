@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.ingestion_plugins import StepCallCapture
@@ -25,7 +21,12 @@ from tests._helpers.ingestion import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.plugin import TargetPlugin
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

@@ -7,13 +7,16 @@ For row count operations, use codeintel.storage.validation.data_checks.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
-
-from duckdb import DuckDBPyConnection
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.errors import DUCKDB_ERRORS
 from codeintel.storage.sql import build_insert_sql, quote_identifier
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from duckdb import DuckDBPyConnection
 
 __all__ = [
     "DUCKDB_ERRORS",

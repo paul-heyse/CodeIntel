@@ -6,26 +6,31 @@ using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.adapters.data_models import DataModelUsageAdapter
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_not_none,
 )
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
     DataModelUsagePayloadSeed,
     data_model_usage_payload,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

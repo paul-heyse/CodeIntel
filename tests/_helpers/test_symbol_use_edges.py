@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,8 +14,10 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.builders import insert_symbol_use_edges, make_symbol_use_edge_row
-from tests._helpers.context import TestContext
 from tests._helpers.seeds.core import MOD_A_FQN, MOD_A_PATH, MOD_B_FQN, MOD_B_PATH
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def test_insert_symbol_use_edges_coerces_five_field_rows(test_ctx: TestContext) -> None:

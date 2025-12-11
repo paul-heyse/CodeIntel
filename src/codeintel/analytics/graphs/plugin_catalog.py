@@ -9,11 +9,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.plugins.registration import ALL_PLUGINS
-from codeintel.build.plugin import TargetPlugin
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.plugin import TargetPlugin
 
 log = logging.getLogger(__name__)
 

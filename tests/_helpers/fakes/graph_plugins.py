@@ -23,23 +23,28 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
 from codeintel.core.plugins.types.result import PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    GraphPluginKind,
     GraphPluginMetadata,
-    GraphPluginProtocol,
-    GraphPluginStage,
 )
 from codeintel.graphs.core.registry import (
     get_graph_registry,
     register_graph_plugin,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Mapping, Sequence
+
+    from codeintel.core.plugins.types.protocol import PluginResourceHints, PluginSeverity
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
+    from codeintel.graphs.core.protocol import (
+        GraphPluginKind,
+        GraphPluginProtocol,
+        GraphPluginStage,
+    )
 
 
 @dataclass

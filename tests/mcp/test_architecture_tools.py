@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -13,15 +12,19 @@ from codeintel.graphs.core.registry import (
     SelectionPolicy,
     reset_graph_registry,
 )
-from codeintel.serving import domain_models as dm
 from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp import architecture_tools, errors
-from codeintel.serving.mcp.serialization import ResponseFactory
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from codeintel.serving import domain_models as dm
+    from codeintel.serving.mcp.serialization import ResponseFactory
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
 
 @dataclass

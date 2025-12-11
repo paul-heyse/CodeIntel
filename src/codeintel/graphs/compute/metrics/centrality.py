@@ -7,11 +7,13 @@ on NetworkX graphs without any database or file I/O.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 

@@ -2,25 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.serving_harnesses import RecordingObservability
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from fastapi import FastAPI
+
+    from codeintel.serving.services.observability import ServiceObservability
+    from codeintel.storage.gateway import StorageGateway
     from tests.serving.mcp.conftest import McpBackendComponents
 
 DEFAULT_LIMIT = 10

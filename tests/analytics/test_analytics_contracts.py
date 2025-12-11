@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import pytest
-from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.utilities.datasets import (
@@ -27,11 +24,19 @@ from codeintel.config.datasets import (
     get_dataset_contracts_by_table_key,
 )
 from codeintel.graphs.catalog import FunctionCatalog
-from tests._helpers import CORE_PACK, TestContext, create_test_context
+from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.rows import function_meta
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from pathlib import Path
+
+    from duckdb import DuckDBPyConnection
+
+    from tests._helpers import TestContext
 
 
 def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:

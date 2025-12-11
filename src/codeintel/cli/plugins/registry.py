@@ -8,15 +8,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.execution.registry import OperationSpec
-from codeintel.cli.introspection import OperationRegistry, get_registry
+from codeintel.cli.introspection import get_registry
 from codeintel.cli.plugins.discovery import DEFAULT_PLUGIN_PATHS
-from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadResult
+from codeintel.cli.plugins.loader import PluginLoader
 from codeintel.cli.plugins.manifest import PluginCapability
 from codeintel.core.singleton import SingletonHolder
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.cli.execution.registry import OperationSpec
+    from codeintel.cli.introspection import OperationRegistry
+    from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoadResult
 
 LOG = logging.getLogger(__name__)
 

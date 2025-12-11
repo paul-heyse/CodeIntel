@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ast
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.storage.repositories.base import RowDict
+if TYPE_CHECKING:
+    from codeintel.storage.repositories.base import RowDict
 
 
 def _coerce_json(value: object) -> object:

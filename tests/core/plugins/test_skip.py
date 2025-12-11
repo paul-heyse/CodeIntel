@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.core.plugins.execution.manifest_store import InMemoryManifestStore
 from codeintel.core.plugins.execution.options import EmptyConfigSource, PluginOptionsResolver
 from codeintel.core.plugins.execution.run_context import (
-    PluginRunContext,
     RunContextInputs,
     prepare_plugin_run,
 )
@@ -27,6 +27,11 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.execution.run_context import (
+        PluginRunContext,
+    )
 
 
 @dataclass(frozen=True)

@@ -21,20 +21,17 @@ graph_telemetry_context
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.catalog import CatalogResource
 from codeintel.graphs.resources.storage import StorageResource
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
@@ -48,6 +45,13 @@ from tests._helpers.fakes.graph_runtime import (
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds.golden_graphs import GOLDEN_COMMIT, GOLDEN_REPO, seed_golden_graphs
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------
 # Gateway Fixtures

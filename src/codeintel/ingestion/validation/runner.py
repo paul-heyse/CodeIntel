@@ -8,7 +8,6 @@ Analogous to graphs/validation/runner.py.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -19,7 +18,6 @@ from codeintel.ingestion.validation.checks.database import (
 from codeintel.ingestion.validation.findings import (
     ColumnConstraint,
     ContractValidationResult,
-    ContractViolation,
     ForeignKeyConstraint,
     IngestContractSpec,
     IngestValidationOptions,
@@ -29,7 +27,12 @@ from codeintel.ingestion.validation.findings import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.ingestion.validation.findings import (
+        ContractViolation,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

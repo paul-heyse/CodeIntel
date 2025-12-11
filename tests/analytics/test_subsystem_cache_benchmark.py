@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.subsystems.materialize import refresh_subsystem_caches
-from tests._helpers import TestContext, create_test_context
+from tests._helpers import create_test_context
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers import TestContext
 
 
 def _seed_subsystem(ctx: TestContext) -> None:

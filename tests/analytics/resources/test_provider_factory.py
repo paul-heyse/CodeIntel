@@ -10,10 +10,9 @@ Note: Uses shared analytics fixtures from analytics/conftest.py.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
-import pytest
 
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
@@ -26,14 +25,12 @@ from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.catalog import (
     FunctionCatalog,
     FunctionCatalogProvider,
     FunctionCatalogService,
-    FunctionMeta,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -41,6 +38,15 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.graphs import build_graph_engine_double
+
+if TYPE_CHECKING:
+    import pytest
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.catalog import (
+        FunctionMeta,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50

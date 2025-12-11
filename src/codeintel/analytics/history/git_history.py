@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.ingestion.engine.infrastructure import ToolRunner
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+    from pathlib import Path
 
 log = logging.getLogger(__name__)
 

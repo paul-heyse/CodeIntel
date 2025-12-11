@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.export.validate_exports import validate_files
 from tests._helpers.ingestion import write_coverage_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_data_model_field_schema_validates_fixture(tmp_path: Path) -> None:

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
 from codeintel.graphs.resources.catalog import CatalogResource
@@ -27,6 +26,7 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.core.resources import ResourceRegistry
     from tests.graphs.conftest import CatalogSampleData
 
 # ---------------------------------------------------------------------------

@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 
 from codeintel.graphs.compute.metrics.components import (
-    ComponentInfo,
     find_strongly_connected,
     find_weakly_connected,
 )
+
+if TYPE_CHECKING:
+    from codeintel.graphs.compute.metrics.components import (
+        ComponentInfo,
+    )
 
 log = logging.getLogger(__name__)
 

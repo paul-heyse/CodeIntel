@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.utilities.datasets import (
@@ -16,11 +17,14 @@ from codeintel.config.datasets import (
     GraphMetricsModulesExtRow,
     GraphMetricsModulesRow,
 )
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration import seed_coverage_rows
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:

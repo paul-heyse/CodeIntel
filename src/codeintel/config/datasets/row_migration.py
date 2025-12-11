@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 _rows_module: ModuleType | None
 

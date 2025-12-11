@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -18,7 +18,9 @@ from tests._helpers.builders import (
     DatasetDataflowNodeRow,
     insert_rows,
 )
-from tests._helpers.context import TestContext
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 DATAFLOW_NODES: tuple[DatasetDataflowNodeRow, ...] = (
     DatasetDataflowNodeRow(

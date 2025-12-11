@@ -8,22 +8,16 @@ the parsed domain objects.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anyio import to_thread
 
-from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolRunner,
 )
 from codeintel.ingestion.engine.plugins import (
-    ToolPlugin,
-    ToolPluginRegistry,
-    ToolPluginResult,
     ToolStatus,
     build_default_registry,
 )
@@ -33,6 +27,20 @@ from codeintel.ingestion.engine.results import (
     ScipIndexResult,
     TestReport,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    from codeintel.config.models import ToolsConfig
+    from codeintel.ingestion.engine.infrastructure import (
+        ToolRunner,
+    )
+    from codeintel.ingestion.engine.plugins import (
+        ToolPlugin,
+        ToolPluginRegistry,
+        ToolPluginResult,
+    )
 
 log = logging.getLogger(__name__)
 

@@ -59,8 +59,8 @@ Two patterns are available:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 # Base context
 from codeintel.core.execution.base_context import BaseContext
@@ -129,6 +129,9 @@ from codeintel.core.execution.validation import (
     group_findings_by_key,
     has_error_findings,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def cached_singleton[T](factory: Callable[[], T]) -> Callable[[], T]:

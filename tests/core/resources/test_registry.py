@@ -15,20 +15,24 @@ This module tests:
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
 from codeintel.core.resources.protocol import LazyResource, ResourceProviderBase
 from codeintel.core.resources.registry import (
     ResourceNotFoundError,
-    ResourceRegistry,
 )
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.core.resources.registry import (
+        ResourceRegistry,
+    )
 
 INT_PROVIDER_VALUE = 42
 

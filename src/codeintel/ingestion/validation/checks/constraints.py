@@ -20,12 +20,14 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_not_null_fraction,
 )
 from codeintel.ingestion.validation.findings import (
-    ColumnConstraint,
     ContractViolation,
-    IngestContractSpec,
 )
 
 if TYPE_CHECKING:
+    from codeintel.ingestion.validation.findings import (
+        ColumnConstraint,
+        IngestContractSpec,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

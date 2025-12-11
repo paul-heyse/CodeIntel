@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
@@ -23,17 +21,20 @@ from codeintel.core.execution.timing import utc_now
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
 from codeintel.core.plugins.execution.tracking import FatalHandling
-from codeintel.core.plugins.types.protocol import ValidationResult
-from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginResult, PluginStatus
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
     from codeintel.core.execution.telemetry import RuntimeTelemetry
     from codeintel.core.plugins.execution.context import PluginExecutionContext
     from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
     from codeintel.core.plugins.execution.settings import PluginExecutionSettings
     from codeintel.core.plugins.registry.base import PluginPlan
-    from codeintel.core.plugins.types.protocol import PluginProtocol
+    from codeintel.core.plugins.types.protocol import PluginProtocol, ValidationResult
     from codeintel.core.plugins.types.report import BaseExecutionReport
+    from codeintel.core.plugins.types.result import PluginResult, PluginStatus
 
 log = logging.getLogger(__name__)
 

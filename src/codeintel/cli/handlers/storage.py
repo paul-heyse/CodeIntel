@@ -15,7 +15,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     GenerateMacrosResult,
@@ -42,6 +41,7 @@ from codeintel.storage.metadata import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)

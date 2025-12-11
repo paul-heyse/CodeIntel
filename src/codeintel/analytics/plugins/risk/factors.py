@@ -12,12 +12,12 @@ from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
-from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
+    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _seed_catalog_modules(

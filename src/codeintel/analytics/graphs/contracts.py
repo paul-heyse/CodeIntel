@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from ibis.common.exceptions import IbisError
 
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 SAFE_TABLE_QUERIES: dict[str, str] = {
     "analytics.graph_metrics_functions": (

@@ -7,14 +7,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.docs import docs_export_handler
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 docs_app = App(
     name="docs",

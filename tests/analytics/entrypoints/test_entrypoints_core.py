@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.entrypoints.core import build_entrypoints
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.steps_analytics import EntryPointsStepConfig
 from tests._helpers import coverage_and_graph_context
 from tests._helpers.assertions import (
@@ -20,10 +19,15 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.builders import CoverageFunctionRow, insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.context import TestContext
 from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog, MockFunctionMeta
 from tests._helpers.graphs import build_ast_map, build_module_map, insert_modules
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from tests._helpers.context import TestContext
 
 
 def _seed_entrypoint_ctx(

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
@@ -19,6 +18,8 @@ from codeintel.config.datasets import DocstringRow, docstring_row_to_tuple
 from codeintel.ingestion.compute.base import StepResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
 

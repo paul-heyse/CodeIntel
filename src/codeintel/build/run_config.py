@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.core.plugins.execution.options import (
@@ -11,10 +10,13 @@ from codeintel.core.plugins.execution.options import (
     PluginOptionsResolver,
     ProfiledConfigSource,
 )
-from codeintel.core.plugins.execution.profiles import ExecutionProfile, get_profile
+from codeintel.core.plugins.execution.profiles import get_profile
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
+
+    from codeintel.core.plugins.execution.profiles import ExecutionProfile
 
 
 @dataclass(frozen=True)

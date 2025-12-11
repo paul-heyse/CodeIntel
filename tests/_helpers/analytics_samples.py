@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,7 +12,11 @@ from codeintel.analytics.compute.dependencies.classification import (
     LibraryPattern,
 )
 from codeintel.analytics.compute.dependencies.detection import DependencyCall
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

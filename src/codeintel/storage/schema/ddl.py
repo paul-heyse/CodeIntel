@@ -11,15 +11,18 @@ Legacy string-based DDL constants have been removed.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import ibis
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_adapter import IbisGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)

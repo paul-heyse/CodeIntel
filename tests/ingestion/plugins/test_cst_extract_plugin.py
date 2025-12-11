@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.plugins.cst_extract import (
     CstExtractPlugin,
-    StepFactory,
-    StorageFactory,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_plugins import (
     StepCallCapture,
@@ -26,6 +22,15 @@ from tests._helpers.ingestion import (
     make_resource_case_params,
 )
 from tests.ingestion.plugins._wiring import ResourceCase, run_sync_plugin_wiring_scenario
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.ingestion.plugins.cst_extract import (
+        StepFactory,
+        StorageFactory,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _make_plugin(

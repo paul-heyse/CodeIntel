@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService, FunctionMeta
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.catalog import FunctionMeta
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 

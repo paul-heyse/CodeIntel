@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -14,15 +14,18 @@ from codeintel.build.executor import (
     ExecutorEnv,
     StageExecutionResult,
 )
-from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import ResolutionResult
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule, TargetOptions
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_in, expect_length, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.build.manifest import BuildRunRecord, OutputManifest
+    from codeintel.build.targets import TargetModule
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Test Fixtures

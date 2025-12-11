@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.meta_tools import DatasetMetaLike, MetaToolOptions, register_meta_tools
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+from codeintel.serving.mcp.meta_tools import MetaToolOptions, register_meta_tools
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import (
     expect_equal,
@@ -19,6 +17,12 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.serving_backends import build_serving_backend
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from codeintel.serving.mcp.meta_tools import DatasetMetaLike
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
 
 @dataclass

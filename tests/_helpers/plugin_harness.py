@@ -7,14 +7,11 @@ module. Prefer these over bespoke harness setup in plugin tests.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.context import SeedPack
 from tests._helpers.harnesses import (
-    AnalyticsPluginHarness,
     coverage_plugin_harness,
     data_models_plugin_harness,
     entrypoints_plugin_harness,
@@ -22,6 +19,15 @@ from tests._helpers.harnesses import (
     plugin_harness_with_packs,
 )
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
+
+    from tests._helpers.context import SeedPack
+    from tests._helpers.harnesses import (
+        AnalyticsPluginHarness,
+    )
 
 
 class PluginHarnessFactory:

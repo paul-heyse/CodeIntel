@@ -29,19 +29,22 @@ See ``codeintel.serving.domain_models`` for the full architecture contract.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.observability import (
     ServiceCallContext,
-    ServiceObservability,
     _observe_call,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.serving.backend.query_api import DuckDBQueryApi
+    from codeintel.serving.services.observability import (
+        ServiceObservability,
+    )
 
 
 class TransportAdapter(Protocol):

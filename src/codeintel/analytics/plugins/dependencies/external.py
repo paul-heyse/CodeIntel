@@ -18,11 +18,11 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 EXTERNAL_DEPS_METADATA = CorePluginMetadata(

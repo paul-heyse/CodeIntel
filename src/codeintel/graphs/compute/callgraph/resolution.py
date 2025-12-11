@@ -6,7 +6,6 @@ local/global maps, import aliases, and SCIP cross-references.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, cast
 
 import libcst as cst
@@ -16,6 +15,8 @@ from codeintel.graphs.compute.callgraph.types import ResolutionResult
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from codeintel.graphs.ports.catalog import FunctionSpanData
 
 

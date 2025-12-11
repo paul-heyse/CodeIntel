@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,8 +16,10 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.seeds.subsystems_analytics import SUBSYSTEM_ANALYTICS_PACK
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 @pytest.fixture

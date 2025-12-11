@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.compute.graphs import to_decimal_id
-from codeintel.analytics.runtime.context import GraphContext
 from codeintel.config.datasets import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsModulesExtRow,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from decimal import Decimal
+
+    from codeintel.analytics.runtime.context import GraphContext
 
 
 def _int_or_none(value: float | str | Decimal | None) -> int | None:

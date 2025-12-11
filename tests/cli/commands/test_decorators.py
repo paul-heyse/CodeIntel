@@ -30,6 +30,11 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
 
 
+def _force_setattr(target: object, name: str, value: object) -> None:
+    """Attempt to set an attribute on a frozen dataclass for testing."""
+    setattr(target, name, value)
+
+
 # -----------------------------------------------------------------------------
 # Test Fixtures
 # -----------------------------------------------------------------------------
@@ -578,4 +583,4 @@ def test_command_config_is_frozen() -> None:
     cfg = CommandConfig()
 
     with pytest.raises(AttributeError):
-        cfg.require_runtime = False
+        _force_setattr(cfg, "require_runtime", value=False)

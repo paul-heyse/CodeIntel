@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, cast
+from typing import TYPE_CHECKING, Final, cast
 
 import networkx as nx
 import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.function_backend import FunctionQueryLayer
 from codeintel.serving.mcp import errors
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.backend_components import build_backend_components
+
+if TYPE_CHECKING:
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 EDGE_COUNT_TWO: Final = 2

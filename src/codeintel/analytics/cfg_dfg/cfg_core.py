@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.compute.graphs import (
@@ -18,14 +16,19 @@ from codeintel.analytics.compute.graphs import (
     dfg_component_stats,
     normalize_decimal_id,
 )
-from codeintel.analytics.runtime.context import GraphContext
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from datetime import datetime
+
     import networkx as nx
+
+    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from pydantic import BaseModel
 
 from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.graphs.core.protocol import (
-    GraphPluginKind,
     GraphPluginMetadataConfig,
-    GraphPluginStage,
     create_graph_metadata,
 )
 from codeintel.graphs.engine import GraphKind
 from tests._helpers.assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.graphs.core.protocol import (
+        GraphPluginKind,
+        GraphPluginStage,
+    )
 
 
 @pytest.mark.parametrize(

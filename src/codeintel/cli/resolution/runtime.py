@@ -12,9 +12,9 @@ The primary API is `resolve_from_params()` which takes a params dict directly.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.cli.project._project import (
     ProjectConfig,
@@ -33,6 +33,9 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.config.serving_models import ServingConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 LOG = logging.getLogger(__name__)
 

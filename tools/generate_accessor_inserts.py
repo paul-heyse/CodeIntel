@@ -17,12 +17,14 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from codeintel.config.datasets import TABLE_SCHEMAS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 LOG = logging.getLogger(__name__)
 

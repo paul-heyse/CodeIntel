@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -25,13 +26,16 @@ from codeintel.analytics.testing.graph_metrics import (
     TestMetricsContext,
     compute_test_graph_metrics,
 )
-from tests._helpers import COVERAGE_PACK, METRICS_PACK, TestContext, assert_frozen
+from tests._helpers import COVERAGE_PACK, METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers import TestContext
 
 # =============================================================================
 # Test Constants

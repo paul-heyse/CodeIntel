@@ -8,9 +8,11 @@ graphs, ingestion, and analytics validation modules.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
 
 T = TypeVar("T")
 SeverityLevel = Literal["info", "warning", "error"]

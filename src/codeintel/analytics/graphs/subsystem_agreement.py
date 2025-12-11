@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

@@ -7,7 +7,6 @@ dependency on the analytics subsystem.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -19,13 +18,10 @@ from codeintel.core.execution.ids import new_run_id
 from codeintel.core.execution.retry import RetryPolicy
 from codeintel.core.plugins.execution.settings import (
     PluginExecutionSettings,
-    PluginSeverity,
 )
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
     GraphPluginPlan,
-    GraphPluginProtocol,
-    GraphPluginSkip,
 )
 from codeintel.graphs.core.registry import (
     PlanningOptions,
@@ -39,8 +35,17 @@ from codeintel.graphs.runtime.manifest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.config.steps_graphs import GraphMetricsStepConfig
+    from codeintel.core.plugins.execution.settings import (
+        PluginSeverity,
+    )
+    from codeintel.graphs.core.protocol import (
+        GraphPluginProtocol,
+        GraphPluginSkip,
+    )
 
 
 LOG = logging.getLogger(__name__)

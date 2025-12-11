@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,7 +14,6 @@ from codeintel.analytics.graphs import (
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.views import create_all_views
-from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -24,6 +24,9 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers import TestContext
 
 
 def _seed_test_modules(ctx: TestContext) -> None:

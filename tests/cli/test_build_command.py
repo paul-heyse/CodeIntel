@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tests._helpers.assertions import expect_in
 from tests._helpers.cli import assert_exit, assert_success
-from tests._helpers.cli_project import CLIProjectHarness
+
+if TYPE_CHECKING:
+    from tests._helpers.cli_project import CLIProjectHarness
 
 
 def test_build_run_success(cli_project_harness: CLIProjectHarness) -> None:

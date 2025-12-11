@@ -16,7 +16,6 @@ from codeintel.serving.mcp.tool_builder import (
     build_tool_from_operation,
     register_tools_for_category,
 )
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.gateway import GatewayFactory
@@ -24,6 +23,7 @@ from tests._helpers.mcp_tools import make_mcp_context
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
 
 @dataclass

@@ -9,11 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import networkx as nx
-
 from codeintel.graphs.ports.engine import GraphData
 
 if TYPE_CHECKING:
+    import networkx as nx
+
     from codeintel.graphs.engine import NxGraphEngine
 
 

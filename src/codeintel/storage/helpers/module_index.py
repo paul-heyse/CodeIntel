@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 LOG: Final = logging.getLogger(__name__)
 

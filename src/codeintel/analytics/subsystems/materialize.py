@@ -7,9 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any
-
-import networkx as nx
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.runtime import (
     GraphRuntime,
@@ -30,11 +28,15 @@ from codeintel.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
-from codeintel.config import SubsystemsStepConfig
-from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    import networkx as nx
+
+    from codeintel.config import SubsystemsStepConfig
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.storage.gateway import StorageGateway
 
 SUBSYSTEM_MODULES_COLS = ["repo", "commit", "subsystem_id", "module", "role"]
 SUBSYSTEMS_COLS = [

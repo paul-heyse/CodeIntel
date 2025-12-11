@@ -84,8 +84,9 @@ def result_type[T](cls: type[T]) -> type[T]:
 
     # Avoid overwriting existing to_dict implementations
     if not hasattr(cls, "to_dict") or getattr(cls, "_result_type_generated", False):
-        setattr(cls, "to_dict", to_dict)  # noqa: B010
-        setattr(cls, "_result_type_generated", True)  # noqa: B010
+        cls_with_attrs = cast("type[object]", cls)
+        cls_with_attrs.to_dict = to_dict  # type: ignore[assignment]
+        cls_with_attrs._result_type_generated = True  # type: ignore[assignment]  # noqa: SLF001
 
     return cls
 
@@ -126,7 +127,7 @@ def _serialize_dataclass(value: object) -> dict[str, object]:
     return result
 
 
-def _serialize_value(value: object) -> object:  # noqa: PLR0911
+def _serialize_value(value: object) -> object:
     """Recursively serialize a value for JSON output.
 
     Handle nested dataclasses, lists, dicts, and primitives.
@@ -156,9 +157,6 @@ def _serialize_value(value: object) -> object:  # noqa: PLR0911
     if isinstance(value, SerializableResult):
         return value.to_dict()
 
-    if isinstance(value, Enum):
-        return value.value
-
     return _serialize_primitive(value)
 
 
@@ -175,6 +173,9 @@ def _serialize_primitive(value: object) -> object:
     object
         Serialized value.
     """
+    if isinstance(value, Enum):
+        return value.value
+
     # Handle Path
     if isinstance(value, Path):
         return str(value)

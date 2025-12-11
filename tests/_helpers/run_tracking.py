@@ -2,22 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.execution import RunContext, RunKind, TriggerKind
-from codeintel.storage.tracking import PipelineRunRecord, PipelineRunTracking, PipelineStepRecord
+from codeintel.core.execution import RunContext
+from codeintel.storage.tracking import PipelineRunTracking
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from codeintel.core.execution import RunKind, TriggerKind
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
+    from codeintel.storage.tracking import PipelineRunRecord, PipelineStepRecord
 
 
 @dataclass(frozen=True)

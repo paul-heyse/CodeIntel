@@ -13,7 +13,7 @@ adapter from `codeintel.graphs.adapters.libcst_parsing`, including:
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.ports.parsing import (
@@ -21,7 +21,6 @@ from codeintel.graphs.ports.parsing import (
     ParsedModule,
     ParseError,
     ParseResult,
-    ParsingPort,
 )
 from tests._helpers.assertions import (
     expect_equal,
@@ -31,6 +30,11 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.graphs.ports.parsing import (
+        ParsingPort,
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers

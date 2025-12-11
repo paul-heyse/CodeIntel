@@ -31,10 +31,12 @@ import os
 import sys
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import duckdb
 
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.plan import PlanGenerator
@@ -51,6 +53,9 @@ from codeintel.core.process import (
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageConfig, open_gateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Configure logging
 logging.basicConfig(
@@ -543,10 +548,10 @@ def _stage_verify_outputs(
     table_counts: dict[str, object] = {}
     for table in CRITICAL_TABLES:
         try:
-            row = gateway.con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
+            row = gateway.con.table(table).aggregate("count(*)").fetchone()
             count = int(row[0]) if row else 0
             table_counts[table] = count
-        except Exception as exc:  # noqa: BLE001
+        except duckdb.Error as exc:
             table_counts[table] = f"ERROR: {exc}"
 
     return {

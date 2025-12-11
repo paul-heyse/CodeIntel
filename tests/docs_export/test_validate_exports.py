@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,6 +18,9 @@ from tests._helpers import (
     seed_docs_export_invalid_profile,
 )
 from tests._helpers.assertions import expect_equal, expect_not_equal, expect_true
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:

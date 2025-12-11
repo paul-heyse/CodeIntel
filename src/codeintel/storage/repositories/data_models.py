@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
 from codeintel.storage.ibis_types import and_predicates, ibis_bool
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from decimal import Decimal
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _as_int(value: Decimal | int | None) -> int | None:

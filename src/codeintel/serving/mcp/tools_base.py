@@ -20,14 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.tool_builder import (
-    McpToolRegistrar,
     build_tool_from_operation,
     register_all_tools,
     register_tools_for_category,
@@ -36,7 +34,12 @@ from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.operations.catalog import iter_registry_operations
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.tool_builder import (
+        McpToolRegistrar,
+    )
 
 
 # Categories handled by the unified tool builder

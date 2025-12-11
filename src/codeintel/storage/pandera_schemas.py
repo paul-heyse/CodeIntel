@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import ItemsView, Iterator, KeysView, Mapping, MutableMapping, ValuesView
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -14,10 +14,12 @@ from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.config.datasets.primitives import ColumnType, TableSchema
 
 if TYPE_CHECKING:
+    from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+
     from codeintel.config.datasets.contracts import DatasetContract
+    from codeintel.config.datasets.primitives import ColumnType, TableSchema
 
 __all__ = [
     "DATASET_SCHEMAS",

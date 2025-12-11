@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import ast
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.ingestion.infrastructure.ast_utils import AstSpanIndex
+if TYPE_CHECKING:
+    import ast
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+    from codeintel.ingestion.infrastructure.ast_utils import AstSpanIndex
 
 
 @dataclass(frozen=True)

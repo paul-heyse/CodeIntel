@@ -8,14 +8,18 @@ consistent defaults.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import ClassVar, TypedDict, cast
+from typing import TYPE_CHECKING, ClassVar, TypedDict, cast
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders.row_protocol import insert_rows
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "CFGBlockRow",

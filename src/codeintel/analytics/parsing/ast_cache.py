@@ -5,15 +5,21 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.graphs.catalog import (
-    FunctionCatalogProvider,
     FunctionCatalogService,
 )
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.graphs.catalog import (
+        FunctionCatalogProvider,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

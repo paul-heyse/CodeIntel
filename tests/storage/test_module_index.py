@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+from typing import TYPE_CHECKING
 
-import pytest
-
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.module_index import load_module_map
 from tests._helpers.assertions.expectation_assertions import (
     expect_empty,
@@ -17,6 +15,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    import pytest
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_load_module_map_returns_normalized_paths(

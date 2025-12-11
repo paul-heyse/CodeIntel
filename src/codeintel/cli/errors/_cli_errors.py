@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
@@ -34,6 +33,8 @@ CLI_EXIT_VALIDATION = 1
 CLI_EXIT_USAGE = 2
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.cli.commands import RuntimeCLI
     from codeintel.cli.core.results import CliResult
 

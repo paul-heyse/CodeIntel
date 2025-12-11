@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tests._helpers.builders import (
@@ -26,6 +25,8 @@ from tests._helpers.builders import (
 from tests._helpers.seeds.core import CORE_PACK
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests._helpers.context import SeedPack, TestContext
 
 

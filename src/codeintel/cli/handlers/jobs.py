@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
     fail_job_cancel_failed,
@@ -17,6 +16,9 @@ from codeintel.cli.errors.results import (
     fail_job_not_found,
 )
 from codeintel.cli.jobs import JobStatus, get_job_manager
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

@@ -7,13 +7,16 @@ without any database or file I/O.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
-from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
 
 @dataclass(frozen=True)

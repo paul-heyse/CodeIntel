@@ -62,18 +62,12 @@ For new code, prefer importing from ``codeintel.serving.types``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import describe_dataset
-from codeintel.serving.backend.query_api import DuckDBQueryApi
-from codeintel.serving.mcp.models import (
-    DatasetSpecDescriptor,
-    GraphScopePayload,
-)
 from codeintel.serving.services.datasets import _HttpDatasetQueryMixin, _LocalDatasetMixin
 from codeintel.serving.services.functions import (
     _FunctionQueryDelegates,
@@ -93,6 +87,15 @@ from codeintel.serving.services.subsystems import (
     _HttpSubsystemQueryMixin,
     _SubsystemQueryDelegates,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
+    from codeintel.serving.mcp.models import (
+        DatasetSpecDescriptor,
+        GraphScopePayload,
+    )
 
 ResponseMeta = dm.ResponseMeta
 

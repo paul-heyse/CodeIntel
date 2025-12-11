@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.analytics.testing.coverage import edges as coverage_edges
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig, TestCoverageStepConfig
+from codeintel.config.steps_analytics import TestCoverageStepConfig
 from tests._helpers import coverage_ready_context
 from tests._helpers.assertions import (
     CoverageFunctionExpectation,
@@ -22,7 +21,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.config_factory import coverage_analytics_cfg
-from tests._helpers.context import TestContext
 from tests._helpers.coverage import (
     CoverageLineSeedData,
     CoverageRangeSeedData,
@@ -31,6 +29,13 @@ from tests._helpers.coverage import (
     seed_coverage_lines_range,
     seed_goid,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
+    from tests._helpers.context import TestContext
 
 EXPECTED_EXECUTABLE_5 = 5
 EXPECTED_EXECUTABLE_3 = 3

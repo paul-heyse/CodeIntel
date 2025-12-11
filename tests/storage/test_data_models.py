@@ -7,6 +7,7 @@ codeintel.storage.repositories.data_models, following the Testing Charter.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -32,7 +33,6 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -42,6 +42,9 @@ from tests._helpers.rows import (
     data_model_row,
 )
 from tests._helpers.seeds import DATA_MODELS_PACK
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 @pytest.fixture

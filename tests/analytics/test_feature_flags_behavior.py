@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import pytest
 
 from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
+from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.engine import GraphKind
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.graphs import CountingGraphEngineAdapter, GraphStubEngine
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
 
 
 def _make_counting_engine(

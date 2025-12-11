@@ -10,7 +10,6 @@ compute_typedness_flags), import directly from:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
@@ -18,6 +17,8 @@ from codeintel.analytics.functions.config import FunctionAnalyticsOptions
 from codeintel.config import FunctionAnalyticsStepConfig
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config import (

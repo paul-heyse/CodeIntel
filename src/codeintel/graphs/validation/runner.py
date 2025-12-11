@@ -18,17 +18,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
-import ibis.expr.types as it
-from ibis.expr.types import Table
-
 from codeintel.analytics.runtime import (
     GraphRuntime,
-    GraphRuntimeOptions,
     resolve_graph_runtime,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import load_function_catalog
-from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.validation.checks import (
     warn_callsite_span_mismatches,
     warn_graph_structure,
@@ -36,18 +30,29 @@ from codeintel.graphs.validation.checks import (
     warn_orphan_modules,
 )
 from codeintel.graphs.validation.findings import (
-    GraphValidationOptions,
     apply_severity_overrides,
     cap_findings,
     has_error_findings,
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import ibis_bool, isin_values
 
 if TYPE_CHECKING:
+    import ibis.expr.types as it
+    from ibis.expr.types import Table
+
+    from codeintel.analytics.runtime import (
+        GraphRuntimeOptions,
+    )
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.validation.findings import (
+        GraphValidationOptions,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 def run_graph_validations(

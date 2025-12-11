@@ -7,8 +7,11 @@ For execution context building, use ``ExecutionContextBuilder`` from
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
 
 
 def build_repo_tree(root: Path, files: Mapping[str, str]) -> Path:

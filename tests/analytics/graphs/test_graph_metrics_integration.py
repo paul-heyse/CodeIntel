@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -43,9 +43,15 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.contracts import ContractCtx, count_rows
 from tests._helpers.graph_runtime_harness import (
-    GraphRuntimeHarness,
     run_graph_metrics_pipeline,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers.graph_runtime_harness import (
+        GraphRuntimeHarness,
+    )
 
 MIN_CONFIG_DATA_FLOW_ROWS = 0
 CONFIG_GRAPH_METRICS_KEY_COUNT = 2

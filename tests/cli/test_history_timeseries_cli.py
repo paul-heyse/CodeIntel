@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.cli import run_cli
 from tests._helpers.configs.history_config import SnapshotSpec
 from tests._helpers.orchestration.history import create_snapshot_db
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 EXPECTED_HISTORY_ROW_COUNT = 2
 

@@ -13,18 +13,17 @@ EdgeContext, FunctionRow, and the edge computation functions.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.testing.coverage.edges import (
     EdgeContext,
-    FunctionRow,
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
 from codeintel.config import ConfigBuilder, SnapshotInit, TestCoverageStepConfig
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers import CORE_PACK, COVERAGE_PACK, TestContext
+from tests._helpers import CORE_PACK, COVERAGE_PACK
 from tests._helpers.assertions import (
     expect_equal,
     expect_length,
@@ -33,6 +32,14 @@ from tests._helpers.assertions import (
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.coverage import synthesize_coverage_edges
 from tests._helpers.factories import make_snapshot
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.analytics.testing.coverage.edges import (
+        FunctionRow,
+    )
+    from tests._helpers import TestContext
 
 # =============================================================================
 # Test Constants

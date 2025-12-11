@@ -14,27 +14,32 @@ See Also
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend.core import (
-    BackendContext,
-    DuckDBConnection,
-    DuckDBRepositories,
-    GraphEngineProvider,
-    StorageGateway,
-)
 from codeintel.serving.backend.dataset_backend import DatasetQueryLayer
 from codeintel.serving.backend.function_backend import FunctionQueryLayer
-from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.profile_backend import ProfileQueryLayer
 from codeintel.serving.backend.query_api import (
-    DatasetQueriesApi,
     DuckDBQueryApi,
-    FunctionQueriesApi,
-    ProfileQueriesApi,
-    SubsystemQueriesApi,
 )
 from codeintel.serving.backend.subsystem_backend import SubsystemQueryLayer
+
+if TYPE_CHECKING:
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving.backend.core import (
+        BackendContext,
+        DuckDBConnection,
+        DuckDBRepositories,
+        GraphEngineProvider,
+        StorageGateway,
+    )
+    from codeintel.serving.backend.pagination import BackendLimits
+    from codeintel.serving.backend.query_api import (
+        DatasetQueriesApi,
+        FunctionQueriesApi,
+        ProfileQueriesApi,
+        SubsystemQueriesApi,
+    )
 
 
 @dataclass

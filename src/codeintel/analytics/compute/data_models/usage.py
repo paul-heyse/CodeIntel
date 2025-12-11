@@ -6,19 +6,24 @@ import ast
 import json
 import logging
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.config import DataModelUsageStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.repositories import DataModelRow, fetch_models
+from codeintel.storage.repositories import fetch_models
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config import DataModelUsageStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.repositories import DataModelRow
 
 DATA_MODEL_USAGE_COLS = [
     "repo",

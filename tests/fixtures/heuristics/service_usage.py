@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
 
-from tests.fixtures.heuristics.models_pydantic import UserPayload
-from tests.fixtures.heuristics.models_sqlalchemy import Post, User
+from tests.fixtures.heuristics.models_sqlalchemy import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from tests.fixtures.heuristics.models_pydantic import UserPayload
+    from tests.fixtures.heuristics.models_sqlalchemy import Post
 
 
 def create_user(session: Session, name: str) -> User:

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
 from codeintel.storage.gateway.factory import open_memory_gateway
-from codeintel.storage.gateway.protocol import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 # Test constants
 FAN_OUT_TWO = 2

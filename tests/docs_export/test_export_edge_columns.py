@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.export.export_jsonl import export_jsonl_for_table
-from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers import provision_graph_ready_repo
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import DuckDBConnection
 
 
 def _setup_edge_table(con: DuckDBConnection, table: str) -> None:

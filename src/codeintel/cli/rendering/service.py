@@ -29,14 +29,14 @@ from rich.console import Console
 from rich.table import Table
 from rich.theme import Theme
 
-from codeintel.cli.core import CliResult
-from codeintel.cli.rendering.table import TableSpec
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.cli.core import CliResult
     from codeintel.cli.errors import ProblemDetail
+    from codeintel.cli.rendering.table import TableSpec
 
 T = TypeVar("T")
 

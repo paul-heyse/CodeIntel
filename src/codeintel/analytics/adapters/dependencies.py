@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from datetime import datetime
 
 log = logging.getLogger(__name__)
 

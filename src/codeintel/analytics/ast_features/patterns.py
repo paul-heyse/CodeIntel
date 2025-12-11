@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 DEFAULT_IO_SPEC: dict[str, dict[str, list[str]]] = {
     "network": {

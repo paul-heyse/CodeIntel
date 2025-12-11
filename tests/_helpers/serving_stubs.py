@@ -6,11 +6,10 @@ tests to inject custom payload producers for each method.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.query_api import (
@@ -21,7 +20,13 @@ from codeintel.serving.backend.query_api import (
     SubsystemQueriesApi,
 )
 from codeintel.serving.mcp.models import DatasetSpecDescriptor
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import open_memory_gateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _dispatch(hooks: dict[str, Callable[..., object]], name: str, **kwargs: object) -> object:

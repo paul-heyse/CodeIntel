@@ -7,23 +7,27 @@ helpers are retained for legacy tests; prefer applying CoveragePack via
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.builders import (
     CoverageFunctionRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
     insert_rows,
 )
-from tests._helpers.context import TestContext
-from tests._helpers.fakes.coverage import FakeCoverage, build_fake_coverage_from_gateway
-from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
+from tests._helpers.fakes.coverage import build_fake_coverage_from_gateway
+from tests._helpers.seeds.coverage import COVERAGE_PACK
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from duckdb import DuckDBPyConnection
+
+    from codeintel.config.primitives import SnapshotRef
+    from tests._helpers.context import TestContext
+    from tests._helpers.fakes.coverage import FakeCoverage
+    from tests._helpers.seeds.coverage import CoveragePack
 
 
 def _coerce_int(value: object, *, default: int) -> int:

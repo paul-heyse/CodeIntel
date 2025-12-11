@@ -15,8 +15,10 @@ Use CliConfig.from_sources() which delegates to config.load_config().
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # =============================================================================
 # Type Aliases

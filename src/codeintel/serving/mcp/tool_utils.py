@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from functools import wraps
+from typing import TYPE_CHECKING
 
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.query_service import QueryService
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 QueryBackendOrService = QueryBackend | QueryService
 logger = logging.getLogger(__name__)

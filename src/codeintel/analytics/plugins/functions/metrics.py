@@ -17,14 +17,15 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 

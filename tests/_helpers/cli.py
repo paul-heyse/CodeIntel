@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass(frozen=True)
@@ -124,7 +126,7 @@ def run_cli(
                     print_error=False,
                 )
                 exit_code = 0
-            except BaseException as exc:  # noqa: BLE001 - map CLI errors to codes
+            except BaseException as exc:  # noqa: BLE001
                 exit_code = handle_cli_error(exc, stderr_buf)
     finally:
         os.environ.clear()

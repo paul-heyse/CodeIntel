@@ -51,11 +51,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
+    from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway

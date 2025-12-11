@@ -14,18 +14,23 @@ Key Components
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable
 from concurrent.futures import Executor
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, ClassVar, NamedTuple, Protocol, TypeVar, runtime_checkable
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
-from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.ports.change_detection import ChangeDetectionPort
+    from collections.abc import Iterable, Sequence
+
+    from codeintel.ingestion.ports.change_detection import (
+        ChangeDetectionPort,
+        ChangeRequest,
+        ChangeSet,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

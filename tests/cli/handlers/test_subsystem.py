@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.cli.handlers.subsystem import (
@@ -23,8 +25,10 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.serving_contexts import ProvisionedServiceContext
-from tests.cli.handlers.conftest import HandlerContextBuilder
+
+if TYPE_CHECKING:
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
+    from tests.cli.handlers.conftest import HandlerContextBuilder
 
 HTTP_NOT_FOUND = 404
 

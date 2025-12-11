@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,6 +18,10 @@ from codeintel.ingestion.compute import (
 )
 from codeintel.storage.helpers.module_index import load_module_map
 from tests._helpers.ingestion import module_inventory_context
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
 
 
 def _source(module: ModuleType) -> str:

@@ -10,7 +10,7 @@ truth for outputs.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,7 +24,6 @@ from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
-from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -37,7 +36,10 @@ from tests._helpers.fakes.fake_providers import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.config.primitives import BuildPaths, SnapshotRef
 
 
 def make_snapshot(

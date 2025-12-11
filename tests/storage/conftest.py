@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import docs_views_ready_gateway
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.run_tracking import RunTrackingHarness, make_tracking
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

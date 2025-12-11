@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +12,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_instance,
 )
 from tests._helpers.graphs import build_ast_map
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_build_ast_map_handles_functions_and_classes(tmp_path: Path) -> None:

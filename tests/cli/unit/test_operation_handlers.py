@@ -5,6 +5,8 @@ Test individual operations through OperationTestHarness.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import (
     expect_false,
@@ -12,7 +14,9 @@ from tests._helpers.assertions import (
     expect_not_empty,
     expect_true,
 )
-from tests.cli._harness import OperationTestHarness
+
+if TYPE_CHECKING:
+    from tests.cli._harness import OperationTestHarness
 
 
 def test_build_status_returns_structured_result(

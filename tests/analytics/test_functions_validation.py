@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config import SnapshotInit
-from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from tests._helpers.builders import GoidRow, insert_rows
 from tests._helpers.config_factory import function_analytics_cfg
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.sql import run_query
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
+    from tests._helpers.context import TestContext
 
 
 def _insert_goid(

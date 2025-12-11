@@ -7,11 +7,10 @@ and ast_metric_row. Prefer these over ad hoc tuples to keep schemas consistent i
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from codeintel.analytics.adapters.dependencies import (
     DependencyAggregateRow,
@@ -21,6 +20,9 @@ from codeintel.analytics.adapters.dependencies import (
 from codeintel.graphs.catalog import FunctionMeta
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 
 def list_public_exports(module: object) -> tuple[str, ...]:

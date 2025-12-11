@@ -11,15 +11,17 @@ Provide lazy initialization and proper lifecycle management.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
     from codeintel.cli.services.runtime import RuntimeService
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 

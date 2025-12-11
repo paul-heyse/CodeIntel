@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,12 +14,18 @@ from codeintel.serving.context import (
     set_current_request_context,
 )
 from codeintel.serving.services.observability import (
-    ServiceCallMetrics,
     ServiceObservability,
 )
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_query_service
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.services.observability import (
+        ServiceCallMetrics,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 class CapturingObservability(ServiceObservability):

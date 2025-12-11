@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-import duckdb
+from typing import TYPE_CHECKING
+
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    import duckdb
+
+    from codeintel.storage.gateway import StorageGateway
 
 EXPECTED_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "docs.v_subsystem_profile": [

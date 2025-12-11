@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 DECIMAL_38_MAX = 10**38 - 1
 

@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import StepResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from codeintel.ingestion.ports.discovery import ModuleRecord

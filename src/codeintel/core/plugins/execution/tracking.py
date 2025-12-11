@@ -7,21 +7,24 @@ from domain-specific executors.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from codeintel.storage.tracking import (
-    ModuleKind,
-    PipelineStatus,
     PipelineStepRecord,
-    StepStatus,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from codeintel.core.plugins.types.result import PluginExecutionRecord
-    from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking import (
+        ModuleKind,
+        PipelineRunTracking,
+        PipelineStatus,
+        StepStatus,
+    )
 
 
 class FatalHandling(Enum):

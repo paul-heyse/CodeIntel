@@ -38,7 +38,6 @@ See Also
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -49,19 +48,23 @@ from codeintel.serving.context import (
     set_current_request_context,
 )
 from codeintel.serving.mcp import models
-from codeintel.serving.mcp.models import ProblemDetail
-from codeintel.serving.mcp.serialization import (
-    ResponseFactory,
-    SupportsFromDomain,
-    SupportsModelValidate,
-)
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.operations import Operation, iter_operations
+from codeintel.serving.mcp.tool_utils import _wrap
+from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.errors import generate_correlation_id
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.models import ProblemDetail
+    from codeintel.serving.mcp.serialization import (
+        ResponseFactory,
+        SupportsFromDomain,
+        SupportsModelValidate,
+    )
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.operations import Operation
 
 
 class _ModelLike(Protocol):

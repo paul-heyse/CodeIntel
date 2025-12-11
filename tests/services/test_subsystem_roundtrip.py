@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,8 +14,10 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.models import SubsystemCoverageRow, SubsystemProfileRow
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory, build_duckdb_query_service
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
 COMMIT = "deadbeef"

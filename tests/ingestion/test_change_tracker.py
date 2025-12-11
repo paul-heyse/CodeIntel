@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
-from pathlib import Path
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import pytest
 
@@ -17,9 +16,7 @@ from codeintel.ingestion import (
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     ScanSetupOptions,
     build_repo_tree,
@@ -28,6 +25,13 @@ from tests._helpers.ingestion import (
     module_records_for_paths,
     seed_inventory_from_paths,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.gateway import GatewayFactory
 
 ModuleFilter = Callable[[ModuleRecord], bool]
 

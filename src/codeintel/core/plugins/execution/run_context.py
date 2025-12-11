@@ -12,10 +12,10 @@ from codeintel.core.plugins.execution.manifest import (
     compute_input_hash,
     compute_options_hash,
 )
-from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
 
 @dataclass(frozen=True)

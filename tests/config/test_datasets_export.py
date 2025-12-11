@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +21,9 @@ from codeintel.config.datasets.export import (
     export_to_file,
     get_constraint_summary,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _require(*, condition: bool, message: str) -> None:

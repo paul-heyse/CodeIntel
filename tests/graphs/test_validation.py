@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
-from _pytest.logging import LogCaptureFixture
 
 from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations
 from codeintel.graphs.validation.checks import (
@@ -22,9 +21,13 @@ from codeintel.graphs.validation.checks import (
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
+
+if TYPE_CHECKING:
+    from _pytest.logging import LogCaptureFixture
+
+    from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import (
     GatewayOptions,
-    ProvisionedGateway,
     ProvisioningConfig,
     provision_docs_export_ready,
     provisioned_gateway,
@@ -26,6 +24,14 @@ from tests._helpers.builders import (
     SymbolGraphMetricsModulesRow,
     insert_rows,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers import (
+        ProvisionedGateway,
+    )
 
 
 def test_provisioned_gateway_round_trip(tmp_path: Path) -> None:

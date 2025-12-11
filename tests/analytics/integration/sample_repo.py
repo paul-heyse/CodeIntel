@@ -5,16 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 import networkx as nx
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.contracts import count_rows
 from tests._helpers.gateway import GatewayFactory
@@ -25,6 +22,12 @@ from tests._helpers.graphs import (
     insert_goids,
     insert_modules,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.storage.gateway import StorageGateway
 
 TABLE_QUERIES: dict[str, str] = {
     "analytics.function_contracts": """

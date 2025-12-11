@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, redirect_stdout
+from contextlib import redirect_stdout
 from io import StringIO
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from codeintel.cli.rendering import OutputFormat, RenderContext
 from tests._helpers.assertions.expectation_assertions import (
@@ -12,6 +12,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_instance,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
 
 
 class _TtyStringIO(StringIO):

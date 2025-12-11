@@ -7,8 +7,10 @@ subsystems so callers can rely on a single import surface.
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "build_subsystems": ("codeintel.analytics.subsystems", "build_subsystems"),

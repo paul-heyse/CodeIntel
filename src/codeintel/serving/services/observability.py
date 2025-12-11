@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.context import RequestContext, get_current_request_context
+from codeintel.serving.context import get_current_request_context
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
@@ -24,6 +23,11 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
 )
 from codeintel.serving.services.errors import ProblemError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.context import RequestContext
 
 LOG = logging.getLogger("codeintel.serving.services.query")
 

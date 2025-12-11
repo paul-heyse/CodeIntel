@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.analytics.ast_features.model import IoFlags
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
+    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 
 
 class FunctionCoverageEntryProtocol(Protocol):

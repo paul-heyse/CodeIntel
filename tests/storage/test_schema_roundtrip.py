@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given, settings
@@ -23,13 +23,17 @@ from codeintel.config.datasets import (
 )
 from codeintel.config.datasets.rows.graph import symbol_use_to_tuple
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema.json_schema import (
     generate_export_schemas,
     json_schema_from_typeddict,
     validate_row_with_schema,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 # Constants
 MAX_HYPOTHESIS_EXAMPLES = 15

@@ -13,13 +13,16 @@ Core Type Mappings
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.core.plugins.registry.base import PluginSkip
 from codeintel.core.plugins.types.report import BaseExecutionReport
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 @dataclass(frozen=True)

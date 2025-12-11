@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import BackendResource, build_backend_resource
+from codeintel.serving.bootstrap import build_backend_resource
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.gateway import GatewayFactory, seed_repo_identity
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
+
+if TYPE_CHECKING:
+    from codeintel.serving.bootstrap import BackendResource
 
 
 def test_create_mcp_server_requires_gateway_for_local_db() -> None:

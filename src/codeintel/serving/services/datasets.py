@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from codeintel.config.datasets import DatasetContract
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits, clamp_limit, clamp_offset
-from codeintel.serving.backend.query_api import DuckDBQueryApi
+from codeintel.serving.backend import clamp_limit, clamp_offset
 from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import (
     DatasetRowsResponse,
@@ -20,6 +17,13 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.services.errors import DatasetNotFoundError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
 from codeintel.storage.datasets import load_dataset_registry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.config.datasets import DatasetContract
+    from codeintel.serving.backend import BackendLimits
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
 
 
 def _normalize_validation_profile(

@@ -15,14 +15,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.constraints import (
-    Constraint,
     ConstraintKind,
-    ConstraintSet,
     extract_constraints_from_pandera,
 )
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
+    from codeintel.config.datasets.constraints import (
+        Constraint,
+        ConstraintSet,
+    )
     from codeintel.config.datasets.schema import DatasetSchema
 
 __all__ = [

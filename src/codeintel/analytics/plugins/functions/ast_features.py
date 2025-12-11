@@ -19,10 +19,10 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 

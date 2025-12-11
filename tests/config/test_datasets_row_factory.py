@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from typing import get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import pandas as pd
 import pytest
-from pandas.api.extensions import ExtensionDtype
 from pandera import Column, DataFrameSchema
 
 from codeintel.config.datasets.row_factory import (
     row_serializer_from_pandera,
     typed_dict_from_pandera,
 )
+
+if TYPE_CHECKING:
+    from pandas.api.extensions import ExtensionDtype
 
 
 def _require(*, condition: bool, message: str) -> None:

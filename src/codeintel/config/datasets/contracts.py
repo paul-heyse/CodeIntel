@@ -10,17 +10,10 @@ This module provides:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Final, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 
-from codeintel.config.datasets.primitives import (
-    CompositeSchema,
-    RowDictType,
-    RowToTuple,
-    TableSchema,
-)
 from codeintel.config.datasets.rows import (
     BehavioralCoverageRowModel,
     CallGraphEdgeRow,
@@ -85,6 +78,16 @@ from codeintel.config.datasets.rows import (
 )
 from codeintel.config.datasets.schema_provider import composite_schemas, table_schemas
 from codeintel.storage.views import DERIVED_DOCS_VIEWS
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.config.datasets.primitives import (
+        CompositeSchema,
+        RowDictType,
+        RowToTuple,
+        TableSchema,
+    )
 
 # ---------------------------------------------------------------------------
 # RowBinding and DatasetContract dataclasses

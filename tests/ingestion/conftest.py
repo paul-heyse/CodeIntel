@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.ingestion import (
     build_ingestion_context_bundle,
@@ -16,6 +15,11 @@ from tests._helpers.ingestion import (
     create_scan_step,
 )
 from tests._helpers.orchestration.tooling import tooling_outputs_session
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

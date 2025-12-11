@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.deps.protocols import JobManagerProtocol
-from codeintel.cli.jobs import JobInfo, JobManager, JobStatus, get_job_manager
+from codeintel.cli.jobs import JobManager, get_job_manager
 
 if TYPE_CHECKING:
-    from codeintel.cli.jobs import JobStore
+    from codeintel.cli.deps.protocols import JobManagerProtocol
+    from codeintel.cli.jobs import JobInfo, JobStatus, JobStore
 
 
 class JobService:

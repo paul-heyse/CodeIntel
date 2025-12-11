@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.analytics.data_models.core import compute_data_models
 from codeintel.analytics.dependencies.core import (
     ExternalDependencyInputs,
@@ -27,10 +29,14 @@ from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 from codeintel.graphs.catalog import FunctionCatalogService
 from tests._helpers.assertions import expect_true
 from tests.analytics.integration.sample_repo import (
-    SampleRepo,
     build_runtime,
     count_table_rows,
 )
+
+if TYPE_CHECKING:
+    from tests.analytics.integration.sample_repo import (
+        SampleRepo,
+    )
 
 MIN_ROWS = 2
 

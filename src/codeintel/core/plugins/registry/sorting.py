@@ -7,8 +7,10 @@ and dependency resolution that can be used by all plugin registries.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 log = logging.getLogger(__name__)
 

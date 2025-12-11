@@ -15,12 +15,13 @@ Examples
 from __future__ import annotations
 
 import datetime
-from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
     from pandera import DataFrameSchema
 
 __all__ = [

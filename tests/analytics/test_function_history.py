@@ -4,17 +4,22 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions import compute_function_history
 from codeintel.config import SnapshotInit
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from tests._helpers import TestContext, TestScenario
+from tests._helpers import TestScenario
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.config_factory import function_history_cfg
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
 from tests._helpers.rows import function_metrics_row, module_row
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers import TestContext
 
 # Test constants
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}

@@ -35,17 +35,14 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import CallGraphStepConfig
 from codeintel.config.datasets import (
-    CallGraphEdgeRow,
     CallGraphNodeRow,
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
 )
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.adapters.callgraph_persistence import dedupe_edge_rows
 from codeintel.graphs.catalog import (
-    FunctionSpanIndex,
     load_function_index,
 )
 from codeintel.graphs.compute.callgraph import (
@@ -64,6 +61,14 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.config.datasets import (
+        CallGraphEdgeRow,
+    )
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
+    from codeintel.graphs.catalog import (
+        FunctionSpanIndex,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

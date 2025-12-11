@@ -7,14 +7,12 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolRunner,
-    ToolRunResult,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -24,6 +22,13 @@ from codeintel.ingestion.engine.plugins import (
 )
 from codeintel.ingestion.engine.results import DiagnosticReport
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
+
+if TYPE_CHECKING:
+    from codeintel.config.models import ToolsConfig
+    from codeintel.ingestion.engine.infrastructure import (
+        ToolRunner,
+        ToolRunResult,
+    )
 
 log = logging.getLogger(__name__)
 

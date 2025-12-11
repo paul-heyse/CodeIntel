@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.storage.ibis_types import ibis_bool
-from codeintel.storage.repositories.base import BaseRepository, RowDict
+from codeintel.storage.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)

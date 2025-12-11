@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.config import ConfigBuilder, SnapshotInit
 from tests._helpers.assertions import expect_equal, expect_in, expect_length
-from tests._helpers.context import TestContext
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.subsystems_analytics import (
     SubsystemAnalyticsPack,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests._helpers.context import TestContext
 
 EXPECTED_SUBSYSTEMS = 2
 EXPECTED_MEMBERSHIP_COUNT = 6

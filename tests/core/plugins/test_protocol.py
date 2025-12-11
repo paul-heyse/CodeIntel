@@ -10,26 +10,32 @@ This module tests:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.core.plugins.types.protocol import (
-    CapabilityKind,
-    InputSource,
     PluginCapability,
     PluginInputSpec,
-    PluginIsolation,
-    PluginKind,
     PluginMetadata,
     PluginOutputSpec,
     PluginProtocol,
     PluginResourceHints,
-    PluginSeverity,
-    PluginStage,
     ValidationResult,
 )
 from codeintel.core.plugins.types.result import PluginResult
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.types.protocol import (
+        CapabilityKind,
+        InputSource,
+        PluginIsolation,
+        PluginKind,
+        PluginSeverity,
+        PluginStage,
+    )
 
 MIN_ROWS_REQUIRED = 10
 RESOURCE_MAX_RUNTIME_MS = 5000

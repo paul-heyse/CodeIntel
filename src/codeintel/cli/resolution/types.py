@@ -8,10 +8,11 @@ needed by CLI handlers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.cli.project import ProjectConfig
     from codeintel.config.models import CodeIntelConfig, ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef

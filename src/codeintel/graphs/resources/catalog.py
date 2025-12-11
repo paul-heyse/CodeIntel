@@ -19,14 +19,16 @@ protocol, enabling:
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
+from codeintel.graphs.ports.catalog import FunctionSpanData
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from codeintel.graphs.catalog import FunctionCatalog
+    from codeintel.graphs.ports.catalog import CatalogPort
 
 
 @dataclass

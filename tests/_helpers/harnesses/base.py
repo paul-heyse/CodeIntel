@@ -11,9 +11,7 @@ while providing consistent assertion APIs.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 from uuid import uuid4
 
@@ -26,6 +24,9 @@ from tests._helpers.assertions.common import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
 
 

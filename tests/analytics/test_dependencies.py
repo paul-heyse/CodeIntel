@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,7 +13,6 @@ from codeintel.analytics.compute.dependencies.classification import (
     CALLSITE_MEDIUM_THRESHOLD,
     SEVERITY_SCORES,
     DependencyModePattern,
-    LibraryPattern,
     classify_modes,
     risk_level,
     risk_score,
@@ -46,8 +44,16 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.scenarios import TestScenario
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.analytics.compute.dependencies.classification import (
+        LibraryPattern,
+    )
+    from tests._helpers.context import TestContext
 
 EXPECTED_SEVERITY_COUNT = 5
 EXPECTED_REQUESTS_CALLS = 2

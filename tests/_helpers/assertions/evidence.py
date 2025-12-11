@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_in
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def assert_evidence_snippet_contains(sample: Mapping[str, object], substring: str) -> None:

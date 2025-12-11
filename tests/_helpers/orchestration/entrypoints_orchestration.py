@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, ModuleRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageSeedConfig
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING, ClassVar, cast
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.protocols import TypeChecker
 from codeintel.build.result import TargetResult
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -29,6 +28,8 @@ from codeintel.storage.ibis_types import filter_by
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 else:
     StorageGateway = object

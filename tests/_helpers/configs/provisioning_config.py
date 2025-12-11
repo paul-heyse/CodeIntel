@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.config import GraphMetricsStepConfig
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths

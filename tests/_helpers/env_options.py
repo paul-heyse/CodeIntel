@@ -7,9 +7,12 @@ can accept a single options object instead of numerous keyword parameters.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeaturesPlugin
 from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
@@ -13,6 +13,9 @@ from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _seed_function_sources(repo_root: Path) -> None:

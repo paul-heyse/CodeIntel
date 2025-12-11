@@ -8,13 +8,13 @@ for all I/O operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from codeintel.ingestion.infrastructure.scanning import ScanProfile

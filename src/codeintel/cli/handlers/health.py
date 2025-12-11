@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
@@ -25,6 +24,8 @@ from codeintel.cli.observability import TelemetryConfig
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

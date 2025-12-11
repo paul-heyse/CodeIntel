@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_invalid_policy
 from codeintel.cli.execution.registry import OperationSpec, register_operation
@@ -20,6 +20,9 @@ from codeintel.graphs.core.registry import (
     list_graph_plugins,
     plan_graph_plugins,
 )
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

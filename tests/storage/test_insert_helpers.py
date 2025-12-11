@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.storage.gateway import insert_helpers
-from codeintel.storage.gateway.protocol import DuckDBConnection
 from tests._helpers.assertions import expect_equal
 from tests._helpers.storage import capture_executor
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 def test_insert_rows_normalizes_mapping() -> None:

@@ -6,11 +6,12 @@ operations, providing access to cached graphs without exposing implementation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import networkx as nx
 
 

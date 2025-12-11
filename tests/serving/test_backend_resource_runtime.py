@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.analytics.runtime import (
-    GraphRuntime,
     GraphRuntimeOptions,
     GraphRuntimePool,
     build_graph_runtime,
@@ -17,6 +16,9 @@ from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_re
 from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
+    from codeintel.analytics.runtime import (
+        GraphRuntime,
+    )
     from tests._helpers.context import TestContext
 
 

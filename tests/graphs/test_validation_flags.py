@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
+from typing import TYPE_CHECKING
+
 from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
+
+if TYPE_CHECKING:
+    from codeintel.analytics.runtime import GraphRuntimeOptions
+    from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 
 def _runtime_options(

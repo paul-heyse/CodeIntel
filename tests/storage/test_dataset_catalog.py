@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,8 +12,12 @@ from codeintel.storage.datasets.catalog import (
     write_html_catalog,
     write_markdown_catalog,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.dataset_factories import sample_dataset_registry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 SAMPLE_ROWS_1 = 1
 SAMPLE_ROWS_2 = 2

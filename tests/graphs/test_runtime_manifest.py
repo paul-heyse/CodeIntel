@@ -12,7 +12,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.runtime.manifest import (
@@ -23,7 +23,6 @@ from codeintel.graphs.runtime.manifest import (
     compute_options_hash,
     is_unchanged,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -35,6 +34,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_plugins import make_graph_plugin
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16

@@ -10,14 +10,18 @@ import contextlib
 import importlib
 import logging
 import sys
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
-from types import ModuleType
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
-from codeintel.cli.plugins.manifest import PluginCapability, PluginManifest
+from codeintel.cli.plugins.manifest import PluginCapability
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from types import ModuleType
+
+    from codeintel.cli.plugins.manifest import PluginManifest
 
 LOG = logging.getLogger(__name__)
 

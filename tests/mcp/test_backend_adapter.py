@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_backend
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_require_identifier_validation(fresh_gateway: StorageGateway) -> None:

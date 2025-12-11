@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,7 +14,6 @@ from codeintel.analytics.compute.semantic_roles.classification import (
     ROLE_THRESHOLD,
     SERVICE_FAN_IN_THRESHOLD,
     SERVICE_FAN_OUT_THRESHOLD,
-    FunctionContext,
     ModuleRecord,
     RoleAccumulator,
     classify_function_role,
@@ -27,6 +27,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.builders import FunctionContextBuilder
+
+if TYPE_CHECKING:
+    from codeintel.analytics.compute.semantic_roles.classification import (
+        FunctionContext,
+    )
 
 DEFAULT_LOC = 50
 BUMP_VALUE_0_2 = 0.2

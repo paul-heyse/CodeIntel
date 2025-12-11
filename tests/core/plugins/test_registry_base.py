@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import importlib.metadata
-from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import TypeGuard
+from typing import TYPE_CHECKING, TypeGuard
 
 import pytest
 
 from codeintel.core.plugins.registry.base import BasePluginRegistry, RegistryHooks
 from codeintel.core.plugins.types.protocol import PluginMetadata
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
 
 
 class DummyPlugin:

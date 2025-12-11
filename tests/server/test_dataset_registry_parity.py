@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,8 +18,10 @@ from codeintel.serving.bootstrap import (
 )
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_rows
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _seed_repo_identity(gateway: StorageGateway, repo: str, commit: str) -> None:
