@@ -34,7 +34,9 @@ def isolated_registry() -> DatasetSchemaRegistry:
     return DatasetSchemaRegistry()
 
 
-def test_registry_get_returns_none_for_unknown_key(isolated_registry: DatasetSchemaRegistry) -> None:
+def test_registry_get_returns_none_for_unknown_key(
+    isolated_registry: DatasetSchemaRegistry,
+) -> None:
     """Get returns None for unknown table keys."""
     # Force initialization by accessing any method that triggers it
     isolated_registry.initialize()

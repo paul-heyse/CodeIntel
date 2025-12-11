@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import tomllib
 from pathlib import Path
-from typing import Any
-
-import yaml  # type: ignore[import-untyped]
+from typing import Any, Protocol, cast
 
 from codeintel.core.plugins.execution.profiles import ExecutionProfile, register_profile
+
+
+class _YamlModule(Protocol):
+    def safe_load(self, stream: object) -> dict[str, Any] | list[Any] | None:
+        ...
+
+
+yaml = cast("_YamlModule", importlib.import_module("yaml"))
 
 log = logging.getLogger(__name__)
 
@@ -21,9 +28,18 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     -------
     dict[str, Any]
         Parsed YAML content.
+
+    Raises
+    ------
+    TypeError
+        If the YAML content is not a mapping.
     """
     with path.open(encoding="utf8") as file:
-        return yaml.safe_load(file)
+        data = yaml.safe_load(file)
+    if not isinstance(data, dict):
+        message = f"YAML profile at {path} must be a mapping"
+        raise TypeError(message)
+    return cast("dict[str, Any]", data)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:

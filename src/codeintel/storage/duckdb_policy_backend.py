@@ -422,7 +422,8 @@ def _build_upsert(
 
     # Determine which columns to update
     cols_to_update = (
-        update_columns if update_columns is not None
+        update_columns
+        if update_columns is not None
         else [col for col in columns if col not in conflict_columns]
     )
 

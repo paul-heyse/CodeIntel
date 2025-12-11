@@ -69,16 +69,24 @@ def _get_ibis_gateway(
     -------
     IbisGateway
         Ibis gateway for building expressions.
+
+    Raises
+    ------
+    TypeError
+        If the provided gateway does not expose an IbisGateway.
     """
     from codeintel.storage.ibis_adapter import IbisGateway  # noqa: PLC0415
 
-    # Check if it's a StorageGateway (has 'ibis' attribute)
-    if hasattr(con_or_gateway, "ibis"):
-        return con_or_gateway.ibis  # type: ignore[return-value, union-attr]
+    if isinstance(con_or_gateway, DuckDBPyConnection):
+        ibis_con = ibis.duckdb.from_connection(con_or_gateway)
+        return IbisGateway(ibis_con)
 
-    # It's a raw DuckDB connection - wrap it
-    ibis_con = ibis.duckdb.from_connection(con_or_gateway)
-    return IbisGateway(ibis_con)
+    ibis_gateway = getattr(con_or_gateway, "ibis", None)
+    if isinstance(ibis_gateway, IbisGateway):
+        return ibis_gateway
+
+    message = "StorageGateway must expose an IbisGateway via `ibis`"
+    raise TypeError(message)
 
 
 def create_all_views(

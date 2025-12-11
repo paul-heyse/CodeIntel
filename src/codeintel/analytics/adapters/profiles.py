@@ -133,9 +133,7 @@ class FunctionProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin
         int
             Number of rows persisted.
         """
-        validated_df = (
-            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
-        )
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
         rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
         return self.persist(rows)
 
@@ -245,9 +243,7 @@ class FileProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
         int
             Number of rows persisted.
         """
-        validated_df = (
-            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
-        )
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
         rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
         return self.persist(rows)
 
@@ -357,9 +353,7 @@ class ModuleProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
         int
             Number of rows persisted.
         """
-        validated_df = (
-            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
-        )
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
         rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
         return self.persist(rows)
 

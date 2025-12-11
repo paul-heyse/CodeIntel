@@ -19,8 +19,10 @@ from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
 from tests._helpers.cli_project import (
     CLIProjectContext,
     CLIProjectHarness,
-    cli_project_harness as cli_project_harness_ctx,
     create_cli_project,
+)
+from tests._helpers.cli_project import (
+    cli_project_harness as cli_project_harness_ctx,
 )
 from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
 
@@ -93,7 +95,13 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
 
 @pytest.fixture
 def cli_project_harness(tmp_path: Path) -> Iterator[CLIProjectHarness]:
-    """Provide a project-backed CLI harness with env/cwd set."""
+    """Provide a project-backed CLI harness with env/cwd set.
+
+    Yields
+    ------
+    CLIProjectHarness
+        Harness configured for the temporary project.
+    """
     with cli_project_harness_ctx(tmp_path) as harness:
         yield harness
 

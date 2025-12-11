@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from types import ModuleType
 
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+_rows_module: ModuleType | None
 
 try:
     from codeintel.config.datasets import rows as _rows_module
 except ImportError:
-    _rows_module = None  # type: ignore[assignment]
+    _rows_module = None
 
 __all__ = [
     "MigrationStatus",

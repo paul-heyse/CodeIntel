@@ -32,8 +32,31 @@ from codeintel.analytics.subsystems.edge_stats import (
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config import SubsystemsStepConfig
 from codeintel.graphs.engine import GraphEngine
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+SUBSYSTEM_MODULES_COLS = ["repo", "commit", "subsystem_id", "module", "role"]
+SUBSYSTEMS_COLS = [
+    "repo",
+    "commit",
+    "subsystem_id",
+    "name",
+    "description",
+    "module_count",
+    "modules_json",
+    "entrypoints_json",
+    "internal_edge_count",
+    "external_edge_count",
+    "fan_in",
+    "fan_out",
+    "function_count",
+    "avg_risk_score",
+    "max_risk_score",
+    "high_risk_function_count",
+    "risk_level",
+    "created_at",
+]
 
 log = logging.getLogger(__name__)
 
@@ -97,14 +120,9 @@ def build_subsystems(
     ensure_schema(con, "analytics.subsystems")
     ensure_schema(con, "analytics.subsystem_modules")
 
-    con.execute(
-        "DELETE FROM analytics.subsystems WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.subsystems", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.subsystem_modules", repo=cfg.repo, commit=cfg.commit)
 
     modules, tags_by_module = load_modules(gateway, cfg)
     if not modules:
@@ -149,26 +167,17 @@ def build_subsystems(
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
 
     if membership_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.subsystem_modules (
-                repo, commit, subsystem_id, module, role
-            ) VALUES (?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.subsystem_modules",
             membership_rows,
+            columns=SUBSYSTEM_MODULES_COLS,
         )
 
     if subsystem_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.subsystems (
-                repo, commit, subsystem_id, name, description, module_count, modules_json,
-                entrypoints_json, internal_edge_count, external_edge_count, fan_in, fan_out,
-                function_count, avg_risk_score, max_risk_score, high_risk_function_count,
-                risk_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.subsystems",
             subsystem_rows,
+            columns=SUBSYSTEMS_COLS,
         )
         log.info(
             "subsystems populated: %d subsystems, %d memberships for %s@%s",

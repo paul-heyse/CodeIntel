@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
+import pandas as pd
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
@@ -17,6 +18,18 @@ from codeintel.config.datasets import (
     GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageGateway
+
+
+def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """
+    Convert DataFrame rows into a list of dictionaries.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Records returned by ``DataFrame.to_dict(orient="records")``.
+    """
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
 
 
 @dataclass(frozen=True)
@@ -105,10 +118,10 @@ def component_metadata_from_import_table(
     """
     try:
         tbl = gateway.ibis.table("graph.import_modules")
-        expr = tbl.filter(
-            cast("Any", (tbl.repo == repo) & (tbl.commit == commit))
-        ).select("module", "scc_id", "component_size", "layer")
-        df = expr.execute()
+        expr = tbl.filter(cast("Any", (tbl.repo == repo) & (tbl.commit == commit))).select(
+            "module", "scc_id", "component_size", "layer"
+        )
+        df = cast("pd.DataFrame", expr.execute())
     except IbisError:
         return None
     if df.empty:
@@ -117,7 +130,7 @@ def component_metadata_from_import_table(
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
-    for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+    for record in _to_records(df):
         name = str(record["module"])
         scc_id = record["scc_id"]
         component_size = record["component_size"]
@@ -197,15 +210,17 @@ def load_symbol_module_edges(
         joined = (
             su.left_join(m_def, cast("Any", su.def_path == m_def.path))
             .left_join(m_use, cast("Any", su.use_path == m_use.path))
-            .filter(cast("Any", m_def.module.notnull() & m_use.module.notnull()))
+            .filter(
+                cast("Any", (~m_def.module.isnull()) & (~m_use.module.isnull()))
+            )
             .select(
                 use_module=m_use.module,
                 def_module=m_def.module,
             )
         )
-        df = joined.execute()
+        df = cast("pd.DataFrame", joined.execute())
 
-        for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+        for record in _to_records(df):
             src = str(record["use_module"])
             dst = str(record["def_module"])
             modules.update((src, dst))
@@ -216,9 +231,9 @@ def load_symbol_module_edges(
     # Use mapping from path to module
     su = gateway.ibis.table("graph.symbol_use_edges")
     expr = su.select("def_path", "use_path")
-    df = expr.execute()
+    df = cast("pd.DataFrame", expr.execute())
 
-    for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+    for record in _to_records(df):
         def_module = module_by_path.get(str(record["def_path"]))
         use_module = module_by_path.get(str(record["use_path"]))
         if def_module is None or use_module is None:

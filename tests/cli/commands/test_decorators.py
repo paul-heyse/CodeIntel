@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 
@@ -126,7 +126,11 @@ def _verify_equal(actual: object, expected: object, message: str) -> None:
         raise AssertionError(full_msg)
 
 
-def _verify_in(item: object, container: object, message: str) -> None:
+class _StrContainer(Protocol):
+    def __contains__(self, item: str, /) -> bool: ...
+
+
+def _verify_in(item: str, container: _StrContainer, message: str) -> None:
     """Verify item is in container.
 
     Parameters
@@ -143,7 +147,7 @@ def _verify_in(item: object, container: object, message: str) -> None:
     AssertionError
         If item is not in container.
     """
-    if item not in container:  # type: ignore[operator]
+    if item not in container:
         full_msg = f"{message}: {item!r} not in {container!r}"
         raise AssertionError(full_msg)
 

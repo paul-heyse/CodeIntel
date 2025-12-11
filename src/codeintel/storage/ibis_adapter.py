@@ -39,6 +39,34 @@ log = logging.getLogger(__name__)
 DUCKDB_DIALECT = "duckdb"
 
 
+def _convert_numpy_types(value: object) -> object:
+    """Convert numpy types to native Python types for DuckDB compatibility.
+
+    Returns
+    -------
+    object
+        Native Python type or original value if not a numpy type.
+    """
+    # Handle numpy integer types
+    item = getattr(value, "item", None)
+    dtype = getattr(value, "dtype", None)
+    if callable(item) and dtype is not None:
+        # This is a numpy scalar - convert to native Python type
+        return item()
+    return value
+
+
+def _normalize_row(row: tuple[object, ...]) -> tuple[object, ...]:
+    """Normalize a row by converting numpy types to native Python types.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row with all numpy types converted to native Python types.
+    """
+    return tuple(_convert_numpy_types(v) for v in row)
+
+
 @dataclass(frozen=True)
 class OnConflict:
     """Specification for UPSERT behavior on conflict.
@@ -402,7 +430,9 @@ class IbisGateway:
             # For UPSERT with Ibis expression, materialize to DataFrame first
             log.warning("UPSERT with Ibis expression not yet optimized; using temp table")
             df = expr.to_pandas()
-            return self._write_dataframe(schema, table, table_key, df=df, columns=resolved_columns, on_conflict=on_conflict)
+            return self._write_dataframe(
+                schema, table, table_key, df=df, columns=resolved_columns, on_conflict=on_conflict
+            )
 
         # Build INSERT...SELECT
         insert_sql = _build_insert_select(schema, table, resolved_columns, select_sql)
@@ -432,7 +462,9 @@ class IbisGateway:
         """
         resolved_columns = list(df.columns) if columns is None else list(columns)
         rows = list(df.itertuples(index=False, name=None))
-        return self._write_tuples(schema, table, table_key, rows=rows, columns=resolved_columns, on_conflict=on_conflict)
+        return self._write_tuples(
+            schema, table, table_key, rows=rows, columns=resolved_columns, on_conflict=on_conflict
+        )
 
     def _write_tuples(  # noqa: PLR0913
         self,
@@ -466,16 +498,28 @@ class IbisGateway:
         resolved_columns = list(columns)
 
         if on_conflict is not None:
-            return self._upsert_tuples(schema, table, table_key, rows=rows, columns=resolved_columns, on_conflict=on_conflict)
+            return self._upsert_tuples(
+                schema,
+                table,
+                table_key,
+                rows=rows,
+                columns=resolved_columns,
+                on_conflict=on_conflict,
+            )
+
+        # Normalize rows to convert numpy types to native Python types
+        normalized_rows = [_normalize_row(row) for row in rows]
 
         # Build INSERT...VALUES
         insert_sql = _build_insert_values(schema, table, resolved_columns)
-        log.debug("write INSERT...VALUES: %s (%d rows)", insert_sql[:100], len(rows))
+        log.debug("write INSERT...VALUES: %s (%d rows)", insert_sql[:100], len(normalized_rows))
 
         # Execute batch insert
-        self._gateway.con.executemany(insert_sql, rows)
+        self._gateway.con.executemany(insert_sql, normalized_rows)
 
-        return WriteResult(table_key=table_key, rows_affected=len(rows), method="insert_values")
+        return WriteResult(
+            table_key=table_key, rows_affected=len(normalized_rows), method="insert_values"
+        )
 
     def _upsert_tuples(  # noqa: PLR0913
         self,
@@ -510,14 +554,19 @@ class IbisGateway:
             msg = "No columns to update on conflict"
             raise ValueError(msg)
 
+        # Normalize rows to convert numpy types to native Python types
+        normalized_rows = [_normalize_row(row) for row in rows]
+
         # Build UPSERT SQL
-        upsert_sql = _build_upsert(schema, table, columns, on_conflict.conflict_columns, update_columns)
-        log.debug("write UPSERT: %s (%d rows)", upsert_sql[:100], len(rows))
+        upsert_sql = _build_upsert(
+            schema, table, columns, on_conflict.conflict_columns, update_columns
+        )
+        log.debug("write UPSERT: %s (%d rows)", upsert_sql[:100], len(normalized_rows))
 
         # Execute batch upsert
-        self._gateway.con.executemany(upsert_sql, rows)
+        self._gateway.con.executemany(upsert_sql, normalized_rows)
 
-        return WriteResult(table_key=table_key, rows_affected=len(rows), method="upsert")
+        return WriteResult(table_key=table_key, rows_affected=len(normalized_rows), method="upsert")
 
     def delete(
         self,

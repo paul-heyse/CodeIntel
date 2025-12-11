@@ -22,9 +22,16 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 CONFIG_DATA_FLOW_COLS = [
-    "repo", "commit", "config_key", "config_path",
-    "function_goid_h128", "usage_kind", "evidence_json",
-    "call_chain_id", "call_chain_json", "created_at",
+    "repo",
+    "commit",
+    "config_key",
+    "config_path",
+    "function_goid_h128",
+    "usage_kind",
+    "evidence_json",
+    "call_chain_id",
+    "call_chain_json",
+    "created_at",
 ]
 
 log = logging.getLogger(__name__)

@@ -20,6 +20,28 @@ from codeintel.storage.gateway import (
 )
 from codeintel.storage.sql.builder import ensure_schema
 
+HISTORY_TIMESERIES_COLS = [
+    "repo",
+    "entity_kind",
+    "entity_stable_id",
+    "function_goid_h128",
+    "module",
+    "rel_path",
+    "language",
+    "qualname",
+    "commit",
+    "commit_ts",
+    "loc",
+    "cyclomatic_complexity",
+    "coverage_ratio",
+    "static_error_count",
+    "typedness_bucket",
+    "risk_score",
+    "risk_level",
+    "bucket_label",
+    "created_at_row",
+]
+
 log = logging.getLogger(__name__)
 
 DBResolver = Callable[[str], DuckDBConnection]
@@ -86,7 +108,7 @@ def _safe_number(value: NumericLike | None) -> float | None:
 
 
 def compute_history_timeseries(
-    history_con: DuckDBConnection,
+    history_gateway: StorageGateway,
     cfg: HistoryTimeseriesStepConfig,
     db_resolver: DBResolver,
     *,
@@ -97,8 +119,8 @@ def compute_history_timeseries(
 
     Parameters
     ----------
-    history_con:
-        Connection to the database where history rows will be written.
+    history_gateway:
+        Gateway to the database where history rows will be written.
     cfg:
         History aggregation configuration.
     db_resolver:
@@ -110,7 +132,9 @@ def compute_history_timeseries(
         log.info("No commits provided for history_timeseries; skipping.")
         return
 
+    history_con = history_gateway.con
     ensure_schema(history_con, "analytics.history_timeseries")
+    # Delete by repo only (not snapshot-specific)
     history_con.execute(
         "DELETE FROM analytics.history_timeseries WHERE repo = ?",
         [cfg.repo],
@@ -147,32 +171,12 @@ def compute_history_timeseries(
                 )
             )
 
-    history_con.executemany(
-        """
-        INSERT INTO analytics.history_timeseries (
-            repo,
-            entity_kind,
-            entity_stable_id,
-            function_goid_h128,
-            module,
-            rel_path,
-            language,
-            qualname,
-            commit,
-            commit_ts,
-            loc,
-            cyclomatic_complexity,
-            coverage_ratio,
-            static_error_count,
-            typedness_bucket,
-            risk_score,
-            risk_level,
-            bucket_label,
-            created_at_row
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
+    if rows:
+        history_gateway.ibis.write(
+            "analytics.history_timeseries",
+            rows,
+            columns=HISTORY_TIMESERIES_COLS,
+        )
     log.info(
         "history_timeseries populated: %s rows for %s commits",
         len(rows),
@@ -220,7 +224,7 @@ def compute_history_timeseries_gateways(
 
     try:
         compute_history_timeseries(
-            history_gateway.con,
+            history_gateway,
             cfg,
             _db_resolver,
             runner=runner,

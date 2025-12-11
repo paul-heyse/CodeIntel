@@ -197,7 +197,7 @@ def write_test_profile_rows(
     """
     rows_list = list(rows)
     return write_rows_with_registry_guard(
-        gateway.con,
+        gateway,
         rows=rows_list,
         context=WriterContext(
             table_key="analytics.test_profile",
@@ -272,7 +272,7 @@ def write_behavioral_coverage_rows(
     """
     rows_list = list(rows)
     return write_rows_with_registry_guard(
-        gateway.con,
+        gateway,
         rows=rows_list,
         context=WriterContext(
             table_key="analytics.behavioral_coverage",

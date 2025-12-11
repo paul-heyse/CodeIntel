@@ -306,7 +306,9 @@ def assert_not_null_fraction(
             fraction = 0.0
         else:
             col = filtered[spec.column]
-            non_null_count = cast("int", filtered.filter(cast("Any", col.notnull())).count().execute())
+            non_null_count = cast(
+                "int", filtered.filter(cast("Any", col.notnull())).count().execute()
+            )
             fraction = float(non_null_count) / float(total)
     except IbisError:
         fraction = 0.0

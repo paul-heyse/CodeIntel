@@ -11,12 +11,14 @@ Legacy string-based DDL constants have been removed.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
-from duckdb import DuckDBPyConnection
+import ibis
+from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.storage.ibis_adapter import IbisGateway
 
 if TYPE_CHECKING:
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -49,19 +51,48 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
     DuckDBPolicyBackend
         Policy backend instance wrapping the connection.
     """
-    # Import here to avoid circular imports
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
 
     # Create a minimal gateway-like wrapper
     class _MinimalGateway:
+        analytics: Any
+        build: Any
+        config: Any
+        core: Any
+        datasets: Any
+        docs: Any
+        graph: Any
+        runs: Any
+        ibis: IbisGateway
+
         def __init__(self, connection: DuckDBPyConnection) -> None:
             self._con = connection
+            self.analytics = None
+            self.build = None
+            self.config = None
+            self.core = None
+            self.datasets = None
+            self.docs = None
+            self.graph = None
+            self.runs = None
+            self.ibis = IbisGateway(ibis.duckdb.from_connection(connection))
 
         @property
         def con(self) -> DuckDBPyConnection:
             return self._con
 
-    return DuckDBPolicyBackend(gateway=_MinimalGateway(con))  # type: ignore[arg-type]
+        def close(self) -> None:
+            self._con.close()
+
+        def execute(
+            self, sql: str, params: Sequence[object] | None = None
+        ) -> DuckDBPyConnection:
+            return self._con.execute(sql, params)
+
+        def table(self, name: str) -> DuckDBPyRelation:
+            return self._con.table(name)
+
+    return DuckDBPolicyBackend(gateway=_MinimalGateway(con))
 
 
 def create_schemas(con: DuckDBPyConnection) -> None:

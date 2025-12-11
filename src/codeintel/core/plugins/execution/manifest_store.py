@@ -26,9 +26,19 @@ MANIFEST_TABLE = "core.plugin_execution_manifest"
 
 # Column names for bulk insert
 _MANIFEST_COLUMNS: tuple[str, ...] = (
-    "plugin_name", "repo", "commit", "scope_id", "variant", "status",
-    "started_at", "ended_at", "duration_ms", "options_hash", "input_hash",
-    "error", "meta_json",
+    "plugin_name",
+    "repo",
+    "commit",
+    "scope_id",
+    "variant",
+    "status",
+    "started_at",
+    "ended_at",
+    "duration_ms",
+    "options_hash",
+    "input_hash",
+    "error",
+    "meta_json",
 )
 
 

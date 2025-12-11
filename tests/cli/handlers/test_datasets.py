@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from dataclasses import replace
-from unittest.mock import MagicMock
+from pathlib import Path
 
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
@@ -259,7 +258,9 @@ def test_datasets_diff_handler_success(
         encoding="utf-8",
     )
 
-    with dataset_handler_harness_fixture.command_context({"baseline_path": str(baseline_path)}) as ctx:
+    with dataset_handler_harness_fixture.command_context(
+        {"baseline_path": str(baseline_path)}
+    ) as ctx:
         result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(result.success)
@@ -271,21 +272,22 @@ def test_datasets_diff_handler_success(
 
 
 def test_datasets_diff_handler_no_differences(
-    mock_get_contracts: MagicMock,
     tmp_path: Path,
     dataset_handler_harness_fixture: DatasetHandlerHarness,
 ) -> None:
     """Verify datasets_diff_handler reports no differences when same."""
     deps = dataset_handler_harness_fixture.deps
 
-    mock_contract = mock_get_contracts.return_value["core.goids"]
+    contract = deps.contracts_provider()["test_dataset"]
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
-        json.dumps([{"name": mock_contract.name, "table_key": mock_contract.table_key}]),
+        json.dumps([{"name": contract.name, "table_key": contract.table_key}]),
         encoding="utf-8",
     )
 
-    with dataset_handler_harness_fixture.command_context({"baseline_path": str(baseline_path)}) as ctx:
+    with dataset_handler_harness_fixture.command_context(
+        {"baseline_path": str(baseline_path)}
+    ) as ctx:
         result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(result.success)

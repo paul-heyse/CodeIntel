@@ -20,16 +20,40 @@ log = logging.getLogger(__name__)
 
 # Column definitions for bulk_insert (derived from table schema)
 _DEPENDENCY_CALL_COLUMNS: tuple[str, ...] = (
-    "repo", "commit", "dep_id", "library", "service_name",
-    "function_goid_h128", "function_urn", "rel_path", "module", "qualname",
-    "callsite_count", "modes", "evidence_json", "created_at",
+    "repo",
+    "commit",
+    "dep_id",
+    "library",
+    "service_name",
+    "function_goid_h128",
+    "function_urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "callsite_count",
+    "modes",
+    "evidence_json",
+    "created_at",
 )
 
 _DEPENDENCY_AGGREGATE_COLUMNS: tuple[str, ...] = (
-    "repo", "commit", "dep_id", "library", "service_name", "category", "language",
-    "severity", "criticality", "risk_score",
-    "function_count", "callsite_count", "modules_json", "usage_modes",
-    "config_keys", "risk_level", "created_at",
+    "repo",
+    "commit",
+    "dep_id",
+    "library",
+    "service_name",
+    "category",
+    "language",
+    "severity",
+    "criticality",
+    "risk_score",
+    "function_count",
+    "callsite_count",
+    "modules_json",
+    "usage_modes",
+    "config_keys",
+    "risk_level",
+    "created_at",
 )
 
 
@@ -209,9 +233,7 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         ]
 
         backend = DuckDBPolicyBackend(self._gateway)
-        return backend.bulk_insert(
-            self.table_name, values, columns=list(_DEPENDENCY_CALL_COLUMNS)
-        )
+        return backend.bulk_insert(self.table_name, values, columns=list(_DEPENDENCY_CALL_COLUMNS))
 
 
 class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):

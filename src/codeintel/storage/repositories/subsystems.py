@@ -170,10 +170,9 @@ class SubsystemRepository(BaseRepository):
             Membership rows keyed by subsystem and module.
         """
         table = self._ibis_table("analytics.subsystem_modules")
-        expr = (
-            table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
-            .select("subsystem_id", "module")
-        )
+        expr = table.filter(
+            and_predicates(table.repo == self.repo, table.commit == self.commit)
+        ).select("subsystem_id", "module")
         return self._ibis_to_dicts(expr)
 
     def list_subsystems_for_module(self, module: str) -> list[RowDict]:

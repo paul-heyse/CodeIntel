@@ -208,7 +208,9 @@ def test_constraint_set_table_level() -> None:
     expected_count = 2
     _expect_equal(len(table_constraints), expected_count, "table level constraints count")
     for c in table_constraints:
-        _require(condition=c.column is None, message="table level constraint should have None column")
+        _require(
+            condition=c.column is None, message="table level constraint should have None column"
+        )
 
 
 def test_constraint_set_by_kind() -> None:

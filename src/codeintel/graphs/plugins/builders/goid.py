@@ -32,6 +32,7 @@ from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.plugins.builders.goid_options import GoidBuilderOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -148,16 +149,22 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     Path | None
         Absolute path to source root, or None if not found.
     """
-    con = gateway.con
     try:
-        row = con.execute(
-            "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        if row and row[0]:
-            return Path(row[0])
-    except Exception as e:  # noqa: BLE001
-        log.debug("goid_builder: Could not get source root: %s", e)
+        snapshots = gateway.ibis.table("core.snapshots")
+        expr = (
+            snapshots.filter(
+                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
+            )
+            .select(snapshots.source_root)
+            .limit(1)
+        )
+        df = expr.execute()
+        if not getattr(df, "empty", True):
+            value = df.iloc[0][0]
+            if value:
+                return Path(str(value))
+    except DuckDBError as exc:
+        log.debug("goid_builder: Could not get source root: %s", exc)
     return None
 
 
@@ -178,19 +185,19 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
     list[str]
         List of relative paths to Python files.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT DISTINCT path
-            FROM core.modules
-            WHERE repo = ? AND commit = ?
-            ORDER BY path
-            """,
-            [repo, commit],
-        ).fetchall()
-        return [str(row[0]) for row in rows]
-    except Exception:  # noqa: BLE001
+        modules = gateway.ibis.table("core.modules")
+        expr = (
+            modules.filter(
+                cast("Any", modules.repo == repo) & cast("Any", modules.commit == commit)
+            )
+            .select(modules.path)
+            .distinct()
+            .order_by(modules.path)
+        )
+        df = expr.execute()
+        return [str(path) for (path,) in df.itertuples(index=False, name=None)]
+    except DuckDBError:
         return []
 
 
@@ -267,9 +274,7 @@ def _process_ast_node(
             goid_compute.build_goid_row(descriptor, result.goid_h128, result.urn, context.now)
         )
         crosswalk_rows.append(
-            goid_compute.build_crosswalk_row(
-                descriptor, result.urn, module_name, context.now
-            )
+            goid_compute.build_crosswalk_row(descriptor, result.urn, module_name, context.now)
         )
 
         for child in ast.iter_child_nodes(node):
@@ -561,9 +566,7 @@ class GoidBuilderPlugin(TargetPlugin):
 
             # Step 4: Persist
             goid_count = _persist_goid_rows(ctx.gateway, all_goid_rows, repo, commit)
-            crosswalk_count = _persist_crosswalk_rows(
-                ctx.gateway, all_crosswalk_rows, repo, commit
-            )
+            crosswalk_count = _persist_crosswalk_rows(ctx.gateway, all_crosswalk_rows, repo, commit)
 
             log.info(
                 "goid_builder: Persisted %d GOIDs and %d crosswalk entries",

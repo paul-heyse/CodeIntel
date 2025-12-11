@@ -117,18 +117,26 @@ def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
         schema=contract.schema,
     )
     backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot(
-        "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
-    )
+    backend.delete_for_snapshot("analytics.symbol_graph_metrics_modules", repo=repo, commit=commit)
     if validated_rows:
         gateway.ibis.write(
             "analytics.symbol_graph_metrics_modules",
             validated_rows,
             columns=[
-                "repo", "commit", "module",
-                "symbol_betweenness", "symbol_closeness", "symbol_eigenvector", "symbol_harmonic",
-                "symbol_k_core", "symbol_constraint", "symbol_effective_size",
-                "symbol_community_id", "symbol_component_id", "symbol_component_size", "created_at",
+                "repo",
+                "commit",
+                "module",
+                "symbol_betweenness",
+                "symbol_closeness",
+                "symbol_eigenvector",
+                "symbol_harmonic",
+                "symbol_k_core",
+                "symbol_constraint",
+                "symbol_effective_size",
+                "symbol_community_id",
+                "symbol_component_id",
+                "symbol_component_size",
+                "created_at",
             ],
         )
 
@@ -222,9 +230,19 @@ def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
             "analytics.symbol_graph_metrics_functions",
             validated_rows,
             columns=[
-                "repo", "commit", "function_goid_h128",
-                "symbol_betweenness", "symbol_closeness", "symbol_eigenvector", "symbol_harmonic",
-                "symbol_k_core", "symbol_constraint", "symbol_effective_size",
-                "symbol_community_id", "symbol_component_id", "symbol_component_size", "created_at",
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "symbol_betweenness",
+                "symbol_closeness",
+                "symbol_eigenvector",
+                "symbol_harmonic",
+                "symbol_k_core",
+                "symbol_constraint",
+                "symbol_effective_size",
+                "symbol_community_id",
+                "symbol_component_id",
+                "symbol_component_size",
+                "created_at",
             ],
         )

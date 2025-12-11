@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, is_dataclass, replace
-from typing import Any, Protocol, TypeVar, cast, runtime_checkable
+from typing import Any, Protocol, Self, TypeVar, cast, runtime_checkable
 
 from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
@@ -42,6 +42,22 @@ class EmptyConfigSource:
         _ = self
         _ = plugin_name
         return None
+
+
+@runtime_checkable
+class _PydanticV2Model(Protocol):
+    """Subset of the Pydantic v2 API we rely on."""
+
+    def model_copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self:
+        ...
+
+
+@runtime_checkable
+class _PydanticV1Model(Protocol):
+    """Subset of the Pydantic v1 API we rely on."""
+
+    def copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self:
+        ...
 
 
 class PluginOptionsResolver:
@@ -86,11 +102,11 @@ class PluginOptionsResolver:
         if is_dataclass(base) and not isinstance(base, type):
             return cast("T", replace(base, **overrides))
 
-        if hasattr(base, "model_copy"):
-            return base.model_copy(update=overrides)  # type: ignore[call-arg]
+        if isinstance(base, _PydanticV2Model):
+            return cast("T", base.model_copy(update=overrides))
 
-        if hasattr(base, "copy"):
-            return base.copy(update=overrides)  # type: ignore[call-arg]
+        if isinstance(base, _PydanticV1Model):
+            return cast("T", base.copy(update=overrides))
 
         for key, value in overrides.items():
             setattr(base, key, value)

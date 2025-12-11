@@ -35,11 +35,19 @@ def test_metadata_default_values() -> None:
     _require(condition=metadata.family is None, message="family should be None")
     _require(condition=metadata.freshness_sla is None, message="freshness_sla should be None")
     _require(condition=metadata.retention_policy is None, message="retention_policy should be None")
-    _require(condition=metadata.upstream_dependencies == (), message="upstream_dependencies should be empty")
-    _require(condition=metadata.downstream_consumers == (), message="downstream_consumers should be empty")
+    _require(
+        condition=metadata.upstream_dependencies == (),
+        message="upstream_dependencies should be empty",
+    )
+    _require(
+        condition=metadata.downstream_consumers == (),
+        message="downstream_consumers should be empty",
+    )
     _require(condition=metadata.tags == frozenset(), message="tags should be empty frozenset")
     _require(condition=metadata.deprecated is False, message="deprecated should be False")
-    _require(condition=metadata.deprecation_message is None, message="deprecation_message should be None")
+    _require(
+        condition=metadata.deprecation_message is None, message="deprecation_message should be None"
+    )
 
 
 def test_metadata_with_values() -> None:
@@ -59,8 +67,13 @@ def test_metadata_with_values() -> None:
     _require(condition=metadata.family == "analytics", message="family mismatch")
     _require(condition=metadata.freshness_sla == "daily", message="freshness_sla mismatch")
     _require(condition=metadata.retention_policy == "90d", message="retention_policy mismatch")
-    _require(condition=metadata.upstream_dependencies == ("core.goids",), message="upstream_dependencies mismatch")
-    _require(condition=metadata.tags == frozenset({"production", "metrics"}), message="tags mismatch")
+    _require(
+        condition=metadata.upstream_dependencies == ("core.goids",),
+        message="upstream_dependencies mismatch",
+    )
+    _require(
+        condition=metadata.tags == frozenset({"production", "metrics"}), message="tags mismatch"
+    )
 
 
 def test_metadata_immutable() -> None:
@@ -103,7 +116,9 @@ def test_schema_create_minimal(simple_pandera_schema: DataFrameSchema) -> None:
     )
 
     _require(condition=ds.name == "test.example", message="name mismatch")
-    _require(condition=ds.pandera_schema is simple_pandera_schema, message="pandera_schema mismatch")
+    _require(
+        condition=ds.pandera_schema is simple_pandera_schema, message="pandera_schema mismatch"
+    )
     _require(condition=ds.row_model is None, message="row_model should be None")
     _require(condition=ds.ddl_schema is None, message="ddl_schema should be None")
     _require(condition=ds.composition is None, message="composition should be None")
@@ -196,7 +211,9 @@ def test_schema_json_schema_produces_valid_output(simple_pandera_schema: DataFra
     _require(condition=json_schema["type"] == "object", message="type mismatch")
     _require(condition="properties" in json_schema, message="properties missing")
     _require(condition="repo" in json_schema["properties"], message="repo missing in properties")
-    _require(condition="commit" in json_schema["properties"], message="commit missing in properties")
+    _require(
+        condition="commit" in json_schema["properties"], message="commit missing in properties"
+    )
     _require(condition="loc" in json_schema["properties"], message="loc missing in properties")
 
 

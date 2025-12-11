@@ -17,7 +17,7 @@ from codeintel.config import HotspotsStepConfig
 from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500
@@ -216,15 +216,22 @@ def build_hotspots(
     >>> con.execute("SELECT rel_path, score FROM analytics.hotspots").fetchall()
     [('sample.py', 0.17328679513998632)]
     """
-    con = gateway.con
-    df_ast = con.execute("SELECT rel_path, complexity FROM core.ast_metrics").fetch_df()
-    if df_ast.empty:
+    try:
+        df_ast = (
+            gateway.ibis.table("core.ast_metrics")
+            .select("rel_path", "complexity")
+            .execute()
+        )
+    except DuckDBError as exc:
+        log.warning("Failed to read core.ast_metrics for hotspots: %s", exc)
+        return
+    if getattr(df_ast, "empty", True):
         log.info("No rows in core.ast_metrics; skipping hotspots.")
         return
 
     git_stats = _collect_git_file_stats(cfg, runner=runner)
 
-    con.execute("DELETE FROM analytics.hotspots")
+    gateway.ibis.delete("analytics.hotspots")
 
     rows: list[HotspotRow] = []
     for _, row in df_ast.iterrows():

@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast
 
+import pandas as pd
+
 from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
 from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.analytics.utilities.datasets import (
@@ -22,13 +24,23 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """
+    Convert a pandas DataFrame to record dictionaries.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Records returned by ``DataFrame.to_dict(orient="records")``.
+    """
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
 
 
 class GoidRow(TypedDict):
@@ -173,9 +185,9 @@ class FunctionGoidLoader:
             "start_line",
             "end_line",
         )
-        df = expr.execute()
+        df = cast("pd.DataFrame", expr.execute())
 
-        for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+        for record in _to_records(df):
             goid_row: GoidRow = {
                 "goid_h128": record["goid_h128"],
                 "urn": record["urn"],
@@ -361,10 +373,8 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"], SchemaValidatio
         int
             Number of rows persisted.
         """
-        validated_df = (
-            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
-        )
-        rows = cast("list[FunctionMetricsRow]", validated_df.to_dict(orient="records"))
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        rows = cast("list[FunctionMetricsRow]", _to_records(validated_df))
         return self.persist(rows)
 
 
@@ -471,10 +481,8 @@ class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"], SchemaValidationMix
         int
             Number of rows persisted.
         """
-        validated_df = (
-            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
-        )
-        rows = cast("list[FunctionTypesRow]", validated_df.to_dict(orient="records"))
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        rows = cast("list[FunctionTypesRow]", _to_records(validated_df))
         return self.persist(rows)
 
 

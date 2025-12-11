@@ -28,6 +28,7 @@ from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.plugins.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -185,28 +186,22 @@ def build_scip_candidates(
     dict[str, tuple[str, ...]]
         Mapping of use path to tuple of potential definition paths.
     """
-    con = gateway.con
     try:
-        # Load occurrences from core.scip_occurrences
-        rows = con.execute(
-            """
-            SELECT DISTINCT
-                o.symbol,
-                o.rel_path,
-                o.roles
-            FROM core.scip_occurrences o
-            WHERE o.repo = ? AND o.commit = ?
-            ORDER BY o.symbol, o.rel_path
-            """,
-            [repo, commit],
-        ).fetchall()
-
-        if not rows:
+        occurrences_tbl = gateway.ibis.table("core.scip_occurrences")
+        repo_filter = cast("Any", occurrences_tbl.repo == repo)
+        commit_filter = cast("Any", occurrences_tbl.commit == commit)
+        expr = (
+            occurrences_tbl.filter(repo_filter & commit_filter)
+            .select(occurrences_tbl.symbol, occurrences_tbl.rel_path, occurrences_tbl.roles)
+            .distinct()
+            .order_by(occurrences_tbl.symbol, occurrences_tbl.rel_path)
+        )
+        df = expr.execute()
+        if getattr(df, "empty", True):
             return {}
 
-        # Parse occurrences
         occurrences: list[symbols_compute.SymbolOccurrence] = []
-        for symbol, rel_path, roles in rows:
+        for symbol, rel_path, roles in df.itertuples(index=False, name=None):
             occurrences.append(
                 symbols_compute.SymbolOccurrence(
                     symbol=str(symbol),
@@ -226,7 +221,7 @@ def build_scip_candidates(
                 occurrences, def_map
             ).items()
         }
-    except Exception:  # noqa: BLE001
+    except DuckDBError:
         return {}
 
 
@@ -251,32 +246,31 @@ def _load_symbol_occurrences(
     list[SymbolOccurrence]
         Symbol occurrences.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT
-                symbol,
-                rel_path,
-                start_line,
-                roles
-            FROM core.scip_occurrences
-            WHERE repo = ? AND commit = ?
-            ORDER BY symbol, rel_path, start_line
-            """,
-            [repo, commit],
-        ).fetchall()
-
+        occurrences_tbl = gateway.ibis.table("core.scip_occurrences")
+        repo_filter = cast("Any", occurrences_tbl.repo == repo)
+        commit_filter = cast("Any", occurrences_tbl.commit == commit)
+        expr = (
+            occurrences_tbl.filter(repo_filter & commit_filter)
+            .select(
+                occurrences_tbl.symbol,
+                occurrences_tbl.rel_path,
+                occurrences_tbl.start_line,
+                occurrences_tbl.roles,
+            )
+            .order_by(occurrences_tbl.symbol, occurrences_tbl.rel_path, occurrences_tbl.start_line)
+        )
+        rows = expr.execute()
         return [
             symbols_compute.SymbolOccurrence(
-                symbol=str(row[0]),
-                rel_path=normalize_rel_path(str(row[1])),
-                line=int(row[2]) if row[2] is not None else 0,
-                roles=symbols_compute.parse_symbol_roles(row[3]),
+                symbol=str(symbol),
+                rel_path=normalize_rel_path(str(rel_path)),
+                line=int(start_line) if start_line is not None else 0,
+                roles=symbols_compute.parse_symbol_roles(roles),
             )
-            for row in rows
+            for symbol, rel_path, start_line, roles in rows.itertuples(index=False, name=None)
         ]
-    except Exception:  # noqa: BLE001
+    except DuckDBError:
         return []
 
 
@@ -301,18 +295,19 @@ def _load_module_map(
     dict[str, str]
         Mapping of relative path to module name.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT rel_path, module_name
-            FROM core.modules
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
-        ).fetchall()
-        return {normalize_rel_path(str(row[0])): str(row[1]) for row in rows}
-    except Exception:  # noqa: BLE001
+        modules_tbl = gateway.ibis.table("core.modules")
+        repo_filter = cast("Any", modules_tbl.repo == repo)
+        commit_filter = cast("Any", modules_tbl.commit == commit)
+        expr = modules_tbl.filter(repo_filter & commit_filter).select(
+            modules_tbl.rel_path, modules_tbl.module_name
+        )
+        rows = expr.execute()
+        return {
+            normalize_rel_path(str(rel_path)): str(module_name)
+            for rel_path, module_name in rows.itertuples(index=False, name=None)
+        }
+    except DuckDBError:
         return {}
 
 
@@ -340,19 +335,23 @@ def _load_path_to_goid_map(
     dict[str, int]
         Mapping of relative path to representative GOID.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT rel_path, MIN(goid_h128) as goid
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind = 'function'
-            GROUP BY rel_path
-            """,
-            [repo, commit],
-        ).fetchall()
-        return {normalize_rel_path(str(row[0])): int(row[1]) for row in rows if row[1] is not None}
-    except Exception:  # noqa: BLE001
+        goids_tbl = gateway.ibis.table("core.goids")
+        repo_filter = cast("Any", goids_tbl.repo == repo)
+        commit_filter = cast("Any", goids_tbl.commit == commit)
+        kind_filter = cast("Any", goids_tbl.kind == "function")
+        expr = (
+            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            .group_by(goids_tbl.rel_path)
+            .aggregate(goid=goids_tbl.goid_h128.min())
+        )
+        rows = expr.execute()
+        return {
+            normalize_rel_path(str(rel_path)): int(goid)
+            for rel_path, goid in rows.itertuples(index=False, name=None)
+            if goid is not None
+        }
+    except DuckDBError:
         return {}
 
 

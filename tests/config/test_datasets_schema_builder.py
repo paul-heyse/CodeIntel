@@ -79,11 +79,15 @@ def test_build_copies_metadata_from_contract() -> None:
 
     result = build_dataset_schema(contract, pandera_schema)
 
-    _require(condition=result.metadata.description == "My description", message="description mismatch")
+    _require(
+        condition=result.metadata.description == "My description", message="description mismatch"
+    )
     _require(condition=result.metadata.owner == "my_team", message="owner mismatch")
     _require(condition=result.metadata.family == "analytics", message="family mismatch")
     _require(condition=result.metadata.freshness_sla == "hourly", message="freshness_sla mismatch")
-    _require(condition=result.metadata.retention_policy == "30d", message="retention_policy mismatch")
+    _require(
+        condition=result.metadata.retention_policy == "30d", message="retention_policy mismatch"
+    )
     _require(
         condition=result.metadata.upstream_dependencies == ("dep1", "dep2"),
         message="upstream_dependencies mismatch",
@@ -180,7 +184,10 @@ def test_build_all_returns_dict_of_schemas() -> None:
     _require(condition=isinstance(result, dict), message="should return dict")
     for key, schema in result.items():
         _require(condition=isinstance(key, str), message=f"key {key} should be string")
-        _require(condition=isinstance(schema, DatasetSchema), message=f"value for {key} should be DatasetSchema")
+        _require(
+            condition=isinstance(schema, DatasetSchema),
+            message=f"value for {key} should be DatasetSchema",
+        )
 
 
 def test_build_all_keys_are_table_keys() -> None:

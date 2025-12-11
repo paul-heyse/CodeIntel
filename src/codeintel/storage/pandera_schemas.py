@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+from collections.abc import ItemsView, Iterator, KeysView, Mapping, MutableMapping, ValuesView
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -1207,7 +1207,7 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     return _DATASET_SCHEMAS_CACHE
 
 
-class _LazySchemaDict(dict[str, DataFrameSchema]):
+class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):
     """Lazy dict wrapper that initializes schemas on first access.
 
     .. deprecated::
@@ -1229,13 +1229,15 @@ class _LazySchemaDict(dict[str, DataFrameSchema]):
     >>> pandera_schema = dataset_schema.pandera_schema
     """
 
-    _initialized: bool = False
-    _deprecation_warned: bool = False
+    def __init__(self) -> None:
+        self._initialized = False
+        self._deprecation_warned = False
+        self._data: dict[str, DataFrameSchema] = {}
 
     def _ensure_initialized(self) -> None:
         if not self._initialized:
             self._initialized = True
-            self.update(_get_dataset_schemas())
+            self._data.update(_get_dataset_schemas())
         if not self._deprecation_warned:
             self._deprecation_warned = True
             warnings.warn(
@@ -1248,40 +1250,46 @@ class _LazySchemaDict(dict[str, DataFrameSchema]):
 
     def __getitem__(self, key: str) -> DataFrameSchema:
         self._ensure_initialized()
-        return super().__getitem__(key)
+        return self._data[key]
 
-    def get(  # type: ignore[override]
-        self, key: str, default: DataFrameSchema | None = None
-    ) -> DataFrameSchema | None:
+    def __setitem__(self, key: str, value: DataFrameSchema) -> None:
         self._ensure_initialized()
-        return super().get(key, default)
+        self._data[key] = value
 
-    def items(self) -> ItemsView[str, DataFrameSchema]:  # type: ignore[override]
+    def __delitem__(self, key: str) -> None:
         self._ensure_initialized()
-        return super().items()
-
-    def keys(self) -> KeysView[str]:  # type: ignore[override]
-        self._ensure_initialized()
-        return super().keys()
-
-    def values(self) -> ValuesView[DataFrameSchema]:  # type: ignore[override]
-        self._ensure_initialized()
-        return super().values()
+        del self._data[key]
 
     def __iter__(self) -> Iterator[str]:
         self._ensure_initialized()
-        return super().__iter__()
+        return iter(self._data)
 
     def __len__(self) -> int:
         self._ensure_initialized()
-        return super().__len__()
+        return len(self._data)
+
+    def get(self, key: str, default: DataFrameSchema | None = None) -> DataFrameSchema | None:
+        self._ensure_initialized()
+        return self._data.get(key, default)
+
+    def items(self) -> ItemsView[str, DataFrameSchema]:
+        self._ensure_initialized()
+        return self._data.items()
+
+    def keys(self) -> KeysView[str]:
+        self._ensure_initialized()
+        return self._data.keys()
+
+    def values(self) -> ValuesView[DataFrameSchema]:
+        self._ensure_initialized()
+        return self._data.values()
 
 
 # Module-level lazy dict that looks like a regular dict
 # DEPRECATED: Use SCHEMA_REGISTRY from codeintel.config.datasets.schema_registry instead.
 # This provides direct Pandera schema access but lacks metadata. The unified
 # DatasetSchema interface wraps Pandera schemas with governance metadata.
-DATASET_SCHEMAS: dict[str, DataFrameSchema] = _LazySchemaDict()  # type: ignore[assignment]
+DATASET_SCHEMAS: _LazySchemaDict = _LazySchemaDict()
 
 
 def get_dataset_schema(table_key: str) -> DataFrameSchema | None:

@@ -58,7 +58,9 @@ def test_typeddict_nullable_columns_become_optional() -> None:
     # Check that optional_col allows None
     # The type will be int | None which is a UnionType
     optional_hint = hints["optional_col"]
-    _require(condition=hasattr(optional_hint, "__args__"), message="optional_col should be Union type")
+    _require(
+        condition=hasattr(optional_hint, "__args__"), message="optional_col should be Union type"
+    )
     _require(condition=int in optional_hint.__args__, message="int should be in union args")
     _require(condition=type(None) in optional_hint.__args__, message="None should be in union args")
 
@@ -201,4 +203,7 @@ def test_dtype_mapping_pandas_types(dtype: object, expected_type: type[object]) 
     schema = DataFrameSchema({"col": Column(dtype)})  # type: ignore[arg-type]
     result = typed_dict_from_pandera("TestRow", schema)
     hints = get_type_hints(result)
-    _require(condition=hints["col"] is expected_type, message=f"dtype {dtype} should map to {expected_type}")
+    _require(
+        condition=hints["col"] is expected_type,
+        message=f"dtype {dtype} should map to {expected_type}",
+    )

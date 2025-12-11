@@ -14,16 +14,24 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.constraints import extract_constraints_from_pandera
+from codeintel.config.datasets.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+    extract_constraints_from_pandera,
+)
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.constraints import ConstraintSet
     from codeintel.config.datasets.schema import DatasetSchema
 
 __all__ = [
     "DatasetIntrospection",
+    "get_introspection_summary",
+    "introspect_all_datasets",
     "introspect_dataset",
+    "query_column_constraints",
+    "query_tables_by_constraint_kind",
 ]
 
 log = logging.getLogger(__name__)
@@ -215,3 +223,157 @@ def introspect_all_datasets() -> dict[str, DatasetIntrospection]:
             continue
 
     return result
+
+
+def query_column_constraints(table_key: str, column: str) -> list[Constraint]:
+    """Query constraints for a specific column.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table name (e.g., "analytics.function_metrics").
+    column
+        Column name to query.
+
+    Returns
+    -------
+    list[Constraint]
+        Constraints applying to this column.
+
+    Raises
+    ------
+    KeyError
+        If the table is not registered.
+    ValueError
+        If the column does not exist.
+
+    Notes
+    -----
+    NOTE(logic-framework): Full constraint aggregation pending
+    Functional Intent: Query all constraints for a specific column
+    Architecture Reference: Section 5.4.3 - Introspection API for querying
+    Activation Steps:
+      1. Add plugin constraint aggregation
+      2. Add DDL constraint extraction
+      3. Cache results for performance
+
+    Examples
+    --------
+    >>> constraints = query_column_constraints("analytics.function_metrics", "loc")
+    >>> isinstance(constraints, list)
+    True
+    """
+    schema = SCHEMA_REGISTRY.get(table_key)
+    if schema is None:
+        msg = f"No schema registered for '{table_key}'"
+        raise KeyError(msg)
+
+    if column not in schema.column_names():
+        msg = f"Column '{column}' not found in table '{table_key}'"
+        raise ValueError(msg)
+
+    constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
+    return constraints.for_column(column)
+
+
+def query_tables_by_constraint_kind(kind: ConstraintKind) -> list[str]:
+    """Find all tables that have constraints of a specific kind.
+
+    Parameters
+    ----------
+    kind
+        The constraint kind to filter by.
+
+    Returns
+    -------
+    list[str]
+        Table keys that have at least one constraint of this kind.
+
+    Notes
+    -----
+    NOTE(logic-framework): Full constraint aggregation pending
+    Functional Intent: Find tables with specific constraint types
+    Architecture Reference: Section 5.4.3 - Introspection API for querying
+    Activation Steps:
+      1. Add plugin constraint aggregation
+      2. Index constraints by kind for faster lookup
+      3. Add caching
+
+    Examples
+    --------
+    >>> tables = query_tables_by_constraint_kind(ConstraintKind.RANGE)
+    >>> isinstance(tables, list)
+    True
+    """
+    result: list[str] = []
+
+    for table_key in SCHEMA_REGISTRY:
+        schema = SCHEMA_REGISTRY.get(table_key)
+        if schema is None:
+            continue
+
+        constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
+        if constraints.by_kind(kind):
+            result.append(table_key)
+
+    return result
+
+
+def get_introspection_summary() -> dict[str, object]:
+    """Get summary of all datasets for LLM consumption.
+
+    Returns
+    -------
+    dict[str, object]
+        Summary statistics and metadata suitable for LLM agents.
+
+    Notes
+    -----
+    NOTE(logic-framework): Full summary requires complete introspection
+    Functional Intent: Provide high-level dataset catalog overview
+    Architecture Reference: Section 5.4.3 - Introspection API for agent consumption
+    Activation Steps:
+      1. Add plugin dependency summary
+      2. Add constraint coverage metrics
+      3. Cache results
+
+    Examples
+    --------
+    >>> summary = get_introspection_summary()
+    >>> "total_datasets" in summary
+    True
+    """
+    total_datasets = len(SCHEMA_REGISTRY)
+    total_columns = 0
+    total_constraints = 0
+    by_family: dict[str, int] = {}
+    by_owner: dict[str, int] = {}
+
+    for table_key in SCHEMA_REGISTRY:
+        schema = SCHEMA_REGISTRY.get(table_key)
+        if schema is None:
+            continue
+
+        total_columns += len(schema.column_names())
+
+        constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
+        total_constraints += len(constraints.constraints)
+
+        # Group by family
+        family_key = schema.metadata.family if schema.metadata.family else "unknown"
+        by_family[family_key] = by_family.get(family_key, 0) + 1
+
+        # Group by owner
+        owner_key = schema.metadata.owner if schema.metadata.owner else "unassigned"
+        by_owner[owner_key] = by_owner.get(owner_key, 0) + 1
+
+    return {
+        "total_datasets": total_datasets,
+        "total_columns": total_columns,
+        "total_constraints": total_constraints,
+        "avg_columns_per_dataset": total_columns / total_datasets if total_datasets else 0,
+        "avg_constraints_per_dataset": total_constraints / total_datasets if total_datasets else 0,
+        "by_family": by_family,
+        "by_owner": by_owner,
+        "constraint_kinds": [kind.value for kind in ConstraintKind],
+    }

@@ -14,10 +14,26 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 FUNCTION_HISTORY_COLS = [
-    "repo", "commit", "function_goid_h128", "urn", "rel_path", "module", "qualname",
-    "created_in_commit", "created_at", "last_modified_commit", "last_modified_at",
-    "age_days", "commit_count", "author_count", "lines_added", "lines_deleted",
-    "churn_score", "stability_bucket", "history_window_start", "history_window_end",
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "created_in_commit",
+    "created_at",
+    "last_modified_commit",
+    "last_modified_at",
+    "age_days",
+    "commit_count",
+    "author_count",
+    "lines_added",
+    "lines_deleted",
+    "churn_score",
+    "stability_bucket",
+    "history_window_start",
+    "history_window_end",
     "created_at_row",
 ]
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure/safe_sql.py
+# hypothesis_version: 6.148.7
+
+[128, '.', 'SafeColumnRef', 'SafeTableRef', 'column', 'schema', 'table', 'validate_column_name', 'validate_table_key']

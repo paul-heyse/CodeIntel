@@ -31,6 +31,7 @@ from codeintel.graphs.compute import imports as imports_compute
 from codeintel.graphs.plugins.builders.import_graph_options import ImportGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -76,16 +77,22 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     Path | None
         Absolute path to source root, or None if not found.
     """
-    con = gateway.con
     try:
-        row = con.execute(
-            "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        if row and row[0]:
-            return Path(row[0])
-    except Exception as e:  # noqa: BLE001
-        log.debug("import_graph: Could not get source root: %s", e)
+        snapshots = gateway.ibis.table("core.snapshots")
+        expr = (
+            snapshots.filter(
+                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
+            )
+            .select(snapshots.source_root)
+            .limit(1)
+        )
+        df = expr.execute()
+        if not getattr(df, "empty", True):
+            value = df.iloc[0][0]
+            if value:
+                return Path(str(value))
+    except DuckDBError as exc:
+        log.debug("import_graph: Could not get source root: %s", exc)
     return None
 
 
@@ -110,18 +117,17 @@ def _load_modules(
     dict[str, str]
         Mapping of relative path to module name.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT path, module
-            FROM core.modules
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
-        ).fetchall()
-        return {normalize_rel_path(str(row[0])): str(row[1]) for row in rows}
-    except Exception:  # noqa: BLE001
+        modules = gateway.ibis.table("core.modules")
+        expr = modules.filter(
+            cast("Any", modules.repo == repo) & cast("Any", modules.commit == commit)
+        ).select(modules.path, modules.module)
+        df = expr.execute()
+        return {
+            normalize_rel_path(str(path)): str(module)
+            for path, module in df.itertuples(index=False, name=None)
+        }
+    except DuckDBError:
         return {}
 
 

@@ -36,6 +36,12 @@ from codeintel.config.datasets.contracts import (
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
 
+from codeintel.config.datasets.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+    extract_constraints_from_pandera,
+)
 from codeintel.config.datasets.dataflow import (
     DataflowEdge,
     DataflowNode,
@@ -47,6 +53,11 @@ from codeintel.config.datasets.dataflow import (
     iter_dependency_edges,
     iter_docs_view_alias_edges,
     iter_docs_view_alias_nodes,
+)
+from codeintel.config.datasets.introspection import (
+    DatasetIntrospection,
+    introspect_all_datasets,
+    introspect_dataset,
 )
 from codeintel.config.datasets.primitives import (
     COLUMN_TYPE,
@@ -70,9 +81,22 @@ from codeintel.config.datasets.primitives import (
     RowToTuple,
     TableSchema,
 )
+from codeintel.config.datasets.row_binding_factory import (
+    compare_row_bindings,
+    get_or_create_row_binding,
+    row_binding_from_schema,
+    row_serializer_from_schema,
+)
 from codeintel.config.datasets.row_factory import (
     row_serializer_from_pandera,
     typed_dict_from_pandera,
+)
+from codeintel.config.datasets.row_migration import (
+    MigrationStatus,
+    RowModelMigrationResult,
+    get_row_model,
+    validate_all_row_models,
+    validate_row_model_compatibility,
 )
 from codeintel.config.datasets.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -154,30 +178,6 @@ from codeintel.config.datasets.rows import (
     subsystem_coverage_cache_to_tuple,
     subsystem_profile_cache_to_tuple,
     typedness_row_to_tuple,
-)
-from codeintel.config.datasets.constraints import (
-    Constraint,
-    ConstraintKind,
-    ConstraintSet,
-    extract_constraints_from_pandera,
-)
-from codeintel.config.datasets.introspection import (
-    DatasetIntrospection,
-    introspect_all_datasets,
-    introspect_dataset,
-)
-from codeintel.config.datasets.row_binding_factory import (
-    compare_row_bindings,
-    get_or_create_row_binding,
-    row_binding_from_schema,
-    row_serializer_from_schema,
-)
-from codeintel.config.datasets.row_migration import (
-    MigrationStatus,
-    RowModelMigrationResult,
-    get_row_model,
-    validate_all_row_models,
-    validate_row_model_compatibility,
 )
 from codeintel.config.datasets.schema import (
     DatasetMetadata,

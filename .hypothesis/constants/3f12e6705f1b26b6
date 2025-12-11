@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/graphs/graph_metrics.py
+# hypothesis_version: 6.148.7
+
+['Any', 'betweenness', 'closeness', 'component_id', 'component_size', 'core.modules', 'def_module', 'def_path', 'graph.import_modules', 'in_cycle', 'layer', 'list[dict[str, Any]]', 'module', 'pagerank', 'records', 'scc_id', 'use_module', 'use_path']

@@ -26,10 +26,9 @@ class Requester(Protocol):
 def _normalize_requester(
     requester: Requester | Callable[[str, dict[str, object]], object],
 ) -> Callable[[str, dict[str, object]], object]:
-    if hasattr(requester, "request_json"):
-        candidate = requester.request_json  # type: ignore[attr-defined]
-        if callable(candidate):
-            return candidate
+    candidate = getattr(requester, "request_json", None)
+    if callable(candidate):
+        return candidate
     if callable(requester):
         return requester
     message = "requester must be callable or expose request_json"

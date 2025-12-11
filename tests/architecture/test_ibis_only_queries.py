@@ -494,8 +494,7 @@ def test_no_raw_sql_views_outside_ibis_views() -> None:
 
     if violations:
         pytest.fail(
-            "View definitions should use Ibis via ibis_views.py:\n"
-            + "\n".join(violations[:10])
+            "View definitions should use Ibis via ibis_views.py:\n" + "\n".join(violations[:10])
         )
 
 

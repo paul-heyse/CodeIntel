@@ -96,6 +96,30 @@ class _FakeCon:
         self.executemany_calls.append((sql, params_list))
 
 
+class _FakeIbis:
+    """Fake IbisGateway for testing without real DB."""
+
+    def __init__(self) -> None:
+        self.write_calls: list[tuple[str, list[tuple[object, ...]], list[str] | None]] = []
+
+    def write(
+        self,
+        table_key: str,
+        data: list[tuple[object, ...]],
+        *,
+        columns: list[str] | None = None,
+    ) -> SimpleNamespace:
+        """Record write call and return fake result.
+
+        Returns
+        -------
+        SimpleNamespace
+            Fake WriteResult.
+        """
+        self.write_calls.append((table_key, data, columns))
+        return SimpleNamespace(rows_affected=len(data), method="insert_values")
+
+
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
     """Create test and behavioral coverage configs from a snapshot.
 
@@ -617,7 +641,8 @@ def test_test_profile_model_snapshot() -> None:
 def test_behavioral_writer_registry_guard() -> None:
     """Ensure behavioral writer honors registry columns and schema guardrails."""
     fake_con = _FakeCon()
-    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
+    fake_ibis = _FakeIbis()
+    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
     _, beh_cfg = _snapshot_cfg()
     row = blank_behavioral_coverage_row()
     row["repo"] = "r"
@@ -651,21 +676,24 @@ def test_behavioral_writer_registry_guard() -> None:
         inserted = rows.write_behavioral_coverage_rows(gateway, beh_cfg, [row])
         if inserted != 1:
             pytest.fail("Writer did not report one inserted row.")
-        if not fake_con.executed[0][0].startswith("DELETE FROM analytics.behavioral_coverage"):
-            pytest.fail("Delete was not issued for behavioral_coverage.")
-        if not fake_con.executemany_calls[0][0].startswith(
-            "INSERT INTO analytics.behavioral_coverage"
-        ):
-            pytest.fail("Insert was not issued for behavioral_coverage.")
+        # Check that ibis.write() was called with the right table
+        if not fake_ibis.write_calls:
+            pytest.fail("ibis.write() was not called.")
+        table_key, data, _columns = fake_ibis.write_calls[0]
+        if table_key != "analytics.behavioral_coverage":
+            pytest.fail(f"Wrong table key: {table_key}")
+        if len(data) != 1:
+            pytest.fail(f"Expected 1 row, got {len(data)}")
         serialized = behavioral_coverage_row_to_tuple(row)
         if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
             pytest.fail("Serialized tuple length mismatch for behavioral_coverage.")
 
 
 def test_write_test_profile_rows_with_stubs() -> None:
-    """Writer should honor registry columns and insert via prepared statement."""
+    """Writer should honor registry columns and insert via Ibis write."""
     fake_con = _FakeCon()
-    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
+    fake_ibis = _FakeIbis()
+    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
     test_cfg, _ = _snapshot_cfg()
     sample_row = blank_test_profile_row()
     sample_row["repo"] = "r"
@@ -701,9 +729,14 @@ def test_write_test_profile_rows_with_stubs() -> None:
         if inserted != 1:
             msg = "Writer did not report one inserted row."
             pytest.fail(msg)
-        if not fake_con.executed[0][0].startswith("DELETE FROM analytics.test_profile"):
-            msg = "Delete was not issued for test_profile."
+        # Check that ibis.write() was called with the right table
+        if not fake_ibis.write_calls:
+            msg = "ibis.write() was not called."
             pytest.fail(msg)
-        if not fake_con.executemany_calls[0][0].startswith("INSERT INTO analytics.test_profile"):
-            msg = "Insert was not issued for test_profile."
+        table_key, data, _columns = fake_ibis.write_calls[0]
+        if table_key != "analytics.test_profile":
+            msg = f"Wrong table key: {table_key}"
+            pytest.fail(msg)
+        if len(data) != 1:
+            msg = f"Expected 1 row, got {len(data)}"
             pytest.fail(msg)

@@ -220,13 +220,19 @@ def _build_backend(ctx: CommandContext) -> DuckDBBackend:
     """
     gateway_backend = getattr(ctx.gateway, "backend", None)
     if gateway_backend is not None:
-        return gateway_backend
+        if isinstance(gateway_backend, DuckDBBackend):
+            return gateway_backend
+        message = f"Expected DuckDBBackend, got {type(gateway_backend).__name__}"
+        raise TypeError(message)
 
     backend_override = getattr(ctx, "_backend_override", None) or ctx.params.raw.get(
         "_backend_override"
     )
     if backend_override is not None:
-        return backend_override  # type: ignore[return-value]
+        if isinstance(backend_override, DuckDBBackend):
+            return backend_override
+        message = f"Expected DuckDBBackend override, got {type(backend_override).__name__}"
+        raise TypeError(message)
 
     gateway_config = getattr(ctx.gateway, "config", None)
     repo_root = ctx.params.get_path("repo_root") or Path.cwd()
@@ -299,6 +305,9 @@ def subsystem_list_handler(ctx: CommandContext) -> CliResult[SubsystemListResult
         "_backend_override"
     )
     if backend_override is not None:
+        if not isinstance(backend_override, DuckDBBackend):
+            message = f"Expected DuckDBBackend override, got {type(backend_override).__name__}"
+            raise TypeError(message)
         response = backend_override.list_subsystems(
             limit=ctx.params.get_int("limit", default=0),
             role=ctx.params.get_str("role"),

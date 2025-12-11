@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.macros import ensure_ingest_macros
 from tests._helpers.cli_context import CliTestContext, create_cli_test_context
 from tests._helpers.seeds import CORE_PACK
 from tests._helpers.seeds.cli import STORAGE_PROFILE_PACK
@@ -29,19 +30,29 @@ class StorageHandlerHarness:
 
     @contextmanager
     def command_context(self, params: dict[str, object]) -> Iterator[object]:
-        """Yield a CommandContext with injected gateway."""
+        """Yield a CommandContext with injected gateway.
+
+        Yields
+        ------
+        object
+            CommandContext bound to the seeded gateway.
+        """
         with self.ctx.command_context(params) as cmd_ctx:
             yield cmd_ctx
 
 
 @contextmanager
 def storage_macro_harness(tmp_path: Path) -> Iterator[StorageHandlerHarness]:
-    """Create a storage handler harness seeded with storage profile data."""
+    """Create a storage handler harness seeded with storage profile data.
+
+    Yields
+    ------
+    StorageHandlerHarness
+        Harness with gateway prepared for storage handlers.
+    """
     ctx = create_cli_test_context(tmp_path)
     ctx.require(CORE_PACK, STORAGE_PROFILE_PACK)
     # Ensure ingest macros are registered for validation paths
-    from codeintel.storage.macros import ensure_ingest_macros  # local import to avoid cyclic init
-
     ensure_ingest_macros(ctx.gateway.con)
     harness = StorageHandlerHarness(ctx=ctx)
     try:

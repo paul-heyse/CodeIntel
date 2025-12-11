@@ -140,7 +140,9 @@ def test_docs_export_handler_with_datasets_filter(
     docs_handler_harness_fixture: DocsHandlerHarness,
 ) -> None:
     """Verify docs_export_handler handles datasets parameter."""
-    with docs_handler_harness_fixture.command_context({"datasets": ["dataset1", "dataset2"]}) as ctx:
+    with docs_handler_harness_fixture.command_context(
+        {"datasets": ["dataset1", "dataset2"]}
+    ) as ctx:
         result = docs_export_handler(ctx)
 
     expect_true(result.success)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from codeintel.cli.handlers.graphs import (
     GraphPlanResult,
     GraphPlanStage,
@@ -123,7 +121,6 @@ def test_plan_mode_values() -> None:
     expect_equal(PlanMode.PLAN.value, "plan")
 
 
-@patch("codeintel.cli.handlers.graphs.list_graph_plugins")
 def _plugin(
     name: str,
     *,
@@ -180,9 +177,10 @@ def test_graph_plugins_list_handler_with_names_filter() -> None:
     plugin1 = _plugin("plugin1")
     plugin2 = _plugin("plugin2", stage="transform")
 
-    with plugin_registrar([plugin1, plugin2]), make_command_context(
-        {"names": ["plugin1"]}, operation_id="graphs.test"
-    ) as ctx:
+    with (
+        plugin_registrar([plugin1, plugin2]),
+        make_command_context({"names": ["plugin1"]}, operation_id="graphs.test") as ctx,
+    ):
         result = graph_plugins_list_handler(ctx)
 
     expect_true(result.success)
@@ -199,9 +197,7 @@ def test_graph_plugins_list_handler_include_disabled() -> None:
     disabled_plugin = _plugin("disabled_plugin", enabled=False, stage="transform")
 
     with plugin_registrar([enabled_plugin, disabled_plugin]):
-        with make_command_context(
-            {"include_disabled": False}, operation_id="graphs.test"
-        ) as ctx:
+        with make_command_context({"include_disabled": False}, operation_id="graphs.test") as ctx:
             result = graph_plugins_list_handler(ctx)
         data1 = result.data
         if data1 is not None:
@@ -294,14 +290,17 @@ def test_graph_plugins_plan_handler_with_enable_disable() -> None:
     plugin2 = _plugin("plugin2")
     plugin3 = _plugin("plugin3")
 
-    with plugin_registrar([plugin1, plugin2, plugin3]), make_command_context(
-        {
-            "names": ["plugin1"],
-            "enable": ["plugin2"],
-            "disable": ["plugin3"],
-        },
-        operation_id="graphs.test",
-    ) as ctx:
+    with (
+        plugin_registrar([plugin1, plugin2, plugin3]),
+        make_command_context(
+            {
+                "names": ["plugin1"],
+                "enable": ["plugin2"],
+                "disable": ["plugin3"],
+            },
+            operation_id="graphs.test",
+        ) as ctx,
+    ):
         result = graph_plugins_plan_handler(ctx)
 
     expect_true(result.success)

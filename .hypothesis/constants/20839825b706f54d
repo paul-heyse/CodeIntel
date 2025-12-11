@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/row_migration.py
+# hypothesis_version: 6.148.7
+
+['CoverageLineRow', 'DocstringRow', 'FunctionMetricsRow', 'FunctionTypesRow', 'GoidCrosswalkRow', 'GoidRow', 'GraphValidationRow', 'HotspotRow', 'MigrationStatus', 'StaticDiagnosticRow', 'TypednessRow', '__annotations__', 'analytics.hotspots', 'analytics.typedness', 'core.docstrings', 'core.goid_crosswalk', 'core.goids', 'get_row_model']

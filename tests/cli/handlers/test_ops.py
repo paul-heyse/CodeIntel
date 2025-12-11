@@ -22,7 +22,8 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.cli_context import make_command_context
 
 
-def test_op_list_handler_returns_ok(operation_registry_harness_fixture: object) -> None:
+@pytest.mark.usefixtures("operation_registry_harness_fixture")
+def test_op_list_handler_returns_ok() -> None:
     """Handler returns success with operation list."""
     with make_command_context({}, operation_id="ops.test") as ctx:
         result = op_list_handler(ctx)
@@ -34,7 +35,8 @@ def test_op_list_handler_returns_ok(operation_registry_harness_fixture: object) 
         expect_equal(result.data.count, len(result.data.operations))
 
 
-def test_op_list_handler_filters_by_category(operation_registry_harness_fixture: object) -> None:
+@pytest.mark.usefixtures("operation_registry_harness_fixture")
+def test_op_list_handler_filters_by_category() -> None:
     """Handler filters operations by category."""
     operations = tuple(iter_operations())
     categorized = [op for op in operations if op.category]

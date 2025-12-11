@@ -124,12 +124,14 @@ class ConstraintSet:
     Examples
     --------
     >>> cs = ConstraintSet(table_key="analytics.test")
-    >>> cs.add(Constraint(
-    ...     kind=ConstraintKind.TYPE,
-    ...     column="value",
-    ...     expression="value: int",
-    ...     source="pandera.column.dtype",
-    ... ))
+    >>> cs.add(
+    ...     Constraint(
+    ...         kind=ConstraintKind.TYPE,
+    ...         column="value",
+    ...         expression="value: int",
+    ...         source="pandera.column.dtype",
+    ...     )
+    ... )
     >>> len(cs.constraints)
     1
     """

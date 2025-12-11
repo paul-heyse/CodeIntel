@@ -29,9 +29,18 @@ log = logging.getLogger(__name__)
 
 # Column definitions for graph_stats table
 _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
-    "graph_name", "repo", "commit", "node_count", "edge_count",
-    "weak_component_count", "scc_count", "component_layers", "avg_clustering",
-    "diameter_estimate", "avg_shortest_path_estimate", "created_at",
+    "graph_name",
+    "repo",
+    "commit",
+    "node_count",
+    "edge_count",
+    "weak_component_count",
+    "scc_count",
+    "component_layers",
+    "avg_clustering",
+    "diameter_estimate",
+    "avg_shortest_path_estimate",
+    "created_at",
 )
 
 
