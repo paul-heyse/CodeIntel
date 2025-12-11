@@ -206,19 +206,22 @@ def output_field() -> OutputFormatCLI:
     return field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SharedFlags:
     """Unified infrastructure flags for all CLI commands.
 
     Combine this mixin into command dataclasses to get consistent project root,
     output format, JSON flag, and verbosity parameters without redeclaring them.
 
+    This is a frozen dataclass to allow using a default instance instead of
+    default_factory, which resolves Cyclopts/Pydantic validation issues.
+
     Use with ``SHARED_FLAGS_METADATA`` for Cyclopts nested parameter flattening::
 
         @dataclass
         class MyCommand:
             flags: SharedFlags = field(
-                default_factory=SharedFlags,
+                default=SharedFlags(),
                 metadata=SHARED_FLAGS_METADATA,
             )
             # Command-specific fields
@@ -231,6 +234,9 @@ class SharedFlags:
     verbose: Verbose = 0
 
 
+# Default instance for use in field() declarations
+_DEFAULT_SHARED_FLAGS = SharedFlags()
+
 SHARED_FLAGS_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
 """Metadata for SharedFlags field to enable Cyclopts nested parameter flattening."""
 
@@ -239,7 +245,7 @@ def shared_flags_field() -> SharedFlags:
     """Create a SharedFlags field with Cyclopts metadata for nested flattening.
 
     Use this for dynamically created dataclasses. For static dataclasses, prefer
-    ``field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)``.
+    ``field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)``.
 
     Returns
     -------
@@ -254,7 +260,7 @@ def shared_flags_field() -> SharedFlags:
     ... class MyCommand:
     ...     flags: SharedFlags = shared_flags_field()  # doctest: +SKIP
     """
-    return field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    return field(default=_DEFAULT_SHARED_FLAGS, metadata=SHARED_FLAGS_METADATA)
 
 
 def resolve_output_format(

@@ -8,7 +8,6 @@ from decimal import Decimal
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories.functions import FunctionRepository
-from tests._helpers import ProvisionedGateway
 from tests._helpers.assertions import (
     expect_empty,
     expect_equal,
@@ -253,7 +252,7 @@ def test_list_function_goids_returns_empty_when_no_data(
 
 
 def test_function_repository_with_docs_export(
-    docs_export_gateway: ProvisionedGateway,
+    docs_export_gateway: TestContext,
 ) -> None:
     """Verify FunctionRepository works with full docs export gateway."""
     repo = FunctionRepository(

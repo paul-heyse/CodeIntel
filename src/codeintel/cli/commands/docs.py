@@ -1,6 +1,6 @@
-"""Cyclopts wiring for docs export commands.
+"""Docs export commands.
 
-This module wires Cyclopts command classes to unified handlers via @cli_command.
+Note: Docs commands require runtime/gateway access via handler pattern.
 """
 
 from __future__ import annotations
@@ -98,6 +98,27 @@ class DocsExportCommand:
             help="Path to DuckDB database.",
         ),
     ] = None
+    build_dir: Annotated[
+        Path | None,
+        Parameter(
+            name="--build-dir",
+            help="Build directory for docs export.",
+        ),
+    ] = None
+    repo_root: Annotated[
+        Path | None,
+        Parameter(
+            name="--repo-root",
+            help="Repository root directory.",
+        ),
+    ] = None
+    document_output_dir: Annotated[
+        Path | None,
+        Parameter(
+            name="--document-output-dir",
+            help="Document Output directory for emitted artifacts.",
+        ),
+    ] = None
 
     # Backend options
     nx_backend: Annotated[
@@ -133,6 +154,22 @@ class DocsExportCommand:
             show_choices=True,
         ),
     ] = MacroRequirement.ALLOW_PARTIAL
+    validate: Annotated[
+        bool,
+        Parameter(
+            name="--validate",
+            help="Enable export validation.",
+            negative=("--no-validate",),
+        ),
+    ] = False
+    skip_prereqs: Annotated[
+        bool,
+        Parameter(
+            name="--skip-prereqs",
+            help="Skip prerequisite ingestion or build steps.",
+            negative=("--run-prereqs",),
+        ),
+    ] = False
     schemas: Annotated[
         list[str] | None,
         Parameter(
@@ -155,6 +192,14 @@ class DocsExportCommand:
             show_choices=True,
         ),
     ] = DryRunMode.EXECUTE
+    dry_run: Annotated[
+        bool,
+        Parameter(
+            name="--dry-run",
+            help="Preview export without writing files.",
+            negative=("--no-dry-run",),
+        ),
+    ] = False
     prereq_mode: Annotated[
         PrereqMode,
         Parameter(
@@ -165,7 +210,7 @@ class DocsExportCommand:
     ] = PrereqMode.RUN
 
     # Shared flags
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["docs_app"]

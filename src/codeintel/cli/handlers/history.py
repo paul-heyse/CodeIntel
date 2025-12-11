@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
-from codeintel.cli.errors.factory import fail_history_error
+from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
@@ -62,16 +62,16 @@ def _output_gateway(output_db: Path) -> Iterator[StorageGateway]:
 # -----------------------------------------------------------------------------
 
 
-def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseriesResult]:
+def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseriesResult]:
     """Aggregate analytics.history_timeseries across multiple commits.
 
-    Collects analytics data from per-commit DuckDB snapshots and aggregates
+    Collect analytics data from per-commit DuckDB snapshots and aggregate
     them into a unified history timeseries table.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - repo: Repository slug (e.g., 'my-org/my-repo').
         - commits: List of commits to include in the timeseries.
         - repo_root: Repository root path.
@@ -89,21 +89,21 @@ def history_timeseries_handler(ctx: HandlerContext) -> CliResult[HistoryTimeseri
     bootstrap_cli(verbosity=ctx.verbosity)
 
     # Check commits first since it's a command-specific required parameter
-    commits = ctx.param_list("commits")
+    commits = ctx.params.get_list("commits")
 
     if not commits:
         return fail_history_error("Validation Error", "At least one commit is required")
 
-    repo = ctx.require_str("repo")
+    repo = ctx.params.require_str("repo")
 
-    repo_root = ctx.param_path("repo_root", Path.cwd()) or Path.cwd()
-    db_dir = ctx.param_path("db_dir", Path("build/db")) or Path("build/db")
-    output_db = ctx.param_path("output_db", Path("build/db/history.duckdb")) or Path(
+    repo_root = ctx.params.get_path("repo_root", Path.cwd()) or Path.cwd()
+    db_dir = ctx.params.get_path("db_dir", Path("build/db")) or Path("build/db")
+    output_db = ctx.params.get_path("output_db", Path("build/db/history.duckdb")) or Path(
         "build/db/history.duckdb"
     )
-    entity_kind = ctx.param_str("entity_kind", "function") or "function"
-    max_entities = ctx.param_int("max_entities", 500)
-    selection_strategy = ctx.param_str("selection_strategy", "risk_score") or "risk_score"
+    entity_kind = ctx.params.get_str("entity_kind", "function") or "function"
+    max_entities = ctx.params.get_int("max_entities", 500)
+    selection_strategy = ctx.params.get_str("selection_strategy", "risk_score") or "risk_score"
 
     runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
     builder = ConfigBuilder.from_snapshot(

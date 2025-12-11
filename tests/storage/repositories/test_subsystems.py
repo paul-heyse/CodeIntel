@@ -16,7 +16,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.context import TestContext
-from tests._helpers.seeds import SUBSYSTEM_ANALYTICS_PACK
+from tests._helpers.seeds.subsystems_analytics import SUBSYSTEM_ANALYTICS_PACK
 
 
 @pytest.fixture

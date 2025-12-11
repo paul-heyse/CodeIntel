@@ -53,6 +53,8 @@ _state = _BootstrapState()
 def bootstrap_cli(
     verbosity: int = 0,
     config: CliConfig | None = None,
+    *,
+    structured_logging: bool = False,
 ) -> CliConfig:
     """Initialize CLI subsystems exactly once.
 
@@ -73,6 +75,9 @@ def bootstrap_cli(
         - 2+ = DEBUG
     config
         Optional pre-loaded configuration. If None, loads from environment.
+    structured_logging
+        If True, use structured JSON log format with trace context.
+        Also enabled automatically if telemetry is enabled in config.
 
     Returns
     -------
@@ -105,8 +110,9 @@ def bootstrap_cli(
         # Load configuration if not provided
         active_config = config if config is not None else load_cli_config(validate=False)
 
-        # Configure logging
-        _configure_logging(verbosity, active_config)
+        # Configure logging (structured if requested or if telemetry enabled)
+        use_structured = structured_logging or active_config.telemetry.enabled
+        _configure_logging(verbosity, active_config, structured=use_structured)
 
         # Register signal handlers
         _register_signal_handlers()
@@ -120,7 +126,12 @@ def bootstrap_cli(
         return active_config
 
 
-def _configure_logging(verbosity: int, config: CliConfig) -> None:
+def _configure_logging(
+    verbosity: int,
+    config: CliConfig,
+    *,
+    structured: bool = False,
+) -> None:
     """Configure logging based on verbosity.
 
     Parameters
@@ -129,14 +140,24 @@ def _configure_logging(verbosity: int, config: CliConfig) -> None:
         Verbosity level from CLI.
     config
         CLI configuration.
+    structured
+        If True, use structured JSON log format with trace context.
     """
     level = _determine_log_level(verbosity, config)
 
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        force=True,  # Reconfigure if already configured
-    )
+    if structured:
+        # Use structured JSON formatter from observability
+        from codeintel.cli.observability._observability import (  # noqa: PLC0415
+            configure_structured_logging,
+        )
+
+        configure_structured_logging(level=level, include_trace=True)
+    else:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            force=True,  # Reconfigure if already configured
+        )
 
 
 def _determine_log_level(verbosity: int, config: CliConfig) -> int:

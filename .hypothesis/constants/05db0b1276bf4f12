@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/operations/registry.py
+# hypothesis_version: 6.148.7
+
+['OperationRegistry', 'get_default_registry']

@@ -137,12 +137,12 @@ def dict_to_config(
 
     output_format_raw = _get_string(data, "output_format", "text")
     output_format_value: OutputFormat = cast(
-        OutputFormat,
+        "OutputFormat",
         output_format_raw if output_format_raw in VALID_OUTPUT_FORMATS else "text",
     )
     log_level_raw = _get_string(data, "log_level", "WARNING")
     log_level_value: LogLevel = cast(
-        LogLevel, log_level_raw if log_level_raw in VALID_LOG_LEVELS else "WARNING"
+        "LogLevel", log_level_raw if log_level_raw in VALID_LOG_LEVELS else "WARNING"
     )
 
     return CliConfig(
@@ -641,7 +641,7 @@ def _parse_config_file(path: Path) -> dict[str, object]:
 
     if not isinstance(parsed, dict):
         return {}
-    return cast(dict[str, object], parsed)
+    return cast("dict[str, object]", parsed)
 
 
 def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:

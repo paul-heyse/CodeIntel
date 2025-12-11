@@ -20,7 +20,6 @@ from codeintel.storage.repositories import (
     TestRepository,
     fetch_models_normalized,
 )
-from tests._helpers import ProvisionedGateway
 from tests._helpers.context import TestContext
 from tests._helpers.rows import (
     DataModelFieldSeed,
@@ -30,7 +29,7 @@ from tests._helpers.rows import (
     data_model_relationship_row,
     data_model_row,
 )
-from tests._helpers.seeds import SUBSYSTEM_ANALYTICS_PACK
+from tests._helpers.seeds.subsystems_analytics import SUBSYSTEM_ANALYTICS_PACK
 
 
 def _expect_true(condition: object, message: str) -> None:
@@ -80,7 +79,7 @@ def _repos_for_gateway(
 
 
 def _repos(
-    provisioned_ctx: ProvisionedGateway,
+    provisioned_ctx: TestContext,
 ) -> tuple[
     FunctionRepository,
     ModuleRepository,
@@ -109,7 +108,7 @@ def subsystem_repo_ctx(test_ctx: TestContext) -> TestContext:
     return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
 
 
-def test_function_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
+def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
     """
     Function repository should resolve GOIDs and surface summaries.
 
@@ -158,9 +157,12 @@ def test_function_repository_reads(docs_export_gateway: ProvisionedGateway) -> N
         message = "dataset rows should be readable"
         raise AssertionError(message)
     _expect_equal(dataset_rows[0]["function_goid_h128"], goid, "dataset goid mismatch")
+    dataset_df = datasets.read_dataset_dataframe("analytics.function_metrics", limit=10, offset=0)
+    _expect_true(not dataset_df.empty, "dataset dataframe should not be empty")
+    _expect_equal(int(dataset_df.iloc[0]["function_goid_h128"]), goid, "dataframe goid mismatch")
 
 
-def test_module_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
+def test_module_repository_reads(docs_export_gateway: TestContext) -> None:
     """
     Module repository should surface file metadata and IDE hints.
 
@@ -203,7 +205,7 @@ def test_subsystem_repository_reads(subsystem_repo_ctx: TestContext) -> None:
     _expect_true(bool(memberships), "module membership count mismatch")
 
 
-def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
+def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
     """Data model accessors should surface normalized rows directly."""
     ctx = docs_export_gateway
     gateway = ctx.gateway

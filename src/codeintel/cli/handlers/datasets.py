@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import cast
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -17,12 +18,11 @@ from codeintel.cli.core.result_types import (
     DatasetListResult,
     DatasetSnapshotResult,
 )
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_file_not_found,
     fail_missing_required,
     fail_project_error,
 )
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.validation import collect_contract_issues
@@ -31,14 +31,14 @@ LOG = logging.getLogger(__name__)
 
 
 def datasets_list_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetListResult | None]:
     """List datasets with capabilities and optional filters.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - category: Optional category filter.
         - include_internal: Include internal datasets.
@@ -48,8 +48,8 @@ def datasets_list_handler(
     CliResult[DatasetListResult]
         List of datasets.
     """
-    category = ctx.param_str("category")
-    include_internal = ctx.param_bool("include_internal")
+    category = ctx.params.get_str("category")
+    include_internal = ctx.params.get_bool("include_internal")
 
     # Trigger runtime resolution to validate project exists
     try:
@@ -83,14 +83,14 @@ def datasets_list_handler(
 
 
 def datasets_lint_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetLintResult | None]:
     """Validate dataset contract health.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
 
     Returns
@@ -124,14 +124,14 @@ def datasets_lint_handler(
 
 
 def datasets_snapshot_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetSnapshotResult]:
     """Write current dataset specs to a JSON snapshot file.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - output: Output file path.
 
@@ -140,7 +140,7 @@ def datasets_snapshot_handler(
     CliResult[DatasetSnapshotResult]
         Snapshot result.
     """
-    output_path_str = ctx.param_str("output")
+    output_path_str = ctx.params.get_str("output")
     if not output_path_str:
         return cast("CliResult[DatasetSnapshotResult]", fail_missing_required("output"))
 
@@ -170,14 +170,14 @@ def datasets_snapshot_handler(
 
 
 def datasets_diff_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[DatasetDiffResult]:
     """Diff current dataset specs against a baseline.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - baseline_path: Path to baseline snapshot file.
 
@@ -186,7 +186,7 @@ def datasets_diff_handler(
     CliResult[DatasetDiffResult]
         Diff result.
     """
-    baseline_path_str = ctx.param_str("baseline_path")
+    baseline_path_str = ctx.params.get_str("baseline_path")
     if not baseline_path_str:
         return cast("CliResult[DatasetDiffResult]", fail_missing_required("baseline_path"))
 
@@ -227,13 +227,13 @@ def datasets_diff_handler(
     )
 
 
-def _build_runtime_from_ctx(ctx: HandlerContext) -> object:
-    """Build runtime from handler context for tests.
+def _build_runtime_from_ctx(ctx: CommandContext) -> object:
+    """Build runtime from command context for tests.
 
     Returns
     -------
     object
-        Runtime resolved from the handler context.
+        Runtime resolved from the command context.
     """
     return ctx.runtime
 

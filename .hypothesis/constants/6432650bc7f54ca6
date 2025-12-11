@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/operations/result.py
+# hypothesis_version: 6.148.7
+
+['Any', 'Result', 'Serializable', '_', '__dict__', 'auto_serialize', 'data', 'error', 'json', 'metadata', 'result_type', 'success', 'to_dict', 'warnings']

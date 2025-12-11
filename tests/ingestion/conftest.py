@@ -17,9 +17,6 @@ from tests._helpers.ingestion import (
 )
 from tests._helpers.orchestration.tooling import tooling_outputs_session
 
-# Ensure orchestration tooling fixtures are available to all ingestion tests.
-pytest_plugins = ["tests._helpers.orchestration.tooling"]
-
 
 @pytest.fixture
 def ingestion_gateway_factory() -> GatewayFactory:

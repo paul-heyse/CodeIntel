@@ -28,7 +28,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess  # noqa: S404 - Required for SCIP/git integration
 import sys
 import time
 import uuid
@@ -44,6 +43,11 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
 from codeintel.config.primitives import BuildLayoutOptions, BuildPaths, SnapshotRef
 from codeintel.config.resolver import resolve_tools_config
+from codeintel.core.process import (
+    CommandExecutionError,
+    CommandExecutor,
+    CommandNotAllowedError,
+)
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -72,6 +76,8 @@ CRITICAL_TABLES = (
     "analytics.function_metrics",
     "graph.call_graph_edges",
 )
+
+COMMAND_EXECUTOR = CommandExecutor.for_build_tools()
 
 
 @dataclass
@@ -307,33 +313,23 @@ def _stage_scip_index(
     log.info("Running SCIP indexing...")
     scip_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run scip-python
-    cmd = [
-        "scip-python",
-        "index",
-        str(repo_root),
-        "--project-name",
-        "codeintel",
-        "--output",
-        str(scip_index),
-    ]
-
-    log.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(  # noqa: S603 - Trusted command with fixed args
-        cmd, capture_output=True, text=True, cwd=repo_root, check=False
-    )
-
-    if result.returncode != 0:
-        log.error("SCIP indexing failed: %s", result.stderr)
-        msg = f"SCIP indexing failed with return code {result.returncode}"
-        raise RuntimeError(msg)
+    try:
+        COMMAND_EXECUTOR.run_scip_index(
+            repo_root,
+            scip_index,
+            project_name="codeintel",
+        )
+    except CommandNotAllowedError as exc:
+        msg = "scip-python is not available on PATH"
+        raise RuntimeError(msg) from exc
 
     # Convert to JSON if needed
     if not scip_json.exists() and scip_index.exists():
-        log.info("Converting SCIP to JSON...")
-        json_cmd = ["scip", "print", str(scip_index), "--json"]
-        with scip_json.open("w") as f:
-            subprocess.run(json_cmd, stdout=f, check=True)  # noqa: S603
+        try:
+            COMMAND_EXECUTOR.export_scip_to_json(scip_index, scip_json)
+        except CommandNotAllowedError as exc:
+            msg = "scip CLI is not available on PATH"
+            raise RuntimeError(msg) from exc
 
     index_size = scip_index.stat().st_size / (1024 * 1024) if scip_index.exists() else 0.0
     return {
@@ -575,15 +571,9 @@ def _get_commit_sha(repo_root: Path) -> str:
         Short commit SHA or "unknown" if git fails.
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],  # noqa: S607 - git is trusted
-            capture_output=True,
-            text=True,
-            cwd=repo_root,
-            check=False,
-        )
-        return result.stdout.strip()[:12] if result.returncode == 0 else "unknown"
-    except Exception:  # noqa: BLE001
+        revision = COMMAND_EXECUTOR.read_git_revision(repo_root)
+        return revision[:12] if revision else "unknown"
+    except (CommandExecutionError, CommandNotAllowedError):
         return "unknown"
 
 

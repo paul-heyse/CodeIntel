@@ -1,6 +1,10 @@
-"""Cyclopts wiring for the build command group.
+"""Build system commands for minimal-work target computation.
 
 This module wires Cyclopts command classes to unified handlers via @cli_command.
+
+Note: Build commands require complex runtime/gateway/snapshot access that is not
+yet fully supported by the Command[T] pattern's Deps abstraction. They use
+the handler pattern for now.
 """
 
 from __future__ import annotations
@@ -71,7 +75,7 @@ class BuildRunCommand:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
@@ -88,7 +92,7 @@ class BuildStatusCommand:
             show_choices=True,
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.history", handler=build_history_handler, config=_BUILD_CONFIG)
@@ -111,7 +115,7 @@ class BuildHistoryCommand:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["build_app"]

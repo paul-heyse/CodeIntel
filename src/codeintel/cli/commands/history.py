@@ -1,6 +1,6 @@
-"""Cyclopts wiring for history commands.
+"""History commands for snapshot management.
 
-This module wires Cyclopts command classes to unified handlers via @cli_command.
+Note: History commands require runtime/gateway access via handler pattern.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["history_app"]

@@ -57,6 +57,7 @@ from codeintel.storage.gateway.factory import (
     open_gateway,
     open_memory_gateway,
 )
+from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -87,6 +88,7 @@ __all__ = [
     "DuckDBProgrammingError",
     "DuckDBRelation",
     "GraphTables",
+    "IbisGateway",
     "SnapshotGatewayResolver",
     "StorageConfig",
     "StorageConnectionError",

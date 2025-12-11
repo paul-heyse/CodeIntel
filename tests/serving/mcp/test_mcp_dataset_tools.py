@@ -23,8 +23,8 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
+from tests._helpers.plugins.mcp import McpBackendComponents
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
-from tests.serving.mcp.conftest import McpBackendComponents
 
 # =============================================================================
 # Constants

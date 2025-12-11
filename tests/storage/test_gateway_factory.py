@@ -194,6 +194,17 @@ def test_open_memory_gateway_creates_accessors() -> None:
         gateway.close()
 
 
+def test_open_memory_gateway_exposes_ibis_backend() -> None:
+    """Verify gateway exposes an Ibis backend bound to the DuckDB connection."""
+    gateway = open_memory_gateway(validate_schema=False)
+    try:
+        table = gateway.ibis.table("core.modules")
+        row_count = table.count().execute()
+        expect_equal(row_count, 0, label="ibis table count")
+    finally:
+        gateway.close()
+
+
 def test_open_memory_gateway_supports_insert_and_query() -> None:
     """Verify gateway supports data operations."""
     gateway = open_memory_gateway(validate_schema=False)

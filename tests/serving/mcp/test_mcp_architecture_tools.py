@@ -30,7 +30,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
-from tests.serving.mcp.conftest import McpBackendComponents
+from tests._helpers.plugins.mcp import McpBackendComponents
 
 # =============================================================================
 # Helper Functions

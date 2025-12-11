@@ -10,14 +10,16 @@ import contextlib
 import json
 import os
 import signal
-import subprocess  # noqa: S404 - Required for background job execution
 import sys
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from multiprocessing import Process
 from pathlib import Path
 from typing import Any
+
+from codeintel.cli.execution.registry import execute_operation, get_registry
 
 
 class JobStatus(Enum):
@@ -321,24 +323,9 @@ class JobManager:
         job
             Job to start.
         """
-        # Build command to run job
-        cmd = [
-            sys.executable,
-            "-m",
-            "codeintel.cli.job_runner",
-            "--job-id",
-            job.job_id,
-        ]
+        process = Process(target=_run_job_process, args=(job.job_id,))
+        process.start()
 
-        # Start detached process - runs our own trusted module with controlled args
-        process = subprocess.Popen(  # noqa: S603
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
-        # Update job with PID
         job.pid = process.pid
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now(UTC).isoformat()
@@ -491,6 +478,67 @@ class JobManager:
         return True
 
 
+def run_job(job_id: str) -> int:
+    """Execute a queued job inside the current process.
+
+    Parameters
+    ----------
+    job_id
+        Job identifier.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, non-zero on failure).
+    """
+    store = JobStore()
+    job = store.load(job_id)
+
+    if job is None:
+        return 1
+
+    registry = get_registry()
+    spec = registry.get(job.operation_id)
+
+    if spec is None:
+        job.status = JobStatus.FAILED
+        job.error = f"Unknown operation: {job.operation_id}"
+        job.completed_at = datetime.now(UTC).isoformat()
+        store.save(job)
+        return 1
+
+    try:
+        result = execute_operation(spec, job.params)
+
+        if result.success:
+            job.status = JobStatus.COMPLETED
+            store.save_output(job.job_id, result.to_dict())
+        else:
+            job.status = JobStatus.FAILED
+            error_detail = ""
+            if result.error:
+                error_detail = result.error.detail or "Unknown error"
+            job.error = error_detail
+
+        job.exit_code = 0 if result.success else 1
+
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        job.status = JobStatus.FAILED
+        job.error = str(exc)
+        job.exit_code = 1
+
+    job.completed_at = datetime.now(UTC).isoformat()
+    store.save(job)
+
+    return job.exit_code or 0
+
+
+def _run_job_process(job_id: str) -> None:
+    """Run a job in a child process."""
+    exit_code = run_job(job_id)
+    sys.exit(exit_code)
+
+
 # Global job manager
 _JOB_MANAGER: JobManager | None = None
 
@@ -515,4 +563,5 @@ __all__ = [
     "JobStatus",
     "JobStore",
     "get_job_manager",
+    "run_job",
 ]

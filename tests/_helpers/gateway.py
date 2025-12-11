@@ -8,7 +8,8 @@ registered, and building backend services.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -308,6 +309,28 @@ class GatewayFactory:
                 raise RuntimeError(message)
 
         return gateway
+
+
+@contextmanager
+def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[StorageGateway]:
+    """Context-managed gateway creation for analytics tests.
+
+    Parameters
+    ----------
+    options
+        Optional GatewayOptions to configure the gateway.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with schema/views/macros applied.
+    """
+    factory = GatewayFactory.from_options(options) if options else GatewayFactory()
+    gateway = factory.open()
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 def memory_con_with_macros() -> DuckDBConnection:

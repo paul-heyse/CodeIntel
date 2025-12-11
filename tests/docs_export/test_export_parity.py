@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from tests._helpers import ProvisionedGateway
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def test_export_mappings_cover_required_tables(
-    docs_export_gateway: ProvisionedGateway,
+    docs_export_gateway: TestContext,
 ) -> None:
     """
     Ensure export mappings include core, graph, analytics tables per architecture.
@@ -65,7 +68,7 @@ def test_export_mappings_cover_required_tables(
 
 
 def test_export_mappings_registered_with_dataset_registry(
-    docs_export_gateway: ProvisionedGateway,
+    docs_export_gateway: TestContext,
 ) -> None:
     """
     Export mappings should reference tables registered in the dataset registry.

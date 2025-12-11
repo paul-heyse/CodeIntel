@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/deps/providers.py
+# hypothesis_version: 6.148.7
+
+['LazyServingProvider', 'LazyStorageProvider', '__dict__', 'json', 'model_dump', 'project_root', 'result']

@@ -1,6 +1,10 @@
-"""Cyclopts wiring for dataset management commands.
+"""Dataset management commands.
 
 This module wires Cyclopts command classes to unified handlers via @cli_command.
+
+Note: Dataset commands require runtime/gateway access that is not yet fully
+supported by the Command[T] pattern's Deps abstraction. They use the handler
+pattern for now.
 """
 
 from __future__ import annotations
@@ -77,7 +81,7 @@ class LintCommand:
             help="Sampling mode: enabled or disabled.",
         ),
     ] = "disabled"
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.list", handler=datasets_list_handler, config=_DATASETS_CONFIG)
@@ -107,7 +111,7 @@ class ListDatasetsCommand:
             help="Maximum description length before truncation.",
         ),
     ] = 80
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.snapshot", handler=datasets_snapshot_handler, config=_DATASETS_CONFIG)
@@ -123,7 +127,7 @@ class SnapshotCommand:
             help="Output file path for JSON dataset specs.",
         ),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.diff", handler=datasets_diff_handler, config=_DATASETS_CONFIG)
@@ -160,7 +164,7 @@ class DiffCommand:
             help="Path of the snapshot file inside the git ref.",
         ),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["datasets_ext_app"]

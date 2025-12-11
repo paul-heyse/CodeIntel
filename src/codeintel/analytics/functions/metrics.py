@@ -22,6 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+import pandas as pd
+
 from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.compute.functions import (
     ComplexityMetrics,
@@ -50,6 +52,7 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.config import FunctionAnalyticsStepConfig
 from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.pandera_schemas import validate_dataset_df
 from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
@@ -585,17 +588,29 @@ def persist_function_analytics(
     metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
     types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
     delete_scope = DeleteScope(repo=cfg.repo, commit=cfg.commit)
+    metrics_rows = result.metrics_rows
+    types_rows = result.types_rows
+
+    def _validated_records(table_key: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        if not rows:
+            return rows
+        df = pd.DataFrame(rows)
+        validated = validate_dataset_df(table_key, df)
+        return validated.where(pd.notnull(validated), None).to_dict(orient="records")
+
+    validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))
+    validated_types = _validated_records(types_contract.table_key, list(types_rows))
     insert_analytics_rows(
         gateway,
         metrics_contract,
-        result.metrics_rows,
+        validated_metrics,
         delete_scope=delete_scope,
         scope=scope,
     )
     insert_analytics_rows(
         gateway,
         types_contract,
-        result.types_rows,
+        validated_types,
         delete_scope=delete_scope,
         scope=scope,
     )

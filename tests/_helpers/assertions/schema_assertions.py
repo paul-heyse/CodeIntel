@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+
+from tests._helpers.assertions.expectation_assertions import expect_true
 
 
 def assert_mapping_value[ValueT](
@@ -77,7 +79,99 @@ def assert_mapping_list(
     return typed_items
 
 
+def assert_metric_series(
+    result: Sequence[Mapping[str, object]] | Mapping[str, object] | None,
+    expect_keys: set[str],
+) -> list[Mapping[str, object]]:
+    """Validate a metric series payload contains expected keys.
+
+    Parameters
+    ----------
+    result
+        Sequence of metric points or single mapping.
+    expect_keys
+        Required keys present in every series element.
+
+    Returns
+    -------
+    list[Mapping[str, object]]
+        Normalized list of metric point mappings.
+
+    Raises
+    ------
+    TypeError
+        If result is not a mapping or sequence of mappings.
+    AssertionError
+        If result is missing, wrong type, or missing required keys.
+    """
+    if result is None:
+        message = "Expected metric series payload, got None"
+        raise AssertionError(message)
+    series: Sequence[Mapping[str, object]]
+    if isinstance(result, Mapping):
+        series = [result]
+    elif isinstance(result, Sequence):
+        series = result
+    else:
+        message = f"Expected mapping or sequence for metric series, got {type(result)}"
+        raise TypeError(message)
+
+    normalized: list[Mapping[str, object]] = []
+    expect_true(bool(expect_keys), message="expect_keys must not be empty")
+    for index, point in enumerate(series):
+        if not isinstance(point, Mapping):
+            message = f"Expected mapping at series[{index}], got {type(point)}"
+            raise TypeError(message)
+        missing = expect_keys - set(point.keys())
+        if missing:
+            message = f"Missing expected keys {sorted(missing)} at series[{index}] in {point}"
+            raise AssertionError(message)
+        normalized.append(point)
+    return normalized
+
+
+def assert_profile_payload(
+    result: Mapping[str, object] | None,
+    expect_fields: set[str],
+) -> Mapping[str, object]:
+    """Validate a profile payload contains required fields.
+
+    Parameters
+    ----------
+    result
+        Profile payload mapping.
+    expect_fields
+        Required fields expected in the payload.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Validated payload mapping.
+
+    Raises
+    ------
+    TypeError
+        If payload is not a mapping.
+    AssertionError
+        If payload is missing or lacks expected fields.
+    """
+    if result is None:
+        message = "Expected profile payload, got None"
+        raise AssertionError(message)
+    if not isinstance(result, Mapping):
+        message = f"Expected mapping for profile payload, got {type(result)}"
+        raise TypeError(message)
+    expect_true(bool(expect_fields), message="expect_fields must not be empty")
+    missing = expect_fields - set(result.keys())
+    if missing:
+        message = f"Missing expected profile fields: {sorted(missing)}"
+        raise AssertionError(message)
+    return result
+
+
 __all__ = [
     "assert_mapping_list",
     "assert_mapping_value",
+    "assert_metric_series",
+    "assert_profile_payload",
 ]

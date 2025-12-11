@@ -92,6 +92,8 @@ from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.assertions.schema_assertions import (
     assert_mapping_list,
     assert_mapping_value,
+    assert_metric_series,
+    assert_profile_payload,
 )
 from tests._helpers.assertions.table_assertions import (
     assert_columns_not_null,
@@ -134,10 +136,12 @@ __all__ = [
     "assert_mapping_list",
     "assert_mapping_value",
     "assert_meta_contains",
+    "assert_metric_series",
     "assert_no_cycles",
     "assert_no_error",
     "assert_no_subprocess_usage",
     "assert_problem_detail_response",
+    "assert_profile_payload",
     "assert_row_count",
     "assert_single_edge",
     "assert_success",

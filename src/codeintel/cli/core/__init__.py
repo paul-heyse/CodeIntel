@@ -24,14 +24,13 @@ from codeintel.cli.core.parsing import (
     parse_bool_or_none,
     parse_cli_value,
 )
-from codeintel.cli.core.results import CliResult, TextRenderer, result_type
+from codeintel.cli.core.results import CliResult, result_type
 from codeintel.cli.core.serialization import serialize_result
 
 __all__ = [
     "CliResult",
     "Command",
     "OutputEnvelope",
-    "TextRenderer",
     "is_truthy_string",
     "iter_stdin_records",
     "merge_stdin_with_args",

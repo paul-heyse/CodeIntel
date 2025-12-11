@@ -18,6 +18,7 @@ from codeintel.storage.gateway.connection import (
 from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.validation import validate_contract_or_raise
+from codeintel.storage.views.ibis_views import create_all_ibis_views
 
 __all__ = [
     "build_snapshot_gateway_resolver",
@@ -52,7 +53,10 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
             bootstrap_metadata_datasets(con)
         datasets = load_dataset_registry(con)
         validate_contract_or_raise(con)
-        return DuckDBGateway(config=config, datasets=datasets, con=con)
+        gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
+        if config.ensure_views and not config.read_only:
+            create_all_ibis_views(gateway)
+        return gateway
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc)) from exc
 

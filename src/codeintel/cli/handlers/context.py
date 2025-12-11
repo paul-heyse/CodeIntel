@@ -25,6 +25,10 @@ from codeintel.analytics.runtime import (
 from codeintel.cli.core.parsing import is_truthy_string
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.runtime import resolve_from_params
+from codeintel.serving.auto_pipeline import run_operation_prereqs
+from codeintel.serving.bootstrap import build_service_stack
+from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 if TYPE_CHECKING:
@@ -124,12 +128,7 @@ class ParameterAccessors:
         Returns
         -------
         int
-            Parsed integer value or provided default.
-
-        Raises
-        ------
-        ParameterError
-            If the parameter cannot be coerced to an integer.
+            Parsed integer value or provided default when conversion fails.
         """
         value = self._params.get(key)
         if value is None:
@@ -137,14 +136,13 @@ class ParameterAccessors:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
         if isinstance(value, bool):
-            return 1 if value else 0
+            return default
         if isinstance(value, (str, float)):
             try:
                 return int(value)
-            except ValueError as exc:
-                raise ParameterError(key, f"Parameter '{key}' must be an integer.") from exc
-        message = f"Parameter '{key}' must be an integer."
-        raise ParameterError(key, message)
+            except (TypeError, ValueError):
+                return default
+        return default
 
     def param_bool(self, key: str, *, default: bool = False) -> bool:
         """Get boolean parameter with default.
@@ -218,11 +216,13 @@ class ParameterAccessors:
         if isinstance(value, enum_type):
             return value
         if isinstance(value, str):
-            normalized = enum_type.__members__.get(value.upper())
-            if normalized is not None:
-                return normalized
-            msg = f"Invalid value '{value}' for parameter '{key}'."
-            raise ParameterError(key, msg)
+            for member in enum_type:
+                if (
+                    value.lower() == str(member.value).lower()
+                    or value.lower() == member.name.lower()
+                ):
+                    return member
+            return default
         msg = f"Parameter '{key}' must be a string or {enum_type.__name__}."
         raise ParameterError(key, msg)
 
@@ -564,11 +564,6 @@ class HandlerContext(ParameterAccessors):
         ... )
         {'function_goid_h128': 'abc123', 'name': 'foo', ...}
         """
-        # Import here to avoid circular imports
-        from codeintel.serving.auto_pipeline import run_operation_prereqs
-        from codeintel.serving.bootstrap import build_service_stack
-        from codeintel.serving.operations.catalog import get_operation
-
         op = get_operation(op_id)
         if op is None:
             msg = f"Unknown serving operation: {op_id}"
@@ -715,8 +710,6 @@ class HandlerContext(ParameterAccessors):
         -----
         Uses resolve_from_params directly with no intermediate context objects.
         """
-        from codeintel.cli.resolution.runtime import resolve_from_params
-
         # Build params dict with project_root and db_path
         params: dict[str, object] = dict(self._params)
         if self.project_root is not None:

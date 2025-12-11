@@ -1,12 +1,12 @@
 """IDE integration handlers following the unified handler pattern.
 
 This module provides handlers for IDE helper commands using the
-HandlerContext pattern for consistent resource management
+CommandContext pattern for consistent resource management
 and output rendering.
 
 All handlers in this module:
 
-1. Accept HandlerContext as their only argument
+1. Accept CommandContext as their only argument
 2. Return CliResult[T]
 3. Never write to stdout/stderr directly
 4. Never call sys.exit()
@@ -18,9 +18,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.factory import fail_ide_hints_not_found
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.errors.results import fail_ide_hints_not_found
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 
 LOG = logging.getLogger(__name__)
@@ -69,24 +70,24 @@ class IdeHintsResult:
 # =============================================================================
 
 
-def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
+def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
     """Emit IDE hints (module + subsystem context) for a relative file path.
 
-    This handler uses the HandlerContext pattern:
+    This handler uses the CommandContext pattern:
 
-    - Gateway access is lazy via ctx.gateway
-    - Graph runtime access is lazy via ctx.graph_runtime
+    - Gateway access is lazy via ctx.storage.gateway
+    - Graph runtime access is lazy via ctx.runtime.graph_runtime
     - All resources are cleaned up by the context manager
 
     Parameters
     ----------
     ctx
-        Handler context with:
+        Command context with:
 
         - params["rel_path"]: Relative path to query hints for
         - runtime: Resolved project runtime
-        - gateway: Lazy storage gateway access
-        - graph_runtime: Lazy graph runtime access
+        - storage: Lazy storage gateway access
+        - serving: Serving invocation access
 
     Returns
     -------
@@ -100,23 +101,29 @@ def ide_hints_handler(ctx: HandlerContext) -> CliResult[IdeHintsResult]:
 
     Examples
     --------
-    >>> with handler_context(config, runtime, {"rel_path": "pkg/mod.py"}) as ctx:
+    >>> with CommandContextBuilder().build() as ctx:
     ...     result = ide_hints_handler(ctx)  # doctest: +SKIP
     ...     result.success  # doctest: +SKIP
     True
     """
-    rel_path = ctx.require_str("rel_path").strip()
+    rel_path = ctx.params.require_str("rel_path").strip()
     if not rel_path:
         msg = "rel_path cannot be empty"
         raise ValueError(msg)
 
     ctx.logger.debug("Resolving IDE hints for: %s", rel_path)
 
+    # Build graph runtime for this operation
+    graph_runtime = build_graph_runtime(
+        gateway=ctx.gateway,
+        options=GraphRuntimeOptions(snapshot=ctx.runtime.snapshot),
+    )
+
     # Build backend resource using context's lazy resources
     resource = build_backend_resource(
         ctx.runtime.serving,
         gateway=ctx.gateway,
-        options=BackendResourceOptions(graph_runtime=ctx.graph_runtime),
+        options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
 
     # Get hints from backend

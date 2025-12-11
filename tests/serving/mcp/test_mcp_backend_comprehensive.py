@@ -36,8 +36,8 @@ from tests._helpers.dataset_factories import make_descriptor, sample_dataset_spe
 from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
 from tests._helpers.http_payloads import make_problem_detail_payload, make_retry_sequence
+from tests._helpers.plugins.mcp import McpBackendComponents
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
-from tests.serving.mcp.conftest import McpBackendComponents
 
 if TYPE_CHECKING:
     from tests._helpers.context import TestContext

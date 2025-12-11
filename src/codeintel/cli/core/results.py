@@ -9,21 +9,16 @@ JSON serialization.
 from __future__ import annotations
 
 import json
-import sys
-from collections.abc import Callable
 from dataclasses import dataclass, field, is_dataclass
+from dataclasses import fields as get_fields
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol, TextIO, TypeGuard, TypeVar, runtime_checkable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
 
 from codeintel.cli.core.serialization import serialize_result
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail
-    from codeintel.cli.rendering.types import OutputFormat
-
-
-# Text renderer protocol: callable that takes data and writer
-TextRenderer = Callable[[object, TextIO], None]
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -84,6 +79,7 @@ def result_type[T](cls: type[T]) -> type[T]:
         dict[str, object]
             Dictionary with non-None field values.
         """
+        # self is a dataclass instance verified by the decorator
         return _serialize_dataclass(self)
 
     # Avoid overwriting existing to_dict implementations
@@ -95,11 +91,17 @@ def result_type[T](cls: type[T]) -> type[T]:
 
 
 def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
-    """Return True when value is a dataclass instance (not a class)."""
+    """Return True when value is a dataclass instance (not a class).
+
+    Returns
+    -------
+    bool
+        True if value is a dataclass instance.
+    """
     return is_dataclass(value) and not isinstance(value, type)
 
 
-def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
+def _serialize_dataclass(value: object) -> dict[str, object]:
     """Serialize a dataclass instance to dictionary.
 
     Parameters
@@ -112,10 +114,9 @@ def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     dict[str, object]
         Dictionary with non-None, non-private field values.
     """
-    from dataclasses import fields as get_fields
-
     result: dict[str, object] = {}
-    for fld in get_fields(value):
+    # Cast to Any to satisfy type checker for dataclass fields access
+    for fld in get_fields(cast("Any", value)):
         if fld.name.startswith("_"):
             continue
         field_value = getattr(value, fld.name)
@@ -125,7 +126,7 @@ def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     return result
 
 
-def _serialize_value(value: object) -> object:
+def _serialize_value(value: object) -> object:  # noqa: PLR0911
     """Recursively serialize a value for JSON output.
 
     Handle nested dataclasses, lists, dicts, and primitives.
@@ -174,8 +175,6 @@ def _serialize_primitive(value: object) -> object:
     object
         Serialized value.
     """
-    from pathlib import Path
-
     # Handle Path
     if isinstance(value, Path):
         return str(value)
@@ -376,70 +375,6 @@ class CliResult[T_co]:
         """
         return json.dumps(self.to_dict(), indent=indent, default=str)
 
-    def render(
-        self,
-        output_format: OutputFormat,
-        writer: TextIO = sys.stdout,
-        *,
-        text_renderer: TextRenderer | None = None,
-    ) -> None:
-        """Render the result to the specified writer.
-
-        Parameters
-        ----------
-        output_format
-            Output format (TEXT or JSON).
-        writer
-            Text writer for output (default: stdout).
-        text_renderer
-            Optional callable for custom text rendering.
-        """
-        self._write_warnings()
-
-        if self._is_json_format(output_format):
-            self._render_json(writer)
-        elif text_renderer is not None:
-            text_renderer(self.data, writer)
-        elif self.data is not None:
-            self._render_text(writer)
-
-    def _write_warnings(self) -> None:
-        """Write warnings to stderr."""
-        for warning in self.warnings:
-            sys.stderr.write(f"Warning: {warning}\n")
-
-    @staticmethod
-    def _is_json_format(output_format: OutputFormat) -> bool:
-        """Check if format is JSON (avoiding circular import).
-
-        Returns
-        -------
-        bool
-            True if format is JSON.
-        """
-        return output_format.value == "json"
-
-    def _render_json(self, writer: TextIO) -> None:
-        """Render as JSON."""
-        writer.write(self.to_json())
-        writer.write("\n")
-
-    def _render_text(self, writer: TextIO) -> None:
-        """Render data as text."""
-        data = self.data
-        if isinstance(data, str):
-            writer.write(data)
-            if not data.endswith("\n"):
-                writer.write("\n")
-        elif isinstance(data, list):
-            for item in data:
-                writer.write(f"{item}\n")
-        elif isinstance(data, dict):
-            for key, value in data.items():
-                writer.write(f"{key}: {value}\n")
-        else:
-            writer.write(f"{data}\n")
-
     @classmethod
     def ok(cls, data: T_co, *, metadata: dict[str, object] | None = None) -> CliResult[T_co]:
         """Create a successful result.
@@ -493,7 +428,6 @@ class CliResult[T_co]:
 __all__ = [
     "CliResult",
     "SerializableResult",
-    "TextRenderer",
     "auto_serialize",
     "ensure_serializable",
     "result_type",

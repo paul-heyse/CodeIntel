@@ -16,10 +16,11 @@ from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.build.targets import TargetGraph, TargetModule
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import BuildHistoryResult, BuildRunResult, BuildStatusResult
 from codeintel.cli.errors import ValidationError
-from codeintel.cli.errors.factory import (
+from codeintel.cli.errors.results import (
     fail_build_run_not_found,
     fail_execution_failed,
     fail_invalid_module,
@@ -28,7 +29,6 @@ from codeintel.cli.errors.factory import (
     fail_project_error,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.storage.gateway import StorageGateway
@@ -283,14 +283,14 @@ def _lookup_run_by_id(
 
 
 def build_status_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[BuildStatusResult]:
     """Show current state of all build targets.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - module: Optional module filter (ingestion, graphs, analytics).
 
@@ -299,7 +299,7 @@ def build_status_handler(
     CliResult[BuildStatusResult]
         Structured result with target status information.
     """
-    module = ctx.param_str("module")
+    module = ctx.params.get_str("module")
 
     try:
         runtime = ctx.runtime
@@ -349,30 +349,30 @@ class _BuildRunParams:
     force: list[str] | None
 
 
-def _extract_build_run_params(ctx: HandlerContext) -> _BuildRunParams:
+def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     """Extract and normalize build run parameters from context.
 
     Parameters
     ----------
     ctx
-        Handler context.
+        Command context.
 
     Returns
     -------
     _BuildRunParams
         Extracted parameters.
     """
-    targets_list = ctx.param_list("targets")
+    targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
 
-    force_list = ctx.param_list("force")
+    force_list = ctx.params.get_list("force")
     force: list[str] | None = force_list if force_list else None
 
     return _BuildRunParams(
         targets=targets,
-        module=ctx.param_str("module"),
-        all_targets=ctx.param_bool("all_targets"),
-        dry_run=ctx.param_bool("dry_run"),
+        module=ctx.params.get_str("module"),
+        all_targets=ctx.params.get_bool("all_targets"),
+        dry_run=ctx.params.get_bool("dry_run"),
         force=force,
     )
 
@@ -405,14 +405,14 @@ def _validate_build_run_params(
 
 
 def build_run_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[BuildRunResult]:
     """Build targets with automatic dependency resolution.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - targets: Target names to build.
         - module: Module name (ingestion, graphs, analytics).
@@ -506,14 +506,14 @@ def _execute_and_format_result(
 
 
 def build_history_handler(
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> CliResult[BuildHistoryResult]:
     """Show build run history and details.
 
     Parameters
     ----------
     ctx
-        Handler context with params:
+        Command context with params:
         - project_root: Optional project root override.
         - run_id: Optional specific run ID to show.
         - limit: Maximum number of runs to show (default 10).
@@ -523,8 +523,8 @@ def build_history_handler(
     CliResult[BuildHistoryResult]
         Structured result with build history.
     """
-    run_id = ctx.param_str("run_id")
-    limit = ctx.param_int("limit", 10)
+    run_id = ctx.params.get_str("run_id")
+    limit = ctx.params.get_int("limit", 10)
 
     try:
         runtime = ctx.runtime

@@ -33,13 +33,29 @@ from codeintel.cli.errors._cli_errors import (
     runtime_required,
 )
 
-# Error factory exports (CliResult-returning convenience functions)
-from codeintel.cli.errors.factory import (
+# Error builder (consolidated ProblemDetail creation)
+from codeintel.cli.errors.builder import ProblemBuilder
+
+# Result factories (new consolidated API)
+from codeintel.cli.errors.results import (
+    fail_config,
+    fail_domain,
+    fail_job_not_completed,
+    fail_job_not_found,
+    fail_operation,
+    fail_storage,
+    fail_validation,
+)
+from codeintel.cli.errors.results import (
     fail_internal,
     fail_invalid_value,
     fail_missing_required,
     fail_not_found,
     fail_storage_connection,
+)
+
+# Legacy factory exports (for backward compatibility, use results.py instead)
+from codeintel.cli.errors.factory import (
     fail_storage_query,
     fail_with_problem,
 )
@@ -101,6 +117,7 @@ from codeintel.cli.errors.taxonomy import (
 )
 
 __all__ = [
+    # Error codes
     "ALREADY_EXISTS",
     "AUTH_FAILED",
     "CANCELLED",
@@ -131,6 +148,7 @@ __all__ = [
     "SCHEMA_MISMATCH",
     "SERVICE_UNAVAILABLE",
     "TIMEOUT",
+    # Error types and enums
     "CliError",
     "ConfigErrorCode",
     "DocsValidationError",
@@ -141,6 +159,7 @@ __all__ = [
     "JobErrorCode",
     "OperationErrorCode",
     "OutputFormat",
+    "ProblemBuilder",
     "ProblemDetail",
     "ServiceErrorCode",
     "StorageConnectionError",
@@ -155,28 +174,38 @@ __all__ = [
     "UnknownOptionCliError",
     "ValidationError",
     "ValidationErrorCode",
+    # Taxonomy functions
     "config_error",
     "config_not_found_error",
     "config_validation_error",
-    "fail_internal",
-    "fail_invalid_value",
-    "fail_missing_required",
-    "fail_not_found",
-    "fail_storage_connection",
-    "fail_storage_query",
-    "fail_with_problem",
-    "handle_cli_error",
     "internal_error",
     "job_not_found_error",
     "make_error_type",
     "missing_required_error",
     "not_found_error",
     "operation_error",
-    "run_handler",
-    "run_structured_handler",
-    "runtime_required",
     "service_error",
     "storage_error",
     "timeout_error",
     "validation_error",
+    # Result factories (new consolidated API)
+    "fail_config",
+    "fail_domain",
+    "fail_internal",
+    "fail_invalid_value",
+    "fail_job_not_completed",
+    "fail_job_not_found",
+    "fail_missing_required",
+    "fail_not_found",
+    "fail_operation",
+    "fail_storage",
+    "fail_storage_connection",
+    "fail_storage_query",
+    "fail_validation",
+    "fail_with_problem",
+    # Handler utilities
+    "handle_cli_error",
+    "run_handler",
+    "run_structured_handler",
+    "runtime_required",
 ]

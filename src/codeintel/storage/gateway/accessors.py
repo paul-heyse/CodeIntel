@@ -38,6 +38,7 @@ from codeintel.storage.gateway.rows.graph import (
     GraphImportGraphEdgesRow,
     GraphSymbolUseEdgesRow,
 )
+from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 
@@ -1023,6 +1024,7 @@ class DuckDBGateway:
     config: StorageConfig
     datasets: DatasetRegistry
     con: DuckDBConnection
+    ibis: IbisGateway = field(init=False)
     analytics: AnalyticsTables = field(init=False)
     build: BuildTracking = field(init=False)
     core: CoreTables = field(init=False)
@@ -1032,6 +1034,7 @@ class DuckDBGateway:
 
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
+        self.ibis = IbisGateway(self)
         self.analytics = AnalyticsTables(self.con)
         self.build = BuildTracking(self.con)
         self.core = CoreTables(self.con)

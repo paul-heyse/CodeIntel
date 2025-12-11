@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/operations/errors/factory.py
+# hypothesis_version: 6.148.7
+
+[400, 403, 404, 500, 503, 'Cancel Failed', 'Capability Denied', 'ErrorResult', 'Internal Error', 'Invalid Value', 'Job Not Completed', 'Query Failed', 'Validation Failed', 'capability', 'dataset', 'exception_type', 'fail_internal', 'fail_invalid_value', 'fail_job_not_found', 'fail_not_found', 'fail_storage_query', 'fail_validation', 'fail_with_problem', 'job', 'operation', 'operation_id', 'param', 'plugin', 'query', 'suggestion', 'table', 'unknown', 'value']

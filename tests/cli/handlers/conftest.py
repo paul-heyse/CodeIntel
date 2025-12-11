@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import networkx as nx
@@ -14,13 +15,15 @@ from codeintel.cli.handlers.context import HandlerContext
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.configs import ProvisionedGateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.serving_contexts import (
     ProvisionedServiceContext,
     build_provisioned_service_context,
 )
 from tests.serving.mcp.conftest import McpBackendComponents
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 type HandlerContextBuilder = Callable[
     [ProvisionedServiceContext, str, dict[str, object]],
@@ -187,7 +190,7 @@ class FakeGraphRuntime(GraphRuntime):
 
 @pytest.fixture
 def handler_service_context(
-    provisioned_repo: ProvisionedGateway,
+    provisioned_repo: TestContext,
     mcp_backend_factory: Callable[..., McpBackendComponents],
 ) -> ProvisionedServiceContext:
     """Provisioned LocalQueryService/Backend for handler tests.
