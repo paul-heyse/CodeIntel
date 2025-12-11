@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tests._helpers.assertions import expect_in, expect_true
 from tests._helpers.cli import assert_exit, assert_success
 from tests._helpers.cli_project import CLIProjectHarness

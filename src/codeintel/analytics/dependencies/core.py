@@ -27,15 +27,39 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
-    "repo", "commit", "dep_id", "library", "service_name",
-    "function_goid_h128", "function_urn", "rel_path", "module", "qualname",
-    "callsite_count", "modes", "evidence_json", "created_at",
+    "repo",
+    "commit",
+    "dep_id",
+    "library",
+    "service_name",
+    "function_goid_h128",
+    "function_urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "callsite_count",
+    "modes",
+    "evidence_json",
+    "created_at",
 ]
 EXTERNAL_DEPENDENCIES_COLS = [
-    "repo", "commit", "dep_id", "library", "service_name", "category", "language",
-    "severity", "criticality", "risk_score",
-    "function_count", "callsite_count", "modules_json", "usage_modes",
-    "config_keys", "risk_level", "created_at",
+    "repo",
+    "commit",
+    "dep_id",
+    "library",
+    "service_name",
+    "category",
+    "language",
+    "severity",
+    "criticality",
+    "risk_score",
+    "function_count",
+    "callsite_count",
+    "modules_json",
+    "usage_modes",
+    "config_keys",
+    "risk_level",
+    "created_at",
 ]
 
 if TYPE_CHECKING:
@@ -212,7 +236,9 @@ def build_external_dependency_calls(
     con = gateway.con
     ensure_schema(con, "analytics.external_dependency_calls")
     backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot("analytics.external_dependency_calls", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.external_dependency_calls", repo=cfg.repo, commit=cfg.commit
+    )
 
     missing = inputs.missing_goids or set()
     if missing:

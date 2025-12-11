@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import GraphMetricsStepConfig
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -44,43 +45,33 @@ def _validate_call_graph_integrity(
         List of validation errors.
     """
     errors: list[str] = []
-    con = gateway.con
 
     try:
-        # Check for orphan caller GOIDs (edges referencing non-existent nodes)
-        orphan_callers = con.execute(
-            """
-            SELECT COUNT(*)
-            FROM graphs.call_graph_edges e
-            LEFT JOIN graphs.call_graph_nodes n ON e.caller_goid_h128 = n.goid_h128
-            WHERE n.goid_h128 IS NULL
-              AND e.repo = ? AND e.commit = ?
-            """,
-            [repo, commit],
-        ).fetchone()
-        if orphan_callers and orphan_callers[0] > 0:
-            errors.append(f"Found {orphan_callers[0]} call graph edges with orphan caller GOIDs")
+        edges = gateway.ibis.table("graph.call_graph_edges")
+        nodes = gateway.ibis.table("graph.call_graph_nodes")
 
-        # Check for orphan callee GOIDs (unresolved references)
-        orphan_callees = con.execute(
-            """
-            SELECT COUNT(*)
-            FROM graphs.call_graph_edges e
-            LEFT JOIN graphs.call_graph_nodes n ON e.callee_goid_h128 = n.goid_h128
-            WHERE e.callee_goid_h128 IS NOT NULL
-              AND n.goid_h128 IS NULL
-              AND e.repo = ? AND e.commit = ?
-            """,
-            [repo, commit],
-        ).fetchone()
-        if orphan_callees and orphan_callees[0] > 0:
-            # This is a warning, not an error - unresolved callees are expected
+        scoped_edges = edges.filter((edges.repo == repo) & (edges.commit == commit))
+
+        caller_join = scoped_edges.left_join(nodes, scoped_edges.caller_goid_h128 == nodes.goid_h128)
+        orphan_callers = caller_join.filter(nodes.goid_h128.isnull()).count().execute()
+        if orphan_callers and orphan_callers > 0:
+            errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
+
+        callee_join = scoped_edges.left_join(nodes, scoped_edges.callee_goid_h128 == nodes.goid_h128)
+        orphan_callees = (
+            callee_join.filter(
+                scoped_edges.callee_goid_h128.notnull() & nodes.goid_h128.isnull()
+            )
+            .count()
+            .execute()
+        )
+        if orphan_callees and orphan_callees > 0:
             log.debug(
                 "validation: %d call graph edges have unresolved callee GOIDs",
-                orphan_callees[0],
+                orphan_callees,
             )
-    except Exception as e:  # noqa: BLE001
-        log.debug("validation: Could not validate call graph: %s", e)
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate call graph: %s", exc)
 
     return errors
 
@@ -107,26 +98,24 @@ def _validate_import_graph_integrity(
         List of validation errors.
     """
     errors: list[str] = []
-    con = gateway.con
 
     try:
-        # Check for edges referencing non-existent modules
-        orphan_src = con.execute(
-            """
-            SELECT COUNT(*)
-            FROM graphs.import_graph_edges e
-            LEFT JOIN graphs.import_modules m ON e.src_module = m.module
-              AND e.repo = m.repo AND e.commit = m.commit
-            WHERE m.module IS NULL
-              AND e.repo = ? AND e.commit = ?
-            """,
-            [repo, commit],
-        ).fetchone()
-        if orphan_src and orphan_src[0] > 0:
-            errors.append(f"Found {orphan_src[0]} import edges with missing source modules")
+        edges = gateway.ibis.table("graph.import_graph_edges")
+        modules = gateway.ibis.table("graph.import_modules")
+        scoped_edges = edges.filter((edges.repo == repo) & (edges.commit == commit))
 
-    except Exception as e:  # noqa: BLE001
-        log.debug("validation: Could not validate import graph: %s", e)
+        joined = scoped_edges.left_join(
+            modules,
+            (scoped_edges.src_module == modules.module)
+            & (scoped_edges.repo == modules.repo)
+            & (scoped_edges.commit == modules.commit),
+        )
+        orphan_src = joined.filter(modules.module.isnull()).count().execute()
+        if orphan_src and orphan_src > 0:
+            errors.append(f"Found {orphan_src} import edges with missing source modules")
+
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate import graph: %s", exc)
 
     return errors
 
@@ -153,25 +142,22 @@ def _validate_cfg_integrity(
         List of validation errors.
     """
     errors: list[str] = []
-    con = gateway.con
 
     try:
-        # Check for CFG edges referencing non-existent blocks
-        # Note: CFG tables are scoped by function_goid_h128, not repo/commit
-        orphan_edges = con.execute(
-            """
-            SELECT COUNT(*)
-            FROM graphs.cfg_edges e
-            LEFT JOIN graphs.cfg_blocks b ON e.src_block_id = b.block_id
-              AND e.function_goid_h128 = b.function_goid_h128
-            WHERE b.block_id IS NULL
-            """,
-        ).fetchone()
-        if orphan_edges and orphan_edges[0] > 0:
-            errors.append(f"Found {orphan_edges[0]} CFG edges with missing source blocks")
+        edges = gateway.ibis.table("graph.cfg_edges")
+        blocks = gateway.ibis.table("graph.cfg_blocks")
 
-    except Exception as e:  # noqa: BLE001
-        log.debug("validation: Could not validate CFG: %s", e)
+        joined = edges.left_join(
+            blocks,
+            (edges.src_block_id == blocks.block_id)
+            & (edges.function_goid_h128 == blocks.function_goid_h128),
+        )
+        orphan_edges = joined.filter(blocks.block_id.isnull()).count().execute()
+        if orphan_edges and orphan_edges > 0:
+            errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
+
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate CFG: %s", exc)
 
     return errors
 

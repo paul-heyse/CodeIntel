@@ -184,6 +184,9 @@ class _LocalDatasetMixin:
         McpError
             When the dataset is not registered.
         """
+        if limit is not None:
+            limit = int(limit)
+        offset = int(offset)
         applied_limit = self.query.limits.default_limit if limit is None else limit
         registry = load_dataset_registry(self.query.gateway.con)
         schema_version = None

@@ -26,8 +26,38 @@ from codeintel.analytics.runtime.context import (
     resolve_graph_context,
 )
 from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+TEST_GRAPH_METRICS_TESTS_COLS = [
+    "test_id",
+    "repo",
+    "commit",
+    "degree",
+    "weighted_degree",
+    "degree_centrality",
+    "proj_degree",
+    "proj_weight",
+    "proj_clustering",
+    "proj_betweenness",
+    "risk_weighted_degree",
+    "created_at",
+]
+TEST_GRAPH_METRICS_FUNCTIONS_COLS = [
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "tests_degree",
+    "tests_weighted_degree",
+    "tests_degree_centrality",
+    "proj_degree",
+    "proj_weight",
+    "proj_clustering",
+    "proj_betweenness",
+    "tests_risk_weighted_degree",
+    "created_at",
+]
 
 
 def _to_decimal(value: int) -> Decimal:
@@ -184,35 +214,19 @@ def compute_test_graph_metrics(
     test_rows = _build_test_rows(graph, tests, ctx)
     func_rows = _build_function_rows(graph, funcs, ctx)
 
-    con.execute(
-        "DELETE FROM analytics.test_graph_metrics_tests WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.test_graph_metrics_functions WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.test_graph_metrics_tests", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.test_graph_metrics_functions", repo=repo, commit=commit)
 
     if test_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.test_graph_metrics_tests (
-                test_id, repo, commit, degree, weighted_degree, degree_centrality,
-                proj_degree, proj_weight, proj_clustering, proj_betweenness,
-                risk_weighted_degree, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.test_graph_metrics_tests",
             test_rows,
+            columns=TEST_GRAPH_METRICS_TESTS_COLS,
         )
     if func_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.test_graph_metrics_functions (
-                function_goid_h128, repo, commit,
-                tests_degree, tests_weighted_degree, tests_degree_centrality,
-                proj_degree, proj_weight, proj_clustering, proj_betweenness,
-                tests_risk_weighted_degree, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.test_graph_metrics_functions",
             func_rows,
+            columns=TEST_GRAPH_METRICS_FUNCTIONS_COLS,
         )

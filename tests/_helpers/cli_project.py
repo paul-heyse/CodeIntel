@@ -101,12 +101,24 @@ class CLIProjectHarness:
         close_gateways()
 
     def invoke(self, args: list[str]) -> CliInvocationResult:
-        """Invoke CLI with project env and cwd configured."""
+        """Invoke CLI with project env and cwd configured.
+
+        Returns
+        -------
+        CliInvocationResult
+            Captured invocation result.
+        """
         self._prepare()
         return self.harness.invoke(args)
 
     def invoke_json(self, args: list[str]) -> dict[str, object]:
-        """Invoke CLI and parse JSON output."""
+        """Invoke CLI and parse JSON output.
+
+        Returns
+        -------
+        dict[str, object]
+            Parsed JSON response.
+        """
         self._prepare()
         return self.harness.invoke_json(args)
 
@@ -128,6 +140,11 @@ def cli_project_harness(
         Repository slug.
     commit
         Commit hash.
+
+    Yields
+    ------
+    CLIProjectHarness
+        Harness configured for the temporary project.
     """
     ctx = create_cli_project(tmp_path, repo=repo, commit=commit)
     harness = CliTestHarness().with_env(**ctx.env).with_cwd(ctx.repo_root)

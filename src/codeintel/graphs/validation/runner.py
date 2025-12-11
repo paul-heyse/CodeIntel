@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ibis.expr.types import Table
+
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -174,47 +176,54 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
     log : logging.Logger
         Logger for output.
     """
-    con = gateway.con
-
-    def _count(query: str, *, use_params: bool) -> int:
+    def _count(table_expr: Table, *, filters: list | None = None) -> int:
         try:
-            row = (
-                con.execute(query, [repo, commit]).fetchone()
-                if use_params
-                else con.execute(query).fetchone()
-            )
+            expr = table_expr if not filters else table_expr.filter(*filters)
+            return int(expr.count().execute())
         except DuckDBError as exc:  # pragma: no cover - defensive logging
-            log.warning("Validation snapshot count failed for %s: %s", query, exc)
+            log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)
             return -1
-        if row is None:
-            return 0
-        value = row[0]
-        return int(value) if value is not None else 0
+
+    modules_tbl = gateway.ibis.table("core.modules")
+    goids_tbl = gateway.ibis.table("core.goids")
+    call_nodes_tbl = gateway.ibis.table("graph.call_graph_nodes")
+    call_edges_tbl = gateway.ibis.table("graph.call_graph_edges")
 
     counts = {
         "modules": _count(
-            "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?", use_params=True
+            modules_tbl,
+            filters=[(modules_tbl.repo == repo) & (modules_tbl.commit == commit)],
         ),
         "goids": _count(
-            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?", use_params=True
+            goids_tbl,
+            filters=[(goids_tbl.repo == repo) & (goids_tbl.commit == commit)],
         ),
         "module_goids": _count(
-            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'",
-            use_params=True,
+            goids_tbl,
+            filters=[
+                (goids_tbl.repo == repo)
+                & (goids_tbl.commit == commit)
+                & (goids_tbl.kind == "module")
+            ],
         ),
         "class_goids": _count(
-            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'class'",
-            use_params=True,
+            goids_tbl,
+            filters=[
+                (goids_tbl.repo == repo)
+                & (goids_tbl.commit == commit)
+                & (goids_tbl.kind == "class")
+            ],
         ),
         "function_goids": _count(
-            """
-            SELECT COUNT(*) FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-            """,
-            use_params=True,
+            goids_tbl,
+            filters=[
+                (goids_tbl.repo == repo)
+                & (goids_tbl.commit == commit)
+                & goids_tbl.kind.isin(["function", "method"])
+            ],
         ),
-        "call_nodes": _count("SELECT COUNT(*) FROM graph.call_graph_nodes", use_params=False),
-        "call_edges": _count("SELECT COUNT(*) FROM graph.call_graph_edges", use_params=False),
+        "call_nodes": _count(call_nodes_tbl),
+        "call_edges": _count(call_edges_tbl),
     }
     snapshot = (
         f"[graph_validation] repo={repo} commit={commit} "

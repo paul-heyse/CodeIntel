@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import load_columns_by_table
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql import PreparedStatements
 
@@ -35,7 +36,7 @@ class WriterContext:
 
 
 def write_rows_with_registry_guard(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     *,
     rows: Iterable[Mapping[str, object]],
     context: WriterContext,
@@ -57,6 +58,7 @@ def write_rows_with_registry_guard(
     if not rows_list and not delete_on_empty:
         return 0
 
+    con = gateway.con
     ensure_schema_fn = context.ensure_schema_fn
     ensure_schema_fn(con, context.table_key)
     registry_cols = load_columns_by_table().get(context.table_key)
@@ -64,13 +66,16 @@ def write_rows_with_registry_guard(
         message = f"Columns for {context.table_key} differ from serializer constants."
         raise RuntimeError(message)
 
-    stmt = context.prepared_statements_fn(con, context.table_key)
-    con.execute(context.delete_sql, [context.repo, context.commit])
+    # Delete existing data using policy backend
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot(context.table_key, repo=context.repo, commit=context.commit)
+
     if not rows_list:
         return 0
 
+    # Write rows using Ibis
     tuples = [context.serialize_row(row) for row in rows_list]
-    con.executemany(stmt.insert_sql, tuples)
+    gateway.ibis.write(context.table_key, tuples, columns=list(context.columns))
     return len(tuples)
 
 

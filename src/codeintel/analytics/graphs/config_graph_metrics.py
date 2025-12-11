@@ -257,8 +257,15 @@ def compute_config_graph_metrics(
             "analytics.config_graph_metrics_keys",
             key_rows,
             columns=[
-                "repo", "commit", "config_key", "degree", "weighted_degree",
-                "betweenness", "closeness", "community_id", "created_at",
+                "repo",
+                "commit",
+                "config_key",
+                "degree",
+                "weighted_degree",
+                "betweenness",
+                "closeness",
+                "community_id",
+                "created_at",
             ],
         )
     if module_rows:
@@ -266,8 +273,15 @@ def compute_config_graph_metrics(
             "analytics.config_graph_metrics_modules",
             module_rows,
             columns=[
-                "repo", "commit", "module", "degree", "weighted_degree",
-                "betweenness", "closeness", "community_id", "created_at",
+                "repo",
+                "commit",
+                "module",
+                "degree",
+                "weighted_degree",
+                "betweenness",
+                "closeness",
+                "community_id",
+                "created_at",
             ],
         )
     if key_edges:

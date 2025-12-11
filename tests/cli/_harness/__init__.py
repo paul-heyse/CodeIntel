@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
@@ -465,7 +466,7 @@ class GoldenFileAssertion:
                     return [remove_keys(item) for item in obj]
                 return obj
 
-            actual = remove_keys(actual)  # type: ignore[assignment]
+            actual = cast("dict[str, object]", remove_keys(actual))
 
         actual_str = json.dumps(actual, indent=2, sort_keys=True)
         self.assert_matches(name, actual_str)

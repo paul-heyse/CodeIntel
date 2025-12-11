@@ -399,9 +399,7 @@ def dataset_flow_handler(ctx: CommandContext) -> CliResult[DatasetFlowResult]:
     return dataset_flow_structured(table_key=table_key)
 
 
-def dataset_constraints_structured(
-    *, table_key: str
-) -> CliResult[DatasetConstraintsResult]:
+def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstraintsResult]:
     """Show constraint summary for a dataset (structured).
 
     Extracts constraints from the Pandera schema and returns them in

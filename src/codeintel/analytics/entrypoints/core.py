@@ -29,17 +29,47 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 ENTRYPOINTS_COLS = [
-    "repo", "commit", "entrypoint_id", "kind", "framework",
-    "handler_goid_h128", "handler_urn", "handler_rel_path", "handler_module", "handler_qualname",
-    "http_method", "route_path", "status_codes", "auth_required",
-    "command_name", "arguments_schema", "schedule", "trigger", "extra",
-    "subsystem_id", "subsystem_name", "tags", "owners",
-    "tests_touching", "failing_tests", "slow_tests", "flaky_tests",
-    "entrypoint_coverage_ratio", "last_test_status", "created_at",
+    "repo",
+    "commit",
+    "entrypoint_id",
+    "kind",
+    "framework",
+    "handler_goid_h128",
+    "handler_urn",
+    "handler_rel_path",
+    "handler_module",
+    "handler_qualname",
+    "http_method",
+    "route_path",
+    "status_codes",
+    "auth_required",
+    "command_name",
+    "arguments_schema",
+    "schedule",
+    "trigger",
+    "extra",
+    "subsystem_id",
+    "subsystem_name",
+    "tags",
+    "owners",
+    "tests_touching",
+    "failing_tests",
+    "slow_tests",
+    "flaky_tests",
+    "entrypoint_coverage_ratio",
+    "last_test_status",
+    "created_at",
 ]
 ENTRYPOINT_TESTS_COLS = [
-    "repo", "commit", "entrypoint_id", "test_id", "test_goid_h128",
-    "coverage_ratio", "status", "duration_ms", "created_at",
+    "repo",
+    "commit",
+    "entrypoint_id",
+    "test_id",
+    "test_goid_h128",
+    "coverage_ratio",
+    "status",
+    "duration_ms",
+    "created_at",
 ]
 
 if TYPE_CHECKING:
@@ -278,6 +308,14 @@ def _materialize_candidate(
     subsystem_id = ctx.subsystem_by_module.get(module_info.module)
     subsystem_name = ctx.subsystem_names.get(subsystem_id) if subsystem_id is not None else None
     coverage_ratio = ctx.coverage_by_goid.get(goid)
+    if coverage_ratio is None:
+        edge_coverages = [
+            edge.coverage_ratio
+            for edge in ctx.edges_by_goid.get(goid, {}).values()
+            if edge.coverage_ratio is not None
+        ]
+        if edge_coverages:
+            coverage_ratio = sum(edge_coverages) / len(edge_coverages)
     summary, edge_rows = _summarize_tests(goid, entrypoint_id, ctx)
     extra_payload = cand.extra or {}
     if feature_vector is not None:

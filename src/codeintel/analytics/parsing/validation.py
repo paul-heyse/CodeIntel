@@ -15,6 +15,29 @@ from codeintel.config.datasets import (
 )
 from codeintel.storage.gateway import StorageGateway
 
+FUNCTION_VALIDATION_COLS = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "rel_path",
+    "qualname",
+    "issue",
+    "detail",
+    "created_at",
+]
+GRAPH_VALIDATION_COLS = [
+    "repo",
+    "commit",
+    "graph_name",
+    "entity_id",
+    "issue",
+    "severity",
+    "rel_path",
+    "detail",
+    "metadata",
+    "created_at",
+]
+
 RowT = TypeVar("RowT")
 
 
@@ -75,14 +98,10 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         if not self.rows:
             return
         tuples = [function_validation_row_to_tuple(r) for r in self.rows]
-        con = gateway.con
-        con.executemany(
-            """
-            INSERT INTO analytics.function_validation (
-                repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.function_validation",
             tuples,
+            columns=FUNCTION_VALIDATION_COLS,
         )
         self.rows.clear()
 
@@ -125,14 +144,10 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         if not self.rows:
             return
         tuples = [graph_validation_row_to_tuple(r) for r in self.rows]
-        con = gateway.con
-        con.executemany(
-            """
-            INSERT INTO analytics.graph_validation (
-                repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.graph_validation",
             tuples,
+            columns=GRAPH_VALIDATION_COLS,
         )
         self.rows.clear()
 

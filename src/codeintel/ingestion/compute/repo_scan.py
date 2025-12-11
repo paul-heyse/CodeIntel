@@ -46,8 +46,7 @@ class RepoScanStep:
         storage: IngestStoragePort,
         discovery: ModuleDiscoveryPort,
         change_detection: ChangeDetectionPort,
-        module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]]
-        | None = None,
+        module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]] | None = None,
     ) -> None:
         """Initialize the step.
 

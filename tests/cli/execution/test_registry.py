@@ -6,7 +6,7 @@ unified registry in execution/registry.py.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 
@@ -36,6 +36,10 @@ EXPECTED_COUNT_FIVE = 5
 # -----------------------------------------------------------------------------
 # Test Fixtures and Helpers
 # -----------------------------------------------------------------------------
+
+
+class _StrContainer(Protocol):
+    def __contains__(self, item: str, /) -> bool: ...
 
 
 def _dummy_handler(ctx: CommandContext) -> CliResult[dict[str, bool]]:
@@ -238,7 +242,7 @@ def _verify_none(actual: object, message: str = "Expected None") -> None:
         raise AssertionError(full_msg)
 
 
-def _verify_in(item: object, container: object, message: str = "") -> None:
+def _verify_in(item: str, container: _StrContainer, message: str = "") -> None:
     """Verify an item is in a container.
 
     Parameters
@@ -255,14 +259,14 @@ def _verify_in(item: object, container: object, message: str = "") -> None:
     AssertionError
         If item is not in container.
     """
-    if item not in container:  # type: ignore[operator]
+    if item not in container:
         msg = f"{item!r} not in container"
         if message:
             msg = f"{message}: {msg}"
         raise AssertionError(msg)
 
 
-def _verify_not_in(item: object, container: object, message: str = "") -> None:
+def _verify_not_in(item: str, container: _StrContainer, message: str = "") -> None:
     """Verify an item is not in a container.
 
     Parameters
@@ -279,7 +283,7 @@ def _verify_not_in(item: object, container: object, message: str = "") -> None:
     AssertionError
         If item is in container.
     """
-    if item in container:  # type: ignore[operator]
+    if item in container:
         msg = f"{item!r} unexpectedly in container"
         if message:
             msg = f"{message}: {msg}"

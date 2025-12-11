@@ -28,19 +28,49 @@ from codeintel.storage.sql.builder import ensure_schema
 
 # Column definitions for data model tables
 DATA_MODELS_COLS = [
-    "repo", "commit", "model_id", "goid_h128",
-    "model_name", "module", "rel_path", "model_kind",
-    "base_classes_json", "doc_short", "doc_long", "created_at",
+    "repo",
+    "commit",
+    "model_id",
+    "goid_h128",
+    "model_name",
+    "module",
+    "rel_path",
+    "model_kind",
+    "base_classes_json",
+    "doc_short",
+    "doc_long",
+    "created_at",
 ]
 DATA_MODEL_FIELDS_COLS = [
-    "repo", "commit", "model_id", "field_name", "field_type", "required",
-    "has_default", "default_expr", "constraints_json", "source", "rel_path",
-    "lineno", "created_at",
+    "repo",
+    "commit",
+    "model_id",
+    "field_name",
+    "field_type",
+    "required",
+    "has_default",
+    "default_expr",
+    "constraints_json",
+    "source",
+    "rel_path",
+    "lineno",
+    "created_at",
 ]
 DATA_MODEL_RELATIONSHIPS_COLS = [
-    "repo", "commit", "source_model_id", "target_model_id", "target_module",
-    "target_model_name", "field_name", "relationship_kind", "multiplicity",
-    "via", "evidence_json", "rel_path", "lineno", "created_at",
+    "repo",
+    "commit",
+    "source_model_id",
+    "target_model_id",
+    "target_module",
+    "target_model_name",
+    "field_name",
+    "relationship_kind",
+    "multiplicity",
+    "via",
+    "evidence_json",
+    "rel_path",
+    "lineno",
+    "created_at",
 ]
 
 log = logging.getLogger(__name__)
@@ -957,7 +987,9 @@ def compute_data_models(
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.data_models", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot("analytics.data_model_fields", repo=cfg.repo, commit=cfg.commit)
-    backend.delete_for_snapshot("analytics.data_model_relationships", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.data_model_relationships", repo=cfg.repo, commit=cfg.commit
+    )
 
     class_metas = _load_class_metadata(con, cfg.repo, cfg.commit)
     if not class_metas:

@@ -8,10 +8,20 @@ execution ratios, which downstream risk scoring relies on.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
+import ibis
+import ibis.expr.types as it
+
+from codeintel.analytics.compute.ibis_utils import (
+    bool_and,
+    literal_sequence,
+    safe_ratio,
+    zero_if_null,
+)
 from codeintel.config import CoverageAnalyticsStepConfig
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.ibis_types import gt, ibis_bool
 
 log = logging.getLogger(__name__)
 
@@ -95,107 +105,129 @@ def compute_coverage_functions(
         cfg.repo,
         cfg.commit,
     )
+    try:
+        goids = gateway.ibis.table("core.goids")
+        coverage = gateway.ibis.table("analytics.coverage_lines")
+    except DuckDBError as exc:
+        log.warning("coverage_functions: failed to access tables: %s", exc)
+        return
 
-    con = gateway.con
-    ensure_schema(con, "analytics.coverage_lines")
-    ensure_schema(con, "analytics.coverage_functions")
+    goids_filtered = _filter_goids(goids, cfg)
+    coverage_filtered = _filter_coverage_lines(coverage, cfg)
+    joined = _join_goids_with_coverage(goids_filtered, coverage_filtered)
+    aggregated = _aggregate_coverage(joined, goids_filtered)
+    result_expr = _enrich_coverage_results(aggregated)
 
-    # Clear any previous rows for this repo/commit.
-    con.execute(
-        """
-        DELETE FROM analytics.coverage_functions
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
+    try:
+        _write_coverage_results(gateway, cfg, result_expr)
+    except DuckDBError as exc:
+        log.warning("coverage_functions: failed to write results: %s", exc)
+        return
+
+    row_count_expr = result_expr.count()
+    row_count = cast("int", row_count_expr.execute())
+    log.info(
+        "coverage_functions populated: %d rows for %s@%s",
+        row_count,
+        cfg.repo,
+        cfg.commit,
     )
 
-    # Insert aggregated coverage per function.
-    #
-    # Notes:
-    # - We restrict to function/method GOIDs only.
-    # - We join coverage_lines by (repo, commit, rel_path) + line span.
-    # - Lines with no coverage_lines rows are treated as non-executable.
-    # - coverage_ratio is NULL when there are no executable lines. :contentReference[oaicite:4]{index=4}
-    insert_sql = """
-        INSERT INTO analytics.coverage_functions (
-            function_goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            language,
-            kind,
-            qualname,
-            start_line,
-            end_line,
-            executable_lines,
-            covered_lines,
-            coverage_ratio,
-            tested,
-            untested_reason,
-            created_at
-        )
-        SELECT
-            g.goid_h128                    AS function_goid_h128,
-            g.urn,
-            g.repo,
-            g.commit,
-            g.rel_path,
-            g.language,
-            g.kind,
-            g.qualname,
-            g.start_line,
-            g.end_line,
-            COUNT(*) FILTER (WHERE c.is_executable) AS executable_lines,
-            COUNT(*) FILTER (WHERE c.is_executable AND c.is_covered) AS covered_lines,
-            CASE
-                WHEN COUNT(*) FILTER (WHERE c.is_executable) = 0 THEN NULL
-                ELSE
-                    CAST(
-                        COUNT(*) FILTER (WHERE c.is_executable AND c.is_covered)
-                        AS DOUBLE
-                    )
-                    / COUNT(*) FILTER (WHERE c.is_executable)
-            END AS coverage_ratio,
-            COUNT(*) FILTER (WHERE c.is_executable AND c.is_covered) > 0 AS tested,
-            CASE
-                WHEN COUNT(*) FILTER (WHERE c.is_executable) = 0 THEN 'no_executable_code'
-                WHEN COUNT(*) FILTER (WHERE c.is_executable AND c.is_covered) = 0 THEN 'no_tests'
-                ELSE ''
-            END AS untested_reason,
-            NOW() AS created_at
-        FROM core.goids g
-        LEFT JOIN analytics.coverage_lines c
-          ON c.repo = g.repo
-         AND c.commit = g.commit
-         AND c.rel_path = g.rel_path
-         AND c.line BETWEEN g.start_line AND COALESCE(g.end_line, g.start_line)
-        WHERE g.repo = ?
-          AND g.commit = ?
-          AND g.kind IN ('function', 'method')
-        GROUP BY
-            g.goid_h128,
-            g.urn,
-            g.repo,
-            g.commit,
-            g.rel_path,
-            g.language,
-            g.kind,
-            g.qualname,
-            g.start_line,
-            g.end_line;
-    """
 
-    con.execute(insert_sql, [cfg.repo, cfg.commit])
+def _filter_goids(table: it.Table, cfg: CoverageAnalyticsStepConfig) -> it.Table:
+    predicate = bool_and(
+        ibis_bool(table.repo == cfg.repo),
+        ibis_bool(table.commit == cfg.commit),
+        ibis_bool(table.kind.isin(literal_sequence(["function", "method"]))),
+    )
+    return table.filter(predicate)
 
-    row = con.execute(
-        """
-        SELECT COUNT(*)
-        FROM analytics.coverage_functions
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetchone()
-    n = int(row[0]) if row is not None else 0
 
-    log.info("coverage_functions populated: %d rows for %s@%s", n, cfg.repo, cfg.commit)
+def _filter_coverage_lines(table: it.Table, cfg: CoverageAnalyticsStepConfig) -> it.Table:
+    predicate = bool_and(
+        ibis_bool(table.repo == cfg.repo),
+        ibis_bool(table.commit == cfg.commit),
+    )
+    return table.filter(predicate)
+
+
+def _join_goids_with_coverage(goids: it.Table, coverage: it.Table) -> it.Table:
+    end_line = ibis.coalesce(goids.end_line, goids.start_line)
+    join_predicates = [
+        ibis_bool(goids.repo == coverage.repo),
+        ibis_bool(goids.commit == coverage.commit),
+        ibis_bool(goids.rel_path == coverage.rel_path),
+        ibis_bool(coverage.line >= goids.start_line),
+        ibis_bool(coverage.line <= end_line),
+    ]
+    return goids.left_join(coverage, join_predicates)
+
+
+def _aggregate_coverage(joined: it.Table, goids: it.Table) -> it.Table:
+    executable = ibis_bool(joined["is_executable"])
+    covered = ibis_bool(joined["is_covered"])
+    executable_int = cast("it.IntegerColumn", executable.cast("int64"))
+    covered_int = cast("it.IntegerColumn", bool_and(executable, covered).cast("int64"))
+    grouped = joined.group_by(
+        goids.goid_h128,
+        goids.urn,
+        goids.repo,
+        goids.commit,
+        goids.rel_path,
+        goids.language,
+        goids.kind,
+        goids.qualname,
+        goids.start_line,
+        goids.end_line,
+    )
+    return grouped.aggregate(
+        executable_lines_raw=executable_int.sum(),
+        covered_lines_raw=covered_int.sum(),
+    )
+
+
+def _enrich_coverage_results(aggregated: it.Table) -> it.Table:
+    exec_lines = zero_if_null(aggregated.executable_lines_raw)
+    covered_lines = zero_if_null(aggregated.covered_lines_raw)
+    coverage_ratio = safe_ratio(covered_lines, exec_lines)
+    no_executable_code = ibis_bool(exec_lines == 0)
+    no_tests = ibis_bool(covered_lines == 0)
+
+    return aggregated.select(
+        aggregated.goid_h128.name("function_goid_h128"),
+        aggregated.urn,
+        aggregated.repo,
+        aggregated.commit,
+        aggregated.rel_path,
+        aggregated.language,
+        aggregated.kind,
+        aggregated.qualname,
+        aggregated.start_line,
+        aggregated.end_line,
+        exec_lines.name("executable_lines"),
+        covered_lines.name("covered_lines"),
+        coverage_ratio.name("coverage_ratio"),
+        gt(covered_lines, 0).name("tested"),
+        (
+            ibis.case()
+            .when(no_executable_code, "no_executable_code")
+            .when(no_tests, "no_tests")
+            .else_("")
+            .end()
+        ).name("untested_reason"),
+        ibis.now().name("created_at"),
+    )
+
+
+def _write_coverage_results(
+    gateway: StorageGateway,
+    cfg: CoverageAnalyticsStepConfig,
+    result_expr: it.Table,
+) -> None:
+    table = gateway.ibis.table("analytics.coverage_functions")
+    where = bool_and(
+        ibis_bool(table.repo == cfg.repo),
+        ibis_bool(table.commit == cfg.commit),
+    )
+    gateway.ibis.delete("analytics.coverage_functions", where=where)
+    gateway.ibis.write("analytics.coverage_functions", result_expr)

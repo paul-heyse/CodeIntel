@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/row_binding_factory.py
+# hypothesis_version: 6.148.7
+
+['No schema registered', '__annotations__', 'column_order_match', 'compare_row_bindings', 'differences', 'has_manual', 'has_schema', 'row_type_match']

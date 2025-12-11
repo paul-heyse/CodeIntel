@@ -255,6 +255,10 @@ def build_docs_function_summary(ibis_gw: IbisGateway) -> it.Table:
             rf.commit == fm.commit,
         ],
     )
+    complexity_bucket = ibis.coalesce(rf.complexity_bucket, ibis.literal("unknown"))
+    typedness_bucket = ibis.coalesce(rf.typedness_bucket, ibis.literal("unknown"))
+    typedness_source = ibis.coalesce(rf.typedness_source, ibis.literal("unknown"))
+    last_test_status = ibis.coalesce(rf.last_test_status, ibis.literal("untested"))
     return joined.select(
         rf.function_goid_h128,
         rf.urn,
@@ -267,7 +271,7 @@ def build_docs_function_summary(ibis_gw: IbisGateway) -> it.Table:
         rf.loc,
         rf.logical_loc,
         rf.cyclomatic_complexity,
-        rf.complexity_bucket,
+        complexity_bucket,
         fm.param_count,
         fm.positional_params,
         fm.keyword_only_params,
@@ -278,8 +282,8 @@ def build_docs_function_summary(ibis_gw: IbisGateway) -> it.Table:
         fm.return_count,
         fm.yield_count,
         fm.raise_count,
-        rf.typedness_bucket,
-        rf.typedness_source,
+        typedness_bucket,
+        typedness_source,
         rf.hotspot_score,
         rf.file_typed_ratio,
         rf.static_error_count,
@@ -290,7 +294,7 @@ def build_docs_function_summary(ibis_gw: IbisGateway) -> it.Table:
         rf.tested,
         rf.test_count,
         rf.failing_test_count,
-        rf.last_test_status,
+        last_test_status,
         rf.risk_score,
         rf.risk_level,
         rf.tags,
@@ -982,15 +986,15 @@ def build_docs_function_architecture(ibis_gw: IbisGateway) -> it.Table:
         Ibis table expression for the view.
     """
     con = ibis_gw.con
-    fp: it.Table = _table(con, "analytics.function_profile")
-    gm: it.Table = _table(con, "analytics.graph_metrics_functions")
-    gmx: it.Table = _table(con, "analytics.graph_metrics_functions_ext")
-    tgf: it.Table = _table(con, "analytics.test_graph_metrics_functions")
-    cfg_fn: it.Table = _table(con, "analytics.cfg_function_metrics")
-    dfg_fn: it.Table = _table(con, "analytics.dfg_function_metrics")
-    mp: it.Table = _table(con, "analytics.module_profile")
-    sm: it.Table = _table(con, "analytics.subsystem_modules")
-    ss: it.Table = _table(con, "analytics.subsystems")
+    fp: it.Table = _table(con, "analytics.function_profile").view()
+    gm: it.Table = _table(con, "analytics.graph_metrics_functions").view()
+    gmx: it.Table = _table(con, "analytics.graph_metrics_functions_ext").view()
+    tgf: it.Table = _table(con, "analytics.test_graph_metrics_functions").view()
+    cfg_fn: it.Table = _table(con, "analytics.cfg_function_metrics").view()
+    dfg_fn: it.Table = _table(con, "analytics.dfg_function_metrics").view()
+    mp: it.Table = _table(con, "analytics.module_profile").view()
+    sm: it.Table = _table(con, "analytics.subsystem_modules").view()
+    ss: it.Table = _table(con, "analytics.subsystems").view()
 
     joined = (
         fp.left_join(

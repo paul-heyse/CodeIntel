@@ -106,10 +106,12 @@ def typed_dict_from_pandera(
     Examples
     --------
     >>> from pandera import DataFrameSchema, Column
-    >>> schema = DataFrameSchema({
-    ...     "repo": Column(str),
-    ...     "loc": Column(int, nullable=True),
-    ... })
+    >>> schema = DataFrameSchema(
+    ...     {
+    ...         "repo": Column(str),
+    ...         "loc": Column(int, nullable=True),
+    ...     }
+    ... )
     >>> RowModel = typed_dict_from_pandera("MyRow", schema)
     >>> # RowModel has annotations: {"repo": str, "loc": int | None}
     """

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+import ibis
 import libcst as cst
 
 from codeintel.build.context import TargetResult
@@ -56,6 +57,7 @@ from codeintel.graphs.compute.callgraph import (
 from codeintel.graphs.plugins.builders.callgraph_options import CallGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -105,29 +107,40 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
     commit
         Commit SHA.
     """
-    con = gateway.con
     try:
-        modules = con.execute(
-            "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        goids = con.execute(
-            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        module_goids = con.execute(
-            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'",
-            [repo, commit],
-        ).fetchone()
+        modules_tbl = gateway.ibis.table("core.modules")
+        goids_tbl = gateway.ibis.table("core.goids")
+
+        module_count = int(
+            modules_tbl.filter(
+                cast("Any", modules_tbl.repo == repo) & cast("Any", modules_tbl.commit == commit)
+            ).count()
+            .execute()
+        )
+        goid_count = int(
+            goids_tbl.filter(
+                cast("Any", goids_tbl.repo == repo) & cast("Any", goids_tbl.commit == commit)
+            ).count()
+            .execute()
+        )
+        module_goid_count = int(
+            goids_tbl.filter(
+                cast("Any", goids_tbl.repo == repo)
+                & cast("Any", goids_tbl.commit == commit)
+                & cast("Any", goids_tbl.kind == "module")
+            )
+            .count()
+            .execute()
+        )
         log.info(
             "call_graph_builder repo_state modules=%d goids=%d (module_kind=%d)",
-            modules[0] if modules else 0,
-            goids[0] if goids else 0,
-            module_goids[0] if module_goids else 0,
+            module_count,
+            goid_count,
+            module_goid_count,
         )
-    except Exception:  # noqa: BLE001
+    except DuckDBError as exc:
         # Tables may not exist yet in early pipeline stages
-        log.debug("call_graph_builder: Could not query repo state")
+        log.debug("call_graph_builder: Could not query repo state: %s", exc)
 
 
 def _build_global_callee_lookup(
@@ -151,18 +164,19 @@ def _build_global_callee_lookup(
     dict[str, int]
         Mapping of qualname to GOID.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT qualname, goid_h128
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-            """,
-            [repo, commit],
-        ).fetchall()
-        return {str(row[0]): int(row[1]) for row in rows}
-    except Exception:  # noqa: BLE001
+        goids_tbl = gateway.ibis.table("core.goids")
+        repo_filter = cast("Any", goids_tbl.repo == repo)
+        commit_filter = cast("Any", goids_tbl.commit == commit)
+        kind_filter = cast("Any", goids_tbl.kind.isin(cast("Any", ["function", "method"])))
+        expr = (
+            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            .select(goids_tbl.qualname, goids_tbl.goid_h128)
+            .order_by(goids_tbl.qualname)
+        )
+        rows = expr.execute()
+        return {str(qualname): int(goid) for qualname, goid in rows.itertuples(index=False, name=None)}
+    except DuckDBError:
         return {}
 
 
@@ -187,18 +201,22 @@ def _build_def_goids_by_path(
     dict[str, int]
         Mapping of relative path to module GOID.
     """
-    con = gateway.con
     try:
-        rows = con.execute(
-            """
-            SELECT rel_path, goid_h128
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind = 'module'
-            """,
-            [repo, commit],
-        ).fetchall()
-        return {normalize_rel_path(str(row[0])): int(row[1]) for row in rows}
-    except Exception:  # noqa: BLE001
+        goids_tbl = gateway.ibis.table("core.goids")
+        repo_filter = cast("Any", goids_tbl.repo == repo)
+        commit_filter = cast("Any", goids_tbl.commit == commit)
+        kind_filter = cast("Any", goids_tbl.kind == "module")
+        expr = (
+            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            .select(goids_tbl.rel_path, goids_tbl.goid_h128)
+            .order_by(goids_tbl.rel_path)
+        )
+        rows = expr.execute()
+        return {
+            normalize_rel_path(str(rel_path)): int(goid)
+            for rel_path, goid in rows.itertuples(index=False, name=None)
+        }
+    except DuckDBError:
         return {}
 
 
@@ -219,16 +237,23 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     Path | None
         Absolute path to source root, or None if not found.
     """
-    con = gateway.con
     try:
-        row = con.execute(
-            "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        if row and row[0]:
-            return Path(row[0])
-    except Exception as e:  # noqa: BLE001
-        log.debug("callgraph: Could not get source root: %s", e)
+        snapshots = gateway.ibis.table("core.snapshots")
+        repo_filter = cast("Any", snapshots.repo == repo)
+        commit_filter = cast("Any", snapshots.commit == commit)
+        expr = (
+            snapshots.filter(repo_filter & commit_filter)
+            .select(snapshots.source_root)
+            .limit(1)
+        )
+        rows = expr.execute()
+        if getattr(rows, "empty", True):
+            return None
+        source_root = rows.iloc[0][0]
+        if source_root:
+            return Path(str(source_root))
+    except DuckDBError as exc:
+        log.debug("callgraph: Could not get source root: %s", exc)
     return None
 
 
@@ -325,23 +350,31 @@ def _build_nodes_from_goids(
     list[CallGraphNodeRow]
         Node rows for all functions.
     """
-    con = gateway.con
     try:
-        # Note: arity and is_public may not exist in all schemas, use COALESCE with literals
-        rows = con.execute(
-            """
-            SELECT
-                goid_h128,
-                COALESCE(language, 'python') AS language,
-                kind,
-                rel_path
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-            """,
-            [repo, commit],
-        ).fetchall()
-    except Exception as e:  # noqa: BLE001
-        log.debug("callgraph: Could not build nodes from GOIDs: %s", e)
+        goids_tbl = gateway.ibis.table("core.goids")
+        repo_filter = cast("Any", goids_tbl.repo == repo)
+        commit_filter = cast("Any", goids_tbl.commit == commit)
+        kind_filter = cast("Any", goids_tbl.kind.isin(cast("Any", ["function", "method"])))
+
+        language_expr = (
+            goids_tbl.language if "language" in goids_tbl.columns else ibis.literal("python")
+        )
+        rel_path_expr = goids_tbl.rel_path if "rel_path" in goids_tbl.columns else ibis.literal("")
+        kind_expr = goids_tbl.kind if "kind" in goids_tbl.columns else ibis.literal("function")
+
+        expr = (
+            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            .select(
+                goids_tbl.goid_h128,
+                ibis.coalesce(language_expr, ibis.literal("python")).name("language"),
+                kind_expr.name("kind"),
+                rel_path_expr.name("rel_path"),
+            )
+            .order_by(goids_tbl.goid_h128)
+        )
+        rows = expr.execute()
+    except DuckDBError as exc:
+        log.debug("callgraph: Could not build nodes from GOIDs: %s", exc)
         return []
 
     return [

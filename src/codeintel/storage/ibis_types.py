@@ -37,13 +37,12 @@ Or using the combinator:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import Any, cast
 
-if TYPE_CHECKING:
-    from ibis.expr.types import BooleanValue, Table
+import ibis.expr.types as it
 
 
-def ibis_bool(expr: object) -> BooleanValue:
+def ibis_bool(expr: object) -> it.BooleanValue:
     """Cast an Ibis comparison expression to BooleanValue.
 
     This is a type-casting helper that tells static type checkers
@@ -66,10 +65,10 @@ def ibis_bool(expr: object) -> BooleanValue:
     >>> predicate = ibis_bool(table.repo == "my-repo")
     >>> filtered = table.filter(predicate)
     """
-    return cast("BooleanValue", expr)
+    return cast("it.BooleanValue", expr)
 
 
-def ge(column: object, value: object) -> BooleanValue:
+def ge(column: it.Value, value: object) -> it.BooleanValue:
     """Type-safe greater-than-or-equal comparison.
 
     Parameters
@@ -84,10 +83,12 @@ def ge(column: object, value: object) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column >= value)  # type: ignore[operator]
+    column_expr = cast("Any", column)
+    comparison: it.BooleanValue = cast("it.BooleanValue", column_expr >= value)
+    return comparison
 
 
-def gt(column: object, value: object) -> BooleanValue:
+def gt(column: it.Value, value: object) -> it.BooleanValue:
     """Type-safe greater-than comparison.
 
     Parameters
@@ -102,10 +103,12 @@ def gt(column: object, value: object) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column > value)  # type: ignore[operator]
+    column_expr = cast("Any", column)
+    comparison: it.BooleanValue = cast("it.BooleanValue", column_expr > value)
+    return comparison
 
 
-def le(column: object, value: object) -> BooleanValue:
+def le(column: it.Value, value: object) -> it.BooleanValue:
     """Type-safe less-than-or-equal comparison.
 
     Parameters
@@ -120,10 +123,12 @@ def le(column: object, value: object) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column <= value)  # type: ignore[operator]
+    column_expr = cast("Any", column)
+    comparison: it.BooleanValue = cast("it.BooleanValue", column_expr <= value)
+    return comparison
 
 
-def lt(column: object, value: object) -> BooleanValue:
+def lt(column: it.Value, value: object) -> it.BooleanValue:
     """Type-safe less-than comparison.
 
     Parameters
@@ -138,10 +143,12 @@ def lt(column: object, value: object) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column < value)  # type: ignore[operator]
+    column_expr = cast("Any", column)
+    comparison: it.BooleanValue = cast("it.BooleanValue", column_expr < value)
+    return comparison
 
 
-def ne(column: object, value: object) -> BooleanValue:
+def ne(column: it.Value, value: object) -> it.BooleanValue:
     """Type-safe not-equal comparison.
 
     Parameters
@@ -156,10 +163,12 @@ def ne(column: object, value: object) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column != value)  # type: ignore[operator]
+    column_expr = cast("Any", column)
+    comparison: it.BooleanValue = cast("it.BooleanValue", column_expr != value)
+    return comparison
 
 
-def count_gt(expr: object, value: int) -> BooleanValue:
+def count_gt(expr: it.Value, value: int) -> it.BooleanValue:
     """Type-safe count > value comparison.
 
     Use this for expressions like `table.count() > 0`.
@@ -176,10 +185,11 @@ def count_gt(expr: object, value: int) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", expr > value)  # type: ignore[operator]
+    comparison: it.BooleanValue = cast("it.BooleanValue", cast("Any", expr) > value)
+    return comparison
 
 
-def ilike(column: object, pattern: str) -> BooleanValue:
+def ilike(column: it.StringValue, pattern: str) -> it.BooleanValue:
     """Type-safe ILIKE pattern match.
 
     Parameters
@@ -194,10 +204,10 @@ def ilike(column: object, pattern: str) -> BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("BooleanValue", column.ilike(pattern))  # type: ignore[attr-defined]
+    return cast("it.BooleanValue", column.ilike(pattern))
 
 
-def and_predicates(*predicates: object) -> BooleanValue:
+def and_predicates(*predicates: object) -> it.BooleanValue:
     """Combine multiple Ibis predicates with AND.
 
     Parameters
@@ -229,11 +239,11 @@ def and_predicates(*predicates: object) -> BooleanValue:
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
         # The & operator on BooleanValue returns BooleanValue
-        result &= ibis_bool(pred)  # type: ignore[assignment]
+        result = cast("it.BooleanValue", result & ibis_bool(pred))
     return result
 
 
-def or_predicates(*predicates: object) -> BooleanValue:
+def or_predicates(*predicates: object) -> it.BooleanValue:
     """Combine multiple Ibis predicates with OR.
 
     Parameters
@@ -265,11 +275,11 @@ def or_predicates(*predicates: object) -> BooleanValue:
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
         # The | operator on BooleanValue returns BooleanValue
-        result |= ibis_bool(pred)  # type: ignore[assignment]
+        result = cast("it.BooleanValue", result | ibis_bool(pred))
     return result
 
 
-def filter_by[TableT: "Table"](table: TableT, *predicates: object) -> TableT:
+def filter_by[TableT: it.Table](table: TableT, *predicates: object) -> TableT:
     """Filter an Ibis table with type-safe predicates.
 
     This is a convenience wrapper around `table.filter()` that handles
@@ -297,7 +307,7 @@ def filter_by[TableT: "Table"](table: TableT, *predicates: object) -> TableT:
     ... )
     """
     typed_predicates = [ibis_bool(p) for p in predicates]
-    return table.filter(typed_predicates)  # type: ignore[return-value]
+    return cast("TableT", table.filter(typed_predicates))
 
 
 __all__ = [

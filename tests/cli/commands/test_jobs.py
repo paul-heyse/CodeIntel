@@ -6,7 +6,7 @@ with fake dependencies.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +20,7 @@ from codeintel.cli.commands.jobs import (
     ListJobs,
 )
 from codeintel.cli.core.result_types import ActionResult, ListResult
+from codeintel.cli.context import CommandContext
 from codeintel.cli.deps.protocols import JobManagerProtocol
 from codeintel.cli.jobs import JobStatus
 from codeintel.cli.services.jobs import JobService
@@ -167,10 +168,34 @@ class FakeJobManager:
         self._cleanup_count += 1
         return 5  # Fake cleanup count
 
+    def submit(self, operation_id: str, params: dict[str, Any]) -> str:
+        """Record a submitted job and return its identifier.
+
+        Returns
+        -------
+        str
+            Generated job identifier.
+        """
+        _ = params
+        job_id = f"job-{len(self._jobs) + 1:03d}"
+        self._jobs[job_id] = FakeJobInfo(
+            job_id=job_id,
+            operation_id=operation_id,
+            status=JobStatus.PENDING,
+            created_at="2024-01-01T00:00:00Z",
+        )
+        return job_id
+
 
 @contextmanager
-def job_context(jobs: JobManagerProtocol | None = None):
-    """Create CommandContext with a configured JobService."""
+def job_context(jobs: JobManagerProtocol | None = None) -> Iterator[CommandContext]:
+    """Create CommandContext with a configured JobService.
+
+    Yields
+    ------
+    object
+        CommandContext wired with a JobService instance.
+    """
     fake_manager = jobs or FakeJobManager()
     job_service = JobService(manager=fake_manager)  # type: ignore[arg-type]
 

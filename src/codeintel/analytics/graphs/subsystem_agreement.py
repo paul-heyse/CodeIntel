@@ -12,7 +12,13 @@ from codeintel.storage.sql.builder import ensure_schema
 log = logging.getLogger(__name__)
 
 SUBSYSTEM_AGREEMENT_COLS = [
-    "repo", "commit", "module", "subsystem_id", "import_community_id", "agrees", "created_at",
+    "repo",
+    "commit",
+    "module",
+    "subsystem_id",
+    "import_community_id",
+    "agrees",
+    "created_at",
 ]
 
 

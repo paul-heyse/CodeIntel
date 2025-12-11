@@ -36,6 +36,7 @@ from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.graphs.plugins.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.ingestion.adapters import IngestStorageService
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -136,16 +137,22 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     Path | None
         Absolute path to source root, or None if not found.
     """
-    con = gateway.con
     try:
-        row = con.execute(
-            "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        if row and row[0]:
-            return Path(row[0])
-    except Exception as e:  # noqa: BLE001
-        log.debug("cfg_dfg: Could not get source root: %s", e)
+        snapshots = gateway.ibis.table("core.snapshots")
+        expr = (
+            snapshots.filter(
+                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
+            )
+            .select(snapshots.source_root)
+            .limit(1)
+        )
+        df = expr.execute()
+        if not getattr(df, "empty", True):
+            value = df.iloc[0][0]
+            if value:
+                return Path(str(value))
+    except DuckDBError as exc:
+        log.debug("cfg_dfg: Could not get source root: %s", exc)
     return None
 
 

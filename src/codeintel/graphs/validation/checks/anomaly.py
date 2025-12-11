@@ -13,6 +13,7 @@ from codeintel.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -28,18 +29,25 @@ def symbol_community_findings(
     list[dict[str, object]]
         Findings for symbol community anomalies.
     """
-    comm_counts = gateway.con.execute(
-        """
-        SELECT symbol_community_id, COUNT(*) AS count
-        FROM analytics.symbol_graph_metrics_modules
-        WHERE repo = ? AND commit = ? AND symbol_community_id IS NOT NULL
-        GROUP BY symbol_community_id
-        HAVING count > ?
-        """,
-        [repo, commit, SYMBOL_COMMUNITY_MIN],
-    ).fetchall()
-    if not comm_counts:
+    try:
+        metrics = gateway.ibis.table("analytics.symbol_graph_metrics_modules")
+        expr = (
+            metrics.filter(
+                (metrics.repo == repo)
+                & (metrics.commit == commit)
+                & metrics.symbol_community_id.notnull()
+            )
+            .group_by(metrics.symbol_community_id)
+            .aggregate(count=metrics.symbol_community_id.count())
+            .filter(lambda t: t.count > SYMBOL_COMMUNITY_MIN)
+        )
+        comm_counts_df = expr.execute()
+    except DuckDBError:
         return []
+
+    if getattr(comm_counts_df, "empty", True):
+        return []
+    comm_counts = list(comm_counts_df.itertuples(index=False, name=None))
     largest = max(comm_counts, key=lambda row: row[1])
     log.warning("Validation: large symbol communities detected (largest size %d)", largest[1])
     return [
@@ -65,14 +73,15 @@ def subsystem_disagreement_findings(
     list[dict[str, object]]
         Findings for subsystem disagreement anomalies.
     """
-    disagreements = gateway.con.execute(
-        """
-        SELECT module, subsystem_id, import_community_id
-        FROM analytics.subsystem_agreement
-        WHERE repo = ? AND commit = ? AND agrees = false
-        """,
-        [repo, commit],
-    ).fetchall()
+    try:
+        agreement = gateway.ibis.table("analytics.subsystem_agreement")
+        disagreements_df = agreement.filter(
+            (agreement.repo == repo) & (agreement.commit == commit) & (~agreement.agrees)
+        ).select(agreement.module, agreement.subsystem_id, agreement.import_community_id).execute()
+    except DuckDBError:
+        return []
+
+    disagreements = list(disagreements_df.itertuples(index=False, name=None)) if not getattr(disagreements_df, "empty", True) else []
     if not disagreements:
         return []
     sample = ", ".join(str(row[0]) for row in disagreements[:SAMPLE_LIMIT])

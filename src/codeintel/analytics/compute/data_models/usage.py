@@ -15,9 +15,21 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.config import DataModelUsageStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import DataModelRow, fetch_models
 from codeintel.storage.sql.builder import ensure_schema
+
+DATA_MODEL_USAGE_COLS = [
+    "repo",
+    "commit",
+    "model_id",
+    "function_goid_h128",
+    "usage_kinds_json",
+    "evidence_json",
+    "context_json",
+    "created_at",
+]
 
 log = logging.getLogger(__name__)
 
@@ -460,10 +472,8 @@ def compute_data_model_usage(
     """
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
-    con.execute(
-        "DELETE FROM analytics.data_model_usage WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.data_model_usage", repo=cfg.repo, commit=cfg.commit)
 
     models = _load_models(gateway, cfg.repo, cfg.commit)
     if not models:
@@ -501,14 +511,10 @@ def compute_data_model_usage(
     rows_to_insert = _build_usage_rows(artifacts=artifacts, cfg=cfg)
 
     if rows_to_insert:
-        con.executemany(
-            """
-            INSERT INTO analytics.data_model_usage (
-                repo, commit, model_id, function_goid_h128,
-                usage_kinds_json, evidence_json, context_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.data_model_usage",
             rows_to_insert,
+            columns=DATA_MODEL_USAGE_COLS,
         )
     log.info(
         "data_model_usage populated: %d rows for %s@%s",

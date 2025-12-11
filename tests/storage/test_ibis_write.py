@@ -9,6 +9,10 @@ import pandas as pd
 import pytest
 
 from codeintel.storage.ibis_adapter import OnConflict, WriteResult
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_instance,
+)
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
@@ -56,15 +60,15 @@ def test_write_dataframe_basic(write_gateway: StorageGateway) -> None:
     result = write_gateway.ibis.write("analytics.write_test", df)
 
     expected_rows = 3
-    assert isinstance(result, WriteResult)
-    assert result.table_key == "analytics.write_test"
-    assert result.rows_affected == expected_rows
-    assert result.method == "insert_values"
+    expect_is_instance(result, WriteResult)
+    expect_equal(result.table_key, "analytics.write_test")
+    expect_equal(result.rows_affected, expected_rows)
+    expect_equal(result.method, "insert_values")
 
     # Verify data was written
     read_df = write_gateway.ibis.table("analytics.write_test").to_pandas()
-    assert len(read_df) == expected_rows
-    assert list(read_df["id"]) == [1, 2, 3]
+    expect_equal(len(read_df), expected_rows)
+    expect_equal(list(read_df["id"]), [1, 2, 3])
 
 
 def test_write_dataframe_with_columns(write_gateway: StorageGateway) -> None:
@@ -78,10 +82,10 @@ def test_write_dataframe_with_columns(write_gateway: StorageGateway) -> None:
     )
 
     expected_rows = 2
-    assert result.rows_affected == expected_rows
+    expect_equal(result.rows_affected, expected_rows)
 
     read_df = write_gateway.ibis.table("analytics.write_test").to_pandas()
-    assert len(read_df) == expected_rows
+    expect_equal(len(read_df), expected_rows)
 
 
 def test_write_tuples_basic(write_gateway: StorageGateway) -> None:
@@ -95,11 +99,11 @@ def test_write_tuples_basic(write_gateway: StorageGateway) -> None:
     )
 
     expected_rows = 2
-    assert result.rows_affected == expected_rows
-    assert result.method == "insert_values"
+    expect_equal(result.rows_affected, expected_rows)
+    expect_equal(result.method, "insert_values")
 
     read_df = write_gateway.ibis.table("analytics.write_test").to_pandas()
-    assert len(read_df) == expected_rows
+    expect_equal(len(read_df), expected_rows)
 
 
 def test_write_tuples_empty(write_gateway: StorageGateway) -> None:
@@ -110,8 +114,8 @@ def test_write_tuples_empty(write_gateway: StorageGateway) -> None:
         columns=["id", "name", "value"],
     )
 
-    assert result.rows_affected == 0
-    assert result.method == "noop"
+    expect_equal(result.rows_affected, 0)
+    expect_equal(result.method, "noop")
 
 
 def test_write_ibis_expression_basic(write_gateway: StorageGateway) -> None:
@@ -127,14 +131,14 @@ def test_write_ibis_expression_basic(write_gateway: StorageGateway) -> None:
     # Write to a new insert (same table for simplicity)
     result = write_gateway.ibis.write("analytics.write_test", transformed)
 
-    assert result.method == "insert_select"
+    expect_equal(result.method, "insert_select")
     # rows_affected is -1 for INSERT...SELECT (not known without counting)
-    assert result.rows_affected == -1
+    expect_equal(result.rows_affected, -1)
 
     # Verify we now have 4 rows (2 original + 2 from transform)
     expected_rows = 4
     read_df = write_gateway.ibis.table("analytics.write_test").to_pandas()
-    assert len(read_df) == expected_rows
+    expect_equal(len(read_df), expected_rows)
 
 
 def test_upsert_insert_new_rows(write_gateway: StorageGateway) -> None:
@@ -149,11 +153,11 @@ def test_upsert_insert_new_rows(write_gateway: StorageGateway) -> None:
     )
 
     expected_rows = 2
-    assert result.method == "upsert"
-    assert result.rows_affected == expected_rows
+    expect_equal(result.method, "upsert")
+    expect_equal(result.rows_affected, expected_rows)
 
     read_df = write_gateway.ibis.table("analytics.upsert_test").to_pandas()
-    assert len(read_df) == expected_rows
+    expect_equal(len(read_df), expected_rows)
 
 
 def test_upsert_updates_on_conflict(write_gateway: StorageGateway) -> None:
@@ -176,9 +180,9 @@ def test_upsert_updates_on_conflict(write_gateway: StorageGateway) -> None:
 
     # Verify update occurred
     read_df = write_gateway.ibis.table("analytics.upsert_test").to_pandas()
-    assert len(read_df) == 1
-    assert read_df.iloc[0]["name"] == "updated"
-    assert read_df.iloc[0]["value"] == expected_value
+    expect_equal(len(read_df), 1)
+    expect_equal(read_df.iloc[0]["name"], "updated")
+    expect_equal(read_df.iloc[0]["value"], expected_value)
 
 
 def test_upsert_selective_update_columns(write_gateway: StorageGateway) -> None:
@@ -201,9 +205,9 @@ def test_upsert_selective_update_columns(write_gateway: StorageGateway) -> None:
 
     # Verify only value was updated
     read_df = write_gateway.ibis.table("analytics.upsert_test").to_pandas()
-    assert len(read_df) == 1
-    assert read_df.iloc[0]["name"] == "original"  # Not updated
-    assert read_df.iloc[0]["value"] == expected_value  # Updated
+    expect_equal(len(read_df), 1)
+    expect_equal(read_df.iloc[0]["name"], "original")  # Not updated
+    expect_equal(read_df.iloc[0]["value"], expected_value)  # Updated
 
 
 def test_write_unqualified_table_key_raises(write_gateway: StorageGateway) -> None:

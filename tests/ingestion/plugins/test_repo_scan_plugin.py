@@ -40,8 +40,30 @@ async def test_execute_populates_modules_and_repo_map(
     )
     plugin = RepoScanPlugin()
     tables = (
-        TableSchema("core", "modules", [Column("module", "VARCHAR")]),
-        TableSchema("core", "repo_map", [Column("repo", "VARCHAR")]),
+        TableSchema(
+            "core",
+            "modules",
+            [
+                Column("module", "VARCHAR"),
+                Column("path", "VARCHAR"),
+                Column("repo", "VARCHAR"),
+                Column("commit", "VARCHAR"),
+                Column("language", "VARCHAR"),
+                Column("tags", "VARCHAR"),
+                Column("owners", "VARCHAR"),
+            ],
+        ),
+        TableSchema(
+            "core",
+            "repo_map",
+            [
+                Column("repo", "VARCHAR"),
+                Column("commit", "VARCHAR"),
+                Column("modules", "JSON"),
+                Column("overlays", "JSON"),
+                Column("generated_at", "VARCHAR"),
+            ],
+        ),
     )
     ctx = build_target_context_for_plugin(
         plugin,
@@ -103,7 +125,19 @@ async def test_compute_row_counts_handles_missing_table(
         target=build_repo_target(
             plugin,
             (
-                TableSchema("core", "modules", [Column("module", "VARCHAR")]),
+                TableSchema(
+                    "core",
+                    "modules",
+                    [
+                        Column("module", "VARCHAR"),
+                        Column("path", "VARCHAR"),
+                        Column("repo", "VARCHAR"),
+                        Column("commit", "VARCHAR"),
+                        Column("language", "VARCHAR"),
+                        Column("tags", "VARCHAR"),
+                        Column("owners", "VARCHAR"),
+                    ],
+                ),
                 TableSchema("core", "missing_table", [Column("id", "INTEGER")]),
             ),
         ),
@@ -140,7 +174,19 @@ async def test_row_counts_ignore_absent_tables_without_errors(
         target=build_repo_target(
             plugin,
             (
-                TableSchema("core", "modules", [Column("module", "VARCHAR")]),
+                TableSchema(
+                    "core",
+                    "modules",
+                    [
+                        Column("module", "VARCHAR"),
+                        Column("path", "VARCHAR"),
+                        Column("repo", "VARCHAR"),
+                        Column("commit", "VARCHAR"),
+                        Column("language", "VARCHAR"),
+                        Column("tags", "VARCHAR"),
+                        Column("owners", "VARCHAR"),
+                    ],
+                ),
                 TableSchema("core", "absent_table", [Column("id", "INTEGER")]),
             ),
         ),

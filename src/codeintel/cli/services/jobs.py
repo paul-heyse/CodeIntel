@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from codeintel.cli.deps.protocols import JobManagerProtocol
 from codeintel.cli.jobs import JobInfo, JobManager, JobStatus, get_job_manager
 
 if TYPE_CHECKING:
@@ -32,17 +33,17 @@ class JobService:
     >>> job = service.get_status("abc123")
     """
 
-    def __init__(self, manager: JobManager | None = None) -> None:
+    def __init__(self, manager: JobManagerProtocol | None = None) -> None:
         """Initialize job service."""
         self._manager = manager
 
     @property
-    def manager(self) -> JobManager:
+    def manager(self) -> JobManagerProtocol:
         """Get the job manager instance.
 
         Returns
         -------
-        JobManager
+        JobManagerProtocol
             Job manager (singleton or provided instance).
         """
         if self._manager is None:

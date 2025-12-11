@@ -59,6 +59,18 @@ from codeintel.storage.sql.builder import ensure_schema
 log = logging.getLogger(__name__)
 
 
+def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """
+    Convert DataFrame rows into plain dictionaries.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Records returned by ``DataFrame.to_dict(orient="records")``.
+    """
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+
+
 @dataclass(frozen=True)
 class FunctionAnalyticsResult:
     """Pure analysis output for function metrics/types plus validation."""
@@ -433,14 +445,14 @@ def _load_goids(
         "start_line",
         "end_line",
     )
-    df = expr.execute()
+    df = cast("pd.DataFrame", expr.execute())
 
     if df.empty:
         log.info("No function GOIDs found for repo=%s commit=%s", cfg.repo, cfg.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+    for record in _to_records(df):
         rel_path = str(record["rel_path"]).replace("\\", "/")
         goid_row: GoidRow = {
             "goid_h128": int(record["goid_h128"]),

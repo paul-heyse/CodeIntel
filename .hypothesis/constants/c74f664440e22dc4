@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/datasets.py
+# hypothesis_version: 6.148.7
+
+['/datasets', '/datasets/specs', '_LocalDatasetMixin', 'capabilities', 'dataset', 'dataset_name', 'dataset_schema', 'dataset_specs', 'description', 'dict[str, bool]', 'dict[str, object]', 'docs_view', 'family', 'gateway', 'is_docs_view', 'is_read_only', 'is_view', 'lenient', 'limit', 'list[object]', 'list_datasets', 'meta', 'name', 'offset', 'owner', 'read_dataset_rows', 'read_only', 'schema_version', 'stable_id', 'str', 'str | None', 'strict', 'table', 'table_key']

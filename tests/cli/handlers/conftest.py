@@ -23,8 +23,8 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.cli_context import CliTestContext, create_cli_test_context
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.context import TestContext, create_test_context
-from tests._helpers.harnesses.datasets import DatasetHandlerHarness, dataset_handler_harness
 from tests._helpers.harnesses.cli import CliHandlerHarness
+from tests._helpers.harnesses.datasets import DatasetHandlerHarness, dataset_handler_harness
 from tests._helpers.harnesses.docs import DocsHandlerHarness, docs_handler_harness
 from tests._helpers.harnesses.storage import StorageHandlerHarness, storage_macro_harness
 from tests._helpers.repo import write_canonical_repo
@@ -33,6 +33,7 @@ from tests._helpers.serving_contexts import (
     ProvisionedServiceContext,
     build_provisioned_service_context,
 )
+from tests.cli._harness import OperationTestHarness
 from tests.serving.mcp.conftest import McpBackendComponents
 
 # Type aliases exported for use by test modules
@@ -257,27 +258,50 @@ def cli_handler_harness_fixture(tmp_path: Path) -> Iterator[CliHandlerHarness]:
 
 @pytest.fixture
 def dataset_handler_harness_fixture(tmp_path: Path) -> Iterator[DatasetHandlerHarness]:
-    """Provide dataset handler harness with real dependencies."""
+    """Provide dataset handler harness with real dependencies.
+
+    Yields
+    ------
+    DatasetHandlerHarness
+        Harness configured with dataset contracts and runtime stub.
+    """
     with dataset_handler_harness(tmp_path) as harness:
         yield harness
 
 
 @pytest.fixture
 def docs_handler_harness_fixture(tmp_path: Path) -> Iterator[DocsHandlerHarness]:
-    """Provide docs handler harness with runtime stub and gateway."""
+    """Provide docs handler harness with runtime stub and gateway.
+
+    Yields
+    ------
+    DocsHandlerHarness
+        Harness prepared for docs handlers.
+    """
     with docs_handler_harness(tmp_path) as harness:
         yield harness
 
 
 @pytest.fixture
 def storage_macro_harness_fixture(tmp_path: Path) -> Iterator[StorageHandlerHarness]:
-    """Provide storage handler harness with seeded macros/profiles."""
+    """Provide storage handler harness with seeded macros/profiles.
+
+    Yields
+    ------
+    StorageHandlerHarness
+        Harness configured with storage macros.
+    """
     with storage_macro_harness(tmp_path) as harness:
         yield harness
 
 
 @pytest.fixture
 def operation_registry_harness_fixture() -> OperationTestHarness:
-    """Ensure operation registry is loaded for ops handler tests."""
-    get_registry()
+    """Ensure operation registry is loaded for ops handler tests.
+
+    Returns
+    -------
+    OperationTestHarness
+        Harness with registry initialized.
+    """
     return OperationTestHarness(render=False)

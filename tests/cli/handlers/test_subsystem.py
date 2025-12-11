@@ -66,12 +66,13 @@ def test_subsystem_list_handler_returns_ok_with_subsystems(
 
     ctx_params: dict[str, object] = {"repo": TEST_REPO, "commit": TEST_COMMIT}
     backend = architecture_service_context.backend
-    backend.list_subsystems = MagicMock(return_value=mock_response)  # type: ignore[attr-defined]
 
-    with command_context_factory(ctx_params) as ctx:
+    with patch.object(
+        backend, "list_subsystems", return_value=mock_response
+    ) as list_subsystems, command_context_factory(ctx_params) as ctx:
         result = subsystem_list_handler(ctx)
 
-    backend.list_subsystems.assert_called_once_with(limit=0, role=None, q=None)
+    list_subsystems.assert_called_once_with(limit=0, role=None, q=None)
     expect_true(result.success)
     expect_is_not_none(result.data)
     expect_is_instance(result.data, SubsystemListResult)

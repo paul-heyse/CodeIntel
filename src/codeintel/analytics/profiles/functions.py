@@ -822,7 +822,7 @@ def write_function_profile_rows(
         prepared_statements_fn=prepared_statements_dynamic,
     )
     return write_rows_with_registry_guard(
-        gateway.con,
+        gateway,
         rows=rows_list,
         context=context,
         delete_on_empty=False,

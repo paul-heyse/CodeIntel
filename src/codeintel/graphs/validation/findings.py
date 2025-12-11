@@ -20,7 +20,7 @@ from codeintel.core.validation import (
     cap_findings,
     has_error_findings,
 )
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -131,12 +131,11 @@ def persist_findings(
     """
     if not findings:
         return
-    con = gateway.con
-    ensure_schema(con, "analytics.graph_validation")
-    con.execute(
-        "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    try:
+        table = gateway.ibis.table("analytics.graph_validation")
+        gateway.ibis.delete("analytics.graph_validation", where=(table.repo == repo) & (table.commit == commit))
+    except DuckDBError:
+        return
     reporter = GraphValidationReporter(repo=repo, commit=commit)
     for finding in findings:
         graph_name = str(finding.get("check_name") or "graph_validation")
