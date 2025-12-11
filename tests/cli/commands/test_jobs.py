@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import Any
 
 from codeintel.cli.commands.jobs import (
@@ -19,9 +18,10 @@ from codeintel.cli.commands.jobs import (
     JobInfo,
     ListJobs,
 )
-from codeintel.cli.core.result_types import ActionResult, ListResult
 from codeintel.cli.context import CommandContext
+from codeintel.cli.core.result_types import ActionResult, ListResult
 from codeintel.cli.deps.protocols import JobManagerProtocol
+from codeintel.cli.jobs import JobInfo as JobModel
 from codeintel.cli.jobs import JobStatus
 from codeintel.cli.services.jobs import JobService
 from tests._helpers.assertions.expectation_assertions import (
@@ -34,36 +34,25 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.cli_context import make_command_context
 
 
-@dataclass
-class FakeJobInfo:
-    """Fake JobInfo for testing."""
-
-    job_id: str
-    operation_id: str
-    status: JobStatus
-    created_at: str
-    started_at: str | None = None
-    completed_at: str | None = None
-    error: str | None = None
-
-
-class FakeJobManager:
+class FakeJobManager(JobManagerProtocol):
     """Fake job manager for testing."""
 
     def __init__(self) -> None:
         """Initialize with test data."""
-        self._jobs: dict[str, FakeJobInfo] = {
-            "job-001": FakeJobInfo(
+        self._jobs: dict[str, JobModel] = {
+            "job-001": JobModel(
                 job_id="job-001",
                 operation_id="test.op",
+                params={},
                 status=JobStatus.COMPLETED,
                 created_at="2024-01-01T00:00:00Z",
                 started_at="2024-01-01T00:00:01Z",
                 completed_at="2024-01-01T00:00:10Z",
             ),
-            "job-002": FakeJobInfo(
+            "job-002": JobModel(
                 job_id="job-002",
                 operation_id="test.op2",
+                params={},
                 status=JobStatus.RUNNING,
                 created_at="2024-01-01T00:00:00Z",
                 started_at="2024-01-01T00:00:01Z",
@@ -80,7 +69,7 @@ class FakeJobManager:
         *,
         status: JobStatus | None = None,
         limit: int = 50,
-    ) -> list[FakeJobInfo]:
+    ) -> list[JobModel]:
         """List jobs with optional filters.
 
         Parameters
@@ -92,7 +81,7 @@ class FakeJobManager:
 
         Returns
         -------
-        list[FakeJobInfo]
+        list[JobModel]
             Jobs matching the provided filters.
         """
         jobs = list(self._jobs.values())
@@ -100,7 +89,7 @@ class FakeJobManager:
             jobs = [j for j in jobs if j.status == status]
         return jobs[:limit]
 
-    def get_status(self, job_id: str) -> FakeJobInfo | None:
+    def get_status(self, job_id: str) -> JobModel | None:
         """Get job status.
 
         Parameters
@@ -110,7 +99,7 @@ class FakeJobManager:
 
         Returns
         -------
-        FakeJobInfo | None
+        JobModel | None
             Job info if found, otherwise None.
         """
         return self._jobs.get(job_id)
@@ -178,9 +167,10 @@ class FakeJobManager:
         """
         _ = params
         job_id = f"job-{len(self._jobs) + 1:03d}"
-        self._jobs[job_id] = FakeJobInfo(
+        self._jobs[job_id] = JobModel(
             job_id=job_id,
             operation_id=operation_id,
+            params={},
             status=JobStatus.PENDING,
             created_at="2024-01-01T00:00:00Z",
         )
@@ -197,7 +187,7 @@ def job_context(jobs: JobManagerProtocol | None = None) -> Iterator[CommandConte
         CommandContext wired with a JobService instance.
     """
     fake_manager = jobs or FakeJobManager()
-    job_service = JobService(manager=fake_manager)  # type: ignore[arg-type]
+    job_service = JobService(manager=fake_manager)
 
     with make_command_context({}, operation_id="test.jobs") as ctx:
         ctx.jobs = job_service

@@ -6,13 +6,14 @@ import logging
 import warnings
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, MutableMapping, ValuesView
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.config.datasets.primitives import ColumnType, TableSchema
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ __all__ = [
 # Type alias for Pandera-compatible dtypes
 # Pandera accepts: type, str, numpy.dtype, or pandas ExtensionDtype
 PanderaDtype = type | str | ExtensionDtype
+_DefaultT = TypeVar("_DefaultT")
 
 _STRING_DTYPE: PanderaDtype = pd.StringDtype()
 _INT_DTYPE: PanderaDtype = pd.Int64Dtype()
@@ -723,13 +725,9 @@ def _build_schema(contract: DatasetContract) -> DataFrameSchema:
 
 
 def _materialize_schemas() -> dict[str, DataFrameSchema]:
-    # Import lazily to avoid circular import with config.datasets
-    from codeintel.config.datasets import (  # noqa: PLC0415
-        DATASET_CONTRACTS_BY_TABLE_KEY,
-    )
-
     schemas: dict[str, DataFrameSchema] = {}
-    for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values():
+
+    for contract in get_dataset_contracts_by_table_key().values():
         if contract.schema is None or contract.is_view:
             continue
         schemas[contract.table_key] = _build_schema(contract)
@@ -1268,7 +1266,16 @@ class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):
         self._ensure_initialized()
         return len(self._data)
 
-    def get(self, key: str, default: DataFrameSchema | None = None) -> DataFrameSchema | None:
+    @overload
+    def get(self, key: str) -> DataFrameSchema | None: ...
+
+    @overload
+    def get(self, key: str, default: DataFrameSchema) -> DataFrameSchema: ...
+
+    @overload
+    def get(self, key: str, default: _DefaultT) -> DataFrameSchema | _DefaultT: ...
+
+    def get(self, key: str, default: object | None = None) -> DataFrameSchema | object | None:
         self._ensure_initialized()
         return self._data.get(key, default)
 

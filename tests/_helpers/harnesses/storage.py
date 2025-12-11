@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.cli.context import CommandContext
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.macros import ensure_ingest_macros
 from tests._helpers.cli_context import CliTestContext, create_cli_test_context
@@ -29,12 +30,12 @@ class StorageHandlerHarness:
         return self.ctx.build_dir / "db" / "codeintel.duckdb"
 
     @contextmanager
-    def command_context(self, params: dict[str, object]) -> Iterator[object]:
+    def command_context(self, params: dict[str, object]) -> Iterator[CommandContext]:
         """Yield a CommandContext with injected gateway.
 
         Yields
         ------
-        object
+        CommandContext
             CommandContext bound to the seeded gateway.
         """
         with self.ctx.command_context(params) as cmd_ctx:

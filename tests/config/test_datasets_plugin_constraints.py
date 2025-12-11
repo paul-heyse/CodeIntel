@@ -91,12 +91,10 @@ def test_plugin_table_relation_immutability() -> None:
         relation_type="produces",
         domain="analytics",
     )
-    # Frozen dataclass should raise FrozenInstanceError
-    try:
-        rel.plugin_name = "modified"  # type: ignore[misc]
-        pytest.fail("Should have raised FrozenInstanceError")
-    except AttributeError:
-        pass  # Expected
+    frozen_rel: object = rel
+    attr = "plugin_name"
+    with pytest.raises(AttributeError):
+        setattr(frozen_rel, attr, "modified")
 
 
 # ------------------------------------------------------------------

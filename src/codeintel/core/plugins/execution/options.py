@@ -48,16 +48,14 @@ class EmptyConfigSource:
 class _PydanticV2Model(Protocol):
     """Subset of the Pydantic v2 API we rely on."""
 
-    def model_copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self:
-        ...
+    def model_copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self: ...
 
 
 @runtime_checkable
 class _PydanticV1Model(Protocol):
     """Subset of the Pydantic v1 API we rely on."""
 
-    def copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self:
-        ...
+    def copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self: ...
 
 
 class PluginOptionsResolver:

@@ -27,6 +27,7 @@ from codeintel.ingestion.plugins.helpers import build_scan_profile, filter_modul
 from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
 
 if TYPE_CHECKING:
@@ -211,20 +212,19 @@ class RepoScanPlugin(TargetPlugin):
             List of discovered module records.
         """
         generated_at = datetime.now(tz=UTC).isoformat()
-        # Extract module names from ModuleRecord objects
-        module_names = [
-            getattr(m, "name", str(m)) if hasattr(m, "name") else str(m) for m in modules
-        ]
-        modules_json = json.dumps(sorted(module_names))
+        module_entries: dict[str, str] = {}
+        for module in modules:
+            name = getattr(module, "module_name", None) or getattr(module, "name", None)
+            rel_path = getattr(module, "rel_path", None) or getattr(module, "path", None)
+            if name is None:
+                name = str(module)
+            module_entries[str(name)] = str(rel_path) if rel_path is not None else ""
+        modules_json = json.dumps(module_entries)
         overlays_json = json.dumps({})
 
         # Delete existing entry for this repo/commit
-        ctx.gateway.con.execute(
-            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        )
-
-        # Insert new entry
+        policy_backend = DuckDBPolicyBackend(ctx.gateway)
+        policy_backend.delete_for_snapshot("core.repo_map", repo=ctx.repo, commit=ctx.commit)
         ctx.gateway.core.insert_repo_map(
             [(ctx.repo, ctx.commit, modules_json, overlays_json, generated_at)]
         )
@@ -246,12 +246,13 @@ class RepoScanPlugin(TargetPlugin):
         row_counts: dict[str, int] = {}
         for table_key in ctx.contract.table_keys:
             try:
-                count = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
-                    f"WHERE repo = ? AND commit = ?",
-                    [ctx.repo, ctx.commit],
-                ).fetchone()
-                row_counts[table_key] = int(count[0]) if count else 0
+                table = ctx.gateway.ibis.table(table_key)
+                count = (
+                    table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+                    .count()
+                    .execute()
+                )
+                row_counts[table_key] = int(count)
             except (RuntimeError, OSError, DuckDBCatalogException) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0

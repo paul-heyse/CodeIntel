@@ -64,15 +64,43 @@ class FunctionRepository(BaseRepository):
         -------
         int | None
             Resolved GOID when found, otherwise ``None``.
-
-        Raises
-        ------
-        ValueError
-            When a GOID value exists but is of an unexpected type.
         """
         if goid_h128 is not None:
             return goid_h128
 
+        if not (urn or (rel_path and qualname)):
+            return None
+
+        goid_from_goids = self._resolve_goid_from_goids_table(
+            urn=urn,
+            rel_path=rel_path,
+            qualname=qualname,
+        )
+        if goid_from_goids is not None:
+            return goid_from_goids
+
+        return self._resolve_goid_from_risk_factors(
+            urn=urn,
+            rel_path=rel_path,
+            qualname=qualname,
+        )
+
+    @staticmethod
+    def _coerce_goid(value: object) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float, str, Decimal)):
+            return int(value)
+        message = f"Unexpected goid type: {type(value)!r}"
+        raise ValueError(message)
+
+    def _resolve_goid_from_goids_table(
+        self,
+        *,
+        urn: str | None,
+        rel_path: str | None,
+        qualname: str | None,
+    ) -> int | None:
         goids = self._ibis_table("core.goids")
         expr = goids.filter(and_predicates(goids.repo == self.repo, goids.commit == self.commit))
 
@@ -83,20 +111,38 @@ class FunctionRepository(BaseRepository):
                 and_predicates(goids.rel_path == rel_path, goids.qualname == qualname)
             )
         else:
-            # No valid filter criteria
             return None
 
         records = self._validated_records("core.goids", expr.limit(1))
-
         if not records:
             return None
-        value = records[0].get("goid_h128")
-        if value is None:
+        return self._coerce_goid(records[0].get("goid_h128"))
+
+    def _resolve_goid_from_risk_factors(
+        self,
+        *,
+        urn: str | None,
+        rel_path: str | None,
+        qualname: str | None,
+    ) -> int | None:
+        factors = self._ibis_table("analytics.goid_risk_factors")
+        expr = factors.filter(
+            and_predicates(factors.repo == self.repo, factors.commit == self.commit)
+        )
+
+        if urn:
+            expr = expr.filter(ibis_bool(factors.urn == urn))
+        elif rel_path and qualname:
+            expr = expr.filter(
+                and_predicates(factors.rel_path == rel_path, factors.qualname == qualname)
+            )
+        else:
             return None
-        if isinstance(value, (int, float, str, Decimal)):
-            return int(value)
-        message = f"Unexpected goid type: {type(value)!r}"
-        raise ValueError(message)
+
+        records = self._validated_records("analytics.goid_risk_factors", expr.limit(1))
+        if not records:
+            return None
+        return self._coerce_goid(records[0].get("function_goid_h128"))
 
     def get_function_summary_by_goid(self, goid_h128: int) -> RowDict | None:
         """

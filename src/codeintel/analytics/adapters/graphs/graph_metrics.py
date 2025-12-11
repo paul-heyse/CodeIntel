@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
+import ibis
 import pandas as pd
 from ibis.common.exceptions import IbisError
 
@@ -211,7 +212,10 @@ def load_symbol_module_edges(
             su.left_join(m_def, cast("Any", su.def_path == m_def.path))
             .left_join(m_use, cast("Any", su.use_path == m_use.path))
             .filter(
-                cast("Any", (~m_def.module.isnull()) & (~m_use.module.isnull()))
+                cast(
+                    "Any",
+                    (~ibis.isnull(m_def.module)) & (~ibis.isnull(m_use.module)),
+                )
             )
             .select(
                 use_module=m_use.module,

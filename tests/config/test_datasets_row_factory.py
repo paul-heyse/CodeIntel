@@ -6,6 +6,7 @@ from typing import get_type_hints
 
 import pandas as pd
 import pytest
+from pandas.api.extensions import ExtensionDtype
 from pandera import Column, DataFrameSchema
 
 from codeintel.config.datasets.row_factory import (
@@ -198,9 +199,10 @@ def test_serializer_missing_key_raises_error() -> None:
         (pd.StringDtype(), str),
     ],
 )
-def test_dtype_mapping_pandas_types(dtype: object, expected_type: type[object]) -> None:
+def test_dtype_mapping_pandas_types(dtype: ExtensionDtype, expected_type: type[object]) -> None:
     """Map pandas extension dtypes to Python types."""
-    schema = DataFrameSchema({"col": Column(dtype)})  # type: ignore[arg-type]
+    series_dtype = pd.Series([0], dtype=dtype).dtype
+    schema = DataFrameSchema({"col": Column(series_dtype)})
     result = typed_dict_from_pandera("TestRow", schema)
     hints = get_type_hints(result)
     _require(

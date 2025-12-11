@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 
+import ibis
+import ibis.expr.types as it
+from ibis import BaseBackend
+
+from codeintel.analytics.compute.ibis_utils import safe_ratio, zero_if_null
 from codeintel.analytics.profiles.types import ModuleProfileInputs
 from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
@@ -25,8 +31,18 @@ from codeintel.config.datasets import (
     ModuleProfileRowModel,
     module_profile_row_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql.builder import ensure_schema, prepared_statements_dynamic
+from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.ibis_types import (
+    bool_not,
+    col_count,
+    col_max,
+    col_mean,
+    col_sum,
+    filter_by,
+    ibis_bool,
+)
+
+log = logging.getLogger(__name__)
 
 
 def compute_module_profile_inputs(
@@ -41,6 +57,7 @@ def compute_module_profile_inputs(
         Snapshot handle for module profile helpers.
     """
     return ModuleProfileInputs(
+        gateway=gateway,
         con=gateway.con,
         repo=cfg.repo,
         commit=cfg.commit,
@@ -67,146 +84,99 @@ def build_module_profile_rows(
     ValueError
         If an unexpected module table name is provided.
     """
-    con = inputs.con
-    sql_core = """
-        WITH func_stats AS (
-            SELECT
-                repo,
-                commit,
-                module,
-                COUNT(*) AS function_count,
-                SUM(COALESCE(loc, 0)) AS total_loc,
-                SUM(COALESCE(logical_loc, 0)) AS total_logical_loc,
-                SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) AS high_risk_function_count,
-                SUM(CASE WHEN risk_level = 'medium' THEN 1 ELSE 0 END)
-                    AS medium_risk_function_count,
-                SUM(CASE WHEN risk_level = 'low' THEN 1 ELSE 0 END) AS low_risk_function_count,
-                MAX(risk_score) AS max_risk_score,
-                AVG(risk_score) AS avg_risk_score,
-                SUM(CASE WHEN tested THEN 1 ELSE 0 END) AS tested_function_count,
-                SUM(CASE WHEN NOT tested THEN 1 ELSE 0 END) AS untested_function_count
-            FROM analytics.function_profile
-            WHERE repo = ? AND commit = ?
-            GROUP BY repo, commit, module
-        ),
-        files AS (
-            SELECT
-                repo,
-                commit,
-                module,
-                COUNT(*) AS file_count,
-                SUM(class_count) AS class_count,
-                AVG(ast_complexity) AS avg_file_complexity,
-                MAX(ast_complexity) AS max_file_complexity
-            FROM analytics.file_profile
-            WHERE repo = ? AND commit = ?
-            GROUP BY repo, commit, module
-        ),
-        mod AS (
-            SELECT repo, commit, module, path, language, tags, owners
-            FROM core.modules
-        ),
-        imports AS (
-            SELECT
-                repo,
-                commit,
-                src_module AS module,
-                MAX(src_fan_out) AS import_fan_out,
-                MAX(dst_fan_in) FILTER (WHERE dst_module = src_module) AS import_fan_in,
-                MAX(cycle_group) AS cycle_group,
-                MAX(CASE WHEN cycle_group IS NOT NULL THEN 1 ELSE 0 END) AS in_cycle_flag
-            FROM graph.import_graph_edges
-            WHERE repo = ? AND commit = ?
-            GROUP BY repo, commit, src_module
-        ),
-        roles AS (
-            SELECT repo, commit, module, role, role_confidence, role_sources_json
-            FROM analytics.semantic_roles_modules
-            WHERE repo = ? AND commit = ?
-        )
-        SELECT
-            mod.repo,
-            mod.commit,
-            mod.module,
-            mod.path,
-            mod.language,
-            COALESCE(files.file_count, 0),
-            COALESCE(func_stats.total_loc, 0),
-            COALESCE(func_stats.total_logical_loc, 0),
-            COALESCE(func_stats.function_count, 0),
-            COALESCE(files.class_count, 0),
-            files.avg_file_complexity,
-            files.max_file_complexity,
-            COALESCE(func_stats.high_risk_function_count, 0),
-            COALESCE(func_stats.medium_risk_function_count, 0),
-            COALESCE(func_stats.low_risk_function_count, 0),
-            func_stats.max_risk_score,
-            func_stats.avg_risk_score,
-            CASE
-                WHEN COALESCE(func_stats.tested_function_count, 0)
-                     + COALESCE(func_stats.untested_function_count, 0) > 0
-                THEN
-                    CAST(func_stats.tested_function_count AS DOUBLE)
-                    / (func_stats.tested_function_count + func_stats.untested_function_count)
-                ELSE NULL
-            END AS module_coverage_ratio,
-            func_stats.tested_function_count,
-            func_stats.untested_function_count,
-            COALESCE(imports.import_fan_in, 0),
-            COALESCE(imports.import_fan_out, 0),
-            imports.cycle_group,
-            imports.in_cycle_flag > 0 AS in_cycle,
-            roles.role,
-            roles.role_confidence,
-            roles.role_sources_json,
-            mod.tags,
-            mod.owners,
-            ?
-        FROM mod
-        LEFT JOIN func_stats
-          ON func_stats.module = mod.module
-         AND func_stats.repo = mod.repo
-         AND func_stats.commit = mod.commit
-        LEFT JOIN files
-          ON files.module = mod.module
-         AND files.repo = mod.repo
-         AND files.commit = mod.commit
-        LEFT JOIN imports
-          ON imports.module = mod.module
-         AND imports.repo = mod.repo
-         AND imports.commit = mod.commit
-        LEFT JOIN roles
-          ON roles.module = mod.module
-         AND roles.repo = mod.repo
-         AND roles.commit = mod.commit
-        WHERE mod.repo = ?
-          AND mod.commit = ?;
-        """
-    sql_catalog = sql_core.replace("core.modules", CATALOG_MODULE_TABLE)
-    if module_table == DEFAULT_MODULE_TABLE:
-        sql = sql_core
-    elif module_table == CATALOG_MODULE_TABLE:
-        sql = sql_catalog
-    else:
+    gateway = inputs.gateway
+    repo = inputs.repo
+    commit = inputs.commit
+
+    if module_table not in {DEFAULT_MODULE_TABLE, CATALOG_MODULE_TABLE}:
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
-    rows = con.execute(
-        sql,
-        [
-            inputs.repo,
-            inputs.commit,
-            inputs.repo,
-            inputs.commit,
-            inputs.repo,
-            inputs.commit,
-            inputs.repo,
-            inputs.commit,
-            inputs.created_at,
-            inputs.repo,
-            inputs.commit,
-        ],
-    ).fetchall()
+    try:
+        modules_scoped, func_stats, files, imports, roles = _load_module_aggregates(
+            cast("BaseBackend", gateway.ibis), module_table, repo, commit
+        )
+    except DuckDBError as exc:
+        log.warning("module_profile: failed to access tables: %s", exc)
+        return
+
+    joined = (
+        modules_scoped.left_join(
+            func_stats,
+            predicates=[
+                (modules_scoped.repo, func_stats.repo),
+                (modules_scoped.commit, func_stats.commit),
+                (modules_scoped.module, func_stats.module),
+            ],
+        )
+        .left_join(
+            files,
+            predicates=[
+                (modules_scoped.repo, files.repo),
+                (modules_scoped.commit, files.commit),
+                (modules_scoped.module, files.module),
+            ],
+        )
+        .left_join(
+            imports,
+            predicates=[
+                (modules_scoped.repo, imports.repo),
+                (modules_scoped.commit, imports.commit),
+                (modules_scoped.module, imports.module),
+            ],
+        )
+        .left_join(
+            roles,
+            predicates=[
+                (modules_scoped.repo, roles.repo),
+                (modules_scoped.commit, roles.commit),
+                (modules_scoped.module, roles.module),
+            ],
+        )
+    )
+
+    tested_expr = zero_if_null(func_stats.tested_function_count)
+    untested_expr = zero_if_null(func_stats.untested_function_count)
+
+    try:
+        df = joined.select(
+            modules_scoped.repo.name("repo"),
+            modules_scoped.commit.name("commit"),
+            modules_scoped.module.name("module"),
+            modules_scoped.path.name("path"),
+            modules_scoped.language.name("language"),
+            zero_if_null(files.file_count).name("file_count"),
+            zero_if_null(func_stats.total_loc).name("total_loc"),
+            zero_if_null(func_stats.total_logical_loc).name("total_logical_loc"),
+            zero_if_null(func_stats.function_count).name("function_count"),
+            zero_if_null(files.class_count).name("class_count"),
+            files.avg_file_complexity.name("avg_file_complexity"),
+            files.max_file_complexity.name("max_file_complexity"),
+            zero_if_null(func_stats.high_risk_function_count).name("high_risk_function_count"),
+            zero_if_null(func_stats.medium_risk_function_count).name("medium_risk_function_count"),
+            zero_if_null(func_stats.low_risk_function_count).name("low_risk_function_count"),
+            func_stats.max_risk_score.name("max_risk_score"),
+            func_stats.avg_risk_score.name("avg_risk_score"),
+            safe_ratio(
+                tested_expr,
+                cast("it.NumericValue", tested_expr + untested_expr),
+            ).name("module_coverage_ratio"),
+            tested_expr.name("tested_function_count"),
+            untested_expr.name("untested_function_count"),
+            zero_if_null(imports.import_fan_in).name("import_fan_in"),
+            zero_if_null(imports.import_fan_out).name("import_fan_out"),
+            imports.cycle_group.name("cycle_group"),
+            zero_if_null(imports.in_cycle_flag).cast("boolean").name("in_cycle"),
+            roles.role.name("role"),
+            roles.role_confidence.name("role_confidence"),
+            roles.role_sources_json.name("role_sources_json"),
+            modules_scoped.tags.name("tags"),
+            modules_scoped.owners.name("owners"),
+            ibis.literal(inputs.created_at).name("created_at"),
+        ).execute()
+    except DuckDBError as exc:
+        log.warning("module_profile: failed to execute aggregation: %s", exc)
+        return
 
     columns = [
         "repo",
@@ -241,7 +211,7 @@ def build_module_profile_rows(
         "created_at",
     ]
 
-    for row in rows:
+    for row in df.itertuples(index=False, name=None):
         record = dict(zip(columns, row, strict=False))
         yield _row_to_module_profile_model(record, inputs)
 
@@ -297,6 +267,96 @@ def _row_to_module_profile_model(
     )
 
 
+def _load_module_aggregates(
+    ibis_api: BaseBackend, module_table: str, repo: str, commit: str
+) -> tuple[it.Table, it.Table, it.Table, it.Table, it.Table]:
+    """
+    Load scoped module and aggregate tables for module profiles.
+
+    Returns
+    -------
+    tuple[Table, Table, Table, Table, Table]
+        Modules table plus function, file, import, and roles aggregates.
+    """
+    modules_table = ibis_api.table(module_table)
+    modules_scoped = filter_by(
+        modules_table,
+        modules_table.repo == repo,
+        modules_table.commit == commit,
+    )
+
+    func_profile = ibis_api.table("analytics.function_profile")
+    func_scoped = filter_by(func_profile, func_profile.repo == repo, func_profile.commit == commit)
+    func_stats = func_scoped.group_by(
+        func_profile.repo,
+        func_profile.commit,
+        func_profile.module,
+    ).aggregate(
+        function_count=col_count(func_profile.function_goid_h128),
+        total_loc=col_sum(func_profile.loc),
+        total_logical_loc=col_sum(func_profile.logical_loc),
+        high_risk_function_count=col_sum(
+            ibis_bool(func_profile.risk_level == "high").cast("int64")
+        ),
+        medium_risk_function_count=col_sum(
+            ibis_bool(func_profile.risk_level == "medium").cast("int64")
+        ),
+        low_risk_function_count=col_sum(
+            ibis_bool(func_profile.risk_level == "low").cast("int64")
+        ),
+        max_risk_score=col_max(func_profile.risk_score),
+        avg_risk_score=col_mean(func_profile.risk_score),
+        tested_function_count=col_sum(ibis_bool(func_profile.tested).cast("int64")),
+        untested_function_count=col_sum(bool_not(func_profile.tested).cast("int64")),
+    )
+
+    file_profile = ibis_api.table("analytics.file_profile")
+    file_scoped = filter_by(file_profile, file_profile.repo == repo, file_profile.commit == commit)
+    files = file_scoped.group_by(
+        file_profile.repo,
+        file_profile.commit,
+        file_profile.module,
+    ).aggregate(
+        file_count=file_profile.path.count(),
+        class_count=col_sum(file_profile.class_count),
+        avg_file_complexity=col_mean(file_profile.ast_complexity),
+        max_file_complexity=col_max(file_profile.ast_complexity),
+    )
+
+    imports_table = ibis_api.table("graph.import_graph_edges")
+    imports_scoped = filter_by(
+        imports_table,
+        imports_table.repo == repo,
+        imports_table.commit == commit,
+    )
+    imports = imports_scoped.group_by(
+        imports_table.repo,
+        imports_table.commit,
+        imports_table.src_module.name("module"),
+    ).aggregate(
+        import_fan_out=col_max(imports_table.src_fan_out),
+        import_fan_in=col_max(imports_table.dst_fan_in),
+        cycle_group=col_max(imports_table.cycle_group),
+        in_cycle_flag=col_sum(ibis_bool(imports_table.cycle_group.notnull()).cast("int64")),
+    )
+
+    roles_table = ibis_api.table("analytics.semantic_roles_modules")
+    roles = filter_by(
+        roles_table,
+        roles_table.repo == repo,
+        roles_table.commit == commit,
+    ).select(
+        roles_table.repo,
+        roles_table.commit,
+        roles_table.module,
+        roles_table.role,
+        roles_table.role_confidence,
+        roles_table.role_sources_json,
+    )
+
+    return modules_scoped, func_stats, files, imports, roles
+
+
 def write_module_profile_rows(
     gateway: StorageGateway, rows: Iterable[ModuleProfileRowModel]
 ) -> int:
@@ -320,9 +380,7 @@ def write_module_profile_rows(
         serialize_row=cast("SerializeRow", module_profile_row_to_tuple),
         repo=repo,
         commit=commit,
-        delete_sql="DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",
-        ensure_schema_fn=ensure_schema,
-        prepared_statements_fn=prepared_statements_dynamic,
+        ensure_schema_fn=lambda _gateway, _table: None,
     )
     return write_rows_with_registry_guard(
         gateway,

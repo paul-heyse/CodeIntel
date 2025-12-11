@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def _resolve_flag(value: object) -> bool:
     return bool(value)
 
 
-def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_flag_and_backend_config() -> None:
     """Flag resolution and backend config selection behave as expected."""
     expect_true(_resolve_flag(value=None) is False)
     expect_true(_resolve_flag(value=True) is True)
@@ -53,13 +54,25 @@ def test_resolve_flag_and_backend_config(monkeypatch: pytest.MonkeyPatch) -> Non
     expect_equal(backend.backend, "cpu")
     expect_true(backend.strict is True)
 
-    monkeypatch.setenv("CODEINTEL_GRAPH_EAGER", "true")
-    monkeypatch.setenv("CODEINTEL_GRAPH_COMMUNITY_LIMIT", "25")
-    monkeypatch.setenv("CODEINTEL_GRAPH_VALIDATION_STRICT", "0")
-    flags = build_graph_feature_flags_from_env()
-    expect_true(flags.eager_hydration is True)
-    expect_equal(flags.community_detection_limit, 25)
-    expect_true(flags.validation_strict is False)
+    prior = {
+        "CODEINTEL_GRAPH_EAGER": os.environ.get("CODEINTEL_GRAPH_EAGER"),
+        "CODEINTEL_GRAPH_COMMUNITY_LIMIT": os.environ.get("CODEINTEL_GRAPH_COMMUNITY_LIMIT"),
+        "CODEINTEL_GRAPH_VALIDATION_STRICT": os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"),
+    }
+    os.environ["CODEINTEL_GRAPH_EAGER"] = "true"
+    os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"] = "25"
+    os.environ["CODEINTEL_GRAPH_VALIDATION_STRICT"] = "0"
+    try:
+        flags = build_graph_feature_flags_from_env()
+        expect_true(flags.eager_hydration is True)
+        expect_equal(flags.community_detection_limit, 25)
+        expect_true(flags.validation_strict is False)
+    finally:
+        for key, val in prior.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
 
 
 def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:

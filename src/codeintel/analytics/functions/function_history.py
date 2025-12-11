@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import cast
+
+import pandas as pd
 
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
 from codeintel.config import FunctionHistoryStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.ibis_types import and_predicates
 
 FUNCTION_HISTORY_COLS = [
     "repo",
@@ -87,19 +89,18 @@ def compute_function_history(
 
     Parameters
     ----------
-    gateway:
+    gateway
         StorageGateway bound to the CodeIntel DuckDB database.
-    cfg:
+    cfg
         Function history configuration.
-    runner:
+    runner
         Optional shared ToolRunner for git invocations.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.function_history")
-    backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot("analytics.function_history", repo=cfg.repo, commit=cfg.commit)
+    table = gateway.ibis.table("analytics.function_history")
+    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    gateway.ibis.delete("analytics.function_history", where=where)
 
-    spans_by_path = _load_function_spans(con, cfg.repo, cfg.commit)
+    spans_by_path = _load_function_spans(gateway, cfg.repo, cfg.commit)
     if not spans_by_path:
         log.info("No function spans found for %s@%s; skipping history.", cfg.repo, cfg.commit)
         return
@@ -255,50 +256,52 @@ def _build_insert_row(
 
 
 def _load_function_spans(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     repo: str,
     commit: str,
 ) -> dict[str, list[FuncSpan]]:
-    rows = con.execute(
-        """
-        SELECT
-            fm.repo,
-            fm.commit,
-            fm.function_goid_h128,
-            fm.urn,
-            fm.rel_path,
-            m.module,
-            fm.qualname,
-            fm.start_line,
-            fm.end_line,
-            fm.loc
-        FROM analytics.function_metrics fm
-        LEFT JOIN core.modules m
-          ON m.repo = fm.repo
-         AND m.commit = fm.commit
-         AND m.path = fm.rel_path
-        WHERE fm.repo = ? AND fm.commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    metrics = gateway.ibis.table("analytics.function_metrics")
+    modules = gateway.ibis.table("core.modules")
+    join_expr = metrics.left_join(
+        modules,
+        [
+            metrics.repo == modules.repo,
+            metrics.commit == modules.commit,
+            metrics.rel_path == modules.path,
+        ],
+    )
+    expr = join_expr.filter(and_predicates(metrics.repo == repo, metrics.commit == commit)).select(
+        metrics.repo.name("repo"),
+        metrics.commit.name("commit"),
+        metrics.function_goid_h128,
+        metrics.urn,
+        metrics.rel_path,
+        modules.module,
+        metrics.qualname,
+        metrics.start_line,
+        metrics.end_line,
+        metrics.loc,
+    )
+    df = cast("pd.DataFrame", expr.execute())
+    rows = df.to_dict(orient="records")
 
     spans_by_path: dict[str, list[FuncSpan]] = {}
     for row in rows:
-        repo_val, commit_val, goid_raw, urn, rel_path, module, qualname, start, end, loc = row
-        goid = int(goid_raw)
-        module_name = module or ""
+        goid = int(row["function_goid_h128"])
+        module_name = row.get("module") or ""
+        rel_path = str(row["rel_path"])
         spans_by_path.setdefault(rel_path, []).append(
             FuncSpan(
                 goid=goid,
-                urn=str(urn),
+                urn=str(row["urn"]),
                 module=str(module_name),
-                qualname=str(qualname),
-                rel_path=str(rel_path),
-                start=int(start or 0),
-                end=int(end or 0),
-                loc=int(loc or 0),
-                repo=str(repo_val),
-                commit=str(commit_val),
+                qualname=str(row["qualname"]),
+                rel_path=rel_path,
+                start=int(row["start_line"] or 0),
+                end=int(row["end_line"] or 0),
+                loc=int(row["loc"] or 0),
+                repo=str(row["repo"]),
+                commit=str(row["commit"]),
             )
         )
     return spans_by_path

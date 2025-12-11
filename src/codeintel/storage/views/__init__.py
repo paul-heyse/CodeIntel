@@ -16,6 +16,7 @@ from duckdb import DuckDBPyConnection
 
 # Import ibis_views to ensure view builders are registered
 import codeintel.storage.views.ibis_views as _ibis_views  # noqa: F401
+from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.views.data_model_views import DATA_MODEL_VIEW_NAMES
 from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES
 from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES
@@ -28,7 +29,6 @@ from codeintel.storage.views.test_views import TEST_VIEW_NAMES
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
-    from codeintel.storage.ibis_adapter import IbisGateway
 
 ALIAS_DOCS_VIEWS: dict[str, str] = {
     "docs.v_function_profile": "analytics.function_profile",
@@ -75,8 +75,6 @@ def _get_ibis_gateway(
     TypeError
         If the provided gateway does not expose an IbisGateway.
     """
-    from codeintel.storage.ibis_adapter import IbisGateway  # noqa: PLC0415
-
     if isinstance(con_or_gateway, DuckDBPyConnection):
         ibis_con = ibis.duckdb.from_connection(con_or_gateway)
         return IbisGateway(ibis_con)

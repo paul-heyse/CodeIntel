@@ -307,11 +307,7 @@ def query_tables_by_constraint_kind(kind: ConstraintKind) -> list[str]:
     """
     result: list[str] = []
 
-    for table_key in SCHEMA_REGISTRY:
-        schema = SCHEMA_REGISTRY.get(table_key)
-        if schema is None:
-            continue
-
+    for table_key, schema in SCHEMA_REGISTRY.items():
         constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
         if constraints.by_kind(kind):
             result.append(table_key)
@@ -349,11 +345,7 @@ def get_introspection_summary() -> dict[str, object]:
     by_family: dict[str, int] = {}
     by_owner: dict[str, int] = {}
 
-    for table_key in SCHEMA_REGISTRY:
-        schema = SCHEMA_REGISTRY.get(table_key)
-        if schema is None:
-            continue
-
+    for table_key, schema in SCHEMA_REGISTRY.items():
         total_columns += len(schema.column_names())
 
         constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)

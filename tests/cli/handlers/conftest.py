@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -115,7 +116,7 @@ def handler_context_builder() -> Iterator[HandlerContextBuilder]:
         )
 
         ctx = stack.enter_context(builder.build())
-        ctx.gateway.backend = service_ctx.backend
+        cast("Any", ctx.gateway).backend = service_ctx.backend
         return ctx
 
     try:
@@ -165,7 +166,7 @@ def command_context_factory(
             .with_injected_gateway(cli_test_context.gateway)
         )
         with builder.build() as ctx:
-            ctx.gateway.backend = architecture_service_context.backend
+            cast("Any", ctx.gateway).backend = architecture_service_context.backend
             yield ctx
 
     return _build

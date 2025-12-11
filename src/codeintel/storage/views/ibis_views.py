@@ -255,10 +255,18 @@ def build_docs_function_summary(ibis_gw: IbisGateway) -> it.Table:
             rf.commit == fm.commit,
         ],
     )
-    complexity_bucket = ibis.coalesce(rf.complexity_bucket, ibis.literal("unknown"))
-    typedness_bucket = ibis.coalesce(rf.typedness_bucket, ibis.literal("unknown"))
-    typedness_source = ibis.coalesce(rf.typedness_source, ibis.literal("unknown"))
-    last_test_status = ibis.coalesce(rf.last_test_status, ibis.literal("untested"))
+    complexity_bucket = ibis.coalesce(rf.complexity_bucket, ibis.literal("unknown")).name(
+        "complexity_bucket"
+    )
+    typedness_bucket = ibis.coalesce(rf.typedness_bucket, ibis.literal("unknown")).name(
+        "typedness_bucket"
+    )
+    typedness_source = ibis.coalesce(rf.typedness_source, ibis.literal("unknown")).name(
+        "typedness_source"
+    )
+    last_test_status = ibis.coalesce(rf.last_test_status, ibis.literal("untested")).name(
+        "last_test_status"
+    )
     return joined.select(
         rf.function_goid_h128,
         rf.urn,

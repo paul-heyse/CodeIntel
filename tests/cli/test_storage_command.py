@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tests._helpers.assertions import expect_equal, expect_is_not_none
 from tests._helpers.cli import assert_exit, assert_success
 from tests._helpers.cli_project import CLIProjectHarness
@@ -19,10 +17,7 @@ def test_storage_validate_macros_success(
     assert_success(result)
 
 
-def test_storage_validate_macros_failure(
-    monkeypatch: pytest.MonkeyPatch,
-    cli_project_harness: CLIProjectHarness,
-) -> None:
+def test_storage_validate_macros_failure(cli_project_harness: CLIProjectHarness) -> None:
     """Validation error should exit with code 1 when macros are missing."""
     db_path = cli_project_harness.ctx.db_path
     gateway = cli_project_harness.ctx.gateway
@@ -31,12 +26,6 @@ def test_storage_validate_macros_failure(
     row = con.execute("SELECT COUNT(*) FROM metadata.macro_registry").fetchone()
     row = expect_is_not_none(row, message="Expected macro_registry count row")
     expect_equal(row[0], 0)
-
-    def _fail_validation(_con: object) -> None:
-        raise RuntimeError
-
-    monkeypatch.setattr("codeintel.storage.metadata.validate_macro_registry", _fail_validation)
-    monkeypatch.setattr("codeintel.cli.handlers.storage.validate_macro_registry", _fail_validation)
 
     result = cli_project_harness.invoke(["storage", "validate-macros", "--db-path", str(db_path)])
     assert_exit(result, 1)

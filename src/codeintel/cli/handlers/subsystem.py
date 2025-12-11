@@ -300,6 +300,11 @@ def subsystem_list_handler(ctx: CommandContext) -> CliResult[SubsystemListResult
     -------
     CliResult[SubsystemListResult]
         Result with subsystem list.
+
+    Raises
+    ------
+    TypeError
+        If a backend override is provided that is not a DuckDBBackend.
     """
     backend_override = getattr(ctx, "_backend_override", None) or ctx.params.raw.get(
         "_backend_override"

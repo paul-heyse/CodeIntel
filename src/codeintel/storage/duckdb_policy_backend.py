@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 import sqlglot.expressions as exp
 
 from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
+from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -691,9 +692,6 @@ class DuckDBPolicyBackend:
             creation after logging. When False, exceptions are logged
             but execution continues.
         """
-        # Import lazily to avoid circular imports
-        from codeintel.storage.views.ibis_registry import VIEW_BUILDERS  # noqa: PLC0415
-
         ibis_gateway = self.gateway.ibis
 
         for view_name, builder in VIEW_BUILDERS.items():

@@ -16,6 +16,7 @@ from ibis.expr.types import BooleanValue
 
 from codeintel.core.plugins.execution.manifest import ManifestStore
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -80,8 +81,6 @@ class DuckDBManifestStore(ManifestStore):
 
         Uses DuckDBPolicyBackend for DDL operations.
         """
-        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
-
         backend = DuckDBPolicyBackend(self._gateway)
         backend.create_schema_if_not_exists("core")
 
@@ -208,8 +207,6 @@ class DuckDBManifestStore(ManifestStore):
 
     def append_record(self, record: PluginExecutionRecord) -> None:
         """Persist a new PluginExecutionRecord using policy backend."""
-        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
-
         meta = dict(record.meta)
         repo = str(meta.pop("repo", ""))
         commit = str(meta.pop("commit", ""))

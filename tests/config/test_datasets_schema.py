@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 import pandas as pd
 import pytest
@@ -79,9 +79,10 @@ def test_metadata_with_values() -> None:
 def test_metadata_immutable() -> None:
     """Verify DatasetMetadata is immutable."""
     metadata = DatasetMetadata(description="Test")
+    metadata_any = cast("Any", metadata)
 
     with pytest.raises(AttributeError):
-        metadata.description = "Changed"  # type: ignore[misc]
+        metadata_any.description = "Changed"
 
 
 # ------------------------------------------------------------------
@@ -259,6 +260,7 @@ def test_schema_immutable(simple_pandera_schema: DataFrameSchema) -> None:
         name="test.example",
         pandera_schema=simple_pandera_schema,
     )
+    ds_any = cast("Any", ds)
 
     with pytest.raises(AttributeError):
-        ds.name = "changed"  # type: ignore[misc]
+        ds_any.name = "changed"

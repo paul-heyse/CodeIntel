@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.cli.resolution.runtime import resolve_from_params
 from codeintel.cli.services.params import ParamService
 
 if TYPE_CHECKING:
@@ -191,11 +192,6 @@ class RuntimeService:
         ResolvedRuntime
             Resolved runtime.
         """
-        # Lazy import to avoid circular dependency with cli.resolution.runtime
-        from codeintel.cli.resolution.runtime import (  # noqa: PLC0415
-            resolve_from_params,
-        )
-
         LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
         return resolve_from_params(self._params, allow_fallback=self._allow_fallback)
 

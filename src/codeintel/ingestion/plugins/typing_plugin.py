@@ -25,6 +25,7 @@ from codeintel.ingestion.adapters import (
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 from codeintel.ingestion.ports.storage import IngestStoragePort
+from codeintel.storage.ibis_types import filter_by
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -120,11 +121,10 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
     if ctx.resources.modules:
         return list(ctx.resources.modules)
     try:
-        rows = ctx.gateway.con.execute(
-            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        ).fetchall()
-        return [str(row[0]) for row in rows]
+        table = ctx.gateway.ibis.table("core.modules")
+        df = filter_by(table, table.repo == ctx.repo, table.commit == ctx.commit).select("path")
+        result = df.execute()
+        return [str(path) for path in result["path"].tolist()]
     except (RuntimeError, OSError):
         return []
 

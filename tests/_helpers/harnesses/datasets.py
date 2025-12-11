@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.handlers.datasets import DatasetDependencies
 from codeintel.config.datasets.contracts import DatasetContract
 from codeintel.storage.validation import collect_contract_issues
@@ -35,12 +36,12 @@ class DatasetHandlerHarness:
     deps: DatasetDependencies
 
     @contextmanager
-    def command_context(self, params: dict[str, object]) -> Iterator[object]:
+    def command_context(self, params: dict[str, object]) -> Iterator[CommandContext]:
         """Yield a CommandContext bound to the underlying gateway.
 
         Yields
         ------
-        object
+        CommandContext
             CommandContext configured for dataset handlers.
         """
         with self.ctx.command_context(params) as cmd_ctx:

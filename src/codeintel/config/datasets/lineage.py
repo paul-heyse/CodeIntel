@@ -348,11 +348,7 @@ def get_all_columns_with_constraint(
 
     result: list[tuple[str, str]] = []
 
-    for table_key in SCHEMA_REGISTRY:
-        schema = SCHEMA_REGISTRY.get(table_key)
-        if schema is None:
-            continue
-
+    for table_key, schema in SCHEMA_REGISTRY.items():
         constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
         result.extend(
             (table_key, c.column) for c in constraints.by_kind(kind) if c.column is not None

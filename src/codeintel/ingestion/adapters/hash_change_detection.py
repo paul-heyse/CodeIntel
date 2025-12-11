@@ -9,8 +9,11 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import ibis
+
+from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeRequest,
@@ -18,11 +21,13 @@ from codeintel.ingestion.ports.change_detection import (
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -140,35 +145,60 @@ class HashChangeDetectionAdapter:
         Mapping[str, FileDigest]
             Mapping from relative path to file digest.
         """
-        self._storage.ensure_schema("core.file_state")
-
-        result = self._storage.execute_query(
-            """
-            WITH ranked AS (
-                SELECT
-                    rel_path,
-                    size_bytes,
-                    mtime_ns,
-                    content_hash,
-                    ROW_NUMBER() OVER (PARTITION BY rel_path ORDER BY mtime_ns DESC) AS rn
-                FROM core.file_state
-                WHERE repo = ? AND language = ?
+        # Prefer ibis when a gateway is available on the storage adapter.
+        gateway = getattr(self._storage, "_gateway", None)
+        if gateway is not None:
+            file_state = gateway.ibis.table("core.file_state")
+            window = ibis.window(
+                partition_by=file_state.rel_path,
+                order_by=[file_state.mtime_ns.desc()],
             )
-            SELECT rel_path, size_bytes, mtime_ns, content_hash
-            FROM ranked
-            WHERE rn = 1
-            """,
-            [repo, language],
-        )
+            rn_expr = ibis.row_number().over(window)
+            ranked = (
+                file_state.filter((file_state.repo == repo) & (file_state.language == language))
+                .mutate(rn=rn_expr)
+                .filter(rn_expr == 0)
+                .select("rel_path", "size_bytes", "mtime_ns", "content_hash")
+            )
+            df = ranked.execute()
+            rows = df.to_dict(orient="records")
+        else:
+            self._storage.ensure_schema("core.file_state")
+            result = self._storage.execute_query(
+                """
+                WITH ranked AS (
+                    SELECT
+                        rel_path,
+                        size_bytes,
+                        mtime_ns,
+                        content_hash,
+                        ROW_NUMBER() OVER (PARTITION BY rel_path ORDER BY mtime_ns DESC) AS rn
+                    FROM core.file_state
+                    WHERE repo = ? AND language = ?
+                )
+                SELECT rel_path, size_bytes, mtime_ns, content_hash
+                FROM ranked
+                WHERE rn = 1
+                """,
+                [repo, language],
+            )
+            rows = [
+                {
+                    "rel_path": rel_path,
+                    "size_bytes": size_bytes,
+                    "mtime_ns": mtime_ns,
+                    "content_hash": content_hash,
+                }
+                for rel_path, size_bytes, mtime_ns, content_hash in result.rows
+            ]
 
         state: dict[str, FileDigest] = {}
-        for row in result.rows:
-            rel_path, size_bytes, mtime_ns, content_hash = row
-            normalized = normalize_rel_path(str(rel_path))
+        for row in rows:
+            normalized = normalize_rel_path(str(row["rel_path"]))
             state[normalized] = FileDigest(
-                size_bytes=int(size_bytes),
-                mtime_ns=int(mtime_ns),
-                content_hash=str(content_hash),
+                size_bytes=int(row["size_bytes"]),
+                mtime_ns=int(row["mtime_ns"]),
+                content_hash=str(row["content_hash"]),
             )
 
         if not state:
@@ -199,18 +229,9 @@ class HashChangeDetectionAdapter:
         if not state:
             return
 
-        self._storage.ensure_schema("core.file_state")
-
-        # Delete existing entries for these paths
-        for rel_path in state:
-            self._storage.execute_query(
-                "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
-                [repo, rel_path, language],
-            )
-
-        # Insert new entries
+        gateway = getattr(self._storage, "_gateway", None)
         rows = [
-            [
+            (
                 repo,
                 commit,
                 rel_path,
@@ -218,10 +239,23 @@ class HashChangeDetectionAdapter:
                 digest.size_bytes,
                 digest.mtime_ns,
                 digest.content_hash,
-            ]
+            )
             for rel_path, digest in sorted(state.items())
         ]
+        if gateway is not None:
+            backend = DuckDBPolicyBackend(cast("StorageGateway", gateway))
+            columns = load_columns_by_table().get("core.file_state", [])
+            backend.delete_for_snapshot("core.file_state", repo=repo, commit=commit)
+            backend.bulk_insert("core.file_state", rows, columns=columns)
+            return
 
+        # Fallback to storage port operations when gateway is unavailable.
+        self._storage.ensure_schema("core.file_state")
+        for rel_path in state:
+            self._storage.execute_query(
+                "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
+                [repo, rel_path, language],
+            )
         self._storage.write_batch("core.file_state", rows)
 
     @staticmethod

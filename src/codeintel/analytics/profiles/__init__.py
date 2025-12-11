@@ -35,7 +35,7 @@ def build_function_profile(
         commit=cfg.commit,
     )
     module_table = seed_catalog_modules(
-        gateway.con,
+        gateway,
         effective_catalog,
         cfg.repo,
         cfg.commit,
@@ -54,7 +54,7 @@ def build_file_profile(
 ) -> None:
     """Populate analytics.file_profile by aggregating function_profile."""
     module_table = seed_catalog_modules(
-        gateway.con,
+        gateway,
         catalog_provider,
         cfg.repo,
         cfg.commit,
@@ -73,7 +73,7 @@ def build_module_profile(
 ) -> None:
     """Populate analytics.module_profile by aggregating file/function profiles."""
     module_table = seed_catalog_modules(
-        gateway.con,
+        gateway,
         catalog_provider,
         cfg.repo,
         cfg.commit,

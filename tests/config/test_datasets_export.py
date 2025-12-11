@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -34,8 +35,8 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-def _expect_in(key: str, container: dict[str, object], label: str) -> None:
-    """Check key is in dict with clear failure message."""
+def _expect_in(key: str, container: Mapping[str, object], label: str) -> None:
+    """Check key is in mapping with clear failure message."""
     if key not in container:
         pytest.fail(f"{label}: key '{key}' not in {list(container.keys())}")
 
@@ -57,7 +58,7 @@ def test_export_all_constraints_json_has_meta() -> None:
     _expect_in("meta", result, "result")
     meta = result["meta"]
     _require(condition=isinstance(meta, dict), message="meta should be dict")
-    _expect_in("export_type", meta, "meta")  # type: ignore[arg-type]
+    _expect_in("export_type", meta, "meta")
     _expect_equal(meta["export_type"], "constraints", "export_type")
 
 
@@ -79,9 +80,9 @@ def test_export_all_constraints_json_structure() -> None:
         if not isinstance(data, dict):
             continue
         _require(condition=isinstance(table_key, str), message="table_key should be str")
-        _expect_in("columns", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("table_level", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("constraint_count", data, f"{table_key}")  # type: ignore[arg-type]
+        _expect_in("columns", data, f"{table_key}")
+        _expect_in("table_level", data, f"{table_key}")
+        _expect_in("constraint_count", data, f"{table_key}")
 
 
 # ------------------------------------------------------------------
@@ -122,9 +123,9 @@ def test_export_dataset_catalog_json_structure() -> None:
         if not isinstance(data, dict):
             continue
         _require(condition=isinstance(table_key, str), message="table_key should be str")
-        _expect_in("name", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("columns", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("column_count", data, f"{table_key}")  # type: ignore[arg-type]
+        _expect_in("name", data, f"{table_key}")
+        _expect_in("columns", data, f"{table_key}")
+        _expect_in("column_count", data, f"{table_key}")
 
 
 # ------------------------------------------------------------------
@@ -182,10 +183,10 @@ def test_export_dependency_graph_json_node_structure() -> None:
         if not isinstance(data, dict):
             continue
         _require(condition=isinstance(table_key, str), message="table_key should be str")
-        _expect_in("upstream", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("downstream", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("is_root", data, f"{table_key}")  # type: ignore[arg-type]
-        _expect_in("is_leaf", data, f"{table_key}")  # type: ignore[arg-type]
+        _expect_in("upstream", data, f"{table_key}")
+        _expect_in("downstream", data, f"{table_key}")
+        _expect_in("is_root", data, f"{table_key}")
+        _expect_in("is_leaf", data, f"{table_key}")
 
 
 # ------------------------------------------------------------------
@@ -307,9 +308,10 @@ def test_get_constraint_summary_has_by_kind() -> None:
 def test_get_constraint_summary_by_kind_has_all_kinds() -> None:
     """Verify by_kind has all constraint kinds."""
     result = get_constraint_summary()
-    by_kind = result["by_kind"]
-    if not isinstance(by_kind, dict):
+    by_kind_obj = result["by_kind"]
+    if not isinstance(by_kind_obj, dict):
         pytest.skip("by_kind not a dict")
 
+    by_kind: Mapping[str, object] = by_kind_obj
     for kind in ConstraintKind:
-        _expect_in(kind.value, by_kind, "by_kind")  # type: ignore[arg-type]
+        _expect_in(kind.value, by_kind, "by_kind")

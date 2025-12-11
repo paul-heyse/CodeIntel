@@ -272,3 +272,48 @@ def test_profile_tools_skip_auto_pipeline_without_gateway() -> None:
             os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
     cast("Callable[..., dict[str, object]]", mcp.registry["get_file_profile"])(rel_path="a.py")
     expect_equal(calls, [])
+
+
+def test_profile_tools_run_auto_pipeline_with_gateway() -> None:
+    """Auto-pipeline prereqs should run when enabled and gateway exists."""
+    backend = _Backend()
+    mcp = RecordingMcp()
+    calls: list[str] = []
+
+    def _record(op_id: str, config: object, backend_obj: object) -> None:
+        _ = config
+        _ = backend_obj
+        calls.append(op_id)
+
+    previous = os.environ.get("CODEINTEL_AUTO_PIPELINE")
+    os.environ["CODEINTEL_AUTO_PIPELINE"] = "1"
+    try:
+        register_tools_for_category(
+            mcp,
+            cast("QueryBackendOrService", backend),
+            {"profiles"},
+            config=cast("ServingConfig", _ServingConfigStub(mode="local_db")),
+            options=ToolRegistrationOptions(
+                operations=_profile_operations(),
+                model_resolver=_resolve_profile_model,
+                prereq_runner=_record,
+            ),
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("CODEINTEL_AUTO_PIPELINE", None)
+        else:
+            os.environ["CODEINTEL_AUTO_PIPELINE"] = previous
+
+    cast("Callable[..., dict[str, object]]", mcp.registry["get_function_profile"])(goid_h128=1)
+    cast("Callable[..., dict[str, object]]", mcp.registry["get_file_profile"])(rel_path="a.py")
+    cast("Callable[..., dict[str, object]]", mcp.registry["get_module_profile"])(module="pkg.mod")
+
+    expect_equal(
+        set(calls),
+        {
+            "profiles.function",
+            "profiles.file",
+            "profiles.module",
+        },
+    )

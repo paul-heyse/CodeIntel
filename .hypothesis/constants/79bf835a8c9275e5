@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/validation.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.import_modules', 'graph_validation', 'graph_validation: %s']

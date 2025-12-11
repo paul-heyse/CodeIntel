@@ -2,12 +2,6 @@
 
 This module provides the canonical bulk insertion function for DuckDB tables.
 For row count operations, use codeintel.storage.validation.data_checks.
-
-Note
-----
-This module uses lazy imports for config.datasets to avoid circular imports.
-The storage → config → ingestion → core → analytics → storage cycle is broken
-by deferring the config.datasets import to runtime.
 """
 
 from __future__ import annotations
@@ -17,6 +11,7 @@ from collections.abc import Iterable, Sequence
 
 from duckdb import DuckDBPyConnection
 
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.errors import DUCKDB_ERRORS
 from codeintel.storage.sql import build_insert_sql, quote_identifier
 
@@ -78,11 +73,6 @@ def macro_insert_rows(
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", table_key):
         message = f"Invalid table key: {table_key}"
         raise ValueError(message)
-    # Lazy import to avoid circular dependency:
-    # storage.helpers → config.datasets → config → ingestion → core → analytics → storage
-    from codeintel.config.datasets import (  # noqa: PLC0415
-        get_dataset_contracts_by_table_key,
-    )
 
     contract = get_dataset_contracts_by_table_key().get(table_key)
     if contract is None or contract.schema is None:

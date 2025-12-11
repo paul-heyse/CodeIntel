@@ -12,7 +12,12 @@ from codeintel.cli.handlers.graphs import (
     graph_plugins_plan_handler,
 )
 from codeintel.core.plugins.types.result import PluginResult
-from codeintel.graphs.core.protocol import GraphPluginMetadata
+from codeintel.graphs.core.protocol import (
+    GraphPluginExecutionContext,
+    GraphPluginMetadata,
+    GraphPluginProtocol,
+    GraphPluginStage,
+)
 from codeintel.graphs.core.registry import reset_graph_registry
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -127,8 +132,8 @@ def _plugin(
     enabled: bool = True,
     depends_on: tuple[str, ...] = (),
     provides: tuple[str, ...] = (),
-    stage: str = "analysis",
-) -> object:
+    stage: GraphPluginStage = "edges",
+) -> GraphPluginProtocol:
     """Create a simple graph plugin with configurable metadata.
 
     Returns
@@ -148,8 +153,9 @@ def _plugin(
             provides=provides,
         )
 
-        @staticmethod
-        def execute(_ctx: object) -> PluginResult:
+        def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
+            _ = self
+            _ = ctx
             return PluginResult.ok()
 
     return SimplePlugin()
@@ -175,7 +181,7 @@ def test_graph_plugins_list_handler_with_names_filter() -> None:
     """Verify graph_plugins_list_handler filters by names."""
     reset_graph_registry()
     plugin1 = _plugin("plugin1")
-    plugin2 = _plugin("plugin2", stage="transform")
+    plugin2 = _plugin("plugin2", stage="core")
 
     with (
         plugin_registrar([plugin1, plugin2]),
@@ -194,21 +200,26 @@ def test_graph_plugins_list_handler_include_disabled() -> None:
     """Verify graph_plugins_list_handler includes disabled plugins when requested."""
     reset_graph_registry()
     enabled_plugin = _plugin("enabled_plugin", enabled=True)
-    disabled_plugin = _plugin("disabled_plugin", enabled=False, stage="transform")
+    disabled_plugin = _plugin("disabled_plugin", enabled=False, stage="core")
 
-    with plugin_registrar([enabled_plugin, disabled_plugin]):
-        with make_command_context({"include_disabled": False}, operation_id="graphs.test") as ctx:
-            result = graph_plugins_list_handler(ctx)
-        data1 = result.data
-        if data1 is not None:
-            expect_equal(data1.count, 1)
-            expect_equal(data1.plugins[0].name, "enabled_plugin")
+    with (
+        plugin_registrar([enabled_plugin, disabled_plugin]),
+        make_command_context({"include_disabled": False}, operation_id="graphs.test") as ctx,
+    ):
+        result = graph_plugins_list_handler(ctx)
+    data1 = result.data
+    if data1 is not None:
+        expect_equal(data1.count, 1)
+        expect_equal(data1.plugins[0].name, "enabled_plugin")
 
-        with make_command_context({"include_disabled": True}, operation_id="graphs.test") as ctx:
-            result = graph_plugins_list_handler(ctx)
-        data2 = result.data
-        if data2 is not None:
-            expect_equal(data2.count, 2)
+    with (
+        plugin_registrar([enabled_plugin, disabled_plugin]),
+        make_command_context({"include_disabled": True}, operation_id="graphs.test") as ctx,
+    ):
+        result = graph_plugins_list_handler(ctx)
+    data2 = result.data
+    if data2 is not None:
+        expect_equal(data2.count, 2)
 
 
 def test_graph_plugins_list_handler_empty() -> None:
@@ -282,7 +293,6 @@ def test_graph_plugins_plan_handler_invalid_dependency_policy() -> None:
         expect_equal(error.type, "urn:codeintel:graphs:invalid-policy")
 
 
-@patch("codeintel.cli.handlers.graphs.plan_graph_plugins")
 def test_graph_plugins_plan_handler_with_enable_disable() -> None:
     """Verify graph_plugins_plan_handler honors enable/disable params."""
     reset_graph_registry()

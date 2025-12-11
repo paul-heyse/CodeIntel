@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
 from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.plugin import TargetPlugin
@@ -80,12 +80,13 @@ def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
     row_counts: dict[str, int] = {}
     for table_key in ctx.contract.table_keys:
         try:
-            count = ctx.gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
-                f"WHERE repo = ? AND commit = ?",
-                [ctx.repo, ctx.commit],
-            ).fetchone()
-            row_counts[table_key] = int(count[0]) if count else 0
+            table = ctx.gateway.ibis.table(table_key)
+            count = (
+                table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+                .count()
+                .execute()
+            )
+            row_counts[table_key] = int(cast("SupportsInt", count))
         except (RuntimeError, OSError):
             row_counts[table_key] = 0
     return row_counts

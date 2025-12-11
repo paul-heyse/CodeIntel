@@ -7,11 +7,12 @@ by querying the database for inconsistencies.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis
 
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.ibis_types import filter_by, ibis_bool, isin_values
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalog
@@ -40,14 +41,15 @@ def warn_missing_function_goids(
         Findings for files with missing function GOIDs.
     """
     try:
-        ast_nodes = gateway.ibis.table("core.ast_nodes")
-        goids = gateway.ibis.table("core.goids")
+        ast_nodes = cast("Any", gateway.ibis.table("core.ast_nodes"))
+        goids = cast("Any", gateway.ibis.table("core.goids"))
 
         funcs = (
-            ast_nodes.filter(
-                (ast_nodes.repo == repo)
-                & (ast_nodes.commit == commit)
-                & ast_nodes.node_type.isin(["FunctionDef", "AsyncFunctionDef"])
+            filter_by(
+                ast_nodes,
+                ibis_bool(ast_nodes.repo == repo),
+                ibis_bool(ast_nodes.commit == commit),
+                isin_values(ast_nodes.node_type, ["FunctionDef", "AsyncFunctionDef"]),
             )
             .group_by(ast_nodes.path)
             .aggregate(function_count=ast_nodes.path.count())
@@ -55,35 +57,39 @@ def warn_missing_function_goids(
         )
 
         goid_counts = (
-            goids.filter(
-                (goids.repo == repo)
-                & (goids.commit == commit)
-                & goids.kind.isin(["function", "method"])
+            filter_by(
+                goids,
+                ibis_bool(goids.repo == repo),
+                ibis_bool(goids.commit == commit),
+                isin_values(goids.kind, ["function", "method"]),
             )
             .group_by(goids.rel_path)
             .aggregate(goid_count=goids.rel_path.count())
         )
 
-        joined = funcs.left_join(goid_counts, funcs.rel_path == goid_counts.rel_path)
+        joined = funcs.left_join(
+            goid_counts,
+            predicates=[(funcs.rel_path, goid_counts.rel_path)],
+        )
         findings = (
             joined.select(
                 funcs.rel_path,
                 funcs.function_count,
                 ibis.coalesce(goid_counts.goid_count, ibis.literal(0)).name("goid_count"),
             )
-            .filter(
-                ibis.coalesce(goid_counts.goid_count, ibis.literal(0)) < funcs.function_count
-            )
+            .filter(ibis.coalesce(goid_counts.goid_count, ibis.literal(0)) < funcs.function_count)
             .order_by(funcs.rel_path)
         )
 
         rows = findings.execute()
-    except DuckDBError:
+    except (DuckDBError, AttributeError):
+        log.info("Skipping missing_function_goids check due to incomplete AST data")
         return []
 
     if getattr(rows, "empty", True):
         return []
-    sample = ", ".join(str(path) for path, _, _ in rows.itertuples(index=False, name=None)[:5])
+    sample_rows = list(rows.itertuples(index=False, name=None))[:5]
+    sample = ", ".join(str(path) for path, _, _ in sample_rows)
     log.warning(
         "Validation: %d file(s) have functions without GOIDs (sample: %s)",
         len(rows),
@@ -132,12 +138,13 @@ def warn_callsite_span_mismatches(
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
-        edges = gateway.ibis.table("graph.call_graph_edges")
+        edges = cast("Any", gateway.ibis.table("graph.call_graph_edges"))
         rows = (
-            edges.filter(
-                (edges.repo == repo)
-                & (edges.commit == commit)
-                & edges.callsite_line.notnull()
+            filter_by(
+                edges,
+                ibis_bool(edges.repo == repo),
+                ibis_bool(edges.commit == commit),
+                ibis_bool(edges.callsite_line.notnull()),
             )
             .select(edges.caller_goid_h128, edges.callsite_path, edges.callsite_line)
             .execute()
@@ -173,13 +180,6 @@ def warn_callsite_span_mismatches(
         }
         for path, line, start, end in mismatches
     ]
-    if not mismatches:
-        log.warning(
-            "Validation: outside caller spans check skipped for %s@%s (no call graph edges)",
-            repo,
-            commit,
-        )
-        return []
 
 
 def warn_orphan_modules(
@@ -211,25 +211,26 @@ def warn_orphan_modules(
     """
     query_failed = False
     try:
-        modules = gateway.ibis.table("core.modules")
-        goids = gateway.ibis.table("core.goids")
-        module_rows = modules.filter((modules.repo == repo) & (modules.commit == commit))
+        modules = cast("Any", gateway.ibis.table("core.modules"))
+        goids = cast("Any", gateway.ibis.table("core.goids"))
+        module_rows = filter_by(modules, modules.repo == repo, modules.commit == commit)
 
         module_goids = (
-            goids.filter(
-                (goids.repo == repo) & (goids.commit == commit) & (goids.kind == "module")
+            filter_by(
+                goids,
+                goids.repo == repo,
+                goids.commit == commit,
+                goids.kind == "module",
             )
             .group_by(goids.rel_path)
             .aggregate(cnt=goids.rel_path.count())
         )
 
         joined = module_rows.left_join(
-            module_goids, module_rows.path == module_goids.rel_path
+            module_goids, predicates=[(module_rows.path, module_goids.rel_path)]
         )
         rows_df = (
-            joined.filter(module_goids.cnt.isnull())
-            .select(module_rows.path)
-            .execute()
+            joined.filter(ibis_bool(module_goids.cnt.isnull())).select(module_rows.path).execute()
         )
         rows = [(path,) for (path,) in rows_df.itertuples(index=False, name=None)]
 

@@ -114,7 +114,7 @@ def graph_executor_env(tmp_path: Path) -> Iterator[GraphTestEnv]:
     GraphTestEnv
         Environment with gateway and snapshot; automatically closed.
     """
-    env = GraphTestEnv.create(tmp_path)
+    env = GraphTestEnv.create(tmp_path, repo="demo/repo", commit="deadbeef")
     try:
         yield env
     finally:

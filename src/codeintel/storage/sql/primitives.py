@@ -531,6 +531,31 @@ def quote_table_key(table_key: str) -> str:
     return f"{quote_identifier(schema_name)}.{quote_identifier(table_name)}"
 
 
+def quote_macro_name(macro_name: str) -> str:
+    """Validate a fully qualified macro name without quoting.
+
+    Parameters
+    ----------
+    macro_name
+        Macro identifier, optionally schema-qualified (e.g., "analytics.ingest_modules").
+
+    Returns
+    -------
+    str
+        Validated macro name (unchanged).
+
+    Raises
+    ------
+    ValueError
+        If any macro component is unsafe or empty.
+    """
+    parts = macro_name.split(".")
+    if not parts or any(not part or not _IDENTIFIER_RE.fullmatch(part) for part in parts):
+        message = f"Unsafe macro name: {macro_name}"
+        raise ValueError(message)
+    return ".".join(parts)
+
+
 # --------------------------------------------------------------------------
 # Macro helpers
 # --------------------------------------------------------------------------
@@ -667,6 +692,7 @@ __all__ = [
     "build_insert_sql",
     "macro_select_sql",
     "quote_identifier",
+    "quote_macro_name",
     "quote_table_key",
     "render_sql",
     "safe_macro_call",

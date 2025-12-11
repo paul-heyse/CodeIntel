@@ -67,6 +67,35 @@ def _normalize_row(row: tuple[object, ...]) -> tuple[object, ...]:
     return tuple(_convert_numpy_types(v) for v in row)
 
 
+def _extract_scalar(value: object) -> object:
+    """
+    Extract a single scalar value from common ibis execute() results.
+
+    Returns
+    -------
+    object
+        Native Python scalar extracted from the result.
+
+    Raises
+    ------
+    ValueError
+        If the result cannot be reduced to a single scalar.
+    """
+    if isinstance(value, pd.DataFrame):
+        if value.empty or value.shape[1] != 1:
+            msg = "Expected single-column DataFrame result for scalar execution"
+            raise ValueError(msg)
+        return _convert_numpy_types(value.iloc[0, 0])
+
+    if isinstance(value, pd.Series):
+        if value.empty:
+            msg = "Expected non-empty Series result for scalar execution"
+            raise ValueError(msg)
+        return _convert_numpy_types(value.iloc[0])
+
+    return _convert_numpy_types(value)
+
+
 @dataclass(frozen=True)
 class OnConflict:
     """Specification for UPSERT behavior on conflict.
@@ -306,6 +335,22 @@ class IbisGateway:
             return self.con.table(name, database=database)
         return self.con.table(table_name)
 
+    def read(self, table_name: str) -> it.Table:
+        """
+        Return a table expression (alias for `table`) to standardize reads.
+
+        Parameters
+        ----------
+        table_name
+            Fully qualified table or view name.
+
+        Returns
+        -------
+        it.Table
+            Ibis table expression for the requested object.
+        """
+        return self.table(table_name)
+
     def view(self, view_name: str) -> it.Table:
         """
         Alias for `table` for semantic clarity when accessing views.
@@ -342,6 +387,32 @@ class IbisGateway:
         This method exists for compatibility and edge cases.
         """
         return self.con.sql(raw_sql)
+
+    @staticmethod
+    def execute_scalar(expr: it.Scalar | it.Table) -> object:
+        """
+        Execute an Ibis scalar or single-value table and return a Python scalar.
+
+        Parameters
+        ----------
+        expr
+            Ibis scalar expression or table that yields a single value (e.g., count()).
+
+        Returns
+        -------
+        Any
+            Native Python scalar extracted from the execution result.
+
+        Raises
+        ------
+        ValueError
+            If the execution result cannot be reduced to a single scalar.
+        """
+        result = expr.execute()
+        try:
+            return _extract_scalar(result)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
     def write(
         self,
@@ -402,6 +473,65 @@ class IbisGateway:
 
         msg = f"Unsupported data type for write: {type(data).__name__}"
         raise TypeError(msg)
+
+    def insert(
+        self,
+        table_key: str,
+        data: pd.DataFrame | Sequence[tuple[object, ...]],
+        *,
+        columns: Sequence[str] | None = None,
+    ) -> WriteResult:
+        """
+        Insert rows into a table (wrapper over write for clarity).
+
+        Parameters
+        ----------
+        table_key
+            Target table in 'schema.table' format.
+        data
+            DataFrame or sequence of tuples to insert.
+        columns
+            Optional column list (required for tuples).
+
+        Returns
+        -------
+        WriteResult
+            Result containing rows affected and method used.
+        """
+        return self.write(table_key, data, columns=columns)
+
+    def upsert(
+        self,
+        table_key: str,
+        data: pd.DataFrame | Sequence[tuple[object, ...]],
+        *,
+        columns: Sequence[str] | None,
+        conflict_columns: Sequence[str],
+        update_columns: Sequence[str],
+    ) -> WriteResult:
+        """
+        Insert-or-update rows using ON CONFLICT semantics.
+
+        Parameters
+        ----------
+        table_key
+            Target table in 'schema.table' format.
+        data
+            DataFrame or sequence of tuples to upsert.
+        columns
+            Column names to write.
+        conflict_columns
+            Columns defining the uniqueness constraint.
+        update_columns
+            Columns to update when a conflict occurs.
+
+        Returns
+        -------
+        WriteResult
+            Result containing rows affected and method used.
+        """
+        on_conflict = OnConflict(conflict_columns=conflict_columns, update_columns=update_columns)
+        return self.write(table_key, data, columns=columns, on_conflict=on_conflict)
 
     def _write_ibis_expression(  # noqa: PLR0913
         self,

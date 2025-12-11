@@ -31,11 +31,13 @@ from __future__ import annotations
 
 import importlib
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -374,7 +376,7 @@ class OperationRegistry:
         """
         return len(self._operations)
 
-    def __contains__(self, operation_id: str) -> bool:
+    def __contains__(self, operation_id: object) -> bool:
         """Check if operation is registered.
 
         Parameters
@@ -387,14 +389,29 @@ class OperationRegistry:
         bool
             True if operation is registered.
         """
+        if not isinstance(operation_id, str):
+            return False
         return operation_id in self._operations
+
+    def __iter__(self) -> Iterator[str]:
+        """
+        Iterate over registered operation IDs.
+
+        Returns
+        -------
+        Iterator[str]
+            Iterator over registered operation identifiers.
+        """
+        return iter(self._operations.keys())
 
 
 # -----------------------------------------------------------------------------
 # Global Registry
 # -----------------------------------------------------------------------------
 
-_REGISTRY: OperationRegistry | None = None
+
+class OperationRegistryHolder(SingletonHolder[OperationRegistry]):
+    """Singleton holder for the CLI OperationRegistry."""
 
 
 def get_registry() -> OperationRegistry:
@@ -407,15 +424,12 @@ def get_registry() -> OperationRegistry:
     OperationRegistry
         Global registry instance.
     """
-    global _REGISTRY  # noqa: PLW0603
-
-    if _REGISTRY is None:
-        _REGISTRY = OperationRegistry()
-    if not _REGISTRY.list_operations():
+    registry = OperationRegistryHolder.get(OperationRegistry)
+    if not registry.list_operations():
         # Import command modules to trigger registration side effects.
         importlib.import_module("codeintel.cli.commands")
 
-    return _REGISTRY
+    return registry
 
 
 def register_operation(spec: OperationSpec) -> OperationSpec:
@@ -462,8 +476,7 @@ def reset_registry() -> None:
     WARNING: This function is for testing purposes only.
     Do not call in production code.
     """
-    global _REGISTRY  # noqa: PLW0603
-    _REGISTRY = None
+    OperationRegistryHolder.reset()
 
 
 def create_spec_from_serving_operation(

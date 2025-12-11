@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 
+import pandas as pd
+
 from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.storage.gateway import DuckDBConnection
+from codeintel.storage.gateway import StorageGateway
 
 CATALOG_MODULE_TABLE = "temp.catalog_modules"
 DEFAULT_MODULE_TABLE = "core.modules"
+log = logging.getLogger(__name__)
 
 
 def seed_catalog_modules(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     catalog_provider: FunctionCatalogProvider | None,
     repo: str,
     commit: str,
@@ -44,33 +48,25 @@ def seed_catalog_modules(
     if not module_by_path:
         return DEFAULT_MODULE_TABLE
 
-    con.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE temp.catalog_modules (
-            path VARCHAR,
-            module VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR,
-            language VARCHAR,
-            tags JSON,
-            owners JSON
-        )
-        """
-    )
-    con.executemany(
-        "INSERT INTO temp.catalog_modules VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                path,
-                module,
-                repo,
-                commit,
-                "python",
-                "[]",
-                "[]",
-            )
-            for path, module in module_by_path.items()
-        ],
+    rows = [
+        {
+            "path": path,
+            "module": module,
+            "repo": repo,
+            "commit": commit,
+            "language": "python",
+            "tags": "[]",
+            "owners": "[]",
+        }
+        for path, module in module_by_path.items()
+    ]
+
+    df = pd.DataFrame(rows)
+
+    gateway.con.execute(f"DROP TABLE IF EXISTS {CATALOG_MODULE_TABLE}")
+
+    gateway.ibis.con.create_table(
+        CATALOG_MODULE_TABLE.rsplit(".", maxsplit=1)[-1], df, temp=True, overwrite=True
     )
     return CATALOG_MODULE_TABLE
 

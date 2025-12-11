@@ -108,15 +108,13 @@ class TestsIngestPlugin(TargetPlugin):
         paths = get_module_paths(ctx)
         modules = paths_to_modules(paths, ctx.repo_root)
 
-        # Create storage adapter
-        storage = DuckDBStorageAdapter(ctx.gateway)
-
         # Get report path - check common locations
         report_path = resolve_report_file(ctx)
         if report_path is None:
             log.info("No pytest report found, skipping tests ingestion")
             return TargetResult.succeeded(row_counts={})
 
+        storage = DuckDBStorageAdapter(ctx.gateway)
         # Execute step
         step = TestsIngestStep(storage=storage)
         result = step.execute(

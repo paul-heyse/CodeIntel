@@ -47,7 +47,7 @@ def service(service_ctx: ProvisionedServiceContext) -> LocalQueryService:
     LocalQueryService
         Service instance backed by the provisioned context.
     """
-    return service_ctx.service  # type: ignore[no-any-return]
+    return service_ctx.service
 
 
 @pytest.fixture

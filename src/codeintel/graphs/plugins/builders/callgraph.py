@@ -58,6 +58,7 @@ from codeintel.graphs.plugins.builders.callgraph_options import CallGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -112,25 +113,38 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         goids_tbl = gateway.ibis.table("core.goids")
 
         module_count = int(
-            modules_tbl.filter(
-                cast("Any", modules_tbl.repo == repo) & cast("Any", modules_tbl.commit == commit)
-            ).count()
-            .execute()
+            cast(
+                "int",
+                gateway.ibis.execute_scalar(
+                    modules_tbl.filter(
+                        and_predicates(modules_tbl.repo == repo, modules_tbl.commit == commit)
+                    ).count()
+                ),
+            )
         )
         goid_count = int(
-            goids_tbl.filter(
-                cast("Any", goids_tbl.repo == repo) & cast("Any", goids_tbl.commit == commit)
-            ).count()
-            .execute()
+            cast(
+                "int",
+                gateway.ibis.execute_scalar(
+                    goids_tbl.filter(
+                        and_predicates(goids_tbl.repo == repo, goids_tbl.commit == commit)
+                    ).count()
+                ),
+            )
         )
         module_goid_count = int(
-            goids_tbl.filter(
-                cast("Any", goids_tbl.repo == repo)
-                & cast("Any", goids_tbl.commit == commit)
-                & cast("Any", goids_tbl.kind == "module")
+            cast(
+                "int",
+                gateway.ibis.execute_scalar(
+                    goids_tbl.filter(
+                        and_predicates(
+                            goids_tbl.repo == repo,
+                            goids_tbl.commit == commit,
+                            goids_tbl.kind == "module",
+                        )
+                    ).count()
+                ),
             )
-            .count()
-            .execute()
         )
         log.info(
             "call_graph_builder repo_state modules=%d goids=%d (module_kind=%d)",
@@ -175,7 +189,9 @@ def _build_global_callee_lookup(
             .order_by(goids_tbl.qualname)
         )
         rows = expr.execute()
-        return {str(qualname): int(goid) for qualname, goid in rows.itertuples(index=False, name=None)}
+        return {
+            str(qualname): int(goid) for qualname, goid in rows.itertuples(index=False, name=None)
+        }
     except DuckDBError:
         return {}
 
@@ -241,11 +257,7 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
         snapshots = gateway.ibis.table("core.snapshots")
         repo_filter = cast("Any", snapshots.repo == repo)
         commit_filter = cast("Any", snapshots.commit == commit)
-        expr = (
-            snapshots.filter(repo_filter & commit_filter)
-            .select(snapshots.source_root)
-            .limit(1)
-        )
+        expr = snapshots.filter(repo_filter & commit_filter).select(snapshots.source_root).limit(1)
         rows = expr.execute()
         if getattr(rows, "empty", True):
             return None

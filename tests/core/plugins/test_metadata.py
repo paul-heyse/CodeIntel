@@ -157,5 +157,7 @@ class TestCorePluginMetadata:
             domain=PluginDomain.ANALYTICS,
             kind="metric",
         )
+        frozen_meta: object = meta
+        attr = "name"
         with pytest.raises(AttributeError):
-            meta.name = "modified"  # type: ignore[misc]
+            setattr(frozen_meta, attr, "modified")

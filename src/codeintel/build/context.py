@@ -48,6 +48,7 @@ from codeintel.build.protocols import (
     TypeChecker,
 )
 from codeintel.build.result import TargetResult
+from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -561,10 +562,6 @@ class TargetExecutionContext:
         Full activation requires updating all plugins to use this method.
         See architecture Section 4.3 - Build Context Integration for details.
         """
-        from codeintel.config.datasets.schema_registry import (  # noqa: PLC0415
-            SCHEMA_REGISTRY,
-        )
-
         schema = SCHEMA_REGISTRY.get(table_key)
         if schema is None:
             msg = f"No schema registered for {table_key}"

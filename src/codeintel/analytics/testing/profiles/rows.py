@@ -40,7 +40,7 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql.builder import ensure_schema, prepared_statements_dynamic
+from codeintel.storage.sql.builder import ensure_schema
 
 
 def build_test_profile_context(
@@ -205,9 +205,7 @@ def write_test_profile_rows(
             serialize_row=cast("SerializeRow", serialize_test_profile_row),
             repo=cfg.repo,
             commit=cfg.commit,
-            delete_sql="DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
-            ensure_schema_fn=ensure_schema,
-            prepared_statements_fn=prepared_statements_dynamic,
+            ensure_schema_fn=lambda gw, table_key: ensure_schema(gw.con, table_key),
         ),
     )
 
@@ -280,9 +278,7 @@ def write_behavioral_coverage_rows(
             serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
             repo=cfg.repo,
             commit=cfg.commit,
-            delete_sql=("DELETE FROM analytics.behavioral_coverage WHERE repo = ? AND commit = ?"),
-            ensure_schema_fn=ensure_schema,
-            prepared_statements_fn=prepared_statements_dynamic,
+            ensure_schema_fn=lambda gw, table_key: ensure_schema(gw.con, table_key),
         ),
     )
 

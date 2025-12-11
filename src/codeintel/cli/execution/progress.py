@@ -34,6 +34,7 @@ from codeintel.cli.execution.types import (
     ProgressState,
     StreamingResult,
 )
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -686,8 +687,8 @@ async def progress_generator[T](
     )
 
 
-# Global progress tracker
-_PROGRESS_TRACKER: ProgressTracker | None = None
+class ProgressTrackerHolder(SingletonHolder[ProgressTracker]):
+    """Singleton holder for the progress tracker."""
 
 
 def get_progress_tracker() -> ProgressTracker:
@@ -698,10 +699,7 @@ def get_progress_tracker() -> ProgressTracker:
     ProgressTracker
         Global progress tracker instance.
     """
-    global _PROGRESS_TRACKER  # noqa: PLW0603
-    if _PROGRESS_TRACKER is None:
-        _PROGRESS_TRACKER = ProgressTracker()
-    return _PROGRESS_TRACKER
+    return ProgressTrackerHolder.get(ProgressTracker)
 
 
 def configure_progress(
@@ -721,13 +719,15 @@ def configure_progress(
     update_interval
         Minimum update interval in seconds.
     """
-    global _PROGRESS_TRACKER  # noqa: PLW0603
-    _PROGRESS_TRACKER = ProgressTracker(
-        config=ProgressConfig(
-            enabled=enabled,
-            show_spinner=show_spinner,
-            update_interval=update_interval,
-        ),
+    ProgressTrackerHolder.reset()
+    ProgressTrackerHolder.get(
+        lambda: ProgressTracker(
+            config=ProgressConfig(
+                enabled=enabled,
+                show_spinner=show_spinner,
+                update_interval=update_interval,
+            ),
+        )
     )
 
 

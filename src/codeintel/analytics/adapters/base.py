@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.gateway.protocol import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -325,7 +326,7 @@ class SimpleBatchAdapter[RowT](ABC):
             repo_filter = cast("Any", tbl.repo == scope.repo)
             commit_filter = cast("Any", tbl.commit == scope.commit)
             return cast("int", tbl.filter(repo_filter & commit_filter).count().execute())
-        except Exception:  # noqa: BLE001
+        except DuckDBError:
             # If count fails, return 0 (table might not exist or be empty)
             return 0
 

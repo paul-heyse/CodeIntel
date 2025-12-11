@@ -30,11 +30,14 @@ from __future__ import annotations
 from collections.abc import Callable as TypingCallable
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, cast
+
+import pandas as pd
 
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 # =============================================================================
 # Function Span Types (from function_index.py)
@@ -192,26 +195,29 @@ def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> l
     list[FunctionSpan]
         Normalized function spans keyed by GOID.
     """
-    con = gateway.con
-    rows = con.execute(
-        """
-        SELECT goid_h128, rel_path, qualname, start_line, end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ?
-          AND kind IN ('function', 'method')
-        """,
-        [repo, commit],
-    ).fetchall()
-
+    goids = cast("Any", gateway.ibis.table("core.goids"))
+    filtered = filter_by(
+        goids,
+        ibis_bool(goids.repo == repo),
+        ibis_bool(goids.commit == commit),
+        ibis_bool(goids.kind.isin(["function", "method"])),
+    )
+    df = cast(
+        "pd.DataFrame",
+        filtered.select("goid_h128", "rel_path", "qualname", "start_line", "end_line").execute(),
+    )
+    rows = df.to_dict(orient="records")
     spans: list[FunctionSpan] = []
-    for goid_h128, rel_path, qualname, start_line, end_line in rows:
+    for row in rows:
+        start_line = row["start_line"]
+        end_line = row["end_line"]
         if start_line is None:
             continue
         spans.append(
             FunctionSpan(
-                goid=int(goid_h128),
-                rel_path=normalize_rel_path(rel_path),
-                qualname=str(qualname),
+                goid=int(row["goid_h128"]),
+                rel_path=normalize_rel_path(row["rel_path"]),
+                qualname=str(row["qualname"]),
                 start_line=int(start_line),
                 end_line=int(end_line) if end_line is not None else int(start_line),
             )
@@ -371,27 +377,34 @@ def load_function_catalog(
     FunctionCatalog
         Catalog containing spans, URNs, and module mapping.
     """
-    con = gateway.con
-    rows = con.execute(
-        """
-        SELECT goid_h128, urn, rel_path, qualname, start_line, end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-        """,
-        [repo, commit],
-    ).fetchall()
+    goids = cast("Any", gateway.ibis.table("core.goids"))
+    goids_filtered = filter_by(
+        goids,
+        ibis_bool(goids.repo == repo),
+        ibis_bool(goids.commit == commit),
+        ibis_bool(goids.kind.isin(["function", "method"])),
+    )
+    df = cast(
+        "pd.DataFrame",
+        goids_filtered.select(
+            "goid_h128", "urn", "rel_path", "qualname", "start_line", "end_line"
+        ).execute(),
+    )
+    rows = df.to_dict(orient="records")
 
     functions: list[FunctionMeta] = []
-    for goid_h128, urn, rel_path, qualname, start_line, end_line in rows:
+    for row in rows:
+        start_line = row["start_line"]
+        end_line = row["end_line"]
         if start_line is None:
             continue
         end_val = int(end_line) if end_line is not None else int(start_line)
         functions.append(
             FunctionMeta(
-                goid=int(goid_h128),
-                urn=str(urn),
-                rel_path=normalize_rel_path(rel_path),
-                qualname=str(qualname),
+                goid=int(row["goid_h128"]),
+                urn=str(row["urn"]),
+                rel_path=normalize_rel_path(row["rel_path"]),
+                qualname=str(row["qualname"]),
                 start_line=int(start_line),
                 end_line=end_val,
             )

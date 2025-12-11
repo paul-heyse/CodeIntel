@@ -436,7 +436,11 @@ class TypingIngestStep:
             typedness_paths = [str(row[2]) for row in typedness_rows]
             # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
             self._storage.delete_by_paths(
-                "analytics.typedness", typedness_paths, path_column="path"
+                "analytics.typedness",
+                typedness_paths,
+                path_column="path",
+                repo=repo,
+                commit=commit,
             )
 
             scope = f"{repo}@{commit}"
@@ -450,7 +454,11 @@ class TypingIngestStep:
             diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
             # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
             self._storage.delete_by_paths(
-                "analytics.static_diagnostics", diagnostic_paths, path_column="rel_path"
+                "analytics.static_diagnostics",
+                diagnostic_paths,
+                path_column="rel_path",
+                repo=repo,
+                commit=commit,
             )
 
             result = self._storage.write_batch("analytics.static_diagnostics", diagnostic_rows)

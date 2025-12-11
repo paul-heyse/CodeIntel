@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 import ibis
 import ibis.expr.types as it
@@ -68,22 +69,23 @@ def literal_sequence(values: Sequence[object]) -> it.Value:
     return ibis.literal(list(values))
 
 
-def zero_if_null(value: it.Value) -> it.Value:
+def zero_if_null(value: it.Value) -> it.NumericValue:
     """
     Replace NULLs in integer expressions with zero.
 
     Returns
     -------
-    Value
+    NumericValue
         Numeric expression with NULLs coalesced to zero.
     """
-    return ibis.coalesce(value, ibis.literal(0, type="int64"))
+    coalesced = ibis.coalesce(cast("Any", value), ibis.literal(0, type="int64"))
+    return cast("it.NumericValue", coalesced)
 
 
 def safe_ratio(
-    numerator: it.Value,
-    denominator: it.Value,
-) -> it.Value:
+    numerator: it.NumericValue,
+    denominator: it.NumericValue,
+) -> it.NumericValue:
     """
     Compute numerator/denominator with a zero-guard.
 
@@ -92,11 +94,11 @@ def safe_ratio(
     Value
         Ratio expression with zero-division guarded.
     """
-    return (
-        ibis.case()
-        .when(denominator == 0, None)
-        .else_(numerator.cast("float64") / denominator)
-        .end()
+    num = numerator.cast("float64")
+    denom = denominator.cast("float64")
+    return ibis.cases(
+        (denom == 0, None),
+        else_=num / denom,
     )
 
 

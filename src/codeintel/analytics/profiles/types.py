@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from codeintel.storage.gateway import DuckDBConnection
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,7 @@ class ProfileInputs:
     """Snapshot handle for profile computations."""
 
     con: DuckDBConnection
+    gateway: StorageGateway
     repo: str
     commit: str
     created_at: datetime

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import duckdb
 import pytest
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
+from codeintel.storage.gateway.factory import open_memory_gateway
+from codeintel.storage.gateway.protocol import StorageGateway
 
 # Test constants
 FAN_OUT_TWO = 2
@@ -21,9 +22,10 @@ GOID_4 = 4
 SLOW_TEST_THRESHOLD_MS = 1000.0
 
 
-def _inputs(con: duckdb.DuckDBPyConnection) -> FunctionProfileInputs:
+def _inputs(gateway: StorageGateway) -> FunctionProfileInputs:
     return FunctionProfileInputs(
-        con=con,
+        con=gateway.con,
+        gateway=gateway,
         repo="r",
         commit="c",
         created_at=datetime.now(tz=UTC),
@@ -31,8 +33,8 @@ def _inputs(con: duckdb.DuckDBPyConnection) -> FunctionProfileInputs:
     )
 
 
-def _setup_graph() -> duckdb.DuckDBPyConnection:
-    """Create a minimal in-memory database with test graph tables.
+def _setup_graph() -> StorageGateway:
+    """Create a minimal in-memory gateway with test graph tables.
 
     This test uses a simplified schema with only the columns needed for
     summarize_graph_for_function_profile, rather than the full production
@@ -41,11 +43,18 @@ def _setup_graph() -> duckdb.DuckDBPyConnection:
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
-        Connection with minimal test graph tables.
+    StorageGateway
+        Gateway with minimal test graph tables.
     """
-    con = duckdb.connect(":memory:")
-    con.execute("CREATE SCHEMA graph")
+    gateway = open_memory_gateway(
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        repo="r",
+        commit="c",
+    )
+    con = gateway.con
+    con.execute("CREATE SCHEMA IF NOT EXISTS graph")
     con.execute(
         """
         CREATE TABLE graph.call_graph_edges (
@@ -81,14 +90,14 @@ def _setup_graph() -> duckdb.DuckDBPyConnection:
             (GOID_4, False),
         ],
     )
-    return con
+    return gateway
 
 
 def test_summarize_graph_for_function_profile_contract() -> None:
     """Graph feature summary should return fan-in/out and role flags per function."""
-    con = _setup_graph()
+    gateway = _setup_graph()
     try:
-        features = summarize_graph_for_function_profile(_inputs(con))
+        features = summarize_graph_for_function_profile(_inputs(gateway))
         expected = {
             GOID_1: {
                 "fan_in": FAN_IN_ZERO,
@@ -150,4 +159,4 @@ def test_summarize_graph_for_function_profile_contract() -> None:
                 msg = f"Public flag incorrect for {goid}."
                 pytest.fail(msg)
     finally:
-        con.close()
+        gateway.close()
