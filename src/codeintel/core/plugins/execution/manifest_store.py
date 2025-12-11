@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.plugins.execution.manifest import ManifestStore
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
@@ -15,6 +14,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+MANIFEST_TABLE = "core.plugin_execution_manifest"
+
 
 class DuckDBManifestStore(ManifestStore):
     """ManifestStore backed by DuckDB."""
@@ -23,35 +24,26 @@ class DuckDBManifestStore(ManifestStore):
         self,
         con: DuckDBPyConnection,
         *,
-        table_name: str = "core.plugin_execution_manifest",
+        table_name: str = MANIFEST_TABLE,
     ) -> None:
-        self._con = con
-        self._table_name = self._validate_table_name(table_name)
-
-    @staticmethod
-    def _validate_table_name(name: str) -> str:
-        """Validate table name to avoid injection in SQL fragments.
-
-        Returns
-        -------
-        str
-            Validated table name.
-
-        Raises
-        ------
-        ValueError
-            If the table name contains unsafe characters.
-        """
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_\\.]*", name):
-            message = f"Invalid manifest table name: {name}"
+        if table_name != MANIFEST_TABLE:
+            message = f"DuckDBManifestStore only supports table {MANIFEST_TABLE}"
             raise ValueError(message)
-        return name
+
+        self._con = con
+        self._table_name = table_name
+        self._insert_sql = (
+            "INSERT INTO core.plugin_execution_manifest ("
+            "plugin_name, repo, commit, scope_id, variant, status, started_at, "
+            "ended_at, duration_ms, options_hash, input_hash, error, meta_json"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
 
     def ensure_schema(self) -> None:
         """Create manifest table and indexes if they do not exist."""
         self._con.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table_name} (
+            """
+            CREATE TABLE IF NOT EXISTS core.plugin_execution_manifest (
                 id INTEGER PRIMARY KEY,
                 plugin_name VARCHAR NOT NULL,
                 repo VARCHAR NOT NULL,
@@ -71,9 +63,9 @@ class DuckDBManifestStore(ManifestStore):
             """
         )
         self._con.execute(
-            f"""
+            """
             CREATE INDEX IF NOT EXISTS idx_manifest_lookup
-            ON {self._table_name} (plugin_name, repo, commit, scope_id, variant)
+            ON core.plugin_execution_manifest (plugin_name, repo, commit, scope_id, variant)
             """
         )
 
@@ -93,29 +85,22 @@ class DuckDBManifestStore(ManifestStore):
         PluginExecutionRecord | None
             Latest matching record when present.
         """
-        query = """
-            SELECT
-                plugin_name,
-                status,
-                started_at,
-                ended_at,
-                duration_ms,
-                options_hash,
-                input_hash,
-                error,
-                meta_json
-            FROM {table_name}
-            WHERE plugin_name = ?
-              AND repo = ?
-              AND commit = ?
-              AND scope_id IS ?
-              AND variant IS ?
-            ORDER BY ended_at DESC
-            LIMIT 1
-            """
+        params: list[Any] = [plugin_name, repo, commit, scope_id, scope_id, variant, variant]
         row = self._con.execute(
-            query.format(table_name=self._table_name),
-            [plugin_name, repo, commit, scope_id, variant],
+            """
+            SELECT
+                plugin_name, status, started_at, ended_at, duration_ms,
+                options_hash, input_hash, error, meta_json
+            FROM core.plugin_execution_manifest
+            WHERE plugin_name = ?
+            AND repo = ?
+            AND commit = ?
+            AND ((scope_id IS NULL AND ? IS NULL) OR scope_id = ?)
+            AND ((variant IS NULL AND ? IS NULL) OR variant = ?)
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            params,
         ).fetchone()
 
         if not row:
@@ -152,7 +137,7 @@ class DuckDBManifestStore(ManifestStore):
 
         return PluginExecutionRecord(
             plugin_name=str(name),
-            status=PluginStatus(status),
+            status=cast("PluginStatus", str(status)),
             started_at=started_at,
             ended_at=ended_at,
             duration_ms=float(duration_ms),
@@ -162,38 +147,28 @@ class DuckDBManifestStore(ManifestStore):
 
     def append_record(self, record: PluginExecutionRecord) -> None:
         """Persist a new PluginExecutionRecord."""
-        meta_json = json.dumps(dict(record.meta), default=str)
-        insert_sql = """
-            INSERT INTO {table_name} (
-                plugin_name,
-                repo,
-                commit,
-                scope_id,
-                variant,
-                status,
-                started_at,
-                ended_at,
-                duration_ms,
-                options_hash,
-                input_hash,
-                error,
-                meta_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+        meta = dict(record.meta)
+        repo = str(meta.pop("repo", ""))
+        commit = str(meta.pop("commit", ""))
+        scope_value = meta.pop("scope_id", None)
+        variant_value = meta.pop("variant", None)
+        options_hash = meta.pop("options_hash", None)
+        input_hash = meta.pop("input_hash", None)
+        meta_json = json.dumps(meta, default=str) if meta else None
         self._con.execute(
-            insert_sql.format(table_name=self._table_name),
+            self._insert_sql,
             [
                 record.plugin_name,
-                record.meta.get("repo", ""),
-                record.meta.get("commit", ""),
-                record.meta.get("scope_id"),
-                record.meta.get("variant"),
+                repo,
+                commit,
+                str(scope_value) if scope_value is not None else None,
+                str(variant_value) if variant_value is not None else None,
                 record.status,
                 record.started_at,
                 record.ended_at,
                 record.duration_ms,
-                record.meta.get("options_hash"),
-                record.meta.get("input_hash"),
+                options_hash,
+                input_hash,
                 record.error,
                 meta_json,
             ],

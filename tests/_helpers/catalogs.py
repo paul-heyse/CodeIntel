@@ -25,7 +25,7 @@ class CatalogCtx(Protocol):
 
 CatalogLike = FunctionCatalog | FunctionCatalogService | MockFunctionCatalog
 CatalogInput = CatalogLike | object
-type CatalogCtxLike = CatalogCtx | "TestContext"
+type CatalogCtxLike = CatalogCtx | TestContext
 
 
 def _normalize_catalog(catalog: CatalogInput) -> FunctionCatalog | MockFunctionCatalog:

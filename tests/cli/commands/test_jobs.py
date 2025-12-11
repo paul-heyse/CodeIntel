@@ -179,6 +179,10 @@ def make_fake_context(
     jobs
         Optional job manager. Defaults to FakeJobManager.
 
+    Yields
+    ------
+    CommandContext
+        Configured fake context.
     """
     fake_manager = jobs or FakeJobManager()
     job_service = JobService(manager=fake_manager)  # type: ignore[arg-type]

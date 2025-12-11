@@ -43,9 +43,10 @@ class ModuleRepository(BaseRepository):
               AND commit = ?
             ORDER BY module
         """
-        rows = self._ibis_with_fallback(
-            ibis_query, sql, [self.repo, self.commit], table_key="core.modules"
-        )
+        # NOTE: Skip Pandera validation (table_key=None) because we're only
+        # selecting a single column. Full schema validation would fail since
+        # the Pandera schema expects all columns.
+        rows = self._ibis_with_fallback(ibis_query, sql, [self.repo, self.commit])
         return [str(row["module"]) for row in rows]
 
     def get_file_summary(self, rel_path: str) -> RowDict | None:

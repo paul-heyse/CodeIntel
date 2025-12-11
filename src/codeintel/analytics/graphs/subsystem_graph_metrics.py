@@ -180,7 +180,7 @@ def compute_subsystem_graph_metrics(
     validated_rows = validate_tuple_rows(
         contract.table_key,
         rows,
-        columns=contract.schema.column_names() if contract.schema else [],
+        schema=contract.schema,
     )
 
     gateway.con.execute(

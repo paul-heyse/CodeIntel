@@ -2,13 +2,60 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
 import ibis.expr.types as it
 
-from codeintel.storage.gateway.protocol import StorageGateway
 from codeintel.storage.ibis_types import ne, or_predicates
+
+if TYPE_CHECKING:
+    from ibis.backends.duckdb import Backend as DuckDBBackend
+
+    from codeintel.storage.gateway.protocol import StorageGateway
+
+
+def _table(con: DuckDBBackend, qualified_name: str) -> it.Table:
+    """Return table using database qualifier when provided.
+
+    Parameters
+    ----------
+    con
+        Ibis DuckDB backend connection.
+    qualified_name
+        Table name, optionally schema-qualified (e.g., "analytics.function_metrics").
+
+    Returns
+    -------
+    it.Table
+        Ibis table expression.
+    """
+    if "." in qualified_name:
+        database, table = qualified_name.split(".", 1)
+        return con.table(table, database=database)
+    return con.table(qualified_name)
+
+
+def _create_view(con: DuckDBBackend, qualified_name: str, expr: it.Table) -> None:
+    """Create view using database qualifier when provided.
+
+    Ibis 11+ requires the `database` parameter for schema-qualified names.
+    This method automatically splits "schema.view" into the correct form.
+
+    Parameters
+    ----------
+    con
+        Ibis DuckDB backend connection.
+    qualified_name
+        View name, optionally schema-qualified (e.g., "analytics.v_function_summary").
+    expr
+        Ibis table expression defining the view.
+    """
+    if "." in qualified_name:
+        database, view_name = qualified_name.split(".", 1)
+        con.create_view(view_name, expr, database=database, overwrite=True)
+    else:
+        con.create_view(qualified_name, expr, overwrite=True)
 
 __all__ = [
     "create_all_ibis_views",
@@ -40,8 +87,8 @@ def create_function_summary_view(gateway: StorageGateway) -> None:
     buckets for complexity and LOC.
     """
     con = gateway.ibis.con
-    fm: it.Table = con.table("analytics.function_metrics")
-    ft: it.Table = con.table("analytics.function_types").select(
+    fm: it.Table = _table(con, "analytics.function_metrics")
+    ft: it.Table = _table(con, "analytics.function_types").select(
         "function_goid_h128",
         "repo",
         "commit",
@@ -64,15 +111,15 @@ def create_function_summary_view(gateway: StorageGateway) -> None:
     medium_loc = loc_col <= ibis.literal(CALLGRAPH_LOC_MEDIUM)
     low_complexity = cyclomatic_complexity <= ibis.literal(COMPLEXITY_LOW_MAX)
     medium_complexity = cyclomatic_complexity <= ibis.literal(COMPLEXITY_MEDIUM_MAX)
-    loc_bucket = (
-        ibis.case().when(small_loc, "small").when(medium_loc, "medium").else_("large").end()
+    loc_bucket = ibis.cases(
+        (small_loc, "small"),
+        (medium_loc, "medium"),
+        else_="large",
     )
-    complexity_band = (
-        ibis.case()
-        .when(low_complexity, "low")
-        .when(medium_complexity, "medium")
-        .else_("high")
-        .end()
+    complexity_band = ibis.cases(
+        (low_complexity, "low"),
+        (medium_complexity, "medium"),
+        else_="high",
     )
 
     enriched = joined.mutate(
@@ -115,14 +162,14 @@ def create_function_summary_view(gateway: StorageGateway) -> None:
         enriched.has_return_annotation,
     )
 
-    con.create_view("analytics.v_function_summary", summary, overwrite=True)
+    _create_view(con, "analytics.v_function_summary", summary)
 
 
 def create_docs_function_summary_view(gateway: StorageGateway) -> None:
     """Create docs.v_function_summary derived from risk factors and metrics."""
     con = gateway.ibis.con
-    rf: it.Table = con.table("analytics.goid_risk_factors")
-    fm: it.Table = con.table("analytics.function_metrics")
+    rf: it.Table = _table(con, "analytics.goid_risk_factors")
+    fm: it.Table = _table(con, "analytics.function_metrics")
 
     joined = rf.left_join(
         fm,
@@ -174,13 +221,13 @@ def create_docs_function_summary_view(gateway: StorageGateway) -> None:
         rf.owners,
         rf.created_at,
     )
-    con.create_view("docs.v_function_summary", summary, overwrite=True)
+    _create_view(con, "docs.v_function_summary", summary)
 
 
 def create_callgraph_degree_view(gateway: StorageGateway) -> None:
     """Create or replace graph.v_call_graph_degree using call graph edges."""
     con = gateway.ibis.con
-    edges: it.Table = con.table("graph.call_graph_edges")
+    edges: it.Table = _table(con, "graph.call_graph_edges")
 
     out_degree = edges.group_by(["repo", "commit", "caller_goid_h128"]).aggregate(
         call_out_degree=edges.callee_goid_h128.count()
@@ -212,14 +259,14 @@ def create_callgraph_degree_view(gateway: StorageGateway) -> None:
         call_in_degree=call_in_degree,
     )
 
-    con.create_view("graph.v_call_graph_degree", degree_view, overwrite=True)
+    _create_view(con, "graph.v_call_graph_degree", degree_view)
 
 
 def create_goid_crosswalk_views(gateway: StorageGateway) -> None:
     """Create or replace goid crosswalk QA views."""
     con = gateway.ibis.con
-    goids: it.Table = con.table("core.goids")
-    crosswalk: it.Table = con.table("core.goid_crosswalk")
+    goids: it.Table = _table(con, "core.goids")
+    crosswalk: it.Table = _table(con, "core.goid_crosswalk")
 
     joined = goids.inner_join(
         crosswalk,
@@ -248,7 +295,7 @@ def create_goid_crosswalk_views(gateway: StorageGateway) -> None:
         crosswalk.scip_symbol,
         crosswalk.updated_at,
     )
-    con.create_view("core.v_goid_crosswalk_join", joined_view, overwrite=True)
+    _create_view(con, "core.v_goid_crosswalk_join", joined_view)
 
     mismatches = joined.filter(
         or_predicates(
@@ -270,23 +317,37 @@ def create_goid_crosswalk_views(gateway: StorageGateway) -> None:
         crosswalk.ast_qualname.name("crosswalk_qualname"),
         crosswalk.updated_at,
     )
-    con.create_view("core.v_goid_crosswalk_mismatches", mismatches, overwrite=True)
+    _create_view(con, "core.v_goid_crosswalk_mismatches", mismatches)
 
 
 def create_all_ibis_views(gateway: StorageGateway) -> None:
-    """Create all Ibis-defined views backed by the storage gateway."""
-    create_docs_function_summary_view(gateway)
-    create_function_summary_view(gateway)
-    create_callgraph_degree_view(gateway)
-    create_call_graph_enriched_view(gateway)
-    create_goid_crosswalk_views(gateway)
-    create_function_hotspots_view(gateway)
-    create_import_graph_degree_view(gateway)
-    create_docs_file_summary_view(gateway)
-    create_docs_module_architecture_view(gateway)
-    create_docs_subsystem_summary_view(gateway)
-    create_docs_subsystem_profile_view(gateway)
-    create_docs_subsystem_coverage_view(gateway)
+    """Create Ibis-defined views that supplement (not replace) SQL views.
+
+    This function creates ONLY views that:
+    1. Do not exist in SQL form (unique to Ibis)
+    2. Require runtime computation (e.g., min/max normalization)
+
+    Views that already have complete SQL definitions in views/*.py are NOT
+    recreated here to avoid schema mismatches between SQL and Ibis versions.
+    The SQL views in subsystem_views.py, function_views.py, module_views.py,
+    and graph_views.py are the source of truth for docs.* views.
+    """
+    # Unique Ibis views (no SQL equivalent)
+    create_function_summary_view(gateway)  # analytics.v_function_summary
+    create_callgraph_degree_view(gateway)  # analytics.v_callgraph_degree
+    create_goid_crosswalk_views(gateway)  # core.v_goid_crosswalk_*
+    create_function_hotspots_view(gateway)  # analytics.v_function_hotspots
+    create_import_graph_degree_view(gateway)  # analytics.v_import_degree
+
+    # NOTE: The following view creators are intentionally REMOVED because
+    # they overwrite complete SQL views with incomplete Ibis versions:
+    # - create_docs_function_summary_view (use function_views.py instead)
+    # - create_call_graph_enriched_view (use graph_views.py instead)
+    # - create_docs_file_summary_view (use module_views.py instead)
+    # - create_docs_module_architecture_view (use module_views.py instead)
+    # - create_docs_subsystem_summary_view (use subsystem_views.py instead)
+    # - create_docs_subsystem_profile_view (use subsystem_views.py instead)
+    # - create_docs_subsystem_coverage_view (use subsystem_views.py instead)
 
 
 def create_function_hotspots_view(gateway: StorageGateway) -> None:
@@ -296,15 +357,13 @@ def create_function_hotspots_view(gateway: StorageGateway) -> None:
     Normalizes hotspot_score to [0,1] for relative comparisons.
     """
     con = gateway.ibis.con
-    rf: it.Table = con.table("analytics.goid_risk_factors")
+    rf: it.Table = _table(con, "analytics.goid_risk_factors")
     min_score = rf.hotspot_score.min()
     max_score = rf.hotspot_score.max()
     score_range = max_score.cast("float64") - min_score.cast("float64")
-    normalized_score = (
-        ibis.case()
-        .when(score_range == 0, 0.0)
-        .else_((rf.hotspot_score.cast("float64") - min_score.cast("float64")) / score_range)
-        .end()
+    normalized_score = ibis.cases(
+        (score_range == 0, 0.0),
+        else_=(rf.hotspot_score.cast("float64") - min_score.cast("float64")) / score_range,
     )
     hotspots = rf.mutate(
         hotspot_normalized=normalized_score,
@@ -326,15 +385,15 @@ def create_function_hotspots_view(gateway: StorageGateway) -> None:
         rf.typedness_bucket,
         rf.created_at,
     )
-    con.create_view("analytics.v_function_hotspots", hotspots, overwrite=True)
+    _create_view(con, "analytics.v_function_hotspots", hotspots)
 
 
 def create_call_graph_enriched_view(gateway: StorageGateway) -> None:
     """Create docs.v_call_graph_enriched to align with the SQL definition."""
     con = gateway.ibis.con
-    edges: it.Table = con.table("graph.call_graph_edges")
-    goids: it.Table = con.table("core.goids")
-    risk: it.Table = con.table("analytics.goid_risk_factors")
+    edges: it.Table = _table(con, "graph.call_graph_edges")
+    goids: it.Table = _table(con, "core.goids")
+    risk: it.Table = _table(con, "analytics.goid_risk_factors")
 
     caller_goids = goids.view()
     callee_goids = goids.view()
@@ -402,13 +461,13 @@ def create_call_graph_enriched_view(gateway: StorageGateway) -> None:
         edges.confidence,
         edges.evidence_json,
     )
-    con.create_view("docs.v_call_graph_enriched", enriched, overwrite=True)
+    _create_view(con, "docs.v_call_graph_enriched", enriched)
 
 
 def create_import_graph_degree_view(gateway: StorageGateway) -> None:
     """Create graph.v_import_graph_degree aggregating import edge degrees."""
     con = gateway.ibis.con
-    edges: it.Table = con.table("graph.import_graph_edges")
+    edges: it.Table = _table(con, "graph.import_graph_edges")
 
     out_degree = edges.group_by(["repo", "commit", "src_module"]).aggregate(
         import_out_degree=edges.dst_module.count()
@@ -432,7 +491,7 @@ def create_import_graph_degree_view(gateway: StorageGateway) -> None:
         import_out_degree=ibis.coalesce(out_degree.import_out_degree, ibis.literal(0)),
         import_in_degree=ibis.coalesce(in_degree.import_in_degree, ibis.literal(0)),
     )
-    con.create_view("graph.v_import_graph_degree", degree_view, overwrite=True)
+    _create_view(con, "graph.v_import_graph_degree", degree_view)
 
 
 def create_docs_file_summary_view(gateway: StorageGateway) -> None:
@@ -442,8 +501,8 @@ def create_docs_file_summary_view(gateway: StorageGateway) -> None:
     Combines file profiles with ownership and module information.
     """
     con = gateway.ibis.con
-    fp: it.Table = con.table("analytics.file_profile")
-    modules: it.Table = con.table("core.modules")
+    fp: it.Table = _table(con, "analytics.file_profile")
+    modules: it.Table = _table(con, "core.modules")
 
     joined = fp.left_join(
         modules,
@@ -462,19 +521,19 @@ def create_docs_file_summary_view(gateway: StorageGateway) -> None:
         fp.language,
         fp.function_count,
         fp.class_count,
-        fp.loc,
-        fp.complexity,
-        fp.avg_risk_score,
+        fp.avg_loc.name("loc"),
+        fp.avg_cyclomatic_complexity.name("complexity"),
+        fp.max_risk_score.name("avg_risk_score"),
         fp.max_risk_score,
         fp.high_risk_function_count,
-        fp.coverage_ratio,
-        fp.typed_ratio,
+        fp.file_coverage_ratio.name("coverage_ratio"),
+        fp.annotation_ratio.name("typed_ratio"),
         fp.hotspot_score,
         fp.static_error_count,
         modules.tags,
         modules.owners,
     )
-    con.create_view("docs.v_file_summary", summary, overwrite=True)
+    _create_view(con, "docs.v_file_summary", summary)
 
 
 def create_docs_module_architecture_view(gateway: StorageGateway) -> None:
@@ -484,10 +543,10 @@ def create_docs_module_architecture_view(gateway: StorageGateway) -> None:
     Provides an architectural view of each module with graph metrics.
     """
     con = gateway.ibis.con
-    modules: it.Table = con.table("core.modules")
-    graph_metrics: it.Table = con.table("analytics.graph_metrics_modules")
-    subsystem_modules: it.Table = con.table("analytics.subsystem_modules")
-    subsystems: it.Table = con.table("analytics.subsystems")
+    modules: it.Table = _table(con, "core.modules")
+    graph_metrics: it.Table = _table(con, "analytics.graph_metrics_modules")
+    subsystem_modules: it.Table = _table(con, "analytics.subsystem_modules")
+    subsystems: it.Table = _table(con, "analytics.subsystems")
 
     joined = (
         modules.left_join(
@@ -531,7 +590,7 @@ def create_docs_module_architecture_view(gateway: StorageGateway) -> None:
         modules.tags,
         modules.owners,
     )
-    con.create_view("docs.v_module_architecture", architecture, overwrite=True)
+    _create_view(con, "docs.v_module_architecture", architecture)
 
 
 def create_docs_subsystem_summary_view(gateway: StorageGateway) -> None:
@@ -541,8 +600,8 @@ def create_docs_subsystem_summary_view(gateway: StorageGateway) -> None:
     Provides an overview of each subsystem's structure and risk profile.
     """
     con = gateway.ibis.con
-    subsystems: it.Table = con.table("analytics.subsystems")
-    profile: it.Table = con.table("analytics.subsystem_profile_cache")
+    subsystems: it.Table = _table(con, "analytics.subsystems")
+    profile: it.Table = _table(con, "analytics.subsystem_profile_cache")
 
     joined = subsystems.left_join(
         profile,
@@ -573,7 +632,7 @@ def create_docs_subsystem_summary_view(gateway: StorageGateway) -> None:
         profile.risk_level,
         subsystems.created_at,
     )
-    con.create_view("docs.v_subsystem_summary", summary, overwrite=True)
+    _create_view(con, "docs.v_subsystem_summary", summary)
 
 
 def create_docs_subsystem_profile_view(gateway: StorageGateway) -> None:
@@ -583,9 +642,9 @@ def create_docs_subsystem_profile_view(gateway: StorageGateway) -> None:
     Extended subsystem view including graph-level metrics.
     """
     con = gateway.ibis.con
-    subsystems: it.Table = con.table("analytics.subsystems")
-    profile: it.Table = con.table("analytics.subsystem_profile_cache")
-    graph_metrics: it.Table = con.table("analytics.subsystem_graph_metrics")
+    subsystems: it.Table = _table(con, "analytics.subsystems")
+    profile: it.Table = _table(con, "analytics.subsystem_profile_cache")
+    graph_metrics: it.Table = _table(con, "analytics.subsystem_graph_metrics")
 
     joined = subsystems.left_join(
         profile,
@@ -629,7 +688,7 @@ def create_docs_subsystem_profile_view(gateway: StorageGateway) -> None:
         graph_metrics.import_layer,
         subsystems.created_at,
     )
-    con.create_view("docs.v_subsystem_profile", profile_view, overwrite=True)
+    _create_view(con, "docs.v_subsystem_profile", profile_view)
 
 
 def create_docs_subsystem_coverage_view(gateway: StorageGateway) -> None:
@@ -639,9 +698,9 @@ def create_docs_subsystem_coverage_view(gateway: StorageGateway) -> None:
     Provides test coverage metrics per subsystem.
     """
     con = gateway.ibis.con
-    subsystems: it.Table = con.table("analytics.subsystems")
-    profile: it.Table = con.table("analytics.subsystem_profile_cache")
-    coverage: it.Table = con.table("analytics.subsystem_coverage_cache")
+    subsystems: it.Table = _table(con, "analytics.subsystems")
+    profile: it.Table = _table(con, "analytics.subsystem_profile_cache")
+    coverage: it.Table = _table(con, "analytics.subsystem_coverage_cache")
 
     joined = subsystems.left_join(
         profile,
@@ -683,4 +742,4 @@ def create_docs_subsystem_coverage_view(gateway: StorageGateway) -> None:
         coverage.function_coverage_ratio,
         subsystems.created_at,
     )
-    con.create_view("docs.v_subsystem_coverage", coverage_view, overwrite=True)
+    _create_view(con, "docs.v_subsystem_coverage", coverage_view)

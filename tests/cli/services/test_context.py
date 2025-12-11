@@ -80,56 +80,59 @@ def test_with_operation_id() -> None:
 
 def test_has_runtime_without_config() -> None:
     """Has runtime returns False without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-
-        with CommandContextBuilder().build() as ctx:
-            expect_false(ctx.has_runtime)
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+    ):
+        expect_false(ctx.has_runtime)
 
 
 def test_has_storage_without_config() -> None:
     """Has storage returns False without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-
-        with CommandContextBuilder().build() as ctx:
-            expect_false(ctx.has_storage)
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+    ):
+        expect_false(ctx.has_storage)
 
 
 def test_has_serving_without_config() -> None:
     """Has serving returns False without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-
-        with CommandContextBuilder().build() as ctx:
-            expect_false(ctx.has_serving)
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+    ):
+        expect_false(ctx.has_serving)
 
 
 def test_runtime_raises_without_config() -> None:
     """Runtime raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-        with CommandContextBuilder().build() as ctx:
-            with pytest.raises(RuntimeError, match="Runtime not available"):
-                _ = ctx.runtime
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+        pytest.raises(RuntimeError, match="Runtime not available"),
+    ):
+        _ = ctx.runtime
 
 
 def test_storage_raises_without_config() -> None:
     """Storage raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-        with CommandContextBuilder().build() as ctx:
-            with pytest.raises(RuntimeError, match="Storage not available"):
-                _ = ctx.storage
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+        pytest.raises(RuntimeError, match="Storage not available"),
+    ):
+        _ = ctx.storage
 
 
 def test_serving_raises_without_config() -> None:
     """Serving raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config:
-        mock_config.return_value = MagicMock()
-        with CommandContextBuilder().build() as ctx:
-            with pytest.raises(RuntimeError, match="Serving not available"):
-                _ = ctx.serving
+    with (
+        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
+        CommandContextBuilder().build() as ctx,
+        pytest.raises(RuntimeError, match="Serving not available"),
+    ):
+        _ = ctx.serving
 
 
 # ---------------------------------------------------------------------------

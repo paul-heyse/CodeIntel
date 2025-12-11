@@ -32,16 +32,16 @@ def test_validate_macros_handler_returns_ok_when_valid() -> None:
     """Handler returns success when macros are valid."""
     with _mock_storage_gateway() as mock_gateway:
         mock_gateway.con = MagicMock()
-        ctx = _build_test_context(params={"macro_requirement": MacroRequirement.REQUIRE})
-
         with (
+            _build_test_context(params={"macro_requirement": MacroRequirement.REQUIRE}) as ctx,
             patch("codeintel.cli.handlers.storage.open_gateway", return_value=mock_gateway),
             patch("codeintel.cli.handlers.storage._assert_macro_coverage"),
             patch("codeintel.cli.handlers.storage.validate_macro_registry"),
             patch("codeintel.cli.handlers.storage.validate_dataset_schema_registry"),
             patch("codeintel.cli.handlers.storage.validate_normalized_macro_schemas"),
             patch(
-                "codeintel.cli.handlers.storage.ingest_macro_coverage", return_value=([], ["test"])
+                "codeintel.cli.handlers.storage.ingest_macro_coverage",
+                return_value=([], ["test"]),
             ),
             patch("codeintel.cli.handlers.storage.dataset_rows_only_entries", return_value=[]),
         ):
@@ -56,9 +56,8 @@ def test_validate_macros_handler_returns_ok_when_valid() -> None:
 
 def test_generate_macros_handler_fails_when_no_tables() -> None:
     """Handler returns error when no tables provided."""
-    ctx = _build_test_context(params={})
-
-    result = generate_macros_handler(ctx)
+    with _build_test_context(params={}) as ctx:
+        result = generate_macros_handler(ctx)
 
     expect_true(not result.success)
     expect_is_not_none(result.error)
@@ -72,9 +71,10 @@ def test_generate_macros_handler_returns_ok_with_tables() -> None:
     mock_macro.macro_name = "test_macro"
     mock_macro.ddl = "CREATE TABLE test()"
 
-    ctx = _build_test_context(params={"tables": ["test_table"]})
-
-    with patch("codeintel.cli.handlers.storage.render_macro", return_value=mock_macro):
+    with (
+        _build_test_context(params={"tables": ["test_table"]}) as ctx,
+        patch("codeintel.cli.handlers.storage.render_macro", return_value=mock_macro),
+    ):
         result = generate_macros_handler(ctx)
 
     expect_true(result.success)
@@ -86,9 +86,8 @@ def test_generate_macros_handler_returns_ok_with_tables() -> None:
 
 def test_profile_storage_handler_fails_when_no_output_dir() -> None:
     """Handler returns error when output_dir not provided."""
-    ctx = _build_test_context(params={})
-
-    result = profile_storage_handler(ctx)
+    with _build_test_context(params={}) as ctx:
+        result = profile_storage_handler(ctx)
 
     expect_true(not result.success)
     expect_is_not_none(result.error)
@@ -100,14 +99,15 @@ def test_profile_storage_handler_returns_ok(tmp_path: Path) -> None:
     """Handler returns success when output_dir is provided."""
     output_dir = tmp_path / "profile"
     include_views = True
-    ctx = _build_test_context(
-        params={
-            "output_dir": str(output_dir),
-            "include_views": include_views,
-        }
-    )
-
-    with patch("codeintel.cli.handlers.storage.run_profile"):
+    with (
+        _build_test_context(
+            params={
+                "output_dir": str(output_dir),
+                "include_views": include_views,
+            }
+        ) as ctx,
+        patch("codeintel.cli.handlers.storage.run_profile"),
+    ):
         result = profile_storage_handler(ctx)
 
     expect_true(result.success)
@@ -176,20 +176,14 @@ def _mock_storage_gateway() -> Iterator[MagicMock]:
     yield mock
 
 
-def _build_test_context(
-    params: dict[str, object],
-) -> CommandContext:
+@contextmanager
+def _build_test_context(params: dict[str, object]) -> Iterator[CommandContext]:
     """Build a test context with mocked dependencies.
 
-    Parameters
-    ----------
-    params
-        Handler parameters.
-
-    Returns
-    -------
+    Yields
+    ------
     CommandContext
-        Test context.
+        Context configured with a mocked storage gateway.
     """
     mock_gateway = MagicMock(spec=StorageGateway)
     builder = (
@@ -198,7 +192,6 @@ def _build_test_context(
         .with_operation_id("storage.test")
         .with_injected_gateway(mock_gateway)
     )
-    stack = ExitStack()
-    ctx = stack.enter_context(builder.build())
-    ctx._close_stack = stack
-    return ctx
+    with ExitStack() as stack:
+        ctx = stack.enter_context(builder.build())
+        yield ctx
