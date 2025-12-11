@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 import ibis
 import ibis.expr.types as it
 
-from codeintel.storage.gateway.protocol import StorageGateway
-
 if TYPE_CHECKING:
     from ibis.backends.duckdb import Backend as DuckDBBackend
+
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = ["IbisGateway"]
 
@@ -32,7 +32,7 @@ class IbisGateway:
         DuckDBBackend
             Ibis backend bound to the DuckDB connection.
         """
-        return ibis.duckdb.connect(con=self._gateway.con)
+        return ibis.duckdb.from_connection(self._gateway.con)
 
     def table(self, table_name: str) -> it.Table:
         """
@@ -41,13 +41,21 @@ class IbisGateway:
         Parameters
         ----------
         table_name
-            Fully qualified table or view name.
+            Fully qualified table or view name (e.g., "analytics.function_metrics").
 
         Returns
         -------
         it.Table
             Ibis table expression for the requested object.
+
+        Note
+        ----
+        Ibis 11+ requires the `database` parameter for schema-qualified names.
+        This method automatically splits "schema.table" into the correct form.
         """
+        if "." in table_name:
+            database, name = table_name.split(".", 1)
+            return self.con.table(name, database=database)
         return self.con.table(table_name)
 
     def view(self, view_name: str) -> it.Table:

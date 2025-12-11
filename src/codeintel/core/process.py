@@ -221,7 +221,12 @@ class CommandExecutor:
         if stdout_path is not None:
             await asyncio.to_thread(stdout_path.write_text, stdout_text, encoding="utf-8")
 
-        return stdout_text, stderr_text, process.returncode
+        return_code = process.returncode
+        if return_code is None:
+            message = "Process exited without a return code"
+            raise RuntimeError(message)
+
+        return stdout_text, stderr_text, return_code
 
 
 __all__ = [

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -60,7 +60,8 @@ def test_is_resolved_initially_false() -> None:
 def test_invalidate_clears_cache() -> None:
     """Invalidate clears cached runtime."""
     service = RuntimeService({})
-    service._resolved = MagicMock()
+    with patch.object(RuntimeService, "_resolve", return_value=MagicMock()):
+        _ = service.runtime
     expect_true(service.is_resolved)
 
     service.invalidate()

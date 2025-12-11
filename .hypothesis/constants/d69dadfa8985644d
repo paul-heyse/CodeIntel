@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/jobs/_jobs.py
+# hypothesis_version: 6.148.7
+
+[1000, 86400, '*.json', '.codeintel', '.output.json', 'JobInfo', 'JobManager', 'JobStatus', 'JobStore', 'Unknown error', 'cancelled', 'completed', 'failed', 'get_job_manager', 'jobs', 'pending', 'run_job', 'running', 'status']

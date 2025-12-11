@@ -44,6 +44,7 @@ if TYPE_CHECKING:
         GraphTables,
     )
     from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.tracking import PipelineRunTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
 
@@ -79,6 +80,51 @@ class FakeBuildStore:
         return list(self.manifests.values())
 
 
+class _FakeIbisGateway:
+    """Minimal ibis gateway stub for readiness tests."""
+
+    def __init__(self, con: duckdb.DuckDBPyConnection) -> None:
+        self._con = con
+
+    @property
+    def con(self) -> duckdb.DuckDBPyConnection:
+        """Return backing DuckDB connection."""
+        return self._con
+
+    def table(self, name: str) -> duckdb.DuckDBPyRelation:
+        """
+        Return a relation for a table.
+
+        Returns
+        -------
+        DuckDBPyRelation
+            Relation bound to the requested table.
+        """
+        return self._con.table(name)
+
+    def view(self, name: str) -> duckdb.DuckDBPyRelation:
+        """
+        Return a relation for a view.
+
+        Returns
+        -------
+        DuckDBPyRelation
+            Relation bound to the requested view.
+        """
+        return self.table(name)
+
+    def sql(self, raw_sql: str) -> duckdb.DuckDBPyRelation:
+        """
+        Execute raw SQL via DuckDB.
+
+        Returns
+        -------
+        DuckDBPyRelation
+            Relation produced by the SQL statement.
+        """
+        return self._con.sql(raw_sql)
+
+
 class FakeGateway(StorageGateway):
     """Minimal StorageGateway implementation for readiness tests."""
 
@@ -93,6 +139,7 @@ class FakeGateway(StorageGateway):
         self.graph = cast("GraphTables", placeholder)
         self.runs = cast("PipelineRunTracking", placeholder)
         self._con = duckdb.connect(":memory:")
+        self.ibis = cast("IbisGateway", _FakeIbisGateway(self._con))
         self.executions: list[tuple[str, tuple[object, ...] | None]] = []
 
     @property

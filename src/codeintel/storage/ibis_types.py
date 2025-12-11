@@ -37,12 +37,10 @@ Or using the combinator:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from ibis.expr.types import BooleanValue, Table
-
-TableT = TypeVar("TableT", bound="Table")
 
 
 def ibis_bool(expr: object) -> BooleanValue:
@@ -271,7 +269,7 @@ def or_predicates(*predicates: object) -> BooleanValue:
     return result
 
 
-def filter_by(table: TableT, *predicates: object) -> TableT:
+def filter_by[TableT: "Table"](table: TableT, *predicates: object) -> TableT:
     """Filter an Ibis table with type-safe predicates.
 
     This is a convenience wrapper around `table.filter()` that handles

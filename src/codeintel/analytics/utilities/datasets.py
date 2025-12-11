@@ -334,9 +334,10 @@ __all__ = [
 
 def validate_tuple_rows(
     table_key: str,
-    rows: Sequence[Sequence[object]],
+    rows: Sequence[Mapping[str, object] | Sequence[object]],
     *,
-    columns: Sequence[str],
+    columns: Sequence[str] | None = None,
+    schema: TableSchema | None = None,
 ) -> list[tuple[object, ...]]:
     """
     Validate tuple rows for a dataset and return normalized tuples.
@@ -346,19 +347,43 @@ def validate_tuple_rows(
     table_key
         Fully qualified dataset key.
     rows
-        Iterable of rows in positional tuple/sequence form.
+        Iterable of rows as mappings or positional sequences.
     columns
         Column order corresponding to the tuples.
+    schema
+        Optional TableSchema used to derive column order.
 
     Returns
     -------
     list[tuple[object, ...]]
         Pandera-validated rows with ``None`` for missing values.
+
+    Raises
+    ------
+    ValueError
+        If both ``columns`` and ``schema`` are provided or if column names cannot be
+        determined.
     """
     if not rows:
         return []
-    df = pd.DataFrame(rows, columns=list(columns))
+    if columns is not None and schema is not None:
+        message = "Specify either schema or columns, not both"
+        raise ValueError(message)
+    column_names = tuple(columns or (schema.column_names() if schema else ()))
+    if not column_names:
+        message = f"Column names required to validate rows for {table_key}"
+        raise ValueError(message)
+
+    first = rows[0]
+    columns_index = pd.Index(column_names)
+    if isinstance(first, Mapping):
+        mapping_rows = cast("Sequence[Mapping[str, object]]", rows)
+        df = pd.DataFrame(mapping_rows, columns=columns_index)
+    else:
+        tuple_rows = cast("Sequence[Sequence[object]]", rows)
+        df = pd.DataFrame(tuple_rows, columns=columns_index)
+
     validated = validate_dataset_df(table_key, df)
     normalized = validated.where(pd.notna(validated), None)
-    ordered = normalized[list(columns)]
+    ordered = normalized.loc[:, columns_index]
     return [tuple(row) for row in ordered.itertuples(index=False, name=None)]

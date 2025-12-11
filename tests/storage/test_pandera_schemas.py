@@ -384,12 +384,21 @@ class TestCrossTableInvariants:
         df = pd.DataFrame(
             {
                 "function_goid_h128": [1],
+                "urn": ["test:func"],
                 "repo": ["repo"],
                 "commit": ["abc"],
                 "rel_path": ["test.py"],
+                "language": ["python"],
+                "kind": ["function"],
+                "qualname": ["test:func"],
+                "start_line": [1],
+                "end_line": [10],
                 "executable_lines": [10],
                 "covered_lines": [5],  # Valid: 5 <= 10
                 "coverage_ratio": [0.5],
+                "tested": [True],
+                "untested_reason": [None],
+                "created_at": [pd.Timestamp.now()],
             }
         )
         result = validate_dataset_df("analytics.coverage_functions", df)

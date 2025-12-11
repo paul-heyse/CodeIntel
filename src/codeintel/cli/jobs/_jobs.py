@@ -489,17 +489,13 @@ def run_job(job_id: str) -> int:
     int
         Exit code (0 on success, non-zero on failure).
     """
-    # Lazy import to avoid circular dependency with cli.execution.registry
-    from codeintel.cli.execution.registry import (  # noqa: PLC0415
-        execute_operation,
-        get_registry,
-    )
-
     store = JobStore()
     job = store.load(job_id)
 
     if job is None:
         return 1
+    # Import lazily to avoid circular imports during CLI startup.
+    from codeintel.cli.execution.registry import execute_operation, get_registry
 
     registry = get_registry()
     spec = registry.get(job.operation_id)

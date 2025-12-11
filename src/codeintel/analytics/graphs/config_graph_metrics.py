@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
 
 import networkx as nx
 
@@ -117,14 +116,14 @@ def _projection_rows(
     node_rows = validate_tuple_rows(
         node_contract.table_key,
         node_dicts,
-        columns=node_contract.schema.column_names(),
+        schema=node_contract.schema,
     )
     edge_rows = validate_tuple_rows(
         edge_contract.table_key,
         edge_dicts,
-        columns=edge_contract.schema.column_names(),
+        schema=edge_contract.schema,
     )
-    return cast("list[tuple[object, ...]]", node_rows), cast("list[tuple[object, ...]]", edge_rows)
+    return node_rows, edge_rows
 
 
 def _projection_payload(

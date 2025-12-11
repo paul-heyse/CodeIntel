@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/ibis_types.py
+# hypothesis_version: 6.148.7
+
+['BooleanValue', 'Table', 'and_predicates', 'count_gt', 'filter_by', 'ge', 'gt', 'ibis_bool', 'ilike', 'le', 'lt', 'ne', 'or_predicates']

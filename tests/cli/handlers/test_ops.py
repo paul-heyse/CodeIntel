@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 from codeintel.cli.context import CommandContext, CommandContextBuilder
@@ -13,10 +14,7 @@ from codeintel.cli.core.result_types import (
     OperationCallResult,
     OperationListResult,
 )
-from codeintel.cli.handlers.ops import (
-    ServeStartResult,
-    op_list_handler,
-)
+from codeintel.cli.handlers.ops import ServeStartResult, op_list_handler
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -35,11 +33,12 @@ def test_op_list_handler_returns_ok() -> None:
     mock_op.http_path = "/api/test"
     mock_op.tool_name = "test_tool"
 
-    ctx = _build_test_context(params={})
-
-    with patch(
-        "codeintel.cli.handlers.ops.iter_operations",
-        return_value=[mock_op],
+    with (
+        _build_test_context(params={}) as ctx,
+        patch(
+            "codeintel.cli.handlers.ops.iter_operations",
+            return_value=[mock_op],
+        ),
     ):
         result = op_list_handler(ctx)
 
@@ -66,11 +65,12 @@ def test_op_list_handler_filters_by_category() -> None:
     mock_op2.http_path = "/api/other"
     mock_op2.tool_name = "other_tool"
 
-    ctx = _build_test_context(params={"category": "test"})
-
-    with patch(
-        "codeintel.cli.handlers.ops.iter_operations",
-        return_value=[mock_op1, mock_op2],
+    with (
+        _build_test_context(params={"category": "test"}) as ctx,
+        patch(
+            "codeintel.cli.handlers.ops.iter_operations",
+            return_value=[mock_op1, mock_op2],
+        ),
     ):
         result = op_list_handler(ctx)
 
@@ -171,20 +171,14 @@ def test_serve_start_result_to_dict() -> None:
     expect_true(data["auto_pipeline"])
 
 
-def _build_test_context(
-    params: dict[str, object],
-) -> CommandContext:
+@contextmanager
+def _build_test_context(params: dict[str, object]) -> Iterator[CommandContext]:
     """Build a test context with mocked dependencies.
 
-    Parameters
-    ----------
-    params
-        Handler parameters.
-
-    Returns
-    -------
+    Yields
+    ------
     CommandContext
-        Test context.
+        Context configured with a mocked storage gateway.
     """
     mock_gateway = MagicMock(spec=StorageGateway)
     builder = (
@@ -193,7 +187,6 @@ def _build_test_context(
         .with_operation_id("ops.test")
         .with_injected_gateway(mock_gateway)
     )
-    stack = ExitStack()
-    ctx = stack.enter_context(builder.build())
-    ctx._close_stack = stack
-    return ctx
+    with ExitStack() as stack:
+        ctx = stack.enter_context(builder.build())
+        yield ctx

@@ -1170,6 +1170,82 @@ executor = PluginExecutor(
 
 ---
 
+## Ibis 11 Patterns (DuckDB Backend)
+
+This project uses **Ibis 11.0.0+** with DuckDB. Key API patterns:
+
+### Connection
+
+```python
+# ✅ Correct - Ibis 11
+ibis_con = ibis.duckdb.from_connection(duckdb_connection)
+
+# ❌ Deprecated - pre-Ibis 11
+ibis_con = ibis.duckdb.connect(con=duckdb_connection)
+```
+
+### Table Access with Qualified Names
+
+```python
+# ✅ Correct - use database parameter
+table = con.table("function_metrics", database="analytics")
+
+# ❌ Will fail in Ibis 11
+table = con.table("analytics.function_metrics")
+
+# ✅ Or use IbisGateway.table() which handles splitting automatically
+table = gateway.ibis.table("analytics.function_metrics")
+```
+
+### View Creation with Qualified Names
+
+```python
+# ✅ Correct - use database parameter
+con.create_view("v_function_summary", expr, database="analytics", overwrite=True)
+
+# ❌ Will create view in wrong schema
+con.create_view("analytics.v_function_summary", expr, overwrite=True)
+
+# ✅ Or use _create_view() helper in ibis_views.py
+_create_view(con, "analytics.v_function_summary", expr)
+```
+
+### Case Expressions
+
+```python
+# ✅ Correct - Ibis 11 ibis.cases() builder
+bucket = ibis.cases(
+    (loc <= 50, "small"),
+    (loc <= 200, "medium"),
+    else_="large",
+)
+
+# ❌ Removed in Ibis 11
+bucket = ibis.case().when(loc <= 50, "small").when(loc <= 200, "medium").else_("large").end()
+```
+
+### Helper Functions
+
+Two helper functions in `src/codeintel/storage/views/ibis_views.py` handle qualified names:
+
+- `_table(con, "schema.table")` - Returns Ibis table with correct database parameter
+- `_create_view(con, "schema.view", expr)` - Creates view with correct database parameter
+
+The `IbisGateway.table()` method in `src/codeintel/storage/ibis_adapter.py` also handles
+qualified names automatically.
+
+### Deprecated Methods to Avoid
+
+| Deprecated | Replacement |
+|------------|-------------|
+| `String.to_date` | `String.as_date` |
+| `String.to_timestamp` | `String.as_timestamp` |
+| `IntegerValue.to_interval` | `IntegerValue.as_interval` |
+| `IntegerValue.to_timestamp` | `IntegerValue.as_timestamp` |
+| `Struct.destructure` | `Table.unpack` |
+
+---
+
 ## Glossary
 
 - **Agent Catalog** — machine‑readable index of packages/modules/symbols with stable anchors and links

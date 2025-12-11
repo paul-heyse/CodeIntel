@@ -303,7 +303,7 @@ class SubsystemRepository(BaseRepository):
                 table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
                 .order_by(
                     [
-                        table.test_count.desc(nulls_last=True),  # type: ignore[call-arg]
+                        table.test_count.desc(nulls_first=False),
                         table.subsystem_id,
                     ]
                 )
@@ -329,7 +329,7 @@ class SubsystemRepository(BaseRepository):
             table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
             .order_by(
                 [
-                    table.test_count.desc(nulls_last=True),  # type: ignore[call-arg]
+                    table.test_count.desc(nulls_first=False),
                     table.subsystem_id,
                 ]
             )

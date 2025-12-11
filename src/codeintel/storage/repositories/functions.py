@@ -121,7 +121,7 @@ class FunctionRepository(BaseRepository):
             )
         if not records:
             return None
-        value = records[0].get("function_goid_h128")
+        value = records[0].get("goid_h128")
         if value is None:
             return None
         if isinstance(value, (int, float, str, Decimal)):
@@ -313,10 +313,12 @@ class FunctionRepository(BaseRepository):
             table = self.gateway.ibis.table("docs.v_function_summary")
             expr = table.filter(
                 and_predicates(table.repo == self.repo, table.commit == self.commit)
-            )
-            records = self._validated_records(
-                "docs.v_function_summary", expr.select("function_goid_h128")
-            )
+            ).select("function_goid_h128")
+            # NOTE: Skip Pandera validation for single-column projections.
+            # The _validated_records method expects the full schema, but here
+            # we're only selecting one column for a simple GOID list.
+            df = pd.DataFrame(expr.execute())
+            records = df.where(pd.notna(df), None).to_dict(orient="records")
         except IbisError:
             sql = """
                 SELECT function_goid_h128

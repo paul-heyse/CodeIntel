@@ -113,7 +113,7 @@ def compute_symbol_graph_metrics_modules(
     validated_rows = validate_tuple_rows(
         contract.table_key,
         rows,
-        columns=contract.schema.column_names() if contract.schema else [],
+        schema=contract.schema,
     )
     gateway.con.execute(
         "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
@@ -211,7 +211,7 @@ def compute_symbol_graph_metrics_functions(
     validated_rows = validate_tuple_rows(
         contract.table_key,
         rows,
-        columns=contract.schema.column_names() if contract.schema else [],
+        schema=contract.schema,
     )
     gateway.con.execute(
         "DELETE FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
