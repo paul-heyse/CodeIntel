@@ -13,32 +13,70 @@ from typing import Any, Protocol, runtime_checkable
 LOG = logging.getLogger(__name__)
 
 
-# Minimal protocols to describe OpenTelemetry trace module and span context.
-@runtime_checkable
-class _TraceContext(Protocol):
-    trace_id: int
-    span_id: int
-
-
-@runtime_checkable
-class _Span(Protocol):
-    def get_span_context(self) -> _TraceContext: ...
-
-
-@runtime_checkable
-class _TraceModule(Protocol):
-    def get_current_span(self) -> _Span: ...
-
-
-# Try to import OpenTelemetry trace module (optional dependency)
-_otel_trace: _TraceModule | None
 try:
     from opentelemetry import trace as _otel_trace
-
-    _OTEL_TRACE_AVAILABLE = True
 except ImportError:
     _otel_trace = None
-    _OTEL_TRACE_AVAILABLE = False
+
+
+@runtime_checkable
+class TraceAdapter(Protocol):
+    """Adapter interface for optional tracing backends."""
+
+    def get_trace_context(self) -> dict[str, str] | None:
+        """Return current trace context identifiers if available.
+
+        Returns
+        -------
+        dict[str, str] | None
+            Mapping with trace/span IDs or None if unavailable.
+        """
+        ...
+
+
+class NullTraceAdapter:
+    """Fallback adapter when tracing is unavailable."""
+
+    def get_trace_context(self) -> dict[str, str] | None:
+        """Tracing disabled.
+
+        Returns
+        -------
+        None
+            Always returns None; tracing is not active.
+        """
+        _ = self
+        return None
+
+
+class OTELTraceAdapter:
+    """Adapter that extracts trace context from OpenTelemetry."""
+
+    def __init__(self) -> None:
+        if _otel_trace is None:
+            msg = "opentelemetry is not installed"
+            raise ImportError(msg)
+        self._trace = _otel_trace
+
+    def get_trace_context(self) -> dict[str, str] | None:
+        """Return trace_id/span_id from the current span.
+
+        Returns
+        -------
+        dict[str, str] | None
+            Trace identifiers if an active span exists.
+        """
+        _ = self
+        span = self._trace.get_current_span()
+        if span is None:
+            return None
+        span_context = span.get_span_context()
+        if not span_context or not getattr(span_context, "trace_id", 0):
+            return None
+        return {
+            "trace_id": format(span_context.trace_id, "032x"),
+            "span_id": format(span_context.span_id, "016x"),
+        }
 
 
 @dataclass
@@ -73,12 +111,20 @@ class StructuredLogFormatter(logging.Formatter):
     ----------
     include_trace
         Include trace context in logs.
+    trace_adapter
+        Adapter for extracting trace identifiers.
     """
 
-    def __init__(self, *, include_trace: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        include_trace: bool = True,
+        trace_adapter: TraceAdapter | None = None,
+    ) -> None:
         """Initialize formatter."""
         super().__init__()
         self._include_trace = include_trace
+        self._trace_adapter = trace_adapter or get_trace_adapter()
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON.
@@ -107,7 +153,7 @@ class StructuredLogFormatter(logging.Formatter):
 
         # Add trace context
         if self._include_trace:
-            trace_ctx = _get_trace_context()
+            trace_ctx = self._trace_adapter.get_trace_context()
             if trace_ctx:
                 log_data.update(trace_ctx)
 
@@ -118,31 +164,25 @@ class StructuredLogFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 
-def _get_trace_context() -> dict[str, str] | None:
-    """Get current trace context.
+def get_trace_adapter() -> TraceAdapter:
+    """Return an active TraceAdapter (OTEL or Null).
 
     Returns
     -------
-    dict[str, str] | None
-        Trace context or None.
+    TraceAdapter
+        Adapter backed by OpenTelemetry if available, else a null adapter.
     """
-    if not _OTEL_TRACE_AVAILABLE or _otel_trace is None:
-        return None
-
-    span = _otel_trace.get_current_span()
-    ctx = span.get_span_context()
-    if ctx.trace_id:
-        return {
-            "trace_id": format(ctx.trace_id, "032x"),
-            "span_id": format(ctx.span_id, "016x"),
-        }
-    return None
+    try:
+        return OTELTraceAdapter()
+    except ImportError:
+        return NullTraceAdapter()
 
 
 def configure_structured_logging(
     *,
     level: int = logging.INFO,
     include_trace: bool = True,
+    trace_adapter: TraceAdapter | None = None,
 ) -> None:
     """Configure structured logging for CLI.
 
@@ -152,9 +192,16 @@ def configure_structured_logging(
         Log level.
     include_trace
         Include trace context.
+    trace_adapter
+        Optional trace adapter override.
     """
     handler = logging.StreamHandler()
-    handler.setFormatter(StructuredLogFormatter(include_trace=include_trace))
+    handler.setFormatter(
+        StructuredLogFormatter(
+            include_trace=include_trace,
+            trace_adapter=trace_adapter,
+        )
+    )
 
     root = logging.getLogger("codeintel.cli")
     root.setLevel(level)

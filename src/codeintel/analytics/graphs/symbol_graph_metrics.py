@@ -23,6 +23,8 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.utilities.datasets import validate_tuple_rows
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
@@ -50,8 +52,7 @@ def compute_symbol_graph_metrics_modules(
         snapshot,
         runtime_opts,
     )
-    con = gateway.con
-    ensure_schema(con, "analytics.symbol_graph_metrics_modules")
+    ensure_schema(gateway.con, "analytics.symbol_graph_metrics_modules")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -72,7 +73,7 @@ def compute_symbol_graph_metrics_modules(
         graph = graph.subgraph([module for module in graph.nodes if module in known_modules]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_module_graph", graph)
-        con.execute(
+        gateway.con.execute(
             "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
@@ -108,12 +109,18 @@ def compute_symbol_graph_metrics_modules(
             created_at=ctx.resolved_now(),
         )
     )
-    con.execute(
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.symbol_graph_metrics_modules"]
+    validated_rows = validate_tuple_rows(
+        contract.table_key,
+        rows,
+        columns=contract.schema.column_names() if contract.schema else [],
+    )
+    gateway.con.execute(
         "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
-    if rows:
-        con.executemany(
+    if validated_rows:
+        gateway.con.executemany(
             """
             INSERT INTO analytics.symbol_graph_metrics_modules (
                 repo, commit, module,
@@ -122,7 +129,7 @@ def compute_symbol_graph_metrics_modules(
                 symbol_community_id, symbol_component_id, symbol_component_size, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            validated_rows,
         )
 
 
@@ -143,8 +150,7 @@ def compute_symbol_graph_metrics_functions(
         snapshot,
         runtime_opts,
     )
-    con = gateway.con
-    ensure_schema(con, "analytics.symbol_graph_metrics_functions")
+    ensure_schema(gateway.con, "analytics.symbol_graph_metrics_functions")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -165,7 +171,7 @@ def compute_symbol_graph_metrics_functions(
         graph = graph.subgraph([goid for goid in graph.nodes if int(goid) in known_goids]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_function_graph", graph)
-        con.execute(
+        gateway.con.execute(
             "DELETE FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
@@ -201,12 +207,18 @@ def compute_symbol_graph_metrics_functions(
             created_at=ctx.resolved_now(),
         )
     )
-    con.execute(
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.symbol_graph_metrics_functions"]
+    validated_rows = validate_tuple_rows(
+        contract.table_key,
+        rows,
+        columns=contract.schema.column_names() if contract.schema else [],
+    )
+    gateway.con.execute(
         "DELETE FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
-    if rows:
-        con.executemany(
+    if validated_rows:
+        gateway.con.executemany(
             """
             INSERT INTO analytics.symbol_graph_metrics_functions (
                 repo, commit, function_goid_h128,
@@ -215,5 +227,5 @@ def compute_symbol_graph_metrics_functions(
                 symbol_community_id, symbol_component_id, symbol_component_size, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            validated_rows,
         )

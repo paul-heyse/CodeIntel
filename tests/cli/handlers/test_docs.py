@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from codeintel.cli.config.model import CliConfig
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.errors import ValidationError
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.handlers.docs import (
     DocsExportResult,
     DocsValidateResult,
@@ -22,25 +23,23 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 
-def _make_mock_context(params: dict[str, Any]) -> HandlerContext:
-    """Create a HandlerContext for testing.
+@contextmanager
+def _make_mock_context(params: dict[str, Any]) -> Iterator[CommandContext]:
+    """Create a CommandContext for testing.
 
     Parameters
     ----------
     params
         Parameters to include in the context.
 
-    Returns
-    -------
-    HandlerContext
+    Yields
+    ------
+    CommandContext
         Test context with provided params.
     """
-    mock_config = MagicMock(spec=CliConfig)
-    return HandlerContext(
-        config=mock_config,
-        operation_id="docs.test",
-        _params=params,
-    )
+    builder = CommandContextBuilder().with_params(params).with_operation_id("docs.test")
+    with builder.build() as ctx:
+        yield ctx
 
 
 def test_docs_export_result_to_dict() -> None:
@@ -123,9 +122,8 @@ def test_docs_export_handler_default_params(mock_build_runtime: MagicMock) -> No
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -141,9 +139,8 @@ def test_docs_export_handler_dry_run_mode(mock_build_runtime: MagicMock) -> None
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({"dry_run": True})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({"dry_run": True}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -158,9 +155,8 @@ def test_docs_export_handler_skip_prereqs(mock_build_runtime: MagicMock) -> None
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({"skip_prereqs": True})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({"skip_prereqs": True}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -174,9 +170,8 @@ def test_docs_export_handler_with_datasets_filter(mock_build_runtime: MagicMock)
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({"datasets": ["dataset1", "dataset2"]})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({"datasets": ["dataset1", "dataset2"]}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -190,9 +185,8 @@ def test_docs_export_handler_with_schemas_filter(mock_build_runtime: MagicMock) 
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({"schemas": ["schema1"]})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({"schemas": ["schema1"]}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -206,9 +200,8 @@ def test_docs_export_handler_custom_validation(mock_build_runtime: MagicMock) ->
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({"validation": "skip"})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({"validation": "skip"}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -222,9 +215,8 @@ def test_docs_validate_handler_success(mock_build_runtime: MagicMock) -> None:
     mock_runtime = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = docs_validate_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = docs_validate_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
@@ -239,9 +231,8 @@ def test_docs_export_handler_project_error(mock_build_runtime: MagicMock) -> Non
     """Verify docs_export_handler handles project errors."""
     mock_build_runtime.side_effect = ValidationError("Project not found")
 
-    ctx = _make_mock_context({})
-
-    result = docs_export_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = docs_export_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -254,9 +245,8 @@ def test_docs_validate_handler_project_error(mock_build_runtime: MagicMock) -> N
     """Verify docs_validate_handler handles project errors."""
     mock_build_runtime.side_effect = ValidationError("Project not found")
 
-    ctx = _make_mock_context({})
-
-    result = docs_validate_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = docs_validate_handler(ctx)
 
     expect_true(not result.success)
     error = result.error

@@ -28,6 +28,10 @@ Type Literals
 
 from __future__ import annotations
 
+from codeintel.core.plugins.types.metadata import (
+    CorePluginMetadata,
+    PluginDomain,
+)
 from codeintel.core.plugins.types.protocol import (
     CapabilityKind,
     InputSource,
@@ -55,15 +59,14 @@ from codeintel.core.plugins.types.result import (
 )
 
 __all__ = [
-    # Report
     "BaseExecutionReport",
-    # Result
     "BasePluginExecutionRecord",
-    # Protocol
     "CapabilityKind",
+    "CorePluginMetadata",
     "ExecutionStatus",
     "InputSource",
     "PluginCapability",
+    "PluginDomain",
     "PluginExecutionRecord",
     "PluginInputSpec",
     "PluginIsolation",

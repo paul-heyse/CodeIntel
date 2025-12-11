@@ -23,7 +23,7 @@ class ResolvedRuntime:
     """Fully resolved runtime - the immutable result of runtime resolution.
 
     This dataclass contains all resolved project information needed by handlers.
-    It is created by resolve_from_params() and cached in HandlerContext.
+    It is created by resolve_from_params() and cached in CommandContext.
 
     All fields are required and immutable (frozen=True).
 

@@ -50,11 +50,10 @@ from codeintel.config.primitives import (
     SnapshotRef,
     ToolBinaries,
 )
-from codeintel.config.resolver import (
-    resolve_graph_backend,
-    resolve_scan_profiles,
-    resolve_tools_config,
-)
+
+# NOTE: resolver functions are NOT imported here to avoid circular imports.
+# Import them directly: from codeintel.config.resolver import resolve_tools_config
+# The resolver module has heavy dependencies on ingestion which creates cycles.
 from codeintel.config.steps_analytics import (
     BehavioralCoverageStepConfig,
     CoverageAnalyticsStepConfig,
@@ -131,7 +130,5 @@ __all__ = [
     "TestProfileStepConfig",
     "ToolBinaries",
     "ToolsConfig",
-    "resolve_graph_backend",
-    "resolve_scan_profiles",
-    "resolve_tools_config",
+    # NOTE: resolve_* functions moved to config.resolver to break circular imports
 ]

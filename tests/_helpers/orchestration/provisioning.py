@@ -59,7 +59,6 @@ from tests._helpers.configs import (
     RepoContext,
     provisioning_gateway_options,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.gateway import GatewayFactory
@@ -76,6 +75,7 @@ from tests._helpers.orchestration.tooling import make_tools_config
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.storage.gateway import DuckDBConnection
+    from tests._helpers.context import TestContext
 
 
 def _assert_ingest_macros_present(con: DuckDBConnection) -> None:
@@ -1098,6 +1098,8 @@ class ProvisioningBuilder:
         TestContext
             Configured test context with provisioned gateway.
         """
+        from tests._helpers.context import TestContext
+
         provisioned = provision_ingested_repo(
             self._repo_root,
             repo=self._repo,

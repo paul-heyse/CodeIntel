@@ -33,10 +33,8 @@ For row count operations, use `codeintel.storage.validation.data_checks`.
 
 from __future__ import annotations
 
-from codeintel.storage.helpers.db import (
-    DUCKDB_ERRORS,
-    macro_insert_rows,
-)
+from codeintel.storage.errors import DUCKDB_ERRORS
+from codeintel.storage.helpers.db import macro_insert_rows
 from codeintel.storage.helpers.json import (
     decode_json,
     decode_json_dict,

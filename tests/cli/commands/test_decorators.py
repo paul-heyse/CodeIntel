@@ -27,7 +27,7 @@ from codeintel.cli.execution.registry import get_registry, reset_registry
 from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.context import HandlerContext
+    from codeintel.cli.context import CommandContext
 
 
 # -----------------------------------------------------------------------------
@@ -41,13 +41,13 @@ def _reset_registries() -> None:
     reset_registry()
 
 
-def _dummy_handler(ctx: HandlerContext) -> CliResult[dict[str, bool]]:
+def _dummy_handler(ctx: CommandContext) -> CliResult[dict[str, bool]]:
     """Return success result for testing.
 
     Parameters
     ----------
     ctx
-        Handler context.
+        Command context.
 
     Returns
     -------

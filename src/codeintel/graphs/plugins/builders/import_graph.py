@@ -16,14 +16,19 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import ImportGraphStepConfig
 from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.graphs.compute import imports as imports_compute
+from codeintel.graphs.plugins.builders.import_graph_options import ImportGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
@@ -32,6 +37,26 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+IMPORT_GRAPH_METADATA = CorePluginMetadata(
+    name="graphs.import_graph",
+    version="2.0.0",
+    description="Build module import graph.",
+    domain=PluginDomain.GRAPH,
+    kind="builder",
+    stage="edges",
+    provides=("graph.import_graph",),
+    requires=("core.modules",),
+    produces_tables=(
+        "graph.import_graph_nodes",
+        "graph.import_graph_edges",
+    ),
+    consumes_tables=("core.modules",),
+    scope_aware=True,
+    options_model=ImportGraphOptions,
+    extra={"graph_kinds": ("import_graph",)},
+)
 
 
 def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
@@ -210,6 +235,43 @@ def _persist_import_edges(
     return len(rows)
 
 
+def _filter_paths_by_scope(
+    module_by_path: Mapping[str, str],
+    scope_paths: list[str] | None,
+) -> dict[str, str]:
+    """Filter module map by configured scope prefixes.
+
+    Returns
+    -------
+    dict[str, str]
+        Filtered mapping keyed by relative path.
+    """
+    if not scope_paths:
+        return dict(module_by_path)
+    prefixes = tuple(scope_paths)
+    return {path: module for path, module in module_by_path.items() if path.startswith(prefixes)}
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "edges"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
+
+
 class ImportGraphPlugin(TargetPlugin):
     """Build module-level import graph.
 
@@ -228,6 +290,43 @@ class ImportGraphPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "import_graph"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Build module-level import graph."
+    _core_metadata: ClassVar[CorePluginMetadata] = IMPORT_GRAPH_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return full core metadata."""
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> ImportGraphOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        ImportGraphOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return ImportGraphOptions(**dynamic_overrides)
+            return ImportGraphOptions()
+
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            ImportGraphOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute import graph construction.
@@ -243,6 +342,7 @@ class ImportGraphPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self  # Protocol method requires instance
+        opts = self.resolve_options()
         config = ImportGraphStepConfig(snapshot=ctx.snapshot)
         gateway, repo, commit = ctx.gateway, config.repo, config.commit
 
@@ -251,7 +351,10 @@ class ImportGraphPlugin(TargetPlugin):
             source_root = (
                 ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )
-            module_by_path = _load_modules(gateway, repo, commit)
+            module_by_path = _filter_paths_by_scope(
+                _load_modules(gateway, repo, commit),
+                opts.scope_paths,
+            )
 
             if not module_by_path:
                 log.info("import_graph: No modules found, skipping")
@@ -293,4 +396,7 @@ class ImportGraphPlugin(TargetPlugin):
             return TargetResult.failed(f"Import graph build failed: {e}")
 
 
-__all__ = ["ImportGraphPlugin"]
+__all__ = [
+    "IMPORT_GRAPH_METADATA",
+    "ImportGraphPlugin",
+]

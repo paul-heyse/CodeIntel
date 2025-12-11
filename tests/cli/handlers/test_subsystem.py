@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from codeintel.cli.handlers.context import ParameterError
 from codeintel.cli.handlers.subsystem import (
     SubsystemCoverageResult,
     SubsystemListResult,
@@ -20,6 +19,7 @@ from codeintel.cli.handlers.subsystem import (
     subsystem_profiles_handler,
     subsystem_show_handler,
 )
+from codeintel.cli.services.params import ParamError
 from codeintel.serving.mcp.models import (
     ModuleWithSubsystemRow,
     ResponseMeta,
@@ -38,7 +38,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.serving_contexts import ProvisionedServiceContext
-from tests.cli.handlers.conftest import HandlerContextBuilder
+from tests.cli.handlers.conftest import CommandContextFactory, HandlerContextBuilder
 
 HTTP_NOT_FOUND = 404
 TEST_REPO = "test/repo"
@@ -47,7 +47,7 @@ TEST_COMMIT = "abc123"
 
 def test_subsystem_list_handler_returns_ok_with_subsystems(
     architecture_service_context: ProvisionedServiceContext,
-    handler_context_builder: HandlerContextBuilder,
+    command_context_factory: CommandContextFactory,
 ) -> None:
     """Handler returns success result with subsystem list."""
     mock_response = SubsystemSummaryResponse(
@@ -64,21 +64,14 @@ def test_subsystem_list_handler_returns_ok_with_subsystems(
         meta=ResponseMeta(),
     )
 
-    with (
-        patch(
-            "codeintel.cli.handlers.subsystem.build_backend_resource",
-            return_value=SimpleNamespace(backend=architecture_service_context.backend),
-        ),
-        patch.object(
-            architecture_service_context.backend,
-            "list_subsystems",
-            return_value=mock_response,
-        ) as list_subsystems,
-    ):
-        ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
+    ctx_params: dict[str, object] = {"repo": TEST_REPO, "commit": TEST_COMMIT}
+    backend = architecture_service_context.backend
+    backend.list_subsystems = MagicMock(return_value=mock_response)  # type: ignore[attr-defined]
+
+    with command_context_factory(ctx_params) as ctx:
         result = subsystem_list_handler(ctx)
 
-    list_subsystems.assert_called_once_with(limit=0, role=None, q=None)
+    backend.list_subsystems.assert_called_once_with(limit=0, role=None, q=None)
     expect_true(result.success)
     expect_is_not_none(result.data)
     expect_is_instance(result.data, SubsystemListResult)
@@ -224,10 +217,10 @@ def test_subsystem_show_handler_raises_when_id_missing(
     architecture_service_context: ProvisionedServiceContext,
     handler_context_builder: HandlerContextBuilder,
 ) -> None:
-    """Handler raises ParameterError when subsystem_id is missing."""
+    """Handler raises ParamError when subsystem_id is missing."""
     ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
 
-    with pytest.raises(ParameterError, match="Required parameter 'subsystem_id' not provided"):
+    with pytest.raises(ParamError, match="Required parameter 'subsystem_id' not provided"):
         subsystem_show_handler(ctx)
 
 
@@ -367,10 +360,10 @@ def test_subsystem_memberships_handler_raises_when_module_missing(
     architecture_service_context: ProvisionedServiceContext,
     handler_context_builder: HandlerContextBuilder,
 ) -> None:
-    """Handler raises ParameterError when module is missing."""
+    """Handler raises ParamError when module is missing."""
     ctx = handler_context_builder(architecture_service_context, "subsystem.test", {})
 
-    with pytest.raises(ParameterError, match="Required parameter 'module' not provided"):
+    with pytest.raises(ParamError, match="Required parameter 'module' not provided"):
         subsystem_module_memberships_handler(ctx)
 
 

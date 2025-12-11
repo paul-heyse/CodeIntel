@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/execution/registry.py
+# hypothesis_version: 6.148.7
+
+['OperationRegistry', 'OperationSpec', '__name__', 'backend_method', 'description', 'estimated_duration', 'execute_operation', 'get_registry', 'group', 'handler', 'hidden', 'http_path', 'name', 'op', 'operation_id', 'register_operation', 'require_gateway', 'require_runtime', 'reset_registry', 'retryable', 'serving_op_id', 'tags', 'timeout', 'tool_name']

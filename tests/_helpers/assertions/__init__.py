@@ -5,6 +5,15 @@ This module provides reusable assertion functions for test validation.
 
 from __future__ import annotations
 
+from tests._helpers.assertions.cli import (
+    expect_handler_data_contains,
+    expect_handler_data_count,
+    expect_handler_error,
+    expect_handler_failure,
+    expect_handler_metadata,
+    expect_handler_success,
+    expect_handler_warnings,
+)
 from tests._helpers.assertions.common import (
     SUBPROCESS_ALLOWLIST,
     HasRowCounts,
@@ -156,6 +165,13 @@ __all__ = [
     "expect_false",
     "expect_graph_equal",
     "expect_graph_is_dag",
+    "expect_handler_data_contains",
+    "expect_handler_data_count",
+    "expect_handler_error",
+    "expect_handler_failure",
+    "expect_handler_metadata",
+    "expect_handler_success",
+    "expect_handler_warnings",
     "expect_has_cycle",
     "expect_in",
     "expect_is_instance",

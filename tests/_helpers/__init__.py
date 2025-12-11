@@ -64,6 +64,13 @@ from tests._helpers.build import (
     write_build_config,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
+from tests._helpers.cli_context import (
+    CliTestContext,
+    cli_test_context_with_seeds,
+    create_cli_test_context,
+    make_command_context,
+    params,
+)
 from tests._helpers.configs.provisioning_config import (
     CallgraphFixtureOptions,
     GatewayOptions,
@@ -146,16 +153,22 @@ from tests._helpers.scenarios import (
     minimal_context,
 )
 from tests._helpers.seeds import (
+    CLI_CORE_PACK,
     CORE_PACK,
     COVERAGE_PACK,
     DATA_MODELS_PACK,
     FUNCTION_TYPES_PACK,
+    GRAPH_HANDLER_PACK,
     GRAPH_PACK,
     METRICS_PACK,
+    OPERATION_REGISTRY_PACK,
+    STORAGE_PROFILE_PACK,
     SUBSYSTEM_ANALYTICS_PACK,
+    SUBSYSTEM_HANDLER_PACK,
 )
 
 __all__ = [
+    "CLI_CORE_PACK",
     "CORE_PACK",
     "COVERAGE_PACK",
     "DATA_MODELS_PACK",
@@ -163,10 +176,15 @@ __all__ = [
     "DEFAULT_REPO",
     "DEFAULT_RUN_ID",
     "FUNCTION_TYPES_PACK",
+    "GRAPH_HANDLER_PACK",
     "GRAPH_PACK",
     "METRICS_PACK",
+    "OPERATION_REGISTRY_PACK",
+    "STORAGE_PROFILE_PACK",
     "SUBSYSTEM_ANALYTICS_PACK",
+    "SUBSYSTEM_HANDLER_PACK",
     "CallgraphFixtureOptions",
+    "CliTestContext",
     "ExecutionContextBuilder",
     "FakeQueryService",
     "GatewayFactory",
@@ -200,10 +218,12 @@ __all__ = [
     "build_target_execution_context",
     "build_test_gateway",
     "chain_graph",
+    "cli_test_context_with_seeds",
     "complete_digraph",
     "coverage_and_graph_context",
     "coverage_context",
     "coverage_ready_context",
+    "create_cli_test_context",
     "create_provisioned_test_env",
     "create_test_context",
     "create_test_env",
@@ -220,10 +240,12 @@ __all__ = [
     "graph_ready_context",
     "make_build_config",
     "make_build_paths",
+    "make_command_context",
     "make_functional_plugin",
     "make_snapshot",
     "minimal_context",
     "module_row",
+    "params",
     "plugin_registrar",
     "provision_docs_export_ready",
     "provision_gateway_with_repo",

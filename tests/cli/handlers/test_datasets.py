@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
@@ -26,25 +27,18 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 
-def _make_mock_context(params: dict[str, Any]) -> HandlerContext:
-    """Create a HandlerContext for testing.
+@contextmanager
+def _make_mock_context(params: dict[str, Any]) -> Iterator[CommandContext]:
+    """Yield a CommandContext for testing.
 
-    Parameters
-    ----------
-    params
-        Parameters to include in the context.
-
-    Returns
-    -------
-    HandlerContext
-        Test context with provided params.
+    Yields
+    ------
+    CommandContext
+        Configured command context for the provided params.
     """
-    mock_config = MagicMock(spec=CliConfig)
-    return HandlerContext(
-        config=mock_config,
-        operation_id="datasets.test",
-        _params=params,
-    )
+    builder = CommandContextBuilder().with_params(params).with_operation_id("datasets.test")
+    with builder.build() as ctx:
+        yield ctx
 
 
 def test_datasets_list_result_to_dict() -> None:
@@ -168,9 +162,8 @@ def test_datasets_list_handler_success(
     mock_runtime.gateway = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = datasets_list_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_list_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
@@ -193,9 +186,8 @@ def test_datasets_list_handler_empty(
     mock_runtime.gateway = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = datasets_list_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_list_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -218,9 +210,8 @@ def test_datasets_lint_handler_success(
     mock_runtime.gateway.con = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = datasets_lint_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_lint_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -243,9 +234,8 @@ def test_datasets_lint_handler_with_issues(
     mock_runtime.gateway.con = MagicMock()
     mock_build_runtime.return_value = mock_runtime
 
-    ctx = _make_mock_context({})
-
-    result = datasets_lint_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_lint_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -256,9 +246,8 @@ def test_datasets_lint_handler_with_issues(
 
 def test_datasets_snapshot_handler_missing_output() -> None:
     """Verify datasets_snapshot_handler fails without output parameter."""
-    ctx = _make_mock_context({})
-
-    result = datasets_snapshot_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_snapshot_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -279,9 +268,8 @@ def test_datasets_snapshot_handler_success(
     mock_get_contracts.return_value = {"test.table": mock_contract}
 
     output_path = tmp_path / "snapshot.json"
-    ctx = _make_mock_context({"output": str(output_path)})
-
-    result = datasets_snapshot_handler(ctx)
+    with _make_mock_context({"output": str(output_path)}) as ctx:
+        result = datasets_snapshot_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -297,9 +285,8 @@ def test_datasets_snapshot_handler_success(
 
 def test_datasets_diff_handler_missing_baseline() -> None:
     """Verify datasets_diff_handler fails without baseline_path parameter."""
-    ctx = _make_mock_context({})
-
-    result = datasets_diff_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = datasets_diff_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -309,9 +296,8 @@ def test_datasets_diff_handler_missing_baseline() -> None:
 
 def test_datasets_diff_handler_baseline_not_found(tmp_path: Path) -> None:
     """Verify datasets_diff_handler fails when baseline file not found."""
-    ctx = _make_mock_context({"baseline_path": str(tmp_path / "nonexistent.json")})
-
-    result = datasets_diff_handler(ctx)
+    with _make_mock_context({"baseline_path": str(tmp_path / "nonexistent.json")}) as ctx:
+        result = datasets_diff_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -337,9 +323,8 @@ def test_datasets_diff_handler_success(
         encoding="utf-8",
     )
 
-    ctx = _make_mock_context({"baseline_path": str(baseline_path)})
-
-    result = datasets_diff_handler(ctx)
+    with _make_mock_context({"baseline_path": str(baseline_path)}) as ctx:
+        result = datasets_diff_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -367,9 +352,8 @@ def test_datasets_diff_handler_no_differences(
         encoding="utf-8",
     )
 
-    ctx = _make_mock_context({"baseline_path": str(baseline_path)})
-
-    result = datasets_diff_handler(ctx)
+    with _make_mock_context({"baseline_path": str(baseline_path)}) as ctx:
+        result = datasets_diff_handler(ctx)
 
     expect_true(result.success)
     data = result.data

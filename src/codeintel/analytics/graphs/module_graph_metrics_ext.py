@@ -37,6 +37,7 @@ from codeintel.analytics.runtime.context import (
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
+    validate_contract_rows,
 )
 from codeintel.config.datasets import GraphMetricsModulesExtRow
 from codeintel.config.primitives import SnapshotRef
@@ -196,10 +197,11 @@ def compute_graph_metrics_modules_ext(
     rows = _module_metric_rows(repo, commit, ctx, views, slices)
 
     contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules_ext")
+    validated_rows = validate_contract_rows(contract.table_key, rows)
     insert_analytics_rows(
         gateway,
         contract,
-        rows,
+        validated_rows,
         delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )

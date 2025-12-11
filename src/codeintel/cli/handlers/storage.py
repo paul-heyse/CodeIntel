@@ -2,7 +2,7 @@
 
 Handlers for storage validation, macro generation, and profiling operations.
 
-These handlers support both runtime-resolved databases (via HandlerContext.gateway)
+These handlers support both runtime-resolved databases (via ctx.gateway)
 and explicit database paths (via the db_path parameter). When an explicit db_path
 is provided, the handler opens a dedicated gateway for that path.
 """

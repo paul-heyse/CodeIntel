@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/errors/builder.py
+# hypothesis_version: 6.148.7
+
+[100, 200, 400, 401, 403, 404, 409, 410, 424, 429, 499, 500, 503, 504, '...', 'Configuration Error', 'Internal Error', 'Job Error', 'Operation Error', 'ProblemBuilder', 'Service Error', 'Storage Error', 'Validation Error', 'cause_message', 'cause_type', 'field', 'job_id', 'key', 'operation_id', 'path', 'query', 'resource_id', 'resource_type', 'retry_after_seconds', 'service', 'suggestion', 'table', 'traceback', 'value']

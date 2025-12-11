@@ -6,6 +6,7 @@ Handlers for plugin discovery, listing, and management operations.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -375,8 +376,6 @@ def plugins_new_handler(ctx: CommandContext) -> CliResult[PluginNewResult]:
     CliResult[PluginNewResult]
         Created plugin info.
     """
-    import re
-
     name = ctx.params.require_str("name")
     output_dir = ctx.params.get_path("output") or Path.cwd()
 

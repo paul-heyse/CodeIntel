@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/views/ibis_views.py
+# hypothesis_version: 6.148.7
+
+[200, 'callee_goid_h128', 'caller_goid_h128', 'commit', 'core.goid_crosswalk', 'core.goids', 'crosswalk_file_path', 'crosswalk_lang', 'crosswalk_language', 'crosswalk_qualname', 'crosswalk_urn', 'function_goid_h128', 'goid_language', 'goid_qualname', 'goid_rel_path', 'high', 'it.NumericValue', 'large', 'loc', 'low', 'medium', 'param_typed_ratio', 'rel_path', 'repo', 'return_type', 'small', 'typedness_bucket', 'typedness_source']

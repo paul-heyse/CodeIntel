@@ -29,9 +29,13 @@ Examples
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from codeintel.cli.context import CommandContextBuilder
+from codeintel.cli.rendering.types import OutputFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -502,10 +506,8 @@ def create_spec_from_serving_operation(
     >>> spec.serving_op_id
     'function.summary'
     """
-    # Import here to avoid circular imports
-    from codeintel.serving.operations.catalog import get_operation
-
-    serving_op = get_operation(serving_op_id)
+    serving_module = importlib.import_module("codeintel.serving.operations.catalog")
+    serving_op = serving_module.get_operation(serving_op_id)
     if serving_op is None:
         msg = f"Serving operation not found: {serving_op_id}"
         raise ValueError(msg)
@@ -556,10 +558,6 @@ def execute_operation(
     >>> spec = get_registry().get("some.operation")  # doctest: +SKIP
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
-    # Import here to avoid circular imports
-    from codeintel.cli.context import CommandContextBuilder
-    from codeintel.cli.rendering.types import OutputFormat
-
     # Build CommandContext
     builder = (
         CommandContextBuilder()

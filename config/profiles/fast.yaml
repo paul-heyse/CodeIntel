@@ -1,0 +1,31 @@
+profile:
+  name: fast
+  description: "Quick iteration profile for local development"
+  version: "1.0.0"
+
+shared: {}
+
+plugins:
+  analytics.function_metrics:
+    include_graph_metrics: false
+    include_coverage_metrics: false
+
+  analytics.type_coverage:
+    include_private: false
+
+  graphs.callgraph:
+    use_libcst: false
+    resolve_imports: false
+    include_external_calls: false
+
+  graphs.import_graph:
+    include_stdlib: false
+    include_third_party: false
+
+  ingest.scip_python:
+    include_references: false
+    include_implementations: false
+    timeout_seconds: 120
+
+  ingest.modules:
+    include_tests: false

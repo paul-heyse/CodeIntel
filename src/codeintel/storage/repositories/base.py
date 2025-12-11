@@ -23,11 +23,19 @@ Existence check:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import pandas as pd
+from ibis.common.exceptions import IbisError
+from ibis.expr import types as it
+
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.pandera_schemas import validate_dataset_df
+
+log = logging.getLogger(__name__)
 
 RowDict = dict[str, Any]
 
@@ -288,3 +296,162 @@ class BaseRepository:
             True if at least one row matches.
         """
         return row_exists(self.con, sql, params)
+
+    # -------------------------------------------------------------------------
+    # Ibis-based query helpers (prefer these over raw SQL)
+    # -------------------------------------------------------------------------
+
+    def _ibis_table(self, table_key: str) -> it.Table:
+        """
+        Return an Ibis table expression for the given table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table name (e.g., "core.goids").
+
+        Returns
+        -------
+        it.Table
+            Ibis table expression.
+        """
+        return self.gateway.ibis.table(table_key)
+
+    def _ibis_to_df(  # noqa: PLR6301
+        self,
+        expr: it.Table,
+        table_key: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Execute an Ibis expression and return a validated DataFrame.
+
+        Parameters
+        ----------
+        expr
+            Ibis table expression.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        pd.DataFrame
+            Validated DataFrame.
+        """
+        df = pd.DataFrame(expr.execute())
+        if table_key:
+            return validate_dataset_df(table_key, df)
+        return df
+
+    def _ibis_to_dicts(
+        self,
+        expr: it.Table,
+        table_key: str | None = None,
+    ) -> list[RowDict]:
+        """
+        Execute an Ibis expression and return rows as dicts.
+
+        Parameters
+        ----------
+        expr
+            Ibis table expression.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        list[RowDict]
+            List of row dictionaries.
+        """
+        df = self._ibis_to_df(expr, table_key)
+        return df.to_dict(orient="records")
+
+    def _ibis_to_one(
+        self,
+        expr: it.Table,
+        table_key: str | None = None,
+    ) -> RowDict | None:
+        """
+        Execute an Ibis expression and return the first row.
+
+        Parameters
+        ----------
+        expr
+            Ibis table expression.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        RowDict | None
+            First row as dict, or None if no rows.
+        """
+        dicts = self._ibis_to_dicts(expr.limit(1), table_key)
+        return dicts[0] if dicts else None
+
+    def _ibis_with_fallback(
+        self,
+        ibis_fn: Callable[[], it.Table],
+        sql_fallback: str,
+        params: Sequence[object],
+        *,
+        table_key: str | None = None,
+    ) -> list[RowDict]:
+        """
+        Execute Ibis query with SQL fallback on error.
+
+        Parameters
+        ----------
+        ibis_fn
+            Callable returning an Ibis expression.
+        sql_fallback
+            SQL query to execute if Ibis fails.
+        params
+            Parameters for the SQL fallback.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        list[RowDict]
+            Query results as dictionaries.
+        """
+        try:
+            expr = ibis_fn()
+            return self._ibis_to_dicts(expr, table_key)
+        except IbisError:
+            log.debug("Falling back to SQL for query")
+            return self._fetch_all(sql_fallback, params)
+
+    def _ibis_one_with_fallback(
+        self,
+        ibis_fn: Callable[[], it.Table],
+        sql_fallback: str,
+        params: Sequence[object],
+        *,
+        table_key: str | None = None,
+    ) -> RowDict | None:
+        """
+        Execute Ibis query for single row with SQL fallback.
+
+        Parameters
+        ----------
+        ibis_fn
+            Callable returning an Ibis expression.
+        sql_fallback
+            SQL query to execute if Ibis fails.
+        params
+            Parameters for the SQL fallback.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        RowDict | None
+            Query result or None.
+        """
+        try:
+            expr = ibis_fn()
+            return self._ibis_to_one(expr, table_key)
+        except IbisError:
+            log.debug("Falling back to SQL for single-row query")
+            return self._fetch_one(sql_fallback, params)

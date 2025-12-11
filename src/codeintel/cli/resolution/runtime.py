@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.cli.project import (
+from codeintel.cli.project._project import (
     ProjectConfig,
     ProjectNotFoundError,
     StorageProjectConfig,

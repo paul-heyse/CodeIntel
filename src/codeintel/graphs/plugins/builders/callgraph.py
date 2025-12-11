@@ -23,9 +23,10 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import libcst as cst
 
@@ -38,6 +39,9 @@ from codeintel.config.datasets import (
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
 )
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.graphs.adapters.callgraph_persistence import dedupe_edge_rows
 from codeintel.graphs.catalog import (
     FunctionSpanIndex,
@@ -49,14 +53,44 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_ast,
     collect_edges_cst,
 )
+from codeintel.graphs.plugins.builders.callgraph_options import CallGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+CALLGRAPH_METADATA = CorePluginMetadata(
+    name="graphs.callgraph",
+    version="3.0.0",
+    description="Build call graph nodes and edges.",
+    domain=PluginDomain.GRAPH,
+    kind="builder",
+    stage="edges",
+    provides=("graph.callgraph",),
+    requires=("core.goids",),
+    produces_tables=(
+        "graph.call_graph_nodes",
+        "graph.call_graph_edges",
+    ),
+    consumes_tables=(
+        "core.goids",
+        "core.modules",
+    ),
+    supports_incremental=False,
+    scope_aware=True,
+    options_model=CallGraphOptions,
+    resource_hints={
+        "max_memory_mb": 1024,
+    },
+    extra={"graph_kinds": ("callgraph",)},
+)
 
 
 def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -198,10 +232,33 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     return None
 
 
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "edges"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
+
+
 def _collect_edges_for_file(
     rel_path: str,
     file_path: Path,
     context: EdgeResolutionContext,
+    *,
+    use_libcst: bool,
+    max_edges_per_file: int,
 ) -> list[CallGraphEdgeRow]:
     """Collect call edges for a single Python file.
 
@@ -215,6 +272,10 @@ def _collect_edges_for_file(
         Absolute path to the file.
     context
         Resolution context with function index and callee maps.
+    use_libcst
+        Whether to prefer LibCST before AST fallback.
+    max_edges_per_file
+        Maximum number of edges to retain per file (0 = unlimited).
 
     Returns
     -------
@@ -229,13 +290,18 @@ def _collect_edges_for_file(
     except (OSError, UnicodeDecodeError):
         return []
 
-    # Try LibCST first (more accurate positions)
-    try:
-        module = cst.parse_module(source)
-        return collect_edges_cst(rel_path, module, context)
-    except cst.ParserSyntaxError:
-        # Fall back to AST
-        return collect_edges_ast(rel_path, file_path, context)
+    if not use_libcst:
+        edges = collect_edges_ast(rel_path, file_path, context)
+    else:
+        try:
+            module = cst.parse_module(source)
+            edges = collect_edges_cst(rel_path, module, context)
+        except cst.ParserSyntaxError:
+            edges = collect_edges_ast(rel_path, file_path, context)
+
+    if max_edges_per_file > 0 and len(edges) > max_edges_per_file:
+        return edges[:max_edges_per_file]
+    return edges
 
 
 def _build_nodes_from_goids(
@@ -387,6 +453,9 @@ class _EdgeCollectionContext:
     source_root: Path
     repo: str
     commit: str
+    use_libcst: bool
+    resolve_imports: bool
+    max_edges_per_file: int
 
 
 def _collect_all_edges(
@@ -413,7 +482,7 @@ def _collect_all_edges(
         local_callees = ctx.function_index.local_name_map(rel_path)
         file_path = ctx.source_root / rel_path
         import_aliases: dict[str, str] = {}
-        if file_path.exists():
+        if ctx.resolve_imports and file_path.exists():
             with contextlib.suppress(OSError, UnicodeDecodeError, cst.ParserSyntaxError):
                 import_aliases = collect_aliases(
                     cst.parse_module(file_path.read_text(encoding="utf8"))
@@ -429,9 +498,31 @@ def _collect_all_edges(
             scip_candidates_by_use_path={},
             def_goids_by_path=ctx.def_goids_by_path,
         )
-        all_edges.extend(_collect_edges_for_file(rel_path, file_path, context))
+        all_edges.extend(
+            _collect_edges_for_file(
+                rel_path,
+                file_path,
+                context,
+                use_libcst=ctx.use_libcst,
+                max_edges_per_file=ctx.max_edges_per_file,
+            )
+        )
 
     return all_edges
+
+
+def _filter_paths_by_scope(paths: list[str], scope_paths: list[str] | None) -> list[str]:
+    """Filter paths by configured scope prefixes.
+
+    Returns
+    -------
+    list[str]
+        Filtered list of relative paths.
+    """
+    if not scope_paths:
+        return paths
+    prefixes = tuple(scope_paths)
+    return [path for path in paths if path.startswith(prefixes)]
 
 
 class CallGraphPlugin(TargetPlugin):
@@ -452,6 +543,55 @@ class CallGraphPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "callgraph"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Build call graph nodes and edges."
+    _core_metadata: ClassVar[CorePluginMetadata] = CALLGRAPH_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata.
+
+        Returns
+        -------
+        PluginMetadata
+            Protocol-compatible metadata.
+        """
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return full core metadata.
+
+        Returns
+        -------
+        CorePluginMetadata
+            Canonical metadata definition.
+        """
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> CallGraphOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        CallGraphOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return CallGraphOptions(**dynamic_overrides)
+            return CallGraphOptions()
+
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            CallGraphOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute call graph construction.
@@ -467,6 +607,7 @@ class CallGraphPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self  # Protocol method requires instance
+        opts = self.resolve_options()
         cfg = CallGraphStepConfig(snapshot=ctx.snapshot)
         gateway, repo, commit = ctx.gateway, cfg.repo, cfg.commit
 
@@ -475,7 +616,7 @@ class CallGraphPlugin(TargetPlugin):
 
             # Load function index and get paths
             function_index = load_function_index(gateway, repo=repo, commit=commit)
-            paths = function_index.paths()
+            paths = _filter_paths_by_scope(function_index.paths(), opts.scope_paths)
 
             if not paths:
                 log.info("callgraph: No functions found, skipping")
@@ -499,6 +640,9 @@ class CallGraphPlugin(TargetPlugin):
                 source_root=source_root,
                 repo=repo,
                 commit=commit,
+                use_libcst=opts.use_libcst,
+                resolve_imports=opts.resolve_imports,
+                max_edges_per_file=opts.max_edges_per_file,
             )
             edges = _collect_all_edges(paths, collection_ctx)
             log.info("callgraph: Collected %d edges from %d files", len(edges), len(paths))
@@ -520,4 +664,7 @@ class CallGraphPlugin(TargetPlugin):
             return TargetResult.failed(f"Call graph build failed: {e}")
 
 
-__all__ = ["CallGraphPlugin"]
+__all__ = [
+    "CALLGRAPH_METADATA",
+    "CallGraphPlugin",
+]

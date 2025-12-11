@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK, AstMetricsPack
+from tests._helpers.seeds.cli import (
+    CLI_CORE_PACK,
+    GRAPH_HANDLER_PACK,
+    OPERATION_REGISTRY_PACK,
+    STORAGE_PROFILE_PACK,
+    SUBSYSTEM_HANDLER_PACK,
+    CliCorePack,
+    GraphHandlerPack,
+    OperationRegistryPack,
+    StorageProfilePack,
+    SubsystemHandlerPack,
+)
 from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
 from tests._helpers.seeds.core import CORE_PACK, CorePack
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
@@ -30,6 +42,7 @@ from tests._helpers.seeds.symbols import SYMBOL_PACK, SymbolPack
 
 __all__ = [
     "AST_METRICS_PACK",
+    "CLI_CORE_PACK",
     "CONFIG_PACK",
     "CORE_PACK",
     "COVERAGE_LINES_PACK",
@@ -39,14 +52,19 @@ __all__ = [
     "DOCS_EXPORT_PACK",
     "ENTRYPOINTS_PACK",
     "FUNCTION_TYPES_PACK",
+    "GRAPH_HANDLER_PACK",
     "GRAPH_PACK",
     "MCP_BACKEND_PACK",
     "METRICS_PACK",
+    "OPERATION_REGISTRY_PACK",
     "PROFILE_DATA_PACK",
+    "STORAGE_PROFILE_PACK",
     "SUBSYSTEM_ANALYTICS_PACK",
+    "SUBSYSTEM_HANDLER_PACK",
     "SUBSYSTEM_PACK",
     "SYMBOL_PACK",
     "AstMetricsPack",
+    "CliCorePack",
     "ConfigPack",
     "CorePack",
     "CoverageLinesPack",
@@ -56,11 +74,15 @@ __all__ = [
     "DocstringPack",
     "EntrypointsPack",
     "FunctionTypesPack",
+    "GraphHandlerPack",
     "GraphPack",
     "McpBackendPack",
     "MetricsPack",
+    "OperationRegistryPack",
     "ProfileDataPack",
+    "StorageProfilePack",
     "SubsystemAnalyticsPack",
+    "SubsystemHandlerPack",
     "SubsystemPack",
     "SymbolPack",
 ]

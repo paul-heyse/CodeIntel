@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
     from codeintel.cli.core.command import Command
     from codeintel.cli.core.results import CliResult
-    from codeintel.cli.deps import Deps
 
 
 class ExecutionMiddleware(ABC):
@@ -26,15 +26,15 @@ class ExecutionMiddleware(ABC):
     """
 
     @abstractmethod
-    def before[T](self, command: Command[T], _deps: Deps) -> None:
+    def before[T](self, command: Command[T], _ctx: CommandContext) -> None:
         """Execute before command runs.
 
         Parameters
         ----------
         command
             Command about to execute.
-        deps
-            Dependencies for command.
+        _ctx
+            Command context.
         """
         ...
 
@@ -42,7 +42,7 @@ class ExecutionMiddleware(ABC):
     def after[T](
         self,
         command: Command[T],
-        _deps: Deps,
+        _ctx: CommandContext,
         result: CliResult[T],
         duration_seconds: float,
     ) -> CliResult[T]:
@@ -52,8 +52,8 @@ class ExecutionMiddleware(ABC):
         ----------
         command
             Command that executed.
-        _deps
-            Dependencies used.
+        _ctx
+            Command context.
         result
             Command result.
         duration_seconds
@@ -70,7 +70,7 @@ class ExecutionMiddleware(ABC):
     def on_error[T](
         self,
         command: Command[T],
-        _deps: Deps,
+        _ctx: CommandContext,
         error: Exception,
     ) -> CliResult[T] | None:
         """Handle command execution error.
@@ -79,8 +79,8 @@ class ExecutionMiddleware(ABC):
         ----------
         command
             Command that failed.
-        _deps
-            Dependencies used.
+        _ctx
+            Command context.
         error
             The exception raised.
 
@@ -105,17 +105,17 @@ class LoggingMiddleware(ExecutionMiddleware):
         """Initialize logging middleware."""
         self._logger = logger or logging.getLogger("codeintel.cli")
 
-    def before[T](self, command: Command[T], _deps: Deps) -> None:
+    def before[T](self, command: Command[T], _ctx: CommandContext) -> None:
         """Log command start.
 
         Parameters
         ----------
         command
             Command about to execute.
-        _deps
-            Dependencies for command (unused in logging).
+        _ctx
+            Command context (unused in logging).
         """
-        _ = _deps
+        _ = _ctx
         self._logger.debug(
             "Executing command: %s",
             command.__operation_id__,
@@ -124,7 +124,7 @@ class LoggingMiddleware(ExecutionMiddleware):
     def after[T](
         self,
         command: Command[T],
-        _deps: Deps,
+        _ctx: CommandContext,
         result: CliResult[T],
         duration_seconds: float,
     ) -> CliResult[T]:
@@ -134,8 +134,8 @@ class LoggingMiddleware(ExecutionMiddleware):
         ----------
         command
             Command that executed.
-        _deps
-            Dependencies used (unused in logging).
+        _ctx
+            Command context (unused in logging).
         result
             Command result.
         duration_seconds
@@ -146,7 +146,7 @@ class LoggingMiddleware(ExecutionMiddleware):
         CliResult[T]
             Unmodified result.
         """
-        _ = _deps
+        _ = _ctx
         if result.success:
             self._logger.debug(
                 "Command %s completed in %.3fs",
@@ -165,7 +165,7 @@ class LoggingMiddleware(ExecutionMiddleware):
     def on_error[T](
         self,
         command: Command[T],
-        _deps: Deps,
+        _ctx: CommandContext,
         error: Exception,
     ) -> CliResult[T] | None:
         """Log command error.
@@ -174,8 +174,8 @@ class LoggingMiddleware(ExecutionMiddleware):
         ----------
         command
             Command that failed.
-        _deps
-            Dependencies used (unused in logging).
+        _ctx
+            Command context (unused in logging).
         error
             The exception raised.
 
@@ -184,7 +184,7 @@ class LoggingMiddleware(ExecutionMiddleware):
         None
             Always re-raises the exception.
         """
-        _ = _deps
+        _ = _ctx
         self._logger.error(
             "Command %s raised exception: %s: %s",
             command.__operation_id__,
@@ -206,15 +206,15 @@ class ExecutionPipeline:
 
     middleware: list[ExecutionMiddleware] = field(default_factory=list)
 
-    def execute[T](self, command: Command[T], deps: Deps) -> CliResult[T]:
+    def execute[T](self, command: Command[T], ctx: CommandContext) -> CliResult[T]:
         """Execute command through middleware pipeline.
 
         Parameters
         ----------
         command
             Command to execute.
-        deps
-            Dependencies for command.
+        ctx
+            Command context.
 
         Returns
         -------
@@ -223,16 +223,16 @@ class ExecutionPipeline:
         """
         # Before hooks
         for mw in self.middleware:
-            mw.before(command, deps)
+            mw.before(command, ctx)
 
         start_time = time.perf_counter()
 
         try:
-            result = command.execute(deps)
+            result = command.execute(ctx)
         except Exception as e:
             # Error hooks
             for mw in reversed(self.middleware):
-                error_result = mw.on_error(command, deps, e)
+                error_result = mw.on_error(command, ctx, e)
                 if error_result is not None:
                     return error_result
             raise
@@ -241,7 +241,7 @@ class ExecutionPipeline:
 
             # After hooks (in reverse order)
             for mw in reversed(self.middleware):
-                result = mw.after(command, deps, result, duration)
+                result = mw.after(command, ctx, result, duration)
 
             return result
 

@@ -11,7 +11,8 @@ live in codeintel.graphs.data_models.rows.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from collections.abc import Mapping
+from typing import TypedDict, cast
 
 # Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import (
@@ -89,6 +90,25 @@ def call_graph_node_to_tuple(row: CallGraphNodeRow) -> tuple[object, ...]:
     )
 
 
+def dict_to_call_graph_node(row: Mapping[str, object]) -> CallGraphNodeRow:
+    """Cast a dictionary to CallGraphNodeRow type.
+
+    This is a type-safe adapter for converting validated dictionary data
+    back to the typed row format expected by serialization functions.
+
+    Parameters
+    ----------
+    row
+        Dictionary with call graph node fields.
+
+    Returns
+    -------
+    CallGraphNodeRow
+        Typed row suitable for serialization.
+    """
+    return cast(CallGraphNodeRow, dict(row))
+
+
 class CallGraphEdgeRow(TypedDict):
     """Row shape for graph.call_graph_edges inserts.
 
@@ -163,6 +183,25 @@ def call_graph_edge_to_tuple(row: CallGraphEdgeRow) -> tuple[object, ...]:
     )
 
 
+def dict_to_call_graph_edge(row: Mapping[str, object]) -> CallGraphEdgeRow:
+    """Cast a dictionary to CallGraphEdgeRow type.
+
+    This is a type-safe adapter for converting validated dictionary data
+    back to the typed row format expected by serialization functions.
+
+    Parameters
+    ----------
+    row
+        Dictionary with call graph edge fields.
+
+    Returns
+    -------
+    CallGraphEdgeRow
+        Typed row suitable for serialization.
+    """
+    return cast(CallGraphEdgeRow, dict(row))
+
+
 __all__ = [
     "CFGBlockRow",
     "CFGEdgeRow",
@@ -174,4 +213,6 @@ __all__ = [
     "SymbolUseRow",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
+    "dict_to_call_graph_edge",
+    "dict_to_call_graph_node",
 ]

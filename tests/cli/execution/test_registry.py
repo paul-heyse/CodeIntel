@@ -20,7 +20,7 @@ from codeintel.cli.execution.registry import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.context import HandlerContext
+    from codeintel.cli.context import CommandContext
 
 
 # -----------------------------------------------------------------------------
@@ -38,7 +38,7 @@ EXPECTED_COUNT_FIVE = 5
 # -----------------------------------------------------------------------------
 
 
-def _dummy_handler(ctx: HandlerContext) -> CliResult[dict[str, bool]]:
+def _dummy_handler(ctx: CommandContext) -> CliResult[dict[str, bool]]:
     """Return a success result for testing.
 
     Parameters

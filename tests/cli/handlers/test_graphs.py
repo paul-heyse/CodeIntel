@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.handlers.graphs import (
     GraphPlanResult,
     GraphPlanStage,
@@ -23,25 +24,23 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 
-def _make_mock_context(params: dict[str, Any]) -> HandlerContext:
-    """Create a HandlerContext for testing.
+@contextmanager
+def _make_mock_context(params: dict[str, Any]) -> Iterator[CommandContext]:
+    """Create a CommandContext for testing.
 
     Parameters
     ----------
     params
         Parameters to include in the context.
 
-    Returns
-    -------
-    HandlerContext
+    Yields
+    ------
+    CommandContext
         Test context with provided params.
     """
-    mock_config = MagicMock(spec=CliConfig)
-    return HandlerContext(
-        config=mock_config,
-        operation_id="graphs.test",
-        _params=params,
-    )
+    builder = CommandContextBuilder().with_params(params).with_operation_id("graphs.test")
+    with builder.build() as ctx:
+        yield ctx
 
 
 def test_graph_plugin_info_to_dict() -> None:
@@ -156,9 +155,8 @@ def test_graph_plugins_list_handler_success(mock_list_plugins: MagicMock) -> Non
 
     mock_list_plugins.return_value = [mock_plugin]
 
-    ctx = _make_mock_context({})
-
-    result = graph_plugins_list_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = graph_plugins_list_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
@@ -189,9 +187,8 @@ def test_graph_plugins_list_handler_with_names_filter(mock_list_plugins: MagicMo
 
     mock_list_plugins.return_value = [mock_plugin1, mock_plugin2]
 
-    ctx = _make_mock_context({"names": ["plugin1"]})
-
-    result = graph_plugins_list_handler(ctx)
+    with _make_mock_context({"names": ["plugin1"]}) as ctx:
+        result = graph_plugins_list_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -222,16 +219,16 @@ def test_graph_plugins_list_handler_include_disabled(mock_list_plugins: MagicMoc
     mock_list_plugins.return_value = [mock_enabled, mock_disabled]
 
     # Without include_disabled - should only return enabled
-    ctx = _make_mock_context({"include_disabled": False})
-    result = graph_plugins_list_handler(ctx)
+    with _make_mock_context({"include_disabled": False}) as ctx:
+        result = graph_plugins_list_handler(ctx)
     data1 = result.data
     if data1 is not None:
         expect_equal(data1.count, 1)
         expect_equal(data1.plugins[0].name, "enabled_plugin")
 
     # With include_disabled - should return both
-    ctx = _make_mock_context({"include_disabled": True})
-    result = graph_plugins_list_handler(ctx)
+    with _make_mock_context({"include_disabled": True}) as ctx:
+        result = graph_plugins_list_handler(ctx)
     data2 = result.data
     if data2 is not None:
         expect_equal(data2.count, 2)
@@ -242,9 +239,8 @@ def test_graph_plugins_list_handler_empty(mock_list_plugins: MagicMock) -> None:
     """Verify graph_plugins_list_handler handles empty results."""
     mock_list_plugins.return_value = []
 
-    ctx = _make_mock_context({})
-
-    result = graph_plugins_list_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = graph_plugins_list_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -265,9 +261,8 @@ def test_graph_plugins_plan_handler_success(mock_plan_plugins: MagicMock) -> Non
 
     mock_plan_plugins.return_value = mock_plan
 
-    ctx = _make_mock_context({})
-
-    result = graph_plugins_plan_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = graph_plugins_plan_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
@@ -292,9 +287,8 @@ def test_graph_plugins_plan_handler_with_skipped(mock_plan_plugins: MagicMock) -
 
     mock_plan_plugins.return_value = mock_plan
 
-    ctx = _make_mock_context({})
-
-    result = graph_plugins_plan_handler(ctx)
+    with _make_mock_context({}) as ctx:
+        result = graph_plugins_plan_handler(ctx)
 
     expect_true(result.success)
     data = result.data
@@ -304,9 +298,8 @@ def test_graph_plugins_plan_handler_with_skipped(mock_plan_plugins: MagicMock) -
 
 def test_graph_plugins_plan_handler_invalid_selection_policy() -> None:
     """Verify graph_plugins_plan_handler handles invalid selection policy."""
-    ctx = _make_mock_context({"selection_policy": "invalid_policy"})
-
-    result = graph_plugins_plan_handler(ctx)
+    with _make_mock_context({"selection_policy": "invalid_policy"}) as ctx:
+        result = graph_plugins_plan_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -316,9 +309,8 @@ def test_graph_plugins_plan_handler_invalid_selection_policy() -> None:
 
 def test_graph_plugins_plan_handler_invalid_dependency_policy() -> None:
     """Verify graph_plugins_plan_handler handles invalid dependency policy."""
-    ctx = _make_mock_context({"dependency_policy": "invalid_policy"})
-
-    result = graph_plugins_plan_handler(ctx)
+    with _make_mock_context({"dependency_policy": "invalid_policy"}) as ctx:
+        result = graph_plugins_plan_handler(ctx)
 
     expect_true(not result.success)
     error = result.error
@@ -335,15 +327,14 @@ def test_graph_plugins_plan_handler_with_enable_disable(mock_plan_plugins: Magic
 
     mock_plan_plugins.return_value = mock_plan
 
-    ctx = _make_mock_context(
+    with _make_mock_context(
         {
             "names": ["plugin1"],
             "enable": ["plugin2"],
             "disable": ["plugin3"],
         }
-    )
-
-    result = graph_plugins_plan_handler(ctx)
+    ) as ctx:
+        result = graph_plugins_plan_handler(ctx)
 
     expect_true(result.success)
 

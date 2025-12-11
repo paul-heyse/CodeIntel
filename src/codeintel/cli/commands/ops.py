@@ -6,6 +6,7 @@ Note: Operation commands require runtime/gateway and use dynamic registration.
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 import sys
 import types
@@ -621,9 +622,6 @@ def _invoke_operation_with_prereqs(
     verbose
         Whether to emit verbose output.
     """
-    import json
-    import sys
-
     sys.stdout.write(f"Invoking operation '{op_id}'...\n")
 
     result = _invoke_operation_for_result(

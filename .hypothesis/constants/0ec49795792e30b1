@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/storage.py
+# hypothesis_version: 6.148.7
+
+[', ', 'GenerateMacrosResult', 'MacroRequirement', 'ProfileStorageResult', 'ValidateMacrosResult', 'allow_missing', 'db_path', 'ddl', 'include_views', 'macro_name', 'macro_requirement', 'output_dir', 'require', 'skipped', 'tables', 'valid']

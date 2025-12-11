@@ -335,7 +335,7 @@ __all__ = ["register"]
     main_content = f'''"""
 Main module for {name} plugin.
 
-This module follows the CLI's HandlerContext + OperationSpec pattern.
+This module follows the CLI's CommandContext + OperationSpec pattern.
 """
 
 from __future__ import annotations
@@ -346,23 +346,23 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.execution import OperationSpec
 
 if TYPE_CHECKING:
-    from codeintel.cli.handlers.context import HandlerContext
+    from codeintel.cli.context import CommandContext
 
 
-def _example_handler(ctx: HandlerContext) -> CliResult[dict[str, str]]:
+def _example_handler(ctx: CommandContext) -> CliResult[dict[str, str]]:
     """Example operation handler.
 
     Parameters
     ----------
     ctx
-        Handler context with params and resources.
+        Command context with params and resources.
 
     Returns
     -------
     CliResult[dict[str, str]]
         Result with greeting message.
     """
-    # Access params via ctx.param_str(), ctx.param_int(), etc.
+    # Access params via ctx.params.get_str(), ctx.params.get_int(), etc.
     _ = ctx  # Acknowledge context (remove when adding real logic)
     return CliResult.ok({{"message": "Hello from {name}!"}})
 
@@ -381,7 +381,7 @@ def register(registry: object) -> None:
     - operation_id: Unique ID prefixed with plugin name
     - name: Human-readable display name
     - description: Help text
-    - handler: Function accepting HandlerContext
+    - handler: Function accepting CommandContext
     - group: Command group for organization
     """
     registry.register(

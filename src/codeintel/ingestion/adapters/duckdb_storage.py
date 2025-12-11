@@ -576,15 +576,18 @@ class IngestStorageService:
     """High-level storage operations for ingestion.
 
     Wraps IngestStoragePort to provide convenient batch operations
-    with automatic schema management and logging.
+    with automatic schema management, Pandera validation, and logging.
 
     Attributes
     ----------
     storage
         The underlying storage port for database operations.
+    validate
+        Whether to validate data with Pandera before writing (default: True).
     """
 
     storage: IngestStoragePort
+    validate: bool = True
 
     def run_batch(
         self,
@@ -594,10 +597,11 @@ class IngestStorageService:
         delete_params: Sequence[object] | None = None,
         scope: str | None = None,
     ) -> BatchResult:
-        """Write batch with optional pre-delete.
+        """Write batch with optional pre-delete and Pandera validation.
 
-        Ensures schema exists, optionally deletes prior rows, and inserts
-        the batch with structured logging.
+        Ensures schema exists, optionally validates rows with Pandera,
+        optionally deletes prior rows, and inserts the batch with
+        structured logging.
 
         Parameters
         ----------
@@ -617,13 +621,64 @@ class IngestStorageService:
         """
         self.storage.ensure_schema(table_key)
 
+        # Validate rows with Pandera if enabled and rows exist
+        validated_rows = rows
+        if self.validate and rows:
+            validated_rows = self._validate_rows(table_key, rows)
+
         if delete_params is not None:
             self.storage.delete_by_params(table_key, delete_params)
 
-        return self.storage.write_batch(table_key, rows, scope=scope)
+        return self.storage.write_batch(table_key, validated_rows, scope=scope)
+
+    @staticmethod
+    def _validate_rows(
+        table_key: str, rows: Sequence[Sequence[object]]
+    ) -> Sequence[Sequence[object]]:
+        """Validate rows using Pandera schema if available.
+
+        Parameters
+        ----------
+        table_key
+            Table key for schema lookup.
+        rows
+            Rows to validate.
+
+        Returns
+        -------
+        Sequence[Sequence[object]]
+            Validated rows (unchanged if no schema or validation disabled).
+        """
+        from codeintel.storage.pandera_schemas import (  # noqa: PLC0415
+            get_dataset_schema,
+        )
+
+        schema = get_dataset_schema(table_key)
+        if schema is None:
+            return rows
+
+        # Get column names from registry
+        registry_cols = load_columns_by_table().get(table_key)
+        if registry_cols is None:
+            return rows
+
+        # Build DataFrame and validate
+        df = pd.DataFrame([list(row) for row in rows], columns=pd.Index(registry_cols))
+        try:
+            schema.validate(df, lazy=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "Pandera validation warning for %s: %s",
+                table_key,
+                str(exc)[:200],
+            )
+        # Continue with original rows - validation is advisory in ingest path
+        return rows
 
     @classmethod
-    def from_gateway(cls, gateway: StorageGateway) -> IngestStorageService:
+    def from_gateway(
+        cls, gateway: StorageGateway, *, validate: bool = True
+    ) -> IngestStorageService:
         """Create a service instance from a StorageGateway.
 
         This factory method creates the appropriate DuckDB storage adapter
@@ -633,13 +688,15 @@ class IngestStorageService:
         ----------
         gateway
             StorageGateway providing DuckDB access.
+        validate
+            Whether to validate data with Pandera before writing.
 
         Returns
         -------
         IngestStorageService
             Service instance wrapping the storage adapter.
         """
-        return cls(storage=DuckDBStorageAdapter(gateway))
+        return cls(storage=DuckDBStorageAdapter(gateway), validate=validate)
 
 
 __all__ = [

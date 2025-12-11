@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from codeintel.cli.execution.registry import OperationRegistry, get_registry
+
 if TYPE_CHECKING:
     from codeintel.cli.introspection import ValidationSchema
 
@@ -177,20 +179,20 @@ def _extract_flags_from_schema(schema: ValidationSchema | None) -> list[FlagSpec
     ]
 
 
-def build_completion_model() -> CompletionModel:
+def build_completion_model(registry: OperationRegistry | None = None) -> CompletionModel:
     """Build completion model from operation registry.
+
+    Parameters
+    ----------
+    registry
+        Optional registry instance; defaults to global registry.
 
     Returns
     -------
     CompletionModel
         Complete completion model.
     """
-    # Import here to avoid circular import
-    from codeintel.cli.introspection import (
-        get_registry,
-    )
-
-    registry = get_registry()
+    registry = registry or get_registry()
 
     # Build subcommands from registry
     command_groups: dict[str, list[CommandSpec]] = {}
