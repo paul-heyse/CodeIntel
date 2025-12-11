@@ -242,9 +242,7 @@ def fail_internal(
     CliResult
         Failed result with internal error.
     """
-    return CliResult.fail(
-        ProblemBuilder.internal(message, cause=cause, operation_id=operation_id)
-    )
+    return CliResult.fail(ProblemBuilder.internal(message, cause=cause, operation_id=operation_id))
 
 
 # -----------------------------------------------------------------------------
@@ -277,9 +275,7 @@ def fail_operation(
     CliResult
         Failed result with operation error.
     """
-    return CliResult.fail(
-        ProblemBuilder.operation(code, operation_id, detail, cause=cause)
-    )
+    return CliResult.fail(ProblemBuilder.operation(code, operation_id, detail, cause=cause))
 
 
 # -----------------------------------------------------------------------------
@@ -457,9 +453,7 @@ def fail_with_problem(
     domain_index = 2
     domain = parts[domain_index] if len(parts) > domain_index else "cli"
     code = parts[-1] if parts else error_type
-    return CliResult.fail(
-        ProblemBuilder.domain(domain, code, title, detail, status=status)
-    )
+    return CliResult.fail(ProblemBuilder.domain(domain, code, title, detail, status=status))
 
 
 def fail_job_cancel_failed(job_id: str) -> ErrorResult:
@@ -476,9 +470,7 @@ def fail_job_cancel_failed(job_id: str) -> ErrorResult:
         Failed result with cancel failure error.
     """
     return CliResult.fail(
-        ProblemBuilder.job(
-            JobErrorCode.FAILED, job_id, f"Could not cancel job {job_id}"
-        )
+        ProblemBuilder.job(JobErrorCode.FAILED, job_id, f"Could not cancel job {job_id}")
     )
 
 
@@ -787,7 +779,10 @@ def fail_invalid_plugin_manifest(message: str) -> ErrorResult:
         Failed result with invalid manifest error.
     """
     return fail_domain(
-        "plugins", "invalid-manifest", "Invalid Plugin Manifest", f"Error loading manifest: {message}"
+        "plugins",
+        "invalid-manifest",
+        "Invalid Plugin Manifest",
+        f"Error loading manifest: {message}",
     )
 
 

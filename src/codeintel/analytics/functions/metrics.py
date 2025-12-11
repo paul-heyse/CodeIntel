@@ -591,12 +591,14 @@ def persist_function_analytics(
     metrics_rows = result.metrics_rows
     types_rows = result.types_rows
 
-    def _validated_records(table_key: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    def _validated_records(
+        table_key: str, rows: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
         if not rows:
             return rows
         df = pd.DataFrame(rows)
         validated = validate_dataset_df(table_key, df)
-        return validated.where(pd.notnull(validated), None).to_dict(orient="records")
+        return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))
     validated_types = _validated_records(types_contract.table_key, list(types_rows))

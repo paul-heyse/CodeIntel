@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from codeintel.cli.context import CommandContext, CommandContextBuilder
+from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.rendering.types import OutputFormat
 
 
@@ -150,9 +150,7 @@ class TestCommandContextWithStorage:
         db_dir.mkdir(parents=True)
 
         config_file = project_dir / "codeintel.yaml"
-        config_file.write_text(
-            "repo: test/repo\nstorage:\n  db_path: build/db/codeintel.duckdb\n"
-        )
+        config_file.write_text("repo: test/repo\nstorage:\n  db_path: build/db/codeintel.duckdb\n")
 
         with (
             patch("codeintel.cli.context.load_config") as mock_config,
@@ -160,9 +158,7 @@ class TestCommandContextWithStorage:
             mock_config.return_value = MagicMock()
 
             builder = (
-                CommandContextBuilder()
-                .with_storage()
-                .with_params({"project_root": project_dir})
+                CommandContextBuilder().with_storage().with_params({"project_root": project_dir})
             )
             with builder.build() as ctx:
                 assert ctx.has_runtime

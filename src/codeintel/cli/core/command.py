@@ -1,7 +1,7 @@
 """Base class for CLI commands using the new pattern.
 
 The Command[T] base class provides type-safe command execution with explicit
-dependency injection through the Deps container.
+dependency injection through the CommandContext.
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
     from codeintel.cli.core.results import CliResult
-    from codeintel.cli.deps import Deps
 
 
 class Command[T](ABC):
@@ -26,9 +26,9 @@ class Command[T](ABC):
     __operation_id__
         Unique identifier for this operation (e.g., "jobs.list").
     __require_storage__
-        If True, storage access is required and provided via deps.storage.
+        If True, storage access is required and provided via ctx.storage.
     __require_serving__
-        If True, serving access is required and provided via deps.serving.
+        If True, serving access is required and provided via ctx.serving.
 
     Examples
     --------
@@ -36,7 +36,7 @@ class Command[T](ABC):
     >>> from codeintel.cli.core.command import Command
     >>> from codeintel.cli.core.results import CliResult
     >>> from codeintel.cli.core.result_types import ListResult
-    >>> from codeintel.cli.deps import Deps
+    >>> from codeintel.cli.context import CommandContext
     >>>
     >>> @dataclass(frozen=True)
     ... class ListItems(Command[ListResult[str]]):
@@ -45,7 +45,7 @@ class Command[T](ABC):
     ...
     ...     limit: int = 10
     ...
-    ...     def execute(self, deps: Deps) -> CliResult[ListResult[str]]:
+    ...     def execute(self, ctx: CommandContext) -> CliResult[ListResult[str]]:
     ...         items = ["item1", "item2"][: self.limit]
     ...         return CliResult.ok(ListResult.from_items(items))
     """
@@ -55,13 +55,13 @@ class Command[T](ABC):
     __require_serving__: ClassVar[bool] = False
 
     @abstractmethod
-    def execute(self, deps: Deps) -> CliResult[T]:
-        """Execute the command with provided dependencies.
+    def execute(self, ctx: CommandContext) -> CliResult[T]:
+        """Execute the command with provided context.
 
         Parameters
         ----------
-        deps
-            Dependency container with config, logger, jobs, and optional
+        ctx
+            Command context with config, logger, jobs, params, and optional
             storage/serving access based on class requirements.
 
         Returns

@@ -1,23 +1,16 @@
 """Declarative command binding via @cli_command decorator.
 
 This module provides the @cli_command decorator that eliminates boilerplate
-from CLI command classes. It supports two patterns:
+from CLI command classes.
 
-**Legacy Pattern (handler-based)**:
-
-- Handler function receives HandlerContext
-- Use `config=CommandConfig(...)` for resource requirements
-- Command class is a regular dataclass
-
-**New Pattern (Command[T]-based)**:
+**Command[T] Pattern**:
 
 - Command extends `Command[T]` from `cli.core.command`
-- Implements `execute(self, deps: Deps) -> CliResult[T]`
+- Implements `execute(self, ctx: CommandContext) -> CliResult[T]`
 - Uses `require_storage` and `require_serving` parameters
 - Full end-to-end type safety
 
-Both patterns are supported during migration. Prefer the new pattern for
-new commands.
+Handlers also use CommandContext directly via unified services.
 """
 
 from __future__ import annotations
@@ -31,17 +24,11 @@ from pathlib import Path
 from typing import Any, Protocol, TypeGuard, TypeVar, cast
 
 from codeintel.cli.commands._common import SharedFlags
-from codeintel.cli.context import CommandContextBuilder
-from codeintel.cli.context_compat import (
-    deps_from_command_context,
-    handler_context_from_command_context,
-)
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
-from codeintel.cli.deps.compat import deps_from_handler_context
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 
@@ -119,7 +106,7 @@ _INFRASTRUCTURE_FIELDS = frozenset(
 def cli_command[T, R](
     operation_id: str,
     *,
-    handler: Callable[[HandlerContext], CliResult[R]] | None = None,
+    handler: Callable[[CommandContext], CliResult[R]] | None = None,
     config: CommandConfig | None = None,
     require_storage: bool = False,
     require_serving: bool = False,
@@ -128,25 +115,25 @@ def cli_command[T, R](
 
     Support two patterns:
 
-    **Legacy Pattern** (handler= provided):
-    Uses HandlerContext-based handlers with CommandConfig.
+    **Handler Pattern** (handler= provided):
+    Uses CommandContext-based handlers with CommandConfig.
 
-    **New Pattern** (Command[T] subclass, no handler):
-    Command implements execute(deps) directly.
+    **Command[T] Pattern** (Command[T] subclass, no handler):
+    Command implements execute(ctx) directly.
 
     Parameters
     ----------
     operation_id
         Unique operation identifier (e.g., "jobs.list").
     handler
-        Legacy handler function to invoke. If None, command must extend Command[T].
+        Handler function to invoke. If None, command must extend Command[T].
     config
-        Legacy command configuration (resource requirements, description).
-        Defaults to requiring runtime and gateway. Ignored for new pattern.
+        Command configuration (resource requirements, description).
+        Defaults to requiring runtime and gateway.
     require_storage
-        For new pattern: whether command needs storage access via deps.storage.
+        Whether command needs storage access via ctx.storage.
     require_serving
-        For new pattern: whether command needs serving access via deps.serving.
+        Whether command needs serving access via ctx.serving.
 
     Returns
     -------
@@ -155,25 +142,25 @@ def cli_command[T, R](
 
     Examples
     --------
-    Legacy pattern with handler:
+    Handler pattern:
 
-    >>> from codeintel.cli.handlers.context import HandlerContext
+    >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
-    >>> def my_handler(ctx: HandlerContext) -> CliResult[dict[str, str]]:
+    >>> def my_handler(ctx: CommandContext) -> CliResult[dict[str, str]]:
     ...     return CliResult.ok({"status": "done"})
     >>> # @cli_command("my.op", handler=my_handler)
     >>> # @dataclass
     >>> # class MyCommand:
     >>> #     name: str = "default"
 
-    New pattern with Command[T]:
+    Command[T] pattern:
 
     >>> # @cli_command("jobs.list", require_storage=False)
     >>> # @dataclass(frozen=True)
     >>> # class ListJobs(Command[ListResult[JobInfo]]):
     >>> #     limit: int = 20
     >>> #
-    >>> #     def execute(self, deps: Deps) -> CliResult[ListResult[JobInfo]]:
+    >>> #     def execute(self, ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
     >>> #         ...
     """
 
@@ -192,11 +179,11 @@ def cli_command[T, R](
             return cast("type[T]", decorated)
 
         if handler is not None:
-            return _decorate_legacy(cls, operation_id, handler, config)
+            return _decorate_handler_based(cls, operation_id, handler, config)
 
         msg = (
-            f"@cli_command on {cls.__name__}: must provide handler= for legacy "
-            "pattern or extend Command[T] for new pattern"
+            f"@cli_command on {cls.__name__}: must provide handler= for handler "
+            "pattern or extend Command[T] for command pattern"
         )
         raise TypeError(msg)
 
@@ -229,13 +216,13 @@ def _is_command_subclass(cls: type[object]) -> bool:
         return False
 
 
-def _decorate_legacy[T, R](
+def _decorate_handler_based[T, R](
     cls: type[T],
     operation_id: str,
-    handler: Callable[[HandlerContext], CliResult[R]],
+    handler: Callable[[CommandContext], CliResult[R]],
     config: CommandConfig | None,
 ) -> type[T]:
-    """Decorate with legacy handler pattern.
+    """Decorate with handler-based pattern using CommandContext.
 
     Parameters
     ----------
@@ -244,7 +231,7 @@ def _decorate_legacy[T, R](
     operation_id
         Operation identifier.
     handler
-        Handler function.
+        Handler function receiving CommandContext.
     config
         Optional command config.
 
@@ -279,10 +266,11 @@ def _decorate_legacy[T, R](
     # Generate __call__ method
     def generated_call(command_self: CommandInstance, *args: object, **kwargs: object) -> None:
         del args, kwargs
-        _execute_command(
+        _execute_handler_command(
             command=command_self,
             operation_id=operation_id,
             handler=handler,
+            config=effective_config,
         )
 
     cls.__call__ = cast("Callable[..., object]", generated_call)
@@ -296,7 +284,7 @@ def _decorate_new_style(
     require_storage: bool,
     require_serving: bool,
 ) -> type[Command[Any]]:
-    """Decorate with new Command[T] pattern.
+    """Decorate with Command[T] pattern using CommandContext.
 
     Parameters
     ----------
@@ -329,12 +317,11 @@ def _decorate_new_style(
     group = operation_id.split(".", maxsplit=1)[0]
 
     # Create a wrapper handler for registry compatibility
-    def command_handler(ctx: HandlerContext) -> CliResult[object]:
+    def command_handler(ctx: CommandContext) -> CliResult[object]:
         # This is called if someone uses execute_operation() from registry
-        # We need to convert HandlerContext to Deps and call execute()
-        deps = deps_from_handler_context(ctx)
-        cmd = _reconstruct_command(cls, ctx)
-        return cmd.execute(deps)
+        # Reconstruct the command and call execute() with context
+        cmd = _reconstruct_command_from_context(cls, ctx)
+        return cmd.execute(ctx)
 
     # Register operation
     register_operation(
@@ -363,18 +350,18 @@ def _decorate_new_style(
     return cls
 
 
-def _reconstruct_command(
+def _reconstruct_command_from_context(
     cls: type[Command[Any]],
-    ctx: HandlerContext,
+    ctx: CommandContext,
 ) -> Command[Any]:
-    """Reconstruct command instance from HandlerContext params.
+    """Reconstruct command instance from CommandContext params.
 
     Parameters
     ----------
     cls
         Command class.
     ctx
-        Handler context with params.
+        Command context with params.
 
     Returns
     -------
@@ -395,14 +382,13 @@ def _reconstruct_command(
     for fld in dataclasses.fields(dataclass_cls):
         if fld.name == "flags":
             # Create SharedFlags from context
-
             kwargs["flags"] = SharedFlags(
                 output_format=ctx.output_format,
                 verbose=ctx.verbosity,
-                project_root=ctx.project_root,
+                project_root=ctx.runtime.root if ctx.runtime else None,
             )
-        elif fld.name in ctx._params:  # noqa: SLF001
-            kwargs[fld.name] = ctx._params[fld.name]  # noqa: SLF001
+        elif fld.name in ctx.params.raw:
+            kwargs[fld.name] = ctx.params.raw[fld.name]
         elif fld.default is not dataclasses.MISSING:
             kwargs[fld.name] = fld.default
         elif fld.default_factory is not dataclasses.MISSING:
@@ -417,7 +403,7 @@ def _execute_new_command[T](
     require_storage: bool,
     require_serving: bool,
 ) -> None:
-    """Execute a new-style Command[T] using unified CommandContext.
+    """Execute a Command[T] using unified CommandContext.
 
     Parameters
     ----------
@@ -452,9 +438,7 @@ def _execute_new_command[T](
 
     # Execute with unified context
     with builder.build() as ctx:
-        # Convert to Deps for backward compatibility with Command[T].execute()
-        deps = deps_from_command_context(ctx)
-        result = command.execute(deps)
+        result = command.execute(ctx)
 
     # Render result
     renderer = get_renderer(infra.output_format)
@@ -464,12 +448,13 @@ def _execute_new_command[T](
         sys.exit(exit_code)
 
 
-def _execute_command[R](
+def _execute_handler_command[R](
     command: CommandInstance,
     operation_id: str,
-    handler: Callable[[HandlerContext], CliResult[R]],
+    handler: Callable[[CommandContext], CliResult[R]],
+    config: CommandConfig,
 ) -> None:
-    """Execute a CLI command using unified CommandContext.
+    """Execute a CLI handler command using unified CommandContext.
 
     Parameters
     ----------
@@ -478,7 +463,9 @@ def _execute_command[R](
     operation_id
         Operation identifier.
     handler
-        Handler function.
+        Handler function receiving CommandContext.
+    config
+        Command configuration.
     """
     # Extract standard infrastructure from SharedFlags mixin or inline fields
     infra = _extract_infrastructure(command)
@@ -488,35 +475,25 @@ def _execute_command[R](
     bootstrap_cli(verbosity=infra.verbosity)
 
     # Build unified CommandContext
-    # Legacy handlers always need runtime/storage for backwards compatibility
     builder = (
         CommandContextBuilder()
         .with_params(params)
         .with_output_format(infra.output_format)
         .with_verbosity(infra.verbosity)
         .with_operation_id(operation_id)
-        .with_runtime(project_root=infra.project_root)
-        .with_storage(db_path=infra.database_path)
     )
+
+    # Apply resource requirements from config
+    if config.require_runtime:
+        builder = builder.with_runtime(project_root=infra.project_root)
+
+    if config.require_gateway:
+        builder = builder.with_storage(db_path=infra.database_path)
 
     # Execute with unified context
     with builder.build() as ctx:
-        # Convert to legacy HandlerContext for backward compatibility
-        handler_ctx = handler_context_from_command_context(ctx)
-        # Set additional legacy fields
-        handler_ctx = HandlerContext(
-            config=ctx.config,
-            operation_id=operation_id,
-            output_format=infra.output_format,
-            verbosity=infra.verbosity,
-            project_root=infra.project_root,
-            database_path=infra.database_path,
-            index_path=infra.index_path,
-            _params=params,
-        )
         try:
-            with handler_ctx:
-                result = handler(handler_ctx)
+            result = handler(ctx)
         except Exception:
             LOG.exception("Handler %s raised exception", operation_id)
             raise

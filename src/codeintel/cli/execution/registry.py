@@ -10,10 +10,10 @@ Operations are registered here and discovered by:
 Examples
 --------
 >>> from codeintel.cli.execution.registry import register_operation, OperationSpec
->>> from codeintel.cli.handlers.context import HandlerContext
+>>> from codeintel.cli.context import CommandContext
 >>> from codeintel.cli.core import CliResult
 >>>
->>> def my_handler(ctx: HandlerContext) -> CliResult:  # doctest: +SKIP
+>>> def my_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
 ...     return CliResult.ok({"status": "done"})
 >>>
 >>> spec = register_operation(
@@ -36,8 +36,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.cli.context import CommandContext
     from codeintel.cli.core import CliResult
-    from codeintel.cli.handlers.context import HandlerContext
 
 LOG = logging.getLogger(__name__)
 
@@ -91,10 +91,10 @@ class OperationSpec:
     Examples
     --------
     >>> from codeintel.cli.execution.registry import OperationSpec
-    >>> from codeintel.cli.handlers.context import HandlerContext
+    >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def example_handler(ctx: HandlerContext) -> CliResult:  # doctest: +SKIP
+    >>> def example_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
     ...     return CliResult.ok({})
     >>>
     >>> spec = OperationSpec(  # doctest: +SKIP
@@ -111,7 +111,7 @@ class OperationSpec:
     operation_id: str
     name: str
     description: str
-    handler: Callable[[HandlerContext], CliResult[Any]]
+    handler: Callable[[CommandContext], CliResult[Any]]
     group: str
 
     # Resource requirements (explicitly declare what each operation needs)
@@ -212,10 +212,10 @@ class OperationRegistry:
     Examples
     --------
     >>> from codeintel.cli.execution.registry import OperationRegistry, OperationSpec
-    >>> from codeintel.cli.handlers.context import HandlerContext
+    >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def dummy_handler(ctx: HandlerContext) -> CliResult:  # doctest: +SKIP
+    >>> def dummy_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
     ...     return CliResult.ok({})
     >>>
     >>> registry = OperationRegistry()
@@ -430,10 +430,10 @@ def register_operation(spec: OperationSpec) -> OperationSpec:
     Examples
     --------
     >>> from codeintel.cli.execution.registry import register_operation, OperationSpec
-    >>> from codeintel.cli.handlers.context import HandlerContext
+    >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def my_handler(ctx: HandlerContext) -> CliResult:  # doctest: +SKIP
+    >>> def my_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
     ...     return CliResult.ok({})
     >>>
     >>> register_operation(
@@ -461,7 +461,7 @@ def reset_registry() -> None:
 
 def create_spec_from_serving_operation(
     serving_op_id: str,
-    handler: Callable[[HandlerContext], CliResult[Any]],
+    handler: Callable[[CommandContext], CliResult[Any]],
     *,
     cli_operation_id: str | None = None,
     group: str | None = None,
@@ -535,7 +535,7 @@ def execute_operation(
 ) -> CliResult[Any]:
     """Execute an operation directly via its handler.
 
-    This is the simple execution path that creates a HandlerContext and
+    This is the simple execution path that creates a CommandContext and
     calls the handler. For programmatic execution of registered operations.
 
     Parameters
@@ -557,27 +557,27 @@ def execute_operation(
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
     # Import here to avoid circular imports
-    from codeintel.cli.config import load_config
-    from codeintel.cli.handlers.context import HandlerContext
+    from codeintel.cli.context import CommandContextBuilder
     from codeintel.cli.rendering.types import OutputFormat
 
-    # Load config for context creation
-    config = load_config(validate=False)
-
-    # Create handler context
-    ctx = HandlerContext(
-        config=config,
-        operation_id=spec.operation_id,
-        output_format=OutputFormat.JSON,  # Default to JSON for programmatic use
-        verbosity=0,
-        _params=params,
+    # Build CommandContext
+    builder = (
+        CommandContextBuilder()
+        .with_params(params)
+        .with_output_format(OutputFormat.JSON)  # Default to JSON for programmatic use
+        .with_verbosity(0)
+        .with_operation_id(spec.operation_id)
     )
 
-    try:
-        # Execute handler
+    # Apply resource requirements from spec
+    if spec.require_runtime:
+        builder = builder.with_runtime()
+
+    if spec.require_gateway:
+        builder = builder.with_storage()
+
+    with builder.build() as ctx:
         return spec.handler(ctx)
-    finally:
-        ctx.close()
 
 
 __all__ = [

@@ -107,7 +107,6 @@ def _dtype_for_column_type(col_type: ColumnType) -> object:
 
 
 def _build_columns(
-    table_key: str,
     schema: TableSchema,
     *,
     column_checks: Mapping[str, list[Check]],
@@ -129,7 +128,7 @@ def _build_schema(contract: DatasetContract) -> DataFrameSchema:
         raise ValueError(message)
     table_key = contract.table_key
     column_checks = _COLUMN_CHECKS.get(table_key, {})
-    columns = _build_columns(table_key, contract.schema, column_checks=column_checks)
+    columns = _build_columns(contract.schema, column_checks=column_checks)
     dataframe_checks = _DATAFRAME_CHECKS.get(table_key, [])
     return DataFrameSchema(
         columns,
@@ -154,7 +153,19 @@ DATASET_SCHEMAS: dict[str, DataFrameSchema] = _materialize_schemas()
 
 
 def get_dataset_schema(table_key: str) -> DataFrameSchema | None:
-    """Return the Pandera schema for a dataset when registered."""
+    """
+    Return the Pandera schema for a dataset when registered.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified dataset table identifier.
+
+    Returns
+    -------
+    DataFrameSchema | None
+        Schema when registered, otherwise ``None``.
+    """
     return DATASET_SCHEMAS.get(table_key)
 
 

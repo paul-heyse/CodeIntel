@@ -24,17 +24,60 @@ class IbisGateway:
 
     @cached_property
     def con(self) -> DuckDBBackend:
-        """Return an Ibis backend that reuses the gateway DuckDB connection."""
+        """
+        Return an Ibis backend that reuses the gateway DuckDB connection.
+
+        Returns
+        -------
+        DuckDBBackend
+            Ibis backend bound to the DuckDB connection.
+        """
         return ibis.duckdb.connect(con=self._gateway.con)
 
     def table(self, table_name: str) -> it.Table:
-        """Return an Ibis table expression for a fully qualified table."""
+        """
+        Return an Ibis table expression for a fully qualified table.
+
+        Parameters
+        ----------
+        table_name
+            Fully qualified table or view name.
+
+        Returns
+        -------
+        it.Table
+            Ibis table expression for the requested object.
+        """
         return self.con.table(table_name)
 
     def view(self, view_name: str) -> it.Table:
-        """Alias for `table` for semantic clarity when accessing views."""
+        """
+        Alias for `table` for semantic clarity when accessing views.
+
+        Parameters
+        ----------
+        view_name
+            Fully qualified view name.
+
+        Returns
+        -------
+        it.Table
+            Ibis table expression for the view.
+        """
         return self.table(view_name)
 
     def sql(self, raw_sql: str) -> it.Table:
-        """Execute raw SQL through Ibis and return the resulting table expression."""
+        """
+        Execute raw SQL through Ibis and return the resulting table expression.
+
+        Parameters
+        ----------
+        raw_sql
+            SQL string to execute via Ibis.
+
+        Returns
+        -------
+        it.Table
+            Table expression backed by the SQL statement.
+        """
         return self.con.sql(raw_sql)
