@@ -1,8 +1,7 @@
-"""Shared helpers for isolated gateway/DuckDB test setup.
+"""Shared helpers for isolated gateway/DuckDB test setup (ibis-only).
 
-This module provides gateway and DuckDB connection helpers for tests,
-including functions for creating fresh gateways, ensuring macros are
-registered, and building backend services.
+This module now builds gateways without ingest macro registration. Tests should
+exercise ibis/sqlglot paths and avoid DuckDB macros or legacy storage adapters.
 """
 
 from __future__ import annotations
@@ -35,13 +34,6 @@ from codeintel.storage.metadata import INGEST_MACROS
 from tests._helpers.env_options import GatewayOptions
 from tests._helpers.fakes.serving import ScopeRecordingQuery
 
-# Type alias for DuckDB connections (originally from duckdb.py)
-DuckDBConnection = duckdb.DuckDBPyConnection
-
-# Expected macros that must be registered for tests (originally from duckdb.py)
-MACROS_EXPECTED = {m.lower() for m in INGEST_MACROS.values()}
-
-
 # =============================================================================
 # Gateway Factory
 # =============================================================================
@@ -56,7 +48,6 @@ class GatewayFactory:
 
     Example
     -------
-    >>> gateway = GatewayFactory().with_macros().open()
     >>> gateway = GatewayFactory().file_backed(db_path).with_schema().open()
     >>> gateway = GatewayFactory.from_options(opts).open()
     """
@@ -65,7 +56,6 @@ class GatewayFactory:
         """Initialize factory with defaults."""
         self._apply_schema: bool = True
         self._ensure_views: bool = True
-        self._ensure_macros: bool = True
         self._validate_schema: bool = True
         self._strict_schema: bool = True
         self._file_backed: bool = False
@@ -140,28 +130,6 @@ class GatewayFactory:
             Self for chaining.
         """
         self._ensure_views = False
-        return self
-
-    def with_macros(self) -> GatewayFactory:
-        """Enable macro registration (default).
-
-        Returns
-        -------
-        GatewayFactory
-            Self for chaining.
-        """
-        self._ensure_macros = True
-        return self
-
-    def without_macros(self) -> GatewayFactory:
-        """Disable macro registration.
-
-        Returns
-        -------
-        GatewayFactory
-            Self for chaining.
-        """
-        self._ensure_macros = False
         return self
 
     def with_validation(self) -> GatewayFactory:
@@ -268,8 +236,6 @@ class GatewayFactory:
         ------
         ValueError
             If db_path is not set for file-backed gateway.
-        RuntimeError
-            If macros cannot be registered.
         """
         if self._file_backed:
             if self._db_path is None:
@@ -294,19 +260,6 @@ class GatewayFactory:
                 repo=self._repo,
                 commit=self._commit,
             )
-
-        if self._ensure_macros:
-            ensure_ingest_macros(gateway.con)
-            registered = list_ingest_macros(gateway.con)
-            missing = MACROS_EXPECTED - registered
-            if missing:
-                ensure_ingest_macros(gateway.con)
-                registered = list_ingest_macros(gateway.con)
-                missing = MACROS_EXPECTED - registered
-            if missing:
-                gateway.close()
-                message = f"Missing ingest macros on gateway: {sorted(missing)}"
-                raise RuntimeError(message)
 
         return gateway
 
@@ -335,25 +288,23 @@ def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[Storage
 
 def memory_con_with_macros() -> DuckDBConnection:
     """
-    Create an in-memory DuckDB connection with ingest macros registered.
+    Create an in-memory DuckDB connection (no macros).
 
     Returns
     -------
     DuckDBConnection
-        Connection to an in-memory DuckDB instance with macros ensured.
+        Connection to an in-memory DuckDB instance.
     """
-    con = duckdb.connect(database=":memory:")
-    ensure_ingest_macros(con)
-    return con
+    return duckdb.connect(database=":memory:")
 
 
 def gateway_with_macros() -> StorageGateway:
-    """Open an in-memory gateway with macros ensured.
+    """Open an in-memory gateway with schema/views ensured (no macros).
 
     Returns
     -------
     StorageGateway
-        Gateway configured with schema/views and ingest macros.
+        Gateway configured with schema/views.
     """
     return GatewayFactory().open()
 

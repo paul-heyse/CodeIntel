@@ -24,6 +24,7 @@ from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
+from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -195,11 +196,12 @@ class ModuleIngestPlugin(TargetPlugin):
         for table_key in ctx.contract.table_keys:
             try:
                 table = ctx.gateway.ibis.table(table_key)
-                count = (
-                    table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
-                    .count()
-                    .execute()
-                )
+                count_expr = filter_by(
+                    table,
+                    ibis_bool(table.repo == ctx.repo),
+                    ibis_bool(table.commit == ctx.commit),
+                ).count()
+                count = count_expr.execute()
                 row_counts[table_key] = int(cast("SupportsInt", count))
             except (RuntimeError, OSError, DuckDBCatalogException) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)

@@ -10,7 +10,7 @@ import json
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
@@ -29,6 +29,7 @@ from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
+from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -247,12 +248,12 @@ class RepoScanPlugin(TargetPlugin):
         for table_key in ctx.contract.table_keys:
             try:
                 table = ctx.gateway.ibis.table(table_key)
-                count = (
-                    table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
-                    .count()
-                    .execute()
-                )
-                row_counts[table_key] = int(count)
+                count_expr = filter_by(
+                    table,
+                    ibis_bool(table.repo == ctx.repo),
+                    ibis_bool(table.commit == ctx.commit),
+                ).count()
+                row_counts[table_key] = int(cast("SupportsInt", count_expr.execute()))
             except (RuntimeError, OSError, DuckDBCatalogException) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0

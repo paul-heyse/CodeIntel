@@ -97,7 +97,10 @@ def _write_synthetic_history_rows(
         if df is None:
             continue
 
-        records = cast("list[dict[str, object]]", df.to_dict("records"))
+        records = [
+            {col: value for col, value in zip(df.columns, row, strict=False)}
+            for row in df.itertuples(index=False, name=None)
+        ]
         for record in records:
             rel_path = record["rel_path"]
             qualname = record["qualname"]

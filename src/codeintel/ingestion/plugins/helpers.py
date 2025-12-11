@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.storage.ibis_types import ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -179,7 +180,12 @@ def get_module_paths(ctx: TargetExecutionContext) -> list[str]:
     try:
         table = ctx.gateway.ibis.table("core.modules")
         df = (
-            table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+            table.filter(
+                [
+                    ibis_bool(table.repo == ctx.repo),
+                    ibis_bool(table.commit == ctx.commit),
+                ]
+            )
             .select("path")
             .execute()
         )
