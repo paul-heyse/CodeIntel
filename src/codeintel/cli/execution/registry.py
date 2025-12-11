@@ -411,6 +411,9 @@ def get_registry() -> OperationRegistry:
 
     if _REGISTRY is None:
         _REGISTRY = OperationRegistry()
+    if not _REGISTRY.list_operations():
+        # Import command modules to trigger registration side effects.
+        import codeintel.cli.commands  # noqa: F401
 
     return _REGISTRY
 

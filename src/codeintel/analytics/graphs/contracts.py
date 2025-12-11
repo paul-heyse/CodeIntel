@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol, cast
-
-import pandas as pd
+from typing import Any, Literal, Protocol, cast
 
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.ibis_types import IbisError
 
 SAFE_TABLE_QUERIES: dict[str, str] = {
     "analytics.graph_metrics_functions": (
@@ -151,8 +150,20 @@ def assert_table_not_empty(
     commit: str,
     name: str | None = None,
 ) -> PluginContractResult:
-    """
-    Ensure a table has at least one row for repo/commit.
+    """Ensure a table has at least one row for repo/commit using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DB access.
+    table
+        Fully qualified table name.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    name
+        Optional custom name for the check.
 
     Returns
     -------
@@ -160,12 +171,15 @@ def assert_table_not_empty(
         Contract outcome with status and optional message.
     """
     resolved_name = name or f"{table}_not_empty"
-    query = SAFE_TABLE_QUERIES.get(table)
-    if query is None:
+    if table not in SAFE_TABLE_QUERIES:
         message = f"Unsafe or unknown table requested in contract: {table}"
         return PluginContractResult(name=resolved_name, status="failed", message=message)
-    row = gateway.con.execute(query, [repo, commit]).fetchone()
-    count = int(row[0]) if row is not None else 0
+    try:
+        tbl = gateway.ibis.table(table)
+        filtered = tbl.filter(cast("Any", (tbl.repo == repo) & (tbl.commit == commit)))
+        count = cast("int", filtered.count().execute())
+    except IbisError:
+        count = 0
     if count > 0:
         return PluginContractResult(name=resolved_name, status="passed")
     return PluginContractResult(
@@ -181,8 +195,16 @@ def assert_table_exists(
     table: str,
     name: str | None = None,
 ) -> PluginContractResult:
-    """
-    Ensure a table exists in the analytics schema.
+    """Ensure a table exists in the database using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DB access.
+    table
+        Fully qualified table name.
+    name
+        Optional custom name for the check.
 
     Returns
     -------
@@ -191,15 +213,12 @@ def assert_table_exists(
     """
     resolved_name = name or f"{table}_exists"
     _ensure_safe_table(table)
-    schema, table_name = _split_table(table)
-    query = (
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1"
-    )
-    row = gateway.con.execute(query, [schema, table_name]).fetchone()
-    if row is None:
+    try:
+        gateway.ibis.table(table)
+        return PluginContractResult(name=resolved_name, status="passed")
+    except IbisError:
         message = f"{table} is missing"
         return PluginContractResult(name=resolved_name, status="failed", message=message)
-    return PluginContractResult(name=resolved_name, status="passed")
 
 
 def assert_columns_present(
@@ -209,8 +228,18 @@ def assert_columns_present(
     expected_columns: set[str],
     name: str | None = None,
 ) -> PluginContractResult:
-    """
-    Ensure required columns exist on a table.
+    """Ensure required columns exist on a table using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DB access.
+    table
+        Fully qualified table name.
+    expected_columns
+        Column names that must be present.
+    name
+        Optional custom name for the check.
 
     Returns
     -------
@@ -219,18 +248,17 @@ def assert_columns_present(
     """
     resolved_name = name or f"{table}_columns_present"
     _ensure_safe_table(table)
-    schema, table_name = _split_table(table)
     allowed = SAFE_TABLE_COLUMNS.get(table, set())
     if not expected_columns.issubset(allowed):
         missing = expected_columns.difference(allowed)
         message = f"Columns not allowed for contract: {missing}"
         return PluginContractResult(name=resolved_name, status="failed", message=message)
-    query = (
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema = ? AND table_name = ?"
-    )
-    rows = gateway.con.execute(query, [schema, table_name]).fetchall()
-    present = {row[0] for row in rows}
+    try:
+        tbl = gateway.ibis.table(table)
+        present = set(tbl.columns)
+    except IbisError:
+        message = f"{table} is missing"
+        return PluginContractResult(name=resolved_name, status="failed", message=message)
     missing_columns = expected_columns.difference(present)
     if missing_columns:
         message = f"Missing columns on {table}: {sorted(missing_columns)}"
@@ -244,8 +272,16 @@ def assert_not_null_fraction(
     snapshot: SnapshotKey,
     spec: NotNullFractionSpec,
 ) -> PluginContractResult:
-    """
-    Ensure a column has a minimum non-null fraction for repo/commit rows.
+    """Ensure a column has a minimum non-null fraction for repo/commit rows.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DB access.
+    snapshot
+        Scoped snapshot identifier.
+    spec
+        Configuration for non-null fraction validation.
 
     Returns
     -------
@@ -258,13 +294,22 @@ def assert_not_null_fraction(
     if spec.column not in allowed:
         message = f"Column {spec.column} is not allowed for {spec.table}"
         return PluginContractResult(name=resolved_name, status="failed", message=message)
-    df = gateway.con.table(spec.table).to_df()
-    if df.empty:
+
+    try:
+        tbl = gateway.ibis.table(spec.table)
+        filtered = tbl.filter(
+            cast("Any", (tbl.repo == snapshot.repo) & (tbl.commit == snapshot.commit))
+        )
+        total = cast("int", filtered.count().execute())
+        if total == 0:
+            fraction = 0.0
+        else:
+            col = filtered[spec.column]
+            non_null_count = cast("int", filtered.filter(cast("Any", col.notnull())).count().execute())
+            fraction = float(non_null_count) / float(total)
+    except IbisError:
         fraction = 0.0
-    else:
-        filtered = df[(df["repo"] == snapshot.repo) & (df["commit"] == snapshot.commit)]
-        series = cast("pd.Series", filtered[spec.column])
-        fraction = float(series.notna().mean()) if not filtered.empty else 0.0
+
     if fraction >= spec.min_fraction:
         return PluginContractResult(name=resolved_name, status="passed", message=str(fraction))
     message = (

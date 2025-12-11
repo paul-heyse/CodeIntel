@@ -76,6 +76,10 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
     """
 
     def _run(args: list[str]) -> CliResult:
+        if cli_project_ctx.gateway is not None:
+            cli_project_ctx.gateway.close()
+            cli_project_ctx.gateway = None
+        close_gateways()
         return run_cli(args, env=cli_project_ctx.env, cwd=cli_project_ctx.repo_root)
 
     return _run
@@ -183,6 +187,9 @@ def op_harness() -> OperationTestHarness:
     OperationTestHarness
         Harness for testing operations directly.
     """
+    from codeintel.cli.introspection import get_registry
+
+    get_registry()
     return OperationTestHarness(render=False)
 
 

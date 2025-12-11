@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.storage.repositories.base import BaseRepository, RowDict, fetch_all_dicts
+from codeintel.storage.ibis_types import ibis_bool
+from codeintel.storage.repositories.base import BaseRepository, RowDict
 
 
 @dataclass(frozen=True)
@@ -20,12 +21,9 @@ class DataflowRepository(BaseRepository):
         list[RowDict]
             Each row has keys: id, kind, family, owner_package, description.
         """
-        sql = """
-        SELECT id, kind, family, owner_package, description
-        FROM metadata.dataset_dataflow_nodes
-        ORDER BY id
-        """
-        return fetch_all_dicts(self.con, sql, [])
+        tbl = self._ibis_table("metadata.dataset_dataflow_nodes")
+        expr = tbl.select("id", "kind", "family", "owner_package", "description").order_by("id")
+        return self._ibis_to_dicts(expr)
 
     def list_edges(self, *, src: str | None = None, dst: str | None = None) -> list[RowDict]:
         """
@@ -43,22 +41,14 @@ class DataflowRepository(BaseRepository):
         list[RowDict]
             Each row has keys: src, dst, edge_type.
         """
-        sql = """
-        SELECT src, dst, edge_type
-        FROM metadata.dataset_dataflow_edges
-        """
-        params: list[object] = []
-        predicates: list[str] = []
+        tbl = self._ibis_table("metadata.dataset_dataflow_edges")
+        expr = tbl.select("src", "dst", "edge_type")
 
+        # Apply optional filters
         if src is not None:
-            predicates.append("src = ?")
-            params.append(src)
+            expr = expr.filter(ibis_bool(tbl.src == src))
         if dst is not None:
-            predicates.append("dst = ?")
-            params.append(dst)
+            expr = expr.filter(ibis_bool(tbl.dst == dst))
 
-        if predicates:
-            sql += " WHERE " + " AND ".join(predicates)
-
-        sql += " ORDER BY src, dst, edge_type"
-        return fetch_all_dicts(self.con, sql, params)
+        expr = expr.order_by("src", "dst", "edge_type")
+        return self._ibis_to_dicts(expr)

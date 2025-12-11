@@ -12,6 +12,7 @@ from pathlib import Path
 
 from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
+from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
 from codeintel.cli.errors.taxonomy import ValidationErrorCode, validation_error
 from codeintel.cli.resolution.errors import ResolutionError
@@ -163,7 +164,7 @@ def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     validation_mode = ctx.params.get_str("validation") or ctx.params.get_str("validation_mode")
     if ctx.params.get_bool("validate"):
         validation_mode = "required"
-    validation = (validation_mode or "skip").lower()
+    validation = (validation_mode or "required").lower()
     macro_requirement_raw = ctx.params.get_str("macro_requirement", "require_normalized")
     macro_requirement = (macro_requirement_raw or "require_normalized").lower()
 
@@ -266,37 +267,40 @@ def docs_export_handler(
     try:
         # Access runtime to trigger resolution and validate project
         _ = _build_runtime_from_ctx(ctx)
-    except ResolutionError as e:
+    except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
 
     export_options = _build_export_options(params)
     mode, status = _resolve_mode(dry_run=params.dry_run, skip_prereqs=params.skip_prereqs)
 
     if params.require_validation:
-        try:
-            run_validated_exports(
-                gateway=ctx.gateway,
-                output_dir=params.output_dir,
-                options=export_options,
-            )
-        except ProblemError as exc:
-            message = exc.detail.detail or "Validation failed"
-            return CliResult.fail(
-                validation_error(
-                    ValidationErrorCode.INVALID_FORMAT,
-                    "validation",
-                    f"Validation failed: {message}",
+        if not ctx.has_storage:
+            LOG.debug("Skipping docs export validation: storage unavailable")
+        else:
+            try:
+                run_validated_exports(
+                    gateway=ctx.gateway,
+                    output_dir=params.output_dir,
+                    options=export_options,
                 )
-            )
-        except (ValueError, OSError, RuntimeError) as exc:
-            LOG.exception("Docs export validation failed")
-            return CliResult.fail(
-                validation_error(
-                    ValidationErrorCode.INVALID_FORMAT,
-                    "validation",
-                    f"Validation failed: {exc}",
+            except ProblemError as exc:
+                message = exc.detail.detail or "Validation failed"
+                return CliResult.fail(
+                    validation_error(
+                        ValidationErrorCode.INVALID_FORMAT,
+                        "validation",
+                        f"Validation failed: {message}",
+                    )
                 )
-            )
+            except (ValueError, OSError, RuntimeError) as exc:
+                LOG.exception("Docs export validation failed")
+                return CliResult.fail(
+                    validation_error(
+                        ValidationErrorCode.INVALID_FORMAT,
+                        "validation",
+                        f"Validation failed: {exc}",
+                    )
+                )
 
     return CliResult.ok(
         DocsExportResult(
@@ -329,7 +333,7 @@ def docs_validate_handler(
     try:
         # Access runtime to trigger resolution and validate project
         _ = _build_runtime_from_ctx(ctx)
-    except ResolutionError as e:
+    except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
 
     LOG.info("Validating docs exports")

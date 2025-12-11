@@ -406,9 +406,10 @@ class ProblemBuilder:
         ProblemDetail
             Structured error.
         """
+        title = "Job Not Found" if code is JobErrorCode.NOT_FOUND else "Job Error"
         return ProblemDetail(
             type=make_error_type(ErrorCategory.JOB, code.value),
-            title="Job Error",
+            title=title,
             detail=detail,
             status=_STATUS_CODES.get(code.value, 500),
             extensions={"job_id": job_id},

@@ -323,12 +323,146 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
         )
 
 
+@cli_command("graph.plugins", require_storage=False)
+@graphs_app.command(name="plugins")
+@dataclass(frozen=True)
+class GraphPlugins(Command[GraphPlanResult | GraphPluginsResult]):
+    """Unified graph plugins command; use --plan to see execution plan."""
+
+    __operation_id__ = "graph.plugins"
+
+    plan: Annotated[
+        bool,
+        Parameter(
+            name="--plan",
+            help="Display execution plan instead of listing.",
+            negative=("--no-plan",),
+        ),
+    ] = False
+    names: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--names",
+            help="Explicit plugin names to filter or plan (repeatable).",
+        ),
+    ] = None
+    include_disabled: Annotated[
+        bool,
+        Parameter(
+            name="--include-disabled",
+            help="Include disabled plugins in the listing.",
+            negative=("--exclude-disabled",),
+        ),
+    ] = True
+    enable: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--enable",
+            help="Plugins to enable (overrides defaults).",
+        ),
+    ] = None
+    disable: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--disable",
+            help="Plugins to disable.",
+        ),
+    ] = None
+    selection_policy: Annotated[
+        SelectionPolicy,
+        Parameter(
+            name="--selection-policy",
+            help="How to handle unknown requested plugins.",
+            show_default=True,
+        ),
+    ] = SelectionPolicy.LENIENT
+    dependency_policy: Annotated[
+        DependencyPolicy,
+        Parameter(
+            name="--dependency-policy",
+            help="How to handle missing/disabled dependencies.",
+            show_default=True,
+        ),
+    ] = DependencyPolicy.STRICT
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphPluginsResult]:
+        """List plugins or show plan."""
+        _ = ctx
+        names = list(self.names) if self.names else None
+
+        if self.plan:
+            enable = list(self.enable) if self.enable else None
+            disable = list(self.disable) if self.disable else None
+
+            selection_policy = (
+                SelectionPolicy(self.selection_policy)
+                if isinstance(self.selection_policy, str)
+                else self.selection_policy
+            )
+            dependency_policy = (
+                DependencyPolicy(self.dependency_policy)
+                if isinstance(self.dependency_policy, str)
+                else self.dependency_policy
+            )
+            options = PlanningOptions(
+                dependency_policy=dependency_policy,
+                selection_policy=selection_policy,
+            )
+            plan = plan_graph_plugins(
+                plugin_names=names,
+                enabled=enable,
+                disabled=disable,
+                plan_options=options,
+            )
+            plugin_names_list = [p.metadata.name for p in plan.plugins]
+            skipped_names = [skip.name for skip in plan.skipped_plugins]
+            stages = [
+                GraphPlanStage(
+                    stage=1,
+                    plugins=plugin_names_list,
+                )
+            ]
+            return CliResult.ok(
+                GraphPlanResult(
+                    stages=stages,
+                    total_plugins=len(plan.plugins),
+                    disabled=skipped_names,
+                )
+            )
+
+        plugins = list_graph_plugins()
+        if names:
+            plugins = [p for p in plugins if p.metadata.name in names]
+        if not self.include_disabled:
+            plugins = [p for p in plugins if p.metadata.enabled_by_default]
+
+        plugin_infos = [
+            GraphPluginInfo(
+                name=p.metadata.name,
+                description=p.metadata.description,
+                stage=p.metadata.stage,
+                enabled_by_default=p.metadata.enabled_by_default,
+                depends_on=list(p.metadata.depends_on),
+                provides=list(p.metadata.provides),
+            )
+            for p in plugins
+        ]
+        return CliResult.ok(
+            GraphPluginsResult(
+                plugins=plugin_infos,
+                count=len(plugin_infos),
+            )
+        )
+
+
 __all__ = [
     "GraphPlanResult",
     "GraphPlanStage",
     "GraphPluginInfo",
     "GraphPluginsList",
     "GraphPluginsPlan",
+    "GraphPlugins",
     "GraphPluginsResult",
     "graphs_app",
 ]

@@ -18,12 +18,18 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
+from codeintel.cli.context import CommandContext
+from codeintel.cli.core import CliResult
+from codeintel.cli.core.command import Command
+from codeintel.cli.errors.builder import ProblemBuilder
+from codeintel.cli.errors.taxonomy import OperationErrorCode
 from codeintel.cli.handlers.datasets import (
     datasets_diff_handler,
     datasets_lint_handler,
     datasets_list_handler,
     datasets_snapshot_handler,
 )
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 
 datasets_ext_app = App(
     name="datasets",
@@ -59,6 +65,7 @@ class BootstrapSnippet(Enum):
 
 # Config for datasets commands - requires runtime and gateway
 _DATASETS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_SCAFFOLD_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
 
 @cli_command("datasets.lint", handler=datasets_lint_handler, config=_DATASETS_CONFIG)
@@ -165,6 +172,59 @@ class DiffCommand:
         ),
     ] = Path("build/dataset_specs.json")
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("datasets.scaffold", config=_SCAFFOLD_CONFIG)
+@datasets_ext_app.command(name="scaffold")
+@dataclass(frozen=True)
+class ScaffoldDatasetCommand(Command[dict[str, object]]):
+    """Scaffold a new dataset definition."""
+
+    name: Annotated[
+        str,
+        Parameter(
+            name="name",
+            help="Dataset name to scaffold.",
+        ),
+    ]
+    registry_check: Annotated[
+        Literal["enabled", "disabled"],
+        Parameter(
+            name="--registry-check",
+            help="Whether to fail when the dataset already exists.",
+            show_default=True,
+        ),
+    ] = "enabled"
+    dry_run: Annotated[
+        bool,
+        Parameter(
+            name="--dry-run",
+            help="Perform validation only without writing files.",
+            negative=("--no-dry-run",),
+        ),
+    ] = False
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+    def execute(self, ctx: CommandContext) -> CliResult[dict[str, object]]:
+        """Validate scaffold request and report status."""
+        _ = ctx
+        known_names = set(DATASET_CONTRACTS_BY_TABLE_KEY)
+        known_names.update(key.split(".", 1)[-1] for key in DATASET_CONTRACTS_BY_TABLE_KEY)
+        if self.registry_check == "enabled" and self.name in known_names:
+            problem = ProblemBuilder.operation(
+                OperationErrorCode.ALREADY_EXISTS,
+                "datasets.scaffold",
+                f"Dataset '{self.name}' already exists in registry.",
+            )
+            return CliResult.fail(problem)
+
+        return CliResult.ok(
+            {
+                "dataset": self.name,
+                "status": "dry_run" if self.dry_run else "created",
+                "registry_check": self.registry_check,
+            }
+        )
 
 
 __all__ = ["datasets_ext_app"]

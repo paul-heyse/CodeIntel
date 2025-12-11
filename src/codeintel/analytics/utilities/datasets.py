@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
+    DELETE_SQL_BY_TABLE,
     BehavioralCoverageRowModel,
     DatasetContract,
     FunctionAstFeaturesRow,
@@ -38,9 +39,9 @@ from codeintel.config.datasets import (
 )
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
-from codeintel.storage.sql import QueryBuilder, SafeTable
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)
@@ -49,31 +50,24 @@ ToTuple = Callable[[RowT], tuple[object, ...]]
 REPO_COMMIT_ARITY = 2
 
 
-def _build_delete_sql_by_table() -> dict[str, str]:
-    """
-    Build a mapping of table keys to DELETE SQL statements from contracts.
+def _table_supports_snapshot_delete(table_key: str) -> bool:
+    """Check if a table supports repo/commit scoped deletion.
 
-    Automatically generates delete SQL for all datasets that have both 'repo'
-    and 'commit' columns in their schema, enabling scoped deletion by
-    repository and commit.
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (e.g., 'analytics.function_metrics').
 
     Returns
     -------
-    dict[str, str]
-        Mapping from table key to DELETE SQL statement.
+    bool
+        True if the table has repo and commit columns.
     """
-    result: dict[str, str] = {}
-    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items():
-        if contract.schema is None or contract.is_view:
-            continue
-        col_names = contract.schema.column_names()
-        if "repo" in col_names and "commit" in col_names:
-            # SafeTable validates the table name from contract definition
-            result[table_key] = QueryBuilder.delete_repo_commit(SafeTable(table_key))
-    return result
-
-
-DELETE_SQL_BY_TABLE: dict[str, str] = _build_delete_sql_by_table()
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    if contract is None or contract.schema is None or contract.is_view:
+        return False
+    col_names = contract.schema.column_names()
+    return "repo" in col_names and "commit" in col_names
 
 
 @dataclass(frozen=True)
@@ -251,43 +245,42 @@ def insert_analytics_rows(
     delete_scope: DeleteScope | None = None,
     scope: str | None = None,
 ) -> None:
-    """
-    Insert rows for a dataset contract using run_batch.
+    """Insert rows for a dataset contract using run_batch.
+
+    Deletions are routed through DuckDBPolicyBackend for centralized SQL
+    generation.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    contract
+        Dataset contract describing the target table.
+    rows
+        Rows to insert.
+    delete_scope
+        Optional deletion scope for clearing existing data.
+    scope
+        Optional scope label for logging.
 
     Raises
     ------
     ValueError
         If delete columns cannot be determined for the requested dataset.
     """
-    schema_columns = (
-        tuple(column.name for column in contract.schema.columns) if contract.schema else ()
-    )
     if delete_scope is not None:
-        columns_for_delete = delete_scope.columns
-        delete_params = [delete_scope.repo, delete_scope.commit]
-        if (
-            columns_for_delete is None
-            and contract.primary_key
-            and len(delete_params) == len(contract.primary_key)
-        ):
-            columns_for_delete = contract.primary_key
-        elif (
-            columns_for_delete is None
-            and len(delete_params) == REPO_COMMIT_ARITY
-            and "repo" in schema_columns
-            and "commit" in schema_columns
-        ):
-            columns_for_delete = ("repo", "commit")
-
-        if columns_for_delete is None:
-            message = f"Delete columns unknown for {contract.table_key}"
-            raise ValueError(message)
-
-        delete_sql = DELETE_SQL_BY_TABLE.get(contract.table_key)
-        if delete_sql is None:
+        # Validate that the table supports repo/commit deletion
+        if not _table_supports_snapshot_delete(contract.table_key):
             message = f"Unsupported delete target: {contract.table_key}"
             raise ValueError(message)
-        gateway.con.execute(delete_sql, delete_params)
+
+        # Use policy backend for deletion
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot(
+            contract.table_key,
+            repo=delete_scope.repo,
+            commit=delete_scope.commit,
+        )
 
     if rows:
         tuple_rows = [contract.to_tuple(row) for row in rows]

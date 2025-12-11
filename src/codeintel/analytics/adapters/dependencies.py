@@ -18,14 +18,7 @@ from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 
-# Pre-built SQL statements (constants avoid S608 f-string detection)
-_DELETE_DEPENDENCY_CALLS = (
-    "DELETE FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?"
-)
-_DELETE_DEPENDENCY_AGGREGATES = (
-    "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?"
-)
-
+# Pre-built SQL statements for INSERT (bulk inserts stay as executemany)
 _INSERT_DEPENDENCY_CALL = """
 INSERT INTO analytics.external_dependency_calls (
     repo, commit, dep_id, library, service_name,
@@ -43,40 +36,10 @@ INSERT INTO analytics.external_dependencies (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-# SQL statement mapping by table name
-_DELETE_SQL: dict[str, str] = {
-    "analytics.external_dependency_calls": _DELETE_DEPENDENCY_CALLS,
-    "analytics.external_dependencies": _DELETE_DEPENDENCY_AGGREGATES,
-}
-
 _INSERT_SQL: dict[str, str] = {
     "analytics.external_dependency_calls": _INSERT_DEPENDENCY_CALL,
     "analytics.external_dependencies": _INSERT_DEPENDENCY_AGGREGATE,
 }
-
-
-def _get_delete_sql(table_name: str) -> str:
-    """Get delete SQL for a table.
-
-    Parameters
-    ----------
-    table_name
-        Table name.
-
-    Returns
-    -------
-    str
-        Delete SQL statement.
-
-    Raises
-    ------
-    ValueError
-        If table name is not in the mapping.
-    """
-    if table_name not in _DELETE_SQL:
-        msg = f"No delete SQL for table: {table_name}"
-        raise ValueError(msg)
-    return _DELETE_SQL[table_name]
 
 
 def _get_insert_sql(table_name: str) -> str:

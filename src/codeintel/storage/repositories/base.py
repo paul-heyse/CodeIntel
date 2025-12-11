@@ -76,6 +76,10 @@ def fetch_one_dict(con: DuckDBConnection, sql: str, params: Sequence[object]) ->
     """
     Execute a query and return the first row as a mapping.
 
+    .. deprecated::
+        Use ``BaseRepository._ibis_to_one()`` instead. Raw SQL helpers will
+        be removed in a future release. Migrate to Ibis-based queries.
+
     Parameters
     ----------
     con
@@ -101,6 +105,10 @@ def fetch_one_dict(con: DuckDBConnection, sql: str, params: Sequence[object]) ->
 def fetch_all_dicts(con: DuckDBConnection, sql: str, params: Sequence[object]) -> list[RowDict]:
     """
     Execute a query and return all rows as mappings.
+
+    .. deprecated::
+        Use ``BaseRepository._ibis_to_dicts()`` instead. Raw SQL helpers will
+        be removed in a future release. Migrate to Ibis-based queries.
 
     Parameters
     ----------
@@ -132,7 +140,11 @@ def fetch_paginated(
     """
     Execute a query with pagination and truncation detection.
 
-    Fetches limit+1 rows to detect if more data exists beyond the page.
+    Fetch limit+1 rows to detect if more data exists beyond the page.
+
+    .. deprecated::
+        Use ``BaseRepository._ibis_paginated()`` instead. Raw SQL helpers will
+        be removed in a future release. Migrate to Ibis-based queries.
 
     Parameters
     ----------
@@ -171,6 +183,10 @@ def fetch_paginated(
 def row_exists(con: DuckDBConnection, sql: str, params: Sequence[object]) -> bool:
     """
     Check if at least one row matches the query.
+
+    .. deprecated::
+        Use ``BaseRepository._ibis_exists()`` instead. Raw SQL helpers will
+        be removed in a future release. Migrate to Ibis-based queries.
 
     Parameters
     ----------
@@ -414,6 +430,9 @@ class BaseRepository:
         -------
         list[RowDict]
             Query results as dictionaries.
+
+        .. deprecated::
+            Use ``_ibis_to_dicts`` directly. SQL fallbacks will be removed.
         """
         try:
             expr = ibis_fn()
@@ -448,6 +467,9 @@ class BaseRepository:
         -------
         RowDict | None
             Query result or None.
+
+        .. deprecated::
+            Use ``_ibis_to_one`` directly. SQL fallbacks will be removed.
         """
         try:
             expr = ibis_fn()
@@ -455,3 +477,69 @@ class BaseRepository:
         except IbisError:
             log.debug("Falling back to SQL for single-row query")
             return self._fetch_one(sql_fallback, params)
+
+    def _ibis_exists(  # noqa: PLR6301
+        self,
+        expr: it.Table,
+    ) -> bool:
+        """
+        Check if at least one row exists in the Ibis expression result.
+
+        Execute an Ibis expression and return True if at least one row
+        is present. This is the Ibis equivalent of ``_exists()``.
+
+        Parameters
+        ----------
+        expr
+            Ibis table expression (typically with filters applied).
+
+        Returns
+        -------
+        bool
+            True if at least one row matches the expression.
+        """
+        # Limit to 1 row for efficiency and count
+        limited = expr.limit(1)
+        df = pd.DataFrame(limited.execute())
+        return len(df) > 0
+
+    def _ibis_paginated(  # noqa: PLR6301
+        self,
+        expr: it.Table,
+        *,
+        limit: int,
+        table_key: str | None = None,
+    ) -> PaginatedRows:
+        """
+        Execute an Ibis expression with pagination and truncation detection.
+
+        Fetch limit+1 rows to detect if more data exists beyond the page,
+        returning a PaginatedRows result with truncation metadata.
+
+        Parameters
+        ----------
+        expr
+            Ibis table expression (filters/ordering should already be applied).
+        limit
+            Maximum rows to return.
+        table_key
+            Optional table key for Pandera validation.
+
+        Returns
+        -------
+        PaginatedRows
+            Paginated result with truncation metadata.
+        """
+        # Fetch one extra row to detect truncation
+        fetch_limit = limit + 1
+        limited_expr = expr.limit(fetch_limit)
+        df = pd.DataFrame(limited_expr.execute())
+
+        if table_key:
+            df = validate_dataset_df(table_key, df)
+
+        all_rows = df.to_dict(orient="records")
+        truncated = len(all_rows) > limit
+        rows = all_rows[:limit]
+
+        return PaginatedRows(rows=rows, limit=limit, truncated=truncated)

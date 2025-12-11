@@ -52,7 +52,8 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
             _ensure_macros_and_schema(con, config)
             bootstrap_metadata_datasets(con)
         datasets = load_dataset_registry(con)
-        validate_contract_or_raise(con)
+        if config.validate_schema:
+            validate_contract_or_raise(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         if config.ensure_views and not config.read_only:
             create_all_ibis_views(gateway)

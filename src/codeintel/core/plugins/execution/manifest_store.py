@@ -41,10 +41,11 @@ class DuckDBManifestStore(ManifestStore):
 
     def ensure_schema(self) -> None:
         """Create manifest table and indexes if they do not exist."""
+        self._con.execute("CREATE SCHEMA IF NOT EXISTS core")
         self._con.execute(
             """
             CREATE TABLE IF NOT EXISTS core.plugin_execution_manifest (
-                id INTEGER PRIMARY KEY,
+                id BIGINT,
                 plugin_name VARCHAR NOT NULL,
                 repo VARCHAR NOT NULL,
                 commit VARCHAR NOT NULL,

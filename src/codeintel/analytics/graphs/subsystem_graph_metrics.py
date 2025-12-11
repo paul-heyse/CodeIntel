@@ -29,6 +29,7 @@ from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.sql.builder import ensure_schema
@@ -138,10 +139,8 @@ def compute_subsystem_graph_metrics(
     ]
     membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
-        gateway.con.execute(
-            "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        )
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
         return
 
     subsystem_graph = _build_subsystem_graph(
@@ -152,10 +151,8 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
     if subsystem_graph.number_of_nodes() == 0:
-        gateway.con.execute(
-            "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        )
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
         return
 
     centralities = _subsystem_centralities(subsystem_graph, graph_ctx)
@@ -183,10 +180,8 @@ def compute_subsystem_graph_metrics(
         schema=contract.schema,
     )
 
-    gateway.con.execute(
-        "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
     gateway.con.executemany(
         """
         INSERT INTO analytics.subsystem_graph_metrics (

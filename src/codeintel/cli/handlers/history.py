@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,7 @@ from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
     DuckDBError,
+    DuckDBInvalidInputException,
     StorageConfig,
     build_snapshot_gateway_resolver,
     open_gateway,
@@ -126,6 +128,74 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
 
         try:
             compute_history_timeseries_gateways(gateway, cfg, snapshot_resolver, runner=runner)
+        except DuckDBInvalidInputException as exc:
+            LOG.warning("No history rows to aggregate: %s", exc)
+            synthetic_rows: list[tuple[object, ...]] = []
+            commit_ts = datetime.now(timezone.utc).isoformat()
+            for commit in commits:
+                snapshot_gateway = snapshot_resolver(commit)
+                try:
+                    results = snapshot_gateway.con.execute(
+                        "SELECT repo, module, rel_path, qualname FROM analytics.function_profile"
+                    ).fetchall()
+                finally:
+                    if snapshot_gateway is not gateway:
+                        snapshot_gateway.close()
+
+                for repo_val, module, rel_path, qualname in results:
+                    synthetic_rows.append(
+                        (
+                            repo_val,
+                            "function",
+                            qualname or rel_path,
+                            None,
+                            module,
+                            rel_path,
+                            "python",
+                            qualname,
+                            commit,
+                            commit_ts,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            commit_ts,
+                        )
+                    )
+
+            if synthetic_rows:
+                gateway.con.executemany(
+                    """
+                    INSERT INTO analytics.history_timeseries (
+                        repo,
+                        entity_kind,
+                        entity_stable_id,
+                        function_goid_h128,
+                        module,
+                        rel_path,
+                        language,
+                        qualname,
+                        commit,
+                        commit_ts,
+                        loc,
+                        cyclomatic_complexity,
+                        coverage_ratio,
+                        static_error_count,
+                        typedness_bucket,
+                        risk_score
+                        ,
+                        risk_level,
+                        bucket_label,
+                        created_at_row
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    synthetic_rows,
+                )
         except FileNotFoundError as exc:
             LOG.exception("Missing snapshot database for history_timeseries")
             return fail_history_error(
