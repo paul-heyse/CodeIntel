@@ -387,7 +387,18 @@ class GraphPlugins(Command[GraphPlanResult | GraphPluginsResult]):
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphPluginsResult]:
-        """List plugins or show plan."""
+        """List plugins or show plan.
+
+        Parameters
+        ----------
+        ctx
+            Command context (unused).
+
+        Returns
+        -------
+        CliResult[GraphPlanResult | GraphPluginsResult]
+            Either the planned plugin execution graph or the resolved plugin list.
+        """
         _ = ctx
         names = list(self.names) if self.names else None
 
@@ -460,9 +471,9 @@ __all__ = [
     "GraphPlanResult",
     "GraphPlanStage",
     "GraphPluginInfo",
+    "GraphPlugins",
     "GraphPluginsList",
     "GraphPluginsPlan",
-    "GraphPlugins",
     "GraphPluginsResult",
     "graphs_app",
 ]

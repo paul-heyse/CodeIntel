@@ -6,8 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
+from ibis.common.exceptions import IbisError
+
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.ibis_types import IbisError
 
 SAFE_TABLE_QUERIES: dict[str, str] = {
     "analytics.graph_metrics_functions": (

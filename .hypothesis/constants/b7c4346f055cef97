@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/entrypoints/build.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'ENTRYPOINTS_METADATA', 'EntrypointsPlugin', 'core.modules', 'entrypoints', 'metric']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/dataset_ops.py
+# hypothesis_version: 6.148.7
+
+['DatasetFlowCommand', 'DatasetInfoCommand', 'DatasetListCommand', 'DatasetVerifyCommand', 'dataset', 'dataset.describe', 'dataset.flow', 'dataset.info', 'dataset.list', 'dataset.verify', 'dataset_app', 'describe', 'flow', 'info', 'list', 'verify']

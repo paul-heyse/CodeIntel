@@ -13,13 +13,36 @@ from codeintel.analytics.dependencies import (
 )
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.context import TargetExecutionContext
+
+
+EXTERNAL_DEPS_METADATA = CorePluginMetadata(
+    name="analytics.external_dependencies",
+    version="3.0.0",
+    description="Identify external dependency usage across functions.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="graph",
+    provides=(
+        "analytics.external_dependency_calls",
+        "analytics.external_dependencies",
+    ),
+    requires=("core.modules", "core.goids"),
+    produces_tables=(
+        "analytics.external_dependency_calls",
+        "analytics.external_dependencies",
+    ),
+    consumes_tables=("core.modules", "core.goids"),
+)
 
 
 class ExternalDepsPlugin(TargetPlugin):
@@ -39,6 +62,17 @@ class ExternalDepsPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "external_deps"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Identify external dependency usage across functions."
+    _core_metadata: ClassVar[CorePluginMetadata] = EXTERNAL_DEPS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -103,4 +137,4 @@ class ExternalDepsPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["ExternalDepsPlugin"]
+__all__ = ["EXTERNAL_DEPS_METADATA", "ExternalDepsPlugin"]

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/cfg_dfg/metrics.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'CfgDfgMetricsPlugin', 'cfg', 'cfg_dfg_metrics', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'metric']

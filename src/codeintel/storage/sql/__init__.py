@@ -6,6 +6,23 @@ This package provides type-safe SQL construction utilities:
 - sql.builder: Schema-aware functions that integrate with codeintel.config.datasets
   (import directly from sql.builder to avoid circular imports)
 
+.. deprecated::
+    Most utilities in this module are deprecated. Use ``DuckDBPolicyBackend``
+    from ``codeintel.storage.duckdb_policy_backend`` for all SQL operations.
+
+    **Deprecated (use DuckDBPolicyBackend instead):**
+
+    - ``SafeTable``, ``SafeColumn``: Use policy backend methods
+    - ``QueryBuilder``: Use ``DuckDBPolicyBackend.bulk_insert()``,
+      ``DuckDBPolicyBackend.delete_for_snapshot()``, etc.
+    - ``build_insert_sql``, ``build_delete_query``: Use policy backend methods
+
+    **Still supported:**
+
+    - ``quote_identifier``, ``quote_table_key``: Used by macros and policy backend
+    - ``safe_macro_call``, ``macro_select_sql``: Used for macro invocations
+    - ``InvalidIdentifierError``, ``SqlBuilderError``: Exception types
+
 For most use cases, import directly from this package which re-exports all
 public symbols from primitives. For schema-aware functions like
 `ensure_schema` and `prepared_statements_dynamic`, import directly from

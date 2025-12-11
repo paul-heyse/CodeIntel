@@ -2,6 +2,8 @@
 
 This module provides adapters for persisting function, file, and module
 profiles to DuckDB.
+
+All profile adapters include schema validation via SchemaValidationMixin.
 """
 
 from __future__ import annotations
@@ -9,25 +11,32 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
+from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.config.datasets import load_columns_by_table, serialize_row
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
-class FunctionProfileAdapter(BatchAdapter[dict[str, Any]]):
+class FunctionProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
     """Adapter for analytics.function_profile table.
 
     Handle persisting aggregated function profile data.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.function_profile"
 
     def __init__(
         self,
@@ -53,7 +62,7 @@ class FunctionProfileAdapter(BatchAdapter[dict[str, Any]]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.function_profile"
+        return type(self).table_key
 
     def load(self) -> Iterator[dict[str, Any]]:
         """Raise NotImplementedError as profiles are computed not loaded.
@@ -104,12 +113,42 @@ class FunctionProfileAdapter(BatchAdapter[dict[str, Any]]):
         )
         return len(rows)
 
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
 
-class FileProfileAdapter(BatchAdapter[dict[str, Any]]):
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
+        return self.persist(rows)
+
+
+class FileProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
     """Adapter for analytics.file_profile table.
 
     Handle persisting aggregated file profile data.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.file_profile"
 
     def __init__(
         self,
@@ -135,7 +174,7 @@ class FileProfileAdapter(BatchAdapter[dict[str, Any]]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.file_profile"
+        return type(self).table_key
 
     def load(self) -> Iterator[dict[str, Any]]:
         """Raise NotImplementedError as profiles are computed not loaded.
@@ -186,12 +225,42 @@ class FileProfileAdapter(BatchAdapter[dict[str, Any]]):
         )
         return len(rows)
 
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
 
-class ModuleProfileAdapter(BatchAdapter[dict[str, Any]]):
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
+        return self.persist(rows)
+
+
+class ModuleProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
     """Adapter for analytics.module_profile table.
 
     Handle persisting aggregated module profile data.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.module_profile"
 
     def __init__(
         self,
@@ -217,7 +286,7 @@ class ModuleProfileAdapter(BatchAdapter[dict[str, Any]]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.module_profile"
+        return type(self).table_key
 
     def load(self) -> Iterator[dict[str, Any]]:
         """Raise NotImplementedError as profiles are computed not loaded.
@@ -267,6 +336,32 @@ class ModuleProfileAdapter(BatchAdapter[dict[str, Any]]):
             self.commit,
         )
         return len(rows)
+
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
+
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
+        return self.persist(rows)
 
 
 __all__ = [

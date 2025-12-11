@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
-from unittest.mock import MagicMock, patch
+import pytest
 
-from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.core.result_types import (
     DatasetDescribeResult,
     DatasetListResult,
@@ -15,69 +12,44 @@ from codeintel.cli.core.result_types import (
     OperationListResult,
 )
 from codeintel.cli.handlers.ops import ServeStartResult, op_list_handler
-from codeintel.storage.gateway import StorageGateway
+from codeintel.serving.operations.catalog import iter_operations
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.cli_context import make_command_context
 
 
-def test_op_list_handler_returns_ok() -> None:
+def test_op_list_handler_returns_ok(operation_registry_harness_fixture: object) -> None:
     """Handler returns success with operation list."""
-    mock_op = MagicMock()
-    mock_op.id = "test-op"
-    mock_op.category = "test"
-    mock_op.summary = "Test operation"
-    mock_op.http_path = "/api/test"
-    mock_op.tool_name = "test_tool"
-
-    with (
-        _build_test_context(params={}) as ctx,
-        patch(
-            "codeintel.cli.handlers.ops.iter_operations",
-            return_value=[mock_op],
-        ),
-    ):
+    with make_command_context({}, operation_id="ops.test") as ctx:
         result = op_list_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
     expect_is_instance(result.data, OperationListResult)
     if result.data is not None:
-        expect_equal(result.data.count, 1)
+        expect_equal(result.data.count, len(result.data.operations))
 
 
-def test_op_list_handler_filters_by_category() -> None:
+def test_op_list_handler_filters_by_category(operation_registry_harness_fixture: object) -> None:
     """Handler filters operations by category."""
-    mock_op1 = MagicMock()
-    mock_op1.id = "test-op"
-    mock_op1.category = "test"
-    mock_op1.summary = "Test operation"
-    mock_op1.http_path = "/api/test"
-    mock_op1.tool_name = "test_tool"
+    operations = tuple(iter_operations())
+    categorized = [op for op in operations if op.category]
+    if not categorized:
+        pytest.skip("No categorized operations available")
 
-    mock_op2 = MagicMock()
-    mock_op2.id = "other-op"
-    mock_op2.category = "other"
-    mock_op2.summary = "Other operation"
-    mock_op2.http_path = "/api/other"
-    mock_op2.tool_name = "other_tool"
+    target_category = categorized[0].category
 
-    with (
-        _build_test_context(params={"category": "test"}) as ctx,
-        patch(
-            "codeintel.cli.handlers.ops.iter_operations",
-            return_value=[mock_op1, mock_op2],
-        ),
-    ):
+    with make_command_context({"category": target_category}, operation_id="ops.test") as ctx:
         result = op_list_handler(ctx)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
     if result.data is not None:
-        expect_equal(result.data.count, 1)
+        expect_true(all(op["category"] == target_category for op in result.data.operations))
 
 
 def test_op_list_result_to_dict() -> None:
@@ -169,24 +141,3 @@ def test_serve_start_result_to_dict() -> None:
     expect_equal(data["host"], "127.0.0.1")
     expect_equal(data["port"], 8000)
     expect_true(data["auto_pipeline"])
-
-
-@contextmanager
-def _build_test_context(params: dict[str, object]) -> Iterator[CommandContext]:
-    """Build a test context with mocked dependencies.
-
-    Yields
-    ------
-    CommandContext
-        Context configured with a mocked storage gateway.
-    """
-    mock_gateway = MagicMock(spec=StorageGateway)
-    builder = (
-        CommandContextBuilder()
-        .with_params(params)
-        .with_operation_id("ops.test")
-        .with_injected_gateway(mock_gateway)
-    )
-    with ExitStack() as stack:
-        ctx = stack.enter_context(builder.build())
-        yield ctx

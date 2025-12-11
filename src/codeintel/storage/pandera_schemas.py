@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+import warnings
+from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
 from codeintel.config.datasets.primitives import ColumnType, TableSchema
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.contracts import DatasetContract
 
 __all__ = [
     "DATASET_SCHEMAS",
@@ -720,6 +723,11 @@ def _build_schema(contract: DatasetContract) -> DataFrameSchema:
 
 
 def _materialize_schemas() -> dict[str, DataFrameSchema]:
+    # Import lazily to avoid circular import with config.datasets
+    from codeintel.config.datasets import (  # noqa: PLC0415
+        DATASET_CONTRACTS_BY_TABLE_KEY,
+    )
+
     schemas: dict[str, DataFrameSchema] = {}
     for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values():
         if contract.schema is None or contract.is_view:
@@ -1177,18 +1185,107 @@ def _docs_view_schemas() -> dict[str, DataFrameSchema]:
     return view_schemas
 
 
-# Build and export schema registry
+# Lazily-initialized schema registry (avoids circular import at module load)
+_DATASET_SCHEMAS_CACHE: dict[str, DataFrameSchema] | None = None
 
-DATASET_SCHEMAS: dict[str, DataFrameSchema] = _materialize_schemas()
-DATASET_SCHEMAS.update(_analytics_view_schemas())
-DATASET_SCHEMAS.update(_graph_view_schemas())
-DATASET_SCHEMAS.update(_core_view_schemas())
-DATASET_SCHEMAS.update(_docs_view_schemas())
+
+def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
+    """Lazily build and return the dataset schemas registry.
+
+    Returns
+    -------
+    dict[str, DataFrameSchema]
+        All registered dataset schemas.
+    """
+    global _DATASET_SCHEMAS_CACHE  # noqa: PLW0603
+    if _DATASET_SCHEMAS_CACHE is None:
+        _DATASET_SCHEMAS_CACHE = _materialize_schemas()
+        _DATASET_SCHEMAS_CACHE.update(_analytics_view_schemas())
+        _DATASET_SCHEMAS_CACHE.update(_graph_view_schemas())
+        _DATASET_SCHEMAS_CACHE.update(_core_view_schemas())
+        _DATASET_SCHEMAS_CACHE.update(_docs_view_schemas())
+    return _DATASET_SCHEMAS_CACHE
+
+
+class _LazySchemaDict(dict[str, DataFrameSchema]):
+    """Lazy dict wrapper that initializes schemas on first access.
+
+    .. deprecated::
+        Direct access to DATASET_SCHEMAS is deprecated.
+        Use ``SCHEMA_REGISTRY`` from ``codeintel.config.datasets.schema_registry``
+        instead, which provides a unified interface with metadata support.
+
+    Examples
+    --------
+    **Before (deprecated):**
+
+    >>> from codeintel.storage.pandera_schemas import DATASET_SCHEMAS
+    >>> schema = DATASET_SCHEMAS.get("analytics.function_metrics")
+
+    **After (recommended):**
+
+    >>> from codeintel.config.datasets import SCHEMA_REGISTRY
+    >>> dataset_schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
+    >>> pandera_schema = dataset_schema.pandera_schema
+    """
+
+    _initialized: bool = False
+    _deprecation_warned: bool = False
+
+    def _ensure_initialized(self) -> None:
+        if not self._initialized:
+            self._initialized = True
+            self.update(_get_dataset_schemas())
+        if not self._deprecation_warned:
+            self._deprecation_warned = True
+            warnings.warn(
+                "Direct access to DATASET_SCHEMAS is deprecated. "
+                "Use SCHEMA_REGISTRY from codeintel.config.datasets.schema_registry instead. "
+                "See codeintel.config.datasets.DatasetSchema for the unified schema interface.",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+
+    def __getitem__(self, key: str) -> DataFrameSchema:
+        self._ensure_initialized()
+        return super().__getitem__(key)
+
+    def get(  # type: ignore[override]
+        self, key: str, default: DataFrameSchema | None = None
+    ) -> DataFrameSchema | None:
+        self._ensure_initialized()
+        return super().get(key, default)
+
+    def items(self) -> ItemsView[str, DataFrameSchema]:  # type: ignore[override]
+        self._ensure_initialized()
+        return super().items()
+
+    def keys(self) -> KeysView[str]:  # type: ignore[override]
+        self._ensure_initialized()
+        return super().keys()
+
+    def values(self) -> ValuesView[DataFrameSchema]:  # type: ignore[override]
+        self._ensure_initialized()
+        return super().values()
+
+    def __iter__(self) -> Iterator[str]:
+        self._ensure_initialized()
+        return super().__iter__()
+
+    def __len__(self) -> int:
+        self._ensure_initialized()
+        return super().__len__()
+
+
+# Module-level lazy dict that looks like a regular dict
+# DEPRECATED: Use SCHEMA_REGISTRY from codeintel.config.datasets.schema_registry instead.
+# This provides direct Pandera schema access but lacks metadata. The unified
+# DatasetSchema interface wraps Pandera schemas with governance metadata.
+DATASET_SCHEMAS: dict[str, DataFrameSchema] = _LazySchemaDict()  # type: ignore[assignment]
 
 
 def get_dataset_schema(table_key: str) -> DataFrameSchema | None:
-    """
-    Return the Pandera schema for a dataset when registered.
+    """Return the Pandera schema for a dataset when registered.
 
     Parameters
     ----------

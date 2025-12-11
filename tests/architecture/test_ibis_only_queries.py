@@ -259,17 +259,15 @@ def _find_execute_violations(path: Path) -> list[tuple[int, str]]:
             continue
 
         for pattern in EXECUTE_PATTERNS:
-            if re.search(pattern, line):
-                # Exclude SELECT 1 health checks
-                if "SELECT 1" in line:
-                    continue
-                # Skip Ibis expression execution (e.g., .count().execute())
-                if ".count().execute(" in line or ".execute()" in line:
-                    # But only if it's NOT a con.execute or gateway.con.execute
-                    if "con.execute" not in line and "gateway.con.execute" not in line:
-                        continue
-                violations.append((i, stripped))
-                break
+            if not re.search(pattern, line):
+                continue
+            if "SELECT 1" in line:
+                continue
+            is_ibis_execute = ".count().execute(" in line or ".execute()" in line
+            if is_ibis_execute and "con.execute" not in line and "gateway.con.execute" not in line:
+                continue
+            violations.append((i, stripped))
+            break
 
     return violations
 
@@ -437,7 +435,7 @@ def test_policy_backend_is_single_ddl_source() -> None:
         if path in allowed_ddl_files:
             continue
         if "views" in path.parts:
-            # View modules may have CREATE VIEW
+            # View modules use Ibis for CREATE VIEW (handled separately)
             continue
 
         text = path.read_text(encoding="utf-8")
@@ -450,3 +448,155 @@ def test_policy_backend_is_single_ddl_source() -> None:
         pytest.fail(
             "DDL should be centralized in DuckDBPolicyBackend:\n" + "\n".join(violations[:10])
         )
+
+
+def test_no_raw_sql_views_outside_ibis_views() -> None:
+    """Verify raw SQL CREATE VIEW statements are only in ibis_views.py.
+
+    All view definitions should use Ibis expressions via the view registry.
+    This test ensures that:
+    1. Raw SQL CREATE VIEW is not found in view files (except ibis_views.py)
+    2. View creation uses the Ibis registry pattern
+    """
+    # Pattern for raw SQL view creation
+    sql_view_patterns = (
+        r"\bCREATE\s+(?:OR\s+REPLACE\s+)?VIEW\b",
+        r"\.execute\s*\(\s*[\"'].*CREATE.*VIEW",
+        r"con\.execute\s*\(\s*[\"'].*CREATE.*VIEW",
+    )
+
+    # Only ibis_views.py should use CREATE VIEW (via Ibis API)
+    allowed_view_files = frozenset(
+        {
+            Path("src/codeintel/storage/views/ibis_views.py"),
+        }
+    )
+
+    violations: list[str] = []
+    views_dir = Path("src/codeintel/storage/views")
+
+    if not views_dir.exists():
+        pytest.skip("Views directory not found")
+
+    for path in views_dir.rglob("*.py"):
+        if path in allowed_view_files:
+            continue
+        if path.name == "__init__.py":
+            continue
+        if path.name == "ibis_registry.py":
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        for pattern in sql_view_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                violations.append(f"{path}: contains raw SQL CREATE VIEW")
+                break
+
+    if violations:
+        pytest.fail(
+            "View definitions should use Ibis via ibis_views.py:\n"
+            + "\n".join(violations[:10])
+        )
+
+
+# Files allowed to use executemany directly (policy backend and storage layer)
+ALLOWED_EXECUTEMANY_FILES = frozenset(
+    {
+        # Policy backend - centralized bulk operations
+        Path("src/codeintel/storage/duckdb_policy_backend.py"),
+        # Storage layer helpers - low-level DB utilities
+        Path("src/codeintel/storage/helpers/db.py"),
+        # Metadata bootstrap - schema initialization
+        Path("src/codeintel/storage/metadata/bootstrap.py"),
+        # Test fixtures and helpers
+        Path("tests/_helpers/gateway.py"),
+        # Ingestion adapters (pending migration)
+        Path("src/codeintel/ingestion/adapters/duckdb_storage.py"),
+    }
+)
+
+
+def _is_executemany_allowed(path: Path) -> bool:
+    """Check if a file is allowed to use executemany.
+
+    Parameters
+    ----------
+    path
+        File path to check.
+
+    Returns
+    -------
+    bool
+        True if executemany is allowed in this file.
+    """
+    if path in ALLOWED_EXECUTEMANY_FILES:
+        return True
+    if path in PENDING_IBIS_MIGRATION_ANALYTICS:
+        return True
+    return path in PENDING_IBIS_MIGRATION_INGESTION
+
+
+def _find_executemany_violations(path: Path, pattern: re.Pattern[str]) -> list[str]:
+    """Find executemany usage violations in a file.
+
+    Parameters
+    ----------
+    path
+        File path to check.
+    pattern
+        Regex pattern to match executemany calls.
+
+    Returns
+    -------
+    list[str]
+        List of violation messages.
+    """
+    violations: list[str] = []
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    for i, line in enumerate(lines, start=1):
+        if not pattern.search(line):
+            continue
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        violations.append(f"{path}:{i}: {stripped[:60]}")
+
+    return violations
+
+
+def test_executemany_centralized_in_policy_backend() -> None:
+    """Verify executemany calls are centralized in policy backend.
+
+    Bulk insert operations should use DuckDBPolicyBackend.bulk_insert()
+    instead of direct executemany calls. This test fails for new
+    executemany usage outside the allowlist.
+
+    New code should use:
+    - DuckDBPolicyBackend.bulk_insert() for bulk inserts
+    - DuckDBPolicyBackend.upsert() for insert-or-update
+    """
+    executemany_pattern = re.compile(r"\.executemany\s*\(")
+    violations: list[str] = []
+
+    src_dir = Path("src/codeintel")
+    if not src_dir.exists():
+        pytest.skip("Source directory not found")
+
+    for path in src_dir.rglob("*.py"):
+        if _is_executemany_allowed(path):
+            continue
+        violations.extend(_find_executemany_violations(path, executemany_pattern))
+
+    if violations:
+        msg_lines = [
+            f"Found {len(violations)} executemany calls outside policy backend.",
+            "Use DuckDBPolicyBackend.bulk_insert() instead.",
+            "",
+            *violations[:MAX_VIOLATIONS_DISPLAY],
+        ]
+        if len(violations) > MAX_VIOLATIONS_DISPLAY:
+            remaining = len(violations) - MAX_VIOLATIONS_DISPLAY
+            msg_lines.append(f"... and {remaining} more violations")
+        pytest.fail("\n".join(msg_lines))

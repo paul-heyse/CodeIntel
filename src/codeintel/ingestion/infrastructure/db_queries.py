@@ -16,8 +16,20 @@ Examples
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
+
+# Import Ibis exception types - catch a broad set of Ibis errors
+from ibis.common.exceptions import (
+    ExpressionError,
+    IbisError,
+    IbisInputError,
+    IbisTypeError,
+    IntegrityError,
+    RelationError,
+    TableNotFound,
+)
 
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
@@ -28,13 +40,17 @@ from codeintel.storage.gateway.protocol import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
-from codeintel.storage.ibis_types import IbisError
+
+# Alias for compatibility
+IbisBaseError = IbisError
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
+# All exceptions we catch for safe database operations
 DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
+    # DuckDB exceptions
     DuckDBError,
     DuckDBCatalogException,
     DuckDBConnectionException,
@@ -42,7 +58,17 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
     DuckDBBinderException,
     DuckDBDatabaseError,
     DuckDBProgrammingError,
+    # Ibis exceptions
     IbisError,
+    IbisBaseError,
+    IbisInputError,
+    IbisTypeError,
+    TableNotFound,
+    ExpressionError,
+    IntegrityError,
+    RelationError,
+    # Catch-all for edge cases with invalid identifiers
+    KeyError,
 )
 
 log = logging.getLogger(__name__)
@@ -124,7 +150,7 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     try:
         tbl = gateway.ibis.table(table_key)
         return cast("int", tbl.count().execute())
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count query failed for %s: %s", table_key, exc)
         return None
 
@@ -156,7 +182,7 @@ def safe_count_with_scope(
             cast("Any", (tbl.repo == snapshot.repo) & (tbl.commit == snapshot.commit))
         )
         return cast("int", filtered.count().execute())
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Scoped count query failed for %s: %s", table_key, exc)
         return None
 
@@ -178,7 +204,7 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
     """
     try:
         gateway.ibis.table(table_key)
-    except IbisError:
+    except DUCKDB_QUERY_ERRORS:
         return False
     else:
         return True
@@ -202,7 +228,7 @@ def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
     try:
         tbl = gateway.ibis.table(table_key)
         return set(tbl.columns)
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Get columns failed for %s: %s", table_key, exc)
         return set()
 
@@ -232,7 +258,7 @@ def safe_count_nulls(
         tbl = gateway.ibis.table(table_key)
         col = tbl[column]
         return cast("int", tbl.filter(cast("Any", col.isnull())).count().execute())
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count nulls failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -262,8 +288,12 @@ def safe_min_value(
         tbl = gateway.ibis.table(table_key)
         col = tbl[column]
         result = col.min().execute()
-        return float(cast("Any", result)) if result is not None else None
-    except IbisError as exc:
+        if result is None:
+            return None
+        # Convert to float and handle NaN (returned for empty tables)
+        value = float(cast("Any", result))
+        return None if math.isnan(value) else value
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Min value failed for %s.%s: %s", table_key, column, exc)
         return None
 
@@ -293,8 +323,12 @@ def safe_max_value(
         tbl = gateway.ibis.table(table_key)
         col = tbl[column]
         result = col.max().execute()
-        return float(cast("Any", result)) if result is not None else None
-    except IbisError as exc:
+        if result is None:
+            return None
+        # Convert to float and handle NaN (returned for empty tables)
+        value = float(cast("Any", result))
+        return None if math.isnan(value) else value
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Max value failed for %s.%s: %s", table_key, column, exc)
         return None
 
@@ -324,7 +358,7 @@ def safe_count_non_positive(
         tbl = gateway.ibis.table(table_key)
         col = cast("Any", tbl[column])
         return cast("int", tbl.filter(col <= 0).count().execute())
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count non-positive failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -358,7 +392,7 @@ def safe_count_duplicates(
         total = cast("int", non_null.count().execute())
         distinct = cast("int", col.nunique().execute())
         return total - distinct
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count duplicates failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -392,7 +426,7 @@ def safe_not_null_fraction(
             return 0.0
         non_null_count = cast("int", tbl.filter(cast("Any", col.notnull())).count().execute())
         return float(non_null_count) / float(total)
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Not null fraction failed for %s.%s: %s", table_key, column, exc)
         return 0.0
 
@@ -455,7 +489,7 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
             orphans = orphans.filter(cast("Any", src_tbl[fk.source_column].notnull()))
 
         return cast("int", orphans.count().execute())
-    except IbisError as exc:
+    except DUCKDB_QUERY_ERRORS as exc:
         log.debug(
             "Count orphan refs failed for %s.%s -> %s.%s: %s",
             fk.source_table,

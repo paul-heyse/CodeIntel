@@ -8,14 +8,37 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+TEST_GRAPH_METRICS_METADATA = CorePluginMetadata(
+    name="analytics.test_graph_metrics",
+    version="3.0.0",
+    description="Compute graph metrics from the test-function bipartite graph.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="test",
+    provides=(
+        "analytics.test_graph_metrics_tests",
+        "analytics.test_graph_metrics_functions",
+    ),
+    requires=("analytics.test_coverage_edges",),
+    produces_tables=(
+        "analytics.test_graph_metrics_tests",
+        "analytics.test_graph_metrics_functions",
+    ),
+    consumes_tables=("analytics.test_coverage_edges",),
+)
 
 
 class TestGraphMetricsPlugin(TargetPlugin):
@@ -38,6 +61,17 @@ class TestGraphMetricsPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Compute graph metrics from the test-function bipartite graph."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = TEST_GRAPH_METRICS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -85,4 +119,4 @@ class TestGraphMetricsPlugin(TargetPlugin):
         return TargetResult.succeeded(row_counts=row_counts)
 
 
-__all__ = ["TestGraphMetricsPlugin"]
+__all__ = ["TEST_GRAPH_METRICS_METADATA", "TestGraphMetricsPlugin"]

@@ -413,7 +413,7 @@ def get_registry() -> OperationRegistry:
         _REGISTRY = OperationRegistry()
     if not _REGISTRY.list_operations():
         # Import command modules to trigger registration side effects.
-        import codeintel.cli.commands  # noqa: F401
+        importlib.import_module("codeintel.cli.commands")
 
     return _REGISTRY
 

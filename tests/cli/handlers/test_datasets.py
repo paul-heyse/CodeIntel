@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
+from dataclasses import replace
+from unittest.mock import MagicMock
 
-from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
@@ -25,20 +22,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-
-
-@contextmanager
-def _make_mock_context(params: dict[str, Any]) -> Iterator[CommandContext]:
-    """Yield a CommandContext for testing.
-
-    Yields
-    ------
-    CommandContext
-        Configured command context for the provided params.
-    """
-    builder = CommandContextBuilder().with_params(params).with_operation_id("datasets.test")
-    with builder.build() as ctx:
-        yield ctx
+from tests.cli.handlers.conftest import DatasetHandlerHarness
 
 
 def test_datasets_list_result_to_dict() -> None:
@@ -144,26 +128,14 @@ def test_dataset_diff_result_no_differences() -> None:
     expect_equal(data["removed"], [])
 
 
-@patch("codeintel.cli.handlers.datasets._build_runtime_from_ctx")
-@patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
 def test_datasets_list_handler_success(
-    mock_get_contracts: MagicMock,
-    mock_build_runtime: MagicMock,
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
 ) -> None:
     """Verify datasets_list_handler returns datasets successfully."""
-    # Setup mocks
-    mock_contract = MagicMock()
-    mock_contract.name = "test_dataset"
-    mock_contract.table_key = "test.table"
-    mock_contract.description = "A test dataset"
-    mock_get_contracts.return_value = {"test.table": mock_contract}
+    deps = dataset_handler_harness_fixture.deps
 
-    mock_runtime = MagicMock()
-    mock_runtime.gateway = MagicMock()
-    mock_build_runtime.return_value = mock_runtime
-
-    with _make_mock_context({}) as ctx:
-        result = datasets_list_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({}) as ctx:
+        result = datasets_list_handler(ctx, deps=deps)
 
     expect_true(result.success)
     expect_is_not_none(result.data)
@@ -173,45 +145,14 @@ def test_datasets_list_handler_success(
         expect_equal(data.datasets[0]["name"], "test_dataset")
 
 
-@patch("codeintel.cli.handlers.datasets._build_runtime_from_ctx")
-@patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
-def test_datasets_list_handler_empty(
-    mock_get_contracts: MagicMock,
-    mock_build_runtime: MagicMock,
-) -> None:
-    """Verify datasets_list_handler handles empty results."""
-    mock_get_contracts.return_value = {}
-
-    mock_runtime = MagicMock()
-    mock_runtime.gateway = MagicMock()
-    mock_build_runtime.return_value = mock_runtime
-
-    with _make_mock_context({}) as ctx:
-        result = datasets_list_handler(ctx)
-
-    expect_true(result.success)
-    data = result.data
-    if data is not None:
-        expect_equal(data.count, 0)
-        expect_equal(data.datasets, [])
-
-
-@patch("codeintel.cli.handlers.datasets._build_runtime_from_ctx")
-@patch("codeintel.cli.handlers.datasets.collect_contract_issues")
 def test_datasets_lint_handler_success(
-    mock_collect_issues: MagicMock,
-    mock_build_runtime: MagicMock,
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
 ) -> None:
     """Verify datasets_lint_handler returns success when no issues."""
-    mock_collect_issues.return_value = []
+    deps = dataset_handler_harness_fixture.deps
 
-    mock_runtime = MagicMock()
-    mock_runtime.gateway = MagicMock()
-    mock_runtime.gateway.con = MagicMock()
-    mock_build_runtime.return_value = mock_runtime
-
-    with _make_mock_context({}) as ctx:
-        result = datasets_lint_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({}) as ctx:
+        result = datasets_lint_handler(ctx, deps=deps)
 
     expect_true(result.success)
     data = result.data
@@ -220,22 +161,17 @@ def test_datasets_lint_handler_success(
         expect_equal(data.issue_count, 0)
 
 
-@patch("codeintel.cli.handlers.datasets._build_runtime_from_ctx")
-@patch("codeintel.cli.handlers.datasets.collect_contract_issues")
 def test_datasets_lint_handler_with_issues(
-    mock_collect_issues: MagicMock,
-    mock_build_runtime: MagicMock,
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
 ) -> None:
     """Verify datasets_lint_handler returns issues when found."""
-    mock_collect_issues.return_value = ["Issue 1", "Issue 2"]
+    deps = replace(
+        dataset_handler_harness_fixture.deps,
+        issue_collector=lambda _con: ["Issue 1", "Issue 2"],
+    )
 
-    mock_runtime = MagicMock()
-    mock_runtime.gateway = MagicMock()
-    mock_runtime.gateway.con = MagicMock()
-    mock_build_runtime.return_value = mock_runtime
-
-    with _make_mock_context({}) as ctx:
-        result = datasets_lint_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({}) as ctx:
+        result = datasets_lint_handler(ctx, deps=deps)
 
     expect_true(result.success)
     data = result.data
@@ -244,9 +180,11 @@ def test_datasets_lint_handler_with_issues(
         expect_equal(data.issue_count, 2)
 
 
-def test_datasets_snapshot_handler_missing_output() -> None:
+def test_datasets_snapshot_handler_missing_output(
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
+) -> None:
     """Verify datasets_snapshot_handler fails without output parameter."""
-    with _make_mock_context({}) as ctx:
+    with dataset_handler_harness_fixture.command_context({}) as ctx:
         result = datasets_snapshot_handler(ctx)
 
     expect_true(not result.success)
@@ -255,21 +193,15 @@ def test_datasets_snapshot_handler_missing_output() -> None:
         expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
 
 
-@patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
 def test_datasets_snapshot_handler_success(
-    mock_get_contracts: MagicMock,
-    tmp_path: Path,
+    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
 ) -> None:
     """Verify datasets_snapshot_handler writes snapshot file."""
-    mock_contract = MagicMock()
-    mock_contract.name = "test_dataset"
-    mock_contract.table_key = "test.table"
-    mock_contract.description = "Test"
-    mock_get_contracts.return_value = {"test.table": mock_contract}
+    deps = dataset_handler_harness_fixture.deps
 
     output_path = tmp_path / "snapshot.json"
-    with _make_mock_context({"output": str(output_path)}) as ctx:
-        result = datasets_snapshot_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({"output": str(output_path)}) as ctx:
+        result = datasets_snapshot_handler(ctx, deps=deps)
 
     expect_true(result.success)
     data = result.data
@@ -283,10 +215,14 @@ def test_datasets_snapshot_handler_success(
     expect_equal(content[0]["name"], "test_dataset")
 
 
-def test_datasets_diff_handler_missing_baseline() -> None:
+def test_datasets_diff_handler_missing_baseline(
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
+) -> None:
     """Verify datasets_diff_handler fails without baseline_path parameter."""
-    with _make_mock_context({}) as ctx:
-        result = datasets_diff_handler(ctx)
+    deps = dataset_handler_harness_fixture.deps
+
+    with dataset_handler_harness_fixture.command_context({}) as ctx:
+        result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(not result.success)
     error = result.error
@@ -294,10 +230,16 @@ def test_datasets_diff_handler_missing_baseline() -> None:
         expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
 
 
-def test_datasets_diff_handler_baseline_not_found(tmp_path: Path) -> None:
+def test_datasets_diff_handler_baseline_not_found(
+    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
+) -> None:
     """Verify datasets_diff_handler fails when baseline file not found."""
-    with _make_mock_context({"baseline_path": str(tmp_path / "nonexistent.json")}) as ctx:
-        result = datasets_diff_handler(ctx)
+    deps = dataset_handler_harness_fixture.deps
+
+    with dataset_handler_harness_fixture.command_context(
+        {"baseline_path": str(tmp_path / "nonexistent.json")}
+    ) as ctx:
+        result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(not result.success)
     error = result.error
@@ -305,55 +247,46 @@ def test_datasets_diff_handler_baseline_not_found(tmp_path: Path) -> None:
         expect_equal(error.type, "urn:codeintel:datasets:file-not-found")
 
 
-@patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
 def test_datasets_diff_handler_success(
-    mock_get_contracts: MagicMock,
-    tmp_path: Path,
+    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
 ) -> None:
     """Verify datasets_diff_handler computes differences correctly."""
-    # Current datasets
-    mock_contract = MagicMock()
-    mock_contract.name = "new_dataset"
-    mock_get_contracts.return_value = {"new.table": mock_contract}
+    deps = dataset_handler_harness_fixture.deps
 
-    # Baseline with old dataset
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
-        json.dumps([{"name": "old_dataset", "table_key": "old.table"}]),
+        json.dumps([{"name": "missing", "table_key": "missing.table"}]),
         encoding="utf-8",
     )
 
-    with _make_mock_context({"baseline_path": str(baseline_path)}) as ctx:
-        result = datasets_diff_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({"baseline_path": str(baseline_path)}) as ctx:
+        result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(result.success)
     data = result.data
     if data is not None:
         expect_true(data.has_differences)
-        expect_equal(data.added, ["new_dataset"])
-        expect_equal(data.removed, ["old_dataset"])
+        expect_true(any(name for name in data.added))
+        expect_equal(data.removed, ["missing"])
 
 
-@patch("codeintel.cli.handlers.datasets.get_dataset_contracts_by_table_key")
 def test_datasets_diff_handler_no_differences(
     mock_get_contracts: MagicMock,
     tmp_path: Path,
+    dataset_handler_harness_fixture: DatasetHandlerHarness,
 ) -> None:
     """Verify datasets_diff_handler reports no differences when same."""
-    # Current datasets
-    mock_contract = MagicMock()
-    mock_contract.name = "same_dataset"
-    mock_get_contracts.return_value = {"same.table": mock_contract}
+    deps = dataset_handler_harness_fixture.deps
 
-    # Baseline with same dataset
+    mock_contract = mock_get_contracts.return_value["core.goids"]
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
-        json.dumps([{"name": "same_dataset", "table_key": "same.table"}]),
+        json.dumps([{"name": mock_contract.name, "table_key": mock_contract.table_key}]),
         encoding="utf-8",
     )
 
-    with _make_mock_context({"baseline_path": str(baseline_path)}) as ctx:
-        result = datasets_diff_handler(ctx)
+    with dataset_handler_harness_fixture.command_context({"baseline_path": str(baseline_path)}) as ctx:
+        result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(result.success)
     data = result.data

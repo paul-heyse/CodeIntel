@@ -10,14 +10,31 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.functions import compute_function_contracts
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import FunctionContractsStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+FUNCTION_CONTRACTS_METADATA = CorePluginMetadata(
+    name="analytics.function_contracts",
+    version="3.0.0",
+    description="Infer pre/postconditions and nullability contracts for functions.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="function",
+    provides=("analytics.function_contracts",),
+    requires=("core.goids",),
+    produces_tables=("analytics.function_contracts",),
+    consumes_tables=("core.goids",),
+)
 
 
 class FunctionContractsPlugin(TargetPlugin):
@@ -38,6 +55,17 @@ class FunctionContractsPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Infer pre/postconditions and nullability contracts for functions."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = FUNCTION_CONTRACTS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -92,4 +120,4 @@ class FunctionContractsPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["FunctionContractsPlugin"]
+__all__ = ["FUNCTION_CONTRACTS_METADATA", "FunctionContractsPlugin"]

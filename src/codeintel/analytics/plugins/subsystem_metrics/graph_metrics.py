@@ -11,13 +11,30 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.analytics.graphs.subsystem_graph_metrics import (
     compute_subsystem_graph_metrics,
 )
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+SUBSYSTEM_GRAPH_METRICS_METADATA = CorePluginMetadata(
+    name="analytics.subsystem_graph_metrics",
+    version="3.0.0",
+    description="Compute graph metrics for subsystems.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="subsystem",
+    provides=("analytics.subsystem_graph_metrics",),
+    requires=("analytics.subsystems", "analytics.subsystem_modules"),
+    produces_tables=("analytics.subsystem_graph_metrics",),
+    consumes_tables=("analytics.subsystems", "analytics.subsystem_modules"),
+)
 
 
 class SubsystemGraphMetricsPlugin(TargetPlugin):
@@ -36,6 +53,17 @@ class SubsystemGraphMetricsPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "subsystem_graph_metrics"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute graph metrics for subsystems."
+    _core_metadata: ClassVar[CorePluginMetadata] = SUBSYSTEM_GRAPH_METRICS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -81,4 +109,4 @@ class SubsystemGraphMetricsPlugin(TargetPlugin):
         return TargetResult.succeeded(row_counts={"analytics.subsystem_graph_metrics": row_count})
 
 
-__all__ = ["SubsystemGraphMetricsPlugin"]
+__all__ = ["SUBSYSTEM_GRAPH_METRICS_METADATA", "SubsystemGraphMetricsPlugin"]

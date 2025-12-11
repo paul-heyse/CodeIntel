@@ -15,12 +15,17 @@ The symbol uses plugin performs the following steps:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import SymbolUsesStepConfig
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.graphs.compute import symbols as symbols_compute
+from codeintel.graphs.plugins.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
@@ -29,6 +34,134 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+SYMBOL_USES_METADATA = CorePluginMetadata(
+    name="graphs.symbol_uses",
+    version="3.0.0",
+    description="Build symbol usage graph.",
+    domain=PluginDomain.GRAPH,
+    kind="builder",
+    stage="edges",
+    provides=("graph.symbol_uses",),
+    requires=("core.scip_occurrences", "core.modules", "core.goids"),
+    produces_tables=("graph.symbol_use_edges",),
+    consumes_tables=("core.scip_occurrences", "core.modules", "core.goids"),
+    supports_incremental=False,
+    scope_aware=True,
+    options_model=SymbolUsesOptions,
+    extra={"graph_kinds": ("symbol_use",)},
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "edges"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
+
+
+def _is_test_path(path: str) -> bool:
+    """Return True when the path looks like a test file.
+
+    Returns
+    -------
+    bool
+        True when the path is considered a test path.
+    """
+    lowered = path.lower()
+    return (
+        "tests/" in lowered
+        or lowered.endswith("_test.py")
+        or "/test_" in lowered
+        or lowered.startswith("test_")
+    )
+
+
+def _matches_scope(path: str, scope_paths: list[str] | None) -> bool:
+    """Check whether a path matches configured scope prefixes.
+
+    Returns
+    -------
+    bool
+        True when the path is within scope or no scope is set.
+    """
+    if not scope_paths:
+        return True
+    prefixes = tuple(scope_paths)
+    return path.startswith(prefixes)
+
+
+def _filter_occurrences(
+    occurrences: list[symbols_compute.SymbolOccurrence],
+    options: SymbolUsesOptions,
+) -> list[symbols_compute.SymbolOccurrence]:
+    """Filter symbol occurrences by scope and test inclusion.
+
+    Returns
+    -------
+    list[SymbolOccurrence]
+        Filtered symbol occurrences.
+    """
+    filtered: list[symbols_compute.SymbolOccurrence] = []
+    for occurrence in occurrences:
+        if not _matches_scope(occurrence.rel_path, options.scope_paths):
+            continue
+        if not options.include_tests and _is_test_path(occurrence.rel_path):
+            continue
+        filtered.append(occurrence)
+    return filtered
+
+
+def _filter_module_map(
+    module_map: dict[str, str],
+    options: SymbolUsesOptions,
+) -> dict[str, str]:
+    """Filter module map to align with scope configuration.
+
+    Returns
+    -------
+    dict[str, str]
+        Filtered module map keyed by relative path.
+    """
+    return {
+        path: module
+        for path, module in module_map.items()
+        if _matches_scope(path, options.scope_paths)
+        and (options.include_tests or not _is_test_path(path))
+    }
+
+
+def _filter_path_to_goid_map(
+    path_to_goid: dict[str, int],
+    options: SymbolUsesOptions,
+) -> dict[str, int]:
+    """Filter path->GOID map to align with scope configuration.
+
+    Returns
+    -------
+    dict[str, int]
+        Filtered path to GOID mapping.
+    """
+    return {
+        path: goid
+        for path, goid in path_to_goid.items()
+        if _matches_scope(path, options.scope_paths)
+        and (options.include_tests or not _is_test_path(path))
+    }
 
 
 def build_scip_candidates(
@@ -316,6 +449,43 @@ class SymbolUsesPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "symbol_uses"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Build symbol usage graph."
+    _core_metadata: ClassVar[CorePluginMetadata] = SYMBOL_USES_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return full core metadata."""
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> SymbolUsesOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        SymbolUsesOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return SymbolUsesOptions(**dynamic_overrides)
+            return SymbolUsesOptions()
+
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            SymbolUsesOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute symbol use analysis.
@@ -331,6 +501,7 @@ class SymbolUsesPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self  # Protocol method requires instance
+        opts = self.resolve_options()
 
         # Build config - SymbolUsesStepConfig requires paths
         cfg = SymbolUsesStepConfig(
@@ -345,6 +516,7 @@ class SymbolUsesPlugin(TargetPlugin):
         try:
             # Step 1: Load symbol occurrences
             occurrences = _load_symbol_occurrences(gateway, repo, commit)
+            occurrences = _filter_occurrences(occurrences, opts)
 
             if not occurrences:
                 log.info("symbol_uses: No symbol occurrences found, skipping")
@@ -353,7 +525,7 @@ class SymbolUsesPlugin(TargetPlugin):
             log.info("symbol_uses: Loaded %d symbol occurrences", len(occurrences))
 
             # Step 2: Load module map
-            module_by_path = _load_module_map(gateway, repo, commit)
+            module_by_path = _filter_module_map(_load_module_map(gateway, repo, commit), opts)
             log.debug("symbol_uses: Loaded %d module mappings", len(module_by_path))
 
             # Step 3: Build definition map
@@ -365,7 +537,9 @@ class SymbolUsesPlugin(TargetPlugin):
             log.info("symbol_uses: Built %d use edges", len(edges))
 
             # Step 5: Enrich edges with GOIDs for function-level tracking
-            path_to_goid = _load_path_to_goid_map(gateway, repo, commit)
+            path_to_goid = _filter_path_to_goid_map(
+                _load_path_to_goid_map(gateway, repo, commit), opts
+            )
             log.debug("symbol_uses: Loaded %d path->goid mappings", len(path_to_goid))
             edges = _enrich_edges_with_goids(edges, path_to_goid)
 

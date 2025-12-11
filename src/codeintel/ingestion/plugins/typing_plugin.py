@@ -9,11 +9,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.protocols import TypeChecker
 from codeintel.build.result import TargetResult
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -35,6 +38,43 @@ StorageFactory = Callable[[StorageGateway], IngestStoragePort]
 DiscoveryFactory = Callable[[Path], ModuleDiscoveryPort]
 TypeCheckerFactory = Callable[[TypeChecker | None], TypeChecker | None]
 StepFactory = Callable[[IngestStoragePort, ModuleDiscoveryPort, BuildToolAdapter], TypingIngestStep]
+
+
+TYPING_INGEST_METADATA = CorePluginMetadata(
+    name="ingest.typing",
+    version="3.0.0",
+    description="Populate analytics.typedness and analytics.static_diagnostics.",
+    domain=PluginDomain.INGEST,
+    kind="builder",
+    stage="typing",
+    provides=("analytics.typedness", "analytics.static_diagnostics"),
+    requires=("core.modules",),
+    produces_tables=("analytics.typedness", "analytics.static_diagnostics"),
+    consumes_tables=("core.modules",),
+    supports_incremental=True,
+    scope_aware=True,
+    resource_hints={"requires_tools": ["pyright", "pyrefly", "ruff"]},
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "typing"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
 
 
 def _default_type_checker_factory(checker: TypeChecker | None) -> TypeChecker | None:
@@ -106,6 +146,7 @@ class TypingIngestPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Populate analytics.typedness and analytics.static_diagnostics."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = TYPING_INGEST_METADATA
 
     # Class-level defaults for adapter and step factories
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
@@ -125,11 +166,23 @@ class TypingIngestPlugin(TargetPlugin):
         discovery_adapter_factory: DiscoveryFactory | None = None,
         type_checker_factory: TypeCheckerFactory | None = None,
         step_factory: StepFactory | None = None,
+        options_resolver: PluginOptionsResolver | None = None,
     ) -> None:
         self._storage_factory = storage_adapter_factory or type(self).default_storage_factory
         self._discovery_factory = discovery_adapter_factory or type(self).default_discovery_factory
         self._type_checker_factory = type_checker_factory or _default_type_checker_factory
         self._step_factory = step_factory or type(self).default_step_factory
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata definition."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute typing analysis.
@@ -185,4 +238,7 @@ class TypingIngestPlugin(TargetPlugin):
         return TargetResult.succeeded(row_counts=result.table_counts or {})
 
 
-__all__ = ["TypingIngestPlugin"]
+__all__ = [
+    "TYPING_INGEST_METADATA",
+    "TypingIngestPlugin",
+]

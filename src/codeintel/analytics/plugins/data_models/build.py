@@ -8,12 +8,37 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.data_models import compute_data_models
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import DataModelsStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+
+
+DATA_MODELS_METADATA = CorePluginMetadata(
+    name="analytics.data_models",
+    version="3.0.0",
+    description="Extract structured data models from class definitions.",
+    domain=PluginDomain.ANALYTICS,
+    kind="builder",
+    stage="data_model",
+    provides=(
+        "analytics.data_models",
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+    ),
+    requires=("core.modules", "core.goids", "core.ast_metrics"),
+    produces_tables=(
+        "analytics.data_models",
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+    ),
+    consumes_tables=("core.modules", "core.goids", "core.ast_metrics"),
+)
 
 
 class DataModelsPlugin(TargetPlugin):
@@ -32,6 +57,17 @@ class DataModelsPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "data_models"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Extract structured data models from class definitions."
+    _core_metadata: ClassVar[CorePluginMetadata] = DATA_MODELS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -60,4 +96,4 @@ class DataModelsPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["DataModelsPlugin"]
+__all__ = ["DATA_MODELS_METADATA", "DataModelsPlugin"]

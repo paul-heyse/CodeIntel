@@ -1,7 +1,7 @@
 """Persistence adapter for dependency analytics.
 
 This module provides database operations for storing and retrieving
-dependency analysis results.
+dependency analysis results. Uses DuckDBPolicyBackend for bulk inserts.
 """
 
 from __future__ import annotations
@@ -12,58 +12,25 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 
-# Pre-built SQL statements for INSERT (bulk inserts stay as executemany)
-_INSERT_DEPENDENCY_CALL = """
-INSERT INTO analytics.external_dependency_calls (
-    repo, commit, dep_id, library, service_name,
-    function_goid_h128, function_urn, rel_path, module, qualname,
-    callsite_count, modes, evidence_json, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# Column definitions for bulk_insert (derived from table schema)
+_DEPENDENCY_CALL_COLUMNS: tuple[str, ...] = (
+    "repo", "commit", "dep_id", "library", "service_name",
+    "function_goid_h128", "function_urn", "rel_path", "module", "qualname",
+    "callsite_count", "modes", "evidence_json", "created_at",
+)
 
-_INSERT_DEPENDENCY_AGGREGATE = """
-INSERT INTO analytics.external_dependencies (
-    repo, commit, dep_id, library, service_name, category, language,
-    severity, criticality, risk_score,
-    function_count, callsite_count, modules_json, usage_modes,
-    config_keys, risk_level, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
-
-_INSERT_SQL: dict[str, str] = {
-    "analytics.external_dependency_calls": _INSERT_DEPENDENCY_CALL,
-    "analytics.external_dependencies": _INSERT_DEPENDENCY_AGGREGATE,
-}
-
-
-def _get_insert_sql(table_name: str) -> str:
-    """Get insert SQL for a table.
-
-    Parameters
-    ----------
-    table_name
-        Table name.
-
-    Returns
-    -------
-    str
-        Insert SQL statement.
-
-    Raises
-    ------
-    ValueError
-        If table name is not in the mapping.
-    """
-    if table_name not in _INSERT_SQL:
-        msg = f"No insert SQL for table: {table_name}"
-        raise ValueError(msg)
-    return _INSERT_SQL[table_name]
+_DEPENDENCY_AGGREGATE_COLUMNS: tuple[str, ...] = (
+    "repo", "commit", "dep_id", "library", "service_name", "category", "language",
+    "severity", "criticality", "risk_score",
+    "function_count", "callsite_count", "modules_json", "usage_modes",
+    "config_keys", "risk_level", "created_at",
+)
 
 
 @dataclass(frozen=True)
@@ -180,12 +147,17 @@ class DependencyAggregateRow:
 
 
 class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
-    """Adapter for external_dependency_calls table."""
+    """Adapter for external_dependency_calls table.
+
+    Uses DuckDBPolicyBackend for bulk insert operations.
+    """
+
+    table_key: ClassVar[str] = "analytics.external_dependency_calls"
 
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.external_dependency_calls"
+        return type(self).table_key
 
     def load(self) -> Iterator[DependencyCallRow]:
         """Load dependency call rows (not implemented for this adapter).
@@ -199,7 +171,7 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         return iter(())
 
     def persist(self, rows: Sequence[DependencyCallRow]) -> int:
-        """Persist computed rows to the database.
+        """Persist computed rows to the database using policy backend.
 
         Parameters
         ----------
@@ -214,7 +186,8 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
+        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
+
         values = [
             (
                 row.repo,
@@ -234,18 +207,25 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
             )
             for row in rows
         ]
-        insert_sql = _get_insert_sql(self.table_name)
-        self._gateway.con.executemany(insert_sql, values)
-        return len(values)
+
+        backend = DuckDBPolicyBackend(self._gateway)
+        return backend.bulk_insert(
+            self.table_name, values, columns=list(_DEPENDENCY_CALL_COLUMNS)
+        )
 
 
 class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
-    """Adapter for external_dependencies table."""
+    """Adapter for external_dependencies table.
+
+    Uses DuckDBPolicyBackend for bulk insert operations.
+    """
+
+    table_key: ClassVar[str] = "analytics.external_dependencies"
 
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.external_dependencies"
+        return type(self).table_key
 
     def load(self) -> Iterator[DependencyAggregateRow]:
         """Load dependency aggregate rows (not implemented for this adapter).
@@ -259,7 +239,7 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
         return iter(())
 
     def persist(self, rows: Sequence[DependencyAggregateRow]) -> int:
-        """Persist computed rows to the database.
+        """Persist computed rows to the database using policy backend.
 
         Parameters
         ----------
@@ -274,7 +254,8 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
+        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
+
         values = [
             (
                 row.repo,
@@ -297,9 +278,11 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
             )
             for row in rows
         ]
-        insert_sql = _get_insert_sql(self.table_name)
-        self._gateway.con.executemany(insert_sql, values)
-        return len(values)
+
+        backend = DuckDBPolicyBackend(self._gateway)
+        return backend.bulk_insert(
+            self.table_name, values, columns=list(_DEPENDENCY_AGGREGATE_COLUMNS)
+        )
 
 
 def compute_dep_id(repo: str, commit: str, library: str) -> str:

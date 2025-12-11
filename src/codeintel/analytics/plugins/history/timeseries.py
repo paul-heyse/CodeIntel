@@ -9,15 +9,32 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HistoryTimeseriesStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import SnapshotGatewayResolver
 
 log = logging.getLogger(__name__)
+
+
+HISTORY_TIMESERIES_METADATA = CorePluginMetadata(
+    name="analytics.history_timeseries",
+    version="3.0.0",
+    description="Aggregate analytics across commits into history timeseries.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="history",
+    provides=("analytics.history_timeseries",),
+    requires=("analytics.function_history",),
+    produces_tables=("analytics.history_timeseries",),
+    consumes_tables=("analytics.function_history",),
+)
 
 
 class HistoryTimeseriesPlugin(TargetPlugin):
@@ -41,6 +58,17 @@ class HistoryTimeseriesPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Aggregate analytics across commits into history timeseries."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = HISTORY_TIMESERIES_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -99,4 +127,4 @@ class HistoryTimeseriesPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["HistoryTimeseriesPlugin"]
+__all__ = ["HISTORY_TIMESERIES_METADATA", "HistoryTimeseriesPlugin"]

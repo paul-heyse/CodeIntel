@@ -317,6 +317,128 @@ class DatasetVerifyResult:
 
 
 @dataclass(frozen=True)
+class DatasetInfoResult:
+    """Result from dataset info command.
+
+    Provides comprehensive schema information for a dataset including
+    column definitions, metadata, and JSON schema representation.
+
+    Parameters
+    ----------
+    name
+        Dataset name (e.g., "analytics.function_metrics").
+    columns
+        Tuple of column names in the schema.
+    metadata
+        Dataset metadata as a dictionary.
+    json_schema
+        JSON Schema representation of the dataset.
+    has_pandera_schema
+        Whether a Pandera schema is registered for this dataset.
+    """
+
+    name: str
+    columns: tuple[str, ...]
+    metadata: dict[str, object]
+    json_schema: dict[str, object]
+    has_pandera_schema: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "name": self.name,
+            "columns": list(self.columns),
+            "column_count": len(self.columns),
+            "metadata": self.metadata,
+            "json_schema": self.json_schema,
+            "has_pandera_schema": self.has_pandera_schema,
+        }
+
+
+@dataclass(frozen=True)
+class DatasetFlowResult:
+    """Result from dataset flow command.
+
+    Shows the producer/consumer graph for a dataset, indicating which
+    plugins produce this dataset and which consume it.
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+    producers
+        List of plugin names that produce this dataset.
+    consumers
+        List of plugin names that consume this dataset.
+    """
+
+    table_key: str
+    producers: list[str]
+    consumers: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "table_key": self.table_key,
+            "producers": self.producers,
+            "consumers": self.consumers,
+            "producer_count": len(self.producers),
+            "consumer_count": len(self.consumers),
+        }
+
+
+@dataclass(frozen=True)
+class DatasetConstraintsResult:
+    """Result from dataset constraints command.
+
+    Shows all constraints extracted from the Pandera schema for a dataset.
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+    constraints
+        List of constraint dictionaries with kind, column, and expression.
+    constraint_count
+        Total number of constraints.
+    inferred_from
+        Sources from which constraints were inferred.
+    """
+
+    table_key: str
+    constraints: list[dict[str, object]]
+    constraint_count: int
+    inferred_from: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "table_key": self.table_key,
+            "constraints": self.constraints,
+            "constraint_count": self.constraint_count,
+            "inferred_from": self.inferred_from,
+        }
+
+
+@dataclass(frozen=True)
 class BuildStatusResult:
     """Result from build status command.
 
@@ -1445,8 +1567,11 @@ __all__ = [
     "BuildStatusResult",
     "BuildTargetInfo",
     "ConfigShowResult",
+    "DatasetConstraintsResult",
     "DatasetDescribeResult",
     "DatasetDiffResult",
+    "DatasetFlowResult",
+    "DatasetInfoResult",
     "DatasetLintResult",
     "DatasetListResult",
     "DatasetSnapshotResult",

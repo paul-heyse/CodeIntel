@@ -9,13 +9,44 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+CFG_DFG_METRICS_METADATA = CorePluginMetadata(
+    name="analytics.cfg_dfg_metrics",
+    version="3.0.0",
+    description="Compute control-flow and data-flow graph metrics per function.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="cfg",
+    provides=(
+        "analytics.cfg_function_metrics",
+        "analytics.cfg_block_metrics",
+        "analytics.cfg_function_metrics_ext",
+        "analytics.dfg_function_metrics",
+        "analytics.dfg_block_metrics",
+        "analytics.dfg_function_metrics_ext",
+    ),
+    requires=("graph.cfg_blocks", "graph.cfg_edges", "graph.dfg_edges"),
+    produces_tables=(
+        "analytics.cfg_function_metrics",
+        "analytics.cfg_block_metrics",
+        "analytics.cfg_function_metrics_ext",
+        "analytics.dfg_function_metrics",
+        "analytics.dfg_block_metrics",
+        "analytics.dfg_function_metrics_ext",
+    ),
+    consumes_tables=("graph.cfg_blocks", "graph.cfg_edges", "graph.dfg_edges"),
+)
 
 
 class CfgDfgMetricsPlugin(TargetPlugin):
@@ -43,6 +74,17 @@ class CfgDfgMetricsPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Compute control-flow and data-flow graph metrics per function."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = CFG_DFG_METRICS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute CFG/DFG metrics computation.
@@ -108,4 +150,4 @@ class CfgDfgMetricsPlugin(TargetPlugin):
         return TargetResult.succeeded(row_counts=row_counts)
 
 
-__all__ = ["CfgDfgMetricsPlugin"]
+__all__ = ["CFG_DFG_METRICS_METADATA", "CfgDfgMetricsPlugin"]

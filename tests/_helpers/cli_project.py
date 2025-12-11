@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.storage import gateway as gateway_pkg
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway_cache import close_gateways
+from tests.cli._harness import CliInvocationResult, CliTestHarness
 
 PROJECT_FILENAME = "codeintel.yaml"
 
@@ -80,3 +84,57 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
         env=env,
         gateway=gateway,
     )
+
+
+@dataclass
+class CLIProjectHarness:
+    """Harness wrapper for CLI project-backed invocations."""
+
+    ctx: CLIProjectContext
+    harness: CliTestHarness
+
+    def _prepare(self) -> None:
+        """Ensure gateways are closed before invocation to avoid cache leakage."""
+        if self.ctx.gateway is not None:
+            self.ctx.gateway.close()
+            self.ctx.gateway = None
+        close_gateways()
+
+    def invoke(self, args: list[str]) -> CliInvocationResult:
+        """Invoke CLI with project env and cwd configured."""
+        self._prepare()
+        return self.harness.invoke(args)
+
+    def invoke_json(self, args: list[str]) -> dict[str, object]:
+        """Invoke CLI and parse JSON output."""
+        self._prepare()
+        return self.harness.invoke_json(args)
+
+
+@contextmanager
+def cli_project_harness(
+    tmp_path: Path,
+    *,
+    repo: str = "demo/repo",
+    commit: str = "deadbeef",
+) -> Iterator[CLIProjectHarness]:
+    """Context manager yielding a CLIProjectHarness.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory root for the project.
+    repo
+        Repository slug.
+    commit
+        Commit hash.
+    """
+    ctx = create_cli_project(tmp_path, repo=repo, commit=commit)
+    harness = CliTestHarness().with_env(**ctx.env).with_cwd(ctx.repo_root)
+    project_harness = CLIProjectHarness(ctx=ctx, harness=harness)
+    try:
+        yield project_harness
+    finally:
+        if ctx.gateway is not None:
+            ctx.gateway.close()
+        close_gateways()

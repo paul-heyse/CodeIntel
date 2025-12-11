@@ -7,15 +7,32 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import SemanticRolesStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.build.context import TargetExecutionContext
+
+
+SEMANTIC_ROLES_METADATA = CorePluginMetadata(
+    name="analytics.semantic_roles",
+    version="3.0.0",
+    description="Compute semantic roles for functions and calls.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="semantic",
+    provides=("analytics.semantic_roles",),
+    requires=("core.modules", "analytics.function_ast_features"),
+    produces_tables=("analytics.semantic_roles",),
+    consumes_tables=("core.modules", "analytics.function_ast_features"),
+)
 
 
 class SemanticRolesPlugin(TargetPlugin):
@@ -34,6 +51,17 @@ class SemanticRolesPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "semantic_roles"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute semantic roles for functions and calls."
+    _core_metadata: ClassVar[CorePluginMetadata] = SEMANTIC_ROLES_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -90,4 +118,4 @@ class SemanticRolesPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["SemanticRolesPlugin"]
+__all__ = ["SEMANTIC_ROLES_METADATA", "SemanticRolesPlugin"]

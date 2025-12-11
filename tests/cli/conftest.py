@@ -13,9 +13,15 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.cli.introspection import get_registry
 from codeintel.storage.gateway_cache import close_gateways
 from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
-from tests._helpers.cli_project import CLIProjectContext, create_cli_project
+from tests._helpers.cli_project import (
+    CLIProjectContext,
+    CLIProjectHarness,
+    cli_project_harness as cli_project_harness_ctx,
+    create_cli_project,
+)
 from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
 
 
@@ -85,10 +91,18 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
     return _run
 
 
+@pytest.fixture
+def cli_project_harness(tmp_path: Path) -> Iterator[CLIProjectHarness]:
+    """Provide a project-backed CLI harness with env/cwd set."""
+    with cli_project_harness_ctx(tmp_path) as harness:
+        yield harness
+
+
 __all__ = [
     "cli",
     "cli_ctx",
     "cli_project_ctx",
+    "cli_project_harness",
     "cli_project_runner",
     "cli_runner",
     "cli_with_json",
@@ -187,8 +201,6 @@ def op_harness() -> OperationTestHarness:
     OperationTestHarness
         Harness for testing operations directly.
     """
-    from codeintel.cli.introspection import get_registry
-
     get_registry()
     return OperationTestHarness(render=False)
 

@@ -10,20 +10,24 @@ This module has no dependencies on config.datasets or other schema-aware
 modules, making it safe to import from anywhere without circular dependency
 concerns.
 
-Example
--------
->>> from codeintel.storage.sql import QueryBuilder, SafeTable
->>>
->>> # Build a safe COUNT query
->>> query, params = QueryBuilder.count(
-...     "analytics.function_metrics", where={"repo": "org/repo", "commit": "abc123"}
-... )
->>> result = con.execute(query, params)
+.. deprecated::
+    The following classes are deprecated and will be removed in a future version:
+
+    - ``SafeTable``, ``SafeColumn``: Use ``DuckDBPolicyBackend`` methods instead
+    - ``QueryBuilder``: Use ``DuckDBPolicyBackend.bulk_insert()``,
+      ``DuckDBPolicyBackend.delete_for_snapshot()``, etc.
+    - ``build_insert_sql``, ``build_delete_query``: Use policy backend methods
+
+    The following utilities remain supported:
+    - ``quote_identifier``, ``quote_table_key``: Used by macros and policy backend
+    - ``safe_macro_call``, ``macro_select_sql``: Used for macro invocations
+    - ``InvalidIdentifierError``, ``SqlBuilderError``: Exception types
 """
 
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
@@ -121,6 +125,11 @@ def render_sql(parts: Sequence[str]) -> str:
 class SafeTable:
     """A validated table name that's safe for SQL construction.
 
+    .. deprecated::
+        Use ``DuckDBPolicyBackend`` methods instead of building SQL strings
+        with SafeTable. The policy backend provides centralized, type-safe
+        SQL generation via SQLGlot.
+
     Use this to wrap table names before using them in queries to ensure
     they've been validated.
 
@@ -133,18 +142,17 @@ class SafeTable:
     ------
     InvalidIdentifierError
         If the table name is invalid.
-
-    Example
-    -------
-    >>> table = SafeTable("analytics.function_metrics")
-    >>> str(table)
-    'analytics.function_metrics'
     """
 
     name: str
 
     def __post_init__(self) -> None:
         """Validate the table name on construction."""
+        warnings.warn(
+            "SafeTable is deprecated. Use DuckDBPolicyBackend methods instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         validate_identifier(self.name)
 
     def __str__(self) -> str:
@@ -161,6 +169,11 @@ class SafeTable:
 @dataclass(frozen=True)
 class SafeColumn:
     """A validated column name that's safe for SQL construction.
+
+    .. deprecated::
+        Use ``DuckDBPolicyBackend`` methods instead of building SQL strings
+        with SafeColumn. The policy backend provides centralized, type-safe
+        SQL generation via SQLGlot.
 
     Parameters
     ----------
@@ -183,6 +196,11 @@ class SafeColumn:
         InvalidIdentifierError
             If the column name is invalid or contains dots.
         """
+        warnings.warn(
+            "SafeColumn is deprecated. Use DuckDBPolicyBackend methods instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Column names shouldn't have dots (no schema prefix)
         if "." in self.name:
             raise InvalidIdentifierError(self.name, "column names cannot contain dots")
@@ -199,20 +217,31 @@ class SafeColumn:
         return self.name
 
 
+def _warn_query_builder_deprecated() -> None:
+    """Emit deprecation warning for QueryBuilder usage."""
+    warnings.warn(
+        "QueryBuilder is deprecated. Use DuckDBPolicyBackend methods instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
 class QueryBuilder:
     """Static methods for building safe parameterized SQL queries.
+
+    .. deprecated::
+        Use ``DuckDBPolicyBackend`` from ``codeintel.storage.duckdb_policy_backend``
+        instead. The policy backend provides centralized, type-safe SQL generation
+        via SQLGlot.
+
+        Migration:
+        - ``QueryBuilder.count()`` -> Use Ibis expressions via ``gateway.ibis``
+        - ``QueryBuilder.delete()`` -> ``DuckDBPolicyBackend.delete_for_snapshot()``
+        - ``QueryBuilder.insert()`` -> ``DuckDBPolicyBackend.bulk_insert()``
 
     All methods return a tuple of (query_string, parameters) where
     the query uses `?` placeholders and parameters are the values
     to bind.
-
-    Example
-    -------
-    >>> query, params = QueryBuilder.count(
-    ...     "analytics.metrics", where={"repo": "org/repo", "commit": "abc123"}
-    ... )
-    >>> # query = "SELECT COUNT(*) FROM analytics.metrics WHERE repo = ? AND commit = ?"
-    >>> # params = ["org/repo", "abc123"]
     """
 
     @staticmethod
@@ -235,6 +264,7 @@ class QueryBuilder:
         tuple[str, list[object]]
             Query string and parameter values.
         """
+        _warn_query_builder_deprecated()
         table_name = str(table) if isinstance(table, SafeTable) else str(SafeTable(table))
         params: list[object] = []
 

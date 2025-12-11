@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
+from ibis.common.exceptions import IbisError
+
 from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.datasets import (
@@ -15,7 +17,6 @@ from codeintel.config.datasets import (
     GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.ibis_types import IbisError
 
 
 @dataclass(frozen=True)

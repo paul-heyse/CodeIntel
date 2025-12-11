@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure/db_queries.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'Any', 'ColumnNotFoundError', 'DUCKDB_QUERY_ERRORS', 'ForeignKeyRef', 'QueryError', 'TableNotFoundError', 'int', 'safe_count', 'safe_count_nulls', 'safe_get_columns', 'safe_macro_exists', 'safe_max_value', 'safe_min_value', 'safe_table_exists']

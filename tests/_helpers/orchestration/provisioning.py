@@ -1098,7 +1098,7 @@ class ProvisioningBuilder:
         TestContext
             Configured test context with provisioned gateway.
         """
-        from tests._helpers.context import TestContext
+        from tests._helpers.context import TestContext  # noqa: PLC0415
 
         provisioned = provision_ingested_repo(
             self._repo_root,

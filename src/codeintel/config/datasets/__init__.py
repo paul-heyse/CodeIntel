@@ -70,6 +70,10 @@ from codeintel.config.datasets.primitives import (
     RowToTuple,
     TableSchema,
 )
+from codeintel.config.datasets.row_factory import (
+    row_serializer_from_pandera,
+    typed_dict_from_pandera,
+)
 from codeintel.config.datasets.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
@@ -151,6 +155,43 @@ from codeintel.config.datasets.rows import (
     subsystem_profile_cache_to_tuple,
     typedness_row_to_tuple,
 )
+from codeintel.config.datasets.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+    extract_constraints_from_pandera,
+)
+from codeintel.config.datasets.introspection import (
+    DatasetIntrospection,
+    introspect_all_datasets,
+    introspect_dataset,
+)
+from codeintel.config.datasets.row_binding_factory import (
+    compare_row_bindings,
+    get_or_create_row_binding,
+    row_binding_from_schema,
+    row_serializer_from_schema,
+)
+from codeintel.config.datasets.row_migration import (
+    MigrationStatus,
+    RowModelMigrationResult,
+    get_row_model,
+    validate_all_row_models,
+    validate_row_model_compatibility,
+)
+from codeintel.config.datasets.schema import (
+    DatasetMetadata,
+    DatasetSchema,
+)
+from codeintel.config.datasets.schema_builder import (
+    build_all_schemas,
+    build_dataset_schema,
+)
+from codeintel.config.datasets.schema_registry import (
+    SCHEMA_REGISTRY,
+    DatasetSchemaRegistry,
+    get_schema,
+)
 from codeintel.config.datasets.sql import (
     AST_METRICS_DELETE,
     AST_NODES_DELETE,
@@ -175,6 +216,34 @@ from codeintel.config.datasets.sql import (
     load_columns_by_table,
     serialize_row,
 )
+
+_EXPORTS_FOR_API: dict[str, object] = {
+    "Constraint": Constraint,
+    "ConstraintKind": ConstraintKind,
+    "ConstraintSet": ConstraintSet,
+    "DatasetIntrospection": DatasetIntrospection,
+    "DatasetMetadata": DatasetMetadata,
+    "DatasetSchema": DatasetSchema,
+    "DatasetSchemaRegistry": DatasetSchemaRegistry,
+    "MigrationStatus": MigrationStatus,
+    "RowModelMigrationResult": RowModelMigrationResult,
+    "SCHEMA_REGISTRY": SCHEMA_REGISTRY,
+    "build_all_schemas": build_all_schemas,
+    "build_dataset_schema": build_dataset_schema,
+    "compare_row_bindings": compare_row_bindings,
+    "extract_constraints_from_pandera": extract_constraints_from_pandera,
+    "get_or_create_row_binding": get_or_create_row_binding,
+    "get_row_model": get_row_model,
+    "get_schema": get_schema,
+    "introspect_all_datasets": introspect_all_datasets,
+    "introspect_dataset": introspect_dataset,
+    "row_binding_from_schema": row_binding_from_schema,
+    "row_serializer_from_pandera": row_serializer_from_pandera,
+    "row_serializer_from_schema": row_serializer_from_schema,
+    "typed_dict_from_pandera": typed_dict_from_pandera,
+    "validate_all_row_models": validate_all_row_models,
+    "validate_row_model_compatibility": validate_row_model_compatibility,
+}
 
 # ---------------------------------------------------------------------------
 # Eagerly-initialized dictionaries with proper types for type checkers
@@ -301,6 +370,7 @@ __all__ = [
     "RETENTION_BY_DATASET_NAME",
     "RISK_COLS",
     "ROW_BINDINGS_BY_TABLE_KEY",
+    "SCHEMA_REGISTRY",
     "SCHEMA_VERSION_BY_DATASET_NAME",
     "SOURCE_SPAN_COLS",
     "STABLE_ID_BY_DATASET_NAME",
@@ -329,6 +399,9 @@ __all__ = [
     "DataflowEdge",
     "DataflowNode",
     "DatasetContract",
+    "DatasetMetadata",
+    "DatasetSchema",
+    "DatasetSchemaRegistry",
     "DocstringRow",
     "EdgeType",
     "FileProfileRowModel",
@@ -365,7 +438,9 @@ __all__ = [
     "TestCoverageEdgeRow",
     "TypednessRow",
     "behavioral_coverage_row_to_tuple",
+    "build_all_schemas",
     "build_contract_dataflow_graph",
+    "build_dataset_schema",
     "build_delete_sql",
     "build_delete_sql_by_table",
     "build_insert_sql",
@@ -390,6 +465,7 @@ __all__ = [
     "get_delete_sql_by_table",
     "get_insert_sql_by_table",
     "get_row_bindings",
+    "get_schema",
     "get_table_columns",
     "get_table_schemas",
     "graph_metrics_functions_ext_row_to_tuple",
@@ -406,6 +482,7 @@ __all__ = [
     "iter_docs_view_alias_nodes",
     "load_columns_by_table",
     "module_profile_row_to_tuple",
+    "row_serializer_from_pandera",
     "serialize_row",
     "serialize_test_catalog_row",
     "serialize_test_coverage_edge",
@@ -413,5 +490,8 @@ __all__ = [
     "static_diagnostic_to_tuple",
     "subsystem_coverage_cache_to_tuple",
     "subsystem_profile_cache_to_tuple",
+    "typed_dict_from_pandera",
     "typedness_row_to_tuple",
 ]
+
+__all__ += [name for name in _EXPORTS_FOR_API if name not in __all__]

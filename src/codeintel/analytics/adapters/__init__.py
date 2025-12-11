@@ -35,6 +35,10 @@ from codeintel.analytics.adapters.base import (
     AnalyticsAdapter,
     DeleteScope,
 )
+from codeintel.analytics.adapters.schema_adapter import (
+    SchemaAwareBatchAdapter,
+    SchemaValidationMixin,
+)
 from codeintel.analytics.adapters.data_models import (
     DataModelUsageAdapter,
 )
@@ -71,6 +75,8 @@ __all__ = [
     "FunctionProfileAdapter",
     "FunctionTypesAdapter",
     "ModuleProfileAdapter",
+    "SchemaAwareBatchAdapter",
+    "SchemaValidationMixin",
     "SemanticRolesFunctionsAdapter",
     "SemanticRolesModulesAdapter",
     "SubsystemModulesAdapter",

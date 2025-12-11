@@ -22,7 +22,7 @@ Example
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -313,6 +313,132 @@ def _build_delete(
     )
 
 
+def _build_insert(
+    table_schema: str,
+    table_name: str,
+    columns: Sequence[str],
+) -> exp.Insert:
+    """Build a SQLGlot INSERT expression with placeholders.
+
+    Parameters
+    ----------
+    table_schema
+        Schema containing the table.
+    table_name
+        Table name.
+    columns
+        Column names for the INSERT.
+
+    Returns
+    -------
+    exp.Insert
+        SQLGlot INSERT expression with placeholders.
+    """
+    # Build table expression
+    table_expr = exp.Table(
+        this=exp.to_identifier(table_name),
+        db=exp.to_identifier(table_schema),
+    )
+
+    # Build Schema with table and columns (required for INSERT column list)
+    schema = exp.Schema(
+        this=table_expr,
+        expressions=[exp.to_identifier(col) for col in columns],
+    )
+
+    # Build VALUES clause with placeholders
+    placeholders = [exp.Placeholder() for _ in columns]
+    values = exp.Values(expressions=[exp.Tuple(expressions=placeholders)])
+
+    return exp.Insert(
+        this=schema,
+        expression=values,
+    )
+
+
+def _quote_identifier(name: str) -> str:
+    """Quote a SQL identifier safely.
+
+    Parameters
+    ----------
+    name
+        Identifier name to quote.
+
+    Returns
+    -------
+    str
+        Double-quoted identifier.
+
+    Raises
+    ------
+    ValueError
+        If the identifier contains invalid characters.
+    """
+    # Validate identifier to prevent injection
+    if not name or not all(c.isalnum() or c == "_" for c in name):
+        message = f"Invalid identifier: {name}"
+        raise ValueError(message)
+    return f'"{name}"'
+
+
+def _build_upsert(
+    table_schema: str,
+    table_name: str,
+    columns: Sequence[str],
+    conflict_columns: Sequence[str],
+    update_columns: Sequence[str] | None = None,
+) -> str:
+    """Build an INSERT ... ON CONFLICT DO UPDATE statement.
+
+    DuckDB uses INSERT OR REPLACE or INSERT ... ON CONFLICT syntax.
+    Since SQLGlot support for ON CONFLICT is limited, we build this
+    as a formatted SQL string with safe identifier quoting.
+
+    All identifiers are validated and quoted to prevent SQL injection.
+
+    Parameters
+    ----------
+    table_schema
+        Schema containing the table.
+    table_name
+        Table name.
+    columns
+        All column names for the INSERT.
+    conflict_columns
+        Columns to detect conflicts on.
+    update_columns
+        Columns to update on conflict. If None, updates all non-conflict columns.
+
+    Returns
+    -------
+    str
+        SQL string for upsert operation.
+    """
+    # Build qualified table with validated identifiers
+    qualified_table = f"{_quote_identifier(table_schema)}.{_quote_identifier(table_name)}"
+    cols_sql = ", ".join(_quote_identifier(col) for col in columns)
+    placeholders = ", ".join("?" for _ in columns)
+    conflict_cols = ", ".join(_quote_identifier(col) for col in conflict_columns)
+
+    # Determine which columns to update
+    cols_to_update = (
+        update_columns if update_columns is not None
+        else [col for col in columns if col not in conflict_columns]
+    )
+
+    if cols_to_update:
+        updates = ", ".join(
+            f"{_quote_identifier(col)} = EXCLUDED.{_quote_identifier(col)}"
+            for col in cols_to_update
+        )
+        on_conflict = f"ON CONFLICT ({conflict_cols}) DO UPDATE SET {updates}"
+    else:
+        on_conflict = f"ON CONFLICT ({conflict_cols}) DO NOTHING"
+
+    # Build complete statement - S608 is a false positive since all identifiers are validated
+    return f"INSERT INTO {qualified_table} ({cols_sql}) VALUES ({placeholders}) {on_conflict}"  # noqa: S608
+
+
 @dataclass
 class DuckDBPolicyBackend:
     """Centralized policy backend for DDL and mutation operations.
@@ -456,29 +582,29 @@ class DuckDBPolicyBackend:
         repo: str,
         commit: str,
     ) -> None:
-        """Delete rows for a specific repo/commit from a fully qualified table.
+        """Delete rows for a specific repo/commit from a table.
 
-        This is a convenience method that accepts a table_key in 'schema.table'
-        format and routes to delete_repo_commit.
+        This is a convenience method that accepts a table_key and routes to
+        delete_repo_commit. Supports both schema-qualified names
+        (e.g., 'analytics.function_metrics') and simple table names
+        (e.g., 'sample_simple_batch') which default to the 'main' schema.
 
         Parameters
         ----------
         table_key
-            Fully qualified table name (e.g., 'analytics.function_metrics').
+            Table name, optionally schema-qualified (e.g., 'analytics.function_metrics'
+            or just 'my_table' for main schema).
         repo
             Repository identifier.
         commit
             Commit identifier.
-
-        Raises
-        ------
-        ValueError
-            If table_key is not in 'schema.table' format.
         """
-        if "." not in table_key:
-            message = f"Table key must be in 'schema.table' format: {table_key}"
-            raise ValueError(message)
-        schema, table = table_key.split(".", 1)
+        if "." in table_key:
+            schema, table = table_key.split(".", 1)
+        else:
+            # Default to main schema for unqualified table names
+            schema = "main"
+            table = table_key
         self.delete_repo_commit(schema, table, repo, commit)
 
     def clear_cfg_metrics(self, repo: str, commit: str) -> None:
@@ -600,3 +726,121 @@ class DuckDBPolicyBackend:
             Additional DDL statements to execute.
         """
         self.ensure_all_schemas(drop_existing=False, extra_ddl=extra_ddl)
+
+    def bulk_insert(
+        self,
+        table_key: str,
+        rows: Sequence[tuple[object, ...]],
+        *,
+        columns: Sequence[str] | None = None,
+    ) -> int:
+        """Bulk insert rows using executemany with SQLGlot-generated SQL.
+
+        This method provides a centralized, type-safe way to perform bulk inserts.
+        The INSERT statement is generated via SQLGlot, ensuring proper identifier
+        quoting and consistent SQL generation.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table name (e.g., 'analytics.function_metrics').
+        rows
+            Sequence of tuples containing row values in column order.
+        columns
+            Optional column names. If not provided, columns are derived from
+            the table's TableSchema contract.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+
+        Raises
+        ------
+        ValueError
+            If table_key is not qualified or columns cannot be determined.
+        """
+        if not rows:
+            return 0
+
+        if "." not in table_key:
+            message = f"Table key must be qualified (schema.table): {table_key}"
+            raise ValueError(message)
+
+        schema, table = table_key.split(".", 1)
+
+        # Determine columns
+        if columns is None:
+            contracts = get_dataset_contracts_by_table_key()
+            contract = contracts.get(table_key)
+            if contract is None or contract.schema is None:
+                message = f"No TableSchema found for {table_key}; columns must be provided"
+                raise ValueError(message)
+            columns = [col.name for col in contract.schema.columns]
+
+        # Build INSERT statement via SQLGlot
+        insert_expr = _build_insert(schema, table, columns)
+        sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
+
+        log.debug("Bulk insert into %s: %d rows", table_key, len(rows))
+        self.gateway.con.executemany(sql, rows)
+        return len(rows)
+
+    def upsert(
+        self,
+        table_key: str,
+        rows: Sequence[tuple[object, ...]],
+        *,
+        columns: Sequence[str],
+        conflict_columns: Sequence[str],
+        update_columns: Sequence[str] | None = None,
+    ) -> int:
+        """Insert rows with ON CONFLICT UPDATE semantics.
+
+        This method provides upsert (insert-or-update) functionality using
+        DuckDB's INSERT ... ON CONFLICT syntax. Rows that conflict on the
+        specified columns are updated instead of causing an error.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table name (e.g., 'analytics.function_metrics').
+        rows
+            Sequence of tuples containing row values in column order.
+        columns
+            Column names for the INSERT (required for upsert).
+        conflict_columns
+            Columns to detect conflicts on (typically primary key columns).
+        update_columns
+            Columns to update on conflict. If None, updates all non-conflict
+            columns. If empty sequence, uses DO NOTHING.
+
+        Returns
+        -------
+        int
+            Number of rows processed (inserted or updated).
+
+        Raises
+        ------
+        ValueError
+            If table_key is not qualified or conflict_columns is empty.
+        """
+        if not rows:
+            return 0
+
+        if "." not in table_key:
+            message = f"Table key must be qualified (schema.table): {table_key}"
+            raise ValueError(message)
+
+        if not conflict_columns:
+            message = "conflict_columns cannot be empty"
+            raise ValueError(message)
+
+        schema, table = table_key.split(".", 1)
+
+        # Build UPSERT statement
+        sql = _build_upsert(schema, table, columns, conflict_columns, update_columns)
+
+        log.debug("Upsert into %s: %d rows", table_key, len(rows))
+        self.gateway.con.executemany(sql, rows)
+        return len(rows)

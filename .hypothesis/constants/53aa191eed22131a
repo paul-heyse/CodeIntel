@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/data_models.py
+# hypothesis_version: 6.148.7
+
+['Any', 'base_classes_json', 'commit', 'constraints', 'constraints_json', 'created_at', 'default_expr', 'doc_long', 'doc_short', 'evidence', 'evidence_json', 'field', 'field_name', 'field_type', 'fields', 'goid_h128', 'has_default', 'kind', 'lineno', 'model_id', 'model_kind', 'model_name', 'module', 'multiplicity', 'name', 'qualname', 'records', 'rel_path', 'relationship_kind', 'relationships', 'repo', 'required', 'source', 'source_model_id', 'target_model_id', 'target_model_name', 'target_module', 'type', 'via']
