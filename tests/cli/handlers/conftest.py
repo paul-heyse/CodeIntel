@@ -23,7 +23,10 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.cli_context import CliTestContext, create_cli_test_context
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.harnesses.datasets import DatasetHandlerHarness, dataset_handler_harness
 from tests._helpers.harnesses.cli import CliHandlerHarness
+from tests._helpers.harnesses.docs import DocsHandlerHarness, docs_handler_harness
+from tests._helpers.harnesses.storage import StorageHandlerHarness, storage_macro_harness
 from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, GRAPH_PACK, SUBSYSTEM_PACK
 from tests._helpers.serving_contexts import (
@@ -111,8 +114,7 @@ def handler_context_builder() -> Iterator[HandlerContextBuilder]:
         )
 
         ctx = stack.enter_context(builder.build())
-        setattr(ctx.gateway, "backend", service_ctx.backend)
-        setattr(ctx, "_backend_override", service_ctx.backend)
+        ctx.gateway.backend = service_ctx.backend
         return ctx
 
     try:
@@ -140,7 +142,10 @@ def cli_test_context(tmp_path: Path) -> Iterator[TestContext]:
 
 
 @pytest.fixture
-def command_context_factory(cli_test_context: TestContext) -> CommandContextFactory:
+def command_context_factory(
+    cli_test_context: TestContext,
+    architecture_service_context: ProvisionedServiceContext,
+) -> CommandContextFactory:
     """Build CommandContext instances backed by TestContext gateway.
 
     Returns
@@ -151,13 +156,15 @@ def command_context_factory(cli_test_context: TestContext) -> CommandContextFact
 
     @contextmanager
     def _build(params: dict[str, object]) -> Iterator[CommandContext]:
+        merged_params = {"_backend_override": architecture_service_context.backend, **params}
         builder = (
             CommandContextBuilder()
-            .with_params(params)
+            .with_params(merged_params)
             .with_operation_id("cli.test")
             .with_injected_gateway(cli_test_context.gateway)
         )
         with builder.build() as ctx:
+            ctx.gateway.backend = architecture_service_context.backend
             yield ctx
 
     return _build
@@ -246,3 +253,31 @@ def cli_handler_harness_fixture(tmp_path: Path) -> Iterator[CliHandlerHarness]:
         yield harness
     finally:
         harness.close()
+
+
+@pytest.fixture
+def dataset_handler_harness_fixture(tmp_path: Path) -> Iterator[DatasetHandlerHarness]:
+    """Provide dataset handler harness with real dependencies."""
+    with dataset_handler_harness(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def docs_handler_harness_fixture(tmp_path: Path) -> Iterator[DocsHandlerHarness]:
+    """Provide docs handler harness with runtime stub and gateway."""
+    with docs_handler_harness(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def storage_macro_harness_fixture(tmp_path: Path) -> Iterator[StorageHandlerHarness]:
+    """Provide storage handler harness with seeded macros/profiles."""
+    with storage_macro_harness(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def operation_registry_harness_fixture() -> OperationTestHarness:
+    """Ensure operation registry is loaded for ops handler tests."""
+    get_registry()
+    return OperationTestHarness(render=False)

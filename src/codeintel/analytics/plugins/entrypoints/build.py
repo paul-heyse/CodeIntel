@@ -9,15 +9,32 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import EntryPointsStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+ENTRYPOINTS_METADATA = CorePluginMetadata(
+    name="analytics.entrypoints",
+    version="3.0.0",
+    description="Detect HTTP/CLI/job entrypoints and map them to handlers and tests.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="entrypoints",
+    provides=("analytics.entrypoints", "analytics.entrypoint_tests"),
+    requires=("core.modules", "analytics.function_ast_features"),
+    produces_tables=("analytics.entrypoints", "analytics.entrypoint_tests"),
+    consumes_tables=("core.modules", "analytics.function_ast_features"),
+)
 
 
 class EntrypointsPlugin(TargetPlugin):
@@ -40,6 +57,17 @@ class EntrypointsPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Detect HTTP/CLI/job entrypoints and map them to handlers and tests."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = ENTRYPOINTS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the entrypoints detection.
@@ -101,4 +129,4 @@ class EntrypointsPlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["EntrypointsPlugin"]
+__all__ = ["ENTRYPOINTS_METADATA", "EntrypointsPlugin"]

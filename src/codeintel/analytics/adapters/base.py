@@ -31,7 +31,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
@@ -295,12 +295,39 @@ class SimpleBatchAdapter[RowT](ABC):
         Returns
         -------
         int
-            Number of rows deleted (always 0 since DELETE doesn't return count).
+            Number of rows deleted.
         """
+        # Count rows before deleting to return accurate count
+        count = self._count_rows_for_scope(gateway, scope)
+
         backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot(self.table_name, repo=scope.repo, commit=scope.commit)
-        # DuckDB DELETE doesn't return affected row count directly
-        return 0
+
+        return count
+
+    def _count_rows_for_scope(self, gateway: StorageGateway, scope: DeleteScope) -> int:
+        """Count rows matching the scope before deletion.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        scope
+            Deletion scope specifying repo/commit.
+
+        Returns
+        -------
+        int
+            Number of matching rows.
+        """
+        try:
+            tbl = gateway.ibis.table(self.table_name)
+            repo_filter = cast("Any", tbl.repo == scope.repo)
+            commit_filter = cast("Any", tbl.commit == scope.commit)
+            return cast("int", tbl.filter(repo_filter & commit_filter).count().execute())
+        except Exception:  # noqa: BLE001
+            # If count fails, return 0 (table might not exist or be empty)
+            return 0
 
 
 class BatchAdapter[RowT](AnalyticsAdapter[RowT], ABC):

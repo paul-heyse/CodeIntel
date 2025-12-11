@@ -2,17 +2,16 @@
 
 This package provides utilities for managing database schemas:
 
-- schema.ddl: DuckDB CREATE TABLE/INDEX DDL generation
+- schema.ddl: DuckDB DDL management via DuckDBPolicyBackend
 - schema.json_schema: JSON Schema generation from TypedDict row models
+
+All DDL is now generated from dataset contracts via the policy backend.
 """
 
 from __future__ import annotations
 
 from codeintel.storage.schema.ddl import (
-    INDEX_DDL,
     SCHEMAS,
-    TABLE_DDL,
-    TABLE_DDL_IF_NOT_EXISTS,
     apply_all_schemas,
     assert_schema_alignment,
     create_schemas,
@@ -26,10 +25,7 @@ from codeintel.storage.schema.json_schema import (
 )
 
 __all__ = [
-    "INDEX_DDL",
     "SCHEMAS",
-    "TABLE_DDL",
-    "TABLE_DDL_IF_NOT_EXISTS",
     "apply_all_schemas",
     "assert_schema_alignment",
     "build_validator",

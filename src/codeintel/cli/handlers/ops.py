@@ -14,7 +14,10 @@ import uvicorn
 from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
+    DatasetConstraintsResult,
     DatasetDescribeResult,
+    DatasetFlowResult,
+    DatasetInfoResult,
     DatasetListResult,
     DatasetVerifyResult,
     OperationCallResult,
@@ -29,6 +32,12 @@ from codeintel.cli.errors.results import (
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.config.datasets.constraints import extract_constraints_from_pandera
+from codeintel.config.datasets.schema import DatasetMetadata
+from codeintel.config.datasets.schema_registry import (
+    SCHEMA_REGISTRY,
+    DatasetSchemaRegistry,
+)
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
@@ -258,6 +267,200 @@ def dataset_verify_handler(
     return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
+def _metadata_to_dict(metadata: object) -> dict[str, object]:
+    """Convert DatasetMetadata to a dictionary.
+
+    Parameters
+    ----------
+    metadata
+        DatasetMetadata instance.
+
+    Returns
+    -------
+    dict[str, object]
+        Dictionary with non-empty metadata fields.
+    """
+    if not isinstance(metadata, DatasetMetadata):
+        return {}
+
+    field_map: dict[str, object] = {
+        "description": metadata.description,
+        "owner": metadata.owner,
+        "family": metadata.family,
+        "freshness_sla": metadata.freshness_sla,
+        "retention_policy": metadata.retention_policy,
+        "deprecated": metadata.deprecated if metadata.deprecated else None,
+        "deprecation_message": metadata.deprecation_message,
+    }
+    result = {k: v for k, v in field_map.items() if v}
+
+    # Handle tuple/frozenset fields that need list conversion
+    if metadata.upstream_dependencies:
+        result["upstream_dependencies"] = list(metadata.upstream_dependencies)
+    if metadata.downstream_consumers:
+        result["downstream_consumers"] = list(metadata.downstream_consumers)
+    if metadata.tags:
+        result["tags"] = list(metadata.tags)
+
+    return result
+
+
+def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
+    """Show comprehensive schema information for a dataset (structured).
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+
+    Returns
+    -------
+    CliResult[DatasetInfoResult]
+        Schema information including columns, metadata, and JSON schema.
+    """
+    schema = SCHEMA_REGISTRY.get(table_key)
+    if schema is None:
+        return fail_dataset_not_found(table_key)
+
+    return CliResult.ok(
+        DatasetInfoResult(
+            name=schema.name,
+            columns=schema.column_names(),
+            metadata=_metadata_to_dict(schema.metadata),
+            json_schema=schema.json_schema(),
+            has_pandera_schema=True,
+        )
+    )
+
+
+def dataset_info_handler(ctx: CommandContext) -> CliResult[DatasetInfoResult]:
+    """Show comprehensive schema information for a dataset.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - table_key: Dataset table key
+
+    Returns
+    -------
+    CliResult[DatasetInfoResult]
+        Schema information.
+    """
+    table_key = ctx.params.require_str("table_key")
+    return dataset_info_structured(table_key=table_key)
+
+
+def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
+    """Show producer/consumer graph for a dataset (structured).
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+
+    Returns
+    -------
+    CliResult[DatasetFlowResult]
+        Flow result with producers and consumers.
+    """
+    # Verify the dataset exists
+    schema = SCHEMA_REGISTRY.get(table_key)
+    if schema is None:
+        return fail_dataset_not_found(table_key)
+
+    producers = DatasetSchemaRegistry.producers_of(table_key)
+    consumers = DatasetSchemaRegistry.consumers_of(table_key)
+
+    return CliResult.ok(
+        DatasetFlowResult(
+            table_key=table_key,
+            producers=producers,
+            consumers=consumers,
+        )
+    )
+
+
+def dataset_flow_handler(ctx: CommandContext) -> CliResult[DatasetFlowResult]:
+    """Show producer/consumer graph for a dataset.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - table_key: Dataset table key
+
+    Returns
+    -------
+    CliResult[DatasetFlowResult]
+        Flow result with producers and consumers.
+    """
+    table_key = ctx.params.require_str("table_key")
+    return dataset_flow_structured(table_key=table_key)
+
+
+def dataset_constraints_structured(
+    *, table_key: str
+) -> CliResult[DatasetConstraintsResult]:
+    """Show constraint summary for a dataset (structured).
+
+    Extracts constraints from the Pandera schema and returns them in
+    a structured format for programmatic consumption.
+
+    Parameters
+    ----------
+    table_key
+        Dataset table key.
+
+    Returns
+    -------
+    CliResult[DatasetConstraintsResult]
+        Constraint information including kind, column, and expression.
+    """
+    schema = SCHEMA_REGISTRY.get(table_key)
+    if schema is None:
+        return fail_dataset_not_found(table_key)
+
+    constraint_set = extract_constraints_from_pandera(table_key, schema.pandera_schema)
+
+    constraints: list[dict[str, object]] = [
+        {
+            "kind": c.kind.value,
+            "column": c.column,
+            "expression": c.expression,
+            "source": c.source,
+        }
+        for c in constraint_set.constraints
+    ]
+
+    return CliResult.ok(
+        DatasetConstraintsResult(
+            table_key=table_key,
+            constraints=constraints,
+            constraint_count=len(constraints),
+            inferred_from=list(constraint_set.inferred_from),
+        )
+    )
+
+
+def dataset_constraints_handler(ctx: CommandContext) -> CliResult[DatasetConstraintsResult]:
+    """Show constraint summary for a dataset.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - table_key: Dataset table key
+
+    Returns
+    -------
+    CliResult[DatasetConstraintsResult]
+        Constraint information.
+    """
+    table_key = ctx.params.require_str("table_key")
+    return dataset_constraints_structured(table_key=table_key)
+
+
 def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     """Start the HTTP server.
 
@@ -350,6 +553,8 @@ def serve_mcp_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
 __all__ = [
     "AUTO_PIPELINE_ENV",
     "DatasetDescribeResult",
+    "DatasetFlowResult",
+    "DatasetInfoResult",
     "DatasetListResult",
     "DatasetVerifyResult",
     "OperationCallResult",
@@ -357,6 +562,10 @@ __all__ = [
     "ServeStartResult",
     "dataset_describe_handler",
     "dataset_describe_structured",
+    "dataset_flow_handler",
+    "dataset_flow_structured",
+    "dataset_info_handler",
+    "dataset_info_structured",
     "dataset_list_handler",
     "dataset_verify_handler",
     "op_call_handler",

@@ -16,14 +16,20 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import GoidBuilderStepConfig
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.graphs.compute import goid as goid_compute
+from codeintel.graphs.plugins.builders.goid_options import GoidBuilderOptions
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
@@ -33,6 +39,96 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+GOID_BUILDER_METADATA = CorePluginMetadata(
+    name="graphs.goid_builder",
+    version="3.0.0",
+    description="Build global object identifiers.",
+    domain=PluginDomain.GRAPH,
+    kind="builder",
+    stage="goid",
+    provides=("core.goids", "core.goid_crosswalk"),
+    requires=("core.modules",),
+    produces_tables=("core.goids", "core.goid_crosswalk"),
+    consumes_tables=("core.modules",),
+    supports_incremental=False,
+    scope_aware=True,
+    options_model=GoidBuilderOptions,
+    extra={"graph_kinds": ("goid",)},
+)
+
+
+@dataclass(frozen=True)
+class GoidExtractionContext:
+    """Context for GOID extraction."""
+
+    repo: str
+    commit: str
+    now: datetime
+    options: GoidBuilderOptions
+    module_name: str
+    normalized_path: str
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "goid"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
+
+
+def _is_test_path(path: str) -> bool:
+    """Return True when the path looks like a test module.
+
+    Returns
+    -------
+    bool
+        True when the path is considered a test file.
+    """
+    lowered = path.lower()
+    return (
+        "tests/" in lowered
+        or lowered.endswith("_test.py")
+        or "/test_" in lowered
+        or lowered.startswith("test_")
+    )
+
+
+def _filter_tracked_files(
+    paths: list[str],
+    options: GoidBuilderOptions,
+) -> list[str]:
+    """Apply scope and test filtering to tracked files.
+
+    Returns
+    -------
+    list[str]
+        Filtered list of relative file paths.
+    """
+    filtered = list(paths)
+
+    if options.scope_paths:
+        prefixes = tuple(options.scope_paths)
+        filtered = [path for path in filtered if path.startswith(prefixes)]
+
+    if not options.include_tests:
+        filtered = [path for path in filtered if not _is_test_path(path)]
+
+    return filtered
 
 
 def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
@@ -120,12 +216,84 @@ def _path_to_module_name(rel_path: str) -> str:
     return ".".join(parts)
 
 
+def _process_ast_node(
+    node: ast.AST,
+    parent_qualname: str | None,
+    *,
+    context: GoidExtractionContext,
+    goid_rows: list[GoidRow],
+    crosswalk_rows: list[GoidCrosswalkRow],
+) -> None:
+    """Process an AST node recursively."""
+    options = context.options
+    name: str | None = None
+    start_line: int = 0
+    end_line: int | None = None
+
+    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        name = node.name
+        start_line = node.lineno
+        end_line = getattr(node, "end_lineno", node.lineno)
+
+    if name is not None:
+        module_name = context.module_name
+        if not options.include_private and name.startswith("_") and name != "__init__":
+            for child in ast.iter_child_nodes(node):
+                _process_ast_node(
+                    child,
+                    parent_qualname,
+                    context=context,
+                    goid_rows=goid_rows,
+                    crosswalk_rows=crosswalk_rows,
+                )
+            return
+        qualname = f"{parent_qualname}.{name}" if parent_qualname else f"{module_name}.{name}"
+        kind = goid_compute.determine_kind(
+            type(node).__name__, parent_qualname, context.normalized_path, module_name
+        )
+
+        descriptor = goid_compute.GoidDescriptor(
+            repo=context.repo,
+            commit=context.commit,
+            language="python",
+            rel_path=context.normalized_path,
+            kind=kind,
+            qualname=qualname,
+            start_line=start_line,
+            end_line=end_line,
+        )
+        result = goid_compute.compute_goid_result(descriptor)
+        goid_rows.append(
+            goid_compute.build_goid_row(descriptor, result.goid_h128, result.urn, context.now)
+        )
+        crosswalk_rows.append(
+            goid_compute.build_crosswalk_row(
+                descriptor, result.urn, module_name, context.now
+            )
+        )
+
+        for child in ast.iter_child_nodes(node):
+            _process_ast_node(
+                child,
+                qualname,
+                context=context,
+                goid_rows=goid_rows,
+                crosswalk_rows=crosswalk_rows,
+            )
+    else:
+        for child in ast.iter_child_nodes(node):
+            _process_ast_node(
+                child,
+                parent_qualname,
+                context=context,
+                goid_rows=goid_rows,
+                crosswalk_rows=crosswalk_rows,
+            )
+
+
 def _extract_entities_from_file(
     file_path: Path,
-    rel_path: str,
-    repo: str,
-    commit: str,
-    now: datetime,
+    context: GoidExtractionContext,
 ) -> tuple[list[GoidRow], list[GoidCrosswalkRow]]:
     """Extract entities from a Python file and compute GOIDs.
 
@@ -133,14 +301,8 @@ def _extract_entities_from_file(
     ----------
     file_path
         Absolute path to the file.
-    rel_path
-        Relative path to the file.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    now
-        Timestamp for created_at/updated_at.
+    context
+        Extraction context with repo, commit, module metadata, and options.
 
     Returns
     -------
@@ -159,13 +321,12 @@ def _extract_entities_from_file(
     goid_rows: list[GoidRow] = []
     crosswalk_rows: list[GoidCrosswalkRow] = []
 
-    module_name = _path_to_module_name(rel_path)
-    normalized_path = normalize_rel_path(rel_path)
-
+    module_name = context.module_name
+    normalized_path = context.normalized_path
     # Process module itself
     module_descriptor = goid_compute.GoidDescriptor(
-        repo=repo,
-        commit=commit,
+        repo=context.repo,
+        commit=context.commit,
         language="python",
         rel_path=normalized_path,
         kind="module",
@@ -176,71 +337,23 @@ def _extract_entities_from_file(
     module_result = goid_compute.compute_goid_result(module_descriptor)
     goid_rows.append(
         goid_compute.build_goid_row(
-            module_descriptor, module_result.goid_h128, module_result.urn, now
+            module_descriptor, module_result.goid_h128, module_result.urn, context.now
         )
     )
     crosswalk_rows.append(
-        goid_compute.build_crosswalk_row(module_descriptor, module_result.urn, module_name, now)
+        goid_compute.build_crosswalk_row(
+            module_descriptor, module_result.urn, module_name, context.now
+        )
     )
 
-    # Process all nodes
-    def process_node(
-        node: ast.AST,
-        parent_qualname: str | None,
-    ) -> None:
-        """Process an AST node recursively.
-
-        Parameters
-        ----------
-        node
-            AST node to process.
-        parent_qualname
-            Qualified name of the parent node.
-        """
-        name: str | None = None
-        start_line: int = 0
-        end_line: int | None = None
-
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            name = node.name
-            start_line = node.lineno
-            end_line = getattr(node, "end_lineno", node.lineno)
-
-        if name is not None:
-            qualname = f"{parent_qualname}.{name}" if parent_qualname else f"{module_name}.{name}"
-            kind = goid_compute.determine_kind(
-                type(node).__name__, parent_qualname, normalized_path, module_name
-            )
-
-            descriptor = goid_compute.GoidDescriptor(
-                repo=repo,
-                commit=commit,
-                language="python",
-                rel_path=normalized_path,
-                kind=kind,
-                qualname=qualname,
-                start_line=start_line,
-                end_line=end_line,
-            )
-            result = goid_compute.compute_goid_result(descriptor)
-            goid_rows.append(
-                goid_compute.build_goid_row(descriptor, result.goid_h128, result.urn, now)
-            )
-            crosswalk_rows.append(
-                goid_compute.build_crosswalk_row(descriptor, result.urn, module_name, now)
-            )
-
-            # Process children with updated parent
-            for child in ast.iter_child_nodes(node):
-                process_node(child, qualname)
-        else:
-            # Process children with same parent
-            for child in ast.iter_child_nodes(node):
-                process_node(child, parent_qualname)
-
-    # Start processing from module level
     for child in ast.iter_child_nodes(tree):
-        process_node(child, module_name)
+        _process_ast_node(
+            child,
+            module_name,
+            context=context,
+            goid_rows=goid_rows,
+            crosswalk_rows=crosswalk_rows,
+        )
 
     return goid_rows, crosswalk_rows
 
@@ -336,6 +449,43 @@ class GoidBuilderPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "goid_builder"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Build global object identifiers."
+    _core_metadata: ClassVar[CorePluginMetadata] = GOID_BUILDER_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return full core metadata."""
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> GoidBuilderOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        GoidBuilderOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return GoidBuilderOptions(**dynamic_overrides)
+            return GoidBuilderOptions()
+
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            GoidBuilderOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute GOID construction.
@@ -354,8 +504,8 @@ class GoidBuilderPlugin(TargetPlugin):
 
         # Build config
         cfg = GoidBuilderStepConfig(snapshot=ctx.snapshot)
+        opts = self.resolve_options()
 
-        gateway = ctx.gateway
         repo = cfg.repo
         commit = cfg.commit
 
@@ -363,13 +513,15 @@ class GoidBuilderPlugin(TargetPlugin):
             # Step 1: Get source root (prefer snapshot, then db, then cwd)
             source_root = ctx.snapshot.repo_root
             if not source_root:
-                source_root = _get_source_root(gateway, repo, commit)
+                source_root = _get_source_root(ctx.gateway, repo, commit)
             if not source_root:
                 source_root = Path.cwd()
                 log.warning("goid_builder: No source root found, using current directory")
 
             # Step 2: Get tracked files
-            tracked_files = _get_tracked_files(gateway, repo, commit)
+            tracked_files = _filter_tracked_files(
+                _get_tracked_files(ctx.gateway, repo, commit), opts
+            )
 
             if not tracked_files:
                 log.info("goid_builder: No tracked files found, skipping")
@@ -386,12 +538,19 @@ class GoidBuilderPlugin(TargetPlugin):
             all_crosswalk_rows: list[GoidCrosswalkRow] = []
 
             for rel_path in tracked_files:
-                file_path = source_root / rel_path
-                goid_rows, crosswalk_rows = _extract_entities_from_file(
-                    file_path, rel_path, repo, commit, now
+                rows = _extract_entities_from_file(
+                    source_root / rel_path,
+                    GoidExtractionContext(
+                        repo=repo,
+                        commit=commit,
+                        now=now,
+                        options=opts,
+                        module_name=_path_to_module_name(rel_path),
+                        normalized_path=normalize_rel_path(rel_path),
+                    ),
                 )
-                all_goid_rows.extend(goid_rows)
-                all_crosswalk_rows.extend(crosswalk_rows)
+                all_goid_rows.extend(rows[0])
+                all_crosswalk_rows.extend(rows[1])
 
             log.info(
                 "goid_builder: Extracted %d GOIDs and %d crosswalk entries from %d files",
@@ -401,8 +560,10 @@ class GoidBuilderPlugin(TargetPlugin):
             )
 
             # Step 4: Persist
-            goid_count = _persist_goid_rows(gateway, all_goid_rows, repo, commit)
-            crosswalk_count = _persist_crosswalk_rows(gateway, all_crosswalk_rows, repo, commit)
+            goid_count = _persist_goid_rows(ctx.gateway, all_goid_rows, repo, commit)
+            crosswalk_count = _persist_crosswalk_rows(
+                ctx.gateway, all_crosswalk_rows, repo, commit
+            )
 
             log.info(
                 "goid_builder: Persisted %d GOIDs and %d crosswalk entries",

@@ -10,25 +10,68 @@ import json
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.infrastructure.scanning import default_code_profile
+from codeintel.ingestion.plugins.helpers import build_scan_profile, filter_modules
+from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+REPO_SCAN_METADATA = CorePluginMetadata(
+    name="ingest.repo_scan",
+    version="3.0.0",
+    description="Scan repository modules and build change-tracker state.",
+    domain=PluginDomain.INGEST,
+    kind="builder",
+    stage="discovery",
+    provides=("core.modules", "core.repo_map", "core.file_state"),
+    requires=(),
+    produces_tables=("core.modules", "core.repo_map", "core.file_state"),
+    consumes_tables=(),
+    supports_incremental=True,
+    scope_aware=True,
+    options_model=ModuleIngestOptions,
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "discovery"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
 
 
 class RepoScanPlugin(TargetPlugin):
@@ -48,6 +91,42 @@ class RepoScanPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "repo_scan"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Scan repository modules and build change-tracker state."
+    _core_metadata: ClassVar[CorePluginMetadata] = REPO_SCAN_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata definition."""
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> ModuleIngestOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        ModuleIngestOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return ModuleIngestOptions(**dynamic_overrides)
+            return ModuleIngestOptions()
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            ModuleIngestOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute repository scan.
@@ -67,14 +146,15 @@ class RepoScanPlugin(TargetPlugin):
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
 
-        # Create scan profile - use default code profile for Python files
-        profile = default_code_profile(ctx.repo_root)
+        opts = self.resolve_options()
+        profile = build_scan_profile(ctx.repo_root, opts)
 
         # Execute step
         step = RepoScanStep(
             storage=storage,
             discovery=discovery,
             change_detection=change_detection,
+            module_filter=lambda discovered: filter_modules(discovered, opts),
         )
 
         _result, modules, _change_set = step.execute(
@@ -178,4 +258,7 @@ class RepoScanPlugin(TargetPlugin):
         return row_counts
 
 
-__all__ = ["RepoScanPlugin"]
+__all__ = [
+    "REPO_SCAN_METADATA",
+    "RepoScanPlugin",
+]

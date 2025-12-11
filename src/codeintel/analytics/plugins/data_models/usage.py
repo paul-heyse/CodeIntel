@@ -10,14 +10,39 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.data_models.usage import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import DataModelUsageStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+DATA_MODEL_USAGE_METADATA = CorePluginMetadata(
+    name="analytics.data_model_usage",
+    version="3.0.0",
+    description="Classify per-function data model read/write usage patterns.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="data_model_usage",
+    provides=("analytics.data_model_usage",),
+    requires=(
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+        "core.modules",
+    ),
+    produces_tables=("analytics.data_model_usage",),
+    consumes_tables=(
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+        "core.modules",
+    ),
+)
 
 
 class DataModelUsagePlugin(TargetPlugin):
@@ -38,6 +63,17 @@ class DataModelUsagePlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Classify per-function data model read/write usage patterns."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = DATA_MODEL_USAGE_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -110,4 +146,4 @@ class DataModelUsagePlugin(TargetPlugin):
         return TargetResult.succeeded()
 
 
-__all__ = ["DataModelUsagePlugin"]
+__all__ = ["DATA_MODEL_USAGE_METADATA", "DataModelUsagePlugin"]

@@ -26,7 +26,6 @@ from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
 from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
-from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
 from tests._helpers.gateway import GatewayFactory

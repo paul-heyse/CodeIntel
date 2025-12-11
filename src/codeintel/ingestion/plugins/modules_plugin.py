@@ -18,7 +18,7 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.infrastructure.scanning import default_code_profile
+from codeintel.ingestion.plugins.helpers import build_scan_profile, filter_modules
 from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
@@ -139,13 +139,13 @@ class ModuleIngestPlugin(TargetPlugin):
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
 
-        profile = default_code_profile(ctx.repo_root)
-        _ = opts  # Options are reserved for future config-driven profiles
+        profile = build_scan_profile(ctx.repo_root, opts)
 
         step = RepoScanStep(
             storage=storage,
             discovery=discovery,
             change_detection=change_detection,
+            module_filter=lambda discovered: filter_modules(discovered, opts),
         )
 
         result, modules, _change_set = step.execute(

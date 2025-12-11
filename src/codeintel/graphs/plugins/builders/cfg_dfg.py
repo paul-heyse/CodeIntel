@@ -20,16 +20,21 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import CFGBuilderStepConfig
 from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.graphs.catalog import FunctionSpanIndex, load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
+from codeintel.graphs.plugins.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
@@ -37,6 +42,81 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+CFG_DFG_METADATA = CorePluginMetadata(
+    name="graphs.cfg_dfg",
+    version="3.0.0",
+    description="Build control flow and data flow graphs.",
+    domain=PluginDomain.GRAPH,
+    kind="builder",
+    stage="edges",
+    provides=("graph.cfg", "graph.dfg"),
+    requires=("core.goids",),
+    produces_tables=("graph.cfg_blocks", "graph.cfg_edges", "graph.dfg_edges"),
+    consumes_tables=("core.goids",),
+    supports_incremental=False,
+    scope_aware=True,
+    options_model=CfgDfgOptions,
+    extra={"graph_kinds": ("cfg", "dfg")},
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "edges"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
+
+
+def _is_test_path(path: str) -> bool:
+    """Return True when the path looks like a test file.
+
+    Returns
+    -------
+    bool
+        True when the path is considered a test path.
+    """
+    lowered = path.lower()
+    return (
+        "tests/" in lowered
+        or lowered.endswith("_test.py")
+        or "/test_" in lowered
+        or lowered.startswith("test_")
+    )
+
+
+def _filter_paths(paths: list[str], options: CfgDfgOptions) -> list[str]:
+    """Filter function paths by scope and test inclusion.
+
+    Returns
+    -------
+    list[str]
+        Filtered list of relative paths.
+    """
+    filtered = list(paths)
+
+    if options.scope_paths:
+        prefixes = tuple(options.scope_paths)
+        filtered = [path for path in filtered if path.startswith(prefixes)]
+
+    if not options.include_test_files:
+        filtered = [path for path in filtered if not _is_test_path(path)]
+
+    return filtered
 
 
 def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
@@ -323,6 +403,43 @@ class CfgDfgPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "cfg_dfg"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Build control flow and data flow graphs."
+    _core_metadata: ClassVar[CorePluginMetadata] = CFG_DFG_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return plugin metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return full core metadata."""
+        return self._core_metadata
+
+    def resolve_options(
+        self,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> CfgDfgOptions:
+        """Resolve typed options from configuration.
+
+        Returns
+        -------
+        CfgDfgOptions
+            Resolved options instance.
+        """
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return CfgDfgOptions(**dynamic_overrides)
+            return CfgDfgOptions()
+
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            CfgDfgOptions,
+            dynamic_overrides=dynamic_overrides,
+        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute CFG/DFG construction.
@@ -339,11 +456,12 @@ class CfgDfgPlugin(TargetPlugin):
         """
         _ = self  # Protocol method requires instance
         config = CFGBuilderStepConfig(snapshot=ctx.snapshot)
+        opts = self.resolve_options()
         gateway, repo, commit = ctx.gateway, config.repo, config.commit
 
         try:
             function_index = load_function_index(gateway, repo=repo, commit=commit)
-            paths = function_index.paths()
+            paths = _filter_paths(function_index.paths(), opts)
 
             if not paths:
                 log.info("cfg_dfg: No functions found, skipping")

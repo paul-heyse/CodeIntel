@@ -206,7 +206,18 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[dict[str, object]]:
-        """Validate scaffold request and report status."""
+        """Validate scaffold request and report status.
+
+        Parameters
+        ----------
+        ctx
+            Command context (unused).
+
+        Returns
+        -------
+        CliResult[dict[str, object]]
+            Result with dataset name, status, and registry check behavior.
+        """
         _ = ctx
         known_names = set(DATASET_CONTRACTS_BY_TABLE_KEY)
         known_names.update(key.split(".", 1)[-1] for key in DATASET_CONTRACTS_BY_TABLE_KEY)

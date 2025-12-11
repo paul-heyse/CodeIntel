@@ -8,7 +8,7 @@ for all I/O operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import StepResult
@@ -46,6 +46,8 @@ class RepoScanStep:
         storage: IngestStoragePort,
         discovery: ModuleDiscoveryPort,
         change_detection: ChangeDetectionPort,
+        module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]]
+        | None = None,
     ) -> None:
         """Initialize the step.
 
@@ -57,10 +59,13 @@ class RepoScanStep:
             Discovery port for finding modules.
         change_detection
             Change detection port for computing changes.
+        module_filter
+            Optional filter applied to discovered modules before persistence.
         """
         self._storage = storage
         self._discovery = discovery
         self._change_detection = change_detection
+        self._module_filter = module_filter
 
     def execute(
         self,
@@ -93,6 +98,8 @@ class RepoScanStep:
         """
         # Discover modules
         modules = self._discovery.discover_modules(repo_root, profile)
+        if self._module_filter is not None:
+            modules = list(self._module_filter(modules))
         log.info("Discovered %d modules in %s", len(modules), repo_root)
 
         # Compute changes

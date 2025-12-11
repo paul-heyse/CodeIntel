@@ -7,14 +7,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+
+
+BEHAVIORAL_COVERAGE_METADATA = CorePluginMetadata(
+    name="analytics.behavioral_coverage",
+    version="3.0.0",
+    description="Assign heuristic behavior tags to tests (unit/integration/etc.).",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="test",
+    provides=("analytics.behavioral_coverage",),
+    requires=("analytics.test_profile",),
+    produces_tables=("analytics.behavioral_coverage",),
+    consumes_tables=("analytics.test_profile",),
+)
 
 
 class BehavioralCoveragePlugin(TargetPlugin):
@@ -35,6 +52,17 @@ class BehavioralCoveragePlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Assign heuristic behavior tags to tests (unit/integration/etc.)."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = BEHAVIORAL_COVERAGE_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -85,4 +113,4 @@ class BehavioralCoveragePlugin(TargetPlugin):
         )
 
 
-__all__ = ["BehavioralCoveragePlugin"]
+__all__ = ["BEHAVIORAL_COVERAGE_METADATA", "BehavioralCoveragePlugin"]

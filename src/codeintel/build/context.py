@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pandera.errors import SchemaError, SchemaErrors
+
 from codeintel.build.contracts import OutputContract, TableSchema
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
@@ -48,6 +50,8 @@ from codeintel.build.protocols import (
 from codeintel.build.result import TargetResult
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from codeintel.analytics.runtime import GraphRuntime
     from codeintel.build.providers import Providers, RealTestReporter
     from codeintel.build.targets import OutputTarget
@@ -515,6 +519,70 @@ class TargetExecutionContext:
             table_key,
             self.resources.gateway is not None,
         )
+
+    # -------------------------------------------------------------------------
+    # Schema-Aware Writing
+    # -------------------------------------------------------------------------
+
+    def write_validated_table(
+        self,
+        table_key: str,
+        df: pd.DataFrame,
+        *,
+        strict: bool = True,
+    ) -> int:
+        """Write DataFrame with automatic Pandera schema validation.
+
+        This method validates the DataFrame against the registered Pandera
+        schema before writing to the database. It provides stronger type
+        guarantees than the row-based write_table method.
+
+        Parameters
+        ----------
+        table_key
+            Fully-qualified table name (e.g., "analytics.function_metrics").
+        df
+            DataFrame to validate and write.
+        strict
+            If True, raise on validation failure. If False, log and continue.
+
+        Returns
+        -------
+        int
+            Number of rows written.
+
+        Raises
+        ------
+        KeyError
+            If no schema is registered for the table.
+
+        Notes
+        -----
+        Full activation requires updating all plugins to use this method.
+        See architecture Section 4.3 - Build Context Integration for details.
+        """
+        from codeintel.config.datasets.schema_registry import (  # noqa: PLC0415
+            SCHEMA_REGISTRY,
+        )
+
+        schema = SCHEMA_REGISTRY.get(table_key)
+        if schema is None:
+            msg = f"No schema registered for {table_key}"
+            raise KeyError(msg)
+
+        # Validate the DataFrame
+        if strict:
+            validated_df = schema.validate(df)
+        else:
+            try:
+                validated_df = schema.validate(df)
+            except (SchemaError, SchemaErrors) as exc:
+                log.warning("Schema validation failed for %s: %s", table_key, exc)
+                validated_df = df
+
+        # Convert to rows and write
+        rows = list(validated_df.itertuples(index=False, name=None))
+        return self.write_table(table_key, rows, validate=False)
 
     # -------------------------------------------------------------------------
     # Testing Helpers

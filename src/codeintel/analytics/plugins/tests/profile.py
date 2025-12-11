@@ -7,13 +7,30 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.analytics.testing.profiles.builder import build_test_profile
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import TestProfileStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+
+
+TEST_PROFILE_METADATA = CorePluginMetadata(
+    name="analytics.test_profile",
+    version="3.0.0",
+    description="Build per-test profiles with coverage and subsystem context.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="test",
+    provides=("analytics.test_profile",),
+    requires=("analytics.test_coverage_edges",),
+    produces_tables=("analytics.test_profile",),
+    consumes_tables=("analytics.test_coverage_edges",),
+)
 
 
 class TestProfilePlugin(TargetPlugin):
@@ -34,6 +51,17 @@ class TestProfilePlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Build per-test profiles with coverage and subsystem context."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = TEST_PROFILE_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
@@ -74,4 +102,4 @@ class TestProfilePlugin(TargetPlugin):
         )
 
 
-__all__ = ["TestProfilePlugin"]
+__all__ = ["TEST_PROFILE_METADATA", "TestProfilePlugin"]

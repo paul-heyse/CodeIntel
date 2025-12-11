@@ -11,9 +11,10 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast
 
 from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
+from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
@@ -21,6 +22,8 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -216,7 +219,7 @@ class FunctionGoidLoader:
         return (self._snapshot.repo_root / goid.rel_path).resolve()
 
 
-class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
+class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"], SchemaValidationMixin):
     """Adapter for analytics.function_metrics table.
 
     Handles loading source GOIDs and persisting function metrics rows.
@@ -225,7 +228,11 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
     - `load_inputs()` loads source data (FunctionGoid) for computation
     - `load_outputs()` would load existing metrics (returns empty)
     - `persist()` writes computed FunctionMetricsRow
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.function_metrics"
 
     def __init__(
         self,
@@ -252,7 +259,7 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.function_metrics"
+        return type(self).table_key
 
     @property
     def goid_loader(self) -> FunctionGoidLoader:
@@ -334,12 +341,42 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
         )
         return len(rows)
 
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
 
-class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"]):
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows = cast("list[FunctionMetricsRow]", validated_df.to_dict(orient="records"))
+        return self.persist(rows)
+
+
+class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"], SchemaValidationMixin):
     """Adapter for analytics.function_types table.
 
     Handles persisting function type annotation rows.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.function_types"
 
     def __init__(
         self,
@@ -365,7 +402,7 @@ class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.function_types"
+        return type(self).table_key
 
     def load(self) -> Iterator[FunctionTypesRow]:
         """Raise NotImplementedError as types are computed not loaded.
@@ -413,6 +450,32 @@ class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"]):
             self.commit,
         )
         return len(rows)
+
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
+
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows = cast("list[FunctionTypesRow]", validated_df.to_dict(orient="records"))
+        return self.persist(rows)
 
 
 __all__ = [

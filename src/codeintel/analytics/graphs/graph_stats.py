@@ -1,4 +1,8 @@
-"""Global graph statistics for core graphs."""
+"""Global graph statistics for core graphs.
+
+This module computes and persists global graph statistics using
+DuckDBPolicyBackend for bulk insert operations.
+"""
 
 from __future__ import annotations
 
@@ -20,9 +24,15 @@ from codeintel.analytics.runtime import (
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
+
+# Column definitions for graph_stats table
+_GRAPH_STATS_COLUMNS: tuple[str, ...] = (
+    "graph_name", "repo", "commit", "node_count", "edge_count",
+    "weak_component_count", "scc_count", "component_layers", "avg_clustering",
+    "diameter_estimate", "avg_shortest_path_estimate", "created_at",
+)
 
 
 def compute_graph_stats(
@@ -46,6 +56,8 @@ def compute_graph_stats(
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime supplying cached graphs and backend selection.
     """
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
+
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
@@ -56,8 +68,6 @@ def compute_graph_stats(
         runtime_opts,
     )
     use_gpu = resolved_runtime.backend.use_gpu
-    con = gateway.con
-    ensure_schema(con, "analytics.graph_stats")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -113,18 +123,8 @@ def compute_graph_stats(
             )
         )
 
-    con.execute(
-        "DELETE FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    # Use policy backend for delete and bulk insert
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.graph_stats", repo=repo, commit=commit)
     if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.graph_stats (
-                graph_name, repo, commit, node_count, edge_count,
-                weak_component_count, scc_count, component_layers, avg_clustering,
-                diameter_estimate, avg_shortest_path_estimate, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        backend.bulk_insert("analytics.graph_stats", rows, columns=list(_GRAPH_STATS_COLUMNS))

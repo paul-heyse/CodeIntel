@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/functions/history.py
+# hypothesis_version: 6.148.7
+
+[365, '3.0.0', 'core.goids', 'function_history', 'max_history_days', 'metric']

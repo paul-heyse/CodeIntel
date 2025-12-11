@@ -28,20 +28,29 @@ from tests._helpers.harnesses.cli import (
     storage_handler_harness,
     subsystem_handler_harness,
 )
+from tests._helpers.harnesses.datasets import DatasetHandlerHarness, dataset_handler_harness
+from tests._helpers.harnesses.docs import DocsHandlerHarness, docs_handler_harness
+from tests._helpers.harnesses.storage import StorageHandlerHarness, storage_macro_harness
 
 __all__ = [
     "AnalyticsPluginHarness",
+    "DatasetHandlerHarness",
+    "DocsHandlerHarness",
     "BaseResultAssertions",
     "BaseTestHarness",
     "CliHandlerHarness",
+    "StorageHandlerHarness",
     "ResultLike",
     "cli_handler_harness",
+    "dataset_handler_harness",
+    "docs_handler_harness",
     "core_handler_harness",
     "coverage_plugin_harness",
     "data_models_plugin_harness",
     "entrypoints_plugin_harness",
     "graph_handler_harness",
     "graph_plugin_harness",
+    "storage_macro_harness",
     "ops_handler_harness",
     "plugin_harness_with_packs",
     "storage_handler_harness",

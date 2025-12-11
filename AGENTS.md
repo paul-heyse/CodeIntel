@@ -1159,6 +1159,101 @@ executor = PluginExecutor(
 
 ---
 
+## Schema-First Development (Pandera Unified Schemas)
+
+This project uses a unified schema approach where Pandera `DataFrameSchema` is the single source of truth for dataset structure. The schema unification architecture provides:
+
+### Core Components
+
+- **DatasetSchema** (`config/datasets/schema.py`): Unified wrapper for Pandera schemas with metadata
+- **DatasetSchemaRegistry** (`config/datasets/schema_registry.py`): Global registry for all dataset schemas
+- **Constraint Layer** (`config/datasets/constraints.py`): Extract and aggregate constraints from schemas
+- **Introspection Service** (`config/datasets/introspection.py`): Complete dataset introspection for LLM/tooling
+
+### Schema Registration
+
+All datasets should be registered in `SCHEMA_REGISTRY`:
+
+```python
+from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+# Get a schema
+schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
+
+# Check if registered
+if SCHEMA_REGISTRY.get("analytics.my_table") is not None:
+    ...
+
+# List all registered schemas
+all_keys = SCHEMA_REGISTRY.all()
+```
+
+### Schema-Aware Adapters
+
+Adapters can inherit `SchemaValidationMixin` for automatic Pandera validation:
+
+```python
+from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
+
+class MyAdapter(BatchAdapter[MyRow], SchemaValidationMixin):
+    table_key: ClassVar[str] = "analytics.my_table"
+    
+    def persist_with_validation(self, rows: Sequence[MyRow], *, strict: bool = True) -> int:
+        df = pd.DataFrame(rows)
+        validated_df = self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        # ... persist validated_df
+```
+
+### Schema-Aware Writing in Build Context
+
+Use `write_validated_table()` for DataFrame validation before persistence:
+
+```python
+async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+    df = compute_metrics(...)
+    ctx.write_validated_table("analytics.function_metrics", df, strict=True)
+    return TargetResult.success()
+```
+
+### Dataset Introspection
+
+Introspect datasets for LLM/agent consumption:
+
+```python
+from codeintel.config.datasets.introspection import introspect_dataset
+
+intro = introspect_dataset("analytics.function_metrics")
+print(intro.summary_for_llm())
+```
+
+### CLI Commands
+
+- `codeintel dataset info <table_key>` - Show schema information
+- `codeintel dataset flow <table_key>` - Show producer/consumer relationships
+- `codeintel dataset constraints <table_key>` - Show extracted constraints
+
+### Adding New Datasets
+
+1. Define the Pandera schema in `storage/pandera_schemas.py`
+2. Register via `build_dataset_schema()` or directly in `SCHEMA_REGISTRY`
+3. Use `typed_dict_from_pandera()` to generate row models
+4. Inherit `SchemaValidationMixin` in adapters for validation
+
+### Migration from Manual Models
+
+Use the migration utilities to validate compatibility:
+
+```python
+from codeintel.config.datasets.row_migration import validate_row_model_compatibility
+
+status = validate_row_model_compatibility("analytics.function_metrics")
+if status.compatible:
+    # Safe to switch to schema-generated model
+    ...
+```
+
+---
+
 ## NetworkX GPU backend
 
 - Use `GraphBackendConfig` plus `codeintel.cli.nx_backend.maybe_enable_nx_gpu`; do not import
@@ -1243,6 +1338,94 @@ qualified names automatically.
 | `IntegerValue.to_interval` | `IntegerValue.as_interval` |
 | `IntegerValue.to_timestamp` | `IntegerValue.as_timestamp` |
 | `Struct.destructure` | `Table.unpack` |
+
+---
+
+## Bulk Operations (DuckDBPolicyBackend)
+
+All bulk insert and upsert operations should use `DuckDBPolicyBackend` from
+`codeintel.storage.duckdb_policy_backend`. This centralizes SQL generation and
+ensures type-safe operations via SQLGlot.
+
+### Bulk Insert
+
+```python
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+
+backend = DuckDBPolicyBackend(gateway)
+
+# Bulk insert with explicit columns
+rows = [
+    ("goid1", "repo", "commit", 100),
+    ("goid2", "repo", "commit", 200),
+]
+count = backend.bulk_insert(
+    "analytics.function_metrics",
+    rows,
+    columns=["function_goid_h128", "repo", "commit", "loc"],
+)
+
+# Bulk insert with columns from TableSchema (if registered)
+count = backend.bulk_insert("analytics.function_metrics", rows)
+```
+
+### UPSERT (Insert or Update)
+
+For tables needing insert-or-update semantics (e.g., aggregations, caches):
+
+```python
+# UPSERT with ON CONFLICT DO UPDATE
+count = backend.upsert(
+    "analytics.function_metrics",
+    rows,
+    columns=["function_goid_h128", "repo", "commit", "loc"],
+    conflict_columns=["function_goid_h128", "repo", "commit"],
+    update_columns=["loc"],  # Only update these on conflict
+)
+
+# UPSERT with ON CONFLICT DO NOTHING (skip duplicates)
+count = backend.upsert(
+    "analytics.function_metrics",
+    rows,
+    columns=["function_goid_h128", "repo", "commit", "loc"],
+    conflict_columns=["function_goid_h128", "repo", "commit"],
+    update_columns=[],  # Empty = DO NOTHING
+)
+```
+
+### Snapshot-Scoped Deletion
+
+Before bulk inserts, clear existing data for the snapshot:
+
+```python
+backend.delete_for_snapshot(
+    "analytics.function_metrics",
+    repo="org/repo",
+    commit="abc123",
+)
+```
+
+### Deprecated Patterns
+
+The following patterns are deprecated:
+
+| Deprecated | Replacement |
+|------------|-------------|
+| `con.executemany(sql, rows)` | `backend.bulk_insert(table_key, rows)` |
+| `QueryBuilder.insert()` | `backend.bulk_insert()` |
+| `QueryBuilder.delete()` | `backend.delete_for_snapshot()` |
+| `SafeTable`, `SafeColumn` | Use policy backend methods |
+
+### When Direct executemany is Acceptable
+
+Direct `executemany` usage is only acceptable in:
+
+1. `DuckDBPolicyBackend` itself (the centralized location)
+2. Storage layer helpers (`storage/helpers/db.py`)
+3. Schema bootstrap (`storage/metadata/bootstrap.py`)
+4. Test fixtures
+
+All other code should use `DuckDBPolicyBackend.bulk_insert()` or `upsert()`.
 
 ---
 

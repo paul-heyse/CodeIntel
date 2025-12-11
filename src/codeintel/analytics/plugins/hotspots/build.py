@@ -9,12 +9,29 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.hotspots.metrics import build_hotspots
+from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HotspotsStepConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+
+
+HOTSPOTS_METADATA = CorePluginMetadata(
+    name="analytics.hotspots",
+    version="3.0.0",
+    description="Compute file-level hotspots from AST metrics and Git churn.",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="hotspots",
+    provides=("analytics.hotspots",),
+    requires=("core.ast_metrics",),
+    produces_tables=("analytics.hotspots",),
+    consumes_tables=("core.ast_metrics",),
+)
 
 
 class HotspotsPlugin(TargetPlugin):
@@ -35,6 +52,17 @@ class HotspotsPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Compute file-level hotspots from AST metrics and Git churn."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = HOTSPOTS_METADATA
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the hotspots computation.
@@ -95,4 +123,4 @@ class HotspotsPlugin(TargetPlugin):
         return row_counts
 
 
-__all__ = ["HotspotsPlugin"]
+__all__ = ["HOTSPOTS_METADATA", "HotspotsPlugin"]

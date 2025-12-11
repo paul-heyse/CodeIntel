@@ -1,7 +1,12 @@
-"""Function metrics plugin."""
+"""Function metrics plugin.
+
+This plugin computes function complexity and type coverage metrics.
+It is schema-aware and validates output data against registered Pandera schemas.
+"""
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.analytics.functions import (
@@ -10,6 +15,7 @@ from codeintel.analytics.functions import (
 )
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
@@ -19,6 +25,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.context import TargetExecutionContext
+
+log = logging.getLogger(__name__)
 
 
 FUNCTION_METRICS_METADATA = CorePluginMetadata(
@@ -127,6 +135,19 @@ class FunctionMetricsPlugin(TargetPlugin):
             dynamic_overrides=dynamic_overrides,
         )
 
+    def check_schemas_available(self) -> dict[str, bool]:
+        """Check if output table schemas are registered.
+
+        Returns
+        -------
+        dict[str, bool]
+            Mapping of table names to availability status.
+        """
+        return {
+            table: SCHEMA_REGISTRY.get(table) is not None
+            for table in self._core_metadata.produces_tables
+        }
+
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute function metrics computation.
 
@@ -139,8 +160,21 @@ class FunctionMetricsPlugin(TargetPlugin):
         -------
         TargetResult
             Success result with row counts.
+
+        Notes
+        -----
+        This plugin validates output data against Pandera schemas when available.
+        Schema validation occurs in the persistence layer via validate_dataset_df.
         """
         _ = self  # Protocol method requires instance
+
+        # Log schema availability status
+        schema_status = self.check_schemas_available()
+        for table, available in schema_status.items():
+            if not available:
+                log.warning("No schema registered for output table: %s", table)
+            else:
+                log.debug("Schema available for validation: %s", table)
 
         # Get AST data from catalog if available
         function_ast_map = None

@@ -1,5 +1,26 @@
 """Safe SQL primitives for validated table and column references.
 
+.. deprecated::
+    This module is deprecated. Use ``DuckDBPolicyBackend`` from
+    ``codeintel.storage.duckdb_policy_backend`` for all SQL operations.
+
+    The policy backend provides centralized, type-safe SQL generation via
+    SQLGlot, replacing the need for manual identifier validation.
+
+    Migration guide:
+
+    **Before (deprecated):**
+
+    >>> from codeintel.ingestion.infrastructure.safe_sql import SafeTableRef
+    >>> ref = SafeTableRef.from_key("analytics.function_metrics")
+    >>> sql = f"SELECT * FROM {ref.full_name}"  # Manual SQL construction
+
+    **After (recommended):**
+
+    >>> from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+    >>> backend = DuckDBPolicyBackend(gateway)
+    >>> backend.bulk_insert("analytics.function_metrics", rows)
+
 This module provides value objects that validate SQL identifiers at construction
 time, preventing SQL injection vulnerabilities when building dynamic queries.
 
@@ -7,27 +28,22 @@ The validation ensures identifiers follow standard SQL naming conventions:
 - Start with a letter or underscore
 - Contain only letters, digits, and underscores
 - Are not excessively long (max 128 characters)
-
-Examples
---------
->>> ref = SafeTableRef.from_key("core.ast_nodes")
->>> ref.full_name
-'core.ast_nodes'
->>> ref.schema
-'core'
->>> ref.table
-'ast_nodes'
-
->>> col = SafeColumnRef("file_path")
->>> col.name
-'file_path'
 """
 
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
 from typing import ClassVar
+
+# Emit deprecation warning on import
+warnings.warn(
+    "codeintel.ingestion.infrastructure.safe_sql is deprecated. "
+    "Use DuckDBPolicyBackend from codeintel.storage.duckdb_policy_backend instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class InvalidIdentifierError(ValueError):

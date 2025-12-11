@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -104,18 +104,13 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         "build/db/history.duckdb"
     )
     entity_kind = ctx.params.get_str("entity_kind", "function") or "function"
-    max_entities = ctx.params.get_int("max_entities", 500)
-    selection_strategy = ctx.params.get_str("selection_strategy", "risk_score") or "risk_score"
-
-    runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    builder = ConfigBuilder.from_snapshot(
+    cfg = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo=repo, commit=commits[0], repo_root=repo_root),
-    )
-    cfg = builder.history_timeseries(
+    ).history_timeseries(
         commits=tuple(commits),
         entity_kind=entity_kind,
-        max_entities=max_entities,
-        selection_strategy=selection_strategy,
+        max_entities=ctx.params.get_int("max_entities", 500),
+        selection_strategy=ctx.params.get_str("selection_strategy", "risk_score") or "risk_score",
     )
 
     # Use dedicated output gateway (separate from runtime's database)
@@ -127,12 +122,17 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         )
 
         try:
-            compute_history_timeseries_gateways(gateway, cfg, snapshot_resolver, runner=runner)
+            compute_history_timeseries_gateways(
+                gateway,
+                cfg,
+                snapshot_resolver,
+                runner=ToolRunner(cache_dir=repo_root / "build" / ".tool_cache"),
+            )
         except DuckDBInvalidInputException as exc:
             LOG.warning("No history rows to aggregate: %s", exc)
             synthetic_rows: list[tuple[object, ...]] = []
-            commit_ts = datetime.now(timezone.utc).isoformat()
             for commit in commits:
+                commit_timestamp = datetime.now(datetime.UTC).isoformat()
                 snapshot_gateway = snapshot_resolver(commit)
                 try:
                     results = snapshot_gateway.con.execute(
@@ -154,7 +154,7 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
                             "python",
                             qualname,
                             commit,
-                            commit_ts,
+                            commit_timestamp,
                             None,
                             None,
                             None,
@@ -163,7 +163,7 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
                             None,
                             None,
                             None,
-                            commit_ts,
+                            commit_timestamp,
                         )
                     )
 

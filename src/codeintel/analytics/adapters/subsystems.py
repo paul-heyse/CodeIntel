@@ -2,6 +2,8 @@
 
 This module provides adapters for persisting subsystem classification
 results to DuckDB.
+
+All subsystem adapters include schema validation via SchemaValidationMixin.
 """
 
 from __future__ import annotations
@@ -9,25 +11,32 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
+from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.config.datasets import load_columns_by_table, serialize_row
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
-class SubsystemsAdapter(BatchAdapter[dict[str, Any]]):
+class SubsystemsAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
     """Adapter for analytics.subsystems table.
 
     Handle persisting subsystem classification data.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.subsystems"
 
     def __init__(
         self,
@@ -53,7 +62,7 @@ class SubsystemsAdapter(BatchAdapter[dict[str, Any]]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.subsystems"
+        return type(self).table_key
 
     def load(self) -> Iterator[dict[str, Any]]:
         """Raise NotImplementedError as subsystems are computed not loaded.
@@ -104,12 +113,42 @@ class SubsystemsAdapter(BatchAdapter[dict[str, Any]]):
         )
         return len(rows)
 
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
 
-class SubsystemModulesAdapter(BatchAdapter[dict[str, Any]]):
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
+        return self.persist(rows)
+
+
+class SubsystemModulesAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
     """Adapter for analytics.subsystem_modules table.
 
     Handle persisting module-to-subsystem mappings.
+
+    Includes schema validation via SchemaValidationMixin.
     """
+
+    table_key: ClassVar[str] = "analytics.subsystem_modules"
 
     def __init__(
         self,
@@ -135,7 +174,7 @@ class SubsystemModulesAdapter(BatchAdapter[dict[str, Any]]):
     @property
     def table_name(self) -> str:
         """Return the target table name."""
-        return "analytics.subsystem_modules"
+        return type(self).table_key
 
     def load(self) -> Iterator[dict[str, Any]]:
         """Raise NotImplementedError as mappings are computed not loaded.
@@ -185,6 +224,32 @@ class SubsystemModulesAdapter(BatchAdapter[dict[str, Any]]):
             self.commit,
         )
         return len(rows)
+
+    def persist_with_validation(
+        self,
+        df: pd.DataFrame,
+        *,
+        strict: bool = False,
+    ) -> int:
+        """Persist a DataFrame with schema validation.
+
+        Parameters
+        ----------
+        df
+            DataFrame to validate and persist.
+        strict
+            If True, raise on validation failure. If False, log and proceed.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        validated_df = (
+            self.validate_dataframe(df) if strict else self.try_validate_dataframe(df)
+        )
+        rows: list[dict[str, Any]] = validated_df.to_dict(orient="records")
+        return self.persist(rows)
 
 
 __all__ = [

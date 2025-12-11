@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
@@ -19,6 +22,42 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+TESTS_INGEST_METADATA = CorePluginMetadata(
+    name="ingest.tests",
+    version="3.0.0",
+    description="Ingest pytest JSON reports.",
+    domain=PluginDomain.INGEST,
+    kind="builder",
+    stage="tests",
+    provides=("analytics.test_results",),
+    requires=("core.modules",),
+    produces_tables=("analytics.test_results",),
+    consumes_tables=("core.modules",),
+    supports_incremental=True,
+    scope_aware=True,
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "tests"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
 
 
 class TestsIngestPlugin(TargetPlugin):
@@ -35,6 +74,20 @@ class TestsIngestPlugin(TargetPlugin):
     plugin_name: ClassVar[str] = "tests_ingest"
     plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Ingest pytest JSON reports."
+    _core_metadata: ClassVar[CorePluginMetadata] = TESTS_INGEST_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata definition."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute tests ingestion.
@@ -117,6 +170,7 @@ def resolve_report_file(ctx: TargetExecutionContext) -> Path | None:
 
 
 __all__ = [
+    "TESTS_INGEST_METADATA",
     "TestsIngestPlugin",
     "get_module_paths",
     "paths_to_modules",

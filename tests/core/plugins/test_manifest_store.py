@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
 
 from codeintel.core.plugins.execution.manifest_store import (
@@ -19,6 +19,9 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 
 def _record(plugin: str, *, repo: str = "owner/repo", commit: str = "abc") -> PluginExecutionRecord:
@@ -58,16 +61,35 @@ def test_inmemory_manifest_store_round_trip() -> None:
 
 
 @pytest.fixture
-def duckdb_store(tmp_path: Path) -> DuckDBManifestStore:
-    """Create a DuckDBManifestStore backed by temp file.
+def manifest_gateway(tmp_path: Path) -> StorageGateway:
+    """Create a StorageGateway for manifest tests.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway instance with core schema created.
+    """
+    from tests._helpers.gateway import GatewayFactory  # noqa: PLC0415
+
+    return (
+        GatewayFactory()
+        .file_backed(tmp_path / "manifest.duckdb")
+        .with_snapshot("owner/repo", "abc")
+        .with_schema()
+        .open()
+    )
+
+
+@pytest.fixture
+def duckdb_store(manifest_gateway: StorageGateway) -> DuckDBManifestStore:
+    """Create a DuckDBManifestStore backed by StorageGateway.
 
     Returns
     -------
     DuckDBManifestStore
         Store instance with schema ensured.
     """
-    con = duckdb.connect(database=str(tmp_path / "manifest.duckdb"))
-    store = DuckDBManifestStore(con)
+    store = DuckDBManifestStore(manifest_gateway)
     store.ensure_schema()
     return store
 

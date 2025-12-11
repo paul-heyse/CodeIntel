@@ -1,36 +1,34 @@
 """Docs view registry and creation helpers.
 
-This module provides two view creation systems:
-1. SQL-based views (create_all_views) - legacy, uses raw SQL
-2. Ibis-based views (VIEW_BUILDERS registry) - new, uses Ibis expressions
+This module provides Ibis-based view creation using the VIEW_BUILDERS registry.
+All views are now defined as Ibis expressions in ibis_views.py.
 
-New views should be added to the Ibis registry in ibis_views.py using the
-@register_view decorator. The registry is accessible via VIEW_BUILDERS or
-get_registered_views().
+The legacy SQL-based view creation functions have been removed in favor of
+the unified Ibis approach.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
+import ibis
 from duckdb import DuckDBPyConnection
 
 # Import ibis_views to ensure view builders are registered
 import codeintel.storage.views.ibis_views as _ibis_views  # noqa: F401
-from codeintel.storage.views.data_model_views import (
-    DATA_MODEL_VIEW_NAMES,
-    create_data_model_views,
-)
-from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES, create_function_views
-from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES, create_graph_views
+from codeintel.storage.views.data_model_views import DATA_MODEL_VIEW_NAMES
+from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES
+from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS, ViewBuilder, get_registered_views
-from codeintel.storage.views.ide_views import IDE_VIEW_NAMES, create_ide_views
-from codeintel.storage.views.module_views import MODULE_VIEW_NAMES, create_module_views
-from codeintel.storage.views.subsystem_views import (
-    SUBSYSTEM_VIEW_NAMES,
-    create_subsystem_views,
-)
-from codeintel.storage.views.test_views import TEST_VIEW_NAMES, create_test_views
+from codeintel.storage.views.ibis_views import _create_view
+from codeintel.storage.views.ide_views import IDE_VIEW_NAMES
+from codeintel.storage.views.module_views import MODULE_VIEW_NAMES
+from codeintel.storage.views.subsystem_views import SUBSYSTEM_VIEW_NAMES
+from codeintel.storage.views.test_views import TEST_VIEW_NAMES
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.ibis_adapter import IbisGateway
 
 ALIAS_DOCS_VIEWS: dict[str, str] = {
     "docs.v_function_profile": "analytics.function_profile",
@@ -56,21 +54,51 @@ DERIVED_DOCS_VIEWS: tuple[str, ...] = tuple(
     view for view in DOCS_VIEWS if view not in ALIAS_DOCS_VIEWS
 )
 
-_VIEW_CREATORS: tuple[Callable[[DuckDBPyConnection], None], ...] = (
-    create_function_views,
-    create_module_views,
-    create_test_views,
-    create_subsystem_views,
-    create_graph_views,
-    create_ide_views,
-    create_data_model_views,
-)
+
+def _get_ibis_gateway(
+    con_or_gateway: DuckDBPyConnection | StorageGateway,
+) -> IbisGateway:
+    """Extract or create IbisGateway from connection or gateway.
+
+    Parameters
+    ----------
+    con_or_gateway
+        Either a DuckDB connection or a StorageGateway.
+
+    Returns
+    -------
+    IbisGateway
+        Ibis gateway for building expressions.
+    """
+    from codeintel.storage.ibis_adapter import IbisGateway  # noqa: PLC0415
+
+    # Check if it's a StorageGateway (has 'ibis' attribute)
+    if hasattr(con_or_gateway, "ibis"):
+        return con_or_gateway.ibis  # type: ignore[return-value, union-attr]
+
+    # It's a raw DuckDB connection - wrap it
+    ibis_con = ibis.duckdb.from_connection(con_or_gateway)
+    return IbisGateway(ibis_con)
 
 
-def create_all_views(con: DuckDBPyConnection) -> None:
-    """Create or replace all docs.* views using SQL-based creators."""
-    for create in _VIEW_CREATORS:
-        create(con)
+def create_all_views(
+    con_or_gateway: DuckDBPyConnection | StorageGateway,
+) -> None:
+    """Create or replace all docs.* views using Ibis expressions.
+
+    This function iterates through all registered view builders in VIEW_BUILDERS
+    and creates each view using the Ibis gateway.
+
+    Parameters
+    ----------
+    con_or_gateway
+        Either a DuckDB connection or a StorageGateway. For backward
+        compatibility, raw connections are wrapped in an IbisGateway.
+    """
+    ibis_gw = _get_ibis_gateway(con_or_gateway)
+    for view_name, builder in VIEW_BUILDERS.items():
+        expr = builder(ibis_gw)
+        _create_view(ibis_gw.con, view_name, expr)
 
 
 __all__ = [

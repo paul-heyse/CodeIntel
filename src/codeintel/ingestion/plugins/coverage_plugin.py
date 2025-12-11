@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
+from codeintel.core.plugins.execution.options import PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
@@ -20,6 +23,42 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
 
 log = logging.getLogger(__name__)
+
+
+COVERAGE_INGEST_METADATA = CorePluginMetadata(
+    name="ingest.coverage",
+    version="3.0.0",
+    description="Load coverage.py data and populate analytics.coverage_lines.",
+    domain=PluginDomain.INGEST,
+    kind="builder",
+    stage="tests",
+    provides=("analytics.coverage_lines",),
+    requires=("core.modules",),
+    produces_tables=("analytics.coverage_lines",),
+    consumes_tables=("core.modules",),
+    supports_incremental=True,
+    scope_aware=True,
+)
+
+
+def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
+    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
+
+    Returns
+    -------
+    PluginMetadata
+        Protocol-compatible metadata instance.
+    """
+    return PluginMetadata(
+        name=core.name,
+        version=core.version,
+        description=core.description,
+        kind=cast("PluginKind", core.kind),
+        stage=cast("PluginStage", core.stage or "tests"),
+        provides=core.provides,
+        requires=core.requires,
+        produces_tables=core.produces_tables,
+    )
 
 
 def resolve_coverage_file(ctx: TargetExecutionContext) -> Path | None:
@@ -57,6 +96,20 @@ class CoverageIngestPlugin(TargetPlugin):
     plugin_description: ClassVar[str] = (
         "Load coverage.py data and populate analytics.coverage_lines."
     )
+    _core_metadata: ClassVar[CorePluginMetadata] = COVERAGE_INGEST_METADATA
+
+    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata."""
+        return _to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return canonical metadata definition."""
+        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute coverage ingestion.
@@ -107,6 +160,7 @@ class CoverageIngestPlugin(TargetPlugin):
 
 
 __all__ = [
+    "COVERAGE_INGEST_METADATA",
     "CoverageIngestPlugin",
     "get_module_paths",
     "paths_to_modules",
