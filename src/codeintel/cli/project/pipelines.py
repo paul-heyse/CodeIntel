@@ -20,7 +20,7 @@ from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.service import UnifiedRenderer
-from codeintel.cli.rendering.types import RenderContext
+from codeintel.cli.rendering.types import OutputFormat, RenderContext
 
 
 @dataclass
@@ -60,9 +60,6 @@ def _get_streaming_renderer(output: TextIO | None = None) -> UnifiedRenderer:
     """
     ctx = RenderContext.auto_detect()
     if output is not None:
-        # Create context with custom writer
-        from codeintel.cli.rendering.types import OutputFormat
-
         ctx = RenderContext(
             format=OutputFormat.JSONL,
             color=False,

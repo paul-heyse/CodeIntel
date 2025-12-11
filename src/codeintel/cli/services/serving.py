@@ -69,6 +69,16 @@ class ServingService:
         self._runtime = runtime
         self._storage = storage
 
+    @property
+    def runtime_service(self) -> RuntimeService:
+        """Return the underlying RuntimeService."""
+        return self._runtime
+
+    @property
+    def storage_service(self) -> StorageService:
+        """Return the underlying StorageService."""
+        return self._storage
+
     def invoke(
         self,
         operation_id: str,
@@ -210,6 +220,11 @@ class ServingService:
 
         # Primitive value
         return {"value": result}
+
+    @staticmethod
+    def serialize_result(result: object) -> dict[str, Any]:
+        """Public wrapper for result serialization."""
+        return ServingService._serialize_result(result)
 
 
 __all__ = [

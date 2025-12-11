@@ -144,7 +144,13 @@ class SandboxedImporter(MetaPathFinder, Loader):
         return None
 
     def exec_module(self, module: ModuleType) -> None:
-        """Block module load with an ImportError."""
+        """Block module load with an ImportError.
+
+        Raises
+        ------
+        ImportError
+            Always raised to block disallowed plugin imports.
+        """
         msg = (
             f"Plugin '{self._manifest.name}' cannot import '{module.__name__}': "
             "missing required capability"

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from codeintel.cli.config.model import CliConfig
-from codeintel.cli.handlers.context import HandlerContext
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
     MacroRequirement,
@@ -18,8 +17,6 @@ from codeintel.cli.handlers.storage import (
     profile_storage_handler,
     validate_macros_handler,
 )
-from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.config.serving_models import ServingConfig
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -181,7 +178,7 @@ def _mock_storage_gateway() -> Iterator[MagicMock]:
 
 def _build_test_context(
     params: dict[str, object],
-) -> HandlerContext:
+) -> CommandContext:
     """Build a test context with mocked dependencies.
 
     Parameters
@@ -191,23 +188,17 @@ def _build_test_context(
 
     Returns
     -------
-    HandlerContext
+    CommandContext
         Test context.
     """
-    mock_serving = MagicMock(spec=ServingConfig)
-    mock_runtime = MagicMock(spec=ResolvedRuntime)
-    mock_runtime.serving = mock_serving
-    mock_runtime.paths = MagicMock()
-    mock_runtime.paths.db_path = Path("build/test.duckdb")
-    mock_config = MagicMock(spec=CliConfig)
     mock_gateway = MagicMock(spec=StorageGateway)
-    mock_graph_runtime = MagicMock()
-
-    return HandlerContext(
-        config=mock_config,
-        operation_id="storage.test",
-        _params=params,
-        _runtime=mock_runtime,
-        _gateway=mock_gateway,
-        _graph_runtime=mock_graph_runtime,
+    builder = (
+        CommandContextBuilder()
+        .with_params(params)
+        .with_operation_id("storage.test")
+        .with_injected_gateway(mock_gateway)
     )
+    stack = ExitStack()
+    ctx = stack.enter_context(builder.build())
+    setattr(ctx, "_close_stack", stack)
+    return ctx

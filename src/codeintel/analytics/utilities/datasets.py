@@ -6,6 +6,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
+import pandas as pd
+
 if TYPE_CHECKING:
     from codeintel.analytics.adapters.base import DeleteScope
 
@@ -37,6 +39,7 @@ from codeintel.config.datasets import (
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.pandera_schemas import validate_dataset_df
 from codeintel.storage.sql import QueryBuilder, SafeTable
 
 type RowType = Mapping[str, object]
@@ -297,6 +300,26 @@ def insert_analytics_rows(
         )
 
 
+def validate_contract_rows(
+    table_key: str, rows: Sequence[Mapping[str, object]]
+) -> list[dict[str, object]]:
+    """
+    Validate rows for a dataset using Pandera and return normalized dicts.
+
+    Missing values are normalized to ``None`` for safe DuckDB insertion.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Pandera-validated rows coerced to serializable dictionaries.
+    """
+    if not rows:
+        return []
+    df = validate_dataset_df(table_key, pd.DataFrame(rows))
+    normalized = df.where(pd.notna(df), None)
+    return normalized.to_dict(orient="records")
+
+
 __all__ = [
     "DELETE_SQL_BY_TABLE",
     "AnalyticsDatasetContract",
@@ -304,4 +327,38 @@ __all__ = [
     "get_analytics_dataset_contract",
     "get_function_ast_features_contract",
     "insert_analytics_rows",
+    "validate_contract_rows",
+    "validate_tuple_rows",
 ]
+
+
+def validate_tuple_rows(
+    table_key: str,
+    rows: Sequence[Sequence[object]],
+    *,
+    columns: Sequence[str],
+) -> list[tuple[object, ...]]:
+    """
+    Validate tuple rows for a dataset and return normalized tuples.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified dataset key.
+    rows
+        Iterable of rows in positional tuple/sequence form.
+    columns
+        Column order corresponding to the tuples.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Pandera-validated rows with ``None`` for missing values.
+    """
+    if not rows:
+        return []
+    df = pd.DataFrame(rows, columns=list(columns))
+    validated = validate_dataset_df(table_key, df)
+    normalized = validated.where(pd.notna(validated), None)
+    ordered = normalized[list(columns)]
+    return [tuple(row) for row in ordered.itertuples(index=False, name=None)]

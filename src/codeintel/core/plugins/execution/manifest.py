@@ -16,6 +16,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Protocol
 
 from codeintel.core.plugins.types.result import PluginExecutionRecord
 
@@ -418,13 +419,105 @@ def build_manifest_entry(
     }
 
 
+# =============================================================================
+# ManifestStore Protocol
+# =============================================================================
+
+
+class ManifestStore(Protocol):
+    """Abstract interface for storing and retrieving execution records."""
+
+    def load_last_record(
+        self,
+        *,
+        plugin_name: str,
+        repo: str,
+        commit: str,
+        scope_id: str | None,
+        variant: str | None,
+    ) -> PluginExecutionRecord | None:
+        """Return the most recent record for this combination."""
+        ...
+
+    def append_record(self, record: PluginExecutionRecord) -> None:
+        """Persist a new PluginExecutionRecord."""
+        ...
+
+
+@dataclass(frozen=True)
+class ManifestQuery:
+    """Query parameters for manifest lookups."""
+
+    repo: str
+    commit: str
+    scope_id: str | None
+    variant: str | None
+
+
+# =============================================================================
+# Upstream State Resolution
+# =============================================================================
+
+
+def compute_scope_id(paths: list[str] | None) -> str | None:
+    """Compute a stable scope hash for repo-relative paths.
+
+    Returns
+    -------
+    str | None
+        Sixteen-character hash for paths, or None when no scope is provided.
+    """
+    if not paths:
+        return None
+    payload = {"paths": sorted(paths)}
+    serialized = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(serialized.encode()).hexdigest()[:16]
+
+
+def build_upstream_state_from_records(
+    required_capabilities: tuple[str, ...],
+    provider_lookup: Mapping[str, str],
+    manifest_store: ManifestStore,
+    query: ManifestQuery,
+) -> dict[str, str]:
+    """Build upstream_state from required capabilities.
+
+    Returns
+    -------
+    dict[str, str]
+        Capability name to provider input hash mapping.
+    """
+    state: dict[str, str] = {}
+
+    for capability in required_capabilities:
+        provider_name = provider_lookup.get(capability)
+        if not provider_name:
+            continue
+
+        record = manifest_store.load_last_record(
+            plugin_name=provider_name,
+            repo=query.repo,
+            commit=query.commit,
+            scope_id=query.scope_id,
+            variant=query.variant,
+        )
+        if record and record.meta.get("input_hash"):
+            state[capability] = str(record.meta["input_hash"])
+
+    return state
+
+
 __all__ = [
     "InputHashPayload",
+    "ManifestQuery",
     "ManifestState",
+    "ManifestStore",
     "PluginExecutionManifest",
     "build_manifest_entry",
+    "build_upstream_state_from_records",
     "compute_input_hash",
     "compute_options_hash",
+    "compute_scope_id",
     "create_skip_record",
     "is_unchanged",
 ]

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -592,10 +593,10 @@ def persist_function_analytics(
     types_rows = result.types_rows
 
     def _validated_records(
-        table_key: str, rows: list[dict[str, object]]
+        table_key: str, rows: Sequence[Mapping[str, object]]
     ) -> list[dict[str, object]]:
         if not rows:
-            return rows
+            return []
         df = pd.DataFrame(rows)
         validated = validate_dataset_df(table_key, df)
         return validated.where(pd.notna(validated), None).to_dict(orient="records")

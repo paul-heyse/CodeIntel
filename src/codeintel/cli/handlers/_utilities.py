@@ -47,10 +47,9 @@ def open_handler_gateway(
 
     .. note::
 
-       For CLI handlers, prefer using ``HandlerContext.gateway`` property,
-       ``HandlerContext.gateway_scope()``, or ``HandlerContext.write_gateway()``
-       instead. Those methods provide automatic lifecycle management and
-       consistent configuration.
+       For CLI handlers, prefer using ``CommandContext.gateway`` property
+       or ``CommandContext.write_gateway()`` instead. Those methods provide
+       automatic lifecycle management and consistent configuration.
 
        This function is retained for internal use by ``runtime_gateway()``
        and should not be called directly from handlers.

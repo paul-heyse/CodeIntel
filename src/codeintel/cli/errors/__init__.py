@@ -37,11 +37,6 @@ from codeintel.cli.errors._cli_errors import (
 from codeintel.cli.errors.builder import ProblemBuilder
 
 # Factory exports (consolidated in results.py)
-from codeintel.cli.errors.results import (
-    fail_storage_query,
-    fail_with_problem,
-)
-
 # Result factories (new consolidated API)
 from codeintel.cli.errors.results import (
     fail_config,
@@ -55,7 +50,9 @@ from codeintel.cli.errors.results import (
     fail_operation,
     fail_storage,
     fail_storage_connection,
+    fail_storage_query,
     fail_validation,
+    fail_with_problem,
 )
 
 # Error taxonomy exports
@@ -176,16 +173,6 @@ __all__ = [
     "config_error",
     "config_not_found_error",
     "config_validation_error",
-    "internal_error",
-    "job_not_found_error",
-    "make_error_type",
-    "missing_required_error",
-    "not_found_error",
-    "operation_error",
-    "service_error",
-    "storage_error",
-    "timeout_error",
-    "validation_error",
     # Result factories (new consolidated API)
     "fail_config",
     "fail_domain",
@@ -203,7 +190,17 @@ __all__ = [
     "fail_with_problem",
     # Handler utilities
     "handle_cli_error",
+    "internal_error",
+    "job_not_found_error",
+    "make_error_type",
+    "missing_required_error",
+    "not_found_error",
+    "operation_error",
     "run_handler",
     "run_structured_handler",
     "runtime_required",
+    "service_error",
+    "storage_error",
+    "timeout_error",
+    "validation_error",
 ]

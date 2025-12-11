@@ -6,7 +6,7 @@ with fake dependencies.
 
 from __future__ import annotations
 
-import logging
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,8 +18,8 @@ from codeintel.cli.commands.jobs import (
     JobInfo,
     ListJobs,
 )
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.core.result_types import ActionResult, ListResult
-from codeintel.cli.deps import Deps
 from codeintel.cli.deps.protocols import JobManagerProtocol
 from codeintel.cli.jobs import JobStatus
 from tests._helpers.assertions.expectation_assertions import (
@@ -166,14 +166,8 @@ class FakeJobManager:
         return 5  # Fake cleanup count
 
 
-class FakeConfig:
-    """Fake CLI config for testing."""
-
-    log_level = "WARNING"
-
-
-def make_fake_deps(jobs: JobManagerProtocol | None = None) -> Deps:
-    """Create fake Deps for testing.
+def make_fake_context(jobs: JobManagerProtocol | None = None) -> CommandContext:
+    """Create fake CommandContext for testing.
 
     Parameters
     ----------
@@ -182,14 +176,24 @@ def make_fake_deps(jobs: JobManagerProtocol | None = None) -> Deps:
 
     Returns
     -------
-    Deps
-        Configured fake deps.
+    CommandContext
+        Configured fake context.
     """
-    return Deps(
-        config=FakeConfig(),  # type: ignore[arg-type]
-        logger=logging.getLogger("test"),
-        jobs=jobs or FakeJobManager(),  # type: ignore[arg-type]
-    )
+    from codeintel.cli.services.jobs import JobService
+
+    # Create JobService with fake manager
+    fake_manager = jobs or FakeJobManager()
+    job_service = JobService(manager=fake_manager)  # type: ignore[arg-type]
+
+    # Build context and inject the job service
+    builder = CommandContextBuilder().with_params({}).with_operation_id("test.jobs")
+    stack = ExitStack()
+    ctx = stack.enter_context(builder.build())
+    setattr(ctx, "_close_stack", stack)
+
+    # Replace the jobs service with our fake
+    setattr(ctx, "jobs", job_service)
+    return ctx
 
 
 class TestListJobs:
@@ -199,9 +203,9 @@ class TestListJobs:
     def test_list_all_jobs() -> None:
         """List all jobs returns expected structure."""
         cmd = ListJobs(limit=20)
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -219,9 +223,9 @@ class TestListJobs:
     def test_list_filtered_by_status() -> None:
         """Filter jobs by status works."""
         cmd = ListJobs(status="running", limit=20)
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -232,9 +236,9 @@ class TestListJobs:
     def test_list_with_limit() -> None:
         """Limit parameter is respected."""
         cmd = ListJobs(limit=1)
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -248,9 +252,9 @@ class TestGetJobStatus:
     def test_get_existing_job() -> None:
         """Get status of existing job returns details."""
         cmd = GetJobStatus(job_id="job-001")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -263,9 +267,9 @@ class TestGetJobStatus:
     def test_get_nonexistent_job() -> None:
         """Get status of nonexistent job returns error."""
         cmd = GetJobStatus(job_id="nonexistent")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(not result.success)
         error = expect_is_not_none(result.error)
@@ -279,9 +283,9 @@ class TestGetJobOutput:
     def test_get_completed_job_output() -> None:
         """Get output of completed job returns data."""
         cmd = GetJobOutput(job_id="job-001")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -292,9 +296,9 @@ class TestGetJobOutput:
     def test_get_running_job_output() -> None:
         """Get output of running job returns error."""
         cmd = GetJobOutput(job_id="job-002")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(not result.success)
         expect_is_not_none(result.error)
@@ -303,9 +307,9 @@ class TestGetJobOutput:
     def test_get_nonexistent_job_output() -> None:
         """Get output of nonexistent job returns error."""
         cmd = GetJobOutput(job_id="nonexistent")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(not result.success)
 
@@ -317,9 +321,9 @@ class TestCancelJob:
     def test_cancel_running_job() -> None:
         """Cancel running job succeeds."""
         cmd = CancelJob(job_id="job-002")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -331,9 +335,9 @@ class TestCancelJob:
     def test_cancel_completed_job() -> None:
         """Cancel completed job fails."""
         cmd = CancelJob(job_id="job-001")
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(not result.success)
 
@@ -345,9 +349,9 @@ class TestCleanupJobs:
     def test_cleanup_default_age() -> None:
         """Cleanup with default age works."""
         cmd = CleanupJobs()
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -359,9 +363,9 @@ class TestCleanupJobs:
     def test_cleanup_custom_age() -> None:
         """Cleanup with custom age works."""
         cmd = CleanupJobs(max_age_days=30)
-        deps = make_fake_deps()
+        ctx = make_fake_context()
 
-        result = cmd.execute(deps)
+        result = cmd.execute(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)

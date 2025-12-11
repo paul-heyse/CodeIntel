@@ -12,7 +12,7 @@ import cyclopts.help as help_pkg
 import cyclopts.help.help as help_mod
 from cyclopts import App, Parameter
 
-from codeintel.cli.commands import _help as help_utils
+from codeintel.cli.commands import help_utils
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

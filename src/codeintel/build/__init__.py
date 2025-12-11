@@ -79,6 +79,7 @@ from codeintel.build.resources import (
     TargetExecution,
     TargetResources,
 )
+from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
 
 __all__ = [
@@ -89,6 +90,7 @@ __all__ = [
     "ArtifactSpec",
     "BuildError",
     "BuildErrorCollection",
+    "BuildRunConfig",
     "BuildRunRecord",
     "OperationTargets",
     "OutputContract",

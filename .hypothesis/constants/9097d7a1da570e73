@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/observability/_observability.py
+# hypothesis_version: 6.148.7
+
+['016x', '032x', 'ObservabilityConfig', 'codeintel.cli', 'duration_ms', 'error_type', 'exception', 'level', 'logger', 'message', 'operation_id', 'params', 'span_id', 'success', 'timestamp', 'trace_id']

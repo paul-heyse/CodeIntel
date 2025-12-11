@@ -8,13 +8,12 @@ from __future__ import annotations
 import gc
 import time
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 import pytest
 
+from codeintel.cli.context import CommandContext, CommandContextBuilder
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import OperationSpec
-from codeintel.cli.handlers.context import HandlerContext
 from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import expect_true
 from tests._helpers.operations import make_operation_spec
@@ -36,20 +35,16 @@ MEMORY_TEST_ITERATIONS = 100
 
 
 def _execute_spec(spec: OperationSpec) -> CliResult[object]:
-    """Execute an OperationSpec with a minimal HandlerContext.
+    """Execute an OperationSpec with a minimal CommandContext.
 
     Returns
     -------
     CliResult[object]
         Result produced by the handler execution.
     """
-    config = MagicMock()
-    config.log_level = "WARNING"
-    ctx = HandlerContext(config=config, operation_id=spec.operation_id, _params={})
-    try:
+    builder = CommandContextBuilder().with_params({}).with_operation_id(spec.operation_id)
+    with builder.build() as ctx:
         return spec.handler(ctx)
-    finally:
-        ctx.close()
 
 
 @pytest.mark.benchmark
@@ -151,7 +146,7 @@ def test_json_output_overhead(cli: CliTestHarness) -> None:
 def test_middleware_overhead_acceptable() -> None:
     """Test middleware stack doesn't add excessive overhead."""
 
-    def fast_handler(_ctx: HandlerContext) -> CliResult[dict[str, int]]:
+    def fast_handler(_ctx: CommandContext) -> CliResult[dict[str, int]]:
         """Return fast test result.
 
         Returns
@@ -204,7 +199,7 @@ def test_repeated_operations_no_memory_leak(
 def test_executor_cleanup() -> None:
     """Test executor cleans up properly."""
 
-    def handler(_ctx: HandlerContext) -> CliResult[dict[str, int]]:
+    def handler(_ctx: CommandContext) -> CliResult[dict[str, int]]:
         """Return test result.
 
         Returns

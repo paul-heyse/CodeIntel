@@ -1,0 +1,33 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://codeintel.dev/schemas/profile-config.schema.json"
+title: "CodeIntel Profile Configuration"
+description: "Schema for plugin profile configuration files"
+type: object
+properties:
+  profile:
+    type: object
+    properties:
+      name:
+        type: string
+        description: "Profile identifier"
+      description:
+        type: string
+        description: "Human-readable description"
+      version:
+        type: string
+        description: "Profile version (semver)"
+    required: [name, description]
+  
+  shared:
+    type: object
+    description: "Options applied to all plugins"
+    additionalProperties: true
+  
+  plugins:
+    type: object
+    description: "Plugin-specific option overrides"
+    additionalProperties:
+      type: object
+      additionalProperties: true
+
+required: [profile]

@@ -41,6 +41,7 @@ from codeintel.analytics.runtime.context import (
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
+    validate_contract_rows,
 )
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -272,17 +273,18 @@ def _compute_function_graph_metrics(
     )
 
     contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
+    validated_rows = validate_contract_rows(contract.table_key, rows)
     insert_analytics_rows(
         gateway,
         contract,
-        rows,
+        validated_rows,
         delete_scope=DeleteScope(repo=cfg.repo, commit=cfg.commit),
         scope=f"{cfg.repo}@{cfg.commit}",
     )
-    if rows:
+    if validated_rows:
         log.info(
             "graph_metrics_functions populated: %d rows for %s@%s",
-            len(rows),
+            len(validated_rows),
             cfg.repo,
             cfg.commit,
         )
@@ -298,12 +300,9 @@ def _compute_module_graph_metrics(
 ) -> None:
     filters = options.filters or GraphMetricFilters()
     graph = filters.filter_import_graph(runtime.ensure_import_graph())
-    symbol_modules, symbol_inbound, symbol_outbound = load_symbol_module_edges(
-        gateway, options.module_by_path
-    )
-    modules = set(graph.nodes) | symbol_modules
-    module_repo = ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit)
-    modules.update(module_repo.list_modules())
+    symbol_edges = load_symbol_module_edges(gateway, options.module_by_path)
+    modules = set(graph.nodes) | symbol_edges[0]
+    modules.update(ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit).list_modules())
     if filters.modules is not None:
         modules = modules.intersection(filters.modules)
     if modules:
@@ -335,24 +334,25 @@ def _compute_module_graph_metrics(
             import_stats=import_stats,
             centrality=centrality,
             component_meta=component_meta,
-            symbol_inbound=symbol_inbound,
-            symbol_outbound=symbol_outbound,
+            symbol_inbound=symbol_edges[1],
+            symbol_outbound=symbol_edges[2],
             created_at=ctx.resolved_now(),
         )
     )
 
     contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
+    validated_rows = validate_contract_rows(contract.table_key, rows_to_insert)
     insert_analytics_rows(
         gateway,
         contract,
-        rows_to_insert,
+        validated_rows,
         delete_scope=DeleteScope(repo=cfg.repo, commit=cfg.commit),
         scope=f"{cfg.repo}@{cfg.commit}",
     )
-    if rows_to_insert:
+    if validated_rows:
         log.info(
             "graph_metrics_modules populated: %d rows for %s@%s",
-            len(rows_to_insert),
+            len(validated_rows),
             cfg.repo,
             cfg.commit,
         )

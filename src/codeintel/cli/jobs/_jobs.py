@@ -19,8 +19,6 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import Any
 
-from codeintel.cli.execution.registry import execute_operation, get_registry
-
 
 class JobStatus(Enum):
     """Job execution status."""
@@ -491,6 +489,8 @@ def run_job(job_id: str) -> int:
     int
         Exit code (0 on success, non-zero on failure).
     """
+    from codeintel.cli.execution.registry import execute_operation, get_registry
+
     store = JobStore()
     job = store.load(job_id)
 

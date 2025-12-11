@@ -1,0 +1,25 @@
+profile:
+  name: full
+  description: "Comprehensive analysis profile"
+  version: "1.0.0"
+
+shared: {}
+
+plugins:
+  analytics.function_metrics:
+    include_graph_metrics: true
+    include_coverage_metrics: true
+
+  graphs.callgraph:
+    use_libcst: true
+    resolve_imports: true
+    include_external_calls: true
+
+  graphs.import_graph:
+    include_stdlib: true
+    include_third_party: true
+
+  ingest.scip_python:
+    include_references: true
+    include_implementations: true
+    timeout_seconds: 600

@@ -25,6 +25,8 @@ from codeintel.analytics.runtime.context import (
     GraphContextSpec,
     resolve_graph_context,
 )
+from codeintel.analytics.utilities.datasets import validate_tuple_rows
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.storage.gateway import StorageGateway
@@ -110,15 +112,15 @@ def compute_subsystem_graph_metrics(
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    cfg = GraphMetricsStepConfig(snapshot=snapshot)
-    active_filters = filters or build_graph_metric_filters(gateway, cfg)
+    active_filters = filters or build_graph_metric_filters(
+        gateway, GraphMetricsStepConfig(snapshot=snapshot)
+    )
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,
         runtime_opts,
     )
-    con = gateway.con
-    ensure_schema(con, "analytics.subsystem_graph_metrics")
+    ensure_schema(gateway.con, "analytics.subsystem_graph_metrics")
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -136,7 +138,7 @@ def compute_subsystem_graph_metrics(
     ]
     membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
-        con.execute(
+        gateway.con.execute(
             "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
@@ -150,7 +152,7 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
     if subsystem_graph.number_of_nodes() == 0:
-        con.execute(
+        gateway.con.execute(
             "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
@@ -174,16 +176,23 @@ def compute_subsystem_graph_metrics(
         )
     )
 
-    con.execute(
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.subsystem_graph_metrics"]
+    validated_rows = validate_tuple_rows(
+        contract.table_key,
+        rows,
+        columns=contract.schema.column_names() if contract.schema else [],
+    )
+
+    gateway.con.execute(
         "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
-    con.executemany(
+    gateway.con.executemany(
         """
         INSERT INTO analytics.subsystem_graph_metrics (
             repo, commit, subsystem_id, import_in_degree, import_out_degree,
             import_pagerank, import_betweenness, import_closeness, import_layer, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        rows,
+        validated_rows,
     )

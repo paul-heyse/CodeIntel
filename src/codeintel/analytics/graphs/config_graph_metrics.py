@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -25,11 +26,32 @@ from codeintel.analytics.runtime.context import (
     GraphContextSpec,
     resolve_graph_context,
 )
+from codeintel.analytics.utilities.datasets import validate_tuple_rows
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 MAX_BETWEENNESS_NODES = 1000
+NODE_ID_INDEX = 2
+
+
+@dataclass(frozen=True)
+class ProjectionContext:
+    """Projection execution context."""
+
+    repo: str
+    commit: str
+    created_at: datetime
+    graph_ctx: GraphContext
+
+
+@dataclass(frozen=True)
+class ProjectionTargets:
+    """Dataset targets for projection metrics."""
+
+    node_table_key: str
+    edge_table_key: str
 
 
 def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -55,36 +77,53 @@ def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> Non
 def _projection_rows(
     *,
     proj: nx.Graph,
-    repo: str,
-    commit: str,
-    now: datetime,
     metrics: ProjectionMetrics,
+    context: ProjectionContext,
+    targets: ProjectionTargets,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
-    node_rows = [
-        (
-            repo,
-            commit,
-            node[1],
-            metrics.degree.get(node, 0),
-            metrics.weighted_degree.get(node, 0.0),
-            metrics.betweenness.get(node, 0.0),
-            metrics.closeness.get(node, 0.0),
-            metrics.community_id.get(node),
-            now,
-        )
+    node_contract = DATASET_CONTRACTS_BY_TABLE_KEY[targets.node_table_key]
+    edge_contract = DATASET_CONTRACTS_BY_TABLE_KEY[targets.edge_table_key]
+    node_columns = node_contract.schema.column_names() if node_contract.schema else []
+    edge_columns = edge_contract.schema.column_names() if edge_contract.schema else []
+    node_id_col = node_columns[NODE_ID_INDEX] if len(node_columns) > NODE_ID_INDEX else "node"
+    src_col = next((col for col in edge_columns if col.startswith("src_")), "src")
+    dst_col = next((col for col in edge_columns if col.startswith("dst_")), "dst")
+
+    node_dicts = [
+        {
+            "repo": context.repo,
+            "commit": context.commit,
+            node_id_col: node[1],
+            "degree": metrics.degree.get(node, 0),
+            "weighted_degree": metrics.weighted_degree.get(node, 0.0),
+            "betweenness": metrics.betweenness.get(node, 0.0),
+            "closeness": metrics.closeness.get(node, 0.0),
+            "community_id": metrics.community_id.get(node),
+            "created_at": context.created_at,
+        }
         for node in proj.nodes
     ]
-    edge_rows = [
-        (
-            repo,
-            commit,
-            src[1],
-            dst[1],
-            float(data.get("weight", 1.0)),
-            now,
-        )
+    edge_dicts = [
+        {
+            "repo": context.repo,
+            "commit": context.commit,
+            src_col: src[1],
+            dst_col: dst[1],
+            "weight": float(data.get("weight", 1.0)),
+            "created_at": context.created_at,
+        }
         for src, dst, data in proj.edges(data=True)
     ]
+    node_rows = validate_tuple_rows(
+        node_contract.table_key,
+        node_dicts,
+        columns=node_contract.schema.column_names(),
+    )
+    edge_rows = validate_tuple_rows(
+        edge_contract.table_key,
+        edge_dicts,
+        columns=edge_contract.schema.column_names(),
+    )
     return cast("list[tuple[object, ...]]", node_rows), cast("list[tuple[object, ...]]", edge_rows)
 
 
@@ -92,11 +131,10 @@ def _projection_payload(
     *,
     graph: nx.Graph,
     nodes: set[tuple[str, str]],
-    created_at: datetime,
-    ctx: GraphContext,
+    context: ProjectionContext,
     label: str,
+    targets: ProjectionTargets,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
-    repo, commit = ctx.repo, ctx.commit
     proj = build_projection_graph(
         graph,
         nodes,
@@ -105,16 +143,15 @@ def _projection_payload(
     metrics = projection_metrics(
         graph,
         nodes,
-        ctx,
+        context.graph_ctx,
         projection=proj,
         label=label,
     )
     return _projection_rows(
         proj=proj,
-        repo=repo,
-        commit=commit,
-        now=created_at,
         metrics=metrics,
+        context=context,
+        targets=targets,
     )
 
 
@@ -153,12 +190,10 @@ def compute_config_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    use_gpu = resolved_runtime.backend.use_gpu
-    con = gateway.con
-    ensure_schema(con, "analytics.config_graph_metrics_keys")
-    ensure_schema(con, "analytics.config_graph_metrics_modules")
-    ensure_schema(con, "analytics.config_projection_key_edges")
-    ensure_schema(con, "analytics.config_projection_module_edges")
+    ensure_schema(gateway.con, "analytics.config_graph_metrics_keys")
+    ensure_schema(gateway.con, "analytics.config_graph_metrics_modules")
+    ensure_schema(gateway.con, "analytics.config_projection_key_edges")
+    ensure_schema(gateway.con, "analytics.config_projection_module_edges")
 
     graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
@@ -169,7 +204,7 @@ def compute_config_graph_metrics(
         GraphContextSpec(
             repo=repo,
             commit=commit,
-            use_gpu=use_gpu,
+            use_gpu=resolved_runtime.backend.use_gpu,
             now=datetime.now(UTC),
             betweenness_cap=MAX_BETWEENNESS_NODES,
             pagerank_weight="weight",
@@ -190,25 +225,40 @@ def compute_config_graph_metrics(
         _clear_config_tables(gateway, repo, commit)
         return
 
+    projection_ctx = ProjectionContext(
+        repo=repo,
+        commit=commit,
+        created_at=created_at,
+        graph_ctx=ctx,
+    )
+    key_targets = ProjectionTargets(
+        node_table_key="analytics.config_graph_metrics_keys",
+        edge_table_key="analytics.config_projection_key_edges",
+    )
+    module_targets = ProjectionTargets(
+        node_table_key="analytics.config_graph_metrics_modules",
+        edge_table_key="analytics.config_projection_module_edges",
+    )
+
     key_rows, key_edges = _projection_payload(
         graph=graph,
         nodes=keys,
-        created_at=created_at,
-        ctx=ctx,
+        context=projection_ctx,
         label="config_keys",
+        targets=key_targets,
     )
     module_rows, module_edges = _projection_payload(
         graph=graph,
         nodes=modules,
-        created_at=created_at,
-        ctx=ctx,
+        context=projection_ctx,
         label="config_modules",
+        targets=module_targets,
     )
 
     _clear_config_tables(gateway, repo, commit)
 
     _persist_rows(
-        con,
+        gateway.con,
         """
         INSERT INTO analytics.config_graph_metrics_keys (
             repo, commit, config_key, degree, weighted_degree,
@@ -218,7 +268,7 @@ def compute_config_graph_metrics(
         key_rows,
     )
     _persist_rows(
-        con,
+        gateway.con,
         """
         INSERT INTO analytics.config_graph_metrics_modules (
             repo, commit, module, degree, weighted_degree,
@@ -228,7 +278,7 @@ def compute_config_graph_metrics(
         module_rows,
     )
     _persist_rows(
-        con,
+        gateway.con,
         """
         INSERT INTO analytics.config_projection_key_edges (
             repo, commit, src_key, dst_key, weight, created_at
@@ -237,7 +287,7 @@ def compute_config_graph_metrics(
         key_edges,
     )
     _persist_rows(
-        con,
+        gateway.con,
         """
         INSERT INTO analytics.config_projection_module_edges (
             repo, commit, src_module, dst_module, weight, created_at

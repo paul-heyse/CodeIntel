@@ -6,17 +6,17 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import OperationSpec
-from codeintel.cli.handlers.context import HandlerContext
 
-HandlerOrContextHandler = Callable[[HandlerContext], CliResult[Any]]
+ContextHandler = Callable[[CommandContext], CliResult[Any]]
 ZeroArgHandler = Callable[[], CliResult[Any]]
 
 
 def make_operation_spec(
     operation_id: str,
-    handler: HandlerOrContextHandler | ZeroArgHandler,
+    handler: ContextHandler | ZeroArgHandler,
     *,
     name: str | None = None,
     description: str | None = None,
@@ -32,7 +32,7 @@ def make_operation_spec(
     sig = inspect.signature(handler)
     expects_ctx = len(sig.parameters) > 0
 
-    def wrapped(ctx: HandlerContext) -> CliResult[Any]:
+    def wrapped(ctx: CommandContext) -> CliResult[Any]:
         return handler(ctx) if expects_ctx else handler()  # type: ignore[arg-type]
 
     return OperationSpec(

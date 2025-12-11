@@ -28,6 +28,9 @@ Examples
 
 from __future__ import annotations
 
+# Context types - use CommandContext from codeintel.cli.context
+from codeintel.cli.context import CommandContext
+
 # Bootstrap for logging/signal setup
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 
@@ -45,15 +48,6 @@ from codeintel.cli.handlers.build import (
     build_history_handler,
     build_run_handler,
     build_status_handler,
-)
-
-# Legacy context types (for backward compatibility during transition)
-# New code should use CommandContext from codeintel.cli.context
-from codeintel.cli.handlers.context import (
-    HandlerContext,
-    HandlerContextOptions,
-    ParameterError,
-    handler_context_manager,
 )
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
@@ -159,6 +153,8 @@ __all__ = [
     "BuildHistoryResult",
     "BuildRunResult",
     "BuildStatusResult",
+    # Context types
+    "CommandContext",
     "DatasetDescribeResult",
     "DatasetDiffResult",
     "DatasetLintResult",
@@ -170,9 +166,6 @@ __all__ = [
     "GenerateMacrosResult",
     "GraphPlanResult",
     "GraphPluginsResult",
-    # Context types
-    "HandlerContext",
-    "HandlerContextOptions",
     "HealthCheckResult",
     "HistoryTimeseriesResult",
     "IdeHintsResult",
@@ -184,7 +177,6 @@ __all__ = [
     "MacroRequirement",
     "OperationCallResult",
     "OperationListResult",
-    "ParameterError",
     "PluginInfoResult",
     "PluginNewResult",
     "PluginPathsResult",
@@ -219,7 +211,6 @@ __all__ = [
     "get_handler_logger",
     "graph_plugins_list_handler",
     "graph_plugins_plan_handler",
-    "handler_context_manager",
     "health_check_handler",
     "history_timeseries_handler",
     "ide_hints_handler",

@@ -37,6 +37,7 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import DatasetSchemaColumn, DatasetSpecDescriptor
 from codeintel.storage.datasets import dataset_for_name, list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.pandera_schemas import dataset_json_schema
 from codeintel.storage.repositories import DatasetReadRepository
 
 
@@ -279,11 +280,12 @@ class DatasetQueryLayer(DatasetQueriesApi):
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        return self.datasets.read_dataset_rows(
+        df = self.datasets.read_dataset_dataframe(
             table_key=ds.table_key,
             limit=clamp.limit_or_default(self.context.limits.default_limit),
             offset=offset_clamp.applied,
         )
+        return df.to_dict(orient="records")
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         """
@@ -313,16 +315,18 @@ class DatasetQueryLayer(DatasetQueriesApi):
             message = f"Unknown dataset: {dataset_name}"
             raise errors.not_found(message) from exc
         duckdb_schema = _fetch_duckdb_schema(self.gateway.con, ds.table_key)
-        sample_rows = self.datasets.read_dataset_rows(
+        sample_df = self.datasets.read_dataset_dataframe(
             table_key=ds.table_key,
             limit=sample_limit,
             offset=0,
         )
+        sample_rows = sample_df.to_dict(orient="records")
+        json_schema = _load_json_schema(ds) or dataset_json_schema(ds.table_key)
         schema_input = DatasetSchemaInput(
             dataset_name=dataset_name,
             table_key=ds.table_key,
             duckdb_schema=duckdb_schema,
-            json_schema=_load_json_schema(ds),
+            json_schema=json_schema,
             sample_rows=sample_rows,
             capabilities=ds.capabilities(),
             owner=ds.owner,

@@ -15,7 +15,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.resolution.runtime import resolve_from_params as _resolve_from_params
 from codeintel.cli.services.params import ParamService
 
 if TYPE_CHECKING:
@@ -151,6 +150,11 @@ class RuntimeService:
         return self._resolved is not None
 
     @property
+    def params(self) -> dict[str, object]:
+        """Return a copy of the underlying parameters."""
+        return dict(self._params)
+
+    @property
     def db_path(self) -> Path:
         """Get database path.
 
@@ -188,7 +192,9 @@ class RuntimeService:
             Resolved runtime.
         """
         LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
-        return _resolve_from_params(self._params, allow_fallback=self._allow_fallback)
+        from codeintel.cli.resolution.runtime import resolve_from_params
+
+        return resolve_from_params(self._params, allow_fallback=self._allow_fallback)
 
 
 __all__ = [

@@ -1,10 +1,7 @@
 """Unified command execution context.
 
 This module provides the single, canonical context type that all CLI commands
-receive. It consolidates:
-
-- ``handlers/context.py`` (HandlerContext)
-- ``deps/container.py`` (Deps)
+receive. It provides:
 
 The CommandContext provides:
 
@@ -237,6 +234,7 @@ class CommandContextBuilder:
         self._verbosity: int = 0
         self._operation_id: str | None = None
         self._logger: logging.Logger | None = None
+        self._injected_gateway: StorageGateway | None = None
 
     def with_runtime(self, *, project_root: Path | None = None) -> Self:
         """Enable runtime resolution.
@@ -372,6 +370,22 @@ class CommandContextBuilder:
         self._logger = logger
         return self
 
+    def with_injected_gateway(self, gateway: StorageGateway) -> Self:
+        """Inject a pre-built gateway (for testing).
+
+        Parameters
+        ----------
+        gateway
+            Pre-built storage gateway.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._injected_gateway = gateway
+        return self
+
     @contextmanager
     def build(self) -> Iterator[CommandContext]:
         """Build CommandContext and manage resource lifecycle.
@@ -413,6 +427,9 @@ class CommandContextBuilder:
             # Build storage if required
             if self._require_storage and runtime_service is not None:
                 storage_service = StorageService.from_runtime(runtime_service)
+            elif self._injected_gateway is not None:
+                # Use injected gateway (for testing)
+                storage_service = StorageService.from_gateway(self._injected_gateway)
 
             # Build serving if required
             if (

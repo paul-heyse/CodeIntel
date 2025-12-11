@@ -9,19 +9,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator
-from contextlib import suppress
 from pathlib import Path
 
 import pytest
 
-from codeintel.storage import gateway as gateway_pkg
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway_cache import close_gateways
 from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
 from tests._helpers.cli_project import CLIProjectContext, create_cli_project
 from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
-
-_GATEWAY_CACHE: dict[Path, StorageGateway] = {}
 
 
 @pytest.fixture
@@ -54,10 +49,7 @@ def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], CliResult]:
 
 
 @pytest.fixture
-def cli_project_ctx(
-    tmp_path: Path,
-    _track_and_close_gateways: None,
-) -> Iterator[CLIProjectContext]:
+def cli_project_ctx(tmp_path: Path) -> Iterator[CLIProjectContext]:
     """Fixture creating a project layout with codeintel.yaml.
 
     Yields
@@ -195,51 +187,29 @@ def op_harness() -> OperationTestHarness:
 
 
 @pytest.fixture(autouse=True)
-def _disable_contract_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Avoid full contract validation for CLI smoke tests."""
-    monkeypatch.setattr(
-        "codeintel.storage.gateway.factory.validate_contract_or_raise",
-        lambda *_, **__: None,
-    )
-
-
-@pytest.fixture(autouse=True)
 def _cleanup_gateways() -> Iterator[None]:
-    """Ensure gateway cache is closed between CLI tests."""
+    """Ensure gateway cache is closed between CLI tests.
+
+    This fixture properly manages gateway lifecycle without monkeypatching.
+    It uses the gateway_cache module's close_gateways function for cleanup.
+    """
     try:
         yield
     finally:
         close_gateways()
 
 
-@pytest.fixture(autouse=True)
-def _track_and_close_gateways(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Track gateways opened during a test and close them afterward."""
-    _GATEWAY_CACHE.clear()
-
-    real_open = gateway_pkg.open_gateway
-
-    def _wrapped_open(config: gateway_pkg.StorageConfig) -> object:
-        db_path = Path(config.db_path).resolve()
-        if db_path in _GATEWAY_CACHE:
-            return _GATEWAY_CACHE[db_path]
-        gateway = real_open(config)
-        _GATEWAY_CACHE[db_path] = gateway
-        return gateway
-
-    monkeypatch.setattr("codeintel.storage.gateway.open_gateway", _wrapped_open)
-    monkeypatch.setattr("codeintel.storage.gateway.factory.open_gateway", _wrapped_open)
-    monkeypatch.setattr("codeintel.cli.handlers.storage.open_gateway", _wrapped_open)
-    monkeypatch.setattr(
-        "codeintel.cli.handlers._utilities.open_gateway",
-        _wrapped_open,
-        raising=False,
-    )
-
-    try:
-        yield
-    finally:
-        for gateway in _GATEWAY_CACHE.values():
-            with suppress(Exception):
-                gateway.close()
-        _GATEWAY_CACHE.clear()
+# NOTE: The following fixtures have been removed as they violate the Testing Charter:
+#
+# - _disable_contract_validation: Used monkeypatch to disable contract validation.
+#   Tests should use real validation. If a test needs to skip validation, it should
+#   use the proper configuration options instead.
+#
+# - _track_and_close_gateways: Used monkeypatch to wrap open_gateway. Gateway
+#   lifecycle should be managed through proper test context (CliTestContext) and
+#   the _cleanup_gateways fixture above.
+#
+# New tests should use the fixtures from tests/cli/handlers/conftest.py:
+# - cli_handler_ctx: CliTestContext with CORE_PACK seeds
+# - graph_cli_ctx: CliTestContext with CORE_PACK and GRAPH_PACK seeds
+# - cli_handler_harness_fixture: CliHandlerHarness for handler testing

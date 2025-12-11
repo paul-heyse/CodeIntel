@@ -88,6 +88,24 @@ class StorageService:
         """
         return cls(db_path=db_path)
 
+    @classmethod
+    def from_gateway(cls, gateway: StorageGateway) -> StorageService:
+        """Create with a pre-opened gateway (for testing).
+
+        Parameters
+        ----------
+        gateway
+            Pre-opened storage gateway.
+
+        Returns
+        -------
+        StorageService
+            Storage service wrapping the gateway.
+        """
+        service = cls()
+        service._gateway = gateway
+        return service
+
     @property
     def gateway(self) -> StorageGateway:
         """Get storage gateway (lazy, read-only).

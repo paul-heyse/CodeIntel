@@ -49,6 +49,7 @@ from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
+from codeintel.cli.commands import _help as help_utils
 
 __all__ = [
     "OutputFormatCLI",
@@ -63,6 +64,7 @@ __all__ = [
     "get_output_format",
     "get_verbose",
     "graphs_app",
+    "help_utils",
     "health_app",
     "help_commands_app",
     "history_app",

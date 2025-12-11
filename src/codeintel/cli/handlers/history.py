@@ -3,7 +3,7 @@
 Provide analytics aggregation across multiple commit snapshots.
 
 This handler writes to a dedicated output database (not the runtime's database),
-so it uses explicit gateway management rather than HandlerContext.gateway.
+so it uses explicit gateway management rather than ctx.gateway.
 """
 
 from __future__ import annotations

@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from codeintel.cli.handlers.context import ParameterError
 from codeintel.cli.handlers.ide import IdeHintsResult, ide_hints_handler
+from codeintel.cli.services.params import ParamError
 from codeintel.serving.mcp.models import FileHintsResponse, ResponseMeta, ViewRow
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -16,14 +16,14 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.serving_contexts import ProvisionedServiceContext
-from tests.cli.handlers.conftest import HandlerContextBuilder
+from tests.cli.handlers.conftest import CommandContextBuilder_
 
 HTTP_NOT_FOUND = 404
 
 
 def test_ide_hints_handler_returns_ok_when_hints_found(
     handler_service_context: ProvisionedServiceContext,
-    handler_context_builder: HandlerContextBuilder,
+    handler_context_builder: CommandContextBuilder_,
 ) -> None:
     """Handler returns success result when hints are found."""
     hint_row = ViewRow.model_validate(
@@ -61,7 +61,7 @@ def test_ide_hints_handler_returns_ok_when_hints_found(
 
 def test_ide_hints_handler_returns_fail_when_no_hints(
     handler_service_context: ProvisionedServiceContext,
-    handler_context_builder: HandlerContextBuilder,
+    handler_context_builder: CommandContextBuilder_,
 ) -> None:
     """Handler returns failure result when no hints are found."""
     mock_response = FileHintsResponse(
@@ -93,9 +93,9 @@ def test_ide_hints_handler_returns_fail_when_no_hints(
 
 def test_ide_hints_handler_raises_when_rel_path_missing(
     handler_service_context: ProvisionedServiceContext,
-    handler_context_builder: HandlerContextBuilder,
+    handler_context_builder: CommandContextBuilder_,
 ) -> None:
-    """Handler raises ParameterError when rel_path is missing."""
+    """Handler raises ParamError when rel_path is missing."""
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
 
     with patch.object(
@@ -105,13 +105,13 @@ def test_ide_hints_handler_raises_when_rel_path_missing(
     ):
         ctx = handler_context_builder(handler_service_context, "ide.hints", {})
 
-        with pytest.raises(ParameterError, match="Required parameter 'rel_path' not provided"):
+        with pytest.raises(ParamError, match="Required parameter 'rel_path' not provided"):
             ide_hints_handler(ctx)
 
 
 def test_ide_hints_handler_raises_when_rel_path_empty(
     handler_service_context: ProvisionedServiceContext,
-    handler_context_builder: HandlerContextBuilder,
+    handler_context_builder: CommandContextBuilder_,
 ) -> None:
     """Handler raises ValueError when rel_path is empty after strip."""
     mock_response = FileHintsResponse(found=True, hints=[], meta=ResponseMeta())
